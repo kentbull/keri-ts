@@ -11,10 +11,13 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -50,7 +53,7 @@ function* seedWitnessHostState(
   witness: Hab,
   hostUrl: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
     enableMailboxStore: true,
   });
   try {
@@ -71,7 +74,9 @@ function* seedRemoteWitnessLocation(
   url: string,
   scheme: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    enableMailboxStore: true,
+  });
   try {
     for (const message of witness.db.clonePreIter(witness.pre, 0)) {
       yield* settleRuntimeIngress(runtime, [message]);
@@ -126,9 +131,13 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
       assertExists(message);
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
@@ -258,9 +267,13 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
       assertExists(rotation);
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
@@ -331,9 +344,13 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
       assertExists(message);
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
@@ -417,9 +434,13 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
       assertExists(latest?.said);
 
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const serverTask = yield* spawn(function*() {
         yield* startServer(port, undefined, runtime, {
           hostname: "127.0.0.1",
@@ -509,17 +530,13 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       yield* seedRemoteWitnessLocation(sourceHby, witness, tcpUrl, Schemes.tcp);
 
       const drains: number[] = [];
-      const runtime = yield* createAgentRuntime(providerHby, {
-        services: {
-          clock: {
-            ...defaultRuntimeServices.clock,
-            setTimeout(callback, ms) {
-              if (ms === 200) drains.push(ms);
-              return setTimeout(callback, ms);
-            },
-          },
+      const runtime = yield* createAgentRuntime(providerHby, new FetchHttpClient(), {
+        ...systemClock,
+        setTimeout(callback, ms) {
+          if (ms === 200) drains.push(ms);
+          return setTimeout(callback, ms);
         },
-      });
+      }, httpMailboxPollTransport);
       const refusals: string[] = [];
       const sockets: Socket[] = [];
       const failed = Promise.withResolvers<unknown>();
@@ -537,7 +554,13 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         }
       };
       let tcpTask = yield* spawn(serve);
-      const receiver = yield* createAgentRuntime(sourceHby, { enableMailboxStore: true });
+      const receiver = yield* createAgentRuntime(
+        sourceHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       let replayed = 0, foreignReplay = false;
       let driver: Task<void> | undefined;
       let stoppingReceiver = false, receiveTask: Task<void> | undefined;
@@ -547,8 +570,8 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         const receiptor = new Receiptor(
           sourceHby,
           createProtocolProcessor(sourceHby),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
         );
         yield* receiptor.catchup(controller.pre, witness.pre);
         yield* sleepOp(50);

@@ -1,5 +1,8 @@
+import { httpMailboxPollTransport } from "../forwarding.ts";
+import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { systemClock } from "../runtime-clock.ts";
+
 /**
  * `tufa rotate` command implementation.
  *
@@ -119,6 +122,8 @@ function difference(
  * - habitat/key-state mutation lives in `Hab.rotate(...)`
  */
 export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
+  // Select one HTTP implementation for all work owned by this command.
+  const http = new FetchHttpClient();
   const rotateArgs: RotateArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -201,8 +206,8 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           const receiptor = new Receiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* receiptor.receipt(hab.pre, {
             sn: hab.kever.sn,
@@ -212,8 +217,8 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           const witDoer = new WitnessReceiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* witDoer.submit(hab.pre, {
             sn: hab.kever.sn,
@@ -228,7 +233,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           hby,
           rotateArgs.proxy,
         );
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
         try {
           runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
             communicationHab,

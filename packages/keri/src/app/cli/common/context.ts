@@ -2,7 +2,10 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../agent-runtime.ts";
 import type { CesrBodyMode } from "../../cesr-http.ts";
+import { httpMailboxPollTransport } from "../../forwarding.ts";
 import type { Hab, Habery } from "../../habbing.ts";
+import { FetchHttpClient } from "../../http-client.ts";
+import { systemClock } from "../../runtime-clock.ts";
 import { setupHby } from "./existing.ts";
 
 /** Common store-location and unlock arguments shared by existing-store CLI commands. */
@@ -110,6 +113,9 @@ export function* withAgentRuntime<TResult>(
   return yield* withExistingHabery(args, options, function*({ hby }) {
     const runtime = yield* (options.dependencies?.createAgentRuntime ?? createAgentRuntime)(
       hby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
     );
     try {
       return yield* use({ hby, runtime });

@@ -152,7 +152,7 @@ export function* dwsResolveCommand(args: Record<string, unknown>): Operation<voi
     function*({ runtime }) {
       const rgy = runtime.vdr;
       if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
-      const result = yield* resolveDidWebs(rgy, runtime.reactor, runtime.services.http, {
+      const result = yield* resolveDidWebs(rgy, runtime.reactor, runtime.http, {
         did,
         metadata: commandArgs.meta ?? false,
         insecureHttp: commandArgs.insecureHttp ?? false,
@@ -221,7 +221,7 @@ function* receiptNewWitnessEvents(
   if (!hab?.kever || latestSn === undefined || latestSn <= priorSn || hab.kever.wits.length === 0) {
     return;
   }
-  const receiptor = new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock);
+  const receiptor = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
   for (let sn = priorSn + 1; sn <= latestSn; sn += 1) {
     yield* receiptor.submit(pre, { sn });
   }

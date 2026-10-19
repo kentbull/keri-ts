@@ -8,13 +8,13 @@
  */
 import { concatBytes } from "cesr-ts";
 import { call, type Operation, spawn } from "effection";
+import { FetchHttpClient } from "keri-ts/runtime";
 import {
   abortable,
   type AgentRuntime,
   buildCesrStreamRequest,
   type CesrBodyMode,
   collectBytes,
-  defaultRuntimeServices,
   endpointRoleAccepted,
   fetchEndpointUrls,
   type Hab,
@@ -608,7 +608,7 @@ function* postMailboxAdminCesr(
   bytes: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
   const request = buildCesrStreamRequest(bytes);
-  const response = yield* defaultRuntimeServices.http.request(mailboxAdminUrl(url), {
+  const response = yield* new FetchHttpClient().request(mailboxAdminUrl(url), {
     method: "POST",
     headers: request.headers,
     body: request.body,
@@ -638,7 +638,7 @@ function* postMailboxAdminMultipart(
   // Use the platform encoder once, preserving its generated multipart boundary.
   const prepared = new Response(form);
   const bytes = yield* call(() => prepared.arrayBuffer());
-  const response = yield* defaultRuntimeServices.http.request(mailboxAdminUrl(url), {
+  const response = yield* new FetchHttpClient().request(mailboxAdminUrl(url), {
     method: "POST",
     headers: prepared.headers,
     body: bytes,

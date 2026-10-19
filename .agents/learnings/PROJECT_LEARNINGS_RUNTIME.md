@@ -11,7 +11,8 @@ One runtime serves a Habery or command invocation. Hosted AID selection is
 separate from listener topology; never auto-host all Habs or expose signatory/AEID
 as normal identities. Provider storage is explicit enableMailboxStore or a borrowed
 Mailboxer, not AgentMode/runtimeMode. HTTP and clock dependencies are separate
-required component arguments; the remaining root services option is temporary.
+required component arguments. Application roots also select the existing mailbox
+poll transport explicitly; requests carry data rather than collaborator bundles.
 Choose concrete dependencies at construction; no parent-runtime discovery in
 Respondant, QueryCoordinator, Anchorer, receipt owners or lower TCP transport.
 

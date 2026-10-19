@@ -2,8 +2,10 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { concatBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue, ReplayCue, ReplyCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
@@ -104,29 +106,30 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
     const preparation = new Error("second reply failure");
     let refuse = true, blocked = false, failPrepare = false, constructions = 0;
     const packets: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (_url, init) => {
-          const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-          packets.push(
-            concatBytes(body, new TextEncoder().encode(new Headers(init!.headers).get("CESR-ATTACHMENT") ?? "")),
-          );
-          return blocked
-            ? new Response(
-              new ReadableStream({
-                pull() {
-                  reading();
-                },
-                async cancel() {
-                  cleaning();
-                  await gate;
-                },
-              }, { highWaterMark: 0 }),
-            )
-            : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (_url, init) => {
+        const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
+        packets.push(
+          concatBytes(body, new TextEncoder().encode(new Headers(init!.headers).get("CESR-ATTACHMENT") ?? "")),
+        );
+        return blocked
+          ? new Response(
+            new ReadableStream({
+              pull() {
+                reading();
+              },
+              async cancel() {
+                cleaning();
+                await gate;
+              },
+            }, { highWaterMark: 0 }),
+          )
+          : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const produce = sender.processCuesIter.bind(sender);
     sender.processCuesIter = function*(cues) {
       for (const cue of cues) {
@@ -216,14 +219,15 @@ Deno.test("queue-only reply pairs retain their atomic slot until complete constr
     const preparation = new Error("second queued reply failure");
     let failPrepare = true;
     const packets: SerderKERI[] = [];
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (_url, init) => {
-          packets.push(new SerderKERI({ raw: new Uint8Array(await new Response(init!.body).arrayBuffer()) }));
-          return new Response(null, { status: 204 });
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (_url, init) => {
+        packets.push(new SerderKERI({ raw: new Uint8Array(await new Response(init!.body).arrayBuffer()) }));
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const produce = sender.processCuesIter.bind(sender);
     sender.processCuesIter = function*(cues) {
       for (const cue of cues) {

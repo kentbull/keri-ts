@@ -7,11 +7,12 @@
  * rather than process-local defaults.
  */
 import type { Operation } from "effection";
+import { systemClock } from "keri-ts/runtime";
+import { FetchHttpClient } from "keri-ts/runtime";
 import {
   type Configer,
   createConfiger,
   createProtocolProcessor,
-  defaultRuntimeServices,
   Receiptor,
   ValidationError,
   WitnessReceiptor,
@@ -148,16 +149,16 @@ export function* witnessSubmitCommand(
         const receiptor = new Receiptor(
           hby,
           createProtocolProcessor(hby),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
         );
         yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
       } else {
         const witDoer = new WitnessReceiptor(
           hby,
           createProtocolProcessor(hby),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
           {
             force: commandArgs.force ?? false,
           },

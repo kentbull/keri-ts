@@ -8,8 +8,11 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
@@ -91,9 +94,13 @@ Deno.test("challenge verification joins an empty mailbox wait before successful 
         throw new Error("Expected mailbox provider habitat.");
       }
 
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");

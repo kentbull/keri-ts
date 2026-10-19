@@ -9,7 +9,10 @@
  * - agent controller bootstrap config behavior
  * - multi-AID host filtering for the selected mailbox alias
  */
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
@@ -44,7 +47,7 @@ import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { reserveTcpPort } from "../../http-test-support.ts";
-import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
+import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-fakes.ts";
 import { assertOperationThrows, CLITestHarness, testCLICommand } from "../../utils.ts";
 
 /** Return a random localhost port for ephemeral mailbox and OOBI hosts. */
@@ -357,7 +360,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -400,7 +403,7 @@ async function seedHostedController(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -601,9 +604,13 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       toad: 0,
     });
 
-    const runtime = yield* createAgentRuntime(providerHby, {
-      enableMailboxStore: true,
-    });
+    const runtime = yield* createAgentRuntime(
+      providerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     const hab = providerHby.habByName("relay");
     yield* settleRuntimeIngress(runtime, [
       mailbox.makeLocScheme(advertisedUrl, mailbox.pre, "http"),

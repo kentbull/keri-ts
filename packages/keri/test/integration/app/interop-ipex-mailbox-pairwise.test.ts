@@ -1,6 +1,7 @@
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import { collectPayload, framePayload, parseBytes, Prefixer, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
@@ -114,7 +115,7 @@ for (const tsDiscloser of [true, false]) {
                       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
                       hbys.push(hby);
                       runtimes.push(
-                        yield* createAgentRuntime(hby, {
+                        yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
                           kram: {
                             enabled: true,
                             caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] },
@@ -163,7 +164,7 @@ for (const tsDiscloser of [true, false]) {
                       },
                     );
                     for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
-                    yield* new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock)
+                    yield* new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock)
                       .submit(
                         hab.pre,
                       );
@@ -303,7 +304,7 @@ for (const tsDiscloser of [true, false]) {
                                   gvrsn: Vrsn_2_0,
                                   genusify: true,
                                 }));
-                                const response = yield* requestFrame(mailboxUrl, frame, defaultRuntimeServices.http, {
+                                const response = yield* requestFrame(mailboxUrl, frame, new FetchHttpClient(), {
                                   signal: AbortSignal.timeout(10_000),
                                 });
                                 assertEquals(response.status, 200);

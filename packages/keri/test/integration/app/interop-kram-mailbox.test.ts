@@ -1,6 +1,7 @@
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import { Diger, NumberPrimitive, parseBytes, Prefixer, Siger, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
@@ -141,7 +142,7 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
       for (let index = 0; index < count; index++) {
         const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
         hbys.push(hby);
-        runtimes.push(yield* createAgentRuntime(hby));
+        runtimes.push(yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport));
       }
       const wits = witnesses.map((witness) => witness.pre);
       const witnessing = { wits, toad: wits.length ? 2 : 0 };
@@ -177,7 +178,7 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
           assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
           assertExists(hbys[0].db.getKever(pre));
         }
-        yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.services.http, runtime.services.clock).submit(
+        yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.http, runtime.clock).submit(
           sender.pre,
         );
         assertEquals(sender.db.wigs.get([sender.pre, sender.kever!.serder.said!]).map((sig) => sig.index).sort(), [
@@ -228,7 +229,7 @@ async function send(url: string, wire: string, readEvent: boolean): Promise<Sent
   return await run(function*() {
     const [frame] = yield* call(() => parseBytes(decodeBase64(wire)));
     // Real detached-header egress performs the reference media-type negotiation.
-    const response = yield* requestFrame(url, frame, defaultRuntimeServices.http, {
+    const response = yield* requestFrame(url, frame, new FetchHttpClient(), {
       signal: AbortSignal.timeout(10_000),
     });
     let payload: string | null = null;

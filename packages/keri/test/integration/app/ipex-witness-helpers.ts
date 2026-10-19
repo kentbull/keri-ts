@@ -1,6 +1,6 @@
 /** Real witnessed KEL/registry preparation and signed IPEX wire for composed interop cases. */
 import { collectBytes } from "../../../src/app/byte-source.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 
 import {
   type CesrFrame,
@@ -34,7 +34,7 @@ export function nonce(): string {
 /** Actual detached-header egress; transport success is followed by store assertions. */
 export async function post(url: string, frame: CesrFrame): Promise<void> {
   await run(function*() {
-    const response = yield* requestFrame(url, frame, defaultRuntimeServices.http, {
+    const response = yield* requestFrame(url, frame, new FetchHttpClient(), {
       signal: AbortSignal.timeout(10_000),
     });
     const body = new TextDecoder().decode(yield* call(() => collectBytes(response.body())));
@@ -90,7 +90,7 @@ export function* anchor(
     }
   }
   const hab = signers[0], runtime = runtimes[0];
-  yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services.http, runtime.services.clock).submit(
+  yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock).submit(
     hab.pre,
   );
   const serder = hab.kever!.serder;

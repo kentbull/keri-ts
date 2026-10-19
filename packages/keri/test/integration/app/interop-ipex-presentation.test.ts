@@ -1,6 +1,7 @@
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import {
   type CesrFrame,
@@ -85,16 +86,17 @@ for (const count of [1, 2]) {
               const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
               hbys.push(hby);
               runtimes.push(
-                yield* createAgentRuntime(hby, {
-                  kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-                  services: {
-                    clock: {
-                      now: () => index === 1 ? receiverNow : now,
-                      setTimeout,
-                      clearTimeout: (timer) => clearTimeout(timer as number),
-                    },
+                yield* createAgentRuntime(
+                  hby,
+                  new FetchHttpClient(),
+                  {
+                    now: () => index === 1 ? receiverNow : now,
+                    setTimeout,
+                    clearTimeout: (timer) => clearTimeout(timer as number),
                   },
-                }),
+                  httpMailboxPollTransport,
+                  { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
+                ),
               );
             }
             const [issuerHby, receiverHby, ...holderHbys] = hbys;
@@ -150,7 +152,7 @@ for (const count of [1, 2]) {
                 ...(mailboxUrl ? [[receiverRuntime, receiver] as const] : []),
               ] as const
             ) {
-              yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services.http, runtime.services.clock)
+              yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock)
                 .submit(
                   hab.pre,
                 );
@@ -302,7 +304,7 @@ for (const count of [1, 2]) {
                 gvrsn: Vrsn_2_0,
                 genusify: true,
               }));
-              const response = yield* requestFrame(mailboxUrl, request, defaultRuntimeServices.http, {
+              const response = yield* requestFrame(mailboxUrl, request, new FetchHttpClient(), {
                 signal: AbortSignal.timeout(10_000),
               });
               assertEquals(response.status, 200);

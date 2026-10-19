@@ -1,3 +1,6 @@
+import { httpMailboxPollTransport } from "../../../keri/src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../keri/src/app/http-client.ts";
+import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
 // @file-test-lane app-stateful-a
 
 import { action, type Operation, run, spawn } from "effection";
@@ -61,7 +64,13 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
         headDirPath: provider.headDirPath,
         skipConfig: true,
       });
-      const providerRuntime = yield* createAgentRuntime(providerHby, { enableMailboxStore: true });
+      const providerRuntime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const providerHab = providerHby.habByName(provider.alias);
       const runtimeTask = yield* spawn(function*() {
         yield* runAgentRuntime(providerRuntime, { hab: providerHab ?? undefined });
@@ -159,7 +168,12 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           headDirPath: `${headRoot}/dws-resolver`,
           skipConfig: true,
         });
-        const dwsRuntime = yield* createAgentRuntime(dwsHby);
+        const dwsRuntime = yield* createAgentRuntime(
+          dwsHby,
+          new FetchHttpClient(),
+          systemClock,
+          httpMailboxPollTransport,
+        );
         const dwsServerTask = yield* spawn(function*() {
           yield* startServer(dwsPort, undefined, dwsRuntime, {
             dwsStaticFilesDir: webRoot,
@@ -197,7 +211,7 @@ async function seedMailboxProvider(headRoot: string, url: string): Promise<Mailb
 
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab(alias, undefined, {
         transferable: false,
@@ -311,7 +325,7 @@ async function issueMailboxRole(
       headDirPath: store.headDirPath,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       yield* settleRuntimeIngress(runtime, [...providerKel, provider.loc]);
       const hab = hby.habByName(store.alias);
@@ -333,7 +347,7 @@ async function ingestSharedState(
 ): Promise<void> {
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       // Seed accepted protocol state before the provider host starts; this is not a sender turn.
       yield* settleRuntimeIngress(runtime, messages);
@@ -381,7 +395,7 @@ async function writeDidWebsArtifacts(
       headDirPath: store.headDirPath,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const artifacts = generateDidWebsArtifacts(runtime.vdr!, {
         alias: "team",

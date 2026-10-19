@@ -1,5 +1,8 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
 import { collectBytes } from "../../../../src/app/byte-source.ts";
+import { httpMailboxPollTransport } from "../../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../../src/app/http-client.ts";
+import { systemClock } from "../../../../src/app/runtime-clock.ts";
 
 import {
   type CesrFrame,
@@ -143,10 +146,10 @@ class TypeScriptPeer implements IpexPeer {
   private async post(frame: CesrFrame): Promise<void> {
     const remote = this.remote;
     assertExists(remote, "connect the peer before sending");
-    const services = this.runtime.services;
+    const http = this.runtime.http;
     await run(() =>
       scoped(function*() {
-        const response = yield* requestFrame(remote.url, frame, services.http, { destination: remote.pre });
+        const response = yield* requestFrame(remote.url, frame, http, { destination: remote.pre });
         yield* call(() => collectBytes(response.body()));
         assertEquals(response.status, 204);
       })
@@ -410,7 +413,7 @@ async function withTypeScriptPeer(
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-http-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const runtime = yield* createAgentRuntime(hby, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
         kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
       });
       try {

@@ -2,7 +2,10 @@
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import {
   createInteropContext,
@@ -250,7 +253,7 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
     await run(function*() {
       const reader = yield* createHabery({ name: readerName, headDirPath, skipConfig: true, skipSignator: true });
       try {
-        const runtime = yield* createAgentRuntime(reader);
+        const runtime = yield* createAgentRuntime(reader, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         yield* runtime.reactor.processBytes(inceptionWire);
         assertEquals(reader.db.getKever(controllerPre)?.sn, 0);
       } finally {

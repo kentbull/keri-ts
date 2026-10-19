@@ -1,5 +1,7 @@
+import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { systemClock } from "../runtime-clock.ts";
+
 /**
  * `tufa interact` command implementation.
  *
@@ -42,6 +44,8 @@ interface InteractArgs {
 export function* interactCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
+  // Select one HTTP implementation for all work owned by this command.
+  const http = new FetchHttpClient();
   const interactArgs: InteractArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -94,8 +98,8 @@ export function* interactCommand(
           const receiptor = new Receiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* receiptor.receipt(hab.pre, {
             sn: hab.kever.sn,
@@ -105,8 +109,8 @@ export function* interactCommand(
           const witDoer = new WitnessReceiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* witDoer.submit(hab.pre, {
             sn: hab.kever.sn,

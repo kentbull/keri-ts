@@ -11,10 +11,13 @@ import {
   Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { encodeHugeNumber } from "../../../src/app/keeping.ts";
 import { type AcdcDispatchArgs, dispatchEnvelope, type TelDispatchArgs } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { incept } from "../../../src/core/protocol-vdr-eventing.ts";
@@ -32,7 +35,7 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
@@ -87,7 +90,7 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
@@ -158,7 +161,7 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       let telEscrows = 0;
       let verifierEscrows = 0;

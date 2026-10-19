@@ -13,10 +13,13 @@ import {
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+
 import { loadStoredReply } from "../../../src/app/stored-replies.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
@@ -26,7 +29,7 @@ import { reply } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
-import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
+import { FakeRuntimeHttpClient } from "../../support/runtime-fakes.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
 const textDecoder = new TextDecoder();
@@ -163,7 +166,7 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       const endRole = hab.makeEndRole(pre, EndpointRoles.controller, true);
       yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
@@ -257,7 +260,7 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       const endRole = hab.makeEndRole(pre, EndpointRoles.mailbox, true);
       yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
@@ -375,7 +378,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       const introducedUrl = `http://127.0.0.1:1234/oobi/${hab.pre}/controller`;
       const serder = new SerderKERI({
         sad: {
@@ -391,7 +394,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         const proofCues = new Deck<AgentCue>();
         const cues = shared ? proofCues : new Deck<AgentCue>();
         const reactor = new Reactor(protocolFixture(hby, { cues: proofCues }));
-        const owner = new Oobiery(hby, reactor, reactor.protocol.rvy, defaultRuntimeServices.http, cues);
+        const owner = new Oobiery(hby, reactor, reactor.protocol.rvy, new FetchHttpClient(), cues);
         const url = `${introducedUrl}?deck=${shared}`;
         const notice = new SerderKERI({
           sad: { t: "rpy", dt: makeNowIso8601(), r: "/introduce", a: { cid: hab.pre, oobi: url } },
@@ -423,7 +426,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       try {
         const queries = new Deck<AgentCue>(), queues = new Deck<AgentCue>();
         const reactor = new Reactor(protocolFixture(cold, { cues: queries })),
-          owner = new Oobiery(cold, reactor, reactor.protocol.rvy, defaultRuntimeServices.http, queues);
+          owner = new Oobiery(cold, reactor, reactor.protocol.rvy, new FetchHttpClient(), queues);
         const args = {
           serder,
           diger: new Diger({ qb64: serder.said! }),

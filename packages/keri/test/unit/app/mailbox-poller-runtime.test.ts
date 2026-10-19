@@ -5,20 +5,19 @@ import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import type { MailboxSseMessage } from "../../../src/app/mailbox-sse.ts";
 import { mailboxDeliveryEndpoints, mailboxPollEndpoints, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { FakeRuntimeHttpClient } from "../../support/runtime-fakes.ts";
+
 import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
 import { httpClient } from "../../support/http-client.ts";
-import {
-  FakeMailboxPollTransport,
-  fakeRuntimeServices,
-  ManualRuntimeClock,
-} from "../../support/runtime-service-fakes.ts";
+import { FakeMailboxPollTransport, ManualRuntimeClock } from "../../support/runtime-fakes.ts";
 
 function makeExchangeSerder(
   route: string,
@@ -96,7 +95,7 @@ function makePollerFixture(
     { length: endpointCount },
     (_, index) => seedMailboxEndpoint(hby, hab.pre, `remote-${index + 1}`),
   );
-  const poller = new MailboxPoller(hby, new MailboxDirector(hby), defaultRuntimeServices.http, clock, transport, {
+  const poller = new MailboxPoller(hby, new MailboxDirector(hby), new FetchHttpClient(), clock, transport, {
     timeouts,
   });
   poller.registerTopic("/challenge");
@@ -164,8 +163,8 @@ Deno.test("MailboxPoller.pollDo keeps HTTP endpoint selection and request-open t
         const defaultPoller = new MailboxPoller(
           hby,
           new MailboxDirector(hby),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
           httpMailboxPollTransport,
           {},
         );
@@ -283,10 +282,7 @@ Deno.test("continuous mailbox consumer settles complete body-only mailbox record
           }),
         ],
       });
-      const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ clock }),
-        mailboxPollTransport: transport,
-      });
+      const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), clock, transport);
       try {
         const batches: MailboxPollBatch[] = [];
         const worker = yield* spawn(() =>
@@ -414,7 +410,7 @@ Deno.test("continuous mailbox consumer settles local mailbox batches with source
       const bob = makeTransferableHab(hby, "bob");
       const senderA = makeTransferableHab(hby, "sender-a");
       const senderB = makeTransferableHab(hby, "sender-b");
-      const runtime = yield* createAgentRuntime(hby, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
         enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
@@ -514,7 +510,7 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       hby,
       new MailboxDirector(hby),
       httpClient(() => Promise.resolve(new Response(responseBody))),
-      defaultRuntimeServices.clock,
+      systemClock,
       httpMailboxPollTransport,
       {},
     );

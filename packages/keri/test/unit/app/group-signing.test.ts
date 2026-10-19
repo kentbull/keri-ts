@@ -2,14 +2,17 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { parseBytes } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 Deno.test("group query signs only its local member at current index3", async () => {
   await run(function*() {
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipSignator: true, skipConfig: true });
     const local = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipSignator: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(local);
+    const runtime = yield* createAgentRuntime(local, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const peers = [0, 1, 2].map((i) => remote.makeHab(`peer${i}`));
       for (const peer of peers) {

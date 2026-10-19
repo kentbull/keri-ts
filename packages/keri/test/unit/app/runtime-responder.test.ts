@@ -8,8 +8,11 @@ import {
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { drainWitnessCues, processWitnessIngress, processWitnessIngressSource } from "../../../src/app/witnessing.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { query as queryEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
@@ -21,7 +24,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const cues: AgentCue[] = [
       { kin: "receipt", serder: recipient.kever!.serder },
       { kin: "witness", serder: recipient.kever!.serder },
@@ -53,7 +56,7 @@ Deno.test("app/runtime-responder - stream cues stay with mailbox query correlati
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const retained: AgentCue[] = [];
     runtime.mailboxDirector.retainQueryCue = (cue) => {
       retained.push(cue);
@@ -102,7 +105,9 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       try {
         yield* settleRuntimeIngress(runtime, [
           witness.makeLocScheme("http://127.0.0.1:9137", witness.pre, "http"),
@@ -187,7 +192,13 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
       assertEquals(provider.db.getKever(controller.pre), null, "the receiver has no controller state yet");
       const first = acceptedEventReplayMessage(source, controller.pre, 0).message;
       const later = controller.interact();
-      const runtime = yield* createAgentRuntime(provider, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(
+        provider,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const seen = Promise.withResolvers<void>(), returning = Promise.withResolvers<void>();
       const cleanup = Promise.withResolvers<void>();
       let continued = false, eof = false;
@@ -265,7 +276,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
       const sender = hby.makeHab("sender"),
         recipient = hby.makeHab("recipient"),
         controller = remote.makeHab("controller");
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(`http://127.0.0.1:${server.addr.port}`, recipient.pre, "http"),
@@ -371,15 +382,16 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
       signatures++;
       return query.apply(this, args);
     };
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (url, init) => {
-          const wire = await readCesrRequestBytes(new Request(url, init));
-          if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
-          return new Response(null, { status: 204 });
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (url, init) => {
+        const wire = await readCesrRequestBytes(new Request(url, init));
+        if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     try {
       runtime.cues.push({
         kin: "query",

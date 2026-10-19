@@ -2,9 +2,12 @@ import { call, run } from "effection";
 import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE, DelegateRequestHandler } from "../../../src/app/delegating.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { notice, Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { OOBI_REQUEST_ROUTE, oobiRequestExn, OobiRequestHandler } from "../../../src/app/oobiery.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Signal, Signaler } from "../../../src/app/signaling.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 
@@ -299,7 +302,7 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       assertEquals(runtime.noter?.opened, true);
       assertEquals(runtime.notifier !== null, true);
       runtime.signaler!.push({}, "/owned");
@@ -307,14 +310,16 @@ Deno.test("AgentRuntime owns and closes the noter it opened", async () => {
       assertEquals(runtime.noter?.opened, false);
       assertEquals(runtime.signaler?.count(), 0);
       const scoped = yield* call(function*() {
-        const owned = yield* createAgentRuntime(hby);
+        const owned = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         owned.signaler!.push({}, "/scope-owned");
         return owned.signaler!;
       });
       assertEquals(scoped.count(), 0);
       const borrowed = new Signaler();
       yield* call(function*() {
-        const other = yield* createAgentRuntime(hby, { signaler: borrowed });
+        const other = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+          signaler: borrowed,
+        });
         borrowed.push({}, "/borrowed");
         yield* other.close();
         assertEquals(borrowed.count(), 1);

@@ -15,7 +15,10 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -332,8 +335,18 @@ for (const spec of MATRIX) {
         temp: true,
       });
 
-      const delegatorRuntime = yield* createAgentRuntime(delegatorHby);
-      const delegateRuntime = yield* createAgentRuntime(delegateHby);
+      const delegatorRuntime = yield* createAgentRuntime(
+        delegatorHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+      );
+      const delegateRuntime = yield* createAgentRuntime(
+        delegateHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+      );
 
       try {
         const delegatorWitnesses = spec.witnessed

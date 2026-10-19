@@ -143,7 +143,7 @@ await new Promise((resolve, reject) => {
 try {
   const wire = signature.qb64b;
   const [result, bytes] = await Promise.all([
-    run(() => runtime.sendCesrTcp(`tcp://127.0.0.1:${server.address().port}`, wire, {
+    run(() => runtime.sendCesrTcp(`tcp://127.0.0.1:${server.address().port}`, wire, runtime.systemClock, {
       maxChunkBytes: 7, connectTimeoutMs: 5000, drainTimeoutMs: 5000, signal: AbortSignal.timeout(5000),
     })),
     received,

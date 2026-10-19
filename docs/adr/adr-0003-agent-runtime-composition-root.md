@@ -40,7 +40,11 @@ record. Do not add a renamed test pump or another scheduler.
 
 ## Construction and lifetime
 
-Choose actual processors and clock/HTTP dependencies at construction. Provider
+Application roots supply HttpClient, RuntimeClock and the existing mailbox poll
+transport as required createAgentRuntime arguments. Components receive their
+actual collaborators directly; options contain policy and optional store acquisition
+choices. No partial services resolver or lower-level production fallback remains.
+Choose actual processors at construction. Provider
 storage is an explicit capability, not a runtime mode. Readonly Haberies acquire
 no implicit writable registry. Defaults are owned; injected stores remain borrowed.
 Acquire stores before their consumers so reverse teardown joins output first.

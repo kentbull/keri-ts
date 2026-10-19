@@ -9,6 +9,9 @@ import {
   resolveDidWebs,
   runAgentRuntime,
 } from "keri-ts/runtime";
+import { httpMailboxPollTransport } from "../../../keri/src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../keri/src/app/http-client.ts";
+import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
 import { httpClient } from "../../../keri/test/support/http-client.ts";
 import { startServer } from "../../src/host/http-server.ts";
 import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
@@ -18,8 +21,8 @@ Deno.test("tufa/dkr - HTTP waits for every supplied introduction on the existing
   await run(function*() {
     const issuer = yield* createHabery({ name: `dkr-http-source-${crypto.randomUUID()}`, temp: true });
     const reader = yield* createHabery({ name: `dkr-http-reader-${crypto.randomUUID()}`, temp: true });
-    const source = yield* createAgentRuntime(issuer);
-    const resolver = yield* createAgentRuntime(reader);
+    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const resolver = yield* createAgentRuntime(reader, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const habs = Array.from({ length: 6 }, (_, index) => issuer.makeHab(`issuer-${index}`));
     const unhosted = issuer.makeHab("unhosted");
     const worker = yield* spawn(() => runAgentRuntime(resolver, { pollMailbox: false }));
@@ -79,8 +82,18 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
       name: `dws-static-resolver-${crypto.randomUUID()}`,
       temp: true,
     });
-    const issuerRuntime = yield* createAgentRuntime(issuerHby);
-    const resolverRuntime = yield* createAgentRuntime(resolverHby);
+    const issuerRuntime = yield* createAgentRuntime(
+      issuerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+    );
+    const resolverRuntime = yield* createAgentRuntime(
+      resolverHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     let serverTask;
     try {
       const hab = issuerHby.makeHab("issuer", undefined, {
@@ -135,7 +148,7 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
       const resolved = yield* resolveDidWebs(
         resolverRuntime.vdr!,
         resolverRuntime.reactor,
-        resolverRuntime.services.http,
+        resolverRuntime.http,
         {
           did,
           // Native HTTPS header failure falls back to this actual local HTTP artifact host.
@@ -200,14 +213,15 @@ Deno.test("DID adapters reject absent registry before schema writes or introduct
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
     let fetched = false;
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(() => {
-          fetched = true;
-          throw new Error("Registry absence must precede fetch");
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => {
+        fetched = true;
+        throw new Error("Registry absence must precede fetch");
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     try {
       const hab = hby.makeHab("issuer");
       const handler = createProtocolHandler({ ...runtime, vdr: null }, { dwsDynamic: true, hostedPrefixes: [hab.pre] });

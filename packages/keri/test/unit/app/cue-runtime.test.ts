@@ -4,7 +4,10 @@ import { SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -13,7 +16,7 @@ Deno.test("Respondant finishes local replay construction before publishing or re
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const first = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const second = hab.query(hab.pre, hab.pre, { route: "logs", q: { s: "1" } });
     const failure = new Error("second replay message could not be constructed");
@@ -76,16 +79,17 @@ Deno.test("Poster retains the complete source message on exceptions and requires
     const failure = new Error("transport unavailable");
     let fail = true, attempts = 0, closed = 0, url = "https://peer.test/";
     const destinations: string[] = [];
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient((url) => {
-          attempts++;
-          destinations.push(String(url));
-          if (fail) throw failure;
-          return Promise.resolve(new Response(null, { status: 204 }));
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient((url) => {
+        attempts++;
+        destinations.push(String(url));
+        if (fail) throw failure;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const source = wire.slice();
     const msgs = {
@@ -145,20 +149,21 @@ Deno.test("complete replay batches precede receipt delivery while refused events
     const sender = hby.makeHab("sender"), second = hby.makeHab("second"), third = hby.makeHab("third");
     let refuse = true, queries = 0, secondSaid = "";
     const attempts: { target: string; said: string }[] = [];
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (url, init) => {
-          const target = new URL(url).hostname.split(".")[0];
-          const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-          const serder = new SerderKERI({ raw: body });
-          if (target === "query" && serder.ilk === "qry") queries++;
-          attempts.push({ target, said: serder.said! });
-          const rejected = refuse && serder.ilk === "qry"
-            && (target === "first" || target === "third" && serder.said === secondSaid);
-          return new Response(null, { status: rejected ? 503 : 204 });
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (url, init) => {
+        const target = new URL(url).hostname.split(".")[0];
+        const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
+        const serder = new SerderKERI({ raw: body });
+        if (target === "query" && serder.ilk === "qry") queries++;
+        attempts.push({ target, said: serder.said! });
+        const rejected = refuse && serder.ilk === "qry"
+          && (target === "first" || target === "third" && serder.said === secondSaid);
+        return new Response(null, { status: rejected ? 503 : 204 });
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const msgs = [
       sender.query(sender.pre, sender.pre, { route: "logs", q: {} }),
       sender.query(sender.pre, sender.pre, { route: "logs", q: { s: "1" } }),
@@ -251,24 +256,25 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (_url, init) => {
-          await new Response(init!.body).arrayBuffer();
-          return new Response(
-            new ReadableStream<Uint8Array>({
-              pull() {
-                reading();
-              },
-              async cancel() {
-                cleaning();
-                await gate;
-              },
-            }, { highWaterMark: 0 }),
-          );
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (_url, init) => {
+        await new Response(init!.body).arrayBuffer();
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull() {
+              reading();
+            },
+            async cancel() {
+              cleaning();
+              await gate;
+            },
+          }, { highWaterMark: 0 }),
+        );
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     runtime.cues.push({
       kin: "replay",
       msgs: [hab.query(hab.pre, hab.pre, { route: "logs", q: {} })],

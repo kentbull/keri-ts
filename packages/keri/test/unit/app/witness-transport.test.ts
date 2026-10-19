@@ -6,11 +6,13 @@ import { createConnection, createServer, type Socket } from "node:net";
 import { abortable } from "../../../src/app/abortable.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import {
   openTcpConnection,
@@ -52,10 +54,10 @@ Deno.test("witness delivery preserves authorization and retries the media type f
       try {
         const { witness, controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
         controller.interact();
-        const services = defaultRuntimeServices;
+        const http = new FetchHttpClient(), clock = systemClock;
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         // One request completes before the next complete event is sent.
-        yield* sendWitnessMessage(controller, witness.pre, wire, services.http, services.clock, null, "Bearer fixture");
+        yield* sendWitnessMessage(controller, witness.pre, wire, http, clock, null, "Bearer fixture");
         assertEquals(requests.length, 4);
         assertEquals(requests.map((request) => request.authorization), Array(4).fill("Bearer fixture"));
         assertEquals(requests.map((request) => request.destination), Array(4).fill(witness.pre));
@@ -93,7 +95,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP test address");
-  const services = defaultRuntimeServices;
+  const http = new FetchHttpClient(), clock = systemClock;
   try {
     await run(function*() {
       const hby = yield* createHabery({
@@ -105,15 +107,15 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url: `tcp://127.0.0.1:${address.port}` });
-        const runtime = yield* createAgentRuntime(hby, { services });
+        const runtime = yield* createAgentRuntime(hby, http, clock, httpMailboxPollTransport);
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const task = run(function*() {
           yield* sendWitnessMessage(
             controller,
             witness.pre,
             wire,
-            runtime.services.http,
-            runtime.services.clock,
+            runtime.http,
+            runtime.clock,
             runtime.protocol,
           );
           continued = true;
@@ -129,8 +131,8 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
           controller,
           witness.pre,
           wire,
-          runtime.services.http,
-          runtime.services.clock,
+          runtime.http,
+          runtime.clock,
           runtime.protocol,
         );
         assertEquals(connections, 2);
@@ -165,13 +167,13 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
-        const runtime = yield* createAgentRuntime(hby);
-        const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
         yield* call(() =>
           assertRejects(
             () =>
               run(() =>
-                new Receiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock).receipt(
+                new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock).receipt(
                   controller.pre,
                 )
               ),
@@ -186,8 +188,8 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
           controller,
           witness.pre,
           message,
-          runtime.services.http,
-          runtime.services.clock,
+          runtime.http,
+          runtime.clock,
           runtime.protocol,
         );
         assertEquals(hby.db.wigs.get(key).length, 0, "generic drain makes no receipt success claim");
@@ -219,8 +221,8 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         yield* new WitnessReceiptor(
           hby,
           createProtocolProcessor(hby),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
         ).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
 
@@ -258,14 +260,14 @@ Deno.test("HTTP receipt success requires the requested event's verified witness 
         const submitter = new WitnessReceiptor(
             source,
             createProtocolProcessor(source),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            new FetchHttpClient(),
+            systemClock,
           ),
           getter = new Receiptor(
             source,
             createProtocolProcessor(source),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            new FetchHttpClient(),
+            systemClock,
           );
         const forged = new Cigar({ qb64: outsider.sign(current.raw, false)[0]!.qb64 }, witness.kever!.verfers[0]);
         for (
@@ -345,8 +347,8 @@ Deno.test("HTTP three-witness fanout contains only verified complementary witnes
         yield* new Receiptor(
           source,
           createProtocolProcessor(source),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
         ).receipt(controller.pre);
         assertEquals(source.db.wigs.get([controller.pre, serder.said!]).map((siger) => siger.index).sort(), [0, 1, 2]);
         assertEquals(fanout.map(({ witness }) => witness), [0, 1, 2]);
@@ -394,8 +396,8 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
         const receiptor = new Receiptor(
           source,
           createProtocolProcessor(source),
-          defaultRuntimeServices.http,
-          defaultRuntimeServices.clock,
+          new FetchHttpClient(),
+          systemClock,
         );
         assertEquals(yield* receiptor.get(controller.pre, { sn: 0 }), true);
         const expected = { witnesses: [before.pre], statuses: { [before.pre]: 200 } };
@@ -403,8 +405,8 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
           yield* new WitnessReceiptor(
             source,
             createProtocolProcessor(source),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            new FetchHttpClient(),
+            systemClock,
           ).submit(
             controller.pre,
             { sn: 0 },
@@ -450,8 +452,8 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
           yield* new WitnessReceiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            new FetchHttpClient(),
+            systemClock,
           ).submit(
             controller.pre,
             { sn: event.sn! },
@@ -462,8 +464,8 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
           yield* new Receiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            new FetchHttpClient(),
+            systemClock,
           ).receipt(controller.pre, {
             sn: event.sn!,
           }),
@@ -488,7 +490,7 @@ Deno.test("receipt POST authorizes the accepted historical event and leaves miss
       controller.interact();
       const historical = acceptedEventReplayMessage(source, controller.pre, 1);
       controller.rotate({ cuts: [before.pre], adds: [after.pre], toad: 1 });
-      const runtime = yield* createAgentRuntime(provider);
+      const runtime = yield* createAgentRuntime(provider, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         for (const [sn, message] of [...source.db.clonePreIter(controller.pre)].entries()) {
           const result = yield* witnessReceiptPost(runtime, sn < 2 ? before : after, message);
@@ -534,7 +536,7 @@ Deno.test("halting a receipt read closes the peer body without continuing its ca
     const hby = yield* createHabery({ name: `receipt-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const { controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
-      yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices.http, defaultRuntimeServices.clock)
+      yield* new Receiptor(hby, createProtocolProcessor(hby), new FetchHttpClient(), systemClock)
         .get(controller.pre);
       continued = true;
     } finally {
@@ -672,18 +674,19 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
     const producing = yield* createHabery({ name: `tcp-proof-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const sender = producing.makeHab("sender", undefined, { transferable: true });
     const timers: number[] = [];
-    const runtime = yield* createAgentRuntime(receiving, {
-      enableMailboxStore: true,
-      services: {
-        clock: {
-          ...defaultRuntimeServices.clock,
-          setTimeout(callback, ms) {
-            timers.push(ms);
-            return setTimeout(callback, ms);
-          },
+    const runtime = yield* createAgentRuntime(
+      receiving,
+      new FetchHttpClient(),
+      {
+        ...systemClock,
+        setTimeout(callback, ms) {
+          timers.push(ms);
+          return setTimeout(callback, ms);
         },
       },
-    });
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     let mode = "drain", expectedSn = 0, received = 0, opened = 0;
     let peerEOF = Promise.withResolvers<void>();
     const peers = new Set<Socket>();
@@ -704,7 +707,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       yield* call(() => new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve)));
       const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
       // The connection owns its intake and borrows only the protocol processor from the host.
-      const options = { clock: runtime.services.clock, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
+      const options = { clock: runtime.clock, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
       const preAborted = new AbortController();
       const cancellation = new Error("cancel before socket acquisition");
       preAborted.abort(cancellation);
@@ -858,7 +861,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const services = defaultRuntimeServices;
+  const http = new FetchHttpClient(), clock = systemClock;
   let pulls = 0, opened = 0, continued = false;
   const source = async function*(signal: AbortSignal) {
     opened++;
@@ -874,7 +877,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
     }
   };
   const task = run(function*() {
-    yield* streamCesrTcp(url, source, services.clock);
+    yield* streamCesrTcp(url, source, clock);
     continued = true;
   });
   const socket = await accepted.promise;
@@ -926,7 +929,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const services = defaultRuntimeServices;
+  const http = new FetchHttpClient(), clock = systemClock;
   try {
     assertEquals(
       await run(() =>
@@ -936,7 +939,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
             await new Promise((resolve) => setTimeout(resolve, 30));
             yield Uint8Array.of(1, 2);
           },
-          services.clock,
+          clock,
           { drainTimeoutMs: 10 },
         )
       ),
@@ -998,7 +1001,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
                 };
               },
             }),
-            services.clock,
+            clock,
             { maxChunkBytes: 4 },
           )
         ),
@@ -1013,13 +1016,13 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
         run(() =>
           streamCesrTcp(url, () => {
             throw openingFault;
-          }, services.clock)
+          }, clock)
         )
       ),
       openingFault,
     );
     const faultyClock = {
-      ...services.clock,
+      ...clock,
       setTimeout() {
         throw openingFault;
       },
@@ -1042,9 +1045,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       }
     };
     const emptyFailure = await assertRejects(() =>
-      run(() =>
-        streamCesrTcp(url, emptySource, services.clock, { signal: emptyController.signal, drainTimeoutMs: 100 })
-      )
+      run(() => streamCesrTcp(url, emptySource, clock, { signal: emptyController.signal, drainTimeoutMs: 100 }))
     );
     assertStrictEquals(emptyFailure, openingFault);
     assertEquals(emptyPulls > 0 && emptyPulls < 65536, true, "empty pulls allow timer cancellation before exhaustion");
@@ -1065,7 +1066,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
             // deno-lint-ignore no-unsafe-finally -- Intentionally model a late foreign cleanup failure.
             if (lateFailure) throw lateFailure;
           }
-        }, services.clock)
+        }, clock)
       );
       try {
         await reading.promise;
@@ -1083,7 +1084,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       }
     }
     finish = true;
-    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), services.clock)), {
+    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), clock)), {
       kind: "transmitted",
       bytes: 2,
     });
@@ -1093,7 +1094,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       await run(() =>
         streamCesrTcp(url, async function*() {
           for (let index = 0; index < 3; index++) yield Uint8Array.of(5, 6);
-        }, services.clock)
+        }, clock)
       ),
       { kind: "transmitted", bytes: 6 },
     );
@@ -1107,14 +1108,14 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
           await run(() =>
             writeCesrTcpSocket(borrowed, async function*() {
               yield Uint8Array.of(7, 8);
-            }, services.clock)
+            }, clock)
           ),
           { kind: "transmitted", bytes: 2 },
         );
         assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
       }
       let succeeded = false;
-      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), services.clock)).then(
+      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), clock)).then(
         () => succeeded = true,
         (error) => assertEquals(error, undefined),
       );
@@ -1132,7 +1133,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
 });
 
 Deno.test("TCP application composes raw duplex siblings over a real borrowed connection", async () => {
-  const services = defaultRuntimeServices;
+  const http = new FetchHttpClient(), clock = systemClock;
   const reply = Uint8Array.of(3, 4, 5);
   let closed = false;
   const incoming: number[] = [], outgoing: number[] = [];
@@ -1160,7 +1161,7 @@ Deno.test("TCP application composes raw duplex siblings over a real borrowed con
       );
       const sent = yield* sendCesrTcpSocket(connection, async function*() {
         yield Uint8Array.of(1, 2);
-      }, services.clock);
+      }, clock);
       yield* read;
       return sent;
     });

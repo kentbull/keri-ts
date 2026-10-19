@@ -86,10 +86,7 @@ export {
 export {
   Respondant,
 } from "../app/respondant.ts";
-export {
-  defaultRuntimeServices,
-  type RuntimeServices,
-} from "../app/runtime-services.ts";
+
 export {
   socketBytes,
   type SocketSourceOptions,

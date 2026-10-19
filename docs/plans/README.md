@@ -8,7 +8,7 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
-- [Explicit runtime dependencies](runtime/explicit-runtime-dependencies.md): planned removal of RuntimeServices and dependency options, followed by a separate verifier clock correction.
+- [Explicit runtime dependencies](runtime/explicit-runtime-dependencies.md): removal of RuntimeServices and dependency options, followed by a separate verifier clock correction.
 - [HTTP client simplification](runtime/http-client-simplification.md): phased reduction to prepared bodies, finite responses and a small scoped streaming path.
 - [KERIpy compatibility ports](compatibility/KERIPY_COMPATIBILITY_PORTS.md): proposed
   1.x/2.x target assessment and ports tied to the maintained v1/v2 compatibility inventory.

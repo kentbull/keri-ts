@@ -2,7 +2,9 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { FetchHttpClient } from "../http-client.ts";
+import { systemClock } from "../runtime-clock.ts";
+
 import { withExistingHab } from "./common/context.ts";
 import { parseExnDataItems } from "./common/parsing.ts";
 
@@ -78,8 +80,8 @@ export function* exchangeSendCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        defaultRuntimeServices.http,
-        defaultRuntimeServices.clock,
+        new FetchHttpClient(),
+        systemClock,
         {
           dest: recipient,
           route,
