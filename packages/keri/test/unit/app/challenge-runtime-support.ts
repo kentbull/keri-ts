@@ -1,6 +1,9 @@
 import { type Operation, run } from "effection";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
 export interface SeededIdentifier {
@@ -36,7 +39,7 @@ export async function seedHostedIdentifier(
       });
       pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),

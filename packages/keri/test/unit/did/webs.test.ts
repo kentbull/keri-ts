@@ -3,7 +3,10 @@ import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -51,7 +54,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       name: `did-webs-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -106,7 +109,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         const hab = hby.makeHab(alias, undefined, {
           transferable: true,
@@ -135,7 +138,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         const second = bindDesignatedAliases(runtime.vdr!, {
           alias,
@@ -158,25 +161,26 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
   await run(function*() {
     const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const source = yield* createAgentRuntime(issuer);
+    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     let fetches: string[] = [], mode = "stream", body: ReadableStream<Uint8Array>;
     const injected = new TypeError("injected client invariant failure");
-    const runtime = yield* createAgentRuntime(target, {
-      services: {
-        http: httpClient((url) => {
-          fetches.push(url);
-          if (mode === "injected") throw injected;
-          if (mode === "opening" && fetches.length === 1) {
-            throw new TransportError("opening failed", { cause: injected });
-          }
-          if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
-          if (url.endsWith("did.json")) {
-            if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
-          }
-          return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      target,
+      httpClient((url) => {
+        fetches.push(url);
+        if (mode === "injected") throw injected;
+        if (mode === "opening" && fetches.length === 1) {
+          throw new TransportError("opening failed", { cause: injected });
+        }
+        if (mode === "status" && fetches.length === 1) return new Response(null, { status: 503 });
+        if (url.endsWith("did.json")) {
+          if (mode === "mismatch") return new Response(JSON.stringify({ id: did }));
+        }
+        return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     let escrowPasses = 0;
     const advance = runtime.protocol.processEscrowsOnce.bind(runtime.protocol);
     runtime.protocol.processEscrowsOnce = function*() {
@@ -206,7 +210,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       }, { highWaterMark: 0 });
       let complete = false;
       const task = yield* spawn(function*() {
-        const result = yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+        const result = yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
         complete = true;
         return result;
       });
@@ -245,7 +249,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         },
       }, { highWaterMark: 0 });
       const stopped = yield* spawn(function*() {
-        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
       });
       for (let i = 0; i < 100 && !fetches.length; i++) yield* sleep(1);
       yield* sleep(5);
@@ -269,7 +273,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       }, { highWaterMark: 0 });
       const failed = yield* spawn(function*() {
         try {
-          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
         } catch (error) {
           return error;
         }
@@ -292,7 +296,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         throw fault;
       };
       try {
-        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
         throw new Error("Expected escrow infrastructure failure");
       } catch (error) {
         assertEquals(error, fault);
@@ -311,7 +315,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       });
       let truncated: unknown;
       try {
-        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
       } catch (error) {
         truncated = error;
       }
@@ -321,7 +325,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       fetches = [];
       mode = "injected";
       try {
-        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+        yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
         throw new Error("Expected injected failure");
       } catch (error) {
         assertEquals(error, injected);
@@ -337,7 +341,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
           },
         });
         assertEquals(
-          (yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did })).document.id,
+          (yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did })).document.id,
           did,
         );
         assertEquals(fetches.slice(0, 2).map((url) => new URL(url).protocol), ["https:", "http:"]);
@@ -355,7 +359,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         });
         let rejected: unknown;
         try {
-          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.services.http, { did });
+          yield* resolveDidWebs(runtime.vdr!, runtime.reactor, runtime.http, { did });
         } catch (error) {
           rejected = error;
         }
@@ -379,7 +383,7 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
       name: `did-webs-cesr-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -494,7 +498,7 @@ Deno.test("did/webs - numeric thresholds project as conditionThreshold methods",
       name: `did-webs-numeric-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("numeric", undefined, {
         transferable: true,
@@ -526,7 +530,7 @@ Deno.test("did/webs - flat weighted thresholds project with scaled integer weigh
       name: `did-webs-flat-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("flat", undefined, {
         transferable: true,
@@ -561,7 +565,7 @@ Deno.test("did/webs - nested weighted thresholds project recursively without pat
       name: `did-webs-nested-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("nested", undefined, {
         transferable: true,
@@ -604,7 +608,7 @@ Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd c
       name: `did-webs-multi-clause-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = hby.makeHab("multi", undefined, {
         transferable: true,
@@ -665,7 +669,7 @@ Deno.test("did/webs - CLI generate writes artifacts under the DID path", async (
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       let did = "";
       try {
         const hab = hby.makeHab("issuer", undefined, {

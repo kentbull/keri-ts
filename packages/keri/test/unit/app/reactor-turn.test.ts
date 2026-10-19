@@ -5,11 +5,14 @@ import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { Oobiery } from "../../../src/app/oobiery.ts";
 import { queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
@@ -31,24 +34,25 @@ Deno.test("finite runtime workers progress independently and join blocked HTTP c
       const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const sender = source.makeHab("sender"), fetched = gate(), cancelling = gate(), cleanup = gate();
       let finished = false, failure: unknown;
-      const runtime = yield* createAgentRuntime(target, {
-        services: {
-          http: httpClient(() => {
-            fetched.open();
-            return Promise.resolve(
-              new Response(
-                new ReadableStream<Uint8Array>({
-                  cancel() {
-                    cancelling.open();
-                    return cleanup.wait;
-                  },
-                }),
-                { headers: { "Content-Type": "application/cesr" } },
-              ),
-            );
-          }),
-        },
-      });
+      const runtime = yield* createAgentRuntime(
+        target,
+        httpClient(() => {
+          fetched.open();
+          return Promise.resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                cancel() {
+                  cancelling.open();
+                  return cleanup.wait;
+                },
+              }),
+              { headers: { "Content-Type": "application/cesr" } },
+            ),
+          );
+        }),
+        systemClock,
+        httpMailboxPollTransport,
+      );
       runtime.oobiery.resolve(`http://blocked.test/oobi/${sender.pre}/controller`);
       const worker = yield* spawn(function*() {
         try {
@@ -132,7 +136,8 @@ Deno.test("protocol processing waits for cancelled handler cleanup before the ne
 Deno.test("two request reservations survive an interleaved background cue drain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby), reactor = runtime.reactor;
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport),
+      reactor = runtime.reactor;
     const first = reactor.protocol.replies.reserve("query-a"), second = reactor.protocol.replies.reserve("query-b");
     const ready = gate(), release = gate();
     const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: [Uint8Array.of(1)] };
@@ -199,7 +204,7 @@ Deno.test("dispatch returns mailbox authorization from its exact protocol state"
 Deno.test("cue routing keeps its initial extent when owner observation appends more work", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const observe = runtime.querying.observeCue.bind(runtime.querying);
     try {
       for (const withHab of [false, true]) {
@@ -391,7 +396,7 @@ Deno.test("runtime explicit close and scope exit clear queued ingress and cues",
       let runtime!: AgentRuntime;
       for (const explicit of [true, false]) {
         yield* call(function*() {
-          runtime = yield* createAgentRuntime(hby);
+          runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
           runtime.reactor.ingest(new Uint8Array(4));
           runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
           assertEquals(runtime.reactor.hasIngress, true);

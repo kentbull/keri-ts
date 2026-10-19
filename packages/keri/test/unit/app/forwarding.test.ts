@@ -19,15 +19,13 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import {
-  createAgentRuntime,
-  settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { postCesr } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import {
   type ExchangeDeliveryPreference,
   ForwardHandler,
@@ -37,6 +35,7 @@ import {
   Poster,
 } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
 import {
   mailboxQueryTopics,
@@ -46,7 +45,8 @@ import {
 } from "../../../src/app/mailboxing.ts";
 import { persistResolvedContact } from "../../../src/app/organizing.ts";
 import type { Reactor } from "../../../src/app/reactor.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+
 import { TCPMessenger } from "../../../src/app/tcp-messenger.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
@@ -171,7 +171,7 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
         oobi: "http://example.test/oobi/bob/controller",
       });
 
-      const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
+      const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
       assertEquals(postman.resolveRecipient(local.pre), local.pre);
       assertEquals(postman.resolveRecipient("bob-contact"), remote.pre);
     } finally {
@@ -209,7 +209,7 @@ Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
       persistResolvedContact(hby, remoteA.pre, { alias: "shared" });
       persistResolvedContact(hby, remoteB.pre, { alias: "shared" });
 
-      const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
+      const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
       assertThrows(
         () => postman.resolveRecipient("missing"),
         Error,
@@ -245,7 +245,9 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected indirect runtime mailboxer.");
@@ -303,7 +305,7 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       assertEquals(runtime.mailboxer, null);
       assertEquals(runtime.mailboxDirector.mailboxer, null);
       assertEquals(runtime.postman.mbx, null);
@@ -324,7 +326,7 @@ Deno.test("Runtime composes concrete registry processors and registers /credenti
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       assertEquals(runtime.protocol.tvy, runtime.vdr!.tvy);
       assertEquals(runtime.protocol.vry, runtime.vdr!.vry);
       assertEquals(runtime.vdr!.cues, runtime.cues);
@@ -349,7 +351,9 @@ Deno.test("Indirect runtime closes the mailboxer it opened", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected indirect runtime mailboxer.");
@@ -375,7 +379,7 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
     let mailboxer: Mailboxer | undefined;
     try {
       mailboxer = yield* openMailboxerForHabery(hby);
-      const runtime = yield* createAgentRuntime(hby, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
         enableMailboxStore: true,
         mailboxer,
       });
@@ -419,7 +423,9 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       try {
         yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(
@@ -439,7 +445,7 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
           throw new Error("Sender first-seen ordinal is missing.");
         }
         const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
 
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
@@ -521,7 +527,9 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       try {
         yield* settleRuntimeIngress(runtime, [
           recipient.makeLocScheme(
@@ -532,7 +540,7 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
         ]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: "/ipex/grant",
@@ -589,7 +597,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
       mailboxer = yield* openMailboxerForHabery(hby);
       const director = new MailboxDirector(hby, { mailboxer });
       const handler = new ForwardHandler(director);
-      const runtime = yield* createAgentRuntime(hby, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
         mailboxer,
       });
       try {
@@ -663,11 +671,13 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.http, runtime.clock);
         const { serder, deliveries } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: DELEGATE_REQUEST_ROUTE,
@@ -761,7 +771,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           toad: 1,
         });
 
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -781,14 +791,14 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const postman = new Poster(hby, null, runtime.protocol, runtime.services.http, runtime.services.clock);
+          const postman = new Poster(hby, null, runtime.protocol, runtime.http, runtime.clock);
           const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
           const prepared = yield* postman.prepareBytesTarget(sender, route, route.targets[0], message);
           assertEquals(prepared.kind, "http");
           if (prepared.kind !== "http") throw new Error("Expected HTTP target");
           assertEquals(bodies.length, 0);
           // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
-          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), runtime.services.http, {
+          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), runtime.http, {
             bodyMode: prepared.bodyMode,
             destination: prepared.destination,
           });
@@ -895,7 +905,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 
             hby.db.rcts.rem(receiptKey);
-            yield* new TCPMessenger(null, runtime.services.clock).send(tcpTarget.url, tcpTarget.message);
+            yield* new TCPMessenger(null, runtime.clock).send(tcpTarget.url, tcpTarget.message);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             // Local transmission may complete before the remote application accepts the socket.
             yield* call(() => transmitReceived.promise);
@@ -961,7 +971,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         yield* settleRuntimeIngress(runtime, [
           sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
@@ -1062,11 +1072,11 @@ Deno.test("Queued CESR with direct delivery does not fall back to witnesses", as
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
 
-        const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
+        const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
         yield* deliverMessage(postman, sender, {
           recipient: recipient.pre,
           message: new Uint8Array([9]),
@@ -1140,7 +1150,9 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       try {
         yield* settleRuntimeIngress(runtime, [
           recipient.makeEndRole(mailboxHost.pre, EndpointRoles.mailbox, true),
@@ -1206,7 +1218,7 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
     await run(function*() {
       const hby = yield* createHabery({ name: `send-result-${crypto.randomUUID()}`, temp: true, skipConfig: true });
       const peer = yield* createHabery({ name: `send-peer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         for (const name of ["good", "bad"]) {
@@ -1265,7 +1277,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
-        const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
+        const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
         for (const version of [Vrsn_1_0, Vrsn_2_0]) {
           const [body] = exchangeMessage("/application/message", { value: "retained" }, {
             sender: sender.pre,

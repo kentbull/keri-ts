@@ -2,20 +2,17 @@ import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
-import {
-  createAgentRuntime,
-  settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { introduce } from "../../../src/app/forwarding.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-} from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
@@ -77,7 +74,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -298,7 +295,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           [remoteController.pre, remoteController.kever!.said],
           remoteWitness.sign(remoteController.kever!.serder.raw, true),
         );
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -481,7 +478,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -551,18 +548,19 @@ Deno.test("query delivery processes a streamed reply after synchronous preparati
     const sender = hby.makeHab("sender");
     const peer = remote.makeHab("peer");
     let requests = 0;
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(() => {
-          requests++;
-          return Promise.resolve(
-            new Response(new Uint8Array(concatBytes(...remote.db.clonePreIter(peer.pre))), {
-              headers: { "Content-Type": "application/cesr" },
-            }),
-          );
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => {
+        requests++;
+        return Promise.resolve(
+          new Response(new Uint8Array(concatBytes(...remote.db.clonePreIter(peer.pre))), {
+            headers: { "Content-Type": "application/cesr" },
+          }),
+        );
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     try {
       hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });
       hby.db.ends.pin([peer.pre, EndpointRoles.controller, peer.pre], { allowed: true });

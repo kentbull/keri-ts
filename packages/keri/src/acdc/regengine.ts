@@ -1,11 +1,5 @@
 /** Shared TEL validation, accepted-state publication, anchoring and retry for local and foreign registries. */
-import {
-  Diger,
-  Ilks,
-  NumberPrimitive,
-  type Saider,
-  SerderACDC,
-} from "cesr-ts";
+import { Diger, Ilks, NumberPrimitive, type Saider, SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import {

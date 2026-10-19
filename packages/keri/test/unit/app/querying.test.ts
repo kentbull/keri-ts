@@ -11,11 +11,13 @@ import {
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { queryCommand } from "../../../src/app/cli/query.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { type HttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
-import { type RuntimeServices } from "../../../src/app/runtime-services.ts";
+
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -56,19 +58,16 @@ void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof 
 void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
 
 /** Capture actual HTTP query wire after production framing; introductions are not queries. */
-function queryHttp(messages: Uint8Array[], urls: string[] = []): RuntimeServices {
-  return {
-    clock: systemClock,
-    http: httpClient(async (url, init) => {
-      const bytes = await readCesrRequestBytes(new Request(url, init));
-      const serder = new SerderKERI({ raw: bytes });
-      if (serder.ilk === "qry") {
-        messages.push(bytes);
-        urls.push(url);
-      }
-      return new Response(null, { status: 204 });
-    }),
-  };
+function queryHttp(messages: Uint8Array[], urls: string[] = []): HttpClient {
+  return httpClient(async (url, init) => {
+    const bytes = await readCesrRequestBytes(new Request(url, init));
+    const serder = new SerderKERI({ raw: bytes });
+    if (serder.ilk === "qry") {
+      messages.push(bytes);
+      urls.push(url);
+    }
+    return new Response(null, { status: 204 });
+  });
 }
 
 function seedControllerEndpoint(hby: Habery, pre: string, url = "http://controller.test/"): void {
@@ -94,7 +93,7 @@ Deno.test("default runtime sends queued and cue queries through its concrete own
     const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
     const sign = sender.query;
     let signatures = 0;
     sender.query = function(...args) {
@@ -129,7 +128,7 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, ambient);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, ambient);
     try {
       const request = { pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs" as const, q: {} };
       coordinator.enqueue(request);
@@ -156,7 +155,7 @@ Deno.test("unrouted notices create no requests; ambiguous identities and missing
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
     try {
       runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
       runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
@@ -191,7 +190,7 @@ Deno.test("mailbox-only query transport retains the controller as attester", asy
     hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
     hby.db.ends.pin([subject.pre, Roles.mailbox, mailbox.pre], { allowed: true });
     const messages: Uint8Array[] = [], urls: string[] = [];
-    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages, urls) });
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages, urls), systemClock, httpMailboxPollTransport);
     try {
       runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
       yield* processCuesOnce(runtime, { hab: sender });
@@ -211,7 +210,7 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
     try {
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();
@@ -274,7 +273,7 @@ Deno.test("sequence and anchor continuations preserve the seal snapshot and comp
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, { services: queryHttp(messages) });
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
     try {
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();
@@ -309,7 +308,7 @@ Deno.test("query preparation retains failed heads and limits one pass to its ini
     const hab = hby.makeHab("sender");
     seedControllerEndpoint(hby, hab.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, hab);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
     const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
     const sign = hab.query, fault = new Error("signing failed");
     try {
@@ -348,7 +347,7 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
       second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, hab);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
     const seal = { i: hab.pre, s: "0", d: hab.pre };
     const anchor = coordinator.watchAnchor(hab.pre, seal, { wits: [first.pre, second.pre] });
     try {

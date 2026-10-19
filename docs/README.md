@@ -17,7 +17,7 @@ consolidates Request validation, execution and body transport failures into the 
 The [HTTP client simplification](plans/runtime/http-client-simplification.md)
 narrows that owner to prepared bodies, finite results and a small scoped streaming path.
 The [explicit dependency plan](plans/runtime/explicit-runtime-dependencies.md)
-proposes removing RuntimeServices through concrete composition, then fixing verifier clock consistency separately.
+tracks explicit HTTP/clock composition and removal of RuntimeServices, followed by a separate verifier clock correction.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

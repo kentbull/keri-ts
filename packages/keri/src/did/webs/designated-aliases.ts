@@ -6,13 +6,7 @@
  * - issue replacement DA credentials for one local AID
  * - expose one active-state query shared by DID documents and CESR artifacts
  */
-import {
-  DigDex,
-  Ilks,
-  Kinds,
-  Saider,
-  type SerderACDC,
-} from "cesr-ts";
+import { DigDex, Ilks, Kinds, Saider, type SerderACDC } from "cesr-ts";
 import type { Hab, Habery } from "../../app/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemer } from "../../core/scheming.ts";

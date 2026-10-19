@@ -1,6 +1,7 @@
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Witnessed TS IPEX conversations carried by a real KERIpy KRAM mailbox. */
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import {
   collectPayload,
@@ -83,7 +84,7 @@ for (const count of [1, 2]) {
                 const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
                 hbys.push(hby);
                 runtimes.push(
-                  yield* createAgentRuntime(hby, {
+                  yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
                     kram: { enabled: true, caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
                   }),
                 );
@@ -135,8 +136,8 @@ for (const count of [1, 2]) {
                 yield* new WitnessReceiptor(
                   runtime.hby,
                   runtime.protocol,
-                  runtime.services.http,
-                  runtime.services.clock,
+                  runtime.http,
+                  runtime.clock,
                 )
                   .submit(hab.pre);
               }
@@ -297,7 +298,7 @@ for (const count of [1, 2]) {
                       genusify: true,
                     }),
                   );
-                  const response = yield* requestFrame(mailboxUrl, queryFrame, defaultRuntimeServices.http, {
+                  const response = yield* requestFrame(mailboxUrl, queryFrame, new FetchHttpClient(), {
                     signal: AbortSignal.timeout(10_000),
                   });
                   assertEquals(response.status, 200);

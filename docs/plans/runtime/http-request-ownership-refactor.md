@@ -15,6 +15,10 @@ narrows upload and cleanup guarantees while preserving this composition boundary
 It tracks the implementation of the finite/open response split; the detailed
 contracts below record the original refactor and are superseded as that plan lands.
 
+The RuntimeHttpClient/runtime-services.ts inventory below describes the original
+refactor baseline. The [explicit dependency migration](explicit-runtime-dependencies.md)
+subsequently removed that alias/module; current consumers use HttpClient directly.
+
 ## Decision and scope
 
 Composition supplies the HTTP implementation. One concrete HTTP request owner

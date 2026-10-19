@@ -7,6 +7,9 @@
  * config loading, console output, and long-lived listener execution at the edge.
  */
 import type { Operation } from "effection";
+import { httpMailboxPollTransport } from "keri-ts/runtime";
+import { systemClock } from "keri-ts/runtime";
+import { FetchHttpClient } from "keri-ts/runtime";
 import {
   createAgentRuntime,
   EndpointRoles,
@@ -310,7 +313,7 @@ function* reconcileWitnessIdentity(
   hab: Hab,
   startup: WitnessStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby);
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
   try {
     yield* settleRuntimeIngress(runtime, [
       hab.makeLocScheme(startup.httpUrl, hab.pre, schemeForUrl(startup.httpUrl), startup.datetime),

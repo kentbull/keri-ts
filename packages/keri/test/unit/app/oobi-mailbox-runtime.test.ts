@@ -1,15 +1,14 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../tufa/src/cli/mailbox.ts";
-import {
-  createAgentRuntime,
-  runAgentRuntime,
-  settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { OOBI_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
@@ -92,9 +91,13 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
         throw new Error("Expected mailbox provider habitat.");
       }
 
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
@@ -208,7 +211,12 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
           if (!recipientHab) {
             throw new Error("Expected recipient habitat.");
           }
-          const recipientRuntime = yield* createAgentRuntime(recipientHby);
+          const recipientRuntime = yield* createAgentRuntime(
+            recipientHby,
+            new FetchHttpClient(),
+            systemClock,
+            httpMailboxPollTransport,
+          );
 
           try {
             yield* settleRuntimeIngress(recipientRuntime, [storedMessage]);

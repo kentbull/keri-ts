@@ -72,9 +72,9 @@ function* processWitnessSocket(
     peers.add(error);
     rejectFailure(error);
   };
-  let deadline: ReturnType<AgentRuntime["services"]["clock"]["setTimeout"]> | undefined;
+  let deadline: ReturnType<AgentRuntime["clock"]["setTimeout"]> | undefined;
   const eof = () => {
-    deadline = runtime.services.clock.setTimeout(() => {
+    deadline = runtime.clock.setTimeout(() => {
       const error = new Error("TCP reply drain deadline exceeded");
       peers.add(error);
       rejectFailure(error);
@@ -90,7 +90,7 @@ function* processWitnessSocket(
       socket.off("error", error);
       socket.off("close", close);
       socket.off("end", eof);
-      if (deadline !== undefined) runtime.services.clock.clearTimeout(deadline);
+      if (deadline !== undefined) runtime.clock.clearTimeout(deadline);
     }
   });
   try {
@@ -163,7 +163,7 @@ function* processWitnessSocket(
               for (const msg of msgs) {
                 yield* chunkBytes(msg, { signal, maxChunkBytes: 65536 });
               }
-            }, runtime.services.clock);
+            }, runtime.clock);
           };
           /** Settle current input and retain at most one authorized missing-state query on this connection. */
           const processFrame = function*(frame: CesrFrame): Operation<void> {

@@ -11,7 +11,7 @@ import type { HttpClient } from "../../src/app/http-client.ts";
 import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
 import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime-clock.ts";
-import type { RuntimeServices } from "../../src/app/runtime-services.ts";
+
 import { runtimeTurn } from "../../src/app/runtime-turn.ts";
 import { httpClient } from "./http-client.ts";
 
@@ -186,18 +186,6 @@ export class FakeMailboxPollTransport implements MailboxPollTransport {
     // Like the wire transport, a rejected event stops this poll before the next event is read.
     for (const message of result.messages ?? []) if ((yield* consume(message)) === false) break;
   }
-}
-
-export function fakeRuntimeServices(
-  {
-    clock = new ManualRuntimeClock(),
-    http = new FakeRuntimeHttpClient(),
-  }: {
-    clock?: ManualRuntimeClock;
-    http?: FakeRuntimeHttpClient;
-  } = {},
-): RuntimeServices {
-  return { clock, http };
 }
 
 /** In-process Tufa runtime host registered under a fake HTTP origin. */

@@ -1,8 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import {
-  parseExnDataItems,
-  parseThresholdOption,
-} from "../../../src/app/cli/common/parsing.ts";
+import { parseExnDataItems, parseThresholdOption } from "../../../src/app/cli/common/parsing.ts";
 
 Deno.test("parseExnDataItems matches KERIpy-style coercion and merge order", () => {
   const parsed = parseExnDataItems([

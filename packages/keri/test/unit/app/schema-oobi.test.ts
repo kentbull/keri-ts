@@ -1,6 +1,7 @@
 import { type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
@@ -9,7 +10,8 @@ import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
-import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
+import { ManualRuntimeClock } from "../../support/runtime-fakes.ts";
+import { FakeRuntimeHttpClient } from "../../support/runtime-fakes.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -59,9 +61,7 @@ Deno.test("Oobiery resolves application/schema+json data OOBIs", async () => {
       }));
 
     try {
-      const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ http }),
-      });
+      const runtime = yield* createAgentRuntime(hby, http, new ManualRuntimeClock(), httpMailboxPollTransport);
       try {
         runtime.oobiery.resolve(url);
         yield* runtime.oobiery.processOnce();
@@ -96,9 +96,7 @@ Deno.test("Oobiery rejects schema data OOBIs with mismatched SAIDs", async () =>
       }));
 
     try {
-      const runtime = yield* createAgentRuntime(hby, {
-        services: fakeRuntimeServices({ http }),
-      });
+      const runtime = yield* createAgentRuntime(hby, http, new ManualRuntimeClock(), httpMailboxPollTransport);
       try {
         runtime.oobiery.resolve(url);
         yield* runtime.oobiery.processOnce();

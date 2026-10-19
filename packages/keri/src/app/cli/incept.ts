@@ -8,8 +8,10 @@ import {
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+import { httpMailboxPollTransport } from "../forwarding.ts";
+import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { systemClock } from "../runtime-clock.ts";
 
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
@@ -71,6 +73,8 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
  * Creates a single-sig identifier locally.
  */
 export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
+  // Select one HTTP implementation for all work owned by this command.
+  const http = new FetchHttpClient();
   const inceptArgs: InceptArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -135,7 +139,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     try {
       if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
         try {
           yield* runAgentRuntimeUntil(
             runtime,
@@ -171,16 +175,16 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
           const receiptor = new Receiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* receiptor.receipt(hab.pre, { sn: 0 });
         } else {
           const witDoer = new WitnessReceiptor(
             hby,
             createProtocolProcessor(hby),
-            defaultRuntimeServices.http,
-            defaultRuntimeServices.clock,
+            http,
+            systemClock,
           );
           yield* witDoer.submit(hab.pre, { sn: 0 });
         }
@@ -197,7 +201,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
             `Delegated inception for ${hab.pre} requires --proxy <alias>.`,
           );
         }
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
         try {
           runtime.delegating.beginLatest(hab.pre, 0, {
             communicationHab,

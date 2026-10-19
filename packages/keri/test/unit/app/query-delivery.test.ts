@@ -1,7 +1,9 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("query owner retains actual failed HTTP output for retry and closes ordinary pending work", async () => {
@@ -10,7 +12,12 @@ Deno.test("query owner retains actual failed HTTP output for retry and closes or
     const hab = hby.makeHab("sender");
     hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
     const fault = new Error("query peer unavailable");
-    const runtime = yield* createAgentRuntime(hby, { services: { http: httpClient(() => Promise.reject(fault)) } });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => Promise.reject(fault)),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     try {
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {}, wits: [hab.pre] };
       for (let index = 0; index < 9; index++) runtime.querying.enqueue(request);
@@ -49,9 +56,12 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
         await release.promise;
       },
     }, { highWaterMark: 0 });
-    const runtime = yield* createAgentRuntime(hby, {
-      services: { http: httpClient(() => Promise.resolve(new Response(body))) },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => Promise.resolve(new Response(body))),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     try {
       hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
       runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
@@ -92,21 +102,22 @@ Deno.test("query shutdown after successful response consumption cannot send the 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(() => {
-          requests++;
-          const response = new Response(new Uint8Array());
-          const cancel = response.body!.cancel.bind(response.body);
-          response.body!.cancel = async (reason) => {
-            cleaning.resolve();
-            await release.promise;
-            await cancel(reason);
-          };
-          return Promise.resolve(response);
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => {
+        requests++;
+        const response = new Response(new Uint8Array());
+        const cancel = response.body!.cancel.bind(response.body);
+        response.body!.cancel = async (reason) => {
+          cleaning.resolve();
+          await release.promise;
+          await cancel(reason);
+        };
+        return Promise.resolve(response);
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const queue = runtime.querying;
     hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
     for (let index = 0; index < 2; index++) {

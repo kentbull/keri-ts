@@ -63,8 +63,8 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
           cdb,
           runtime.reactor,
           runtime.cues,
-          runtime.services.http,
-          () => runtime.services.clock.now(),
+          runtime.http,
+          () => runtime.clock.now(),
           validatorsFromVerifierConfig(config),
           {
             hook,

@@ -4,8 +4,10 @@ import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
 import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
+import { FetchHttpClient } from "../http-client.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { systemClock } from "../runtime-clock.ts";
+
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -280,8 +282,8 @@ export function* oobiRequestCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        defaultRuntimeServices.http,
-        defaultRuntimeServices.clock,
+        new FetchHttpClient(),
+        systemClock,
         {
           dest: recipient,
           route: OOBI_REQUEST_ROUTE,

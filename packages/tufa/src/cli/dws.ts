@@ -1,5 +1,8 @@
 /** Long-lived `tufa dws resolver` service command. */
 import type { Operation } from "effection";
+import { httpMailboxPollTransport } from "keri-ts/runtime";
+import { systemClock } from "keri-ts/runtime";
+import { FetchHttpClient } from "keri-ts/runtime";
 import {
   type CesrBodyMode,
   consoleLogger,
@@ -67,7 +70,7 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
-  const runtime = yield* createAgentRuntime(hby);
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
   try {
     yield* startServer(port, consoleLogger, runtime, {
       hostname: commandArgs.listenHost ?? "127.0.0.1",

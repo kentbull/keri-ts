@@ -2,6 +2,7 @@ import { action, call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes, Counter, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
@@ -132,19 +133,19 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
       temp: true,
     });
     const requests: Array<{ body: Record<string, unknown>; headers: Headers }> = [];
-    const runtime = yield* createAgentRuntime(verifierHby, {
-      reger: verifierReger,
-      services: {
-        clock: fixedClock(),
-        http: httpClient((_url, init) => {
-          requests.push({
-            body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
-            headers: new Headers(init?.headers),
-          });
-          return Promise.resolve(new Response("", { status: 202 }));
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      verifierHby,
+      httpClient((_url, init) => {
+        requests.push({
+          body: JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>,
+          headers: new Headers(init?.headers),
+        });
+        return Promise.resolve(new Response("", { status: 202 }));
+      }),
+      fixedClock(),
+      httpMailboxPollTransport,
+      { reger: verifierReger },
+    );
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby, gvrsn);
       yield* ingestGrant(runtime, fixture);
@@ -155,8 +156,8 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
         cdb,
         runtime.reactor,
         runtime.cues,
-        runtime.services.http,
-        () => runtime.services.clock.now(),
+        runtime.http,
+        () => runtime.clock.now(),
         {},
         { hook: "http://example.test/hook", gvrsn },
       );
@@ -212,16 +213,16 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       temp: true,
     });
     const requests: Array<Record<string, unknown>> = [];
-    const runtime = yield* createAgentRuntime(verifierHby, {
-      reger: verifierReger,
-      services: {
-        clock: fixedClock(),
-        http: httpClient((_url, init) => {
-          requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-          return Promise.resolve(new Response("", { status: 200 }));
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      verifierHby,
+      httpClient((_url, init) => {
+        requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return Promise.resolve(new Response("", { status: 200 }));
+      }),
+      fixedClock(),
+      httpMailboxPollTransport,
+      { reger: verifierReger },
+    );
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
       yield* ingestGrant(runtime, fixture);
@@ -231,8 +232,8 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         cdb,
         runtime.reactor,
         runtime.cues,
-        runtime.services.http,
-        () => runtime.services.clock.now(),
+        runtime.http,
+        () => runtime.clock.now(),
         {},
         { hook: "http://example.test/hook" },
       );
@@ -321,16 +322,16 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
       temp: true,
     });
     const requests: Array<Record<string, unknown>> = [];
-    const runtime = yield* createAgentRuntime(verifierHby, {
-      reger: verifierReger,
-      services: {
-        clock: fixedClock(),
-        http: httpClient((_url, init) => {
-          requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
-          return Promise.resolve(new Response("", { status: 200 }));
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      verifierHby,
+      httpClient((_url, init) => {
+        requests.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
+        return Promise.resolve(new Response("", { status: 200 }));
+      }),
+      fixedClock(),
+      httpMailboxPollTransport,
+      { reger: verifierReger },
+    );
     try {
       const fixture = issueFixture(issuerHby, issuerReger, verifierHby);
       yield* ingestGrant(runtime, fixture);
@@ -340,8 +341,8 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
         cdb,
         runtime.reactor,
         runtime.cues,
-        runtime.services.http,
-        () => runtime.services.clock.now(),
+        runtime.http,
+        () => runtime.clock.now(),
         {},
         { hook: "http://example.test/hook" },
       );

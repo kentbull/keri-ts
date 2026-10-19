@@ -46,7 +46,7 @@ export async function handleDidResolutionRoute(
       const rgy = context.runtime.vdr;
       if (!rgy) throw new Error("Legacy credential registry is unavailable in this runtime.");
       result = await run(() =>
-        resolveDidWebs(rgy, context.runtime!.reactor, context.runtime!.services.http, {
+        resolveDidWebs(rgy, context.runtime!.reactor, context.runtime!.http, {
           did,
           metadata: meta,
           insecureHttp: context.policy.dwsInsecureHttp ?? false,

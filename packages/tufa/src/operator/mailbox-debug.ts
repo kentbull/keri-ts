@@ -1,4 +1,5 @@
-import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
+import { FetchHttpClient } from "keri-ts/runtime";
+import { systemClock } from "keri-ts/runtime";
 /**
  * Mailbox operator debug report collection.
  *
@@ -10,7 +11,6 @@ import type { Operation } from "effection";
 import {
   buildCesrRequest,
   type CesrBodyMode,
-  defaultRuntimeServices,
   fetchEndpointUrls,
   type Hab,
   type Habery,
@@ -121,7 +121,7 @@ function* fetchMailboxDebug(
     destination,
   });
   const controller = new AbortController();
-  const response = yield* defaultRuntimeServices.http.open(url, {
+  const response = yield* new FetchHttpClient().open(url, {
     method: "POST",
     headers: request.headers,
     body: request.body,

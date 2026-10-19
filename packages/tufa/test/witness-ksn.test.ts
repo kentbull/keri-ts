@@ -1,12 +1,10 @@
 import { SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  createHabery,
-  settleRuntimeIngress,
-  witnessReceiptPost,
-} from "keri-ts/runtime";
+import { createAgentRuntime, createHabery, settleRuntimeIngress, witnessReceiptPost } from "keri-ts/runtime";
+import { httpMailboxPollTransport } from "../../keri/src/app/forwarding.ts";
+import { FetchHttpClient } from "../../keri/src/app/http-client.ts";
+import { systemClock } from "../../keri/src/app/runtime-clock.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 Deno.test("tufa witness KSN requires destination and receipts and independently verifies endorsed state", async () => {
@@ -18,7 +16,7 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       skipSignator: true,
     });
     const peer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     let server: Deno.HttpServer<Deno.NetAddr> | undefined;
     const client = Deno.createHttpClient({});
     try {
@@ -103,7 +101,12 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
           skipConfig: true,
           skipSignator: true,
         });
-        const verifier = yield* createAgentRuntime(observer);
+        const verifier = yield* createAgentRuntime(
+          observer,
+          new FetchHttpClient(),
+          systemClock,
+          httpMailboxPollTransport,
+        );
         try {
           yield* settleRuntimeIngress(verifier, hby.db.clonePreIter(witness.pre));
           const evidence = bytes.slice();

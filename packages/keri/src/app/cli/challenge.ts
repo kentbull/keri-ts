@@ -15,8 +15,10 @@ import {
 import { sendExchangeMessage } from "../exchange-messaging.ts";
 import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
+import { FetchHttpClient } from "../http-client.ts";
 import { Organizer } from "../organizing.ts";
-import { defaultRuntimeServices } from "../runtime-services.ts";
+import { systemClock } from "../runtime-clock.ts";
+
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 interface ChallengeGenerateArgs {
@@ -120,8 +122,8 @@ export function* challengeRespondCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        defaultRuntimeServices.http,
-        defaultRuntimeServices.clock,
+        new FetchHttpClient(),
+        systemClock,
         {
           dest: recipient,
           route: CHALLENGE_RESPONSE_ROUTE,

@@ -1,4 +1,7 @@
 import { essrWire } from "../../../../cesr/src/parser/essr.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
 import {
   b,
@@ -328,7 +331,7 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
     const sender = hby.makeHab("sender", undefined, { icount: 3, isith: "2", ncount: 3, nsith: "2" });
     const provider = hby.makeHab("provider", undefined, { transferable: false });
     const recipient = hby.makeHab("recipient", undefined, { wits: [provider.pre], toad: 1 });
-    const runtime = yield* createAgentRuntime(hby, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
       enableMailboxStore: true,
       kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
     });

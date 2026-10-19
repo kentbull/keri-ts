@@ -13,8 +13,9 @@ composed, failure/restart and installed-package evidence gates.
 
 One runtime serves a Habery or command invocation. Provider storage is selected
 with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
-Components receive the actual HttpClient and RuntimeClock separately. The root
-still resolves its temporary services option until the final composition migration. Baser, Habery,
+Components receive the actual HttpClient and RuntimeClock separately. Application
+roots call createAgentRuntime(hby, http, clock, pollTransport, options); required
+collaborators have no options-bag override or lower-level production fallback. Baser, Habery,
 Reactor, CLI and client constructors carry no shared accounting options.
 
 `runtime.vdr` is the existing legacy Regery with its concrete Reger, Tevery and

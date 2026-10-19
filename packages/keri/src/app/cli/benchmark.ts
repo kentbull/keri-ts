@@ -1,8 +1,4 @@
-import {
-  type BenchmarkOptions,
-  benchmarkParser,
-  type BenchmarkResult,
-} from "cesr-ts";
+import { type BenchmarkOptions, benchmarkParser, type BenchmarkResult } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../abortable.ts";
 import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";

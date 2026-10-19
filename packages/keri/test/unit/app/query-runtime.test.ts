@@ -1,18 +1,15 @@
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
-import {
-  createAgentRuntime,
-  runAgentRuntime,
-  settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 
 import { createHabery } from "../../../src/app/habbing.ts";
 import { readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
-import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { witnessReceiptPost } from "../../../src/app/witnessing.ts";
@@ -49,7 +46,7 @@ Deno.test("tufa agent host stays protocol-only", async () => {
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -66,7 +63,9 @@ Deno.test("tufa agent host stays protocol-only", async () => {
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      enableMailboxStore: true,
+    });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
     });
@@ -123,7 +122,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(baseUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -141,7 +140,9 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      enableMailboxStore: true,
+    });
     const runtimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(runtime, {
         hab: hab ?? undefined,
@@ -172,7 +173,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         { route: "mbx", q: { topics: { "/reply": 0 } } },
       );
       const controller = new AbortController();
-      const streamed = yield* defaultRuntimeServices.http.open(
+      const streamed = yield* new FetchHttpClient().open(
         baseUrl,
         {
           method: "POST",
@@ -208,7 +209,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
       const replayController = new AbortController();
-      const replayStream = yield* defaultRuntimeServices.http.open(baseUrl, {
+      const replayStream = yield* new FetchHttpClient().open(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(replayQuery),
@@ -307,13 +308,26 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
     const relayLoc = relay.makeLocScheme(relayUrl, relay.pre, "http");
     const witnessLoc = witness.makeLocScheme(witnessUrl, witness.pre, "http");
 
-    const proxyRuntime = yield* createAgentRuntime(proxyHby);
-    const witnessRuntime = yield* createAgentRuntime(witnessHby, {
-      enableMailboxStore: true,
-    });
-    const relayRuntime = yield* createAgentRuntime(relayHby, {
-      enableMailboxStore: true,
-    });
+    const proxyRuntime = yield* createAgentRuntime(
+      proxyHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+    );
+    const witnessRuntime = yield* createAgentRuntime(
+      witnessHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
+    const relayRuntime = yield* createAgentRuntime(
+      relayHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
 
     const witnessRuntimeTask = yield* spawn(function*() {
       yield* runAgentRuntime(witnessRuntime, {
@@ -405,7 +419,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       }
       assertExists(relayRuntime.hby.db.getKever(witness.pre));
       const controller = new AbortController();
-      const response = yield* defaultRuntimeServices.http.open(relayUrl, {
+      const response = yield* new FetchHttpClient().open(relayUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(mbx),
@@ -498,9 +512,13 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         ),
       );
 
-      const runtime = yield* createAgentRuntime(witnessHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        witnessHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       try {
         const message = [...subjectHby.db.clonePreIter(subject.pre, 0)][0];
         assertExists(message);
@@ -533,9 +551,13 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
       assertExists(witnessHby.db.getState(subjectPre));
       assertEquals(witnessHby.db.kevers.has(subjectPre), false);
 
-      const runtime = yield* createAgentRuntime(witnessHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        witnessHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       try {
         yield* settleRuntimeIngress(runtime, [queryBytes]);
         const replay = runtime.cues.toArray().find((cue) => cue.kin === "replay");

@@ -8,7 +8,10 @@ import {
   loadChallengeHandlers,
 } from "../../../src/app/challenging.ts";
 import { Exchanger, type ExchangeRouteHandler } from "../../../src/app/exchanging.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -96,7 +99,7 @@ Deno.test("Exchanger accepts signed challenge responses and records exchange sta
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         sender.makeLocScheme("http://127.0.0.1:9001"),
         sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
@@ -192,7 +195,7 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         sender.makeLocScheme("http://127.0.0.1:9011"),
         sender.makeEndRole(sender.pre, EndpointRoles.controller, true),
@@ -271,7 +274,7 @@ Deno.test("Exchanger accepts nested weighted threshold combinations from partial
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         sender.makeLocScheme("http://127.0.0.1:9021"),
         sender.makeEndRole(sender.pre, EndpointRoles.controller, true),

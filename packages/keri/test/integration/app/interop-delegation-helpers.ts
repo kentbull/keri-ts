@@ -8,7 +8,10 @@
  */
 import { type Operation, race, run, sleep } from "npm:effection@^3.6.0";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import {
   type CmdResult,
   extractLastNonEmptyLine,
@@ -944,7 +947,7 @@ export async function pumpTufaRuntimeUntil(
     });
     try {
       const hab = store.alias ? hby.habByName(store.alias) ?? undefined : undefined;
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       try {
         yield* runAgentRuntimeUntil(runtime, () => done({ hby, runtime, hab }), {
           hab,

@@ -4,9 +4,13 @@ import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { openRegistry } from "../../../src/acdc/registering.ts";
 import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../src/acdc/registraring.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
+import { ProtocolProcessor } from "../../../src/app/protocol-processing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Signaler } from "../../../src/app/signaling.ts";
 import { LMDBer } from "../../../src/db/core/lmdber.ts";
 import { PathManager } from "../../../src/db/core/path-manager.ts";
@@ -43,10 +47,12 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
   await run(function*() {
     const hby = yield* createHabery({ ...habitatOptions, skipSignator: false });
     try {
-      const command = yield* createAgentRuntime(hby);
+      const command = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       assertEquals(command.mailboxer, null, "Command runtimes do not construct provider mailbox storage");
       yield* command.close();
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
 
       registry = runtime.acdc!.baser;
       reger = runtime.vdr!.reger;
@@ -88,10 +94,9 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
   const mailboxer = await run(() => openMailboxerForHabery(hby));
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
         acdc: rgy,
         reger,
-
         noter,
         mailboxer,
         enableMailboxStore: false,
@@ -126,7 +131,7 @@ Deno.test("runtime stores - failed reply cleanup still joins owned database clos
     await run(function*() {
       const hby = yield* createHabery(habitatOptions);
       try {
-        const runtime = yield* createAgentRuntime(hby);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
         const reader = runtime.replyStreams.open({
           *[Symbol.iterator]() {
             try {
@@ -169,7 +174,12 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
       yield* hby.close();
       const readonly = yield* createHabery({ ...options, readonly: true });
       try {
-        const runtime = yield* createAgentRuntime(readonly);
+        const runtime = yield* createAgentRuntime(
+          readonly,
+          new FetchHttpClient(),
+          systemClock,
+          httpMailboxPollTransport,
+        );
         assertEquals(runtime.mailboxer, null);
         assertEquals(runtime.acdc, null);
         assertEquals(runtime.vdr, null);
@@ -186,6 +196,7 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
 });
 
 Deno.test("runtime stores - construction failure releases acquired default stores", async () => {
+  const makeKevery = ProtocolProcessor.prototype.makeKevery;
   const registryReopen = RegBaser.prototype.reopen;
   const regerReopen = Reger.prototype.reopen;
   let registry!: RegBaser;
@@ -213,18 +224,19 @@ Deno.test("runtime stores - construction failure releases acquired default store
   };
   const hby = await run(() => createHabery({ ...habitatOptions, skipSignator: false }));
   try {
+    // Reactor construction happens after every default sidecar has been acquired.
+    ProtocolProcessor.prototype.makeKevery = function() {
+      throw new Error("input owner setup failed");
+    };
     await assertRejects(
       () =>
         run(() =>
-          createAgentRuntime(hby, {
+          createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
             enableMailboxStore: true,
-            get mailboxPollTransport(): never {
-              throw new Error("poll transport setup failed");
-            },
           })
         ),
       Error,
-      "poll transport setup failed",
+      "input owner setup failed",
     );
     assertReleased(registry);
     assertReleased(reger);
@@ -232,6 +244,7 @@ Deno.test("runtime stores - construction failure releases acquired default store
     assertReleased(mailboxer);
     assertEquals(hby.db.opened, true);
   } finally {
+    ProtocolProcessor.prototype.makeKevery = makeKevery;
     Noter.prototype.reopen = noterReopen;
     Mailboxer.prototype.reopen = mailboxerReopen;
     RegBaser.prototype.reopen = registryReopen;
@@ -250,7 +263,9 @@ Deno.test("runtime stores - manager construction failure joins its acquired stor
   };
   const hby = await run(() => createHabery(habitatOptions));
   try {
-    const rejected = await assertRejects(() => run(() => createAgentRuntime(hby)));
+    const rejected = await assertRejects(() =>
+      run(() => createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport))
+    );
     assertEquals(rejected, failure, "construction failure must propagate unchanged");
     assertReleased(registry);
     assertEquals(hby.db.opened, true);
@@ -273,7 +288,7 @@ Deno.test("runtime stores - cancellation during acquisition joins unreturned sto
     return result;
   };
   const hby = await run(() => createHabery(habitatOptions));
-  const task = run(() => createAgentRuntime(hby));
+  const task = run(() => createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport));
   try {
     await opened;
     assertEquals(registry.opened, true);
@@ -318,13 +333,23 @@ Deno.test("runtime stores - failed pre-native and cancelled unreturned sidecar a
   let task: ReturnType<typeof run> | undefined;
   try {
     assertStrictEquals(
-      await assertRejects(() => run(() => createAgentRuntime(hby, { enableMailboxStore: true }))),
+      await assertRejects(() =>
+        run(() =>
+          createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+            enableMailboxStore: true,
+          })
+        )
+      ),
       failure,
     );
     assertReleased(noter);
     assertReleased(mailboxer);
     PathManager.prototype.reopen = pathReopen;
-    task = run(() => createAgentRuntime(hby, { enableMailboxStore: true }));
+    task = run(() =>
+      createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      })
+    );
     await ready.promise;
     await task.halt();
     assertReleased(noter);
@@ -361,10 +386,13 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     },
   }, { highWaterMark: 0 });
   const task = run(function*() {
-    runtime = yield* createAgentRuntime(hby, {
-      enableMailboxStore: true,
-      services: { http: httpClient(() => Promise.resolve(new Response(body))) },
-    });
+    runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => Promise.resolve(new Response(body))),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     const reader = runtime.replyStreams.open({
       *[Symbol.iterator]() {
         try {
@@ -431,7 +459,9 @@ Deno.test("runtime stores - mailbox cleanup joins before stores and failure stil
   const failure = new Error("mailbox cleanup failed");
   try {
     await run(function*() {
-      const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        enableMailboxStore: true,
+      });
       const original = runtime.mailboxDirector.close.bind(runtime.mailboxDirector);
       runtime.mailboxDirector.close = async () => {
         await original();
@@ -517,11 +547,21 @@ Deno.test("runtime notification injection rejects conflicting concrete dependenc
           { notifier, noter: otherNoter },
         ]
       ) {
-        yield* call(() => assertRejects(() => run(() => createAgentRuntime(hby, options)), RangeError));
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() => createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, options)),
+            RangeError,
+          )
+        );
         assertEquals(noter.opened, true);
         assertEquals(otherNoter.opened, true);
       }
-      const runtime = yield* createAgentRuntime(hby, { notifier, noter, signaler: notifier.signaler });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        notifier,
+        noter,
+        signaler: notifier.signaler,
+      });
       assertStrictEquals(runtime.notifier, notifier);
       yield* runtime.close();
       assertEquals(noter.opened, true);

@@ -14,8 +14,11 @@ import {
 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -305,7 +308,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer");
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -525,7 +528,9 @@ Deno.test("registry TSN runtime verifies independent proof, accepted trust and m
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
     const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
-    const runtime = yield* createAgentRuntime(hby, { reger });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      reger,
+    });
     const tvy = runtime.vdr!.tvy;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -760,7 +765,7 @@ Deno.test("Tevery routes both signed TSNs and completes their dependencies in on
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(target);
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const received = runtime.vdr!.reger, tvy = runtime.vdr!.tvy;
     try {
       const issuer = sender.makeHab("issuer"), producing = new Tevery({ db: sender.db, reger: source });
@@ -812,16 +817,17 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
     const queries: Record<string, unknown>[] = [];
     hby.db.locs.pin([issuer.pre, "http"], { url: "http://issuer.test/" });
     hby.db.ends.pin([issuer.pre, "controller", issuer.pre], { allowed: true });
-    const runtime = yield* createAgentRuntime(hby, {
-      services: {
-        http: httpClient(async (url, init) => {
-          const wire = await readCesrRequestBytes(new Request(url, init));
-          const message = new SerderKERI({ raw: wire });
-          if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
-          return new Response(null, { status: 204 });
-        }),
-      },
-    });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (url, init) => {
+        const wire = await readCesrRequestBytes(new Request(url, init));
+        const message = new SerderKERI({ raw: wire });
+        if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+      httpMailboxPollTransport,
+    );
     const reger = runtime.vdr!.reger! as Reger;
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
@@ -892,7 +898,7 @@ Deno.test("registry TSN partial proof ownership stays in finite Broker retry", a
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -930,7 +936,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), outsider = hby.makeHab("outsider", undefined, { transferable: false });
-    const runtime = yield* createAgentRuntime(hby);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const reger = runtime.vdr!.reger! as Reger, tvy = runtime.vdr!.tvy! as Tevery;
     try {
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -1090,7 +1096,8 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
     const issuer = sender.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
     const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby), reger = runtime.vdr!.reger! as Reger;
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport),
+      reger = runtime.vdr!.reger! as Reger;
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -1217,9 +1224,11 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
 Deno.test("TSN runtime query delivers ordered replies with independent credential acceptance", async () => {
   await run(function*() {
     const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const issuer = sender.makeHab("issuer"), runtime = yield* createAgentRuntime(sender);
+    const issuer = sender.makeHab("issuer"),
+      runtime = yield* createAgentRuntime(sender, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const requester = receiver.makeHab("requester"), target = yield* createAgentRuntime(receiver);
+    const requester = receiver.makeHab("requester"),
+      target = yield* createAgentRuntime(receiver, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     const reger = runtime.vdr!.reger! as Reger,
       tvy = runtime.vdr!.tvy! as Tevery,
       received = target.vdr!.reger! as Reger;

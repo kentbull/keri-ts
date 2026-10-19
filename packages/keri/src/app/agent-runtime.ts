@@ -25,7 +25,6 @@ import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import { Exchanger } from "./exchanging.ts";
-import { httpMailboxPollTransport } from "./forwarding.ts";
 import {
   ForwardHandler,
   type MailboxPollBatch,
@@ -36,6 +35,7 @@ import {
 } from "./forwarding.ts";
 import { loadMultisigHandlers } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { mailboxerOptionsForHabery } from "./mailboxing.ts";
@@ -47,7 +47,7 @@ import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
-import { resolveRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
 
@@ -111,17 +111,19 @@ export interface AgentRuntime {
   readonly vdr: VdrRegery | null;
   /** V2 registry services, separately owned from the legacy VDR environment. */
   readonly acdc: AcdcRegery | null;
-  /** Resolved shared HTTP and clock services selected at composition. */
-  services: RuntimeServices;
+  /** Borrowed HTTP implementation selected by the application root. */
+  readonly http: HttpClient;
+  /** Borrowed clock selected by the same application root. */
+  readonly clock: RuntimeClock;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
 }
 
 /**
- * Construction options for the shared `AgentRuntime` bundle.
+ * Store acquisition and protocol policy choices for one composed agent.
  *
- * The runtime intentionally has a small option surface in Gate E so command-
- * local hosting and long-lived hosting stay behaviorally aligned.
+ * Required I/O collaborators are separate arguments. Optional stores select
+ * borrowed resources; omitted stores follow the explicit acquisition rules.
  */
 export interface AgentRuntimeOptions {
   mailboxer?: Mailboxer;
@@ -130,8 +132,6 @@ export interface AgentRuntimeOptions {
   notifier?: Notifier;
   /** Construct a provider mailbox store. Omitted leaves it absent; injected mailboxer stays borrowed. */
   enableMailboxStore?: boolean;
-  services?: Partial<RuntimeServices>;
-  mailboxPollTransport?: MailboxPollTransport;
   /** Borrowed legacy registry store; the runtime creates its processors and never closes this store. */
   reger?: Reger;
   /** An injected v2 manager and its backing store remain caller-owned. */
@@ -170,11 +170,15 @@ export interface RuntimeOobiTerminalState {
  * `tufa agent`.
  *
  * Construction rule:
+ * - application roots supply HTTP, clock and mailbox transport explicitly
  * - hosts choose concrete optional stores and borrow supplied dependencies
  * - the composition owns only stores it constructs
  */
 export function* createAgentRuntime(
   hby: Habery,
+  http: HttpClient,
+  clock: RuntimeClock,
+  pollTransport: MailboxPollTransport,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
@@ -185,7 +189,6 @@ export function* createAgentRuntime(
   ) {
     throw new RangeError("AgentRuntime notification services require its exact Signator, Noter and Signaler");
   }
-  const services = resolveRuntimeServices(options.services);
   const mailboxer = options.mailboxer
     ?? (options.enableMailboxStore ? (yield* openRuntimeMailboxer(hby)) : null);
   const ownsMailboxer = options.mailboxer === undefined && mailboxer !== null;
@@ -236,7 +239,7 @@ export function* createAgentRuntime(
     }
   });
   // Compose the shared semantic handlers before input owners or network delivery.
-  const now = () => services.clock.now();
+  const now = () => clock.now();
   const kramer = options.kram ? new Kramer(hby.db, { config: options.kram, cues: protocolCues, now }) : undefined;
   const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });
   const exc = new Exchanger(hby, { cues: protocolCues, now });
@@ -279,7 +282,7 @@ export function* createAgentRuntime(
     }
   });
   const postman = yield* resource<Poster>(function*(provide) {
-    const postman = new Poster(hby, mailboxer, protocol, services.http, services.clock);
+    const postman = new Poster(hby, mailboxer, protocol, http, clock);
     try {
       yield* provide(postman);
     } finally {
@@ -302,9 +305,9 @@ export function* createAgentRuntime(
   const mailboxPoller = new MailboxPoller(
     hby,
     mailboxDirector,
-    services.http,
-    services.clock,
-    options.mailboxPollTransport ?? httpMailboxPollTransport,
+    http,
+    clock,
+    pollTransport,
     {},
   );
   for (
@@ -319,17 +322,17 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = yield* resource<QueryCoordinator>(function*(provide) {
-    const coordinator = new QueryCoordinator(hby, protocol, services.http, services.clock);
+    const coordinator = new QueryCoordinator(hby, protocol, http, clock);
     try {
       yield* provide(coordinator);
     } finally {
       yield* coordinator.close();
     }
   });
-  const delegating = new Anchorer(hby, postman, querying, protocol, services.http, services.clock);
-  const oobiery = new Oobiery(hby, reactor, revery, services.http, cues);
+  const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
+  const oobiery = new Oobiery(hby, reactor, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
-  const authenticator = new Authenticator(hby, services.http);
+  const authenticator = new Authenticator(hby, http);
   return {
     hby,
     mailboxer,
@@ -352,7 +355,8 @@ export function* createAgentRuntime(
     replyStreams,
     vdr,
     acdc,
-    services,
+    http,
+    clock,
     *close(): Operation<void> {
       reactor.clearIngress();
       const failures: unknown[] = [];

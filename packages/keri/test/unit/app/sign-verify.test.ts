@@ -4,7 +4,10 @@ import { Siger } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
 
 function captureOperationOutput(
@@ -158,7 +161,7 @@ Deno.test("CLI verify fails against stale key state after source rotation", asyn
       headDirPath: observerHeadDir,
       skipSignator: true,
     });
-    const runtime = yield* createAgentRuntime(observer);
+    const runtime = yield* createAgentRuntime(observer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
     try {
       const hab = source.makeHab(alias, undefined, {
         transferable: true,

@@ -9,16 +9,14 @@ import {
   mailboxUpdateCommand,
 } from "../../../../tufa/src/cli/mailbox.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
-import {
-  createAgentRuntime,
-  runAgentRuntime,
-  settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, runAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
@@ -30,7 +28,7 @@ import { dgKey } from "../../../src/db/core/keys.ts";
 import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 import { controllerOobiResponse, reserveTcpPort, startStaticHttpHost } from "../../http-test-support.ts";
 import { httpResponse } from "../../support/http-client.ts";
-import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-service-fakes.ts";
+import { FakeRuntimeHttpClient, InProcessRuntimeHost } from "../../support/runtime-fakes.ts";
 import { testCLICommand } from "../../utils.ts";
 import { seedHostedController, seedLocalController } from "./mailbox-runtime-support.ts";
 
@@ -203,7 +201,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -383,9 +381,13 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
     });
     anchorDelegatedHab(delegatedHby, delegator, delegated);
 
-    const runtime = yield* createAgentRuntime(providerHby, {
-      enableMailboxStore: true,
-    });
+    const runtime = yield* createAgentRuntime(
+      providerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     yield* settleRuntimeIngress(runtime, [
       mailbox.makeLocScheme(url, mailbox.pre, "http"),
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
@@ -613,9 +615,13 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       toad: 0,
     });
 
-    const runtime = yield* createAgentRuntime(providerHby, {
-      enableMailboxStore: true,
-    });
+    const runtime = yield* createAgentRuntime(
+      providerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     yield* settleRuntimeIngress(runtime, [
       mailbox.makeLocScheme(url, mailbox.pre, "http"),
       mailbox.makeEndRole(mailbox.pre, EndpointRoles.controller, true),
@@ -862,9 +868,13 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
       skipConfig: true,
     });
     const hab = providerHby.habByName("mbx");
-    const runtime = yield* createAgentRuntime(providerHby, {
-      enableMailboxStore: true,
-    });
+    const runtime = yield* createAgentRuntime(
+      providerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     const mailboxer = runtime.mailboxer;
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
@@ -1041,9 +1051,13 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
         skipConfig: true,
       });
       const hab = providerHby.habByName("mbx");
-      const runtime = yield* createAgentRuntime(providerHby, {
-        enableMailboxStore: true,
-      });
+      const runtime = yield* createAgentRuntime(
+        providerHby,
+        new FetchHttpClient(),
+        systemClock,
+        httpMailboxPollTransport,
+        { enableMailboxStore: true },
+      );
       const mailboxer = runtime.mailboxer;
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
@@ -1214,9 +1228,13 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       skipConfig: true,
     });
     const hab = providerHby.habByName("mbx");
-    const runtime = yield* createAgentRuntime(providerHby, {
-      enableMailboxStore: true,
-    });
+    const runtime = yield* createAgentRuntime(
+      providerHby,
+      new FetchHttpClient(),
+      systemClock,
+      httpMailboxPollTransport,
+      { enableMailboxStore: true },
+    );
     const mailboxer = runtime.mailboxer;
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
