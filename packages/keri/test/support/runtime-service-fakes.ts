@@ -168,6 +168,8 @@ export class FakeMailboxPollTransport implements MailboxPollTransport {
   }
 
   *poll(
+    _http: HttpClient,
+    _clock: RuntimeClock,
     args: MailboxPollTransportRequest,
     consume: (message: MailboxSseMessage) => Operation<boolean | void>,
   ): Operation<void> {

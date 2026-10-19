@@ -5,6 +5,7 @@ import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTer
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
+import { defaultRuntimeServices } from "../runtime-services.ts";
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
@@ -276,15 +277,21 @@ export function* oobiRequestCommand(
     },
     function*({ hby, hab }) {
       const exn = oobiRequestExn(hab, recipient, url);
-      const { serder } = yield* sendExchangeMessage(hby, hab, {
-        dest: recipient,
-        route: OOBI_REQUEST_ROUTE,
-        topic: OOBI_MAILBOX_TOPIC,
-        payload: (exn.ked?.a as Record<string, unknown>) ?? {
+      const { serder } = yield* sendExchangeMessage(
+        hby,
+        hab,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+        {
           dest: recipient,
-          oobi: url,
+          route: OOBI_REQUEST_ROUTE,
+          topic: OOBI_MAILBOX_TOPIC,
+          payload: (exn.ked?.a as Record<string, unknown>) ?? {
+            dest: recipient,
+            oobi: url,
+          },
         },
-      });
+      );
       console.log("Sent OOBI request");
       console.log(serder.pretty());
     },

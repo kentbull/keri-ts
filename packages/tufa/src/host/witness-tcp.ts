@@ -163,7 +163,7 @@ function* processWitnessSocket(
               for (const msg of msgs) {
                 yield* chunkBytes(msg, { signal, maxChunkBytes: 65536 });
               }
-            }, { clock: runtime.services.clock });
+            }, runtime.services.clock);
           };
           /** Settle current input and retain at most one authorized missing-state query on this connection. */
           const processFrame = function*(frame: CesrFrame): Operation<void> {

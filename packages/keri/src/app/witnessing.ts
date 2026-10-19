@@ -35,7 +35,7 @@ import { HTTPMessenger } from "./http-messenger.ts";
 import { processMessages } from "./message-source.ts";
 import { envelopeFromFrame } from "./parsering.ts";
 import { type ProtocolProcessor } from "./protocol-processing.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 
 const WitnessReceiptPollAttempts = 20;
@@ -602,9 +602,10 @@ export function* sendWitnessMessage(
   hab: Hab,
   witness: string,
   bytes: Uint8Array,
+  http: HttpClient,
+  clock: RuntimeClock,
+  protocol: ProtocolProcessor | null,
   auth?: string,
-  services?: RuntimeServices,
-  protocol?: ProtocolProcessor,
 ): Operation<void> {
   const url = preferredWitnessTransportUrl(hab, witness);
   if (!url) {
@@ -615,15 +616,14 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* new TCPMessenger(protocol ?? null, (services ?? defaultRuntimeServices).clock).send(url, bytes, {
+    yield* new TCPMessenger(protocol ?? null, clock).send(url, bytes, {
       replies: Boolean(protocol),
       local: true,
     });
     return;
   }
 
-  const io = services ?? defaultRuntimeServices;
-  const outcome = yield* new HTTPMessenger(protocol ?? null, io.http, io.clock).send(url, bytes, {
+  const outcome = yield* new HTTPMessenger(protocol ?? null, http, clock).send(url, bytes, {
     bodyMode: "header",
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
@@ -811,15 +811,18 @@ export class Receiptor {
   /** Input-owned Kevery (kvy) for request-owned receipt GET/POST evidence. */
   private readonly kvy: Kevery;
   /** Borrowed HTTP and clock services used by actual receipt operations. */
-  readonly services: RuntimeServices;
+  readonly http: HttpClient;
+  /** Borrowed clock for this owner's actual network deadlines. */
+  readonly clock: RuntimeClock;
 
   /** Bind configured intake over the same Habery; acquire no stores or background workers. */
-  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices) {
+  constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock) {
     if (protocol.kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
     this.hby = hby;
     this.protocol = protocol;
     this.kvy = protocol.makeKevery();
-    this.services = services;
+    this.http = http;
+    this.clock = clock;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
   *receipt(pre: string, { sn, auths = {}, allowTcp = false }: {
@@ -871,12 +874,12 @@ export class Receiptor {
     for (const witness of witnesses) {
       if (kever.delegated) {
         for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-          yield* sendWitnessMessage(hab, witness, dmsg, undefined, this.services, this.protocol);
+          yield* sendWitnessMessage(hab, witness, dmsg, this.http, this.clock, this.protocol);
         }
       }
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-        yield* sendWitnessMessage(hab, witness, message, undefined, this.services, this.protocol);
+        yield* sendWitnessMessage(hab, witness, message, this.http, this.clock, this.protocol);
         statuses[witness] = 200;
       } else {
         // A single receipt attempt owns its response until parsing and collection finish.
@@ -885,7 +888,7 @@ export class Receiptor {
             hab,
             witness,
             message,
-            this.services.http,
+            this.http,
             auths[witness],
           )
         );
@@ -896,7 +899,7 @@ export class Receiptor {
             pre,
             eventSn,
             said,
-            this.services.http,
+            this.http,
           );
         }
         statuses[witness] = response.status;
@@ -946,7 +949,7 @@ export class Receiptor {
           { wigers: otherWigers },
         ),
       );
-      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), undefined, this.services, this.protocol);
+      yield* sendWitnessMessage(hab, witness, concatBytes(...parts), this.http, this.clock, this.protocol);
     }
 
     return { witnesses, statuses };
@@ -973,9 +976,7 @@ export class Receiptor {
       return false;
     }
 
-    const response = yield* call(() =>
-      getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }, this.services.http)
-    );
+    const response = yield* call(() => getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }, this.http));
     if (response.kind !== "accepted") {
       return false;
     }
@@ -1000,11 +1001,11 @@ export class Receiptor {
     const kever = hab.kever;
     if (kever?.delegated) {
       for (const msg of this.hby.db.cloneDelegation(kever)) {
-        yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.protocol);
+        yield* sendWitnessMessage(hab, witness, msg, this.http, this.clock, this.protocol);
       }
     }
     for (const msg of this.hby.db.clonePreIter(pre)) {
-      yield* sendWitnessMessage(hab, witness, msg, undefined, this.services, this.protocol);
+      yield* sendWitnessMessage(hab, witness, msg, this.http, this.clock, this.protocol);
     }
   }
 }
@@ -1023,12 +1024,12 @@ export class WitnessReceiptor {
   readonly force: boolean;
 
   /** Bind actual protocol/I/O dependencies; only the scalar force choice is optional. */
-  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices, { force = false }: {
+  constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock, { force = false }: {
     force?: boolean;
   } = {}) {
     this.hby = hby;
     this.force = force;
-    this.receiptor = new Receiptor(hby, protocol, services);
+    this.receiptor = new Receiptor(hby, protocol, http, clock);
   }
   /** Ensure the current event reaches full witness receipt convergence. */
   *submit(pre: string, { sn, auths = {} }: {

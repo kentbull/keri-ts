@@ -90,7 +90,9 @@ export function* anchor(
     }
   }
   const hab = signers[0], runtime = runtimes[0];
-  yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services).submit(hab.pre);
+  yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services.http, runtime.services.clock).submit(
+    hab.pre,
+  );
   const serder = hab.kever!.serder;
   assertEquals(hab.db.wigs.get([hab.pre, serder.said!]).map((signature) => signature.index).sort(), [0, 1, 2]);
   return { i: new Prefixer({ qb64: hab.pre }), s: serder.sner!, d: new Diger({ qb64: serder.said! }) };

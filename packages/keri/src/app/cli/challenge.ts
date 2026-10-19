@@ -16,6 +16,7 @@ import { sendExchangeMessage } from "../exchange-messaging.ts";
 import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
 import { Organizer } from "../organizing.ts";
+import { defaultRuntimeServices } from "../runtime-services.ts";
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
 interface ChallengeGenerateArgs {
@@ -116,13 +117,19 @@ export function* challengeRespondCommand(
     },
     function*({ hby, hab }) {
       const payload: ChallengeResponsePayload = { words };
-      const { serder } = yield* sendExchangeMessage(hby, hab, {
-        dest: recipient,
-        route: CHALLENGE_RESPONSE_ROUTE,
-        topic: "challenge",
-        payload: { i: hab.pre, ...payload },
-        delivery: normalizeTransport(commandArgs.transport),
-      });
+      const { serder } = yield* sendExchangeMessage(
+        hby,
+        hab,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+        {
+          dest: recipient,
+          route: CHALLENGE_RESPONSE_ROUTE,
+          topic: "challenge",
+          payload: { i: hab.pre, ...payload },
+          delivery: normalizeTransport(commandArgs.transport),
+        },
+      );
       console.log("Sent EXN message");
       console.log(serder.pretty());
     },

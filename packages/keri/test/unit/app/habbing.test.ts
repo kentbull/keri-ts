@@ -30,6 +30,7 @@ import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { introduce, type Poster, type PosterEvent } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { QueryRequest } from "../../../src/core/cues.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
@@ -317,7 +318,14 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
           queuedQueries.push(request);
         },
       };
-      const coordinator = new Anchorer(hby, { postman, querying });
+      const coordinator = new Anchorer(
+        hby,
+        postman,
+        querying,
+        null,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+      );
 
       const started = coordinator.beginLatest(delegate.pre, 0, {
         communicationHab: proxy,
@@ -444,7 +452,14 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             return;
           },
         };
-        const coordinator = new Anchorer(hby, { postman, querying });
+        const coordinator = new Anchorer(
+          hby,
+          postman,
+          querying,
+          null,
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        );
 
         coordinator.beginLatest(delegate.pre, 0, {
           communicationHab: proxy,
@@ -558,7 +573,14 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
           );
         },
       };
-      const coordinator = new Anchorer(hby, { postman, querying });
+      const coordinator = new Anchorer(
+        hby,
+        postman,
+        querying,
+        null,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+      );
 
       coordinator.beginLatest(delegate.pre, 0);
       const initial = yield* coordinator.processAllOnce();
@@ -643,7 +665,14 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
           queuedQueries.push(request);
         },
       };
-      const coordinator = new Anchorer(hby, { postman, querying });
+      const coordinator = new Anchorer(
+        hby,
+        postman,
+        querying,
+        null,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+      );
 
       coordinator.beginLatest(delegate.pre, delegate.kever!.sn);
       const initial = yield* coordinator.processAllOnce();

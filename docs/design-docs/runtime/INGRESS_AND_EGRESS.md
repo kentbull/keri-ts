@@ -13,7 +13,8 @@ composed, failure/restart and installed-package evidence gates.
 
 One runtime serves a Habery or command invocation. Provider storage is selected
 with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
-RuntimeServices contains only the actual clock and HTTP client. Baser, Habery,
+Components receive the actual HttpClient and RuntimeClock separately. The root
+still resolves its temporary services option until the final composition migration. Baser, Habery,
 Reactor, CLI and client constructors carry no shared accounting options.
 
 `runtime.vdr` is the existing legacy Regery with its concrete Reger, Tevery and
@@ -91,7 +92,7 @@ mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
 HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
 Actual cleanup failure still reaches the caller after convergence or cancellation.
 Poster receives its Habery, optional provider store (`mbx`), explicit receive
-capability and RuntimeServices as required constructor arguments. A null store or
+capability, HttpClient and RuntimeClock as required constructor arguments. A null store or
 receive capability expresses actual absence. `ensureOpen()` guards admission and
 completion waiting; producers preflight only before constructing messages or
 opening a direct response, rather than repeating a check around already-built work.
@@ -259,7 +260,7 @@ unsupported acknowledgement or claim that transport proves remote acceptance.
 
 ## HTTP ownership
 
-Composition supplies `RuntimeHttpClient` with finite request and scoped open operations.
+Composition supplies `HttpClient` with finite request and scoped open operations.
 The concrete FetchHttpClient constructs Request before its native fetch catch,
 validates supported HTTP(S)/credential URLs, and owns fetch/body I/O and joined
 cleanup. Producers finish each finite request body before network execution; the HTTP

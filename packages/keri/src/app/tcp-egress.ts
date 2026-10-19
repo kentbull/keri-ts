@@ -5,7 +5,7 @@ import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { type RuntimeClock, type RuntimeTimer, systemClock } from "./runtime-clock.ts";
+import { type RuntimeClock, type RuntimeTimer } from "./runtime-clock.ts";
 import { TransportError } from "./transport-error.ts";
 
 /** Actual connection/write choices, without a parser or receive callback. */
@@ -17,7 +17,6 @@ export interface TcpSendOptions {
   /** Absolute local-drain deadline from output EOF, also covering peer close for duplex; default 30 seconds. */
   drainTimeoutMs?: number;
   signal?: AbortSignal;
-  clock?: RuntimeClock;
 }
 
 /** Producer observes abort and joins cleanup on return. */
@@ -47,7 +46,8 @@ function positive(value: number, name: string): number {
 /** Lend a paused, half-open-capable socket; no application receiver runs inside transport. */
 export function openTcpConnection(
   url: string,
-  options: Pick<TcpSendOptions, "clock" | "connectTimeoutMs" | "signal"> = {},
+  clock: RuntimeClock,
+  options: Pick<TcpSendOptions, "connectTimeoutMs" | "signal"> = {},
 ): Operation<TcpConnection> {
   return resource<TcpConnection>(function*(provide) {
     const parsed = new URL(url), port = Number(parsed.port);
@@ -55,7 +55,6 @@ export function openTcpConnection(
       throw new ValidationError(`TCP output requires tcp: with a valid port: ${url}`);
     }
     const timeout = positive(options.connectTimeoutMs ?? 30000, "connectTimeoutMs");
-    const clock = options.clock ?? systemClock;
     const controller = new AbortController();
     const signal = options.signal ? AbortSignal.any([options.signal, controller.signal]) : controller.signal;
     signal.throwIfAborted();
@@ -98,21 +97,27 @@ export function openTcpConnection(
 }
 
 /** Send a resident value over the same concrete connection/source owner as streaming output. */
-export function sendCesrTcp(url: string, bytes: Uint8Array, options: TcpSendOptions = {}): Operation<TcpTransmission> {
+export function sendCesrTcp(
+  url: string,
+  bytes: Uint8Array,
+  clock: RuntimeClock,
+  options: TcpSendOptions = {},
+): Operation<TcpTransmission> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
-  return streamCesrTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), options);
+  return streamCesrTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), clock, options);
 }
 
 /** Transmit-only flow completes local drain, then its connection owner joins close without awaiting peer EOF. */
 export function streamCesrTcp(
   url: string,
   source: TcpSourceFactory,
+  clock: RuntimeClock,
   options: TcpSendOptions = {},
 ): Operation<TcpTransmission> {
   return call(function*() {
-    const connection = yield* openTcpConnection(url, options);
+    const connection = yield* openTcpConnection(url, clock, options);
     connection.socket.resume();
-    return yield* finishTcpOutput(connection, source, options, false);
+    return yield* finishTcpOutput(connection, source, clock, options, false);
   });
 }
 
@@ -120,19 +125,24 @@ export function streamCesrTcp(
 export function sendCesrTcpFrame(
   url: string,
   frame: CesrFrame,
+  clock: RuntimeClock,
   options: TcpSendOptions = {},
 ): Operation<TcpTransmission> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
-  return streamCesrTcp(url, async function*(signal) {
-    for await (const chunk of framePayload(frame).open(signal)) {
-      yield* chunkBytes(chunk, { signal, maxChunkBytes: cap });
-    }
-  }, options);
+  return streamCesrTcp(
+    url,
+    async function*(signal) {
+      for await (const chunk of framePayload(frame).open(signal)) {
+        yield* chunkBytes(chunk, { signal, maxChunkBytes: cap });
+      }
+    },
+    clock,
+    options,
+  );
 }
 
 /** Write options for a caller-owned socket; this operation never ends its writable half. */
 export interface TcpSocketWriteOptions {
-  clock?: RuntimeClock;
   signal?: AbortSignal;
 }
 
@@ -140,7 +150,8 @@ export interface TcpSocketWriteOptions {
 export function writeCesrTcpSocket(
   socket: Socket,
   factory: TcpSourceFactory,
-  { clock = systemClock, signal }: TcpSocketWriteOptions = {},
+  clock: RuntimeClock,
+  { signal }: TcpSocketWriteOptions = {},
 ): Operation<TcpTransmission> {
   return abortable(async (signal) => {
     const destroy = () => socket.destroy();
@@ -160,20 +171,21 @@ export function writeCesrTcpSocket(
 export function sendCesrTcpSocket(
   connection: TcpConnection,
   factory: TcpSourceFactory,
-  options: Pick<TcpSendOptions, "clock" | "drainTimeoutMs"> = {},
+  clock: RuntimeClock,
+  options: Pick<TcpSendOptions, "drainTimeoutMs"> = {},
 ): Operation<TcpTransmission> {
-  return finishTcpOutput(connection, factory, options, true);
+  return finishTcpOutput(connection, factory, clock, options, true);
 }
 
 /** One fixed deadline covers local end and, only for a duplex owner, peer close. */
 function finishTcpOutput(
   connection: TcpConnection,
   factory: TcpSourceFactory,
-  options: Pick<TcpSendOptions, "clock" | "drainTimeoutMs">,
+  clock: RuntimeClock,
+  options: Pick<TcpSendOptions, "drainTimeoutMs">,
   waitForPeer: boolean,
 ): Operation<TcpTransmission> {
   const timeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
-  const clock = options.clock ?? systemClock;
   return abortable(async (signal) => {
     let timer: RuntimeTimer | undefined;
     let ending: Promise<void> | undefined;

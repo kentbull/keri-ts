@@ -145,12 +145,23 @@ export function* witnessSubmitCommand(
         },
       );
       if (commandArgs.endpoint) {
-        const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
+        const receiptor = new Receiptor(
+          hby,
+          createProtocolProcessor(hby),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        );
         yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
       } else {
-        const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices, {
-          force: commandArgs.force ?? false,
-        });
+        const witDoer = new WitnessReceiptor(
+          hby,
+          createProtocolProcessor(hby),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+          {
+            force: commandArgs.force ?? false,
+          },
+        );
         yield* witDoer.submit(hab.pre, {
           sn: hab.kever?.sn,
           auths,

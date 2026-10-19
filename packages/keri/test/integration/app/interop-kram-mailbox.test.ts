@@ -1,3 +1,4 @@
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
@@ -176,7 +177,7 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
           assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
           assertExists(hbys[0].db.getKever(pre));
         }
-        yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.services).submit(
+        yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.services.http, runtime.services.clock).submit(
           sender.pre,
         );
         assertEquals(sender.db.wigs.get([sender.pre, sender.kever!.serder.said!]).map((sig) => sig.index).sort(), [
@@ -231,10 +232,16 @@ async function send(url: string, wire: string, readEvent: boolean): Promise<Sent
       signal: AbortSignal.timeout(10_000),
     });
     let payload: string | null = null;
-    yield* consumeMailboxSse(response, new AbortController(), function*(event) {
-      payload = t(event.msg);
-      return false;
-    }, { maxDurationMs: 5000 });
+    yield* consumeMailboxSse(
+      response,
+      new AbortController(),
+      function*(event) {
+        payload = t(event.msg);
+        return false;
+      },
+      systemClock,
+      { maxDurationMs: 5000 },
+    );
     return { status: response.status, payload };
   });
 }

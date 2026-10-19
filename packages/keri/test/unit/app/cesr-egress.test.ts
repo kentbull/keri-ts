@@ -19,6 +19,7 @@ import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "../../../src/app/runtime-services.ts";
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
@@ -543,7 +544,7 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const result = await run(() => sendCesrTcpFrame(url, frame, { maxChunkBytes: 7 }));
+    const result = await run(() => sendCesrTcpFrame(url, frame, systemClock, { maxChunkBytes: 7 }));
     assertEquals(result.kind, "transmitted");
     const roundtrip = await received.promise;
     {

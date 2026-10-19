@@ -2,6 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
+import { defaultRuntimeServices } from "../runtime-services.ts";
 import { withExistingHab } from "./common/context.ts";
 import { parseExnDataItems } from "./common/parsing.ts";
 
@@ -74,12 +75,18 @@ export function* exchangeSendCommand(
       cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
-      const { serder } = yield* sendExchangeMessage(hby, hab, {
-        dest: recipient,
-        route,
-        topic: commandArgs.topic,
-        payload,
-      });
+      const { serder } = yield* sendExchangeMessage(
+        hby,
+        hab,
+        defaultRuntimeServices.http,
+        defaultRuntimeServices.clock,
+        {
+          dest: recipient,
+          route,
+          topic: commandArgs.topic,
+          payload,
+        },
+      );
       console.log("Sent EXN message");
       console.log(serder.pretty());
     },

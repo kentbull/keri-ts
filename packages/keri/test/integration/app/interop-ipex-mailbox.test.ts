@@ -1,3 +1,4 @@
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Witnessed TS IPEX conversations carried by a real KERIpy KRAM mailbox. */
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
@@ -131,7 +132,12 @@ for (const count of [1, 2]) {
                   { hab: runtime === holderRuntime ? members[0] : hab, timeoutMs: 20_000, pollMailbox: false },
                 );
                 for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved", url);
-                yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services)
+                yield* new WitnessReceiptor(
+                  runtime.hby,
+                  runtime.protocol,
+                  runtime.services.http,
+                  runtime.services.clock,
+                )
                   .submit(hab.pre);
               }
               const registry = issuerRuntime.acdc!.makeRegistry("issuance", issuer.pre);
@@ -296,15 +302,21 @@ for (const count of [1, 2]) {
                   });
                   assertEquals(response.status, 200);
                   let received = false;
-                  yield* consumeMailboxSse(response, new AbortController(), function*(event) {
-                    const [forwarded] = parseBytes(event.msg);
-                    assertEquals(forwarded.body.raw, body.raw);
-                    assertEquals(new TextDecoder().decode(event.msg).includes("mailbox-secret"), false);
-                    for (const url of destinationUrls) yield* call(() => post(url, forwarded));
-                    cursors.set(destination.pre, event.idx + 1);
-                    received = true;
-                    return false;
-                  }, { idleTimeoutMs: 2000, maxDurationMs: 5000 });
+                  yield* consumeMailboxSse(
+                    response,
+                    new AbortController(),
+                    function*(event) {
+                      const [forwarded] = parseBytes(event.msg);
+                      assertEquals(forwarded.body.raw, body.raw);
+                      assertEquals(new TextDecoder().decode(event.msg).includes("mailbox-secret"), false);
+                      for (const url of destinationUrls) yield* call(() => post(url, forwarded));
+                      cursors.set(destination.pre, event.idx + 1);
+                      received = true;
+                      return false;
+                    },
+                    systemClock,
+                    { idleTimeoutMs: 2000, maxDurationMs: 5000 },
+                  );
                   assertEquals(received, true, "the mailbox yielded the signed IPEX payload");
                   const state = yield* call(() => inspectMailbox(mailboxUrl, destination.pre, [qry.said!]));
                   assertEquals(state.rows[0].cached, true, "KRAM authenticated the mailbox query");

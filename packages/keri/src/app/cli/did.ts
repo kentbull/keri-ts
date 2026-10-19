@@ -221,7 +221,7 @@ function* receiptNewWitnessEvents(
   if (!hab?.kever || latestSn === undefined || latestSn <= priorSn || hab.kever.wits.length === 0) {
     return;
   }
-  const receiptor = new WitnessReceiptor(hby, runtime.protocol, runtime.services);
+  const receiptor = new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock);
   for (let sn = priorSn + 1; sn <= latestSn; sn += 1) {
     yield* receiptor.submit(pre, { sn });
   }

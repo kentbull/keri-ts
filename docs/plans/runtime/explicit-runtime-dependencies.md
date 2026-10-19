@@ -1,6 +1,7 @@
 # Explicit runtime dependencies
 
-Status: execution authorized; Phase 1 implemented; 77 focused tests and static checks passed. Phases 2–4 remain.
+Status: Phase 1 merged in #544; Phase 2 implemented with 130 focused tests and
+static checks passing. Composition deletion and verifier clock correction remain.
 Source baseline: clean local `master` at `137e23d756f4b8fc1a9996517d576827bfcefb51`,
 reviewed 2026-10-19. Recheck the implementation baseline before starting.
 

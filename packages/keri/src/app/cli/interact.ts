@@ -91,13 +91,23 @@ export function* interactCommand(
           },
         );
         if (interactArgs.endpoint) {
-          const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
+          const receiptor = new Receiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          );
           yield* receiptor.receipt(hab.pre, {
             sn: hab.kever.sn,
             auths,
           });
         } else {
-          const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
+          const witDoer = new WitnessReceiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          );
           yield* witDoer.submit(hab.pre, {
             sn: hab.kever.sn,
             auths,
