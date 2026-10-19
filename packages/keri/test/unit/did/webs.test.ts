@@ -176,7 +176,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       },
     });
     let escrowPasses = 0;
-    const advance = runtime.protocol.processEscrowsOnce.bind(runtime.reactor);
+    const advance = runtime.protocol.processEscrowsOnce.bind(runtime.protocol);
     runtime.protocol.processEscrowsOnce = function*() {
       escrowPasses++;
       yield* advance();
