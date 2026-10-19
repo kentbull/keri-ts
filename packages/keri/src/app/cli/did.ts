@@ -135,7 +135,11 @@ export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<vo
   );
 }
 
-/** Implement `tufa dws resolve`. */
+/**
+ * Implement `tufa dws resolve`.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* dwsResolveCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsResolveArgs = {
     ...baseArgs(args),
@@ -210,6 +214,14 @@ function runtimeOpenOptions(args: DidBaseArgs) {
   };
 }
 
+/**
+ * Submit newly created witnessed events in sequence through the composed receipt owner.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pre Local AID whose new accepted events need receipts.
+ * @param priorSn Sequence before the operation; only later events are submitted.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ */
 function* receiptNewWitnessEvents(
   hby: Habery,
   pre: string,

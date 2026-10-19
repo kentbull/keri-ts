@@ -68,7 +68,15 @@ export class Oobiery {
   /** Prevent overlapping passes over this owner's durable job queue. */
   private active = false;
 
-  /** Bind byte intake and the actual reply verifier used by OOBI proof persistence. */
+  /**
+   * Bind byte intake and the actual reply verifier used by OOBI proof persistence.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param reactor Borrowed ingress owner that consumes fetched CESR.
+   * @param rvy Actual shared reply verifier used for OOBI reply proof persistence.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param cues Required application result Deck supplied by composition.
+   */
   constructor(
     hby: Habery,
     reactor: Reactor,
@@ -83,7 +91,11 @@ export class Oobiery {
     this.http = http;
   }
 
-  /** Register `/introduce` on the shared reply router. */
+  /**
+   * Register `/introduce` on the shared reply router.
+   *
+   * @param router Shared reply router on which /introduce is registered.
+   */
   registerReplyRoutes(router = this.rvy.rtr): void {
     router.addRoute("/introduce", this);
   }
@@ -206,6 +218,10 @@ export class Oobiery {
    * - `coobi.` while a fetched response is being processed
    * - `eoobi.` on HTTP failure
    * - `roobi.` after parser/routing success
+   *
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact OOBI URL used as the durable job key.
+   * @param record Pending durable job; retained through failure and joined cleanup.
    */
   private *processJob(
     kind: OobiQueueKind,
@@ -248,7 +264,15 @@ export class Oobiery {
     }
   }
 
-  /** Consume one owned response; queued ownership ends only after a terminal result is persisted. */
+  /**
+   * Consume one owned response; queued ownership ends only after a terminal result is persisted.
+   *
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact OOBI URL used as the durable job key.
+   * @param queuedRecord Original durable job metadata retained until terminal publication.
+   * @param meta Parsed OOBI URL metadata selecting the response interpretation.
+   * @param response Borrowed scoped HTTP response; complete processing precedes terminal state.
+   */
   private *processResponse(
     kind: OobiQueueKind,
     url: string,
@@ -295,7 +319,15 @@ export class Oobiery {
     }
   }
 
-  /** Mark an OOBI resolved only after its complete CESR response has been dispatched. */
+  /**
+   * Mark an OOBI resolved only after its complete CESR response has been dispatched.
+   *
+   * @param kind Durable OOBI queue family identifying the job path.
+   * @param url Exact OOBI URL used as the durable job key.
+   * @param queuedRecord Original durable job metadata retained until terminal publication.
+   * @param meta Parsed OOBI URL metadata selecting the response interpretation.
+   * @param response Borrowed scoped HTTP response; complete processing precedes terminal state.
+   */
   private *resolveCesrOobiResponse(
     kind: OobiQueueKind,
     url: string,
@@ -494,6 +526,8 @@ export class Oobiery {
   /**
    * Process one `/introduce` reply and enqueue the introduced OOBI into the
    * ordinary durable resolver path.
+   *
+   * @param args Verified reply route input and signature evidence used to persist introduction results.
    */
   processReply(args: {
     serder: SerderKERI;
@@ -746,7 +780,12 @@ function isCesrMediaType(type: string): boolean {
 
 export { OOBI_MAILBOX_TOPIC };
 
-/** Collect one finite OOBI document and join its reader on cancellation. */
+/**
+ * Collect one finite OOBI document and join its reader on cancellation.
+ *
+ * @param response Borrowed finite OOBI document response.
+ * @returns Collected bytes after reader cleanup joins.
+ */
 function* readResponseBytes(response: HttpStreamResponse): Operation<Uint8Array> {
   return yield* abortable((signal) => collectBytes(response.body(signal)));
 }

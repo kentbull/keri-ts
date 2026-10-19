@@ -35,7 +35,15 @@ export interface ResolveDidWebsResult {
   readonly resolution: DidResolutionResult;
 }
 
-/** Resolve one `did:webs` by fetching and verifying hosted artifacts. */
+/**
+ * Resolve one `did:webs` by fetching and verifying hosted artifacts.
+ *
+ * @param rgy Borrowed registry owner used to regenerate DID state.
+ * @param reactor Borrowed ingress owner for fetched KERI/VDR artifacts.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param options DID, resolution metadata and HTTP preference choices.
+ * @returns DID document verified against accepted artifact-derived state, plus resolution metadata.
+ */
 export function resolveDidWebs(
   rgy: Regery,
   reactor: Reactor,
@@ -45,7 +53,15 @@ export function resolveDidWebs(
   return call(() => resolveArtifacts(rgy, reactor, http, options));
 }
 
-/** Keep finite JSON ownership local even when a long-lived caller resolves multiple DIDs. */
+/**
+ * Keep finite JSON ownership local even when a long-lived caller resolves multiple DIDs.
+ *
+ * @param rgy Borrowed registry owner used to regenerate DID state.
+ * @param reactor Borrowed ingress owner for fetched KERI/VDR artifacts.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param options DID, resolution metadata and HTTP preference choices.
+ * @returns DID document verified against accepted artifact-derived state, plus resolution metadata.
+ */
 function* resolveArtifacts(
   rgy: Regery,
   reactor: Reactor,
@@ -88,7 +104,16 @@ function* resolveArtifacts(
   };
 }
 
-/** Try alternate artifact URLs only while opening headers; a borrowed body never starts another attempt. */
+/**
+ * Try alternate artifact URLs only while opening headers; a borrowed body never starts another attempt.
+ *
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param httpsUrl HTTPS artifact candidate.
+ * @param httpUrl HTTP artifact candidate.
+ * @param preferHttp Try HTTP first when explicitly requested.
+ * @returns Scoped response borrowed until its enclosing operation closes.
+ * @throws Only opening TransportError/non-ok status permits alternate URL selection; body/parser/cleanup failures propagate.
+ */
 function artifactResponse(
   http: HttpClient,
   httpsUrl: string,

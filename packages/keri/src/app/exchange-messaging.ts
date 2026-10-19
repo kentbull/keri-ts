@@ -10,18 +10,45 @@ import type { RuntimeClock } from "./runtime-clock.ts";
 
 /** Resolved recipient and business fields used to construct one signed exchange. */
 export interface ExchangeMessageArgs {
+  /**
+   * Resolved final recipient AID; standalone sending may resolve a user alias first.
+   */
   dest: string;
+  /**
+   * EXN route interpreted by the receiving application.
+   */
   route: string;
+  /**
+   * Route-defined signed business attributes; this is wire schema data, not a dependency bag.
+   */
   payload: Record<string, unknown>;
   /** Omit the business recipient for KERIpy delegation-request exchanges. */
   exchangeRecipient?: string | null;
+  /**
+   * Optional route-defined signed query modifiers.
+   */
   modifiers?: Record<string, unknown>;
+  /**
+   * Optional protocol timestamp; omission uses exchange construction defaults.
+   */
   date?: string;
+  /**
+   * Optional prior exchange SAID for conversation correlation.
+   */
   dig?: string;
+  /**
+   * Named independently signed/framed CESR messages to embed.
+   */
   embeds?: Record<string, Uint8Array>;
 }
 
-/** Sign the producer's exchange once, including any independently framed embedded material. */
+/**
+ * Sign the producer's exchange once, including any independently framed embedded material.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param args Resolved recipient, route and business fields; optional embeds carry independently framed wire.
+ * @returns Signed EXN body plus complete message bytes; this performs no delivery.
+ */
 export function createExchangeMessage(
   hab: Hab,
   args: ExchangeMessageArgs,
@@ -38,7 +65,17 @@ export function createExchangeMessage(
   return { serder, msg: concatBytes(hab.endorse(serder, { pipelined: false }), attachments) };
 }
 
-/** Run a standalone command's Poster and await actual delivery before closing its worker. */
+/**
+ * Run a standalone command's Poster and await actual delivery before closing its worker.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param args Exchange fields plus optional mailbox topic/delivery preference; recipient aliases are resolved before signing.
+ * @returns Signed EXN and successfully delivered target URLs after the worker/Poster scope joins.
+ * @throws A failed terminal outcome is thrown; admission alone never returns success.
+ */
 export function sendExchangeMessage(
   hby: Habery,
   hab: Hab,

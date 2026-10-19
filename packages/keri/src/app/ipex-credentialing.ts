@@ -285,7 +285,12 @@ export function ipexCredentialAdmit(args: {
   };
 }
 
-/** Parse grant-embedded artifacts in KERIpy admit order: `anc`, `iss`, `acdc`. */
+/**
+ * Parse grant-embedded artifacts in KERIpy admit order: `anc`, `iss`, `acdc`.
+ *
+ * @param reactor Borrowed byte-intake owner connected to the credential processors.
+ * @param artifacts Grant-embedded anchor, issuance and credential streams in their named fields.
+ */
 export function* processCredentialPresentationArtifacts(
   reactor: Reactor,
   artifacts: CredentialPresentationArtifacts,

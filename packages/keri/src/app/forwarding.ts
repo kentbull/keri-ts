@@ -159,7 +159,13 @@ function remoteCesrTarget(
   return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
 }
 
+/**
+ * Scalar polling policy overrides; dependencies are constructor arguments.
+ */
 interface MailboxPollerOptions {
+  /**
+   * Optional millisecond header and poll-window overrides.
+   */
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
 }
 
@@ -856,10 +862,16 @@ function hasLocalStoreForwardHost(
  * - lends retrieved records to the composed consumer; protocol intake stays outside
  */
 export class MailboxPoller {
+  /**
+   * Default header acquisition (5 seconds) and absolute poll window (30 seconds).
+   */
   static readonly DefaultTimeoutPolicy: Readonly<MailboxPollingTimeoutPolicy> = Object.freeze({
     requestOpenTimeoutMs: 5_000,
     maxPollDurationMs: 30_000,
   });
+  /**
+   * Idle read window after the first complete event, in milliseconds.
+   */
   static readonly ReadIdleTimeoutMs = 500;
 
   /** Borrowed habitat collection used to select mailbox signers. */
@@ -877,7 +889,16 @@ export class MailboxPoller {
   /** Process-local progress for provider messages already consumed here. */
   private readonly localCursors = new Map<string, Record<string, number>>();
 
-  /** Bind polling inputs and dependencies without starting workers or acquiring stores. */
+  /**
+   * Bind polling inputs and dependencies without starting workers or acquiring stores.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param mailboxDirector Borrowed provider/topic/cursor owner.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param pollTransport Explicit per-endpoint HTTP/SSE operation; no hidden transport selection.
+   * @param options Optional timeout overrides; defaults are 5-second headers and 30-second poll windows.
+   */
   constructor(
     hby: Habery,
     mailboxDirector: MailboxDirector,
@@ -895,7 +916,11 @@ export class MailboxPoller {
     this.pollTransport = pollTransport;
   }
 
-  /** Register one mailbox topic that this poller should retrieve. */
+  /**
+   * Register one mailbox topic that this poller should retrieve.
+   *
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   */
   registerTopic(topic: string): void {
     this.mailboxDirector.registerTopic(topic);
   }
@@ -905,6 +930,9 @@ export class MailboxPoller {
    *
    * Each remote endpoint progresses independently, and awaits the consumer before
    * reading the next event or advancing its persisted cursor.
+   *
+   * @param onBatch Awaited batch consumer. Remote durable cursors advance after it succeeds; local cursor behavior is documented by readLocalMailbox.
+   * @throws Consumer/transport failures propagate; endpoint workers are joined on scope exit.
    */
   *pollDo(
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
@@ -935,10 +963,14 @@ export class MailboxPoller {
   }
 
   /**
-   * Read locally stored mailbox traffic from the shared `Mailboxer`.
+   * Read local provider rows and advance process-local cursors while collecting.
+   * This happens before pollDo invokes its consumer, unlike remote cursor publication.
+   * A failed local consumer does not roll these cursors back in the current process;
+   * a new poller starts local cursors from zero. No durable acknowledgement is implied.
    *
-   * Local cursors are in-memory only because they are scoped to the current
-   * runtime process, unlike remote mailbox progress tracked in `tops.`.
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topics Registered topics to read from the optional local provider store.
+   * @returns Resident messages; local next-wanted cursors have already advanced.
    */
   private readLocalMailbox(
     pre: string,
@@ -966,7 +998,12 @@ export class MailboxPoller {
     return messages;
   }
 
-  /** Return the in-memory local mailbox cursor map for one local prefix. */
+  /**
+   * Return the in-memory local mailbox cursor map for one local prefix.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @returns Mutable process-local topic-to-next-wanted map, created empty on first use.
+   */
   private localCursor(pre: string): Record<string, number> {
     const current = this.localCursors.get(pre);
     if (current) {
@@ -977,7 +1014,13 @@ export class MailboxPoller {
     return created;
   }
 
-  /** Stream one remote response through its consumer before recording cursor progress. */
+  /**
+   * Stream one remote response through its consumer before recording cursor progress.
+   *
+   * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
+   * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
+   * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
+   */
   private *pollRemoteEndpointOnce(
     target: MailboxPollTarget,
     endpoint: { eid: string; url: string },
@@ -1001,7 +1044,13 @@ export class MailboxPoller {
     });
   }
 
-  /** Keep one long-lived worker running for each currently configured remote endpoint. */
+  /**
+   * Keep one long-lived worker running for each currently configured remote endpoint.
+   *
+   * @param remoteWorkers Owned worker map, mutated to match current endpoint selection.
+   * @param onBatch Shared awaited consumer used independently by each endpoint worker.
+   * @param topics Current registered topics; no topics means no remote workers.
+   */
   private *syncRemoteWorkers(
     remoteWorkers: Map<string, Task<void>>,
     onBatch: (batch: MailboxPollBatch) => void | Operation<void>,
@@ -1037,6 +1086,10 @@ export class MailboxPoller {
    *
    * This keeps KERIpy's "one poller per endpoint" behavior while preserving
    * `keri-ts`'s split between mailbox transport and runtime parser ownership.
+   *
+   * @param target Mailbox subject habitat plus the actual local signer (a member for groups).
+   * @param endpoint Selected remote endpoint AID and HTTP(S) URL.
+   * @param onBatch Awaited consumer; successful completion precedes durable cursor advancement.
    */
   private *remoteEndpointWorker(
     target: MailboxPollTarget,
@@ -1049,6 +1102,11 @@ export class MailboxPoller {
     }
   }
 
+  /**
+   * Select locally pollable subjects without substituting the group for its member signer.
+   *
+   * @returns Local subject/signing pairs; groups without an available local member are omitted.
+   */
   private remotePollTargets(): MailboxPollTarget[] {
     const targets: MailboxPollTarget[] = [];
     for (const hab of this.hby.habs.values()) {
@@ -1061,6 +1119,12 @@ export class MailboxPoller {
     return targets;
   }
 
+  /**
+   * Choose the actual local signer for a subject's mailbox query.
+   *
+   * @param hab Local subject habitat, possibly a group.
+   * @returns The habitat itself, or its available local group member; null when unresolved.
+   */
   private pollSignerHab(hab: Hab): Hab | null {
     if (!this.hby.db.groups.has(hab.pre)) {
       return hab;
@@ -1073,9 +1137,21 @@ export class MailboxPoller {
   }
 }
 
+/**
+ * Mailbox subject and signer selection; a group subject uses its local member for signing.
+ */
 interface MailboxPollTarget {
+  /**
+   * Subject habitat whose endpoint roles choose remote mailbox targets.
+   */
   hab: Hab;
+  /**
+   * Subject AID requested in the mailbox query.
+   */
   targetPre: string;
+  /**
+   * Local signing habitat; may differ from the group subject.
+   */
   signerHab: Hab;
 }
 
@@ -1084,6 +1160,10 @@ interface MailboxPollTarget {
  *
  * The caller is responsible for any surrounding introduction or end-role
  * material that should travel with the forwarded request.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param args Final recipient, mailbox topic and exactly one complete signed source message.
+ * @returns Signed /fwd wire; v2 binds one nested child body, legacy uses pathed embeds.
  */
 function* buildForwardedDelivery(
   hab: Hab,
@@ -1132,6 +1212,12 @@ function* buildForwardedDelivery(
  * event is unknown. Python KLI does not route that escrow's follow-up query cue
  * during the bounded `kli query` command, so a local mailbox host must provide
  * the verification context with the reply itself for rotated `/ksn` replies.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param recipient Final mailbox recipient AID.
+ * @param topic Protocol mailbox topic; leading slash is normalized where required.
+ * @param message Original complete signed payload.
+ * @returns Provider-stored wire selected by the existing reply/replay topic policy.
  */
 function mailboxReplyPayload(
   hab: Hab,
@@ -1151,6 +1237,10 @@ function mailboxReplyPayload(
  * delegator first, then endpoint/location replies. Capture begins on iteration.
  * No source is opened when a witness/receipt already makes introduction unnecessary.
  * Native proof/key copies and the large-history transport caller remain separately qualified.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param remote Remote endpoint AID whose receipt history determines whether introduction is needed.
+ * @returns Reopenable introduction iterable.
  */
 export function introductionMessages(
   hab: Hab,
@@ -1158,6 +1248,11 @@ export function introductionMessages(
 ): Iterable<Uint8Array> {
   const endpoints = hab.replyEndRoleMessages(hab.pre);
   return {
+    /**
+     * Reopen introduction messages when a caller consumes them.
+     *
+     * @returns A fresh local replay iterator over the captured introduction selection.
+     */
     *[Symbol.iterator]() {
       const kever = hab.kever;
       if (!kever || kever.wits.includes(remote)) return;
@@ -1170,11 +1265,25 @@ export function introductionMessages(
   };
 }
 
-/** Collect the introduction required by the existing finite query/forwarding path. */
+/**
+ * Collect the introduction required by the existing finite query/forwarding path.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param remote Remote endpoint AID whose receipt history determines whether introduction is needed.
+ * @returns Collected introduction bytes, possibly empty.
+ */
 export function introduce(hab: Hab, remote: string): Uint8Array {
   return concatBytes(...introductionMessages(hab, remote));
 }
 
+/**
+ * Check known receipts before adding a redundant introduction.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param remote Remote attester AID to seek in receipt evidence.
+ * @param said Latest event SAID used for the receipt lookup.
+ * @returns Whether stored receipt evidence names the remote attester.
+ */
 function remoteAlreadyReceiptedLatestEvent(
   hab: Hab,
   remote: string,
@@ -1197,7 +1306,12 @@ function remoteAlreadyReceiptedLatestEvent(
   return false;
 }
 
-/** Derive the default mailbox topic from the first non-empty route segment. */
+/**
+ * Derive the default mailbox topic from the first non-empty route segment.
+ *
+ * @param route Exchange route whose first nonempty segment chooses the mailbox topic.
+ * @returns Derived topic under the existing route mapping.
+ */
 function defaultTopicForRoute(route: string): string {
   if (route.startsWith("/delegate")) {
     return DELEGATE_MAILBOX_TOPIC;
@@ -1212,7 +1326,12 @@ function defaultTopicForRoute(route: string): string {
   return trimmed.split("/")[0] ?? "";
 }
 
-/** KERIpy pollers query protocol mailbox topics with a leading slash. */
+/**
+ * KERIpy pollers query protocol mailbox topics with a leading slash.
+ *
+ * @param topic Protocol mailbox topic; leading slash is normalized where required.
+ * @returns Slash-prefixed query topic.
+ */
 function pollMailboxTopic(topic: string): string {
   if (topic.length === 0 || topic.startsWith("/")) {
     return topic;
@@ -1220,7 +1339,12 @@ function pollMailboxTopic(topic: string): string {
   return `/${topic}`;
 }
 
-/** KERIpy `/fwd` modifiers use the bare topic name, e.g. `multisig`. */
+/**
+ * KERIpy `/fwd` modifiers use the bare topic name, e.g. `multisig`.
+ *
+ * @param topic Protocol mailbox topic; leading slash is normalized where required.
+ * @returns Bare /fwd modifier topic.
+ */
 function transportMailboxTopic(topic: string): string {
   return topic.replace(/^\/+/, "");
 }
@@ -1230,11 +1354,21 @@ function transportMailboxTopic(topic: string): string {
  *
  * This stays exported because CLI and runtime call sites both need one shared
  * answer for "which mailbox topic should this route land in by default?"
+ *
+ * @param route Exchange route whose first nonempty segment chooses the mailbox topic.
+ * @returns Derived topic under the existing route mapping.
  */
 export function mailboxTopicForRoute(route: string): string {
   return pollMailboxTopic(defaultTopicForRoute(route));
 }
 
+/**
+ * Reconstruct legacy forwarded wire without assigning outer attachments to the child.
+ *
+ * @param serder Legacy forwarding exchange containing an e.evt body.
+ * @param attachments Pathed attachments; only /e/evt material belongs to the embedded message.
+ * @returns Reconstructed child wire, or null without an embedded event.
+ */
 function extractForwardedMessage(
   serder: SerderKERI,
   attachments: readonly ExchangeAttachment[],
@@ -1260,6 +1394,12 @@ function extractForwardedMessage(
   return concatBytes(...messageParts);
 }
 
+/**
+ * Serialize one legacy embedded body according to its declared protocol.
+ *
+ * @param sad Embedded self-addressing data; version prefix selects ACDC versus KERI serialization.
+ * @returns Serialized embedded body bytes; caller owns attachment reconstruction.
+ */
 function embeddedSerderRaw(sad: Record<string, unknown>): Uint8Array {
   const version = typeof sad.v === "string" ? sad.v : "";
   if (version.startsWith("ACDC")) {
@@ -1273,6 +1413,10 @@ function embeddedSerderRaw(sad: Record<string, unknown>): Uint8Array {
  *
  * Forwarded attachment groups can carry multiple pathed attachments, so the
  * path filter keeps mailbox reconstruction focused on the embedded event.
+ *
+ * @param raw One qualified pathed attachment group in text-domain bytes.
+ * @param path Exact embedded SAD path to match.
+ * @returns Attachment bytes after the matching pather, or null for a different/empty group.
  */
 function forwardedAttachmentForPath(
   raw: Uint8Array,
@@ -1301,29 +1445,84 @@ export interface MailboxPollingTimeoutPolicy {
 
 /** One mailbox retrieval batch whose message boundaries should stay together. */
 export interface MailboxPollBatch {
+  /**
+   * Whether messages came from the local provider or a remote SSE response.
+   */
   source: "local" | "remote";
+  /**
+   * Mailbox subject AID, possibly distinct from the signing member.
+   */
   pre: string;
+  /**
+   * Remote endpoint AID when source is remote.
+   */
   eid?: string;
+  /**
+   * Complete wire messages passed to the awaited batch consumer in order.
+   */
   messages: Uint8Array[];
 }
 
+/**
+ * Per-attempt header and SSE window settings in milliseconds.
+ */
 export interface MailboxFetchTimeoutPolicy {
+  /**
+   * Header acquisition deadline in milliseconds.
+   */
   requestOpenTimeoutMs: number;
+  /**
+   * Absolute SSE read window in milliseconds.
+   */
   maxReadDurationMs: number;
+  /**
+   * Idle read deadline after a complete event, in milliseconds.
+   */
   readIdleTimeoutMs: number;
 }
 
+/**
+ * Concrete mailbox query data, including its subject/signing habitat and requested ordinals.
+ */
 export interface MailboxPollTransportRequest {
+  /**
+   * Local signer, including a group's member habitat when required.
+   */
   hab: Hab;
+  /**
+   * Mailbox subject AID requested in q.i.
+   */
   targetPre: string;
+  /**
+   * Selected remote endpoint AID and HTTP(S) URL.
+   */
   endpoint: { eid: string; url: string };
+  /**
+   * Next-wanted ordinal for each requested topic.
+   */
   topics: Record<string, number>;
+  /**
+   * CESR attachment placement for the query.
+   */
   bodyMode: "header" | "body";
+  /**
+   * Header and SSE consumption windows.
+   */
   timeouts: MailboxFetchTimeoutPolicy;
 }
 
+/**
+ * One scoped mailbox attempt; transport mechanics stay separate from consumer cursor publication.
+ */
 export interface MailboxPollTransport {
-  /** Await each complete event consumer; false ends the poll without reading ahead. */
+  /**
+   * Run one scoped HTTP/SSE mailbox attempt, awaiting each complete event consumer.
+   *
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param args Prepared mailbox subject/endpoint/topics and window settings.
+   * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
+   */
   poll(
     http: HttpClient,
     clock: RuntimeClock,
@@ -1334,6 +1533,14 @@ export interface MailboxPollTransport {
 
 /** Concrete mailbox HTTP/SSE operation selected by composition. */
 export const httpMailboxPollTransport: MailboxPollTransport = {
+  /**
+   * Run one scoped HTTP/SSE mailbox attempt, awaiting each complete event consumer.
+   *
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param args Prepared mailbox subject/endpoint/topics and window settings.
+   * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
+   */
   *poll(http, clock, args, consume): Operation<void> {
     // A completed long poll releases its HTTP resource before the next poll begins.
     return yield* call(() =>
@@ -1354,10 +1561,20 @@ export const httpMailboxPollTransport: MailboxPollTransport = {
 };
 
 /**
- * Query one remote mailbox endpoint and parse any returned mailbox SSE events.
+ * Query one endpoint and consume complete SSE events within one request scope.
+ * Header timeout or non-success status ends this attempt without events. Successful
+ * body processing and its cleanup finish before the endpoint worker begins another poll.
  *
- * The query cursor values are "next wanted" ordinals, matching `mbx`
- * semantics.
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param targetPre Mailbox subject AID; may be a group distinct from hab.
+ * @param src Remote mailbox attester AID.
+ * @param url Selected HTTP(S) polling endpoint.
+ * @param topics Next-wanted ordinals by topic.
+ * @param bodyMode CESR attachment placement for the signed query.
+ * @param timeouts Header, absolute read and idle windows in milliseconds.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
  */
 function* fetchMailboxMessages(
   hab: Hab,
@@ -1408,6 +1625,15 @@ function* fetchMailboxMessages(
  * - return `null` when that timeout expires before any response arrives
  *
  * Message parsing and SSE body policy remain with `fetchMailboxMessages(...)`.
+ *
+ * @param url HTTP(S) mailbox endpoint.
+ * @param query Complete signed mbx query bytes.
+ * @param bodyMode CESR attachment placement.
+ * @param destination Remote mailbox endpoint AID carried in framing.
+ * @param timeoutMs Response-header acquisition window in milliseconds.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @returns Borrowed scoped response and its cancellation controller, or null on owned header timeout.
  */
 function* fetchMailboxQueryResponse(
   url: string,
@@ -1437,6 +1663,12 @@ function* fetchMailboxQueryResponse(
   return response ? { response, controller } : null;
 }
 
+/**
+ * Normalize the caller's polling policy against the existing defaults.
+ *
+ * @param overrides Optional timeout values; missing/nonpositive/nonfinite values use defaults.
+ * @returns Frozen header/poll settings with valid positive inputs floored to integers.
+ */
 function normalizeMailboxPollingTimeoutPolicy(
   overrides: Partial<MailboxPollingTimeoutPolicy> | undefined,
 ): Readonly<MailboxPollingTimeoutPolicy> {
@@ -1453,6 +1685,12 @@ function normalizeMailboxPollingTimeoutPolicy(
   });
 }
 
+/**
+ * Translate poller windows into the concrete request/SSE settings.
+ *
+ * @param timeouts Normalized poller policy.
+ * @returns Per-attempt windows with the fixed 500 ms read-idle interval.
+ */
 function mailboxFetchTimeoutPolicy(
   timeouts: Readonly<MailboxPollingTimeoutPolicy>,
 ): MailboxFetchTimeoutPolicy {
@@ -1463,6 +1701,13 @@ function mailboxFetchTimeoutPolicy(
   };
 }
 
+/**
+ * Apply the existing timeout normalization without adding new validation policy.
+ *
+ * @param value Optional proposed duration in milliseconds.
+ * @param fallback Default used for missing, nonfinite or nonpositive input.
+ * @returns Floored positive input, otherwise fallback; sub-millisecond input floors to zero.
+ */
 function positiveTimeoutMs(
   value: number | undefined,
   fallback: number,

@@ -49,7 +49,14 @@ export function loadAcceptedEndpointRole(
   return rpy;
 }
 
-/** Propose one group endpoint-role reply under `/multisig/rpy`. */
+/**
+ * Propose one group endpoint-role reply under `/multisig/rpy`.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param groupHab Local group habitat whose endpoint-role reply needs member approvals.
+ * @param args Endpoint AID, role and allow/cut decision used to construct the signed proposal.
+ * @returns Proposal identifiers, current acceptance and actual delivery URLs.
+ */
 export function* proposeGroupEndpointRole(
   runtime: AgentRuntime,
   groupHab: Hab,

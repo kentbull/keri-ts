@@ -8,6 +8,13 @@ import type { RuntimeClock, RuntimeTimer } from "./runtime-clock.ts";
  * The timer ends at headers, while the client resource remains live in this
  * caller scope for body consumption. Only this timer's exact abort becomes null;
  * external abort, native I/O and cleanup failures remain visible.
+ *
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param url Absolute HTTP(S) endpoint.
+ * @param init Prepared request fields and optional upstream cancellation.
+ * @param timeoutMs Header-acquisition window in milliseconds; body consumption has its own caller policy.
+ * @returns Scoped response after headers, or null only for this owner's header timeout.
  */
 export function requestWithHeaderTimeout(
   http: HttpClient,

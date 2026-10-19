@@ -104,7 +104,14 @@ export function* withExistingHab<TResult>(
   });
 }
 
-/** Open an existing Habery plus local AgentRuntime and close runtime before Habery. */
+/**
+ * Open an existing Habery plus local AgentRuntime and close runtime before Habery.
+ *
+ * @param args Command store identity, path and unlocking inputs.
+ * @param options Habery open/policy choices forwarded by the command root.
+ * @param use Awaited callback borrowing the opened Habery/runtime; start required workers inside its scope.
+ * @returns Callback result after runtime closes before Habery.
+ */
 export function* withAgentRuntime<TResult>(
   args: CommandStoreArgs,
   options: CommandHaberyOptions,

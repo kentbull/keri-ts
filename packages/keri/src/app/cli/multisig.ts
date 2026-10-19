@@ -653,6 +653,14 @@ function approvePrompt(
   return yn === null || yn === "" || yn === "y" || yn === "Y";
 }
 
+/**
+ * Collect witness receipts for the current accepted multisig event using explicit runtime collaborators.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param pre Accepted group event subject.
+ * @param args Witness authentication and HTTP endpoint mode choices.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ */
 function* receiptAcceptedEvent(
   hby: Habery,
   pre: string,

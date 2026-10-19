@@ -200,7 +200,12 @@ function inspectReceiptMessage(
   return { serder: envelope.serder, wigers: envelope.wigers, cigars: envelope.cigars };
 }
 
-/** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
+/**
+ * Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation.
+ *
+ * @param response Borrowed finite receipt-proof HTTP response.
+ * @returns Complete proof bytes after read cleanup.
+ */
 function* readResponseBytes(response: HttpStreamResponse): Operation<Uint8Array> {
   return yield* abortable((signal) => collectBytes(response.body(signal)));
 }
@@ -223,9 +228,14 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 /**
- * Drain one finite runtime cue pass through its concrete owners.
- * Wire preparation finishes before source removal. Even without delivery,
- * receipt and witness construction must run to persist local proof material.
+ * Route one initial witness cue batch and observe query continuations.
+ * Respondant publishes Poster work; this ingress helper never drains Poster
+ * network delivery. QueryCoordinator delivery retains its existing explicit pass.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param serviceHab Optional hosted witness signer; absent selection must be unambiguous.
+ * @param cues Exact runtime application Deck; foreign Decks are rejected.
+ * @param options deliver defaults true: publish outgoing work and run query delivery. False performs local signing side effects only.
  */
 export function* drainWitnessCues(
   runtime: AgentRuntime,
@@ -269,6 +279,11 @@ export interface WitnessIngressOptions {
  * Own one witness input and settle each frame before requesting more input.
  * Each complete frame publishes its prepared replies before requesting more input.
  * Source abort and cleanup belong to this input scope.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param serviceHab Hosted witness/controller habitat used for local replies.
+ * @param source Creates cancellation-aware wire input owned by this operation.
+ * @param options local defaults false; deliver defaults true and controls cue publication, not Poster queue draining.
  */
 export function* processWitnessIngressSource(
   runtime: AgentRuntime,
@@ -340,6 +355,11 @@ export function* processWitnessIngressSource(
  *   host is acting as that witness
  * - generic runtime ingress should remain separate for mailbox streaming,
  *   `/ksn` replay publication, and other non-witness-root policies
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param serviceHab Hosted reply signer.
+ * @param bytes Finite signed input bytes adapted to the same source path.
+ * @param options Witness intake/local-production policy forwarded to processWitnessIngressSource.
  */
 export function* processWitnessIngress(
   runtime: AgentRuntime,
@@ -597,6 +617,15 @@ function witnessSchemeReplies(
  * Send via HTTP first; an explicit protocol processor processes same-socket TCP replies.
  * Without a protocol processor TCP reports local transmission only. Actual socket/parser
  * cleanup finishes before this borrowed protocol processor can be released.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param witness Target witness AID whose accepted locations choose HTTP-first/TCP fallback.
+ * @param bytes Complete signed event/introduction wire.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param protocol Optional same-socket reply processor; null selects transmit-only TCP.
+ * @param auth Optional HTTP Authorization header value.
+ * @throws Missing endpoint, peer refusal, transport/parser or cleanup failures propagate.
  */
 export function* sendWitnessMessage(
   hab: Hab,
@@ -641,7 +670,17 @@ function isKeripyContentTypeRejection(
     && responseText.toLowerCase().includes(KERIPY_CONTENT_TYPE_ERROR);
 }
 
-/** Poll one witness `GET /receipts` endpoint until the receipt becomes available. */
+/**
+ * Poll one witness `GET /receipts` endpoint until the receipt becomes available.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param witness Witness AID whose HTTP receipt endpoint is selected.
+ * @param pre Event subject AID.
+ * @param sn Event sequence number.
+ * @param said Exact event SAID to verify against returned proof.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
+ */
 function* pollWitnessReceipt(
   hab: Hab,
   witness: string,
@@ -683,7 +722,16 @@ function* pollWitnessReceipt(
   };
 }
 
-/** Request one witness receipt via `POST /receipts`. */
+/**
+ * Request one witness receipt via `POST /receipts`.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param witness Witness AID whose HTTP receipt endpoint is selected.
+ * @param message Complete signed event wire requesting a witness receipt.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @param auth Optional witness HTTP Authorization value.
+ * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
+ */
 function* postWitnessReceiptEndpoint(
   hab: Hab,
   witness: string,
@@ -748,7 +796,15 @@ function* postWitnessReceiptEndpoint(
   };
 }
 
-/** Request one stored witness receipt via `GET /receipts`. */
+/**
+ * Request one stored witness receipt via `GET /receipts`.
+ *
+ * @param hab Local signing habitat; its state/store lifetime remains with the caller.
+ * @param witness Witness AID whose HTTP receipt endpoint is selected.
+ * @param query Receipt lookup subject, sequence and digest fields.
+ * @param http Borrowed HTTP implementation selected by composition.
+ * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
+ */
 function* getWitnessReceiptEndpoint(
   hab: Hab,
   witness: string,
@@ -815,7 +871,14 @@ export class Receiptor {
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
 
-  /** Bind configured intake over the same Habery; acquire no stores or background workers. */
+  /**
+   * Bind configured intake over the same Habery; acquire no stores or background workers.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param protocol Borrowed same-database protocol owner for receipt intake.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   */
   constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock) {
     if (protocol.kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
     this.hby = hby;
@@ -833,7 +896,14 @@ export class Receiptor {
   } = {}): Operation<WitnessReceiptRunResult> {
     return yield* call(() => this.receiptOnce(pre, { sn, auths }, allowTcp));
   }
-  /** One scoped attempt joins actual receipt HTTP/TCP work before returning. */
+  /**
+   * One scoped attempt joins actual receipt HTTP/TCP work before returning.
+   *
+   * @param pre Local event subject AID.
+   * @param options Optional event sequence and witness Authorization map.
+   * @param allowTcp Whether missing HTTP receipt routes may use TCP message delivery.
+   * @returns Receipt-attempt result based on verified local witness proof.
+   */
   private *receiptOnce(pre: string, { sn, auths }: {
     sn?: number;
     auths: WitnessAuthMap;
@@ -954,7 +1024,13 @@ export class Receiptor {
 
     return { witnesses, statuses };
   }
-  /** Query a stored witness receipt and apply it to local state when found. */
+  /**
+   * Query a stored witness receipt and apply it to local state when found.
+   *
+   * @param pre Event subject AID.
+   * @param options Optional sequence/SAID selection; defaults follow current accepted state.
+   * @returns Whether matching verified witness receipt state was obtained.
+   */
   *get(pre: string, { sn, said }: {
     sn?: number;
     said?: string;
@@ -992,7 +1068,12 @@ export class Receiptor {
       && this.hby.db.wigs.get(dgKey(pre, expectedSaid)).some((siger) => siger.index === index);
   }
 
-  /** Catch one witness up through the same protocol processor used for receipt intake. */
+  /**
+   * Catch one witness up through the same protocol processor used for receipt intake.
+   *
+   * @param pre Local KEL subject to replay.
+   * @param witness Witness AID to catch up.
+   */
   *catchup(pre: string, witness: string): Operation<void> {
     const hab = this.hby.habs.get(pre) ?? null;
     if (!hab) {
@@ -1023,7 +1104,15 @@ export class WitnessReceiptor {
   /** Existing explicit request to publish even when cached receipt completion is available. */
   readonly force: boolean;
 
-  /** Bind actual protocol/I/O dependencies; only the scalar force choice is optional. */
+  /**
+   * Bind actual protocol/I/O dependencies; only the scalar force choice is optional.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param protocol Borrowed same-database protocol owner for receipt intake.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param options force defaults false; true requests the existing forced witness submission policy.
+   */
   constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock, { force = false }: {
     force?: boolean;
   } = {}) {

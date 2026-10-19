@@ -57,6 +57,9 @@ export type VerifierBusinessValidator = (
   context: VerifierBusinessValidatorContext,
 ) => boolean | string | void;
 
+/**
+ * Verifier business/webhook settings; stores, intake, HTTP, time and validators are explicit dependencies.
+ */
 export interface VerifierAgentOptions {
   /** Webhook destination selected by the verifier operator. */
   hook: string;
@@ -95,7 +98,19 @@ export class VerifierAgent {
   /** Reject credentials without a configured schema validator when explicitly enabled. */
   readonly requireKnownSchemas: boolean;
 
-  /** Borrow the configured stores, input owner and webhook policy; open no runtime or background worker. */
+  /**
+   * Borrow the configured stores, input owner and webhook policy; open no runtime or background worker.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param reger Borrowed credential/TEL evidence store.
+   * @param cdb Borrowed durable pending/ready/acknowledged webhook store.
+   * @param reactor Borrowed input owner for grant prerequisites.
+   * @param cues Application cue Deck; only matching revocation cues are consumed.
+   * @param http Borrowed HTTP implementation selected by composition.
+   * @param now Required epoch-millisecond function, bound to its clock; used for local admission, webhook headers and expiry.
+   * @param validators Schema-SAID-to-business-validator table, shallow-copied at construction.
+   * @param options Webhook URL, child genus, expiry window (default ten minutes), and known-schema policy.
+   */
   constructor(
     hby: Habery,
     reger: Reger,
@@ -121,7 +136,11 @@ export class VerifierAgent {
     this.requireKnownSchemas = options.requireKnownSchemas ?? false;
   }
 
-  /** Settle verified artifacts and deliver queued webhooks within the caller's operation. */
+  /**
+   * Settle verified artifacts and deliver queued webhooks within the caller's operation.
+   *
+   * @returns Per-pass admission, readiness, webhook and rejection counts; no worker is started.
+   */
   *processOnce(): Operation<VerifierAgentProcessResult> {
     const result: VerifierAgentProcessResult = {
       grantsQueued: 0,
@@ -146,7 +165,11 @@ export class VerifierAgent {
     return result;
   }
 
-  /** Settle grant artifacts before queuing their verified credentials for webhook delivery. */
+  /**
+   * Settle grant artifacts before queuing their verified credentials for webhook delivery.
+   *
+   * @returns Number of newly queued presentations after artifact intake and verification.
+   */
   private *scanAcceptedGrants(): Operation<number> {
     let queued = 0;
     for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
@@ -197,7 +220,12 @@ export class VerifierAgent {
     return queued;
   }
 
-  /** Publish existing durable revocation work synchronously; caller retains source ownership through failure. */
+  /**
+   * Publish existing durable revocation work synchronously; caller retains source ownership through failure.
+   *
+   * @param cue Accepted credential revocation observation; uses injected local time for workflow admission.
+   * @returns One for newly queued work, otherwise zero.
+   */
   private queueRevocation(cue: CredentialRevokedCue): number {
     const said = cue.serder.pre;
     if (!said || this.hasRevocationQueuedOrSent(said)) return 0;
@@ -207,7 +235,11 @@ export class VerifierAgent {
     return 1;
   }
 
-  /** Recover revocation work from saved credentials backed by an accepted IPEX grant. */
+  /**
+   * Recover revocation work from saved credentials backed by an accepted IPEX grant.
+   *
+   * @returns Number of revocations recovered from accepted persisted evidence.
+   */
   private scanPersistedRevocations(): number {
     let queued = 0;
     for (const [keys] of this.reger.saved.getTopItemIter()) {
@@ -338,7 +370,13 @@ export class VerifierAgent {
     return sent;
   }
 
-  /** Bind webhook transport cancellation and completion to the enclosing operation. */
+  /**
+   * Bind webhook transport cancellation and completion to the enclosing operation.
+   *
+   * @param body Business notification serialized as JSON; protocol timestamps in data remain unchanged.
+   * @returns HTTP status success after unread response cleanup; this status-only consumer does not parse a receipt.
+   * @throws HTTP/cancellation/cleanup failures propagate rather than acknowledge the work.
+   */
   private *postWebhook(body: VerifierWebhookBody): Operation<boolean> {
     const raw = JSON.stringify(body);
     const http = this.http, now = this.now, hook = this.hook;
@@ -411,7 +449,14 @@ export class VerifierAgent {
     return false;
   }
 
-  /** Compare a workflow timestamp with the injected clock and configured expiry window. */
+  /**
+   * Compare workflow age against the injected epoch clock.
+   * Ready work is attempted before expiry is checked after refusal. Expiry removes
+   * that ready row; it is not a permanent tombstone preventing later rediscovery.
+   *
+   * @param dater Persisted local workflow admission time encoded as a CESR Dater.
+   * @returns True only when elapsed injected wall time is strictly greater than timeoutMs.
+   */
   private expired(dater: Dater): boolean {
     return this.now() - new Date(dater.dts).getTime() > this.timeoutMs;
   }
@@ -489,7 +534,12 @@ function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape |
   return (tever.vcState as (vcid: string) => VcStateRecordShape | null)(said);
 }
 
-/** Encode a local workflow timestamp from the same epoch-millisecond source used for expiry. */
+/**
+ * Encode a local workflow timestamp from the same epoch-millisecond source used for expiry.
+ *
+ * @param now Local epoch milliseconds from the injected verifier clock.
+ * @returns CESR Dater used for durable workflow admission, not the signed protocol timestamp.
+ */
 function nowDater(now: number): Dater {
   return new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(now))) });
 }

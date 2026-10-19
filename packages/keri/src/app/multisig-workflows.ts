@@ -102,7 +102,17 @@ interface NoticeLike {
   attrs: { r?: unknown; d?: unknown };
 }
 
-/** Publish a route-correlated event proposal; grouping owns child identity and label derivation. */
+/**
+ * Publish a route-correlated event proposal; grouping owns child identity and label derivation.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param member Local member signing habitat, distinct from the group AID.
+ * @param recipients Member AIDs; local recipients are skipped.
+ * @param proposal Route-correlated group proposal with its named business fields.
+ * @param embeddedMessage Signed child wire to include under the route-derived label.
+ * @param childGvrsn Optional explicit attachment genus for the child.
+ * @returns Completed proposal delivery URLs, independent of group acceptance.
+ */
 export function* publishProposal(
   runtime: AgentRuntime,
   member: Hab,
@@ -137,7 +147,15 @@ type VdrPublication =
     embeds: { acdc: Uint8Array; iss: Uint8Array; anc: Uint8Array };
   };
 
-/** Publish a registry or issuance proposal with its required named children. */
+/**
+ * Publish a registry or issuance proposal with its required named children.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param member Local member signing habitat, distinct from the group AID.
+ * @param recipients Member AIDs; local recipients are skipped.
+ * @param proposal Route-correlated group proposal with its named business fields.
+ * @returns Completed proposal delivery URLs, independent of group acceptance.
+ */
 function* publishVdrProposal(
   runtime: AgentRuntime,
   member: Hab,
@@ -161,7 +179,15 @@ function* publishVdrProposal(
   return deliveries;
 }
 
-/** Register the exact signed proposal before peers can reply to its delivery. */
+/**
+ * Register the exact signed proposal before peers can reply to its delivery.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param member Local signing member habitat.
+ * @param recipient Remote member AID.
+ * @param message Signed proposal Serder and attachments tuple; registered before delivery can elicit a reply.
+ * @returns Successful target URLs for this exact admission.
+ */
 function* registerAndSendProposal(
   runtime: AgentRuntime,
   member: Hab,
@@ -257,6 +283,18 @@ export function* approvePendingMultisigProposal(
   return null;
 }
 
+/**
+ * Approve and publish a local contribution to one endpoint-role reply proposal.
+ * Validate required child evidence before signing, process the local contribution,
+ * and await concrete member deliveries. Transmission is not group acceptance.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param exn Stored multisig exchange wrapper.
+ * @param route Selected multisig route identifying the proposal kind.
+ * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
+ */
 function* approveRpyProposal(
   hby: Habery,
   runtime: AgentRuntime,
@@ -306,6 +344,18 @@ function* approveRpyProposal(
   return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, deliveries };
 }
 
+/**
+ * Approve and publish a local contribution to one KEL event proposal.
+ * Validate required child evidence before signing, process the local contribution,
+ * and await concrete member deliveries. Transmission is not group acceptance.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param exn Stored multisig exchange wrapper.
+ * @param route Selected multisig route identifying the proposal kind.
+ * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
+ */
 function* approveKelProposal(
   hby: Habery,
   runtime: AgentRuntime,
@@ -369,6 +419,19 @@ function* approveKelProposal(
   return { route, said: wrapperSaid, embedded: embeddedSaid ?? "", group: groupPre, accepted, deliveries };
 }
 
+/**
+ * Approve and publish a local contribution to one registry/credential TEL proposal.
+ * Validate required child evidence before signing, process the local contribution,
+ * and await concrete member deliveries. Transmission is not group acceptance.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param rgy Borrowed legacy registry owner, or null; required only after a valid proposal is approved.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param exn Stored multisig exchange wrapper.
+ * @param route Selected multisig route identifying the proposal kind.
+ * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
+ */
 function* approveVdrProposal(
   hby: Habery,
   rgy: Regery | null,

@@ -69,7 +69,11 @@ interface IpexJoinArgs extends IpexBaseArgs {
   approvalTimeoutSeconds: number;
 }
 
-/** Implement `tufa ipex apply` by sending a schema/attribute request EXN. */
+/**
+ * Implement `tufa ipex apply` by sending a schema/attribute request EXN.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const schema = args.schema as string | undefined;
@@ -106,7 +110,11 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   });
 }
 
-/** Implement `tufa ipex offer` with one embedded ACDC stream reference. */
+/**
+ * Implement `tufa ipex offer` with one embedded ACDC stream reference.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
   const acdcFile = args.acdc as string | undefined;
@@ -149,7 +157,11 @@ export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
   yield* sendPriorResponse(args, IPEX_SPURN_ROUTE, "prior");
 }
-/** Implement `tufa ipex grant` and optional grant artifact export/delivery. */
+/**
+ * Implement `tufa ipex grant` and optional grant artifact export/delivery.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexGrantArgs = {
     ...ipexBaseArgs(args),
@@ -259,7 +271,11 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
   });
 }
 
-/** Implement `tufa ipex admit` and holder-side grant artifact processing. */
+/**
+ * Implement `tufa ipex admit` and holder-side grant artifact processing.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexAdmitArgs = {
     ...ipexBaseArgs(args),
@@ -373,7 +389,11 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
-/** Implement multisig IPEX approval over a pending `/multisig/exn` wrapper. */
+/**
+ * Implement multisig IPEX approval over a pending `/multisig/exn` wrapper.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexJoinArgs = {
     ...ipexBaseArgs(args),
@@ -453,6 +473,15 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
+/**
+ * Send a prior-correlated IPEX response with an explicit Poster worker.
+ * Await this admission's outcome before printing delivered URLs, and join the
+ * worker before leaving the command scope.
+ *
+ * @param args Parsed IPEX command flags, including recipient and prior-message SAID.
+ * @param route Response exchange route to construct.
+ * @param priorLabel Argument key naming the required prior message.
+ */
 function* sendPriorResponse(
   args: Record<string, unknown>,
   route: string,
@@ -663,7 +692,15 @@ function grantSender(grant: SerderKERI): string {
   return sender;
 }
 
-/** Await group approval while the ordinary host owns mailbox, query and escrow progress. */
+/**
+ * Await group approval while the ordinary host owns mailbox, query and escrow progress.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param groupHab Local group waiting for member approval.
+ * @param embeddedSaid Exact IPEX child SAID whose completion is observed.
+ * @param approvalTimeoutSeconds Shared approval wait duration in seconds.
+ */
 function* waitForMultisigIpexCompletion(
   hby: Habery,
   runtime: AgentRuntime,

@@ -29,7 +29,11 @@ interface DwsResolverArgs {
   insecureHttp?: boolean;
 }
 
-/** Run the DID Webs Universal Resolver and optional artifact host. */
+/**
+ * Run the DID Webs Universal Resolver and optional artifact host.
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ */
 export function* dwsResolverCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsResolverArgs = {
     port: args.port ? Number(args.port) : 7723,

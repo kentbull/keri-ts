@@ -148,6 +148,15 @@ function delegateWitnessLogsQuery(
   };
 }
 
+/**
+ * Publish group delegation approval to remote signing members before advancing the workflow.
+ *
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param groupHab Group approving habitat.
+ * @param message Signed approving interaction to embed for remote members.
+ * @returns Successful delivery URLs after each concrete Poster outcome.
+ */
 function* publishGroupDelegationApproval(
   runtime: AgentRuntime,
   hby: Habery,
@@ -206,7 +215,14 @@ function* waitForDelegation(done: () => boolean, timeoutMs: number): Operation<v
   }
 }
 
-/** Approve pending events without starting or serially driving background workers. */
+/**
+ * Approve pending events without starting or serially driving background workers.
+ *
+ * @param hby Borrowed local identities and accepted-state stores.
+ * @param hab Approving local habitat.
+ * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param confirmArgs Command approval choices/callback inputs.
+ */
 function* performDelegationApproval(
   hby: Habery,
   hab: Hab,

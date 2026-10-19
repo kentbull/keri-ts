@@ -288,6 +288,14 @@ function renderMailboxDebugReport(
   writeTextLines(lines);
 }
 
+/**
+ * Apply mailbox role administration through signed accepted endpoint state.
+ * Group proposal mode starts and joins its Poster worker; completion mode requires
+ * the role already accepted before sending the provider administration request.
+ *
+ * @param args Mailbox command store, alias, endpoint and optional group-mode choices.
+ * @param allow True grants the mailbox role; false requests supported single-signature removal.
+ */
 function* withMailboxWorkflow(
   args: MailboxAddRemoveArgs,
   allow: boolean,
@@ -602,7 +610,12 @@ function* postMailboxAdmin(
   return yield* call(() => postMailboxAdminMultipart(url, submission, rpy));
 }
 
-/** Send finite administrative CESR bytes and inspect the completed response. */
+/**
+ * Send finite administrative CESR bytes and inspect the completed response.
+ *
+ * @param url Provider administration endpoint.
+ * @param bytes Finite signed administrative CESR wire.
+ */
 function* postMailboxAdminCesr(
   url: string,
   bytes: Uint8Array,
@@ -619,7 +632,13 @@ function* postMailboxAdminCesr(
   return { ok: response.ok, status: response.status, body };
 }
 
-/** Prepare multipart control bytes before starting the administrative HTTP request. */
+/**
+ * Prepare multipart control bytes before starting the administrative HTTP request.
+ *
+ * @param url Provider administration endpoint.
+ * @param submission Prepared administrative submission fields/artifacts.
+ * @param rpy Signed endpoint-role reply bytes included in the multipart body.
+ */
 function* postMailboxAdminMultipart(
   url: string,
   submission: {

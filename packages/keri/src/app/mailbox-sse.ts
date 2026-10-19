@@ -8,8 +8,17 @@ const textEncoder = new TextEncoder();
 
 /** One parsed mailbox SSE payload with its ordered topic metadata. */
 export interface MailboxSseMessage {
+  /**
+   * Nonnegative insertion ordinal supplied by the provider SSE id.
+   */
   idx: number;
+  /**
+   * UTF-8 bytes from the complete joined SSE data fields.
+   */
   msg: Uint8Array;
+  /**
+   * Provider event/topic name associated with the ordinal.
+   */
   topic: string;
 }
 
@@ -23,7 +32,12 @@ export interface MailboxSseOptions {
   signal?: AbortSignal;
 }
 
-/** Decode one complete SSE block; an unterminated block is never delivered. */
+/**
+ * Decode one complete SSE block; an unterminated block is never delivered.
+ *
+ * @param lines Lines of one blank-line-terminated SSE block, without line endings.
+ * @returns Decoded ordinal/topic/message, or undefined for incomplete/invalid metadata.
+ */
 function eventMessage(lines: string[]): MailboxSseMessage | undefined {
   let idx = -1;
   let topic = "";
@@ -42,7 +56,14 @@ function eventMessage(lines: string[]): MailboxSseMessage | undefined {
   return { idx, topic, msg: textEncoder.encode(data.join("\n")) };
 }
 
-/** Geometric byte growth keeps fragmentation from creating one retained metadata entry per chunk. */
+/**
+ * Geometric byte growth keeps fragmentation from creating one retained metadata entry per chunk.
+ *
+ * @param bytes Current owned backing buffer.
+ * @param size Number of populated bytes already retained.
+ * @param chunk Next fragment to append.
+ * @returns Original or grown buffer containing the appended bytes.
+ */
 function appendBytes(
   bytes: Uint8Array<ArrayBuffer>,
   size: number,
@@ -61,6 +82,13 @@ function appendBytes(
  * Consume complete mailbox events with backpressure from the awaited consumer.
  * Returning false stops the poll without acknowledging an unread event. Timeout,
  * EOF, and cancellation discard an incomplete final event so its cursor can retry.
+ *
+ * @param response Borrowed streaming HTTP response; caller keeps its scope open through this operation.
+ * @param controller Body cancellation owner aborted when the poll window ends.
+ * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param options Positive idle/absolute windows in milliseconds and optional upstream signal; defaults 500 and 30000.
+ * @throws External cancellation and genuine read/consumer/cleanup errors remain visible; owned window expiry ends the poll.
  */
 export function consumeMailboxSse(
   response: HttpStreamResponse,
@@ -114,6 +142,13 @@ export function consumeMailboxSse(
 /**
  * Collect a raw SSE diagnostic report for one poll window. Production polling
  * uses consumeMailboxSse to deliver complete events as they arrive.
+ *
+ * @param response Borrowed streaming HTTP response; caller keeps its scope open through this operation.
+ * @param controller Body cancellation owner aborted when the poll window ends.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param options Positive idle/absolute windows in milliseconds and optional upstream signal; defaults 500 and 30000.
+ * @returns Collected text from this bounded diagnostic window.
+ * @throws External cancellation and genuine read/consumer/cleanup errors remain visible; owned window expiry ends the poll.
  */
 export function readMailboxSseBody(
   response: HttpStreamResponse,
@@ -154,14 +189,29 @@ export function readMailboxSseBody(
   });
 }
 
-/** Parse only terminated events from an already finite diagnostic report. */
+/**
+ * Parse only terminated events from an already finite diagnostic report.
+ *
+ * @param text Finite diagnostic response text; an unterminated final block is ignored.
+ * @returns Complete valid mailbox events in received order.
+ */
 export function parseMailboxSse(text: string): MailboxSseMessage[] {
   return text.replaceAll("\r\n", "\n").split("\n\n").slice(0, -1)
     .map((block) => eventMessage(block.split("\n")))
     .filter((message): message is MailboxSseMessage => message !== undefined);
 }
 
-/** Apply SSE deadlines to the owned byte source; the HTTP client retains native reader mechanics. */
+/**
+ * Apply SSE deadlines to the owned byte source; the HTTP client retains native reader mechanics.
+ *
+ * @param response Borrowed streaming HTTP response; caller keeps its scope open through this operation.
+ * @param controller Body cancellation owner aborted when the poll window ends.
+ * @param consume Awaited byte-chunk consumer; false ends this window.
+ * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+ * @param options Positive idle/absolute windows in milliseconds and optional upstream signal; defaults 500 and 30000.
+ * @param hasEvent Reports whether a complete event has arrived, enabling the shorter idle deadline.
+ * @throws External cancellation and genuine read/consumer/cleanup errors remain visible; owned window expiry ends the poll.
+ */
 function* consumeChunks(
   response: HttpStreamResponse,
   controller: AbortController,

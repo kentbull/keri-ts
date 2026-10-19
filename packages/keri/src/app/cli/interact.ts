@@ -40,6 +40,8 @@ interface InteractArgs {
  * - CLI concerns stop at argument parsing, witness-auth capture, and success
  *   output
  * - interaction event authoring and local acceptance live in `Hab.interact(...)`
+ *
+ * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* interactCommand(
   args: Record<string, unknown>,
