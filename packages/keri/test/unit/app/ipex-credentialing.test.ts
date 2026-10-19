@@ -27,6 +27,7 @@ import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";
 import { Credentialer, CredentialWallet, Regery } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -227,16 +228,16 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
       const revery = new Revery(holderHby.db);
       const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger, rvy: revery });
       const holderVry = new Verifier(holderHby, { reger: holderReger });
-      const holderReactor = new Reactor(holderHby, {
+      const holderReactor = new Reactor(protocolFixture(holderHby, {
         revery,
         tevery: holderTvy,
         verifier: holderVry,
-      });
+      }));
       for (const message of grant.support) {
         yield* holderReactor.processBytes(message);
       }
-      yield* holderReactor.processEscrowsOnce();
-      loadIpexHandlers(holderHby, holderReactor.exchanger);
+      yield* holderReactor.protocol.processEscrowsOnce();
+      loadIpexHandlers(holderHby, holderReactor.protocol.exc);
       yield* holderReactor.processBytes(concatBytes(Counter.makeGVC(envelopeGenus), grant.wire));
       yield* holderHby.db.reopen();
       const storedGrant = holderHby.db.exns.get([grant.grant.said!]);

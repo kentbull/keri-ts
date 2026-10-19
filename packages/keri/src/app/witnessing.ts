@@ -31,6 +31,7 @@ import { buildCesrRequest, CESR_CONTENT_TYPE, inspectCesrRequest, KERIPY_CESR_JS
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { closeResponseBody, fetchResponseHandle } from "./httping.ts";
 import { envelopeFromFrame } from "./parsering.ts";
+import { createProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { converseCesrTcp } from "./tcp-conversation.ts";
@@ -309,7 +310,7 @@ export function* processWitnessIngressSource(
         signal.throwIfAborted();
         if (result.done) break;
         const frame = result.value;
-        yield* runtime.reactor.dispatch(frame, { local, escrows: true });
+        yield* runtime.protocol.dispatch(frame, { local, escrows: true });
         yield* drainWitnessCues(runtime, serviceHab, runtime.cues, { deliver });
       }
     } finally {
@@ -617,7 +618,7 @@ export function* sendWitnessMessage(
       if (reactor) {
         yield* converseCesrTcp(url, bytes, {
           clock: services?.clock,
-          replies: { reactor, local: true },
+          replies: { protocol: reactor.protocol, local: true },
         });
       } else {
         yield* sendCesrTcp(url, bytes, { clock: services?.clock });
@@ -803,17 +804,20 @@ function* getWitnessReceiptEndpoint(
  * - fan witness receipts out to the complementary witnesses
  */
 export class Receiptor {
+  /** Borrowed accepted state and local signer collection. */
   readonly hby: Habery;
+  /** Request-owned byte intake over the shared protocol processing domain. */
   readonly reactor: Reactor;
+  /** Borrowed HTTP and clock dependencies used by actual receipt operations. */
   readonly services: RuntimeServices;
   /** Borrow the protocol processor or create one over the caller's existing Habery; no stores or workers are opened. */
   constructor(hby: Habery, { reactor, services = defaultRuntimeServices }: {
     reactor?: Reactor;
     services?: RuntimeServices;
   } = {}) {
-    if (reactor && reactor.hby !== hby) throw new RangeError("Receiptor Reactor must own the same Habery");
+    if (reactor && reactor.kvy.db !== hby.db) throw new RangeError("Receiptor input must use the same database");
     this.hby = hby;
-    this.reactor = reactor ?? new Reactor(hby);
+    this.reactor = reactor ?? new Reactor(createProtocolProcessor(hby));
     this.services = services;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
@@ -900,7 +904,7 @@ export class Receiptor {
           );
         }
         yield* this.reactor.processBytes(response.body, { local: false });
-        yield* this.reactor.processEscrowsOnce();
+        yield* this.reactor.protocol.processEscrowsOnce();
       }
       // HTTP status and socket drain are transport facts; only accepted witness proof counts.
       const index = witnesses.indexOf(witness);
@@ -970,7 +974,7 @@ export class Receiptor {
     }
 
     yield* this.reactor.processBytes(response.body, { local: false });
-    yield* this.reactor.processEscrowsOnce();
+    yield* this.reactor.protocol.processEscrowsOnce();
     const expectedSaid = this.hby.db.kels.getLast(pre, eventSn);
     const accepted = expectedSaid ? this.hby.db.getEvtSerder(pre, expectedSaid) : null;
     const index = accepted ? this.hby.db.acceptedEventWitnesses(accepted)?.indexOf(witness) : -1;

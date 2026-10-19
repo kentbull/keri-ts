@@ -290,7 +290,7 @@ function* approveRpyProposal(
 
   const localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localRpy), { local: true });
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
   const deliveries = yield* publishProposal(
@@ -350,7 +350,7 @@ function* approveKelProposal(
     concatBytes(Counter.makeGVC(approval.genus), localMessage, approval.attachment),
     { local: true },
   );
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 
   const deliveries = yield* publishProposal(
     runtime,
@@ -421,7 +421,7 @@ function* approveVdrProposal(
   // Keep the attachment set open until the peer signatures are appended.
   const localAnchor = messagize(anchorSerder, { sigers, pipelined: false, gvrsn: genus });
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor, attachment), { local: true });
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 
   let accepted = false;
   let publication: VdrPublication;

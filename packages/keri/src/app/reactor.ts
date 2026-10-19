@@ -1,131 +1,39 @@
-import { type CesrFrame, parse } from "cesr-ts";
-import { action, call, ensure, on, type Operation, race, resource } from "npm:effection@^3.6.0";
-import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { AgentCue } from "../core/cues.ts";
+/** Input-owned buffered parsing and queued ingress; shared protocol work belongs to ProtocolProcessor. */
+import { parse } from "cesr-ts";
+import { call, ensure, on, type Operation, race } from "npm:effection@^3.6.0";
 import { Deck } from "../core/deck.ts";
-import { Kevery, type MessagePolicy } from "../core/eventing.ts";
-import { type KramConfig, Kramer } from "../core/kraming.ts";
-import { BasicReplyRouteHandler, Revery, type Router } from "../core/routing.ts";
-import { Tevery } from "../vdr/eventing.ts";
+import type { Kevery } from "../core/eventing.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { Exchanger } from "./exchanging.ts";
-import type { Habery } from "./habbing.ts";
-import {
-  dispatchEnvelope,
-  type DispatchResult,
-  envelopeFromFrame,
-  queryEnvelopeFromDispatch,
-} from "./parsering.ts";
-import { QueryReplies } from "./query-replies.ts";
+import type { DispatchOptions, ProtocolProcessor } from "./protocol-processing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import type { Verifier } from "./verifying.ts";
 
-/** Protocol processing choices, independent of an input operation's lifetime. */
-export interface DispatchOptions {
-  /** Treat witness/controller ingress as locally received protocol events. */
-  local?: boolean;
-  /** Hosted mailbox endpoint that received this source. */
-  mailboxAid?: string | null;
-  /** Advance escrows before publishing this dispatch's protocol cues. */
-  escrows?: boolean;
-}
-
-/** Exact dispatch evidence plus mailbox authorization observed before releasing protocol state. */
-export interface ReactorDispatchResult extends DispatchResult {
-  mailboxQueryAuthorized: boolean;
-}
-
-/** Input cancellation belongs to the consuming operation, never protocol dispatch. */
+/** Dispatch choices plus cancellation of the concrete source/parser lifetime. */
 export interface IngressOptions extends DispatchOptions {
+  /** Aborts source reads and dispatch waiting, joining cleanup before return. */
   signal?: AbortSignal;
 }
 
 /**
- * Shared message-routing component for one `Habery`.
+ * Own queued/direct input and its buffered parser for one composed protocol domain.
  *
- * KERIpy correspondence:
- * - this is the nearest local correlate to the reactor/doer bundle that owns
- *   parser ingress, `Revery`, `Kevery`, and the reply router
- *
- * Ownership model:
- * - `Reactor` owns transient ingress bytes plus the parser and dispatch seams
- * - protocol processors write a separate Deck; Reactor captures request replies
- *   before publishing ordinary cues to the application flow
- * - durable event/reply state still lives in the `Habery` database, not in
- *   this component
+ * Like KERIpy's direct-mode input owners, this component consumes bytes and drives
+ * protocol handlers. It borrows the shared processor and owns an independent Kevery;
+ * accepted Kever state remains in the common Baser cache. Escrow scheduling, route
+ * registration and application handler installation belong to composition.
  */
 export class Reactor {
-  readonly hby: Habery;
-  readonly cues: Deck<AgentCue>;
-  /** Protocol output stays private until dispatch/escrow processing finishes. */
-  private readonly protocolCues: Deck<AgentCue>;
-  /** Ordinary complete-record queue; callers enter through ingest(). */
-  private readonly ingress: Deck<Uint8Array>;
-  readonly router: Router;
-  readonly revery: Revery;
-  readonly replyRoutes: BasicReplyRouteHandler;
-  readonly kevery: Kevery;
-  readonly exchanger: Exchanger;
-  readonly local: boolean;
-  /** Direct request correlation, captured before protocol cues reach application consumers. */
-  readonly replies: QueryReplies;
-  /** Async protocol handlers and escrow passes share one sequential processor. */
-  private busy = false;
-  /** Waiting operations retain their position until granted or cancelled. */
-  private readonly waiting = new Set<() => void>();
-  readonly tevery?: Tevery;
-  readonly verifier?: Verifier;
-  readonly registry?: AcdcRegery;
+  /** Input-specific Kevery (kvy); its accepted-state cache is shared through Baser. */
+  readonly kvy: Kevery;
+  /** Complete copied records awaiting this input owner's sole queue consumer. */
+  private readonly ingress = new Deck<Uint8Array>();
+
+  /** Bind the actual shared protocol owner; create no runtime, transport or persistent stores. */
   constructor(
-    hby: Habery,
-    {
-      cues,
-      protocolCues,
-      revery,
-      local = false,
-      tevery,
-      verifier,
-      registry,
-      messagePolicy,
-      kram,
-      now,
-    }: {
-      cues?: Deck<AgentCue>;
-      /** The actual TEL/verifier producer flow when composed outside Reactor. */
-      protocolCues?: Deck<AgentCue>;
-      /** Shared reply processor constructed with the TEL processor at composition. */
-      revery?: Revery;
-      local?: boolean;
-      tevery?: Tevery;
-      verifier?: Verifier;
-      registry?: AcdcRegery;
-      /** Runtime-owned v2 non-event sender policy, independent of parser admission. */
-      messagePolicy?: MessagePolicy;
-      /** Omitted preserves disabled intake; the receiver clock is runtime-owned. */
-      kram?: KramConfig;
-      now?: () => number;
-    } = {},
+    /** Borrowed protocol mutations/publication owner, never a transport or callback scheduler. */
+    readonly protocol: ProtocolProcessor,
   ) {
-    this.hby = hby;
-    this.cues = cues ?? new Deck();
-    this.replies = new QueryReplies(this.cues);
-    this.protocolCues = protocolCues ?? revery?.cues ?? new Deck();
-    if (this.protocolCues === this.cues) throw new TypeError("Protocol and application cue flows must be distinct");
-    this.ingress = new Deck();
-    this.revery = revery ?? new Revery(hby.db, { cues: this.protocolCues });
-    this.router = this.revery.rtr;
-    this.replyRoutes = new BasicReplyRouteHandler(this.revery);
-    this.replyRoutes.registerReplyRoutes(this.router);
-    const kramer = kram ? new Kramer(hby.db, { config: kram, cues: this.protocolCues, now }) : undefined;
-    this.kevery = new Kevery(hby.db, { cues: this.protocolCues, rvy: this.revery, messagePolicy, kramer });
-    this.kevery.registerReplyRoutes(this.router);
-    this.exchanger = new Exchanger(hby, { cues: this.protocolCues, now });
-    this.local = local;
-    this.tevery = tevery;
-    this.verifier = verifier;
-    this.registry = registry;
-    tevery?.registerReplyRoutes(this.router);
+    this.kvy = protocol.makeKevery();
   }
 
   /** Whether the complete-record queue still has input to process. */
@@ -173,7 +81,7 @@ export class Reactor {
           pending = undefined;
           signal.throwIfAborted();
           if (result.done) return;
-          yield* self.dispatch(result.value, options);
+          yield* self.protocol.dispatch(result.value, options, self.kvy);
         }
       } finally {
         controller.abort();
@@ -192,82 +100,6 @@ export class Reactor {
       ]);
     } else yield* input;
   }
-  /** Process one frame and publish its committed protocol cues before returning decision data. */
-  dispatch(
-    frame: CesrFrame,
-    { local = this.local, mailboxAid, escrows = false }: DispatchOptions = {},
-  ): Operation<ReactorDispatchResult> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    return call(function*() {
-      yield* self.acquireProtocol();
-      return yield* call(function*() {
-        try {
-          const result = yield* dispatchEnvelope(
-            envelopeFromFrame(frame, local),
-            self.revery,
-            self.kevery,
-            self.exchanger,
-            self.tevery,
-            self.verifier,
-            mailboxAid,
-          );
-          if (escrows) yield* self.advanceEscrows();
-          return {
-            ...result,
-            mailboxQueryAuthorized: result.envelope.serder.route === "mbx"
-              && self.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)),
-          };
-        } finally {
-          self.publishCues();
-        }
-      });
-    });
-  }
-
-  /** Capture direct replies before handing ordinary protocol records to the application consumer. */
-  private publishCues(): void {
-    this.replies.capture(this.protocolCues);
-    while (!this.protocolCues.empty) this.cues.push(this.protocolCues.pull()!);
-  }
-
-  /** Serialize only protocol processing; cancellation removes waiters and joins active handlers before release. */
-  private *acquireProtocol(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    yield* resource<void>(function*(provide) {
-      let acquired = false;
-      try {
-        if (self.busy) {
-          yield* action<void>((resolve) => {
-            const grant = () => {
-              acquired = true;
-              resolve();
-            };
-            self.waiting.add(grant);
-            return () => {
-              self.waiting.delete(grant);
-            };
-          });
-        } else {
-          self.busy = true;
-          acquired = true;
-        }
-        yield* provide();
-      } finally {
-        if (acquired) {
-          const next = self.waiting.values().next().value;
-          if (next) {
-            self.waiting.delete(next);
-            next();
-          } else {
-            self.busy = false;
-          }
-        }
-      }
-    });
-  }
-
   /**
    * Queue one complete CESR/KERI record for later parsing.
    *
@@ -300,39 +132,6 @@ export class Reactor {
   }
 
   /**
-   * Run one bounded escrow-processing pass.
-   *
-   * Current scope:
-   * - KEL escrows through `Kevery.processEscrows()`
-   * - reply escrows through `Revery.processEscrowReply()`
-   */
-  *processEscrowsOnce(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    yield* call(function*() {
-      yield* self.acquireProtocol();
-      yield* call(function*() {
-        try {
-          yield* self.advanceEscrows();
-        } finally {
-          self.publishCues();
-        }
-      });
-    });
-  }
-
-  /** Advance component escrows while this protocol operation owns serialization. */
-  private *advanceEscrows(): Operation<void> {
-    this.kevery.kramer?.prune();
-    this.kevery.processEscrows();
-    this.revery.processEscrowReply();
-    this.tevery?.processEscrows();
-    this.verifier?.processEscrows();
-    this.registry?.processEscrows();
-    yield* this.exchanger.processEscrows();
-  }
-
-  /**
    * Continuous message doer for command hosts that keep the runtime alive.
    *
    * This is the Effection equivalent of a KERIpy `msgDo`: drain ingress, yield
@@ -341,20 +140,6 @@ export class Reactor {
   *msgDo(): Operation<never> {
     while (true) {
       yield* this.processOnce();
-      yield* runtimeTurn();
-    }
-  }
-
-  /**
-   * Continuous escrow doer for the long-lived runtime host.
-   *
-   * KERIpy correspondence:
-   * - mirrors the dedicated `escrowDo` loop rather than folding escrow
-   *   processing into parser ingress
-   */
-  *escrowDo(): Operation<never> {
-    while (true) {
-      yield* this.processEscrowsOnce();
       yield* runtimeTurn();
     }
   }

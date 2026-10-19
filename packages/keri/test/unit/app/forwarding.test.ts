@@ -323,8 +323,8 @@ Deno.test("Runtime composes concrete registry processors and registers /credenti
 
     try {
       const runtime = yield* createAgentRuntime(hby);
-      assertEquals(runtime.reactor.tevery, runtime.vdr!.tvy);
-      assertEquals(runtime.reactor.verifier, runtime.vdr!.vry);
+      assertEquals(runtime.protocol.tvy, runtime.vdr!.tvy);
+      assertEquals(runtime.protocol.vry, runtime.vdr!.vry);
       assertEquals(runtime.vdr!.cues, runtime.cues);
       assertEquals(
         runtime.mailboxDirector.registeredTopics().includes(CREDENTIAL_MAILBOX_TOPIC),
@@ -779,7 +779,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const postman = new Poster(hby, null, runtime.reactor, runtime.services);
+          const postman = new Poster(hby, null, runtime.protocol, runtime.services);
           const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
           const prepared = yield* postman.prepareBytesTarget(sender, route, route.targets[0], message);
           assertEquals(prepared.kind, "http");

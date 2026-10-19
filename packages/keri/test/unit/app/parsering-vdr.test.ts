@@ -19,6 +19,7 @@ import { KeriDispatchEnvelope } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { incept } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery } from "../../../src/core/routing.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 const ISSUER = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
 const REGISTRY = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
@@ -171,14 +172,14 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
         verifierEscrows++;
         return verifierEscrow.call(this);
       };
-      const reactor = new Reactor(hby, {
+      const reactor = new Reactor(protocolFixture(hby, {
         tevery: tvy,
         verifier: vry,
         cues: runtime.cues,
         protocolCues: runtime.vdr!.cues,
-      });
+      }));
 
-      yield* reactor.processEscrowsOnce();
+      yield* reactor.protocol.processEscrowsOnce();
       assertEquals(telEscrows, 1);
       assertEquals(verifierEscrows, 1);
     } finally {

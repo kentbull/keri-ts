@@ -8,6 +8,7 @@ import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
 import { type Role, Roles } from "../core/roles.ts";
+import type { Revery } from "../core/routing.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
 import { abortable } from "./abortable.ts";
@@ -61,13 +62,25 @@ interface OobieryOptions {
  *   leak back to the `AgentRuntime` root
  */
 export class Oobiery {
+  /** Borrowed local identities and durable OOBI job stores. */
   readonly hby: Habery;
+  /** Input owner used for fetched CESR; it joins parser/source cleanup. */
   readonly reactor: Reactor;
+  /** OOBI completion/query observations consumed by the composed application flow. */
   readonly cues: Deck<AgentCue>;
+  /** Borrowed fetch client and clock; no network service is discovered through ingress. */
   readonly services: RuntimeServices;
+  /** Prevent overlapping passes over this owner's durable job queue. */
   private active = false;
 
-  constructor(hby: Habery, reactor: Reactor, options: OobieryOptions = {}) {
+  /** Bind byte intake and the actual reply verifier used by OOBI proof persistence. */
+  constructor(
+    hby: Habery,
+    reactor: Reactor,
+    /** Borrowed reply verifier; route installation and proof writes share this owner. */
+    private readonly rvy: Revery,
+    options: OobieryOptions = {},
+  ) {
     const { cues, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.reactor = reactor;
@@ -76,7 +89,7 @@ export class Oobiery {
   }
 
   /** Register `/introduce` on the shared reply router. */
-  registerReplyRoutes(router = this.reactor.router): void {
+  registerReplyRoutes(router = this.rvy.rtr): void {
     router.addRoute("/introduce", this);
   }
 
@@ -516,7 +529,7 @@ export class Oobiery {
       );
     }
 
-    const proof = this.reactor.revery.decideReply({
+    const proof = this.rvy.decideReply({
       serder: args.serder,
       saider: args.diger,
       route: args.route,
@@ -525,10 +538,10 @@ export class Oobiery {
       cigars: args.cigars,
       tsgs: args.tsgs,
     });
-    const queryCues = this.reactor.revery.cues;
+    const queryCues = this.rvy.cues;
 
     if (proof.kind === "unverified") {
-      this.reactor.revery.writeReply(proof);
+      this.rvy.writeReply(proof);
       if (proof.cues.length) queryCues.extend(proof.cues);
       return unverifiedReplyDecision(`Unverified introduction reply ${args.serder.said ?? "<unknown>"}.`);
     }
@@ -544,7 +557,7 @@ export class Oobiery {
     };
     const cues: AgentCue[] = [{ kin: "oobiQueued", url: oobi }];
 
-    this.reactor.revery.writeReply(proof);
+    this.rvy.writeReply(proof);
     this.pinQueueStore(kind, oobi, record);
     if (proof.cues.length) queryCues.extend(proof.cues);
     this.cues.extend(cues);

@@ -570,7 +570,7 @@ export class QueryCoordinator {
       yield* converseCesrTcp(delivery.url, delivery.body, {
         clock: services.clock,
         signal: controller.signal,
-        replies: { reactor, local: true },
+        replies: { protocol: reactor.protocol, local: true },
       });
       return;
     }

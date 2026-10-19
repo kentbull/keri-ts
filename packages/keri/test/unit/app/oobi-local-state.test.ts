@@ -24,6 +24,7 @@ import { DatabaseOperationError, ValidationError } from "../../../src/core/error
 import { reply } from "../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
 import { assertOperationThrows, testCLICommand } from "../../utils.ts";
 
@@ -388,8 +389,8 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       for (const shared of [true, false]) {
         const proofCues = new Deck<AgentCue>();
         const cues = shared ? proofCues : new Deck<AgentCue>();
-        const reactor = new Reactor(hby, { cues: proofCues });
-        const owner = new Oobiery(hby, reactor, { cues });
+        const reactor = new Reactor(protocolFixture(hby, { cues: proofCues }));
+        const owner = new Oobiery(hby, reactor, reactor.protocol.rvy, { cues });
         const url = `${introducedUrl}?deck=${shared}`;
         const notice = new SerderKERI({
           sad: { t: "rpy", dt: makeNowIso8601(), r: "/introduce", a: { cid: hab.pre, oobi: url } },
@@ -420,8 +421,8 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
       const cold = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const queries = new Deck<AgentCue>(), queues = new Deck<AgentCue>();
-        const reactor = new Reactor(cold, { cues: queries }),
-          owner = new Oobiery(cold, reactor, { cues: queues });
+        const reactor = new Reactor(protocolFixture(cold, { cues: queries })),
+          owner = new Oobiery(cold, reactor, reactor.protocol.rvy, { cues: queues });
         const args = {
           serder,
           diger: new Diger({ qb64: serder.said! }),
@@ -433,12 +434,12 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         assertEquals(cold.db.rpes.cnt(), 1, "Unverified introduction retains existing reply escrow ownership");
         assertExists(cold.db.rpys.get([serder.said!]));
         assertEquals(queries.empty, true, "direct Revery work has not passed Reactor publication");
-        assertEquals(reactor.revery.cues.pull()?.kin, "query");
+        assertEquals(reactor.protocol.rvy.cues.pull()?.kin, "query");
         assertEquals(queues.length, 0);
       } finally {
         yield* cold.close(true);
       }
-      runtime.reactor.revery.processReply({
+      runtime.protocol.rvy.processReply({
         serder,
         tsgs: [replySigGroupFor({
           pre: hab.pre,
@@ -458,9 +459,9 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
 Deno.test("OOBI multi-parent publication validates all URLs and publishes ordinary child and terminal cues", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const cues = new Deck<AgentCue>(), reactor = new Reactor(hby);
+    const cues = new Deck<AgentCue>(), reactor = new Reactor(protocolFixture(hby));
     const http = new FakeRuntimeHttpClient();
-    const oobi = new Oobiery(hby, reactor, { cues, services: fakeRuntimeServices({ http }) });
+    const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, { cues, services: fakeRuntimeServices({ http }) });
     try {
       const cid = hby.makeHab("source").pre;
       const parent = `http://oobi.test/oobi/${cid}/controller?multi=1`;

@@ -413,7 +413,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
         dest: alice.pre,
         msgs: [acceptedEventReplayMessage(hby, bob.pre, 0).message],
       });
-      runtime.reactor.kevery.denyList.add(alice.pre);
+      runtime.protocol.kvy.denyList.add(alice.pre);
       const before = [...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)];
       const denied = yield* call(() =>
         handler(
@@ -431,7 +431,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       for (let pass = 0; pass < 8 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
       assertEquals(runtime.postman.hasPending, false);
       assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], before);
-      runtime.reactor.kevery.denyList.clear();
+      runtime.protocol.kvy.denyList.clear();
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -537,11 +537,11 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
       const accepted = yield* call(post);
       assertEquals(accepted.status, 200);
       yield* call(() => accepted.body?.cancel());
-      runtime.reactor.kevery.denyList.add(sender.pre);
+      runtime.protocol.kvy.denyList.add(sender.pre);
       const refused = yield* call(post);
       assertEquals(refused.status, 403);
       assertEquals(yield* call(() => refused.text()), "Query requester is not authorized");
-      runtime.reactor.kevery.denyList.clear();
+      runtime.protocol.kvy.denyList.clear();
       const readmitted = yield* call(post);
       assertEquals(readmitted.status, 200);
       yield* call(() => readmitted.body?.cancel());
@@ -601,7 +601,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
       assertEquals(denied.status, 403);
       yield* call(() => denied.text());
       assertEquals(hby.db.msgc.get(key), null, "sender denial precedes KRAM durable effects");
-      runtime.reactor.kevery.denyList.clear();
+      runtime.protocol.kvy.denyList.clear();
       const pending = yield* call(() => post(0));
       assertEquals(pending.status, 403);
       yield* call(() => pending.text());
@@ -623,7 +623,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         parseBytes(messagize(body, { sigers: sender.sign(body.raw, true), gvrsn: Vrsn_2_0 }))
       );
       {
-        runtime.reactor.kevery.processQuery(queryEnvelopeFromDispatch(envelopeFromFrame(valid)));
+        runtime.reactor.kvy.processQuery(queryEnvelopeFromDispatch(envelopeFromFrame(valid)));
         const source = SealEvent.fromTuple([
           new Prefixer({ qb64: sender.pre }),
           NumberPrimitive.fromNum(99n),
@@ -654,7 +654,7 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
           assertEquals((queryFrames.at(-1)!.body.ked?.q as Record<string, unknown>).s, "63");
         }
         assertEquals(runtime.querying.hasPendingWork(), false);
-        const accepted = runtime.reactor.kevery.kramer!.intake(envelopeFromFrame(valid));
+        const accepted = runtime.reactor.kvy.kramer!.intake(envelopeFromFrame(valid));
         assertEquals(accepted.kind, "ready");
         const duplicate = yield* call(() => post(0));
         assertEquals(duplicate.status, 403, "synchronous intake completes acceptance before later HTTP work");

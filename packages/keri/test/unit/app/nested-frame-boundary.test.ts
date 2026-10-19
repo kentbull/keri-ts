@@ -6,6 +6,7 @@ import { inspectCesrStream } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 Deno.test("nested runtime boundaries reject unsupported trees before processing", async () => {
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
@@ -21,7 +22,7 @@ Deno.test("nested runtime boundaries reject unsupported trees before processing"
           skipConfig: true,
         });
         try {
-          yield* new Reactor(hby).dispatch(frame);
+          yield* protocolFixture(hby).dispatch(frame);
         } finally {
           yield* hby.close();
         }

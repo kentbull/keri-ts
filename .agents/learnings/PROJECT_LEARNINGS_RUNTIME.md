@@ -42,11 +42,11 @@ Composition routes query to QueryCoordinator, stream to MailboxDirector, and rep
 receipt/replay work to Respondant/Hab interpretation. A Deck is not broadcast.
 See the [cue graph](../../docs/design-docs/runtime/CUES.md).
 
-Composition shares one Revery between Tevery and Reactor. Tevery registers its
-own TSN routes and advances their retries; Reactor knows only its protocol
+Composition shares one Revery between Tevery and ProtocolProcessor. Tevery registers its
+own TSN routes and advances their retries; ProtocolProcessor knows only its protocol
 operations, not separate registry/credential receivers.
 
-Reactor serializes only dispatch/escrows. It returns the processed envelope, exact
+ProtocolProcessor serializes dispatch/escrows; Reactor owns byte ingress and its parser. It returns the processed envelope, exact
 decision and mailbox authorization; KRAM may accumulate threshold proofs. It
 captures request replies before application publication, including synchronous
 capture when a new correlation claims already-published output. No application

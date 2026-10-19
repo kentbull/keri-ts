@@ -22,6 +22,7 @@ import { Kevery } from "../../../src/core/eventing.ts";
 import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
 import { dgKey, snKey } from "../../../src/db/core/keys.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -719,11 +720,11 @@ Deno.test("Kevery stores non-transferable receipt escrows under snKey and replay
       assertExists(event);
       assertExists(event.said);
 
-      const reactor = new Reactor(remote);
+      const reactor = new Reactor(protocolFixture(remote));
       reactor.ingest(receiptor.receipt(event));
       yield* reactor.processOnce();
 
-      const kvy = reactor.kevery;
+      const kvy = reactor.kvy;
       assertEquals(remote.db.ures.cnt(), 1);
       assertEquals(
         remote.db.ures.get(snKey(controller.pre, Number(event.sn))).length,
@@ -2099,7 +2100,7 @@ Deno.test("Kevery.processReceipt skips own witness receipts on own and nonlocal 
       );
       assertExists(remoteEvent);
       assertExists(remoteEvent.said);
-      const reactor = new Reactor(remote);
+      const reactor = new Reactor(protocolFixture(remote));
       yield* reactor.processBytes(acceptedEventReplayMessage(source, remoteController.pre, 0).message, { local: true });
 
       const strictRemote = new Kevery(remote.db, { lax: false, local: true });

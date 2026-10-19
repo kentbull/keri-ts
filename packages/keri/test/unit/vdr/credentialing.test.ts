@@ -324,7 +324,7 @@ Deno.test("vdr/credentialing - imports frozen Python issuance and replays both g
           } finally {
             yield* call(() => server.shutdown());
           }
-          yield* reactor.processEscrowsOnce();
+          yield* reactor.protocol.processEscrowsOnce();
           for (const tel of vector.tels) {
             assertEquals(reger.tvts.get([tel.pre, tel.said]), bytes.encode(tel.body));
           }

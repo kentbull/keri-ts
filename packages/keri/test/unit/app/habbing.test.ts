@@ -504,7 +504,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             );
             assertEquals(runtime.delegating.complete(witnessed.pre, 0), true);
 
-            yield* runtime.reactor.processEscrowsOnce();
+            yield* runtime.protocol.processEscrowsOnce();
           } finally {
             yield* runtime.close();
           }
@@ -1287,8 +1287,8 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
       assertStrictEquals(hab.kevery, hby.kevery);
       assertStrictEquals(hby.kevery.local, true);
       assertStrictEquals(hby.kevery.lax, false);
-      assertEquals(runtime.reactor.kevery === hby.kevery, false);
-      assertEquals(runtime.reactor.kevery.cues === runtime.cues, false);
+      assertEquals(runtime.reactor.kvy === hby.kevery, false);
+      assertEquals(runtime.reactor.kvy.cues === runtime.cues, false);
       assertEquals(runtime.cues === hby.kevery.cues, false);
       const localCues = hby.kevery.cues.toArray();
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -1296,7 +1296,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
         const peer = remote.makeHab("peer");
         yield* settleRuntimeIngress(runtime, remote.db.clonePreIter(peer.pre));
         assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
-        assertEquals(runtime.reactor.kevery.cues.empty, true);
+        assertEquals(runtime.reactor.kvy.cues.empty, true);
         assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["receipt", "keyStateSaved"]);
         assertEquals(hby.kevery.cues.toArray(), localCues);
       } finally {

@@ -6,7 +6,7 @@ requires concrete component flows without application accounting. ResourcePolicy
 its errors, reservations and constructor plumbing are removed. No compatibility
 policy, renamed ledger or queue/client/listener quota belongs here. A necessary
 private socket constraint requires production evidence; use native backpressure.
-Concrete cue ownership, protocol-only Reactor serialization and shared CLI/host
+Concrete cue ownership, protocol-only ProtocolProcessor serialization and shared CLI/host
 workers are implemented. The [transport plan](../../plans/runtime/TRANSPORT_PLAN.md)
 and [qualification plan](../../plans/qualification/QUALIFICATION_PLAN.md) retain
 composed, failure/restart and installed-package evidence gates.
@@ -19,13 +19,13 @@ Reactor, CLI and client constructors carry no shared accounting options.
 `runtime.vdr` is the existing legacy Regery with its concrete Reger, Tevery and
 Verifier; `runtime.acdc` is the independent v2 Regery. Both are null when a readonly
 Habery receives no injected store/manager. Composition supplies the actual Tevery,
-Verifier and v2 registry to Reactor. Dispatch borrows the concrete processors and
+Verifier and v2 registry to ProtocolProcessor. Dispatch borrows the concrete processors and
 never discovers them through a runtime or probes for optional processor methods.
-The root constructs one Revery and supplies it to Tevery and Reactor. Tevery owns
+The root constructs one Revery and supplies it to Tevery and ProtocolProcessor. Tevery owns
 TSN route registration, proof/state admission and Broker dependency retries; its
 escrow operation advances TEL dependencies before registry and credential notices.
 TEL-only Tevery needs no Revery; registering TSN routes without one fails before
-registering either route. Reactor does not name individual TSN handlers.
+registering either route. ProtocolProcessor does not name individual TSN handlers.
 `AgentRuntimeOptions.reger` and `.acdc` borrow caller-owned stores/managers; shutdown
 closes only defaults it acquired. A legacy borrowed Reger gets runtime-created
 processors using the same cue Deck. Application workflows may reject genuine
@@ -52,16 +52,16 @@ never authenticate children, and a later malformed sibling does not roll back
 previously committed messages. FrameIntake, TcpRead, custom frame channels,
 progressive cursors and parser-owned staging/disposal are removed.
 
-`Reactor.dispatch(frame, options)` returns the processed envelope and its exact
+`ProtocolProcessor.dispatch(frame, options, kvy)` returns the processed envelope and its exact
 decision, plus mailbox authorization observed before releasing protocol state.
 KRAM can return accumulated threshold proofs as ordinary buffered data.
-Reactor serializes dispatch and escrow passes so async handlers cannot interleave
+ProtocolProcessor serializes dispatch and escrow passes so async handlers cannot interleave
 protocol processing. Waiting input cancellation removes the waiter; an active
 owner joins handler cleanup before releasing the processor. It has no callback
 executor or application-work entrypoint.
 
 Protocol producers write to their own Deck, wired with the legacy TEL/verifier
-processors at composition. Before publishing to `AgentRuntime.cues`, Reactor
+processors at composition. Before publishing to `AgentRuntime.cues`, ProtocolProcessor
 captures direct request replies. A new reservation also claims matching records
 already published to the application Deck synchronously. Background cue workers cannot consume unfinished
 protocol output or reserved replies. Interpretation, signing, routing and request
@@ -226,7 +226,7 @@ signatures read from wigs; raw response proof and unrelated signer receipts do n
 establish completion or enter fanout.
 Use the requested accepted event's witness list for retrieval, proof indexes and
 cached completion; later witness replacements cannot reinterpret older proof.
-Raw witness/Poster sends receive the actual Reactor, while transport retains native
+Raw witness/Poster sends receive the actual shared protocol processor, while transport retains native
 socket ownership. Every actual HTTP/TCP operation joins cleanup before returning.
 
 QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
@@ -391,3 +391,19 @@ not a content snapshot. Request abort owns acquisition; response/host shutdown o
 later reads. Default handlers are owned, injected handlers borrowed. Dynamic did.json
 uses JSON-only construction without CESR replay; broader lazy generation/export is
 deferred. Post-header body failure terminates the body and reports its original error.
+
+### Shared protocol processing and input owners
+
+ProtocolProcessor holds the serialized protocol turn, captures QueryReplies before
+application cue publication, and advances the shared durable escrows. Reactor owns
+queued/source parsing and an independent Kevery. Each receiving TCP operation also
+creates its own Kevery over the same Baser cache and configured policy. Shared
+Revery/Exchanger/TEL owners remain long-lived; input construction never replaces
+semantic reply registrations. Protocol processing calls the existing dispatchEnvelope
+implementation directly. No callback executor or additional receiver facade exists.
+
+Host composition exposes actual `protocol`, `replies` and `exc` owners. HTTP/TCP
+request slots borrow `replies`; IPEX workflows observe `exc`. Poster borrows the
+shared ProtocolProcessor rather than Reactor. Minimal standalone input composition
+uses createProtocolProcessor over the caller's existing Habery, opening no stores
+or background workers. Reactor has no dispatch, escrow or semantic-handler proxies.

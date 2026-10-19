@@ -1,3 +1,4 @@
+import { protocolFixture } from "../../protocol-fixture.ts";
 /** Non-event policy gates precede real route acceptance and retain borrowed ownership. */
 import { b, Diger, parseBytes, Prefixer, SerderKERI, Texter, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
@@ -118,11 +119,11 @@ Deno.test("runtime sender policy blocks v2 effects while KEL and legacy traffic 
       assertEquals(target.db.epse.get(parent.said!), null);
       assertEquals(target.db.reps.get(sender.pre), []);
       denyList.clear();
-      assertEquals(runtime.reactor.kevery.denyList.has(sender.pre), true, "configuration inputs are copied");
+      assertEquals(runtime.protocol.kvy.denyList.has(sender.pre), true, "configuration inputs are copied");
       const [legacy] = exchange("/challenge/response", { words: ["legacy"] }, { sender: sender.pre });
       yield* runtime.reactor.processBytes(sender.endorse(legacy));
       assertExists(target.db.exns.get(legacy.said!));
-      runtime.reactor.kevery.denyList.clear();
+      runtime.protocol.kvy.denyList.clear();
       group.sigers.splice(0, group.sigers.length, ...wrong.sign(parent.raw, true));
       yield* runtime.reactor.processBytes(serializeMessage(parent, { tsgs: [group], gvrsn: Vrsn_2_0 }));
       assertEquals(target.db.exns.get(parent.said!), null, "allowance does not authenticate signatures");
@@ -142,10 +143,10 @@ Deno.test("refused nested evidence has no public effects and infrastructure fail
   frame.nests![0].essrs = [new Texter({ raw: b("abc"), code: "4B" })];
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const reactor = new Reactor(hby, { messagePolicy: { denyList: new Set([parent.pre!]) } });
+    const reactor = new Reactor(protocolFixture(hby, { messagePolicy: { denyList: new Set([parent.pre!]) } }));
     try {
       {
-        const { decision } = yield* reactor.dispatch(frame);
+        const { decision } = yield* reactor.protocol.dispatch(frame);
         assertEquals(decision, { kind: "drop", reason: "deniedSender" });
       }
       assertEquals(hby.db.enst.get(parent.said!), []);
@@ -154,12 +155,12 @@ Deno.test("refused nested evidence has no public effects and infrastructure fail
         parseBytes(b(fixture.cases.find((row) => row.name === "signed exchange")!.wire))
       );
       {
-        reactor.kevery.denyList.clear();
+        reactor.protocol.kvy.denyList.clear();
         yield* call(() =>
           assertRejects(
             () =>
               run(() =>
-                dispatchEnvelope(envelopeFromFrame(signed), reactor.revery, reactor.kevery, {
+                dispatchEnvelope(envelopeFromFrame(signed), reactor.protocol.rvy, reactor.kvy, {
                   *processEvent() {
                     throw new Error("storage unavailable");
                   },
@@ -191,26 +192,26 @@ Deno.test("optional KRAM returns combined evidence after retiring acceptance", a
     try {
       const [partial] = yield* call(() => frame(0));
       {
-        const { decision } = yield* runtime.reactor.dispatch(partial);
+        const { decision } = yield* runtime.protocol.dispatch(partial);
         assertEquals(decision?.kind, "pending");
       }
       assertExists(hby.db.pmkm.get(key));
       now += 1000;
       const [complete] = yield* call(() => frame(1));
-      const { envelope: ready } = yield* runtime.reactor.dispatch(complete);
+      const { envelope: ready } = yield* runtime.protocol.dispatch(complete);
       assertEquals(ready.sigers.map((sig) => sig.index), [0, 1]);
       assertEquals(hby.db.pmkm.get(key), null, "partial state is retired before returning evidence");
-      assertEquals(runtime.reactor.kevery.kramer!.prune().kind, "pruned");
+      assertEquals(runtime.reactor.kvy.kramer!.prune().kind, "pruned");
       assertExists(hby.db.msgc.get(key));
       assertEquals(hby.db.pmkm.get(key), null);
       now += 1000;
       yield* hby.db.reopen();
       {
-        const { decision } = yield* runtime.reactor.dispatch((yield* call(() => frame(1)))[0]);
+        const { decision } = yield* runtime.protocol.dispatch((yield* call(() => frame(1)))[0]);
         assertEquals(decision, { kind: "drop", reason: "replay" });
       }
       now += 120000;
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(hby.db.msgc.get(key), null, "ordinary escrow scheduling advances finite pruning");
     } finally {
       yield* runtime.close();
@@ -229,7 +230,7 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       services: { clock: { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) } },
     });
     const seen: (string | undefined)[] = [], handled: (string | undefined)[] = [];
-    runtime.reactor.exchanger.addHandler({
+    runtime.exc.addHandler({
       resource: "/receipt",
       verify: ({ receiverTime }) => {
         seen.push(receiverTime);
@@ -259,7 +260,7 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
         parseBytes(serializeMessage(pending, { tsgs: [group(pending)], gvrsn: Vrsn_2_0 }))
       );
       {
-        const { decision } = yield* runtime.reactor.dispatch(frame);
+        const { decision } = yield* runtime.protocol.dispatch(frame);
         assertEquals(decision?.kind, "escrow");
       }
       assertEquals(seen, [receipt]);
@@ -269,13 +270,13 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       now += 10000;
       yield* hby.db.reopen();
       dependency = true;
-      yield* runtime.reactor.exchanger.processEscrows();
+      yield* runtime.exc.processEscrows();
       assertEquals(seen, [receipt, receipt]);
       assertEquals(handled, [receipt]);
       assertExists(hby.db.exns.get([pending.said!]));
       assertEquals(hby.db.exchangeMeta.get([pending.said!])?.receiverTime, receipt);
       // A new direct attempt cannot replace first qualified provenance with sender dt.
-      yield* runtime.reactor.exchanger.processEvent({
+      yield* runtime.exc.processEvent({
         serder: pending,
         tsgs: [group(pending)],
         receiverTime: makeNowIso8601(new Date(now)),
@@ -286,7 +287,7 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
         assertRejects(
           () =>
             run(() =>
-              runtime.reactor.exchanger.processEvent({
+              runtime.exc.processEvent({
                 serder: fresh,
                 tsgs: [group(fresh)],
                 receiverTime: "invalid",
@@ -302,20 +303,20 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       const [staleFrame] = yield* call(() =>
         parseBytes(serializeMessage(stale, { tsgs: [group(stale)], gvrsn: Vrsn_2_0 }))
       );
-      yield* runtime.reactor.dispatch(staleFrame);
+      yield* runtime.protocol.dispatch(staleFrame);
       const admitted = hby.db.epsd.get([stale.said!])!.dts;
       now += 5000;
-      yield* runtime.reactor.exchanger.processEvent({ serder: stale, tsgs: [group(stale)] });
+      yield* runtime.exc.processEvent({ serder: stale, tsgs: [group(stale)] });
       assertEquals(hby.db.epsd.get([stale.said!])!.dts, admitted, "retransmission cannot restart the proof deadline");
       now += 5001;
       dependency = true;
-      yield* runtime.reactor.exchanger.processEscrows();
+      yield* runtime.exc.processEscrows();
       assertEquals(hby.db.epse.get([stale.said!]), null, "strict expiry uses the original shared-clock admission");
       assertEquals(hby.db.exns.get([stale.said!]), null);
       assertEquals(hby.db.exchangeMeta.get([stale.said!]), null);
       assertEquals(handled, [receipt, receipt], "expired proof dependency never invokes handling");
       const competing = body("competing"), winning = makeNowIso8601(new Date(now));
-      runtime.reactor.exchanger.routes.set("/receipt", {
+      runtime.exc.routes.set("/receipt", {
         resource: "/receipt",
         verify: () => {
           hby.db.exchangeMeta.pin([competing.said!], { mailboxAid: null, receiverTime: winning });
@@ -329,7 +330,7 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
         assertRejects(
           () =>
             run(() =>
-              runtime.reactor.exchanger.processEvent({
+              runtime.exc.processEvent({
                 serder: competing,
                 tsgs: [group(competing)],
               })
@@ -345,7 +346,7 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
         assertRejects(
           () =>
             run(() =>
-              runtime.reactor.exchanger.processEvent({
+              runtime.exc.processEvent({
                 serder: pending,
                 tsgs: [group(pending)],
               })
@@ -374,7 +375,7 @@ Deno.test("disabled, exempt, default and v1 exchange intake cannot confer KRAM r
       ];
       for (const { kram, pvrsn } of cases) {
         const runtime = yield* createAgentRuntime(hby, { kram });
-        runtime.reactor.exchanger.addHandler({
+        runtime.exc.addHandler({
           resource: "/unqualified",
           verify: ({ receiverTime }) => {
             assertEquals(receiverTime, undefined);
@@ -444,10 +445,10 @@ Deno.test("optional KRAM preserves actual OOBI verification and frozen processor
       assertEquals(stubs.length, 3);
       for (const row of stubs) {
         const [frame] = yield* call(() => parseBytes(b(row.wire)));
-        const disabled = new Reactor(hby, { kram: { enabled: false } });
+        const disabled = new Reactor(protocolFixture(hby, { kram: { enabled: false } }));
 
         {
-          const { decision } = yield* disabled.dispatch(frame);
+          const { decision } = yield* disabled.protocol.dispatch(frame);
           assertEquals(decision, { kind: "drop", reason: "referenceStub" });
         }
       }

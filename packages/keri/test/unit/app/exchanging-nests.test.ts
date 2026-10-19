@@ -358,7 +358,7 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
           gvrsn: Vrsn_2_0,
         })).then(parseBytes)
       );
-      const { envelope: ready } = yield* runtime.reactor.dispatch(retry, { mailboxAid: provider.pre });
+      const { envelope: ready } = yield* runtime.protocol.dispatch(retry, { mailboxAid: provider.pre });
       assertEquals(ready!.nests[0].body.raw, nest.body.raw);
       assertEquals(yield* call(() => collectPayload(essrWire(ready!.nests[0].essrs!))), wire);
       assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before returning accepted evidence");

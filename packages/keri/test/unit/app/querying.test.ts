@@ -19,6 +19,7 @@ import { defaultRuntimeClock, type RuntimeServices } from "../../../src/app/runt
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 // @ts-expect-error There is one query body; the legacy alias cannot coexist with q.
 void ({ kin: "query", pre: "aid", route: "logs", q: {}, query: {} } satisfies QueryCue);
@@ -130,7 +131,7 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
     const coordinator = new QueryCoordinator(hby, {
-      reactor: new Reactor(hby),
+      reactor: new Reactor(protocolFixture(hby)),
       services: queryHttp(messages),
       hab: ambient,
     });
@@ -313,7 +314,11 @@ Deno.test("query preparation retains failed heads and limits one pass to its ini
     const hab = hby.makeHab("sender");
     seedControllerEndpoint(hby, hab.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab, services: queryHttp(messages) });
+    const coordinator = new QueryCoordinator(hby, {
+      reactor: new Reactor(protocolFixture(hby)),
+      hab,
+      services: queryHttp(messages),
+    });
     const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
     const sign = hab.query, fault = new Error("signing failed");
     try {
@@ -352,7 +357,11 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
       second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, { reactor: new Reactor(hby), hab, services: queryHttp(messages) });
+    const coordinator = new QueryCoordinator(hby, {
+      reactor: new Reactor(protocolFixture(hby)),
+      hab,
+      services: queryHttp(messages),
+    });
     const seal = { i: hab.pre, s: "0", d: hab.pre };
     const anchor = coordinator.watchAnchor(hab.pre, seal, { wits: [first.pre, second.pre] });
     try {

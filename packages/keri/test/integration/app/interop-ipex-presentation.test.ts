@@ -382,7 +382,7 @@ for (const count of [1, 2]) {
               yield* call(() => post(`${receiverUrl}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
             }
             assertEquals(receiverRuntime.acdc!.store.head(prip.said!)?.qb64, later.said);
-            yield* receiverRuntime.reactor.exchanger.processEscrows();
+            yield* receiverRuntime.protocol.exc.processEscrows();
             assertExists(
               receiverHby.db.exns.get(grant.said!),
               "the binding at receipt time survives later TEL updates",

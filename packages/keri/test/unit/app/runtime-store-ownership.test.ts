@@ -62,7 +62,7 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       const local = runtime.acdc!.makeRegistry("local", issuer.pre);
       assertEquals(local.sn, -1n);
       issuer.interact({ data: [{ i: local.regk!, s: "0", d: local.regk! }] });
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(local.sn, 0n, "runtime advances the real v2 registry manager");
       yield* runtime.close();
       assertReleased(registry);
@@ -99,7 +99,7 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       });
 
       assertEquals(runtime.acdc, rgy);
-      assertEquals(runtime.reactor.registry, rgy);
+      assertEquals(runtime.protocol.registry, rgy);
       assertEquals(runtime.vdr!.reger, reger);
       yield* runtime.close();
       assertEquals(registry.opened, true);

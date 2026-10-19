@@ -293,7 +293,7 @@ export function* processCredentialPresentationArtifacts(
   yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.anc.genus), artifacts.anc.wire));
   yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.iss.genus), artifacts.iss.wire));
   yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.acdc.genus), artifacts.acdc.wire));
-  yield* reactor.processEscrowsOnce();
+  yield* reactor.protocol.processEscrowsOnce();
 }
 
 /** Rebuild grant-embedded `anc`, `iss`, and `acdc` streams from exchange storage. */

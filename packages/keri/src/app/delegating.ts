@@ -388,7 +388,7 @@ export class Anchorer {
       reactor?: Reactor;
     },
   ) {
-    if (reactor && reactor.hby !== hby) throw new RangeError("Anchorer Reactor must own the same Habery");
+    if (reactor && reactor.kvy.db !== hby.db) throw new RangeError("Anchorer Reactor must own the same Habery");
     this.hby = hby;
     this.reactor = reactor;
     this.postman = postman;

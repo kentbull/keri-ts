@@ -3,7 +3,7 @@ import { parse } from "cesr-ts";
 import { call, ensure, on, type Operation, race, spawn } from "npm:effection@^3.6.0";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import type { Reactor } from "./reactor.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { socketBytes } from "./socket-source.ts";
 import {
   openTcpConnection,
@@ -13,9 +13,10 @@ import {
   type TcpTransmission,
 } from "./tcp-egress.ts";
 
-/** Protocol processor borrowed only by this application; transport receives no consumer. */
+/** Shared protocol owner borrowed by this application; low-level transport receives no consumer. */
 export interface TcpReplyReceiver {
-  reactor: Reactor;
+  /** Serialize received frames with other inputs over the same accepted-state domain. */
+  protocol: ProtocolProcessor;
 }
 
 /** Same-socket protocol processing selected explicitly by the application owner. */
@@ -59,6 +60,8 @@ function conversation(
   return call(function*() {
     const { replies, ...output } = options;
     const connection = yield* openTcpConnection(url, output);
+    // This input has its own Kevery; accepted state and publication remain shared.
+    const kvy = replies.protocol.makeKevery();
     let processedFrames = 0;
     const receive = yield* spawn(function*() {
       yield* race([
@@ -94,9 +97,10 @@ function conversation(
               pending = undefined;
               signal.throwIfAborted();
               if (next.done) return;
-              yield* replies.reactor.dispatch(
+              yield* replies.protocol.dispatch(
                 next.value,
                 { local: replies.local ?? true, escrows: true },
+                kvy,
               );
               processedFrames++;
             }

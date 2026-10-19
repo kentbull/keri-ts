@@ -37,7 +37,7 @@ preserves receive processing. Concrete network errors retain original causes.
 KERIpy-shaped owners, records and Decks. Refactor responsibility/contracts first,
 then behavior. No runtime-shaped sibling bundles, generic execution gates or
 forwarding-only facades. Lower transport knows actual byte I/O, not AgentRuntime. Tevery owns TSN route
-admission/retries; Reactor composes and advances the processor without naming
+admission/retries; ProtocolProcessor advances the composed processor without naming
 its registry/credential handlers.
 Application boundaries select optional owners before effects; subordinate helpers receive
 concrete dependencies, not root lookup guards. Finite commands run the host workers under elapsed deadlines and join them before

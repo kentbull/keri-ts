@@ -50,7 +50,7 @@ Independent Baser/Reger environments are not one atomic transaction.
 
 Keep state-sensitive evaluation/application in the required uninterrupted owner
 turn. Do not wait on network I/O while holding a transaction or protocol turn.
-Reactor serializes actual dispatch/escrows, captures replies before application
+ProtocolProcessor serializes actual dispatch/escrows, captures replies before application
 publication and returns decision data. It exposes no arbitrary callback gate.
 Output owners sign, route and consume request slots directly.
 

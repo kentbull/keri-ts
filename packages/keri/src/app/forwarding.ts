@@ -52,7 +52,7 @@ import {
   mailboxTopicKey,
 } from "./mailboxing.ts";
 import { Organizer } from "./organizing.ts";
-import type { Reactor } from "./reactor.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { converseCesrTcp, type TcpReplyReceiver } from "./tcp-conversation.ts";
@@ -116,7 +116,7 @@ export function* sendPreparedCesrTarget(
       yield* converseCesrTcp(target.url, target.message, {
         clock: services.clock,
         signal,
-        replies: { reactor: receiver.reactor, local: true },
+        replies: { protocol: receiver.protocol, local: true },
       });
     } else yield* sendCesrTcp(target.url, target.message, { clock: services.clock, signal });
   } else if (target.kind === "http") {
@@ -184,21 +184,21 @@ export class Poster {
   /** Resolves after active delivery and its owned cleanup have joined. */
   private joined?: Promise<void>;
   /** Borrowed same-socket protocol receiver; null explicitly selects send-only capability. */
-  private readonly reactor: Reactor | null;
+  private readonly protocol: ProtocolProcessor | null;
 
   /** Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores. */
-  constructor(hby: Habery, mbx: Mailboxer | null, reactor: Reactor | null, services: RuntimeServices) {
+  constructor(hby: Habery, mbx: Mailboxer | null, protocol: ProtocolProcessor | null, services: RuntimeServices) {
     this.hby = hby;
     this.mbx = mbx;
     this.organizer = new Organizer(hby.db, hby.signator);
     this.services = services;
-    this.reactor = reactor;
+    this.protocol = protocol;
   }
 
   /** Admit signed source bytes; callers must observe an outcome before reporting transmission. */
   send(evt: PosterEvent, { notify = false }: { notify?: boolean } = {}): PosterEvent {
     this.ensureOpen();
-    if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
+    if (evt.replies && !this.protocol) throw new Error("TCP reply delivery requires a protocol processor");
     // Admission owns the source bytes; later producer mutation cannot change queued work.
     const admitted = { ...evt, msg: evt.msg.slice() };
     if (notify) this.notifications.add(admitted);
@@ -211,7 +211,7 @@ export class Poster {
     this.ensureOpen();
     const pending: PosterEvent[] = [];
     for (const evt of evts) {
-      if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
+      if (evt.replies && !this.protocol) throw new Error("TCP reply delivery requires a protocol processor");
       pending.push({ ...evt, msg: evt.msg.slice() });
     }
     // Publish only after every event has passed capability checks and byte copying.
@@ -410,7 +410,7 @@ export class Poster {
               target,
               this.services,
               signal,
-              evt.replies ? { reactor: this.reactor! } : undefined,
+              evt.replies ? { protocol: this.protocol! } : undefined,
             );
           }
         } catch (error) {

@@ -21,6 +21,7 @@ import { Revery } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   let total = 0;
@@ -923,7 +924,7 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
         toad: 0,
       });
       const query = bob.query(alice.pre, bob.pre, { route: "ksn", q: {} });
-      const reactor = new Reactor(remote);
+      const reactor = new Reactor(protocolFixture(remote));
 
       reactor.ingest(query);
       yield* reactor.processOnce();
@@ -935,15 +936,15 @@ Deno.test("Reactor query ingress preserves transferable requester signatures thr
         alice.kever?.said ?? "",
       );
       assertExists(aliceEvent);
-      reactor.kevery.processEvent(eventEnvelope({
+      reactor.kvy.processEvent(eventEnvelope({
         serder: aliceEvent,
         sigers: alice.sign(aliceEvent.raw, true),
       }));
-      reactor.kevery.processQueryNotFound();
+      reactor.kvy.processQueryNotFound();
 
-      let cue = reactor.kevery.cues.pull();
+      let cue = reactor.kvy.cues.pull();
       while (cue && cue.kin !== "reply") {
-        cue = reactor.kevery.cues.pull();
+        cue = reactor.kvy.cues.pull();
       }
       assertExists(cue);
       assertEquals(remote.db.qnfs.cnt(), 0);
@@ -1560,7 +1561,7 @@ Deno.test("Kevery.processQuery escrows `ksn` until the authoritative event is fu
       assertEquals(remote.db.qnfs.cnt(), 1);
       assertEquals(pullCueOfKin(kvy, "reply"), undefined);
 
-      const reactor = new Reactor(remote);
+      const reactor = new Reactor(protocolFixture(remote));
       reactor.ingest(witness.witness(controllerEvent));
       yield* reactor.processOnce();
       kvy.processEscrows();
