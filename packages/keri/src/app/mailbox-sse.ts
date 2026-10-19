@@ -1,6 +1,6 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
-import type { HttpResponse } from "./http-client.ts";
+import type { HttpStreamResponse } from "./http-client.ts";
 import { defaultRuntimeClock, type RuntimeClock } from "./runtime-services.ts";
 
 /** Shared encoder for complete mailbox event payloads. */
@@ -65,7 +65,7 @@ function appendBytes(
  * EOF, and cancellation discard an incomplete final event so its cursor can retry.
  */
 export function consumeMailboxSse(
-  response: HttpResponse,
+  response: HttpStreamResponse,
   controller: AbortController,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
   options: MailboxSseOptions = {},
@@ -116,7 +116,7 @@ export function consumeMailboxSse(
  * uses consumeMailboxSse to deliver complete events as they arrive.
  */
 export function readMailboxSseBody(
-  response: HttpResponse,
+  response: HttpStreamResponse,
   controller: AbortController,
   options: MailboxSseOptions = {},
 ): Operation<string> {
@@ -161,7 +161,7 @@ export function parseMailboxSse(text: string): MailboxSseMessage[] {
 
 /** Apply SSE deadlines to the owned byte source; the HTTP client retains native reader mechanics. */
 function* consumeChunks(
-  response: HttpResponse,
+  response: HttpStreamResponse,
   controller: AbortController,
   consume: (chunk: Uint8Array) => Operation<boolean | void>,
   options: MailboxSseOptions,

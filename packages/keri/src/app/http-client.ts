@@ -1,6 +1,8 @@
 /** Native HTTP request construction, byte I/O and joined attempt cleanup. */
-import { call, type Operation, resource } from "npm:effection@^3.6.0";
+import { call, type Operation, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
+import { abortable } from "./abortable.ts";
+import { collectBytes } from "./byte-source.ts";
 import { TransportError } from "./transport-error.ts";
 
 /** Existing HTTP request choices; protocol framing and retry policy belong to callers. */
@@ -17,8 +19,20 @@ export interface HttpRequestInit {
   signal?: AbortSignal | null;
 }
 
-/** Response metadata and one request-owned byte source, valid only inside its request scope. */
+/** Completed finite response; its bytes remain usable after the request has closed. */
 export interface HttpResponse {
+  /** HTTP status, interpreted by the application or protocol owner. */
+  readonly status: number;
+  /** Whether the status is successful; full body consumption has already completed. */
+  readonly ok: boolean;
+  /** Received protocol metadata. */
+  readonly headers: Headers;
+  /** Complete resident response bytes. */
+  readonly body: Uint8Array;
+}
+
+/** Response metadata and one request-owned byte source, valid only inside its request scope. */
+export interface HttpStreamResponse {
   /** HTTP status; non-success statuses remain application/protocol decisions. */
   readonly status: number;
   /** Success derived from the HTTP status, independent of body/protocol acceptance. */
@@ -31,8 +45,10 @@ export interface HttpResponse {
 
 /** A scoped HTTP implementation supplied by composition, with an explicit transport-error contract. */
 export interface HttpClient {
-  /** Construct and execute one request; enclosing scope exit joins all native I/O. */
+  /** Return finite response bytes after the owned request scope has closed. */
   request(url: string, init?: HttpRequestInit): Operation<HttpResponse>;
+  /** Borrow one streaming response until the enclosing scope ends. */
+  open(url: string, init?: HttpRequestInit): Operation<HttpStreamResponse>;
 }
 
 /** Throw distinct failures without losing an undefined rejection or hiding cleanup behind an I/O error. */
@@ -48,9 +64,19 @@ function throwFailures(errors: unknown[]): void {
  * retain their identity. Protocol consumers never receive the native Response.
  */
 export class FetchHttpClient implements HttpClient {
-  /** Acquire a response whose body remains owned by the caller's request scope. */
+  /** Consume finite bytes and finish the request scope before returning a completed response. */
   request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
-    return resource<HttpResponse>(function*(provide) {
+    const open = this.open.bind(this);
+    return scoped(function*() {
+      const response = yield* open(url, init);
+      const body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
+      return { status: response.status, ok: response.ok, headers: response.headers, body };
+    });
+  }
+
+  /** Acquire a response whose body remains owned by the caller's request scope. */
+  open(url: string, init: HttpRequestInit = {}): Operation<HttpStreamResponse> {
+    return resource<HttpStreamResponse>(function*(provide) {
       const controller = new AbortController();
       const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
       let response: Response | undefined;

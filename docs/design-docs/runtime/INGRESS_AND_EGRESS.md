@@ -266,8 +266,10 @@ cleanup. Producers finish each finite request body before network execution; the
 client accepts prepared bytes or text, with no asynchronous upload source. No lower CESR helper
 compares client identities or selects a default HTTP implementation.
 
-HttpResponse contains status, derived ok, headers and one body(signal) byte source.
-It is borrowed within the request scope; native Response/readers do not escape.
+HttpClient.request returns completed HttpResponse metadata and resident body bytes
+after EOF and scope cleanup. HttpClient.open lends HttpStreamResponse metadata and
+one body(signal) byte source for SSE, incremental CESR and status-only decisions.
+The streaming result is borrowed within the request scope; native Response/readers do not escape.
 Consumer cancellation wakes a blocked native read before parser/source teardown joins
 it. Native read failures are classified at the same concrete owner that issued the
 request. CESR/SSE/JSON parsers and storage execute outside transport catches.

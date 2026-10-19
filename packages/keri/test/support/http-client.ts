@@ -1,13 +1,14 @@
 /** Test HTTP peers implementing the scoped client contract without classifying arbitrary injected failures. */
-import { call, resource } from "effection";
-import { streamBytes } from "../../src/app/byte-source.ts";
-import type { HttpClient, HttpResponse } from "../../src/app/http-client.ts";
+import { call, resource, scoped } from "effection";
+import { abortable } from "../../src/app/abortable.ts";
+import { collectBytes, streamBytes } from "../../src/app/byte-source.ts";
+import type { HttpClient, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
 
 /** Existing test peers describe HTTP response bytes and exact exceptional outcomes. */
 export type TestHttpResponder = (url: string, init?: RequestInit) => Response | Promise<Response>;
 
 /** Adapt a test response into one owned byte source; protocol tests do not need native network classification. */
-export function httpResponse(response: Response, ownerSignal?: AbortSignal): HttpResponse {
+export function httpResponse(response: Response, ownerSignal?: AbortSignal): HttpStreamResponse {
   return {
     status: response.status,
     ok: response.ok,
@@ -38,8 +39,16 @@ export function httpResponse(response: Response, ownerSignal?: AbortSignal): Htt
 /** Supply a deterministic peer through the actual request contract; preserve deliberately injected error identity. */
 export function httpClient(respond: TestHttpResponder): HttpClient {
   return {
-    request(url, init = {}) {
-      return resource<HttpResponse>(function*(provide) {
+    request(url, init = {}): import("effection").Operation<HttpResponse> {
+      const open = this.open.bind(this);
+      return scoped(function*() {
+        const response = yield* open(url, init);
+        const body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
+        return { status: response.status, ok: response.ok, headers: response.headers, body };
+      });
+    },
+    open(url, init = {}) {
+      return resource<HttpStreamResponse>(function*(provide) {
         const controller = new AbortController();
         const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
         let response: Response | undefined;

@@ -9,7 +9,8 @@ state and compares hosted did.json. Hosted JSON alone is not verification.
 Binding and artifact generation take the concrete legacy Regery and use its Habery.
 Resolution takes Regery, Reactor and the HTTP client explicitly. CLI/HTTP adapters
 check registry availability before schema writes, fetches or OOBI introductions.
-CESR resolution streams through the supplied Reactor;
+Artifact headers and streaming bytes use HttpClient.open, preserving header-only
+URL fallback decisions. CESR resolution streams through the supplied Reactor;
 only genuine EOF followed by escrow processing permits full-document comparison.
 Late failure preserves independently accepted state. Explicit opening TransportError
 and HTTP refusals may use the existing URL fallback; arbitrary injected, body/parser,

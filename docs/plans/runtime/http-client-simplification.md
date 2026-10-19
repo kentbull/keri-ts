@@ -1,7 +1,7 @@
 # Simplify HTTP requests and response ownership
 
-Status: implementation in progress; phase 1 prepares bodies and removes upload
-ownership. Phases 2 and 3 remain outstanding. Reviewed
+Status: implementation in progress; phase 1 is merged as PR #541. Phase 2 introduces the
+finite/open contract; phase 3 remains outstanding. Reviewed
 against local `e5e78024309846bd26e5e4cd3880a5e1c53eb58e` on 2026-10-19. Verify
 current master and applicable instructions before implementation. This follows
 the completed [HTTP ownership refactor](http-request-ownership-refactor.md).

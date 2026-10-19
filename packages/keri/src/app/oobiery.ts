@@ -15,7 +15,7 @@ import { abortable } from "./abortable.ts";
 import { collectBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import type { HttpResponse } from "./http-client.ts";
+import type { HttpStreamResponse } from "./http-client.ts";
 import { closeResponseBody } from "./httping.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
@@ -235,7 +235,7 @@ export class Oobiery {
       said: meta.said ?? null,
     };
     // Stage attempt metadata only; the original queue row stays owned until result publication.
-    const response = yield* services.http.request(url);
+    const response = yield* services.http.open(url);
     try {
       yield* this.processResponse(kind, url, queuedRecord, meta, response);
     } finally {
@@ -249,7 +249,7 @@ export class Oobiery {
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
-    response: HttpResponse,
+    response: HttpStreamResponse,
   ): Operation<void> {
     if (!response.ok) {
       yield* closeResponseBody(response);
@@ -308,7 +308,7 @@ export class Oobiery {
     url: string,
     queuedRecord: OobiRecordShape,
     meta: { cid?: string | null; role?: string | null; eid?: string | null },
-    response: HttpResponse,
+    response: HttpStreamResponse,
   ): Operation<void> {
     const cue: OobiResolvedCue = {
       kin: "oobiResolved",
@@ -754,6 +754,6 @@ function isCesrMediaType(type: string): boolean {
 export { OOBI_MAILBOX_TOPIC };
 
 /** Collect one finite OOBI document and join its reader on cancellation. */
-function* readResponseBytes(response: HttpResponse): Operation<Uint8Array> {
+function* readResponseBytes(response: HttpStreamResponse): Operation<Uint8Array> {
   return yield* abortable((signal) => collectBytes(response.body(signal)));
 }

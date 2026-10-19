@@ -335,7 +335,7 @@ export class VerifierAgent {
     const raw = JSON.stringify(body);
     const services = this.services, hook = this.hook;
     return yield* call(function*() {
-      const response = yield* services.http.request(hook, {
+      const response = yield* services.http.open(hook, {
         method: "POST",
         headers: {
           "content-type": "application/json",

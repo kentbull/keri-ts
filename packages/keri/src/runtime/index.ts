@@ -58,7 +58,12 @@ export {
   cueDo,
   processCuesOnce,
 } from "../app/cue-runtime.ts";
-export { FetchHttpClient, type HttpRequestInit, type HttpResponse } from "../app/http-client.ts";
+export {
+  FetchHttpClient,
+  type HttpRequestInit,
+  type HttpResponse,
+  type HttpStreamResponse,
+} from "../app/http-client.ts";
 export {
   type DispatchResult,
   envelopeFromFrame,

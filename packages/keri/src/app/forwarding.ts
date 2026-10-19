@@ -10,7 +10,7 @@
  * - delivery and polling use scoped Effection workers instead of HIO doers
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
-import type { HttpResponse } from "./http-client.ts";
+import type { HttpStreamResponse } from "./http-client.ts";
 
 import {
   attachmentPayload,
@@ -1220,7 +1220,7 @@ function* fetchMailboxQueryResponse(
   services: RuntimeServices = defaultRuntimeServices,
 ): Operation<
   {
-    response: HttpResponse;
+    response: HttpStreamResponse;
     controller: AbortController;
   } | null
 > {

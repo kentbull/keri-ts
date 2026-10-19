@@ -1,11 +1,11 @@
 /** HTTP caller policies; the composed client owns native requests, readers and cleanup. */
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { abortable } from "./abortable.ts";
-import type { HttpClient, HttpRequestInit, HttpResponse } from "./http-client.ts";
+import type { HttpClient, HttpRequestInit, HttpStreamResponse } from "./http-client.ts";
 import type { RuntimeClock, RuntimeTimer } from "./runtime-services.ts";
 
 /** Close an unread owned body before a caller publishes its status-only result. */
-export function* closeResponseBody(response: HttpResponse): Operation<void> {
+export function* closeResponseBody(response: HttpStreamResponse): Operation<void> {
   const iterator = response.body()[Symbol.asyncIterator]();
   yield* abortable(async () => {
     await iterator.return?.();
@@ -24,8 +24,8 @@ export function requestWithHeaderTimeout(
   url: string,
   init: HttpRequestInit,
   timeoutMs: number,
-): Operation<HttpResponse | null> {
-  return resource<HttpResponse | null>(function*(provide) {
+): Operation<HttpStreamResponse | null> {
+  return resource<HttpStreamResponse | null>(function*(provide) {
     const controller = new AbortController();
     const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
     let timer: RuntimeTimer | undefined;
@@ -46,7 +46,7 @@ export function requestWithHeaderTimeout(
       try {
         // Keep acquisition failure inside an error boundary without closing a successful body early.
         yield* call(function*() {
-          const response = yield* http.request(url, { ...init, signal });
+          const response = yield* http.open(url, { ...init, signal });
           clearTimer();
           yield* provide(response);
         });

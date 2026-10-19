@@ -40,7 +40,9 @@ hollow modes and unused hooks are removed rather than renamed.
 
 HTTP composition supplies the scoped request client. Its concrete owner constructs
 Request before network execution and retains the native response reader through
-joined cleanup. Protocol/application consumers receive metadata and owned bytes;
+joined cleanup. Prepared request bodies contain no asynchronous producers. Finite
+request returns metadata and complete bytes after cleanup; scoped open lends a
+stream for actual incremental/status-only consumers. Protocol/application consumers receive metadata and owned bytes;
 client object identity never chooses failure semantics.
 
 A shared Deck is not broadcast. Define its consumer and routing; fan out only when

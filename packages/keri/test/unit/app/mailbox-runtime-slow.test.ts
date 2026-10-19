@@ -19,7 +19,7 @@ import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/ap
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import type { HttpResponse } from "../../../src/app/http-client.ts";
+import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
@@ -158,13 +158,13 @@ function anchorDelegatedHab(
 }
 
 /** Read one JSON response body inside the Effection runtime. */
-function* jsonOp<T>(response: Response | HttpResponse): Operation<T> {
+function* jsonOp<T>(response: Response | HttpStreamResponse): Operation<T> {
   return JSON.parse(yield* textOp(response)) as T;
 }
 
 /** Assert one HTTP status and surface the response body on mismatch. */
 function* assertResponseStatus(
-  response: Response | HttpResponse,
+  response: Response | HttpStreamResponse,
   expected: number,
 ): Operation<void> {
   if (response.status === expected) {
@@ -286,7 +286,7 @@ function* postMailboxAdmin(
   body: Uint8Array,
   contentType = "application/cesr",
   http?: FakeRuntimeHttpClient,
-): Operation<Response | HttpResponse> {
+): Operation<Response | HttpStreamResponse> {
   const init = {
     method: "POST",
     headers: { "Content-Type": contentType },
@@ -300,14 +300,16 @@ function* postMailboxAdminMultipart(
   url: string,
   fields: Array<[string, string]>,
   http?: FakeRuntimeHttpClient,
-): Operation<Response | HttpResponse> {
+): Operation<Response | HttpStreamResponse> {
   const form = new FormData();
   for (const [name, value] of fields) {
     form.set(name, value);
   }
+  const prepared = new Response(form);
   const init = {
     method: "POST",
-    body: form,
+    headers: prepared.headers,
+    body: yield* call(() => prepared.arrayBuffer()),
   };
   return http ? yield* fakeFetchOp(http, url, init) : yield* fetchOp(url, init);
 }
@@ -316,9 +318,9 @@ function* postMailboxAdminMultipart(
 function* fakeFetchOp(
   http: FakeRuntimeHttpClient,
   url: string,
-  init?: RequestInit,
-): Operation<Response | HttpResponse> {
-  return yield* http.request(url, init);
+  init?: HttpRequestInit,
+): Operation<Response | HttpStreamResponse> {
+  return yield* http.open(url, init);
 }
 
 Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add/cut state", async () => {
