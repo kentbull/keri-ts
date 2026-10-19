@@ -5,9 +5,9 @@ import { collectBytes } from "../../../src/app/byte-source.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
 
-Deno.test("HTTP constructs Request before fetch and before opening an upload source", async () => {
+Deno.test("HTTP validates prepared requests before fetch", async () => {
   const original = globalThis.fetch;
-  let requests = 0, opens = 0;
+  let requests = 0;
   globalThis.fetch = () => {
     requests++;
     return Promise.resolve(new Response(null, { status: 204 }));
@@ -22,16 +22,12 @@ Deno.test("HTTP constructs Request before fetch and before opening an upload sou
         run(() =>
           client.request("https://peer.test/", {
             ...init,
-            body: async function*() {
-              opens++;
-              yield new Uint8Array([1]);
-            },
+            body: new Uint8Array([1]),
           })
         )
       );
     }
     assertEquals(requests, 0);
-    assertEquals(opens, 0);
     const controller = new AbortController();
     const cancelled = new Error("already cancelled");
     controller.abort(cancelled);
@@ -151,75 +147,6 @@ Deno.test("HTTP body failures retain native cause without duplicating cancellati
   }
 });
 
-Deno.test("HTTP upload faults survive platform wrapping and cleanup remains visible", async () => {
-  const original = globalThis.fetch;
-  const fault = new Error("source failed"), cleanup = new Error("source cleanup failed");
-  globalThis.fetch = async (input) => {
-    try {
-      await (input as Request).arrayBuffer();
-    } catch {
-      throw new TypeError("fetch failed");
-    }
-    return new Response(null, { status: 204 });
-  };
-  try {
-    assertStrictEquals(
-      await assertRejects(() =>
-        run(() =>
-          new FetchHttpClient().request("https://peer.test/", {
-            method: "POST",
-            body: async function*() {
-              throw fault;
-            },
-          })
-        )
-      ),
-      fault,
-    );
-    const both = await assertRejects(() =>
-      run(() =>
-        new FetchHttpClient().request("https://peer.test/", {
-          method: "POST",
-          body: () => ({
-            [Symbol.asyncIterator]() {
-              return {
-                next: () => Promise.reject(fault),
-                return: () => Promise.reject(cleanup),
-              };
-            },
-          }),
-        })
-      ), AggregateError);
-    assertEquals(both.errors, [fault, cleanup]);
-    globalThis.fetch = async (input) => {
-      const reader = (input as Request).body!.getReader();
-      await reader.read();
-      reader.releaseLock();
-      return new Response(null, { status: 204 });
-    };
-    assertStrictEquals(
-      await assertRejects(() =>
-        run(() =>
-          new FetchHttpClient().request("https://peer.test/", {
-            method: "POST",
-            body: () => ({
-              [Symbol.asyncIterator]() {
-                return {
-                  next: () => Promise.resolve({ done: false, value: new Uint8Array([1]) }),
-                  return: () => Promise.reject(cleanup),
-                };
-              },
-            }),
-          })
-        )
-      ),
-      cleanup,
-    );
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
 Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fetch failure", async () => {
   const original = globalThis.fetch;
   const cleanup = new Error("cleanup failed"), foreign = new DOMException("foreign", "AbortError");
@@ -251,41 +178,6 @@ Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fet
     await started.promise;
     const failure = await assertRejects(() => task.halt(), TransportError);
     assertStrictEquals(failure.cause, foreign);
-  } finally {
-    globalThis.fetch = original;
-  }
-});
-
-Deno.test("HTTP platform upload cancellation wakes its source without canceling a successful response", async () => {
-  const original = globalThis.fetch;
-  let sourceJoined = false;
-  globalThis.fetch = async (input) => {
-    const reader = (input as Request).body!.getReader();
-    const pending = reader.read();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await reader.cancel();
-    await pending;
-    reader.releaseLock();
-    return new Response("accepted");
-  };
-  try {
-    const result = await run(function*() {
-      const response = yield* new FetchHttpClient().request("https://peer.test/", {
-        method: "POST",
-        body: async function*(signal) {
-          try {
-            await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-            signal.throwIfAborted();
-            yield new Uint8Array([1]);
-          } finally {
-            sourceJoined = true;
-          }
-        },
-      });
-      return yield* call(() => collectBytes(response.body()));
-    });
-    assertEquals(new TextDecoder().decode(result), "accepted");
-    assertEquals(sourceJoined, true);
   } finally {
     globalThis.fetch = original;
   }

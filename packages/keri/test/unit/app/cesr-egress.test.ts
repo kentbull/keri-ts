@@ -138,7 +138,7 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
   let closed = false;
   const transport = {
     ...services(async (_url, init) => {
-      // Reading a real platform request stream exercises the serializer and fetch body adapter together.
+      // Reading the prepared platform body checks the complete frame before its request.
       const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
       const frame = await read(bytes);
 
@@ -569,8 +569,10 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
     ]
   ) {
     for (const origin of ["source", "fetch", "body", "cleanup", "peer"] as const) {
+      let requests = 0;
       const transport = services(async (_url, init) => {
         await new Response(init!.body).arrayBuffer();
+        requests++;
         if (origin === "fetch") throw failure;
         if (origin === "body") {
           return new Response(
@@ -613,6 +615,7 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
         assertEquals(result.error.status, 503);
       } else {
         assertStrictEquals(await assertRejects(send), failure);
+        if (origin === "source") assertEquals(requests, 0);
       }
     }
   }

@@ -98,7 +98,8 @@ function openFrameResponse(
           headers,
           signal: options.signal,
           body: mode === "body"
-            ? (signal) => framePayload(frame).open(signal)
+            ? (yield* abortable((signal) => collectPayload(framePayload(frame), signal), options.signal))
+              .buffer as ArrayBuffer
             : frame.body.raw.slice().buffer as ArrayBuffer,
         });
         if (response.ok) {

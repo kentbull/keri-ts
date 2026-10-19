@@ -44,36 +44,12 @@ export function httpClient(respond: TestHttpResponder): HttpClient {
         const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
         let response: Response | undefined;
         let pending: Promise<Response> | undefined;
-        let source: AsyncIterator<Uint8Array> | undefined;
-        let sourceRead: Promise<IteratorResult<Uint8Array>> | undefined;
-        let sourceFailure: { error: unknown } | undefined;
         let reported: { error: unknown } | undefined;
         let bytes: AsyncIterator<Uint8Array> | undefined;
         try {
           signal.throwIfAborted();
-          const open = typeof init.body === "function" ? init.body : undefined;
-          const body = open
-            ? new ReadableStream<Uint8Array>({
-              async pull(stream) {
-                try {
-                  source ??= open(signal)[Symbol.asyncIterator]();
-                  sourceRead = source.next();
-                  const next = await sourceRead;
-                  if (next.done) stream.close();
-                  else stream.enqueue(next.value);
-                } catch (error) {
-                  sourceFailure = { error };
-                  throw error;
-                }
-              },
-            }, { highWaterMark: 0 })
-            : init.body as BodyInit | null | undefined;
-          pending = Promise.resolve(respond(url, { ...init, signal, body }));
-          try {
-            response = yield* call(() => pending!);
-          } catch (error) {
-            throw sourceFailure ? sourceFailure.error : error;
-          }
+          pending = Promise.resolve(respond(url, { ...init, signal, body: init.body as BodyInit | null | undefined }));
+          response = yield* call(() => pending!);
           const owned = httpResponse(response, signal);
           yield* provide({
             ...owned,
@@ -102,7 +78,7 @@ export function httpClient(respond: TestHttpResponder): HttpClient {
             try {
               response = await pending;
             } catch (error) {
-              remember(sourceFailure ? sourceFailure.error : error);
+              remember(error);
             }
             try {
               await bytes?.return?.();
@@ -111,12 +87,6 @@ export function httpClient(respond: TestHttpResponder): HttpClient {
             }
             try {
               if (response?.body && !response.body.locked) await response.body.cancel();
-            } catch (error) {
-              remember(error);
-            }
-            await sourceRead?.catch(() => undefined);
-            try {
-              await source?.return?.();
             } catch (error) {
               remember(error);
             }

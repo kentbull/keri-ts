@@ -10,6 +10,10 @@ baseline: local HEAD and remote `master` both verified at
 implementation. This plan follows the completed [messenger refactor](messenger-protocol-refactor.md)
 and the response-body simplification in PR #538.
 
+Follow-up: the proposed [HTTP client simplification](http-client-simplification.md)
+narrows upload and cleanup guarantees while preserving this composition boundary.
+Its finite/open response split is not implemented yet.
+
 ## Decision and scope
 
 Composition supplies the HTTP implementation. One concrete HTTP request owner

@@ -619,6 +619,7 @@ function* postMailboxAdminCesr(
   return { ok: response.ok, status: response.status, body };
 }
 
+/** Prepare multipart control bytes before starting the administrative HTTP request. */
 function* postMailboxAdminMultipart(
   url: string,
   submission: {
@@ -634,9 +635,13 @@ function* postMailboxAdminMultipart(
   }
   form.append("rpy", new TextDecoder().decode(rpy));
 
+  // Use the platform encoder once, preserving its generated multipart boundary.
+  const prepared = new Response(form);
+  const bytes = yield* call(() => prepared.arrayBuffer());
   const response = yield* defaultRuntimeServices.http.request(mailboxAdminUrl(url), {
     method: "POST",
-    body: form,
+    headers: prepared.headers,
+    body: bytes,
   });
 
   // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
