@@ -209,6 +209,8 @@ authorization; reading requires current requester proof/threshold, not correlati
 alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
 HTTP(S); TCP-only explicit mailbox roles retain precedence while awaiting HTTP.
 Without explicit mailbox routing, poll all eligible witnesses concurrently.
+Polling timeout overrides floor finite positive values with a 1 ms minimum;
+missing/nonfinite/nonpositive values retain the header/poll defaults.
 Remote SSE consumer completion precedes durable cursor advancement and the next
 read. Stored positions are last-consumed; requests send next-wanted. Local polling
 collects proposed next-wanted positions without mutation and publishes the whole

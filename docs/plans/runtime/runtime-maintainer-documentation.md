@@ -55,10 +55,11 @@ requires every ledger entry reviewed and source/design docs consistent.
   retain the previous positions for a restarted worker on the same poller, with
   possible duplicate processing. Regressions cover both consumer forms, joined
   cancellation, multi-topic/prefix progress and partial collection failure.
-- `positiveTimeoutMs` floors positive fractional input, so values below one
-  millisecond become zero; downstream SSE validation can reject them. A separate
-  policy change should either reject fractions or clamp positive values to one.
-  No validation policy is changed here.
+- **Fractional timeout finding resolved by [#555](https://github.com/kentbull/keri-ts/pull/555).**
+  Both mailbox polling windows now floor finite positive overrides with a 1 ms
+  minimum. Missing, nonfinite and nonpositive inputs retain their existing defaults.
+  Boundary-value and manual-clock regressions cover header acquisition, SSE window
+  expiry and joined cleanup. Lower-level timeout contracts are unchanged.
 
 ## Delivery and verification record
 

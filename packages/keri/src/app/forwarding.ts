@@ -924,7 +924,7 @@ export class MailboxPoller {
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
    * @param pollTransport Explicit per-endpoint HTTP/SSE operation; no hidden transport selection.
-   * @param options Optional timeout overrides; defaults are 5-second headers and 30-second poll windows.
+   * @param options Optional timeout overrides; finite positive values are floored with a 1 ms minimum. Missing/nonpositive/nonfinite values use 5-second headers and 30-second poll windows.
    */
   constructor(
     hby: Habery,
@@ -1441,7 +1441,7 @@ function forwardedAttachmentForPath(
   return raw.slice(offset + pather.fullSize);
 }
 
-/** Explicit mailbox polling timeout policy for one runtime poller. */
+/** Mailbox polling windows in milliseconds; the poller floors positive overrides with a 1 ms minimum. */
 export interface MailboxPollingTimeoutPolicy {
   /** Abort the HTTP request when no response headers arrive before this deadline. */
   requestOpenTimeoutMs: number;
@@ -1673,7 +1673,7 @@ function* fetchMailboxQueryResponse(
  * Normalize the caller's polling policy against the existing defaults.
  *
  * @param overrides Optional timeout values; missing/nonpositive/nonfinite values use defaults.
- * @returns Frozen header/poll settings with valid positive inputs floored to integers.
+ * @returns Frozen header/poll settings with finite positive inputs floored and clamped to at least 1 ms.
  */
 function normalizeMailboxPollingTimeoutPolicy(
   overrides: Partial<MailboxPollingTimeoutPolicy> | undefined,
@@ -1708,15 +1708,15 @@ function mailboxFetchTimeoutPolicy(
 }
 
 /**
- * Apply the existing timeout normalization without adding new validation policy.
+ * Normalize a polling duration without turning a positive override into a zero-length window.
  *
  * @param value Optional proposed duration in milliseconds.
  * @param fallback Default used for missing, nonfinite or nonpositive input.
- * @returns Floored positive input, otherwise fallback; sub-millisecond input floors to zero.
+ * @returns Finite positive input floored with a 1 ms minimum; otherwise fallback.
  */
 function positiveTimeoutMs(
   value: number | undefined,
   fallback: number,
 ): number {
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.max(1, Math.floor(value)) : fallback;
 }
