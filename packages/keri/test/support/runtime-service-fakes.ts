@@ -6,7 +6,7 @@ import type {
   MailboxPollTransport,
   MailboxPollTransportRequest,
 } from "../../src/app/forwarding.ts";
-import type { HttpRequestInit, HttpResponse } from "../../src/app/http-client.ts";
+import type { HttpRequestInit, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
 import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
 import type { RuntimeClock, RuntimeHttpClient, RuntimeServices, RuntimeTimer } from "../../src/app/runtime-services.ts";
@@ -108,9 +108,14 @@ export class FakeRuntimeHttpClient implements RuntimeHttpClient {
     this.handlers.set(new URL(origin).origin, handler);
   }
 
-  /** Execute a configured peer through the same scoped request contract used by production. */
+  /** Consume a finite response through the deterministic HTTP peer. */
   request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
     return httpClient((url, init) => this.respond(url, init)).request(url, init);
+  }
+
+  /** Execute a configured peer through the same scoped request contract used by production. */
+  open(url: string, init: HttpRequestInit = {}): Operation<HttpStreamResponse> {
+    return httpClient((url, init) => this.respond(url, init)).open(url, init);
   }
 
   /** Record native request details before dispatching to the in-process peer. */

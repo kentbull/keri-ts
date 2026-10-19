@@ -14,7 +14,7 @@
  * - concrete listener ownership lives in `tufa`; this module stays on the
  *   protocol/runtime side of that boundary
  */
-import type { HttpClient, HttpResponse } from "./http-client.ts";
+import type { HttpClient, HttpStreamResponse } from "./http-client.ts";
 
 import { Cigar, concatBytes, Counter, CtrDexV1, Ilks, parse, parseBytes, type SerderKERI, type Siger } from "cesr-ts";
 import { action, call, ensure, type Operation, resource, spawn } from "npm:effection@^3.6.0";
@@ -202,7 +202,7 @@ function inspectReceiptMessage(
 }
 
 /** Receipt endpoints return one finite proof; cancellation joins the reader before leaving this operation. */
-function* readResponseBytes(response: HttpResponse): Operation<Uint8Array> {
+function* readResponseBytes(response: HttpStreamResponse): Operation<Uint8Array> {
   return yield* abortable((signal) => collectBytes(response.body(signal)));
 }
 
@@ -710,7 +710,7 @@ function* postWitnessReceiptEndpoint(
       contentType,
       destination: witness,
     });
-    const response = yield* http.request(responseUrl.toString(), {
+    const response = yield* http.open(responseUrl.toString(), {
       method: "POST",
       headers: {
         ...request.headers,
@@ -777,14 +777,14 @@ function* getWitnessReceiptEndpoint(
     method: "GET",
   });
   if (response.status !== 200) {
-    const body = yield* readResponseBytes(response);
+    const body = response.body;
     return {
       kind: "reject",
       status: response.status,
       message: new TextDecoder().decode(body),
     };
   }
-  const body = yield* readResponseBytes(response);
+  const body = response.body;
   const inspected = inspectReceiptMessage(body);
   return {
     kind: "accepted",

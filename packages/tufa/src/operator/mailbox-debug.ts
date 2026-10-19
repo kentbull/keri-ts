@@ -120,7 +120,7 @@ function* fetchMailboxDebug(
     destination,
   });
   const controller = new AbortController();
-  const response = yield* defaultRuntimeServices.http.request(url, {
+  const response = yield* defaultRuntimeServices.http.open(url, {
     method: "POST",
     headers: request.headers,
     body: request.body,

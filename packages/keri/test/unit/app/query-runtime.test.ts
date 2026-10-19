@@ -171,7 +171,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         { route: "mbx", q: { topics: { "/reply": 0 } } },
       );
       const controller = new AbortController();
-      const streamed = yield* defaultRuntimeServices.http.request(
+      const streamed = yield* defaultRuntimeServices.http.open(
         baseUrl,
         {
           method: "POST",
@@ -207,7 +207,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         { route: "mbx", q: { topics: { "/replay": 0 } } },
       );
       const replayController = new AbortController();
-      const replayStream = yield* defaultRuntimeServices.http.request(baseUrl, {
+      const replayStream = yield* defaultRuntimeServices.http.open(baseUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(replayQuery),
@@ -408,7 +408,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       }
       assertExists(relayRuntime.hby.db.getKever(witness.pre));
       const controller = new AbortController();
-      const response = yield* defaultRuntimeServices.http.request(relayUrl, {
+      const response = yield* defaultRuntimeServices.http.open(relayUrl, {
         method: "POST",
         headers: { "Content-Type": "application/cesr" },
         body: textDecoder.decode(mbx),

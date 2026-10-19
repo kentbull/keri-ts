@@ -157,10 +157,12 @@ absolute, not extended by activity. Shutdown stops acceptance and joins both
 directions/listeners before stores. Recognized wire/peer failures stay connection-
 local; infrastructure/cleanup failures reach the host.
 
-Composition supplies RuntimeHttpClient.request. FetchHttpClient constructs Request
+Composition supplies RuntimeHttpClient.request (completed finite bytes) and open
+(scoped streaming response). FetchHttpClient constructs Request
 before native fetch classification and owns response-read cancellation and joined
 cleanup. Producers prepare finite HTTP bodies before requesting; no upload-source
-factory or upload pump remains. Consumers borrow HttpResponse metadata and body(signal), not raw Response.
+factory or upload pump remains. Consumers borrow HttpStreamResponse metadata and body(signal) only through open;
+finite HttpResponse bytes remain usable after request cleanup. Native Response never escapes.
 Source/parser/consumer errors remain distinct; test clients explicitly produce
 TransportError for simulated network failure. No client singleton identity check
 controls failure handling. Header-timeout and SSE window policy remains with callers.

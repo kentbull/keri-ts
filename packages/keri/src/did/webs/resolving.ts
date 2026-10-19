@@ -4,7 +4,7 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
-import type { HttpResponse } from "../../app/http-client.ts";
+import type { HttpStreamResponse } from "../../app/http-client.ts";
 import { TransportError } from "../../app/transport-error.ts";
 
 import { call, type Operation, resource, scoped } from "effection";
@@ -94,8 +94,8 @@ function artifactResponse(
   httpsUrl: string,
   httpUrl: string,
   preferHttp: boolean,
-): Operation<HttpResponse> {
-  return resource<HttpResponse>(function*(provide) {
+): Operation<HttpStreamResponse> {
+  return resource<HttpStreamResponse>(function*(provide) {
     const urls = preferHttp ? [httpUrl, httpsUrl] : [httpsUrl, httpUrl];
     let lastError: unknown;
     for (const url of urls) {
@@ -103,7 +103,7 @@ function artifactResponse(
       // Each unsuccessful request finishes cleanup before another URL may be attempted.
       try {
         const delivered = yield* scoped(function*() {
-          const response = yield* http.request(url);
+          const response = yield* http.open(url);
           receivedHeaders = true;
           if (!response.ok) {
             lastError = new ValidationError(`Unable to fetch ${url}: HTTP ${response.status}.`);

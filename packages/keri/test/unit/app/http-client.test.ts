@@ -15,12 +15,12 @@ Deno.test("HTTP validates prepared requests before fetch", async () => {
   const client = new FetchHttpClient();
   try {
     for (const url of ["not a URL", "file:///tmp/test", "https://user:pass@peer.test/"]) {
-      await assertRejects(() => run(() => client.request(url)));
+      await assertRejects(() => run(() => client.open(url)));
     }
     for (const init of [{ method: "bad method" }, { headers: { "bad header": "x" } }, { method: "GET" }]) {
       await assertRejects(() =>
         run(() =>
-          client.request("https://peer.test/", {
+          client.open("https://peer.test/", {
             ...init,
             body: new Uint8Array([1]),
           })
@@ -34,7 +34,7 @@ Deno.test("HTTP validates prepared requests before fetch", async () => {
     assertStrictEquals(
       await assertRejects(() =>
         run(() =>
-          client.request("https://peer.test/", {
+          client.open("https://peer.test/", {
             signal: controller.signal,
           })
         )
@@ -42,8 +42,26 @@ Deno.test("HTTP validates prepared requests before fetch", async () => {
       cancelled,
     );
     assertEquals(requests, 0);
-    await run(() => client.request("https://peer.test/", { headers: { Authorization: "Bearer test" } }));
+    await run(() => client.open("https://peer.test/", { headers: { Authorization: "Bearer test" } }));
     assertEquals(requests, 1);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+Deno.test("finite HTTP responses finish cleanup before their bytes return", async () => {
+  const original = globalThis.fetch;
+  let signal: AbortSignal | undefined;
+  globalThis.fetch = (input) => {
+    signal = (input as Request).signal;
+    return Promise.resolve(new Response("complete"));
+  };
+  try {
+    await run(function*() {
+      const response = yield* new FetchHttpClient().request("https://peer.test/");
+      assertEquals(signal?.aborted, true);
+      assertEquals(new TextDecoder().decode(response.body), "complete");
+    });
   } finally {
     globalThis.fetch = original;
   }
@@ -69,7 +87,7 @@ Deno.test("HTTP scope joins late headers and closes their unread body once", asy
       started.resolve();
     });
   try {
-    const task = run(() => new FetchHttpClient().request("https://peer.test/"));
+    const task = run(() => new FetchHttpClient().open("https://peer.test/"));
     await started.promise;
     await task.halt();
     assertEquals(cancelled, 1);
@@ -100,7 +118,7 @@ Deno.test("HTTP consumer cancellation interrupts its blocked read and joins nati
     );
   try {
     const task = run(function*() {
-      const response = yield* new FetchHttpClient().request("https://peer.test/");
+      const response = yield* new FetchHttpClient().open("https://peer.test/");
       yield* call(function*() {
         const controller = new AbortController();
         try {
@@ -138,7 +156,7 @@ Deno.test("HTTP body failures retain native cause without duplicating cancellati
   try {
     const error = await assertRejects(() =>
       run(function*() {
-        const response = yield* new FetchHttpClient().request("https://peer.test/");
+        const response = yield* new FetchHttpClient().open("https://peer.test/");
         yield* call(() => collectBytes(response.body()));
       }), TransportError);
     assertStrictEquals(error.cause, fault);
@@ -162,7 +180,7 @@ Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fet
         ),
       );
     assertStrictEquals(
-      await assertRejects(() => run(() => new FetchHttpClient().request("https://peer.test/"))),
+      await assertRejects(() => run(() => new FetchHttpClient().open("https://peer.test/"))),
       cleanup,
     );
     const started = Promise.withResolvers<void>();
@@ -172,7 +190,7 @@ Deno.test("HTTP scope preserves unread-body cleanup failure and late foreign fet
         started.resolve();
       });
     const task = run(function*() {
-      yield* new FetchHttpClient().request("https://peer.test/");
+      yield* new FetchHttpClient().open("https://peer.test/");
       yield* suspend();
     });
     await started.promise;
@@ -197,7 +215,7 @@ Deno.test("HTTP cleanup preserves undefined rejection and keeps consumer errors 
         ),
       );
     let completed = false;
-    await run(() => new FetchHttpClient().request("https://peer.test/")).then(
+    await run(() => new FetchHttpClient().open("https://peer.test/")).then(
       () => completed = true,
       (error) => assertStrictEquals(error, undefined),
     );
@@ -207,7 +225,7 @@ Deno.test("HTTP cleanup preserves undefined rejection and keeps consumer errors 
     assertStrictEquals(
       await assertRejects(() =>
         run(function*() {
-          const response = yield* new FetchHttpClient().request("https://peer.test/");
+          const response = yield* new FetchHttpClient().open("https://peer.test/");
           yield* call(async () => {
             for await (const _chunk of response.body()) throw fault;
           });
@@ -242,7 +260,7 @@ Deno.test("native HTTP body EOF, truncation and manual redirects share one reque
   const read = () =>
     run(function*() {
       const response = yield* new FetchHttpClient().request(url, { redirect: "manual" });
-      return { status: response.status, bytes: yield* call(() => collectBytes(response.body())) };
+      return { status: response.status, bytes: response.body };
     });
   try {
     let complete = false;

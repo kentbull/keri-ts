@@ -1,7 +1,7 @@
 import { call, type Operation } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
 import type { Habery } from "./habbing.ts";
-import type { HttpResponse } from "./http-client.ts";
+import type { HttpStreamResponse } from "./http-client.ts";
 import { closeResponseBody } from "./httping.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
@@ -123,7 +123,7 @@ export class Authenticator {
     const cid = record.cid
       ?? parseOobiUrl(url, record.oobialias ?? undefined).cid
       ?? null;
-    const response = yield* this.services.http.request(url);
+    const response = yield* this.services.http.open(url);
     const date = new Date().toISOString();
     const state = response.ok ? "resolved" : `http-${response.status}`;
     yield* closeResponseBody(response);
