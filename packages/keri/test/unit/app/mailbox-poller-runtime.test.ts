@@ -686,3 +686,103 @@ Deno.test("local mailbox collection failure publishes no batch or cursor progres
     }
   });
 });
+
+Deno.test("mailbox polling normalizes positive fractional timeouts without producing zero", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const defaults = MailboxPoller.DefaultTimeoutPolicy;
+      for (
+        const [value, normalized] of [
+          [undefined, undefined],
+          [0, undefined],
+          [-1, undefined],
+          [NaN, undefined],
+          [Infinity, undefined],
+          [-Infinity, undefined],
+          [0.25, 1],
+          [0.999, 1],
+          [1, 1],
+          [1.9, 1],
+          [25, 25],
+          [25.9, 25],
+        ] as const
+      ) {
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          new FetchHttpClient(),
+          new ManualRuntimeClock(),
+          new FakeMailboxPollTransport(),
+          { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
+        );
+        assertEquals(poller.timeoutPolicy, {
+          requestOpenTimeoutMs: normalized ?? defaults.requestOpenTimeoutMs,
+          maxPollDurationMs: normalized ?? defaults.maxPollDurationMs,
+        }, `timeout override ${value}`);
+      }
+    } finally {
+      yield* hby.close();
+    }
+  });
+});
+
+for (const boundary of ["headers", "SSE"] as const) {
+  Deno.test(`sub-millisecond mailbox ${boundary} timeout expires at one millisecond and joins cleanup`, async () => {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const hab = hby.makeHab("recipient");
+      seedMailboxEndpoint(hby, hab.pre, "minimum-timeout");
+      const clock = new ManualRuntimeClock();
+      let waiting = false, cleaned = false, consumed = false;
+      const http = httpClient((_url, init) => {
+        if (boundary === "headers") {
+          waiting = true;
+          return new Promise<Response>((_resolve, reject) => {
+            init!.signal!.addEventListener("abort", () => reject(init!.signal!.reason), { once: true });
+          }).finally(() => {
+            cleaned = true;
+          });
+        }
+        return new Response(
+          new ReadableStream<Uint8Array>({
+            pull() {
+              waiting = true;
+            },
+            async cancel() {
+              await Promise.resolve();
+              cleaned = true;
+            },
+          }, { highWaterMark: 0 }),
+          { headers: { "Content-Type": "text/event-stream" } },
+        );
+      });
+      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, httpMailboxPollTransport, {
+        timeouts: { requestOpenTimeoutMs: 0.25, maxPollDurationMs: 0.25 },
+      });
+      poller.registerTopic("/reply");
+      try {
+        const worker = yield* spawn(() =>
+          poller.pollDo(() => {
+            consumed = true;
+          })
+        );
+        try {
+          yield* waitForCondition(() => waiting, `Expected a pending ${boundary} operation.`);
+          clock.advance(0);
+          yield* runtimeTurn();
+          assertEquals(cleaned, false, "a positive timeout must not expire at time zero");
+          clock.advance(1);
+          yield* waitForCondition(() => cleaned, `Expected ${boundary} timeout cleanup at one millisecond.`);
+          assertEquals(clock.now(), 1);
+          assertEquals(consumed, false);
+        } finally {
+          yield* waitForTaskHalt(worker);
+        }
+        assertEquals(cleaned, true);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  });
+}
