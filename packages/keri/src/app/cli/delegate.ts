@@ -316,7 +316,7 @@ function* performDelegationApproval(
     }
 
     if (hab.kever?.wits.length) {
-      const witDoer = new WitnessReceiptor(hby, { reactor: runtime.reactor, services: runtime.services });
+      const witDoer = new WitnessReceiptor(hby, runtime.protocol, runtime.services);
       yield* witDoer.submit(hab.pre, {
         sn: hab.kever.sn,
         auths,

@@ -9,7 +9,7 @@ future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
 - [Messenger and protocol refactor](runtime/messenger-protocol-refactor.md): phased extraction of shared protocol processing, concrete TCP/HTTP messengers,
-  and explicit constructor dependencies; implementation is in progress.
+  and explicit constructor dependencies; final qualification follows the last merge.
 - [Cue delivery refactor](runtime/cue-delivery-refactor.md): completed message
   production, FIFO Poster execution, retained failures and transport completion work.
   The [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred

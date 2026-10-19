@@ -160,7 +160,7 @@ for (const tsDiscloser of [true, false]) {
                       },
                     );
                     for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
-                    yield* new WitnessReceiptor(hby, { reactor: runtime.reactor, services: runtime.services }).submit(
+                    yield* new WitnessReceiptor(hby, runtime.protocol, runtime.services).submit(
                       hab.pre,
                     );
                     const graph = graphDisclosures(hby, hab, graphCase);

@@ -8,6 +8,8 @@ import {
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+import { createProtocolProcessor } from "../protocol-processing.ts";
+import { defaultRuntimeServices } from "../runtime-services.ts";
 
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
@@ -166,10 +168,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
       if (hab.kever?.wits.length) {
         if (inceptArgs.endpoint) {
-          const receiptor = new Receiptor(hby);
+          const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
           yield* receiptor.receipt(hab.pre, { sn: 0 });
         } else {
-          const witDoer = new WitnessReceiptor(hby);
+          const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
           yield* witDoer.submit(hab.pre, { sn: 0 });
         }
       }

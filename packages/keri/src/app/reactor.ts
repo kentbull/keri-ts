@@ -1,18 +1,11 @@
 /** Input-owned buffered parsing and queued ingress; shared protocol work belongs to ProtocolProcessor. */
-import { parse } from "cesr-ts";
-import { call, ensure, on, type Operation, race } from "npm:effection@^3.6.0";
+import { type Operation } from "npm:effection@^3.6.0";
 import { Deck } from "../core/deck.ts";
 import type { Kevery } from "../core/eventing.ts";
-import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import type { DispatchOptions, ProtocolProcessor } from "./protocol-processing.ts";
+import { type IngressOptions, processMessages } from "./message-source.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-
-/** Dispatch choices plus cancellation of the concrete source/parser lifetime. */
-export interface IngressOptions extends DispatchOptions {
-  /** Aborts source reads and dispatch waiting, joining cleanup before return. */
-  signal?: AbortSignal;
-}
 
 /**
  * Own queued/direct input and its buffered parser for one composed protocol domain.
@@ -41,64 +34,11 @@ export class Reactor {
     return !this.ingress.empty;
   }
   /** Own this input and finish dispatch before reading its next complete frame. */
-  *process(
+  process(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
     options: IngressOptions = {},
   ): Operation<void> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    const input = call(function*() {
-      const controller = new AbortController();
-      const signal = options.signal ? AbortSignal.any([controller.signal, options.signal]) : controller.signal;
-      try {
-        signal.throwIfAborted();
-        const frames = parse(source(signal));
-        let pending: ReturnType<typeof frames.next> | undefined;
-        // This earlier resource joins I/O after dispatch/read children have stopped.
-        yield* ensure(function*() {
-          try {
-            if (pending) {
-              try {
-                yield* call(() => pending!);
-              } catch (error) {
-                rethrowCleanupFailure(error, signal);
-              }
-            }
-          } finally {
-            yield* call(() => frames.return());
-          }
-        });
-        while (true) {
-          signal.throwIfAborted();
-          pending = frames.next();
-          let result: Awaited<typeof pending>;
-          try {
-            result = yield* call(() => pending!);
-          } catch (error) {
-            pending = undefined; // Already reported; the parser has joined its source cleanup.
-            throw error;
-          }
-          pending = undefined;
-          signal.throwIfAborted();
-          if (result.done) return;
-          yield* self.protocol.dispatch(result.value, options, self.kvy);
-        }
-      } finally {
-        controller.abort();
-      }
-    });
-    if (options.signal) {
-      const signal = options.signal;
-      yield* race([
-        input,
-        call(function*(): Operation<never> {
-          const abort = yield* on(signal, "abort");
-          signal.throwIfAborted();
-          yield* abort.next();
-          throw signal.reason;
-        }),
-      ]);
-    } else yield* input;
+    return processMessages(source, this.protocol, this.kvy, options);
   }
   /**
    * Queue one complete CESR/KERI record for later parsing.

@@ -30,7 +30,7 @@ export class CesrHttpRefusal extends ValidationError {
 }
 
 /** Expected remote HTTP refusal; infrastructure and cleanup failures still throw. */
-type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: CesrHttpRefusal };
+export type CesrPostResult = { kind: "complete" } | { kind: "refuse"; error: CesrHttpRefusal };
 type FrameResponse = { kind: "response"; response: Response } | Extract<CesrPostResult, { kind: "refuse" }>;
 
 /** Transport choices for one CESR frame. */

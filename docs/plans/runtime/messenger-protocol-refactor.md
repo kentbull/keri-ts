@@ -1,10 +1,12 @@
 # Messenger ownership and protocol processing
 
-Status: implementation in progress; phases 1 and 2 are merged in PRs #532 and #533;
-phase 3 introduces TCPMessenger. Later phases and final qualification remain outstanding. Planning baseline: local HEAD and remote `master` both verified at
+Status: implementation complete in four focused cuts. The first three merged as
+PRs #532–534; the final HTTP messenger PR owns composed qualification after its
+merge. Exact source/results are recorded in that PR's qualification comment. Planning baseline: local HEAD and remote `master` both verified at
 `d735cfef1cf5e2abaf06517fcb6b55ed694e6ea4` on 2026-10-19, after PRs #528–531.
 Recheck the base before implementation. Preserve the original checkout's unrelated
-formatting edit. This document does not change the current runtime contract.
+formatting edit. The runtime contracts describe the implemented ownership; this document retains
+the agreed sequence and qualification obligations.
 
 ## Decision
 
@@ -428,3 +430,18 @@ clones application handler graphs per connection, registers temporary reply owne
 or leaves redundant wrapper APIs indefinitely. The acceptable extraction removes
 input and transport knowledge from shared processing and gives messengers actual
 parser/attempt ownership with direct calls to the real protocol implementation.
+
+## Delivery record
+
+- PR #532: explicit Poster dependencies, `mbx`, `ensureOpen` and producer guards.
+- PR #533: shared ProtocolProcessor, independent input Keverys, direct request/exchange
+  dependencies, and canonical v2 sender-policy/KRAM ownership.
+- PR #534: TCPMessenger attempt/parser ownership and removal of replaced wrappers.
+- Final HTTP messenger PR: HTTPMessenger, shared actual parser/source cleanup, and explicit query/receipt
+  constructor dependencies. Final qualification is recorded after the final implementation PR merges.
+
+The supplied Kevery is the final dispatch argument; omission selects the long-lived
+processor. The shared v2 message admission policy is passed separately to the existing
+router. This preserves live policy authority while input-local Keverys handle KEL
+and legacy traffic. Query/receipt constructors were made structural during their
+migration so ProtocolProcessor did not become another dependency in an options bag.

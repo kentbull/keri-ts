@@ -206,17 +206,17 @@ accepts dest and owns the same queue/worker/wait lifecycle. Poster.sendBytes,
 sendExchange and sendPreparedExchange and their old result types are removed.
 RuntimeDeliveries is deleted;
 QueryCoordinator owns both deferred requests and signed query packets. Construction
-supplies its actual Reactor and clock/HTTP services; query code never receives an
+supplies its actual ProtocolProcessor and clock/HTTP services; query code never receives an
 AgentRuntime. Its close stops production and joins response I/O before clearing
 records or closing stores. Query requests always use this concrete output path;
 there is no optional no-op downstream sink. Unresolved records remain deferred.
 Synchronous producer preparation has no task/halt bookkeeping, raw-packet injector
-or custom-emission API. Reactor has no general application gate, and commands
+or custom-emission API. ProtocolProcessor has no general application gate, and commands
 use the host workers described above.
 
 Anchorer selects its optional shared protocol processor and transport services at
 construction; its escrow passes receive no parent runtime. Receiptor uses a
-borrowed Reactor or creates a protocol processor over the caller's existing
+borrowed ProtocolProcessor and explicit I/O services over the caller's existing
 Habery. It does not construct AgentRuntime, unrelated registry/notification
 stores or background workers. Receipt intake still runs verification and escrows;
 HTTP and TCP success require the selected witness's persisted signature for the
@@ -415,3 +415,18 @@ the shared protocol processor (or explicit null for transmit-only) and clock.
 exists. Explicit `replies` selects processed receive EOF. Socket/drain/cleanup facts
 remain in the lower TCP owner. The old conversation and prepared-target application
 wrappers are removed; QueryCoordinator and Poster retain separate queue policies.
+
+HTTPMessenger receives required protocol (or explicit null for send-only), HTTP
+client and clock dependencies. Each receiving instance has its own Kevery. `send`
+and `stream` return the existing typed HTTP completion/refusal after full ordinary
+response consumption; `query` owns explicit CESR or bounded SSE response processing.
+The shared `processMessages` function owns actual buffered parser iteration and
+joined source cleanup for Reactor, HTTP query responses and receipt request owners.
+It is not another dispatch class or worker. Normal sends do not interpret arbitrary
+successful response bytes as protocol messages. Refusal does not absorb source,
+parser, storage or cleanup failures. No new stream messenger classes are needed.
+
+QueryCoordinator, Receiptor and WitnessReceiptor receive their ProtocolProcessor
+and I/O services as structural constructor dependencies. Optional force/signatory
+choices retain their domain meaning; they do not conceal component dependencies.
+Standalone command entrypoints choose the minimal protocol composition explicitly.

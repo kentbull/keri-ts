@@ -1,3 +1,5 @@
+import { createProtocolProcessor } from "../../../keri/src/app/protocol-processing.ts";
+import { defaultRuntimeServices } from "../../../keri/src/app/runtime-services.ts";
 /**
  * Tufa witness operator commands.
  *
@@ -143,10 +145,10 @@ export function* witnessSubmitCommand(
         },
       );
       if (commandArgs.endpoint) {
-        const receiptor = new Receiptor(hby);
+        const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
         yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
       } else {
-        const witDoer = new WitnessReceiptor(hby, {
+        const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices, {
           force: commandArgs.force ?? false,
         });
         yield* witDoer.submit(hab.pre, {

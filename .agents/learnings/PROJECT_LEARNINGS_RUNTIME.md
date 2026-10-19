@@ -87,7 +87,8 @@ remains. Failures are process-local and excluded from idle. Unexpected construct
 storage, parser and cleanup failures are retained/reported then propagate.
 The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks
 the reference source and qualification evidence.
-QueryCoordinator owns plain requests, signed packets and joined response I/O.
+QueryCoordinator owns plain requests and signed packets; concrete TCPMessenger/HTTPMessenger
+operations own joined attempt and response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
 both TSN replies before taking records. Current authorization defeats old matching
@@ -171,7 +172,8 @@ historical retrieval after witness replacement. Baser resolves interactions thro
 their preceding establishment, even empty cohorts. Missing dependencies remain
 escrowed. GET without matching proof returns false; complementary fanout reads
 verified indexed proof, never raw peer fields or unrelated receipts. Receipt owners
-borrow Reactor or construct only protocol processing over the existing Habery.
+receive ProtocolProcessor and I/O dependencies explicitly; standalone entrypoints
+compose minimal processing over the existing Habery.
 
 ## OOBI, DID, mailbox and notices
 

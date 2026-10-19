@@ -18,6 +18,12 @@ reply cursors and automatic retry. Ordinary HTTP sends require complete response
 bodies; transmit-only TCP completes local drain and joins cleanup, while duplex
 preserves receive processing. Concrete network errors retain original causes.
 
+The [messenger/protocol refactor](../docs/plans/runtime/messenger-protocol-refactor.md)
+extracts actual shared processing into ProtocolProcessor. Reactor owns input;
+TCPMessenger/HTTPMessenger own attempts and input-specific Kevery/parser lifetimes.
+Semantic reply/exchange/TEL handlers and v2 sender policy remain shared. Outbound
+components receive the actual protocol and I/O dependencies, not Reactor proxies.
+
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.

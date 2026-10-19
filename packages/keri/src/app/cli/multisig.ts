@@ -672,10 +672,10 @@ function* receiptAcceptedEvent(
     },
   );
   if (args.endpoint) {
-    const receiptor = new Receiptor(hby, { reactor: runtime.reactor, services: runtime.services });
+    const receiptor = new Receiptor(hby, runtime.protocol, runtime.services);
     yield* receiptor.receipt(pre, { sn: kever.sn, auths });
   } else {
-    const witDoer = new WitnessReceiptor(hby, { reactor: runtime.reactor, services: runtime.services });
+    const witDoer = new WitnessReceiptor(hby, runtime.protocol, runtime.services);
     yield* witDoer.submit(pre, { sn: kever.sn, auths });
   }
 }

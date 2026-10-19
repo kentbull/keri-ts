@@ -314,7 +314,7 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = yield* resource<QueryCoordinator>(function*(provide) {
-    const coordinator = new QueryCoordinator(hby, { reactor, services });
+    const coordinator = new QueryCoordinator(hby, protocol, services);
     try {
       yield* provide(coordinator);
     } finally {
