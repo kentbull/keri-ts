@@ -629,7 +629,6 @@ export class QueryCoordinator {
    * - runtime-configured habitat
    * - sole local habitat
    */
-  /** Resolve an explicit/default signer without guessing among multiple local identities. */
   private configuredHab(signer?: string): Hab | null {
     return signer === undefined ? this.hab ?? soleHab(this.hby) : this.hby.habs.get(signer) ?? null;
   }
@@ -651,8 +650,7 @@ export class QueryCoordinator {
     this.continuations = this.continuations.filter((continuation) => !continuation.done);
   }
 
-  /** Capture the selected signer's query, introduction and endpoint before retiring its source request. */
-  /** Sign and publish one complete query packet; unresolved signer/routing leaves the request retained. */
+  /** Capture/sign the selected query, introduction and endpoint; unresolved routing retains its source request. */
   private prepareRequest(request: QueryRequest): boolean {
     const hab = this.configuredHab(request.signer);
     if (!hab) return false;

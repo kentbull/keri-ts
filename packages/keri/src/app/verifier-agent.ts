@@ -74,18 +74,30 @@ export interface VerifierAgentOptions {
 
 /** Sally-like verifier processor for one `Habery`/`Reger` runtime. */
 export class VerifierAgent {
+  /** Borrowed identities and accepted exchange/KEL state. */
   readonly hby: Habery;
+  /** Borrowed credential and TEL evidence store used to establish current credential state. */
   readonly reger: Reger;
+  /** Verifier workflow store for pending, ready and acknowledged webhook records. */
   readonly cdb: VerifierCueBaser;
+  /** Borrowed input owner whose shared protocol processor advances credential prerequisites. */
   readonly reactor: Reactor;
+  /** Application cue flow; this owner consumes revocation cues and preserves unrelated records. */
   readonly cues: Deck<AgentCue>;
+  /** Borrowed HTTP client and clock used for webhook requests and expiry. */
   readonly services: RuntimeServices;
+  /** Configured webhook destination, independent of protocol peer routing. */
   readonly hook: string;
+  /** Attachment genus used when settling accepted grant artifacts. */
   readonly gvrsn: Versionage;
+  /** Existing workflow expiry window; elapsed time is measured by the injected clock. */
   readonly timeoutMs: number;
+  /** Schema-specific business checks copied from configuration at construction. */
   readonly validators: Record<string, VerifierBusinessValidator>;
+  /** Reject credentials without a configured schema validator when explicitly enabled. */
   readonly requireKnownSchemas: boolean;
 
+  /** Borrow the configured stores, input owner and webhook policy; open no runtime or background worker. */
   constructor(options: VerifierAgentOptions) {
     this.hby = options.hby;
     this.reger = options.reger;
@@ -112,10 +124,12 @@ export class VerifierAgent {
       rejected: 0,
     };
 
+    // Settle grant evidence and capture revocations before advancing shared protocol dependencies.
     result.grantsQueued += yield* this.scanAcceptedGrants();
     result.revocationsQueued += this.processRevokedCues();
     yield* this.reactor.protocol.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
+    // Project accepted evidence into ready work, then observe real webhook delivery outcomes.
     result.presentationsReady += this.processPresentations();
     result.revocationsReady += this.processRevocations();
     result.webhooksSent += yield* this.processReady(this.cdb.recv, "iss", result);
@@ -149,6 +163,7 @@ export class VerifierAgent {
     return queued;
   }
 
+  /** Consume a finite revocation-cue pass, restoring unrelated and failed records in their original order. */
   private processRevokedCues(): number {
     const retained: AgentCue[] = [];
     const count = this.cues.length;
@@ -183,6 +198,7 @@ export class VerifierAgent {
     return 1;
   }
 
+  /** Recover revocation work from saved credentials backed by an accepted IPEX grant. */
   private scanPersistedRevocations(): number {
     let queued = 0;
     for (const [keys] of this.reger.saved.getTopItemIter()) {
@@ -207,6 +223,7 @@ export class VerifierAgent {
     return queued;
   }
 
+  /** Move accepted, unexpired and business-valid credentials into the ready presentation store. */
   private processPresentations(): number {
     let ready = 0;
     for (const [keys, dater] of [...this.cdb.iss.getTopItemIter()]) {
@@ -245,6 +262,7 @@ export class VerifierAgent {
     return ready;
   }
 
+  /** Move confirmed revocations into the ready revocation store, retaining unresolved evidence. */
   private processRevocations(): number {
     let ready = 0;
     for (const [keys, dater] of [...this.cdb.rev.getTopItemIter()]) {
@@ -334,6 +352,7 @@ export class VerifierAgent {
     });
   }
 
+  /** Apply the configured business validator; return a refusal reason without changing protocol evidence. */
   private validateCredential(creder: SerderACDC): string | null {
     const schema = schemaOf(creder);
     if (!schema) {
@@ -350,18 +369,21 @@ export class VerifierAgent {
     return result === false ? `credential ${creder.said ?? "<unknown>"} failed business validation` : null;
   }
 
+  /** Avoid duplicate presentation work already pending, ready or acknowledged. */
   private hasQueuedOrSent(said: string): boolean {
     return this.cdb.iss.get([said]) !== null
       || this.cdb.ack.get([said]) !== null
       || this.hasReady(this.cdb.recv, said);
   }
 
+  /** Avoid duplicate revocation work already pending, ready or acknowledged. */
   private hasRevocationQueuedOrSent(said: string): boolean {
     return this.cdb.rev.get([said]) !== null
       || this.cdb.rack.get([said]) !== null
       || this.hasReady(this.cdb.revk, said);
   }
 
+  /** Require an accepted grant for this credential before recovering its revocation notification. */
   private hasAcceptedGrantForCredential(said: string): boolean {
     for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
       if (grant.route === IPEX_GRANT_ROUTE && credentialSaidFromGrant(grant) === said) {
@@ -371,6 +393,7 @@ export class VerifierAgent {
     return false;
   }
 
+  /** Look up existing ready work by credential without consuming another delivery record. */
   private hasReady(
     db: VerifierCueBaser["recv"] | VerifierCueBaser["revk"],
     said: string,
@@ -383,6 +406,7 @@ export class VerifierAgent {
     return false;
   }
 
+  /** Compare a workflow timestamp with the injected clock and configured expiry window. */
   private expired(dater: Dater): boolean {
     return this.services.clock.now() - new Date(dater.dts).getTime() > this.timeoutMs;
   }
