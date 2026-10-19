@@ -46,12 +46,13 @@ Composition shares one Revery between Tevery and ProtocolProcessor. Tevery regis
 own TSN routes and advances their retries; ProtocolProcessor knows only its protocol
 operations, not separate registry/credential receivers.
 
-ProtocolProcessor serializes dispatch/escrows; Reactor owns byte ingress and its parser. It returns the processed envelope, exact
+ProtocolProcessor serializes dispatch/escrows. It returns the processed envelope, exact
 decision and mailbox authorization; KRAM may accumulate threshold proofs. It
 captures request replies before application publication, including synchronous
 capture when a new correlation claims already-published output. No application
 callback gate remains. Waiting cancellation removes the waiter; active ownership
-joins handler cleanup before passing the protocol turn. Queued ingress copies
+joins handler cleanup before passing the protocol turn. Reactor owns byte ingress
+and its parser. Queued ingress copies
 bytes, then pulls/processes without reinsertion on failure. clearIngress clears
 queued data, not active I/O. Explicit close and scope exit clear ingress/cues.
 
@@ -119,9 +120,10 @@ check before pull and after results. Finite parser/codec APIs have no lifetime o
 
 Runtime borrows Habery/injected stores; defaults are owned. Readonly Haberies
 create neither default registry. Legacy Regery owns Reger/Tevery/Verifier; v2 Regery
-owns the RegBaser shared by IPEX/Reactor. Inject actual processors, not service bags
+owns the RegBaser shared by IPEX/ProtocolProcessor. Inject actual processors, not service bags
 or optional-method probes. Application entrypoints select optional registry owners
-before effects; subordinate operations receive Regery/Reger, Reactor or Poster.
+before effects; subordinate operations receive Regery/Reger, Reactor for byte input,
+ProtocolProcessor for shared protocol work, or Poster for delivery.
 Keep capability guards for explicitly injected optional stores and lifecycle guards.
 Notifier borrows a required Signator, Noter and optional Signaler; runtime injection
 must match its Signator and any explicitly supplied Noter/Signaler before acquisition.

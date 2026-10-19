@@ -197,17 +197,17 @@ owners. CueSink, its optional preparation/admission hooks and root adapters are
 deleted. Respondant and QueryCoordinator do not receive the parent runtime or
 discover its siblings.
 QueryCoordinator's processPending/queryDo operations own their local pending
-state without an AgentRuntime argument or Reactor callback scheduler.
+state without an AgentRuntime argument or a generic callback scheduler.
 
 Query preparation, signing and admission are synchronous operations over accepted
 state published by its processing owner after commit. They do not suspend between
 state lookup and signing. Network waits happen after preparation; failed delivery,
 refusal and cancellation retain the pending head and its real lifetime through
-joined cleanup. Reactor owns protocol dispatch and captures reserved replies before
+joined cleanup. ProtocolProcessor owns protocol dispatch and captures reserved replies before
 publishing ordinary cues to the application Deck. A reservation also claims
 already-published matching replies synchronously; exact dispatch authorization
 still controls whether that request may use them. Request owners consume slots
-and Respondant prepares output directly, without borrowing a Reactor callback gate.
+and Respondant prepares output directly, without borrowing a protocol callback gate.
 CLI and hosts run the same component workers; final composed qualification remains
 separate from these ownership contracts.
 
