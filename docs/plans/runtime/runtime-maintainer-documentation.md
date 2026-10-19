@@ -49,12 +49,12 @@ requires every ledger entry reviewed and source/design docs consistent.
 
 ## Review findings retained outside this documentation change
 
-- Local mailbox consumption advances its process-local cursor in
-  `MailboxPoller.readLocalMailbox` before `pollDo` invokes the consumer. A consumer
-  failure can therefore skip that batch for the same poller instance. Remote
-  durable cursors advance only after consumption. Review whether local progress
-  should move after successful consumption in a separate behavioral change; add
-  a failing-consumer regression then. Restart creates fresh local cursors.
+- **Local cursor finding resolved by [#554](https://github.com/kentbull/keri-ts/pull/554).**
+  Local collection now proposes cursor positions; pollDo publishes them only after
+  the entire batch consumer succeeds. Read failure, consumer failure and cancellation
+  retain the previous positions for a restarted worker on the same poller, with
+  possible duplicate processing. Regressions cover both consumer forms, joined
+  cancellation, multi-topic/prefix progress and partial collection failure.
 - `positiveTimeoutMs` floors positive fractional input, so values below one
   millisecond become zero; downstream SSE validation can reject them. A separate
   policy change should either reject fractions or clamp positive values to one.
@@ -95,4 +95,4 @@ Required CI static checks and the ENCTX maintenance workflow apply to every hand
 The final review removed stale claims that Poster lacks retained failures or
 stops after a recognized refusal. It also made Hab's low-level Deck consumption,
 remote versus local mailbox cursor advancement, and finite-host Date.now deadlines
-explicit. The two behavior findings above remain separate, unimplemented work.
+explicit. The findings above track their separate behavioral follow-ups; the original documentation pass changed neither behavior.
