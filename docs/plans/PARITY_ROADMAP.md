@@ -32,8 +32,9 @@ exact final-wire replay, fairness and durability outside this implementation.
 
 The [explicit runtime dependency plan](runtime/explicit-runtime-dependencies.md)
 tracks explicit HTTP/clock/transport composition and removal of RuntimeServices
-and hidden dependency defaults. The separate verifier clock correction is
-implemented; final merged-source qualification remains pending.
+and hidden dependency defaults, plus the separate verifier clock correction.
+The [post-merge qualification](../reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
+passed every maintained unit/interoperability owner and installed-package checks.
 
 [ADR-0013](../adr/adr-0013-simple-component-flows.md) governs concrete
 KERIpy-shaped owners, plain records and Deck/cue flows wired by composition.

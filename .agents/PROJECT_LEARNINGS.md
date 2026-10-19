@@ -35,7 +35,8 @@ tracks removal of the remaining HTTP/clock service bundle and dependency options
 All runtime owners and composition callers now take their actual HTTP/clock
 collaborators explicitly. The aggregate and dependency options are removed; the
 verifier workflow Daters, webhook headers and expiry now use one injected epoch
-clock. Final merged-source qualification remains pending.
+clock. The [qualification report](../docs/reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
+records the full post-merge battery and exact source identity.
 
 The [compatibility inventory](../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
 owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy
