@@ -1,6 +1,7 @@
 # Messenger ownership and protocol processing
 
-Status: implementation complete in four focused cuts. The first three merged as
+Status: implementation complete in four focused cuts, followed by a qualification
+repair and maintainer-documentation pass. The first three merged as
 PRs #532–534; the final HTTP messenger PR owns composed qualification after its
 merge. Exact source/results are recorded in that PR's qualification comment. Planning baseline: local HEAD and remote `master` both verified at
 `d735cfef1cf5e2abaf06517fcb6b55ed694e6ea4` on 2026-10-19, after PRs #528–531.
@@ -445,3 +446,10 @@ processor. The shared v2 message admission policy is passed separately to the ex
 router. This preserves live policy authority while input-local Keverys handle KEL
 and legacy traffic. Query/receipt constructors were made structural during their
 migration so ProtocolProcessor did not become another dependency in an options bag.
+
+The first complete post-merge run passed every maintained interop owner and package
+check. Its unit lane exposed one DID-webs fixture still binding the moved escrow
+method to Reactor; the qualification cut binds it to ProtocolProcessor and retains
+all streamed-resolution, cancellation and failure assertions. The same cut completes
+constructor/field/flow comments in delegation and verifier workflows. Final full
+qualification follows that cut's merge and is recorded on its PR.

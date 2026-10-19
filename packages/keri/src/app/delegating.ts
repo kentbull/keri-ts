@@ -370,16 +370,22 @@ export class DelegateRequestHandler implements ExchangeRouteHandler {
  *   learned locally and pinned into `aess.`
  */
 export class Anchorer {
+  /** Borrowed identities and durable delegation escrow stores. */
   readonly hby: Habery;
+  /** Queued delivery owner; phase transitions wait for the matching successful outcome. */
   readonly postman: Poster;
   /** Query producer port; composition owns the consuming coordinator and its lifetime. */
   readonly querying: { enqueue(request: QueryRequest): void };
+  /** Borrowed HTTP and clock services for witness publication. */
   readonly services: RuntimeServices;
   /** Borrowed receive processing for witness sends; absent explicitly permits transmit-only delivery. */
   readonly protocol?: ProtocolProcessor;
+  /** Process-local proxy selection per delegated event; cleared when the workflow ends. */
   readonly communicationHabPins = new Map<string, string>();
+  /** Existing query retry-pass bookkeeping; independent of Poster delivery retry. */
   readonly anchorQueryRetryPasses = new Map<string, number>();
 
+  /** Bind delivery/query/protocol collaborators from the same accepted-state domain; acquire no stores. */
   constructor(
     hby: Habery,
     { postman, querying, services = defaultRuntimeServices, protocol }: {
@@ -399,12 +405,14 @@ export class Anchorer {
     this.services = services;
   }
 
+  /** Start one delegated event in witness-receipt escrow and replace any previous local proxy pin. */
   begin(
     serder: SerderKERI,
     options: { communicationHab?: Hab } = {},
   ): void {
     const key = eventKey(serder);
     const id = workflowId(serder);
+    // Reset durable phase membership before pinning this process's communication signer.
     this.hby.db.dpwe.pin(key, serder);
     this.hby.db.dune.rem(key);
     this.hby.db.dpub.rem(key);
@@ -494,6 +502,7 @@ export class Anchorer {
 
   /** Advance delegation escrows using the protocol receiver selected at construction. */
   *processAllOnce(): Operation<DelegationWorkflowResult[]> {
+    // A pass advances the existing phases in dependency order, using finite escrow snapshots.
     const results: DelegationWorkflowResult[] = [];
     for (
       const [keys, serder] of [...this.hby.db.dpwe.getTopItemIter()] as Array<
@@ -525,6 +534,7 @@ export class Anchorer {
     return results;
   }
 
+  /** Require delegate receipts, deliver the approval request/event, then move to anchor discovery. Failed delivery leaves this phase retained. */
   private *processPartialWitnessEscrow(
     context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
@@ -604,6 +614,7 @@ export class Anchorer {
       msg,
       topic: DELEGATE_MAILBOX_TOPIC,
     }, { notify: true });
+    // Admission alone cannot release the next send or the delegation phase transition.
     const requested = yield* postman.wait(request);
     if (requested.kin === "failed") throw requested.error;
     const replay = postman.send({
@@ -631,6 +642,7 @@ export class Anchorer {
     };
   }
 
+  /** Wait for locally accepted delegator evidence; pin its seal before completing or publishing to witnesses. */
   private *processUnanchoredEscrow(
     context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
@@ -702,6 +714,7 @@ export class Anchorer {
     };
   }
 
+  /** Record durable completion only after the preceding publication operation has succeeded. */
   private *processWitnessPublication(
     context: DelegationEscrowContext,
   ): Operation<DelegationWorkflowResult> {
@@ -719,6 +732,7 @@ export class Anchorer {
     };
   }
 
+  /** Use the pinned proxy for inception or the existing delegate for rotation; never guess an inception signer. */
   private communicationHab(
     serder: SerderKERI,
     hab = workflowHab(this.hby, serder),
@@ -739,6 +753,7 @@ export class Anchorer {
     );
   }
 
+  /** Publish the initial anchor query after successful sending and seed the existing retry-pass bookkeeping. */
   private queueDelegatorWitnessQueryNow(
     serder: SerderKERI,
     communicationHab: Hab,
@@ -830,12 +845,14 @@ export class Anchorer {
     return `Delegator anchor has not been learned locally yet; queried delegator witness ${witness}.`;
   }
 
+  /** Retire only this event's process-local signer and query bookkeeping. */
   private clearWorkflowPins(serder: SerderKERI): void {
     const id = workflowId(serder);
     this.communicationHabPins.delete(id);
     this.anchorQueryRetryPasses.delete(id);
   }
 
+  /** Choose the pinned proxy, local group member or existing communication habitat for publication. */
   private publicationTransportHab(serder: SerderKERI, hab: Hab): Hab {
     const pinned = this.communicationHabPins.get(workflowId(serder));
     if (pinned) {
@@ -848,6 +865,7 @@ export class Anchorer {
     return localGroupMember(this.hby, hab.pre) ?? this.communicationHab(serder, hab);
   }
 
+  /** Send the delegation chain before the approving event, awaiting actual Poster or witness transmission outcomes. */
   private *publishDelegator(serder: SerderKERI): Operation<void> {
     const pre = workflowPre(serder);
     const hab = localHabByPre(this.hby, pre, "Delegation witness publication");
@@ -867,6 +885,7 @@ export class Anchorer {
       }
     }
 
+    // Publish the approving event only after the complete delegation chain has been sent.
     const approvedEvent = eventReplayMessage(this.hby, kever.serder);
     if (kever.delpre) {
       const postman = this.postman;
