@@ -1,6 +1,6 @@
 # ADR-0004: Cue ownership across local and hosted processing
 
-- Status: Accepted; refined by [ADR-0013](adr-0013-simple-component-flows.md)
+- Status: Accepted; phase 1 delivery ownership refinement implemented
 - Date: 2026-03-29
 - Scope: Protocol cues, interpretation and host routing
 
@@ -32,8 +32,10 @@ wire output, notification and transport work. Network waits belong to concrete
 output operations, outside protocol transactions.
 
 The application router sends routed query records to QueryCoordinator and stream
-records to MailboxDirector. Respondant owns other reply/receipt/replay output;
-Poster owns actual sending or authorized local forwarding. Routed queries select
+records to MailboxDirector. Respondant interprets and publishes other
+reply/receipt/replay output. Poster owns queued delivery, live traversal, exact
+prepared retry packets, cancellation and joined cleanup, including authorized
+local forwarding. Routed queries select
 an explicit local signer, a configured Hab, or the sole local Hab. An unavailable
 explicit signer stays unresolved; the runtime never guesses among local identities.
 
@@ -57,6 +59,15 @@ mutation; a later hint failure does not roll back the notice.
 CLI and hosts run the same component workers with different completion/deadline
 conditions. Serial runtime and finite mailbox pumps, CueSink hooks, delivery
 wrappers and callback-based reply admission are removed.
+
+The [cue delivery plan](../plans/runtime/cue-delivery-refactor.md) separates the
+phase 1 ownership move from later behavior changes. Phase 1 retains finite-pass
+rotation, lazy reply consumption, automatic exact-packet retries and the existing
+combined query/Poster worker and ingress-driven passes. `ReplyCursor` and
+`CueEmission` remain temporary implementation state. One queue for all callers,
+eager FIFO replies and explicit whole-event failure handling are later phases,
+not claims about this cut. Deferred reliability features have a separate
+[roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and
 KERIpy correspondence. The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md)

@@ -287,7 +287,7 @@ function* ingest(
                 previous.close();
               }
               yield* runtime.querying.deliverOnce();
-              yield* runtime.respondant.process();
+              yield* runtime.poster.process();
             }
             query = undefined;
             seen = true;

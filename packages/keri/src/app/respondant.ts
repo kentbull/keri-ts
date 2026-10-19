@@ -1,27 +1,9 @@
-import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { AgentCue, CueEmission } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { attemptPreparedCesrTarget, type Poster, type PreparedCesrTarget, type RawCesrRoute } from "./forwarding.ts";
+import type { Poster, RawCesrRoute } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
-import type { Reactor } from "./reactor.ts";
 import type { ReplyStreams } from "./reply-streams.ts";
-
-/** Live replay cursor and exact signed packet owned only by Respondant. */
-interface ReplyCursor {
-  emission: CueEmission;
-  hab: Hab;
-  route: RawCesrRoute;
-  iterator?: Iterator<Uint8Array>;
-  message?: Uint8Array;
-  targetIndex: number;
-  prepared?: PreparedCesrTarget;
-}
-
-/** A correlated reply batch stays ordered; refused packets retain their exact wire. */
-type OutboundReply =
-  | { kind: "cues"; cues: ReplyCursor[]; index: number }
-  | { kind: "packet"; packet: PreparedCesrTarget };
 
 /**
  * Shared host-side responder for indirect and witness runtimes.
@@ -29,12 +11,12 @@ type OutboundReply =
  * KERIpy correspondence:
  * - this is the local analogue of `Respondant` for reply/replay/receipt-style
  *   cues
- * - `BaseHab.processCuesIter()` interprets the cue; `Respondant` delivers the
+ * - `BaseHab.processCuesIter()` interprets the cue; `Poster` delivers the
  *   resulting bytes
  * - mailbox-query `stream` cues stay with mailbox storage/query coordination
  *
  * Boundary rule:
- * - this class owns non-`stream` cue delivery
+ * - this class owns non-`stream` cue production and reply capture
  * - `MailboxDirector` owns mailbox storage and `stream` cue correlation
  * - if a future change starts treating generic `reply` / `replay` /
  *   `receipt`-family cues as local mailbox writes, that change is regressing
@@ -44,40 +26,26 @@ type OutboundReply =
 export class Respondant {
   private readonly hby: Habery;
   private readonly poster: Poster;
-  private readonly reactor: Reactor;
   private readonly replyStreams: ReplyStreams;
-  private readonly outgoing = new Deck<OutboundReply>();
-  private processing = false;
-  private closed = false;
-  private active?: AbortController;
-  private joined?: Promise<void>;
 
   constructor(
     hby: Habery,
     {
       poster,
-      reactor,
       replyStreams,
     }: {
       poster: Poster;
-      reactor: Reactor;
       replyStreams: ReplyStreams;
     },
   ) {
     this.hby = hby;
     this.poster = poster;
-    this.reactor = reactor;
     this.replyStreams = replyStreams;
-  }
-
-  /** Include active transport and lazy replies in runtime convergence. */
-  get hasPending(): boolean {
-    return this.processing || !this.outgoing.empty;
   }
 
   /** Interpret and route a source head before removing it; failed preparation leaves it visible. */
   enqueueCue(interpreter: Hab, source: Deck<AgentCue>, hint?: Hab | null): boolean {
-    this.assertOpen();
+    this.poster.assertOpen();
     const cue = source.peekHead();
     if (!cue) return false;
     const recipient = recipientForCue(cue), topic = topicForCue(cue);
@@ -87,7 +55,7 @@ export class Respondant {
     if (emission?.kind !== "wire") throw new RangeError("Cue delivery requires wire");
     const route = this.poster.findBytesRoute(sender, { recipient, recipientIsPrefix: true, topic });
     if (route?.targets.length) {
-      this.outgoing.push({ kind: "cues", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
+      this.poster.enqueueReplies([{ emission, hab: sender, route }]);
     }
     source.pull();
     return true;
@@ -95,17 +63,17 @@ export class Respondant {
 
   /** Queue an already interpreted witness emission without reopening or signing its messages. */
   enqueueEmission(hab: Hab, emission: CueEmission): void {
-    this.assertOpen();
+    this.poster.assertOpen();
     const route = this.routeForEmission(emission, hab);
     if (route?.targets.length) {
       const sender = this.hby.habs.get(route.sender) ?? hab;
-      this.outgoing.push({ kind: "cues", cues: [{ emission, hab: sender, route, targetIndex: 0 }], index: 0 });
+      this.poster.enqueueReplies([{ emission, hab: sender, route }]);
     }
   }
 
   /** Prepare the whole correlated batch before publishing either its HTTP reader or queued destinations. */
   openReply(hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
-    this.assertOpen();
+    this.poster.assertOpen();
     const captured = reply.peekAll();
     if (!captured) return null;
     const { emissions, cues } = this.interpretReplies(hab, captured.cues);
@@ -114,24 +82,27 @@ export class Respondant {
         for (const emission of emissions) yield* emission.messages;
       },
     });
-    if (cues.length) this.outgoing.push({ kind: "cues", cues, index: 0 });
+    if (cues.length) this.poster.enqueueReplies(cues);
     reply.takeAll();
     return stream;
   }
 
   /** Earlier queries transfer to ordinary queued replies without an HTTP response reader. */
   enqueueReply(hab: Hab, reply: QueryReply): boolean {
-    this.assertOpen();
+    this.poster.assertOpen();
     const captured = reply.peekAll();
     if (!captured) return false;
     const { cues } = this.interpretReplies(hab, captured.cues);
-    if (cues.length) this.outgoing.push({ kind: "cues", cues, index: 0 });
+    if (cues.length) this.poster.enqueueReplies(cues);
     reply.takeAll();
     return true;
   }
 
-  private interpretReplies(hab: Hab, replies: readonly AgentCue[]): { emissions: CueEmission[]; cues: ReplyCursor[] } {
-    const emissions: CueEmission[] = [], cues: ReplyCursor[] = [];
+  private interpretReplies(
+    hab: Hab,
+    replies: readonly AgentCue[],
+  ): { emissions: CueEmission[]; cues: { emission: CueEmission; hab: Hab; route: RawCesrRoute }[] } {
+    const emissions: CueEmission[] = [], cues: { emission: CueEmission; hab: Hab; route: RawCesrRoute }[] = [];
     for (const cue of replies) {
       const emission = hab.interpretCue(cue);
       if (emission?.kind !== "wire") throw new RangeError("Direct reply requires wire");
@@ -144,129 +115,9 @@ export class Respondant {
           topic: cue.kin === "replay" ? "/replay" : "/reply",
         })
         : null;
-      if (route?.targets.length) cues.push({ emission, hab: sender, route, targetIndex: 0 });
+      if (route?.targets.length) cues.push({ emission, hab: sender, route });
     }
     return { emissions, cues };
-  }
-
-  private assertOpen(): void {
-    if (this.closed) throw new Error("Respondant is closed");
-  }
-
-  /** Join actual transport before returning every opened replay cursor; ordinary cues need no release protocol. */
-  *close(): Operation<void> {
-    this.closed = true;
-    this.active?.abort();
-    if (this.joined) yield* call(() => this.joined!);
-    const errors: unknown[] = [];
-    while (!this.outgoing.empty) {
-      try {
-        this.closeReply(this.outgoing.pull()!);
-      } catch (error) {
-        errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Respondant cleanup failed");
-  }
-
-  private closeReply(reply: OutboundReply): void {
-    if (reply.kind === "packet") return;
-    const errors: unknown[] = [];
-    for (const cue of reply.cues.splice(0)) {
-      try {
-        cue.iterator?.return?.();
-      } catch (error) {
-        if (!errors.includes(error)) errors.push(error);
-      }
-    }
-    if (errors.length === 1) throw errors[0];
-    if (errors.length) throw new AggregateError(errors, "Reply cursor cleanup failed");
-  }
-
-  /** Advance each captured batch once; concrete target preparation and transport remain owned operations. */
-  process(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
-    const self = this;
-    return call(function*() {
-      if (self.processing || self.closed) return;
-      self.processing = true;
-      const active = self.active = new AbortController();
-      let complete!: () => void;
-      self.joined = new Promise<void>((resolve) => complete = resolve);
-      yield* resource<void>(function*(provide) {
-        try {
-          yield* provide();
-        } finally {
-          self.processing = false;
-          self.active = undefined;
-          self.joined = undefined;
-          complete();
-        }
-      });
-      const count = self.outgoing.length;
-      for (let index = 0; index < count && !self.closed; index++) {
-        const reply = self.outgoing.peekHead();
-        if (!reply) break;
-        active.signal.throwIfAborted();
-        let done = true;
-        if (reply.kind === "packet") {
-          done = (yield* attemptPreparedCesrTarget(reply.packet, self.poster.services, active.signal, {
-            reactor: self.reactor,
-          })) === "complete";
-        } else {
-          const cue = reply.cues[reply.index];
-          const next = yield* self.prepareReplyTarget(reply);
-          done = next.kind === "done";
-          if (next.kind === "target") {
-            const target = next.target;
-            const outcome = yield* attemptPreparedCesrTarget(target, self.poster.services, active.signal, {
-              reactor: self.reactor,
-            });
-            if (outcome === "complete" || outcome === "refused" && !self.closed) {
-              active.signal.throwIfAborted();
-              if (outcome === "refused") self.outgoing.push({ kind: "packet", packet: target });
-              cue.prepared = undefined;
-              if (++cue.targetIndex === cue.route.targets.length) {
-                cue.targetIndex = 0;
-                cue.message = undefined;
-              }
-            }
-          }
-        }
-        active.signal.throwIfAborted();
-        if (done) {
-          try {
-            self.closeReply(reply);
-          } finally {
-            self.outgoing.pull();
-          }
-        } else {
-          self.outgoing.pull();
-          self.outgoing.push(reply);
-        }
-      }
-    });
-  }
-
-  private *prepareReplyTarget(
-    reply: Extract<OutboundReply, { kind: "cues" }>,
-  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" }> {
-    const cue = reply.cues[reply.index];
-    if (!cue) return { kind: "done" };
-    if (cue.prepared) return { kind: "target", target: cue.prepared };
-    if (!cue.message) {
-      cue.iterator ??= cue.emission.messages[Symbol.iterator]();
-      const next = cue.iterator.next();
-      if (next.done) {
-        reply.index++;
-        return { kind: "more" };
-      }
-      cue.message = next.value;
-      if (!(cue.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
-    }
-    cue.prepared = yield* this.poster.prepareBytesTarget(cue.hab, cue.route, cue.targetIndex, cue.message);
-    return { kind: "target", target: cue.prepared };
   }
 
   /** Resolve the existing responder policy for an admitted witness emission without sending or signing again. */

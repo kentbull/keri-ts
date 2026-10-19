@@ -211,7 +211,13 @@ and Respondant prepares output directly, without borrowing a Reactor callback ga
 CLI and hosts run the same component workers; final composed qualification remains
 separate from these ownership contracts.
 
-Respondant owns reply output directly; there is no forHab/emission-sink facade.
+Respondant owns reply interpretation and publication; Poster owns the queued
+execution and cleanup. There is no forHab/emission-sink facade. The first
+[cue delivery phase](../../plans/runtime/cue-delivery-refactor.md) retains lazy
+reply cursors, finite-pass ordering and exact prepared retries inside Poster;
+the plan tracks qualification. HTTP reply and outbound consumers remain independent.
+Queue consolidation and the later explicit whole-event failure policy are
+separate changes. QueryCoordinator is outside that ownership migration.
 QueryCoordinator prepares its signed packets directly without public custom-emission
 or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary

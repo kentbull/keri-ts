@@ -9,6 +9,10 @@ owns its evidence and limits; future changes still require relevant qualificatio
 Post-release Tevery ownership (#523) has separate scoped evidence and is not in
 published 1.0.0. Historical inventories must never become fresh implementation
 queues; the roadmap explicitly records unresolved contract/source contradictions.
+The [cue delivery refactor](../docs/plans/runtime/cue-delivery-refactor.md) is in
+progress. Its first cut moves execution from Respondant to Poster without changing
+retry/scheduling behavior; the plan tracks qualification. Later queue and failure-policy
+phases remain separately scoped.
 
 ## Read by subject
 

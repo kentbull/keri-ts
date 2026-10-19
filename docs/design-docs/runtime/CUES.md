@@ -5,6 +5,11 @@ transport payloads nor synthetic resource handles. A Deck has a consumer; it is
 not broadcast. [ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs
 component ownership and explicit contracts.
 
+The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) is in
+progress. Phase 1 moves execution ownership to Poster while preserving current
+delivery behavior; the plan tracks qualification. Later phases in that plan are not
+implemented by this ownership cut.
+
 KERIpy is the behavioral reference. Its mailbox host is supplied by the declared
 fork, not current upstream. Keep these sources distinct using the
 [reference inventory](../../plans/qualification/REFERENCE_ENVIRONMENTS.md).
@@ -45,7 +50,8 @@ flowchart TD
   H --> D[Query delivery and response intake]
   A -->|stream| M[MailboxDirector correlation and SSE]
   A -->|reply / replay / receipt / witness| S[Respondant and Hab interpretation]
-  S --> T[Poster or direct response reader]
+  S --> T[Poster queued execution]
+  S --> HTP[Independent direct response reader]
   B[Mailboxer payload storage] --> M
 ```
 
@@ -62,8 +68,11 @@ CueEmission retains the original cue and distinguishes wire, notify and transpor
 results. The root routes stream records directly to MailboxDirector; it does not
 need a Hab emission or host sink to do so.
 
-Respondant owns reply cursors, routing and once-signed retry packets. Poster owns
-actual transmission or authorized local forwarding. Mailboxer stores provider
+Respondant interprets cues, prepares routing and publishes reply work. Poster owns
+reply cursors, once-signed retry packets, delivery progress, active transport and
+joined cleanup, including authorized local forwarding. The temporary
+`enqueueReplies` boundary transfers prepared reply descriptions to this owner;
+it is not the later all-producer queue API. Mailboxer stores provider
 payloads; MailboxDirector correlates stream queries and serves those payloads.
 A successful `/fwd` write does not prove the query-to-SSE bridge works.
 
@@ -74,6 +83,15 @@ Preparation failure leaves it pending. Finite passes use their initial extent;
 newly appended work waits for another pass. Notify-only or no-emission cues can
 still be consumed. Do not restore CueSink hooks, preparation callbacks or generic
 delivery wrappers to enforce this ordinary sequencing.
+
+Phase 1 retains the existing finite outgoing pass: initially queued items rotate
+after one target attempt, and an observed refusal creates an independent retry of
+the exact prepared packet. Unexpected preparation/transport failures preserve the
+current work and propagate. The host still invokes query delivery then
+`Poster.process`, and ingress callers still invoke finite passes. Phase 2 owns
+their migration to an independent postman worker. Phase 3 owns removal of the
+manual cursor and universal emission wrapper, eager replay and explicit failed
+events; those changes must not be assumed from the ownership move alone.
 
 QueryReplies reservations are request-SAID correlation, not capacity. They capture
 before ordinary cue delivery; request owners inspect and take plain records after

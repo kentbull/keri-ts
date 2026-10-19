@@ -832,8 +832,8 @@ Deno.test("Poster.sendBytes falls back to a remote witness with introduce plus f
               new Deck([{ kin: "replay", messages: [message], src: sender.pre, dest: recipient.pre }]),
             );
 
-            for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) yield* runtime.respondant.process();
-            assertEquals(runtime.respondant.hasPending, false);
+            for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
+            assertEquals(runtime.poster.hasPending, false);
             assertEquals(hby.db.rcts.get(receiptKey).length, 1, "actual queue caller lends its receiver");
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 

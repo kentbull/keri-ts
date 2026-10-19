@@ -247,15 +247,15 @@ export function* createAgentRuntime(
       yield* call(() => director.close());
     }
   });
-  const poster = new Poster(hby, { mailboxer, services });
-  const respondant = yield* resource<Respondant>(function*(provide) {
-    const respondant = new Respondant(hby, { poster, reactor, replyStreams });
+  const poster = yield* resource<Poster>(function*(provide) {
+    const poster = new Poster(hby, { mailboxer, services, reactor });
     try {
-      yield* provide(respondant);
+      yield* provide(poster);
     } finally {
-      yield* respondant.close();
+      yield* poster.close();
     }
   });
+  const respondant = new Respondant(hby, { poster, replyStreams });
   if (mailboxer) {
     reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -326,7 +326,7 @@ export function* createAgentRuntime(
           if (ownsSignaler) signaler?.close();
         },
         function*() {
-          yield* respondant.close();
+          yield* poster.close();
         },
         function*() {
           yield* call(() => Promise.resolve(replyStreams.close()));
@@ -523,7 +523,7 @@ export function runtimePendingState(
       || runtime.hby.db.dune.cnt() > 0
       || runtime.hby.db.dpub.cnt() > 0,
     queriesPending: runtime.querying.hasPendingWork(),
-    deliveriesPending: runtime.querying.hasPendingDelivery || runtime.respondant.hasPending,
+    deliveriesPending: runtime.querying.hasPendingDelivery || runtime.poster.hasPending,
   };
 }
 
@@ -655,7 +655,7 @@ export function* runAgentRuntime(
     yield* spawn(function*() {
       while (true) {
         yield* runtime.querying.deliverOnce();
-        yield* runtime.respondant.process();
+        yield* runtime.poster.process();
         yield* runtimeTurn();
       }
     }),

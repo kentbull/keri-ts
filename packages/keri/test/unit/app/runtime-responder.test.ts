@@ -121,7 +121,7 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
           cue: { kin: "receipt", serder: recipient.kever!.serder },
           messages: [message],
         });
-        yield* runtime.respondant.process();
+        yield* runtime.poster.process();
 
         const stored = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, "/receipt"),
@@ -148,10 +148,10 @@ Deno.test("app/runtime-responder - receipt cues for witness-only recipients land
         assertEquals(emitted[0].buffer === witnessWire!.buffer, false, "finite return owns independent wire");
         const published = runtime.mailboxer!.getTopicMsgs(mailboxTopicKey(recipient.pre, "/receipt"));
         assertEquals(published, [message, ...emitted], "the existing local mailbox policy uses that same wire");
-        for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) {
-          yield* runtime.respondant.process();
+        for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
+          yield* runtime.poster.process();
         }
-        assertEquals(runtime.respondant.hasPending, false);
+        assertEquals(runtime.poster.hasPending, false);
 
         const chunk = new Uint8Array(4 * 1024 ** 2 + 1), messages = [chunk, chunk];
         const iterator = messages[Symbol.iterator].bind(messages), cleanupFailure = new Error("witness cursor cleanup");
@@ -341,7 +341,7 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
         let returned = false;
         yield* processCuesOnce(active, { hab: sender });
         const sending = yield* spawn(function*() {
-          yield* active.respondant.process();
+          yield* active.poster.process();
           returned = true;
         });
         let progress!: () => void;
@@ -360,11 +360,11 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
           yield* call(() => Promise.race([progressed, expired]));
           assertEquals(returned, false, "the real HTTP delivery is still paused");
           assertEquals(hby.db.getKever(controller.pre)?.sn, 1, "verified input progresses before delivery returns");
-          assertEquals(active.respondant.hasPending, true);
+          assertEquals(active.poster.hasPending, true);
           release();
           yield* accepting;
           yield* sending;
-          yield* active.respondant.process();
+          yield* active.poster.process();
           assertEquals(
             active.cues.toArray().map((cue) =>
               cue.kin === "receipt"

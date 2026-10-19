@@ -1,6 +1,6 @@
 # ADR-0013: Simple component flows and explicit ownership
 
-- Status: Accepted; 1.0.0 composed qualification complete; Tevery ownership refined after release
+- Status: Accepted; 1.0.0 composed qualification complete; later refinements require separate validation
 - Date: 2026-10-14
 - Scope: Component interaction, decisions, scheduling and actual resource lifetime
 - Related: [composition](adr-0003-agent-runtime-composition-root.md),
@@ -91,6 +91,15 @@ remotely acknowledged are different claims. Add correlation only for actual
 concurrency. Preserve existing completion semantics without a general RPC layer.
 Actual source/payload handles can cross a flow when their lifetime requires it;
 ordinary records do not need a synthetic resource protocol.
+
+The [cue delivery refactor](../plans/runtime/cue-delivery-refactor.md) first moves
+reply execution from Respondant into Poster without changing delivery policy.
+Respondant interprets and publishes; Poster owns live traversal, prepared packets,
+finite-pass progress, active transport and cleanup. This phase retains the existing
+retry and scheduling behavior. Its validation is separate from the 1.0.0 release.
+The approved later queue consolidation and eager FIFO/failure policy must land in
+their own focused cuts. Do not infer a generic retry, durability or scheduling
+framework from the [deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 CLI and long-lived hosts start the same workers. Finite commands use accepted-state
 predicates and elapsed deadlines, then join workers before returning or closing

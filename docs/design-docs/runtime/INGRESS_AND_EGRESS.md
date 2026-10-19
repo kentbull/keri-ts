@@ -152,14 +152,20 @@ CueSink and its optional hooks/root adapters are deleted. Network output runs
 in their concrete delivery operations. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
-Respondant owns lazy reply iterators, routing snapshots, once-signed packets and
-retry progress directly. CueDelivery and DirectReplyDelivery are deleted; no
+Respondant interprets cues and prepares routing before publishing reply work to
+Poster. Poster owns lazy reply iterators, routing snapshots, once-signed packets,
+retry progress, active I/O and joined cleanup. CueDelivery and DirectReplyDelivery are deleted; no
 publication callback runs through a batch wrapper. HTTP openReply/enqueueReply
 interpret the complete correlation batch before publishing either destination and
 then take its records. Failed second-TSN interpretation leaves the pair pending.
 The HTTP reader and outbound delivery consume the same signed emissions independently;
 queue publication does not open replay. Actual cursor cleanup runs once, even if it
-fails, and active transport joins before stores close. RuntimeDeliveries is deleted;
+fails, and Poster joins active transport before stores close. This is the
+ownership-only phase of the [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md);
+the plan tracks qualification. Finite-pass rotation, exact-packet automatic retries,
+the combined query/Poster worker and ingress-triggered delivery passes remain.
+The later independent worker, eager FIFO events and explicit failure policy are
+approved future phases, not current guarantees. RuntimeDeliveries is deleted;
 QueryCoordinator owns both deferred requests and signed query packets. Construction
 supplies its actual Reactor and clock/HTTP services; query code never receives an
 AgentRuntime. Its close stops production and joins response I/O before clearing

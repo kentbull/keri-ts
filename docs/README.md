@@ -2,6 +2,9 @@
 
 Start with the [architecture map](ARCHITECTURE_MAP.md) for package/source ownership
 or the [parity roadmap](plans/PARITY_ROADMAP.md) for remaining approved work.
+The [cue delivery refactor](plans/runtime/cue-delivery-refactor.md) is active;
+its [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records
+deferred capabilities, not additional implementation authorization.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

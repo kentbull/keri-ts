@@ -28,6 +28,8 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, resource, spawn, type Task } from "npm:effection@^3.6.0";
+import type { CueEmission } from "../core/cues.ts";
+import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Kever } from "../core/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -170,6 +172,7 @@ export function* attemptPreparedCesrTarget(
 }
 
 interface PosterOptions {
+  reactor?: Reactor;
   mailboxer?: Mailboxer | null;
   services?: RuntimeServices;
 }
@@ -179,6 +182,22 @@ interface MailboxPollerOptions {
   services?: RuntimeServices;
   pollTransport?: MailboxPollTransport;
 }
+
+/** Live replay cursor and exact signed packet temporarily retained by Poster during the ownership refactor. */
+interface ReplyCursor {
+  emission: CueEmission;
+  hab: Hab;
+  route: RawCesrRoute;
+  iterator?: Iterator<Uint8Array>;
+  message?: Uint8Array;
+  targetIndex: number;
+  prepared?: PreparedCesrTarget;
+}
+
+/** A correlated reply batch stays ordered; refused packets retain their exact wire. */
+type OutboundReply =
+  | { kind: "cues"; cues: ReplyCursor[]; index: number }
+  | { kind: "packet"; packet: PreparedCesrTarget };
 
 /**
  * Mailbox-first postman for outbound EXN transport.
@@ -195,12 +214,158 @@ export class Poster {
   readonly organizer: Organizer;
   readonly services: RuntimeServices;
 
+  private readonly outgoing = new Deck<OutboundReply>();
+  private processing = false;
+  private closed = false;
+  private active?: AbortController;
+  private joined?: Promise<void>;
+  private readonly reactor?: Reactor;
+
   constructor(hby: Habery, options: PosterOptions = {}) {
     const { mailboxer, services = defaultRuntimeServices } = options;
     this.hby = hby;
     this.mailboxer = mailboxer ?? null;
     this.organizer = new Organizer(hby.db, hby.signator);
     this.services = services;
+    this.reactor = options.reactor;
+  }
+
+  /** Include active transport and lazy replies in runtime convergence. */
+  get hasPending(): boolean {
+    return this.processing || !this.outgoing.empty;
+  }
+
+  /** Reject new production before a closed output owner can consume its source. */
+  assertOpen(): void {
+    if (this.closed) throw new Error("Poster is closed");
+  }
+
+  /** Admit a completely prepared reply batch; its existing scheduling policy stays local to Poster. */
+  enqueueReplies(cues: readonly { emission: CueEmission; hab: Hab; route: RawCesrRoute }[]): void {
+    this.assertOpen();
+    this.outgoing.push({ kind: "cues", cues: cues.map((cue) => ({ ...cue, targetIndex: 0 })), index: 0 });
+  }
+
+  /** Join actual transport before returning every opened replay cursor; ordinary cues need no release protocol. */
+  *close(): Operation<void> {
+    this.closed = true;
+    this.active?.abort();
+    if (this.joined) yield* call(() => this.joined!);
+    const errors: unknown[] = [];
+    while (!this.outgoing.empty) {
+      try {
+        this.closeReply(this.outgoing.pull()!);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Poster cleanup failed");
+  }
+
+  private closeReply(reply: OutboundReply): void {
+    if (reply.kind === "packet") return;
+    const errors: unknown[] = [];
+    for (const cue of reply.cues.splice(0)) {
+      try {
+        cue.iterator?.return?.();
+      } catch (error) {
+        if (!errors.includes(error)) errors.push(error);
+      }
+    }
+    if (errors.length === 1) throw errors[0];
+    if (errors.length) throw new AggregateError(errors, "Reply cursor cleanup failed");
+  }
+
+  /** Advance each captured batch once; concrete target preparation and transport remain owned operations. */
+  process(): Operation<void> {
+    // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
+    const self = this;
+    return call(function*() {
+      if (self.processing || self.closed) return;
+      self.processing = true;
+      const active = self.active = new AbortController();
+      let complete!: () => void;
+      self.joined = new Promise<void>((resolve) => complete = resolve);
+      yield* resource<void>(function*(provide) {
+        try {
+          yield* provide();
+        } finally {
+          self.processing = false;
+          self.active = undefined;
+          self.joined = undefined;
+          complete();
+        }
+      });
+      const count = self.outgoing.length;
+      for (let index = 0; index < count && !self.closed; index++) {
+        const reply = self.outgoing.peekHead();
+        if (!reply) break;
+        active.signal.throwIfAborted();
+        let done = true;
+        if (reply.kind === "packet") {
+          done = (yield* attemptPreparedCesrTarget(
+            reply.packet,
+            self.services,
+            active.signal,
+            self.reactor ? { reactor: self.reactor } : undefined,
+          )) === "complete";
+        } else {
+          const cue = reply.cues[reply.index];
+          const next = yield* self.prepareReplyTarget(reply);
+          done = next.kind === "done";
+          if (next.kind === "target") {
+            const target = next.target;
+            const outcome = yield* attemptPreparedCesrTarget(
+              target,
+              self.services,
+              active.signal,
+              self.reactor ? { reactor: self.reactor } : undefined,
+            );
+            if (outcome === "complete" || outcome === "refused" && !self.closed) {
+              active.signal.throwIfAborted();
+              if (outcome === "refused") self.outgoing.push({ kind: "packet", packet: target });
+              cue.prepared = undefined;
+              if (++cue.targetIndex === cue.route.targets.length) {
+                cue.targetIndex = 0;
+                cue.message = undefined;
+              }
+            }
+          }
+        }
+        active.signal.throwIfAborted();
+        if (done) {
+          try {
+            self.closeReply(reply);
+          } finally {
+            self.outgoing.pull();
+          }
+        } else {
+          self.outgoing.pull();
+          self.outgoing.push(reply);
+        }
+      }
+    });
+  }
+
+  private *prepareReplyTarget(
+    reply: Extract<OutboundReply, { kind: "cues" }>,
+  ): Operation<{ kind: "target"; target: PreparedCesrTarget } | { kind: "done" | "more" }> {
+    const cue = reply.cues[reply.index];
+    if (!cue) return { kind: "done" };
+    if (cue.prepared) return { kind: "target", target: cue.prepared };
+    if (!cue.message) {
+      cue.iterator ??= cue.emission.messages[Symbol.iterator]();
+      const next = cue.iterator.next();
+      if (next.done) {
+        reply.index++;
+        return { kind: "more" };
+      }
+      cue.message = next.value;
+      if (!(cue.message instanceof Uint8Array)) throw new TypeError("Cue message must be binary");
+    }
+    cue.prepared = yield* this.prepareBytesTarget(cue.hab, cue.route, cue.targetIndex, cue.message);
+    return { kind: "target", target: cue.prepared };
   }
 
   /**
