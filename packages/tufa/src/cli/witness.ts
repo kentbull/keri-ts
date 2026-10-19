@@ -1,5 +1,3 @@
-import { createProtocolProcessor } from "../../../keri/src/app/protocol-processing.ts";
-import { defaultRuntimeServices } from "../../../keri/src/app/runtime-services.ts";
 /**
  * Tufa witness operator commands.
  *
@@ -12,6 +10,8 @@ import type { Operation } from "effection";
 import {
   type Configer,
   createConfiger,
+  createProtocolProcessor,
+  defaultRuntimeServices,
   Receiptor,
   ValidationError,
   WitnessReceiptor,
