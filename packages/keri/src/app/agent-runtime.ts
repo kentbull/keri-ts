@@ -248,7 +248,7 @@ export function* createAgentRuntime(
     }
   });
   const postman = yield* resource<Poster>(function*(provide) {
-    const postman = new Poster(hby, { mailboxer, services, reactor });
+    const postman = new Poster(hby, mailboxer, reactor, services);
     try {
       yield* provide(postman);
     } finally {

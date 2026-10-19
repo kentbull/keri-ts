@@ -24,10 +24,14 @@ import type { ReplyStreams } from "./reply-streams.ts";
  *   KERIpy's `Respondant`
  */
 export class Respondant {
+  /** Borrowed local signer and accepted-state collection. */
   private readonly hby: Habery;
+  /** Delivery owner; source cues are consumed only after its admission succeeds. */
   private readonly postman: Poster;
+  /** Request-owned HTTP response readers, independent of queued delivery. */
   private readonly replyStreams: ReplyStreams;
 
+  /** Bind production dependencies without acquiring transport or store lifetimes. */
   constructor(
     hby: Habery,
     {
@@ -45,7 +49,7 @@ export class Respondant {
 
   /** Produce a whole cue before publishing or removing it; construction failure leaves the source visible. */
   enqueueCue(hab: Hab, cues: Deck<AgentCue>, hint?: Hab | null): boolean {
-    this.postman.assertOpen();
+    this.postman.ensureOpen();
     const cue = cues.peekHead();
     if (!cue) return false;
     const dest = recipientForCue(cue), topic = topicForCue(cue);
@@ -59,7 +63,6 @@ export class Respondant {
 
   /** Admit already produced witness messages without signing them again. */
   enqueueMsgs(hab: Hab, cue: AgentCue, msgs: readonly Uint8Array[]): void {
-    this.postman.assertOpen();
     const dest = recipientForCue(cue), topic = topicForCue(cue);
     const src = senderHabForCue(this.hby, cue, hab);
     if (!dest || !topic || !src) return;
@@ -68,7 +71,7 @@ export class Respondant {
 
   /** Construct the complete correlated pair before publishing its independent HTTP and queued deliveries. */
   openReply(hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
-    this.postman.assertOpen();
+    this.postman.ensureOpen();
     const captured = reply.peekAll();
     if (!captured) return null;
     const { msgs, evts } = this.prepareReplies(hab, captured.cues);
@@ -80,7 +83,7 @@ export class Respondant {
 
   /** Earlier queries transfer to ordinary queued replies without an HTTP response reader. */
   enqueueReply(hab: Hab, reply: QueryReply): boolean {
-    this.postman.assertOpen();
+    this.postman.ensureOpen();
     const captured = reply.peekAll();
     if (!captured) return false;
     const { evts } = this.prepareReplies(hab, captured.cues);
@@ -89,6 +92,7 @@ export class Respondant {
     return true;
   }
 
+  /** Construct every signed message and routable event before publishing either output. */
   private prepareReplies(hab: Hab, cues: readonly AgentCue[]): { msgs: Uint8Array[]; evts: PosterEvent[] } {
     const msgs: Uint8Array[] = [], evts: PosterEvent[] = [];
     for (const cue of cues) {
@@ -155,6 +159,7 @@ function senderHabForCue(
   return hab ?? soleHab(hby);
 }
 
+/** Read explicit local sender provenance only from cue families that carry it. */
 function cueSourcePrefix(
   cue: AgentCue,
 ): string | null {
@@ -168,6 +173,7 @@ function cueSourcePrefix(
   }
 }
 
+/** Use an implicit signer only when the local collection is unambiguous. */
 function soleHab(hby: Habery): Hab | null {
   const habitats = hby.habs.values();
   const first = habitats.next();

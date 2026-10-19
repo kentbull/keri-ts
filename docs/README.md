@@ -6,6 +6,8 @@ The [cue delivery refactor](plans/runtime/cue-delivery-refactor.md) records the
 implemented boundaries and qualification;
 its [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records
 deferred capabilities, not additional implementation authorization.
+The [messenger and protocol refactor](plans/runtime/messenger-protocol-refactor.md)
+tracks the phased separation of input/transport lifetimes from shared protocol processing.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

@@ -90,6 +90,12 @@ before returning or throwing. Commands choose their actual deadline and whether
 mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
 HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
 Actual cleanup failure still reaches the caller after convergence or cancellation.
+Poster receives its Habery, optional provider store (`mbx`), explicit receive
+capability and RuntimeServices as required constructor arguments. A null store or
+receive capability expresses actual absence. `ensureOpen()` guards admission and
+completion waiting; producers preflight only before constructing messages or
+opening a direct response, rather than repeating a check around already-built work.
+
 Poster.deliverDo is an independent host worker, separate from QueryCoordinator's
 delivery/response loop. HTTP and witness ingress publish outbound work without
 running Poster; the direct request response remains owned by that request.

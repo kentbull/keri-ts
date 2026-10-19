@@ -141,12 +141,6 @@ function remoteCesrTarget(
   return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
 }
 
-interface PosterOptions {
-  reactor?: Reactor;
-  mailboxer?: Mailboxer | null;
-  services?: RuntimeServices;
-}
-
 interface MailboxPollerOptions {
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
   services?: RuntimeServices;
@@ -163,35 +157,49 @@ interface MailboxPollerOptions {
  *   when no mailbox exists
  */
 export class Poster {
+  /** Borrowed habitat collection and backing accepted protocol state. */
   readonly hby: Habery;
-  readonly mailboxer: Mailboxer | null;
+  /** Borrowed mailbox store (mbx); null means this host provides no local mailbox. */
+  readonly mbx: Mailboxer | null;
+  /** Contact reader used only to resolve user-provided recipient aliases. */
   readonly organizer: Organizer;
+  /** Borrowed HTTP client and clock; selected explicitly by composition. */
   readonly services: RuntimeServices;
-
+  /** Runnable signed messages in admission order; the delivery worker is the sole consumer. */
   readonly evts = new Deck<PosterEvent>();
+  /** Whole failed attempts retained until explicit retry, discard or close. */
   readonly failures: Extract<PosterOutcome, { kin: "failed" }>[] = [];
+  /** Opt-in terminal outcomes, matched by concrete admitted event identity. */
   readonly cues = new Deck<PosterOutcome>();
+  /** Events whose callers requested one terminal observation. */
   private readonly notifications = new Set<PosterEvent>();
+  /** Enforce one active completion observer per event. */
   private readonly waiters = new Set<PosterEvent>();
+  /** Prevent overlapping drains of the runnable queue. */
   private processing = false;
+  /** Terminal admission state; closing a Poster cannot be reversed. */
   private closed = false;
+  /** Cancels the current delivery pass before store teardown. */
   private active?: AbortController;
+  /** Resolves after active delivery and its owned cleanup have joined. */
   private joined?: Promise<void>;
-  private readonly reactor?: Reactor;
+  /** Borrowed same-socket protocol receiver; null explicitly selects send-only capability. */
+  private readonly reactor: Reactor | null;
 
-  constructor(hby: Habery, options: PosterOptions = {}) {
-    const { mailboxer, services = defaultRuntimeServices } = options;
+  /** Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores. */
+  constructor(hby: Habery, mbx: Mailboxer | null, reactor: Reactor | null, services: RuntimeServices) {
     this.hby = hby;
-    this.mailboxer = mailboxer ?? null;
+    this.mbx = mbx;
     this.organizer = new Organizer(hby.db, hby.signator);
     this.services = services;
-    this.reactor = options.reactor;
+    this.reactor = reactor;
   }
 
   /** Admit signed source bytes; callers must observe an outcome before reporting transmission. */
   send(evt: PosterEvent, { notify = false }: { notify?: boolean } = {}): PosterEvent {
-    this.assertOpen();
+    this.ensureOpen();
     if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
+    // Admission owns the source bytes; later producer mutation cannot change queued work.
     const admitted = { ...evt, msg: evt.msg.slice() };
     if (notify) this.notifications.add(admitted);
     this.evts.push(admitted);
@@ -200,12 +208,13 @@ export class Poster {
 
   /** Construct all source records before atomically publishing a complete cue or reply pair. */
   sendAll(evts: Iterable<PosterEvent>): void {
-    this.assertOpen();
+    this.ensureOpen();
     const pending: PosterEvent[] = [];
     for (const evt of evts) {
       if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
       pending.push({ ...evt, msg: evt.msg.slice() });
     }
+    // Publish only after every event has passed capability checks and byte copying.
     this.evts.extend(pending);
   }
 
@@ -237,7 +246,7 @@ export class Poster {
       while (true) {
         const outcome = this.takeOutcome(evt);
         if (outcome) return outcome;
-        this.assertOpen();
+        this.ensureOpen();
         yield* runtimeTurn();
       }
     } finally {
@@ -247,6 +256,7 @@ export class Poster {
     }
   }
 
+  /** Consume only this event's outcome while preserving other observers' queue order. */
   private takeOutcome(evt: PosterEvent): PosterOutcome | undefined {
     let found: PosterOutcome | undefined;
     const count = this.cues.length;
@@ -272,12 +282,13 @@ export class Poster {
   }
 
   /** Reject new production before a closed output owner can consume its source. */
-  assertOpen(): void {
+  ensureOpen(): void {
     if (this.closed) throw new Error("Poster is closed");
   }
 
   /** Abort and join actual I/O before releasing process-local queued and failed work. */
   *close(): Operation<void> {
+    // Stop admission first, then abort/join before forgetting process-local work.
     this.closed = true;
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
@@ -307,6 +318,7 @@ export class Poster {
           complete();
         }
       });
+      // Snapshot a finite pass; producers may append work for the next worker turn.
       const count = self.evts.length;
       for (let remaining = count; remaining > 0 && !self.closed; remaining--) {
         const evt = self.evts.peekHead();
@@ -317,6 +329,7 @@ export class Poster {
         try {
           outcome = yield* self.deliverEvent(evt, deliveries, active.signal);
         } catch (error) {
+          // Preserve the source and partial progress before exposing an unexpected failure.
           self.finish({ kin: "failed", evt, deliveries, error });
           throw error;
         }
@@ -375,6 +388,7 @@ export class Poster {
         error: new ValidationError(`No end roles for ${evt.dest} to send raw CESR payload.`),
       };
     }
+    // A refused target does not prevent later targets from receiving this event.
     const failed: Error[] = [];
     try {
       for (const endpoint of route.targets) {
@@ -459,7 +473,7 @@ export class Poster {
       return { ...base, kind: "mailbox", targets: mailboxes };
     }
     if (
-      delivery !== "direct" && topic && this.mailboxer && this.hby.db.prefixes.has(hab.pre)
+      delivery !== "direct" && topic && this.mbx && this.hby.db.prefixes.has(hab.pre)
       && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
     ) {
       return { ...base, kind: "local", targets: [{ eid: hab.pre, url: `local-mailbox:${hab.pre}` }] };
@@ -500,7 +514,7 @@ export class Poster {
     endpoint: { eid: string; url: string },
   ): Operation<PreparedCesrTarget> {
     if (this.hby.db.prefixes.has(endpoint.eid)) {
-      const stored = this.requireMailboxer().storeMsg(
+      const stored = this.requireMbx().storeMsg(
         mailboxTopicKey(recipient, topic),
         mailboxReplyPayload(hab, recipient, topic, message),
       );
@@ -513,13 +527,13 @@ export class Poster {
   }
 
   /** Require provider mailbox storage for local mailbox-target delivery. */
-  private requireMailboxer(): Mailboxer {
-    if (!this.mailboxer) {
+  private requireMbx(): Mailboxer {
+    if (!this.mbx) {
       throw new ValidationError(
         "Local mailbox delivery requires provider mailbox storage.",
       );
     }
-    return this.mailboxer;
+    return this.mbx;
   }
 }
 
