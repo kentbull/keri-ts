@@ -39,15 +39,39 @@ export interface HttpStreamResponse {
   readonly ok: boolean;
   /** Received headers; consumers interpret their protocol meaning. */
   readonly headers: Headers;
-  /** Borrow the body once; consumer cancellation interrupts its pending native read. */
+  /**
+   * Borrow the response body for one consumer.
+   * Finish iteration or return it before leaving the enclosing open scope. Metadata
+   * success does not imply that this stream will reach EOF successfully.
+   *
+   * @param signal Optional consumer cancellation that interrupts the owned request/body read.
+   * @returns The single borrowed body source; chunks are available only within the open request scope.
+   */
   body(signal?: AbortSignal): AsyncIterable<Uint8Array>;
 }
 
 /** A scoped HTTP implementation supplied by composition, with an explicit transport-error contract. */
 export interface HttpClient {
-  /** Return finite response bytes after the owned request scope has closed. */
+  /**
+   * Return finite response bytes after the owned request scope has closed.
+   *
+   * @param url Absolute HTTP(S) URL; invalid URL/request construction fails before fetch.
+   * @param init Prepared method, headers, finite body and cancellation; omitted values use native Request defaults.
+   * @returns Status, headers and complete owned bytes after request cleanup.
+   * @throws Validation/construction errors remain caller errors; native fetch/body failures are TransportError with cause. Cancellation and cleanup failures remain visible.
+   */
   request(url: string, init?: HttpRequestInit): Operation<HttpResponse>;
-  /** Borrow one streaming response until the enclosing scope ends. */
+  /**
+   * Acquire response headers and retain native I/O in the enclosing scope.
+   * HTTP non-success status remains a response for the protocol caller to interpret.
+   * Scope exit aborts unread or pending I/O, joins it, and releases the reader.
+   * The consumer must not retain the response for use after that scope closes.
+   *
+   * @param url Absolute HTTP(S) URL without embedded credentials.
+   * @param init Prepared request choices and optional upstream signal; no asynchronous upload producer.
+   * @returns Response metadata and one body reader borrowed until the enclosing scope closes.
+   * @throws Request validation errors precede network classification. Native fetch/read failures become TransportError; consumer and genuine cleanup failures propagate.
+   */
   open(url: string, init?: HttpRequestInit): Operation<HttpStreamResponse>;
 }
 
@@ -59,12 +83,34 @@ export interface HttpClient {
  * Protocol consumers never receive the native Response.
  */
 export class FetchHttpClient implements HttpClient {
-  /** Consume finite bytes and finish the request scope before returning a completed response. */
+  /**
+   * Consume finite bytes and finish the request scope before returning a completed response.
+   *
+   * @param url Absolute HTTP(S) URL; invalid URL/request construction fails before fetch.
+   * @param init Prepared method, headers, finite body and cancellation; omitted values use native Request defaults.
+   * @returns Status, headers and complete owned bytes after request cleanup.
+   * @throws Validation/construction errors remain caller errors; native fetch/body failures are TransportError with cause. Cancellation and cleanup failures remain visible.
+   */
   request(url: string, init: HttpRequestInit = {}): Operation<HttpResponse> {
-    const open = this.open.bind(this);
+    const /**
+     * Acquire response headers and retain native I/O in the enclosing scope.
+     * HTTP non-success status remains a response for the protocol caller to interpret.
+     * Scope exit aborts unread or pending I/O, joins it, and releases the reader.
+     * The consumer must not retain the response for use after that scope closes.
+     *
+     * @param url Absolute HTTP(S) URL without embedded credentials.
+     * @param init Prepared request choices and optional upstream signal; no asynchronous upload producer.
+     * @returns Response metadata and one body reader borrowed until the enclosing scope closes.
+     * @throws Request validation errors precede network classification. Native fetch/read failures become TransportError; consumer and genuine cleanup failures propagate.
+     */
+    open = this.open.bind(this);
     return scoped(function*() {
       const response = yield* open(url, init);
-      const body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
+      const /**
+       * @param consumerSignal Optional parser/consumer signal; aborting it aborts this request owner.
+       * @returns A single-consumer byte iterable tied to the enclosing request scope.
+       */
+      body = yield* abortable((signal) => collectBytes(response.body(signal)), init.signal ?? undefined);
       return { status: response.status, ok: response.ok, headers: response.headers, body };
     });
   }
@@ -74,6 +120,7 @@ export class FetchHttpClient implements HttpClient {
     return resource<HttpStreamResponse>(function*(provide) {
       const controller = new AbortController();
       const signal = init.signal ? AbortSignal.any([controller.signal, init.signal]) : controller.signal;
+      // These handles let scope teardown join native work before releasing the reader.
       let fetching: Promise<Response> | undefined;
       let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
       let reading: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;

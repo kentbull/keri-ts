@@ -16,6 +16,12 @@ export interface IngressOptions extends DispatchOptions {
  * A pending read is joined before iterator return; cancellation cannot resume the
  * caller after disposal. The owning input operation borrows processors and acquires
  * no stores, queues, transport services or background workers here.
+ *
+ * @param source Creates the input byte source with this operation's abort signal; each source must honor cancellation.
+ * @param protocol Borrowed shared dispatcher that serializes protocol mutations and cue publication.
+ * @param kvy Input-owned KEL processor bound to the same store, reply verifier and cue flow.
+ * @param options Dispatch policy and optional upstream cancellation; defaults follow the shared processor.
+ * @throws Parsing, dispatch and cleanup failures propagate after the pending pull and iterator cleanup join.
  */
 export function* processMessages(
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,

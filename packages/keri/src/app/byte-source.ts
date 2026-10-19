@@ -8,7 +8,13 @@ export interface SourceOptions {
   maxChunkBytes?: number;
 }
 
-/** Adapt an already resident finite value into independent bounded parser chunks. */
+/**
+ * Adapt an already resident finite value into independent bounded parser chunks.
+ *
+ * @param bytes Borrowed resident input; each yielded chunk is a copy independent of subsequent producer mutation.
+ * @param options Optional signal and positive integer chunk size in bytes; defaults to 65536.
+ * @yields Copied byte chunks in input order; this does not parse message boundaries.
+ */
 export async function* chunkBytes(
   bytes: Uint8Array,
   { signal, maxChunkBytes = 64 * 1024 }: SourceOptions = {},
@@ -22,7 +28,14 @@ export async function* chunkBytes(
   }
 }
 
-/** Read a Fetch stream on demand and cancel its reader when parsing stops. */
+/**
+ * Read a Fetch stream on demand and cancel its reader when parsing stops.
+ *
+ * @param stream Borrowed Web stream to read exclusively; null yields no bytes.
+ * @param options Optional signal that cancels the pending read.
+ * @yields Nonempty chunks supplied by the underlying stream.
+ * @throws Read/cancel/unlock failures, combined when distinct failures occur.
+ */
 export async function* streamBytes(
   stream: ReadableStream<Uint8Array> | null,
   { signal }: Pick<SourceOptions, "signal"> = {},
@@ -72,7 +85,14 @@ export async function* streamBytes(
   }
 }
 
-/** Stream a local file with fixed-size owned buffers and close it on break or abort. */
+/**
+ * Stream a local file with fixed-size owned buffers and close it on break or abort.
+ *
+ * @param path Local filesystem path opened read-only for this iteration.
+ * @param options Optional cancellation and positive read buffer size in bytes; defaults to 65536.
+ * @yields Owned buffers up to the selected chunk size until file EOF.
+ * @throws Open/read failures or cancellation; the file closes on EOF, break or failure.
+ */
 export async function* fileBytes(
   path: string,
   { signal, maxChunkBytes = 64 * 1024 }: SourceOptions = {},
@@ -104,7 +124,12 @@ export async function* fileBytes(
   }
 }
 
-/** Collect an explicitly finite operation; bulk ingress should consume its source directly. */
+/**
+ * Collect an explicitly finite operation; bulk ingress should consume its source directly.
+ *
+ * @param source Finite byte source whose iteration errors propagate; do not pass an unbounded mailbox stream.
+ * @returns A contiguous owned array containing all chunks in order.
+ */
 export async function collectBytes(source: AsyncIterable<Uint8Array>): Promise<Uint8Array<ArrayBuffer>> {
   let bytes = new Uint8Array(0);
   let size = 0;
@@ -122,7 +147,12 @@ export async function collectBytes(source: AsyncIterable<Uint8Array>): Promise<U
   return bytes.subarray(0, size);
 }
 
-/** Reject invalid chunk sizes before allocation or opening a file. */
+/**
+ * Reject invalid chunk sizes before allocation or opening a file.
+ *
+ * @param limit Requested per-chunk byte count.
+ * @throws RangeError unless the count is a positive safe integer.
+ */
 function checkLimit(limit: number): void {
   if (!Number.isSafeInteger(limit) || limit < 1) throw new RangeError("Chunk size must be a positive safe integer");
 }
