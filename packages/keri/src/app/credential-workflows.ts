@@ -14,6 +14,7 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
+import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { ExchangeDeliveryPreference, Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
@@ -256,13 +257,17 @@ export function* revokeCredential(
     const messages = revocationStreamMessages(hby, reger, creder);
     for (const recipient of options.sendRecipients ?? []) {
       for (const message of messages) {
-        const sent = yield* poster.sendBytes(options.senderHab, {
-          recipient,
-          message,
+        const postman = poster;
+        const evt = postman.send({
+          src: options.senderHab.pre,
+          dest: postman.resolveRecipient(recipient),
+          msg: message,
           topic: CREDENTIAL_MAILBOX_TOPIC,
           delivery: options.delivery,
-        });
-        deliveries.push(...sent.deliveries);
+        }, { notify: true });
+        const outcome = yield* postman.wait(evt);
+        if (outcome.kin === "failed") throw outcome.error;
+        deliveries.push(...outcome.deliveries);
       }
     }
   }
@@ -452,14 +457,17 @@ function* publishGroupVcProposal(
     if (recipient === member.pre || hby.habs.has(recipient)) {
       continue;
     }
-    const result = yield* poster.sendExchange(member, {
-      recipient,
+    const { msg } = createExchangeMessage(member, {
+      dest: recipient,
       route,
       payload,
       embeds,
-      topic: MULTISIG_TOPIC,
     });
-    deliveries.push(...result.deliveries);
+    const postman = poster;
+    const evt = postman.send({ src: member.pre, dest: recipient, topic: MULTISIG_TOPIC, msg }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    deliveries.push(...outcome.deliveries);
   }
   return deliveries;
 }

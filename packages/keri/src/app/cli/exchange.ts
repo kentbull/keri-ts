@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
-import { sendExchangeMessage } from "../forwarding.ts";
+import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { withExistingHab } from "./common/context.ts";
 import { parseExnDataItems } from "./common/parsing.ts";
 
@@ -75,7 +75,7 @@ export function* exchangeSendCommand(
     },
     function*({ hby, hab }) {
       const { serder } = yield* sendExchangeMessage(hby, hab, {
-        recipient,
+        dest: recipient,
         route,
         topic: commandArgs.topic,
         payload,

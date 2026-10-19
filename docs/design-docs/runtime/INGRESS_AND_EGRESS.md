@@ -69,9 +69,10 @@ slot consumption belong to Hab, Respondant, QueryCoordinator and request owners.
 Poster target preparation is an owned operation that uses the shared codec before
 transport. One complete v2 body/genus becomes a signed `/fwd` body-digest envelope
 with an independent nested payload; legacy traffic retains its pathed-embed shape.
-Qualified CESR selectors are parsed before body construction. Respondant awaits
-preparation before consuming its source and preserves exact prepared retry bytes.
-Network waits happen in the actual delivery operations.
+Qualified CESR selectors are parsed before body construction. Respondant publishes
+its interpreted source before consuming the cue; Poster owns target preparation
+and the temporary cue path's exact prepared retry bytes. Other producers publish
+signed messages with Poster.send. Network waits happen only in Poster execution.
 
 Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
 bytes before publication; copy failure publishes nothing. `processOnce` pulls
@@ -89,6 +90,11 @@ before returning or throwing. Commands choose their actual deadline and whether
 mailbox polling is needed; no max-turn count estimates elapsed work. A blocked
 HTTP/mailbox worker does not serialize unrelated ingress or escrow progress.
 Actual cleanup failure still reaches the caller after convergence or cancellation.
+Poster.deliverDo is an independent host worker, separate from QueryCoordinator's
+delivery/response loop. HTTP and witness ingress publish outbound work without
+running Poster; the direct request response remains owned by that request.
+Standalone Poster callers start and join a worker explicitly before observing
+delivery completion. Tests for a finite delivery may invoke Poster.process.
 Challenge verification uses the same host workers while its command loop observes
 accepted responses and an elapsed deadline. It joins them before marking a match
 or reporting a missing response, so an empty mailbox wait can be retried cleanly.
@@ -160,12 +166,34 @@ interpret the complete correlation batch before publishing either destination an
 then take its records. Failed second-TSN interpretation leaves the pair pending.
 The HTTP reader and outbound delivery consume the same signed emissions independently;
 queue publication does not open replay. Actual cursor cleanup runs once, even if it
-fails, and Poster joins active transport before stores close. This is the
-ownership-only phase of the [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md);
-the plan tracks qualification. Finite-pass rotation, exact-packet automatic retries,
-the combined query/Poster worker and ingress-triggered delivery passes remain.
-The later independent worker, eager FIFO events and explicit failure policy are
-approved future phases, not current guarantees. RuntimeDeliveries is deleted;
+fails, and Poster joins active transport before stores close. The
+[cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) now routes
+all producers through one private execution queue and a separate Poster worker.
+The queue temporarily contains ordinary events, cue batches and prepared retry
+packets. Cue finite-pass rotation and exact-packet automatic retries remain;
+eager FIFO and retained whole-event failure policy are later work.
+
+Poster.send accepts src, dest, topic and signed msg bytes, with optional delivery
+preference and same-socket replies. It copies msg on admission and returns a fresh
+event identity. Callers needing an outcome opt into notify and wait on that exact
+identity, or consume its published cue. A repeated signed message cannot inherit
+an older success. Outcomes contain kin sent/failed, evt and completed deliveries;
+failed outcomes also retain the error. Missing routes and observed HTTP refusals
+produce failed outcomes; unexpected construction, parser, storage and cleanup
+failures also propagate to the owner. Existing direct-target stop-on-refusal and
+mailbox multi-target behavior remain unchanged in this phase.
+
+Only one waiter may observe an event. Cancelling it drops that observation and any
+unconsumed outcome, without withdrawing shared delivery. A published outcome does
+not retain a separate observer registration. Outcome cues are consumable output;
+queued and active work alone determine hasPending. Whole failed events are not yet
+retained in a separate failures queue and there is no new retry/discard API.
+
+Exchange construction and signing live in exchange-messaging.ts. Producers call
+createExchangeMessage before publishing; the standalone sendExchangeMessage helper
+accepts dest and owns the same queue/worker/wait lifecycle. Poster.sendBytes,
+sendExchange and sendPreparedExchange and their old result types are removed.
+RuntimeDeliveries is deleted;
 QueryCoordinator owns both deferred requests and signed query packets. Construction
 supplies its actual Reactor and clock/HTTP services; query code never receives an
 AgentRuntime. Its close stops production and joins response I/O before clearing

@@ -655,10 +655,10 @@ export function* runAgentRuntime(
     yield* spawn(function*() {
       while (true) {
         yield* runtime.querying.deliverOnce();
-        yield* runtime.poster.process();
         yield* runtimeTurn();
       }
     }),
+    yield* spawn(() => runtime.poster.deliverDo()),
     yield* spawn(function*() {
       yield* runtime.reactor.msgDo();
     }),

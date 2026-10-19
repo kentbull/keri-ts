@@ -4,8 +4,9 @@ Status: approved plan; implementation and qualification in progress. The startin
 revision is `6c8e5971ea8f40ac1ad2de3b26080196235e7651`. This plan does not extend
 the published 1.0.0 qualification to subsequent changes. PR #524 was closed
 unmerged; its responder extraction is background evidence, not the implementation
-base. The first implementation cut contains phase 0 and the ownership-only part
-of phase 1. Later phases require their own focused changes and validation.
+base. Phase 1's ownership-only cut merged as PR #528. Phase 2 consolidates queued
+execution and caller outcomes in a separate cut; later phases require their own
+focused changes and validation.
 
 ## Decision and boundaries
 
@@ -189,9 +190,14 @@ changeset validation. Broader release qualification remains a separate obligatio
 ## Progress
 
 - Phase 0: plan and inventories saved; baseline source inspected.
-- Phase 1: ownership relocation implemented; 44 focused tests passed locally.
-  Final candidate checks and CI remain pending; this is not broader release qualification.
-- Phases 2–4: approved follow-up scope; not implemented or qualified by this cut.
+- Phase 1: PR #528 merged at `c0562571`; 44 focused tests passed locally and its
+  selected CI passed. This is not broader release qualification.
+- Phase 2: queue admission/outcomes, independent Poster worker, producer migration
+  and ingress publication are implemented in the current cut. The focused caller,
+  CLI, queue, reply and HTTP suites passed 150 tests locally; static checks passed.
+  Selected CI and merge remain pending.
+  The private queue still carries legacy cue cursors and prepared retry packets.
+- Phases 3–4: approved follow-up scope; not implemented or qualified by this cut.
 
 The owning contracts are [cues](../../design-docs/runtime/CUES.md),
 [ingress/egress](../../design-docs/runtime/INGRESS_AND_EGRESS.md) and

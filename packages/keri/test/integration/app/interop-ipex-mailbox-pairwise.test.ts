@@ -1,6 +1,6 @@
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
 import { collectPayload, framePayload, parseBytes, Prefixer, SerderACDC, Vrsn_2_0 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { decodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
@@ -257,11 +257,19 @@ for (const tsDiscloser of [true, false]) {
                             yield* memberRuntime.reactor.processBytes(wire);
                             assertEquals(Boolean(memberRuntime.hby.db.exns.get(body.said!)), !invalid);
                           }
-                          const delivery = yield* runtime.poster.sendBytes(members[0], {
-                            recipient: py.pre,
-                            topic: "/credential",
-                            message: wire,
-                            delivery: "indirect",
+                          const delivery = yield* call(function*() {
+                            const postman = runtime.poster;
+                            yield* spawn(() => postman.deliverDo());
+                            const evt = postman.send({
+                              src: members[0].pre,
+                              dest: py.pre,
+                              topic: "/credential",
+                              msg: wire,
+                              delivery: "indirect",
+                            }, { notify: true });
+                            const outcome = yield* postman.wait(evt);
+                            if (outcome.kin === "failed") throw outcome.error;
+                            return outcome;
                           });
                           assertEquals(delivery.deliveries, [mailboxUrl]);
                           said = body.said!;

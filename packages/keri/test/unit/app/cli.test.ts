@@ -1,4 +1,4 @@
-import { type Operation, run } from "effection";
+import { type Operation, race, run, sleep } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import {
   concatBytes,
@@ -14,13 +14,20 @@ import {
   WireParseError,
 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
-import { ipexAdmitCommand, ipexGrantCommand, ipexJoinCommand, ipexPollCommand } from "../../../src/app/cli/ipex.ts";
+import {
+  ipexAdmitCommand,
+  ipexApplyCommand,
+  ipexGrantCommand,
+  ipexJoinCommand,
+  ipexPollCommand,
+} from "../../../src/app/cli/ipex.ts";
 import { multisigInceptCommand, multisigJoinCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
@@ -163,6 +170,55 @@ Deno.test("CLI - IPEX empty poll and join deadlines close workers before store r
       yield* hby.close();
     }
   });
+});
+
+Deno.test("CLI - IPEX apply runs queued delivery before closing its command store", async () => {
+  const name = "ipex-queued-send";
+  const headDirPath = await Deno.makeTempDir({ prefix: "ipex-queued-send-" });
+  const messages: SerderKERI[] = [];
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+    messages.push(new SerderKERI({ raw: await readCesrRequestBytes(request) }));
+    return new Response(null, { status: 204 });
+  });
+  const url = `http://127.0.0.1:${server.addr.port}/`;
+  let dest = "", src = "";
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath, temp: false, skipConfig: true });
+      try {
+        src = hby.makeHab("sender").pre;
+        dest = hby.makeHab("recipient").pre;
+        hby.db.ends.pin([dest, "controller", dest], { allowed: true });
+        hby.db.locs.pin([dest, "http"], { url });
+      } finally {
+        yield* hby.close();
+      }
+    });
+    const output = await captureCommand(race([
+      ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
+      (function*() {
+        yield* sleep(5_000);
+        throw new Error("IPEX apply did not complete its queued delivery");
+      })(),
+    ]));
+    const result = JSON.parse(output.stdout);
+    assertEquals(messages.length, 1);
+    assertEquals(messages[0].route, "/ipex/apply");
+    assertEquals(messages[0].pre, src);
+    assertEquals(messages[0].ked?.a, { m: "", s: src, a: {}, i: dest });
+    assertEquals(result, { said: messages[0].said, deliveries: [url] });
+    await run(function*() {
+      const hby = yield* setupHby(name, "", undefined, false, headDirPath, { readonly: true, skipConfig: true });
+      try {
+        assertEquals(hby.habByName("sender")?.pre, src);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await server.shutdown();
+    await Deno.remove(headDirPath, { recursive: true });
+  }
 });
 
 Deno.test("CLI - multisig approval deadlines validate before runtime startup", async () => {

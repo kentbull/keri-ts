@@ -7,8 +7,7 @@
  *   `keri.app.indirecting`
  *
  * Current `keri-ts` difference:
- * - delivery and polling are synchronous Effection operations instead of HIO
- *   doers
+ * - delivery and polling use scoped Effection workers instead of HIO doers
  * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import {
@@ -63,16 +62,20 @@ import { sendCesrTcp } from "./tcp-egress.ts";
 /** Delivery preference accepted by CLI and runtime exchange send helpers. */
 export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
 
-/** Result summary for one EXN send attempt across all resolved destinations. */
-export interface ExchangeSendResult {
-  serder: SerderKERI;
-  deliveries: string[];
+/** One admitted source message; identity distinguishes repeated sends of the same signed bytes. */
+export interface PosterEvent {
+  readonly src: string;
+  readonly dest: string;
+  readonly topic: string;
+  readonly msg: Uint8Array;
+  readonly delivery?: ExchangeDeliveryPreference;
+  readonly replies?: boolean;
 }
 
-/** Result summary for one raw CESR delivery attempt. */
-export interface RawCesrSendResult {
-  deliveries: string[];
-}
+/** Optional terminal observation of one concrete delivery attempt, not remote acceptance. */
+export type PosterOutcome =
+  | { kin: "sent"; evt: PosterEvent; deliveries: string[] }
+  | { kin: "failed"; evt: PosterEvent; deliveries: string[]; error: unknown };
 
 /** Recipient policy captured during a short guarded preparation turn. */
 export interface RawCesrRoute {
@@ -197,10 +200,11 @@ interface ReplyCursor {
 /** A correlated reply batch stays ordered; refused packets retain their exact wire. */
 type OutboundReply =
   | { kind: "cues"; cues: ReplyCursor[]; index: number }
-  | { kind: "packet"; packet: PreparedCesrTarget };
+  | { kind: "packet"; packet: PreparedCesrTarget }
+  | { kind: "event"; evt: PosterEvent };
 
 /**
- * Mailbox-first postman for outbound EXN transport.
+ * Mailbox-first postman for queued signed CESR messages.
  *
  * Responsibilities:
  * - resolve recipient aliases against organizer/contact state
@@ -214,7 +218,10 @@ export class Poster {
   readonly organizer: Organizer;
   readonly services: RuntimeServices;
 
-  private readonly outgoing = new Deck<OutboundReply>();
+  private readonly evts = new Deck<OutboundReply>();
+  readonly cues = new Deck<PosterOutcome>();
+  private readonly notifications = new Set<PosterEvent>();
+  private readonly waiters = new Set<PosterEvent>();
   private processing = false;
   private closed = false;
   private active?: AbortController;
@@ -230,9 +237,59 @@ export class Poster {
     this.reactor = options.reactor;
   }
 
+  /** Admit signed source bytes; callers must observe an outcome before reporting transmission. */
+  send(evt: PosterEvent, { notify = false }: { notify?: boolean } = {}): PosterEvent {
+    this.assertOpen();
+    if (evt.replies && !this.reactor) throw new Error("TCP reply delivery requires a Reactor");
+    const admitted = { ...evt, msg: evt.msg.slice() };
+    if (notify) this.notifications.add(admitted);
+    this.evts.push({ kind: "event", evt: admitted });
+    return admitted;
+  }
+
+  /** Wait only for this admission; cancellation releases its completion observation. */
+  *wait(evt: PosterEvent): Operation<PosterOutcome> {
+    if (!this.notifications.has(evt) && ![...this.cues].some((cue) => cue.evt === evt)) {
+      throw new Error("Event was not admitted with completion notification");
+    }
+    if (this.waiters.has(evt)) throw new Error("Event already has a completion waiter");
+    this.waiters.add(evt);
+    try {
+      while (true) {
+        const outcome = this.takeOutcome(evt);
+        if (outcome) return outcome;
+        this.assertOpen();
+        yield* runtimeTurn();
+      }
+    } finally {
+      this.notifications.delete(evt);
+      this.waiters.delete(evt);
+      this.takeOutcome(evt);
+    }
+  }
+
+  private takeOutcome(evt: PosterEvent): PosterOutcome | undefined {
+    let found: PosterOutcome | undefined;
+    const count = this.cues.length;
+    for (let index = 0; index < count; index++) {
+      const cue = this.cues.pull()!;
+      if (cue.evt === evt) found = cue;
+      else this.cues.push(cue);
+    }
+    return found;
+  }
+
+  /** Run queued delivery independently of query response intake and producer lifetimes. */
+  *deliverDo(): Operation<void> {
+    while (!this.closed) {
+      yield* this.process();
+      yield* runtimeTurn();
+    }
+  }
+
   /** Include active transport and lazy replies in runtime convergence. */
   get hasPending(): boolean {
-    return this.processing || !this.outgoing.empty;
+    return this.processing || !this.evts.empty;
   }
 
   /** Reject new production before a closed output owner can consume its source. */
@@ -243,7 +300,7 @@ export class Poster {
   /** Admit a completely prepared reply batch; its existing scheduling policy stays local to Poster. */
   enqueueReplies(cues: readonly { emission: CueEmission; hab: Hab; route: RawCesrRoute }[]): void {
     this.assertOpen();
-    this.outgoing.push({ kind: "cues", cues: cues.map((cue) => ({ ...cue, targetIndex: 0 })), index: 0 });
+    this.evts.push({ kind: "cues", cues: cues.map((cue) => ({ ...cue, targetIndex: 0 })), index: 0 });
   }
 
   /** Join actual transport before returning every opened replay cursor; ordinary cues need no release protocol. */
@@ -252,19 +309,21 @@ export class Poster {
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
     const errors: unknown[] = [];
-    while (!this.outgoing.empty) {
+    while (!this.evts.empty) {
       try {
-        this.closeReply(this.outgoing.pull()!);
+        this.closeReply(this.evts.pull()!);
       } catch (error) {
         errors.push(error);
       }
     }
+    this.cues.clear();
+    this.notifications.clear();
     if (errors.length === 1) throw errors[0];
     if (errors.length) throw new AggregateError(errors, "Poster cleanup failed");
   }
 
   private closeReply(reply: OutboundReply): void {
-    if (reply.kind === "packet") return;
+    if (reply.kind !== "cues") return;
     const errors: unknown[] = [];
     for (const cue of reply.cues.splice(0)) {
       try {
@@ -297,12 +356,27 @@ export class Poster {
           complete();
         }
       });
-      const count = self.outgoing.length;
+      const count = self.evts.length;
       for (let index = 0; index < count && !self.closed; index++) {
-        const reply = self.outgoing.peekHead();
+        const reply = self.evts.peekHead();
         if (!reply) break;
         active.signal.throwIfAborted();
         let done = true;
+        if (reply.kind === "event") {
+          const deliveries: string[] = [];
+          let outcome: PosterOutcome;
+          try {
+            outcome = yield* self.deliverEvent(reply.evt, deliveries, active.signal);
+          } catch (error) {
+            outcome = { kin: "failed", evt: reply.evt, deliveries, error };
+            self.evts.pull();
+            if (self.notifications.delete(reply.evt)) self.cues.push(outcome);
+            throw error;
+          }
+          self.evts.pull();
+          if (self.notifications.delete(reply.evt)) self.cues.push(outcome);
+          continue;
+        }
         if (reply.kind === "packet") {
           done = (yield* attemptPreparedCesrTarget(
             reply.packet,
@@ -324,7 +398,7 @@ export class Poster {
             );
             if (outcome === "complete" || outcome === "refused" && !self.closed) {
               active.signal.throwIfAborted();
-              if (outcome === "refused") self.outgoing.push({ kind: "packet", packet: target });
+              if (outcome === "refused") self.evts.push({ kind: "packet", packet: target });
               cue.prepared = undefined;
               if (++cue.targetIndex === cue.route.targets.length) {
                 cue.targetIndex = 0;
@@ -338,11 +412,11 @@ export class Poster {
           try {
             self.closeReply(reply);
           } finally {
-            self.outgoing.pull();
+            self.evts.pull();
           }
         } else {
-          self.outgoing.pull();
-          self.outgoing.push(reply);
+          self.evts.pull();
+          self.evts.push(reply);
         }
       }
     });
@@ -393,193 +467,60 @@ export class Poster {
     return matches[0]!.id;
   }
 
-  /**
-   * Send one EXN through the mailbox-first delivery policy.
-   *
-   * Default policy:
-   * - if recipient mailboxes exist, broadcast to all mailbox endpoints
-   * - if no mailbox exists, send directly to controller/agent endpoints
-   * - if no direct endpoints exist, fall back to one witness endpoint
-   * - all mailbox targets are attempted; any failure is reported to the caller
-   *
-   * Current `keri-ts` difference:
-   * - KERIpy `Poster` is queue/doer based
-   * - here the caller drives one explicit operation and gets a structured
-   *   result back immediately
-   * - optional receiver lends same-socket TCP intake; standalone TCP is transmit-only
-   * - public callers own synchronous route/signing preparation and wire retention
-   */
-  *sendExchange(
-    hab: Hab,
-    args: {
-      recipient: string;
-      route: string;
-      payload: Record<string, unknown>;
-      topic?: string;
-      exchangeRecipient?: string | null;
-      modifiers?: Record<string, unknown>;
-      date?: string;
-      dig?: string;
-      embeds?: Record<string, Uint8Array>;
-      delivery?: ExchangeDeliveryPreference;
-    },
-    receiver?: TcpReplyReceiver,
-  ): Operation<ExchangeSendResult> {
-    const recipient = this.resolveRecipient(args.recipient);
-    const topic = args.topic ?? defaultTopicForRoute(args.route);
-    if (topic.length === 0) {
-      throw new ValidationError(
-        `Unable to derive mailbox topic from route ${args.route}.`,
-      );
-    }
-
-    const embedded = args.embeds ?? {};
-    const exchangeRecipient = args.exchangeRecipient === null ? undefined : args.exchangeRecipient ?? recipient;
-    const [serder, attachments] = exchange(args.route, args.payload, {
-      sender: hab.pre,
-      recipient: exchangeRecipient,
-      modifiers: args.modifiers,
-      stamp: args.date,
-      dig: args.dig,
-      embeds: Object.keys(embedded).length > 0 ? embedded : undefined,
+  /** Execute one admitted source message using the existing mailbox-first target policy. */
+  private *deliverEvent(evt: PosterEvent, deliveries: string[], signal: AbortSignal): Operation<PosterOutcome> {
+    const hab = this.hby.habs.get(evt.src);
+    if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
+    const route = this.findBytesRoute(hab, {
+      recipient: evt.dest,
+      recipientIsPrefix: true,
+      topic: evt.topic,
+      delivery: evt.delivery,
     });
-    const message = concatBytes(
-      hab.endorse(serder, { pipelined: false }),
-      attachments,
-    );
-    return yield* this.sendPreparedExchange(hab, {
-      recipient,
-      serder,
-      message,
-      topic,
-      delivery: args.delivery,
-    }, receiver);
-  }
-
-  /** Deliver the owner's signed exchange unchanged; recipient is already resolved and bytes remain borrowed through cleanup. */
-  *sendPreparedExchange(
-    hab: Hab,
-    { recipient, serder, message, topic, delivery = "auto" }: {
-      recipient: string;
-      serder: SerderKERI;
-      message: Uint8Array;
-      topic: string;
-      delivery?: ExchangeDeliveryPreference;
-    },
-    receiver?: TcpReplyReceiver,
-  ): Operation<ExchangeSendResult> {
-    const deliveries: string[] = [];
-    const mailboxEndpoints = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
-
-    if (mailboxEndpoints.length > 0) {
-      const failed = new Map<string, string>();
-      for (const endpoint of mailboxEndpoints) {
-        try {
-          yield* this.deliverMailboxTarget(
-            hab,
-            recipient,
-            topic,
-            message,
-            endpoint,
-            receiver,
-          );
-          deliveries.push(endpoint.url);
-        } catch (error) {
-          failed.set(
-            endpoint.eid,
-            error instanceof Error ? error.message : String(error),
-          );
-        }
-      }
-
-      if (failed.size > 0) {
-        throw new ValidationError(
-          `Exchange delivery failed for ${recipient}: ${[...failed.values()].join("; ")}; completed: ${
-            deliveries.join(", ") || "none"
-          }`,
-        );
-      }
-
-      return { serder, deliveries };
+    if (!route) {
+      return {
+        kin: "failed",
+        evt,
+        deliveries,
+        error: new ValidationError(`No end roles for ${evt.dest} to send raw CESR payload.`),
+      };
     }
-
-    const directEndpoints = directDeliveryEndpoints(hab, recipient);
-    if (directEndpoints.length > 0) {
-      for (const endpoint of directEndpoints) {
-        yield* sendPreparedCesrTarget(
-          remoteCesrTarget(endpoint, message, this.hby.cesrBodyMode),
-          this.services,
-          undefined,
-          receiver,
-        );
-        deliveries.push(endpoint.url);
-      }
-      return { serder, deliveries };
-    }
-
-    if (delivery !== "direct") {
-      const witnessEndpoint = firstSortedEndpoint(
-        hab.endsFor(recipient)[Roles.witness],
-      );
-      if (witnessEndpoint) {
-        yield* this.deliverWitnessTarget(
-          hab,
-          recipient,
-          topic,
-          message,
-          witnessEndpoint,
-          receiver,
-        );
-        deliveries.push(witnessEndpoint.url);
-        return { serder, deliveries };
-      }
-    }
-
-    throw new ValidationError(
-      `No end roles for ${recipient} to send evt=${serder.said ?? "<unknown>"}`,
-    );
-  }
-
-  /**
-   * Send one raw CESR message through the same mailbox-first transport policy.
-   *
-   * This is used by delegation workflows where correctness depends on the
-   * actual KEL bytes reaching the delegator or delegate, not on an EXN wrapper.
-   * Optional Reactor lends TCP intake; caller owns preparation/retention before transport.
-   */
-  *sendBytes(
-    hab: Hab,
-    args: {
-      recipient: string;
-      message: Uint8Array;
-      topic?: string;
-      delivery?: ExchangeDeliveryPreference;
-    },
-    reactor?: Reactor,
-  ): Operation<RawCesrSendResult> {
-    const route = this.resolveBytesRoute(hab, args);
-    const deliveries: string[] = [];
-    const failed = new Map<string, string>();
+    const failed: Error[] = [];
     for (let index = 0; index < route.targets.length; index++) {
       const endpoint = route.targets[index]!;
-      try {
-        const target = yield* this.prepareBytesTarget(hab, route, index, args.message);
-        yield* sendPreparedCesrTarget(target, this.services, undefined, reactor ? { reactor } : undefined);
-        deliveries.push(endpoint.url);
-      } catch (error) {
-        if (route.kind !== "mailbox") throw error;
-        failed.set(endpoint.eid, error instanceof Error ? error.message : String(error));
+      const target = yield* this.prepareBytesTarget(hab, route, index, evt.msg);
+      if (target.kind === "http") {
+        const outcome = yield* attemptPostCesr(target.url, (signal) => chunkBytes(target.message, { signal }), {
+          bodyMode: target.bodyMode,
+          destination: target.destination,
+          services: this.services,
+          signal,
+        });
+        if (outcome.kind === "refuse") {
+          failed.push(outcome.error);
+          if (route.kind !== "mailbox") break;
+          continue;
+        }
+      } else {
+        yield* sendPreparedCesrTarget(
+          target,
+          this.services,
+          signal,
+          evt.replies ? { reactor: this.reactor! } : undefined,
+        );
       }
+      deliveries.push(endpoint.url);
     }
-
-    if (failed.size > 0) {
-      throw new ValidationError(
-        `CESR delivery failed for ${route.recipient}: ${[...failed.values()].join("; ")}; completed: ${
+    if (failed.length) {
+      const error = route.kind !== "mailbox" ? failed[0] : new ValidationError(
+        `CESR delivery failed for ${route.recipient}: ${failed.map((error) => error.message).join("; ")}; completed: ${
           deliveries.join(", ") || "none"
         }`,
+        { cause: failed.length === 1 ? failed[0] : new AggregateError(failed, "Endpoint refusals") },
       );
+      return { kin: "failed", evt, deliveries, error };
     }
-    return { deliveries };
+    return { kin: "sent", evt, deliveries };
   }
 
   /** Snapshot mailbox/direct/witness policy without opening transport or reading message bytes. */
@@ -640,72 +581,6 @@ export class Poster {
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
     return remoteCesrTarget(endpoint, message, route.bodyMode);
-  }
-
-  /**
-   * Deliver one message to one mailbox endpoint.
-   *
-   * Delivery modes:
-   * - if the mailbox AID is local to this habery, store directly in
-   *   `Mailboxer`
-   * - otherwise wrap in `/fwd` and post to the remote mailbox URL
-   */
-  private *deliverMailboxTarget(
-    hab: Hab,
-    recipient: string,
-    topic: string,
-    message: Uint8Array,
-    endpoint: { eid: string; url: string },
-    receiver?: TcpReplyReceiver,
-  ): Operation<void> {
-    yield* this.deliverForwardedTarget(
-      hab,
-      recipient,
-      topic,
-      message,
-      endpoint,
-      receiver,
-    );
-  }
-
-  /**
-   * Deliver one message using the recipient's witness as a store-and-forward
-   * fallback when no mailbox or direct endpoint exists.
-   */
-  private *deliverWitnessTarget(
-    hab: Hab,
-    recipient: string,
-    topic: string,
-    message: Uint8Array,
-    endpoint: { eid: string; url: string },
-    receiver?: TcpReplyReceiver,
-  ): Operation<void> {
-    yield* this.deliverForwardedTarget(
-      hab,
-      recipient,
-      topic,
-      message,
-      endpoint,
-      receiver,
-    );
-  }
-
-  /**
-   * Deliver one `/fwd`-wrapped payload to a mailbox or witness endpoint.
-   *
-   * Local hosted targets store directly in `Mailboxer`; remote targets receive
-   * KERIpy-style introduction material ahead of the forwarded payload.
-   */
-  private *deliverForwardedTarget(
-    hab: Hab,
-    recipient: string,
-    topic: string,
-    message: Uint8Array,
-    endpoint: { eid: string; url: string },
-    receiver?: TcpReplyReceiver,
-  ): Operation<void> {
-    const target = yield* this.prepareForwardedTarget(hab, recipient, topic, message, endpoint);
-    yield* sendPreparedCesrTarget(target, this.services, undefined, receiver);
   }
 
   /** Prepare complete signed wire and its introduction before opening transport. */
@@ -1510,24 +1385,4 @@ export function* postCesrMessage(
     services,
     signal,
   });
-}
-
-/** Shared EXN send helper used by CLI commands that want KERIpy-style behavior. */
-export function* sendExchangeMessage(
-  hby: Habery,
-  hab: Hab,
-  args: {
-    recipient: string;
-    route: string;
-    payload: Record<string, unknown>;
-    topic?: string;
-    modifiers?: Record<string, unknown>;
-    date?: string;
-    dig?: string;
-    embeds?: Record<string, Uint8Array>;
-    delivery?: ExchangeDeliveryPreference;
-  },
-): Operation<ExchangeSendResult> {
-  const poster = new Poster(hby);
-  return yield* poster.sendExchange(hab, args);
 }

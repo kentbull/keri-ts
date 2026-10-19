@@ -161,6 +161,11 @@ export {
   EssrRecipient,
 } from "../app/essr.ts";
 export {
+  createExchangeMessage,
+  type ExchangeMessageArgs,
+  sendExchangeMessage,
+} from "../app/exchange-messaging.ts";
+export {
   type ExchangeAttachment,
   type ExchangeDecision,
   type ExchangeInput,
@@ -172,7 +177,6 @@ export {
 } from "../app/exchanging.ts";
 export {
   type ExchangeDeliveryPreference,
-  type ExchangeSendResult,
   type MailboxFetchTimeoutPolicy,
   type MailboxPollBatch,
   MailboxPoller,
@@ -181,8 +185,8 @@ export {
   type MailboxPollTransportRequest,
   postCesrMessage,
   Poster,
-  type RawCesrSendResult,
-  sendExchangeMessage,
+  type PosterEvent,
+  type PosterOutcome,
 } from "../app/forwarding.ts";
 export { isLocalGroupHab } from "../app/group-members.ts";
 export {

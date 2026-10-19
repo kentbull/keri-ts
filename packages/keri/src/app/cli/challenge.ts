@@ -12,7 +12,8 @@ import {
   markChallengeVerified,
   parseChallengeWords,
 } from "../challenging.ts";
-import { type ExchangeDeliveryPreference, sendExchangeMessage } from "../forwarding.ts";
+import { sendExchangeMessage } from "../exchange-messaging.ts";
+import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
 import { Organizer } from "../organizing.ts";
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
@@ -116,7 +117,7 @@ export function* challengeRespondCommand(
     function*({ hby, hab }) {
       const payload: ChallengeResponsePayload = { words };
       const { serder } = yield* sendExchangeMessage(hby, hab, {
-        recipient,
+        dest: recipient,
         route: CHALLENGE_RESPONSE_ROUTE,
         topic: "challenge",
         payload: { i: hab.pre, ...payload },
