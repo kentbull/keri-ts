@@ -9,6 +9,7 @@ import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { socketBytes } from "../../../src/app/socket-source.ts";
 import {
@@ -54,13 +55,7 @@ Deno.test("witness delivery preserves authorization and retries the media type f
         const services = defaultRuntimeServices;
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         // One request completes before the next complete event is sent.
-        yield* sendWitnessMessage(
-          controller,
-          witness.pre,
-          wire,
-          "Bearer fixture",
-          services,
-        );
+        yield* sendWitnessMessage(controller, witness.pre, wire, services.http, services.clock, null, "Bearer fixture");
         assertEquals(requests.length, 4);
         assertEquals(requests.map((request) => request.authorization), Array(4).fill("Bearer fixture"));
         assertEquals(requests.map((request) => request.destination), Array(4).fill(witness.pre));
@@ -113,7 +108,14 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         const runtime = yield* createAgentRuntime(hby, { services });
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const task = run(function*() {
-          yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.protocol);
+          yield* sendWitnessMessage(
+            controller,
+            witness.pre,
+            wire,
+            runtime.services.http,
+            runtime.services.clock,
+            runtime.protocol,
+          );
           continued = true;
         });
         try {
@@ -123,7 +125,14 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         }
         assertEquals(continued, false);
         finish = true;
-        yield* sendWitnessMessage(controller, witness.pre, wire, undefined, runtime.services, runtime.protocol);
+        yield* sendWitnessMessage(
+          controller,
+          witness.pre,
+          wire,
+          runtime.services.http,
+          runtime.services.clock,
+          runtime.protocol,
+        );
         assertEquals(connections, 2);
       } finally {
         yield* hby.close(true);
@@ -157,10 +166,15 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
         const runtime = yield* createAgentRuntime(hby);
-        const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.services);
+        const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock);
         yield* call(() =>
           assertRejects(
-            () => run(() => new Receiptor(hby, runtime.protocol, runtime.services).receipt(controller.pre)),
+            () =>
+              run(() =>
+                new Receiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock).receipt(
+                  controller.pre,
+                )
+              ),
             Error,
             "HTTP(S) receipt endpoint",
           )
@@ -168,7 +182,14 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         assertEquals(connections, 0, "explicit endpoint receipting retains its HTTP-only contract");
         const { serder, message } = acceptedEventReplayMessage(hby, controller.pre, 0);
         const key = [controller.pre, serder.said!] as const;
-        yield* sendWitnessMessage(controller, witness.pre, message, undefined, runtime.services, runtime.protocol);
+        yield* sendWitnessMessage(
+          controller,
+          witness.pre,
+          message,
+          runtime.services.http,
+          runtime.services.clock,
+          runtime.protocol,
+        );
         assertEquals(hby.db.wigs.get(key).length, 0, "generic drain makes no receipt success claim");
         yield* call(() => assertRejects(() => run(() => submitter.submit(controller.pre)), Error, "did not receipt"));
         const outsider = hby.makeHab("outsider", undefined, { transferable: false });
@@ -195,7 +216,12 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const next = acceptedEventReplayMessage(hby, controller.pre, 1).serder;
         reply = witness.receipt(next);
         hby.db.wigs.rem([controller.pre, next.said!]);
-        yield* new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).submit(controller.pre);
+        yield* new WitnessReceiptor(
+          hby,
+          createProtocolProcessor(hby),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        ).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
 
         assertEquals(controller.kever?.sn, 1, "standalone processing retains the caller's Habery");
@@ -229,8 +255,18 @@ Deno.test("HTTP receipt success requires the requested event's verified witness 
         controller.interact();
         const current = acceptedEventReplayMessage(source, controller.pre, 1).serder;
         const key = [controller.pre, current.said!] as const;
-        const submitter = new WitnessReceiptor(source, createProtocolProcessor(source), defaultRuntimeServices),
-          getter = new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices);
+        const submitter = new WitnessReceiptor(
+            source,
+            createProtocolProcessor(source),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          ),
+          getter = new Receiptor(
+            source,
+            createProtocolProcessor(source),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          );
         const forged = new Cigar({ qb64: outsider.sign(current.raw, false)[0]!.qb64 }, witness.kever!.verfers[0]);
         for (
           const invalid of [
@@ -306,7 +342,12 @@ Deno.test("HTTP three-witness fanout contains only verified complementary witnes
             pipelined: true,
           }));
         }
-        yield* new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices).receipt(controller.pre);
+        yield* new Receiptor(
+          source,
+          createProtocolProcessor(source),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        ).receipt(controller.pre);
         assertEquals(source.db.wigs.get([controller.pre, serder.said!]).map((siger) => siger.index).sort(), [0, 1, 2]);
         assertEquals(fanout.map(({ witness }) => witness), [0, 1, 2]);
         for (const { witness, bytes } of fanout) {
@@ -350,11 +391,21 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
           source.db.locs.pin([witness.pre, "http"], { url: `http://127.0.0.1:${server.addr.port}/${index}` });
           replies.push(witness.receipt(old));
         }
-        const receiptor = new Receiptor(source, createProtocolProcessor(source), defaultRuntimeServices);
+        const receiptor = new Receiptor(
+          source,
+          createProtocolProcessor(source),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        );
         assertEquals(yield* receiptor.get(controller.pre, { sn: 0 }), true);
         const expected = { witnesses: [before.pre], statuses: { [before.pre]: 200 } };
         assertEquals(
-          yield* new WitnessReceiptor(source, createProtocolProcessor(source), defaultRuntimeServices).submit(
+          yield* new WitnessReceiptor(
+            source,
+            createProtocolProcessor(source),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          ).submit(
             controller.pre,
             { sn: 0 },
           ),
@@ -396,14 +447,24 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
       for (const event of [rotation, interaction]) {
         const expected = { witnesses: [], statuses: {} };
         assertEquals(
-          yield* new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).submit(
+          yield* new WitnessReceiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          ).submit(
             controller.pre,
             { sn: event.sn! },
           ),
           expected,
         );
         assertEquals(
-          yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).receipt(controller.pre, {
+          yield* new Receiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          ).receipt(controller.pre, {
             sn: event.sn!,
           }),
           expected,
@@ -473,7 +534,8 @@ Deno.test("halting a receipt read closes the peer body without continuing its ca
     const hby = yield* createHabery({ name: `receipt-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const { controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
-      yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices).get(controller.pre);
+      yield* new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices.http, defaultRuntimeServices.clock)
+        .get(controller.pre);
       continued = true;
     } finally {
       yield* hby.close(true);
@@ -812,7 +874,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
     }
   };
   const task = run(function*() {
-    yield* streamCesrTcp(url, source, { clock: services.clock });
+    yield* streamCesrTcp(url, source, services.clock);
     continued = true;
   });
   const socket = await accepted.promise;
@@ -868,10 +930,15 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
   try {
     assertEquals(
       await run(() =>
-        streamCesrTcp(url, async function*() {
-          await new Promise((resolve) => setTimeout(resolve, 30));
-          yield Uint8Array.of(1, 2);
-        }, { clock: services.clock, drainTimeoutMs: 10 })
+        streamCesrTcp(
+          url,
+          async function*() {
+            await new Promise((resolve) => setTimeout(resolve, 30));
+            yield Uint8Array.of(1, 2);
+          },
+          services.clock,
+          { drainTimeoutMs: 10 },
+        )
       ),
       { kind: "transmitted", bytes: 2 },
     );
@@ -886,18 +953,23 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     await assertRejects(
       () =>
         run(() =>
-          streamCesrTcp(url, () => ({
-            [Symbol.asyncIterator]() {
-              return {
-                next: () => Promise.resolve({ done: true as const, value: undefined }),
-                async return() {
-                  await new Promise((resolve) => setTimeout(resolve, 30));
-                  eofCleanup = true;
-                  return { done: true as const, value: undefined };
-                },
-              };
-            },
-          }), { drainTimeoutMs: 5 })
+          streamCesrTcp(
+            url,
+            () => ({
+              [Symbol.asyncIterator]() {
+                return {
+                  next: () => Promise.resolve({ done: true as const, value: undefined }),
+                  async return() {
+                    await new Promise((resolve) => setTimeout(resolve, 30));
+                    eofCleanup = true;
+                    return { done: true as const, value: undefined };
+                  },
+                };
+              },
+            }),
+            systemClock,
+            { drainTimeoutMs: 5 },
+          )
         ),
       TransportError,
       "drain deadline",
@@ -908,22 +980,27 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     const failure = await assertRejects(
       () =>
         run(() =>
-          streamCesrTcp(url, () => ({
-            [Symbol.asyncIterator]() {
-              return {
-                next() {
-                  return Promise.resolve({
-                    done: false as const,
-                    value: "invalid source chunk" as unknown as Uint8Array,
-                  });
-                },
-                return() {
-                  returned++;
-                  return Promise.reject(fault);
-                },
-              };
-            },
-          }), { clock: services.clock, maxChunkBytes: 4 })
+          streamCesrTcp(
+            url,
+            () => ({
+              [Symbol.asyncIterator]() {
+                return {
+                  next() {
+                    return Promise.resolve({
+                      done: false as const,
+                      value: "invalid source chunk" as unknown as Uint8Array,
+                    });
+                  },
+                  return() {
+                    returned++;
+                    return Promise.reject(fault);
+                  },
+                };
+              },
+            }),
+            services.clock,
+            { maxChunkBytes: 4 },
+          )
         ),
       AggregateError,
       "cleanup failed",
@@ -936,7 +1013,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
         run(() =>
           streamCesrTcp(url, () => {
             throw openingFault;
-          }, { clock: services.clock })
+          }, services.clock)
         )
       ),
       openingFault,
@@ -947,13 +1024,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
         throw openingFault;
       },
     };
-    const clockFailure = await assertRejects(() =>
-      run(() =>
-        sendCesrTcp(url, Uint8Array.of(1), {
-          clock: faultyClock,
-        })
-      )
-    );
+    const clockFailure = await assertRejects(() => run(() => sendCesrTcp(url, Uint8Array.of(1), faultyClock)));
     assertStrictEquals(clockFailure, openingFault);
     const emptyController = new AbortController();
     let emptyPulls = 0, emptyClosed = false;
@@ -972,11 +1043,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     };
     const emptyFailure = await assertRejects(() =>
       run(() =>
-        streamCesrTcp(url, emptySource, {
-          clock: services.clock,
-          signal: emptyController.signal,
-          drainTimeoutMs: 100,
-        })
+        streamCesrTcp(url, emptySource, services.clock, { signal: emptyController.signal, drainTimeoutMs: 100 })
       )
     );
     assertStrictEquals(emptyFailure, openingFault);
@@ -998,7 +1065,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
             // deno-lint-ignore no-unsafe-finally -- Intentionally model a late foreign cleanup failure.
             if (lateFailure) throw lateFailure;
           }
-        }, { clock: services.clock })
+        }, services.clock)
       );
       try {
         await reading.promise;
@@ -1016,7 +1083,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       }
     }
     finish = true;
-    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), { clock: services.clock })), {
+    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), services.clock)), {
       kind: "transmitted",
       bytes: 2,
     });
@@ -1026,7 +1093,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       await run(() =>
         streamCesrTcp(url, async function*() {
           for (let index = 0; index < 3; index++) yield Uint8Array.of(5, 6);
-        }, { clock: services.clock })
+        }, services.clock)
       ),
       { kind: "transmitted", bytes: 6 },
     );
@@ -1040,14 +1107,14 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
           await run(() =>
             writeCesrTcpSocket(borrowed, async function*() {
               yield Uint8Array.of(7, 8);
-            }, { clock: services.clock })
+            }, services.clock)
           ),
           { kind: "transmitted", bytes: 2 },
         );
         assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
       }
       let succeeded = false;
-      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), { clock: services.clock })).then(
+      await run(() => writeCesrTcpSocket(borrowed, () => Promise.reject(undefined), services.clock)).then(
         () => succeeded = true,
         (error) => assertEquals(error, undefined),
       );
@@ -1060,7 +1127,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
-  const refused = await assertRejects(() => run(() => sendCesrTcp(url, Uint8Array.of(1))), TransportError);
+  const refused = await assertRejects(() => run(() => sendCesrTcp(url, Uint8Array.of(1), systemClock)), TransportError);
   assertEquals((refused.cause as NodeJS.ErrnoException).code, "ECONNREFUSED");
 });
 
@@ -1078,6 +1145,7 @@ Deno.test("TCP application composes raw duplex siblings over a real borrowed con
     const result = await run(function*() {
       const connection = yield* openTcpConnection(
         `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
+        systemClock,
       );
       const read = yield* spawn(() =>
         abortable(async (signal) => {
@@ -1092,7 +1160,7 @@ Deno.test("TCP application composes raw duplex siblings over a real borrowed con
       );
       const sent = yield* sendCesrTcpSocket(connection, async function*() {
         yield Uint8Array.of(1, 2);
-      }, { clock: services.clock });
+      }, services.clock);
       yield* read;
       return sent;
     });

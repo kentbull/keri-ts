@@ -23,9 +23,10 @@ import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { ExchangeAttachment, Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import { type Poster } from "./forwarding.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import type { Notifier } from "./notifying.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { sendWitnessMessage } from "./witnessing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";
@@ -377,9 +378,11 @@ export class Anchorer {
   /** Query producer port; composition owns the consuming coordinator and its lifetime. */
   readonly querying: { enqueue(request: QueryRequest): void };
   /** Borrowed HTTP and clock services for witness publication. */
-  readonly services: RuntimeServices;
+  readonly http: HttpClient;
+  /** Borrowed clock for this owner's actual network deadlines. */
+  readonly clock: RuntimeClock;
   /** Borrowed receive processing for witness sends; absent explicitly permits transmit-only delivery. */
-  readonly protocol?: ProtocolProcessor;
+  readonly protocol: ProtocolProcessor | null;
   /** Process-local proxy selection per delegated event; cleared when the workflow ends. */
   readonly communicationHabPins = new Map<string, string>();
   /** Existing query retry-pass bookkeeping; independent of Poster delivery retry. */
@@ -388,12 +391,11 @@ export class Anchorer {
   /** Bind delivery/query/protocol collaborators from the same accepted-state domain; acquire no stores. */
   constructor(
     hby: Habery,
-    { postman, querying, services = defaultRuntimeServices, protocol }: {
-      postman: Poster;
-      querying: Anchorer["querying"];
-      services?: RuntimeServices;
-      protocol?: ProtocolProcessor;
-    },
+    postman: Poster,
+    querying: Anchorer["querying"],
+    protocol: ProtocolProcessor | null,
+    http: HttpClient,
+    clock: RuntimeClock,
   ) {
     if (protocol && protocol.kvy.db !== hby.db) {
       throw new RangeError("Anchorer protocol processor must use the same database");
@@ -402,7 +404,8 @@ export class Anchorer {
     this.protocol = protocol;
     this.postman = postman;
     this.querying = querying;
-    this.services = services;
+    this.http = http;
+    this.clock = clock;
   }
 
   /** Start one delegated event in witness-receipt escrow and replace any previous local proxy pin. */
@@ -881,7 +884,7 @@ export class Anchorer {
     // matches the witness-visible material KERIpy sends for delegated approval.
     for (const msg of this.hby.db.cloneDelegation(kever)) {
       for (const witness of kever.wits) {
-        yield* sendWitnessMessage(transportHab, witness, msg, undefined, this.services, this.protocol);
+        yield* sendWitnessMessage(transportHab, witness, msg, this.http, this.clock, this.protocol);
       }
     }
 
@@ -899,14 +902,7 @@ export class Anchorer {
       if (outcome.kin === "failed") throw outcome.error;
     }
     for (const witness of kever.wits) {
-      yield* sendWitnessMessage(
-        transportHab,
-        witness,
-        approvedEvent,
-        undefined,
-        this.services,
-        this.protocol,
-      );
+      yield* sendWitnessMessage(transportHab, witness, approvedEvent, this.http, this.clock, this.protocol);
     }
   }
 }

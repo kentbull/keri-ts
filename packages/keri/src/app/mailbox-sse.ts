@@ -1,7 +1,7 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
-import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
+import { type RuntimeClock } from "./runtime-clock.ts";
 
 /** Shared encoder for complete mailbox event payloads. */
 const textEncoder = new TextEncoder();
@@ -19,8 +19,6 @@ export interface MailboxSseOptions {
   idleTimeoutMs?: number;
   /** Absolute lifetime of one long poll, including its first event; default 30 seconds. */
   maxDurationMs?: number;
-  /** Clock supplied by the consuming owner; SSE has no HTTP implementation dependency. */
-  clock?: RuntimeClock;
   /** External cancellation remains separate from a successful poll timeout. */
   signal?: AbortSignal;
 }
@@ -68,6 +66,7 @@ export function consumeMailboxSse(
   response: HttpStreamResponse,
   controller: AbortController,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
+  clock: RuntimeClock,
   options: MailboxSseOptions = {},
 ): Operation<void> {
   return call(function*() {
@@ -105,6 +104,7 @@ export function consumeMailboxSse(
           lineSize += chunk.length - start;
         }
       },
+      clock,
       options,
       () => completed,
     );
@@ -118,6 +118,7 @@ export function consumeMailboxSse(
 export function readMailboxSseBody(
   response: HttpStreamResponse,
   controller: AbortController,
+  clock: RuntimeClock,
   options: MailboxSseOptions = {},
 ): Operation<string> {
   return call(function*() {
@@ -145,6 +146,7 @@ export function readMailboxSseBody(
         }
         size = end;
       },
+      clock,
       options,
       () => completed,
     );
@@ -164,10 +166,11 @@ function* consumeChunks(
   response: HttpStreamResponse,
   controller: AbortController,
   consume: (chunk: Uint8Array) => Operation<boolean | void>,
+  clock: RuntimeClock,
   options: MailboxSseOptions,
   hasEvent: () => boolean,
 ): Operation<void> {
-  const { idleTimeoutMs = 500, maxDurationMs = 30_000, clock = systemClock } = options;
+  const { idleTimeoutMs = 500, maxDurationMs = 30_000 } = options;
   for (const value of [idleTimeoutMs, maxDurationMs]) {
     if (!Number.isSafeInteger(value) || value < 1) throw new RangeError("Invalid mailbox SSE timeout");
   }

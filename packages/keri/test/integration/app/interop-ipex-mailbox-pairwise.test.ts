@@ -1,3 +1,4 @@
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
@@ -162,9 +163,10 @@ for (const tsDiscloser of [true, false]) {
                       },
                     );
                     for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
-                    yield* new WitnessReceiptor(hby, runtime.protocol, runtime.services).submit(
-                      hab.pre,
-                    );
+                    yield* new WitnessReceiptor(hby, runtime.protocol, runtime.services.http, runtime.services.clock)
+                      .submit(
+                        hab.pre,
+                      );
                     const graph = graphDisclosures(hby, hab, graphCase);
                     const urls: string[] = [];
                     for (const [i, memberRuntime] of runtimes.entries()) {
@@ -306,16 +308,22 @@ for (const tsDiscloser of [true, false]) {
                                 });
                                 assertEquals(response.status, 200);
                                 queries.push(qry.said!);
-                                yield* consumeMailboxSse(response, new AbortController(), function*(event) {
-                                  const [payload] = parseBytes(event.msg);
-                                  assertEquals(new TextDecoder().decode(event.msg).includes("hidden-value"), false);
-                                  for (const memberRuntime of runtimes) {
-                                    yield* memberRuntime.reactor.processBytes(event.msg);
-                                  }
-                                  received.push(payload.body.said!);
-                                  cursor = event.idx + 1;
-                                  return false;
-                                }, { idleTimeoutMs: 2000, maxDurationMs: 5000 });
+                                yield* consumeMailboxSse(
+                                  response,
+                                  new AbortController(),
+                                  function*(event) {
+                                    const [payload] = parseBytes(event.msg);
+                                    assertEquals(new TextDecoder().decode(event.msg).includes("hidden-value"), false);
+                                    for (const memberRuntime of runtimes) {
+                                      yield* memberRuntime.reactor.processBytes(event.msg);
+                                    }
+                                    received.push(payload.body.said!);
+                                    cursor = event.idx + 1;
+                                    return false;
+                                  },
+                                  systemClock,
+                                  { idleTimeoutMs: 2000, maxDurationMs: 5000 },
+                                );
                               });
                               return received.includes(said) ? true : undefined;
                             })

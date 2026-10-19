@@ -41,6 +41,7 @@ import { abortable } from "./abortable.ts";
 import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
 import { requestWithHeaderTimeout } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
@@ -54,7 +55,7 @@ import {
 } from "./mailboxing.ts";
 import { Organizer } from "./organizing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
-import { defaultRuntimeServices, type RuntimeServices } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 import { TransportError } from "./transport-error.ts";
@@ -116,8 +117,6 @@ function remoteCesrTarget(
 
 interface MailboxPollerOptions {
   timeouts?: Partial<MailboxPollingTimeoutPolicy>;
-  services?: RuntimeServices;
-  pollTransport?: MailboxPollTransport;
 }
 
 /**
@@ -136,8 +135,10 @@ export class Poster {
   readonly mbx: Mailboxer | null;
   /** Contact reader used only to resolve user-provided recipient aliases. */
   readonly organizer: Organizer;
-  /** Borrowed HTTP client and clock; selected explicitly by composition. */
-  readonly services: RuntimeServices;
+  /** Borrowed HTTP client selected explicitly by composition. */
+  readonly http: HttpClient;
+  /** Borrowed clock for this owner's actual network deadlines. */
+  readonly clock: RuntimeClock;
   /** Runnable signed messages in admission order; the delivery worker is the sole consumer. */
   readonly evts = new Deck<PosterEvent>();
   /** Whole failed attempts retained until explicit retry, discard or close. */
@@ -160,12 +161,19 @@ export class Poster {
   private readonly protocol: ProtocolProcessor | null;
 
   /** Bind actual collaborators; Poster owns queue/I/O lifetimes and borrows their stores. */
-  constructor(hby: Habery, mbx: Mailboxer | null, protocol: ProtocolProcessor | null, services: RuntimeServices) {
+  constructor(
+    hby: Habery,
+    mbx: Mailboxer | null,
+    protocol: ProtocolProcessor | null,
+    http: HttpClient,
+    clock: RuntimeClock,
+  ) {
     if (protocol && protocol.kvy.db !== hby.db) throw new RangeError("Poster protocol must use the same database");
     this.hby = hby;
     this.mbx = mbx;
     this.organizer = new Organizer(hby.db, hby.signator);
-    this.services = services;
+    this.http = http;
+    this.clock = clock;
     this.protocol = protocol;
   }
 
@@ -369,7 +377,7 @@ export class Poster {
         const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
         try {
           if (target.kind === "http") {
-            const outcome = yield* new HTTPMessenger(this.protocol, this.services.http, this.services.clock).send(
+            const outcome = yield* new HTTPMessenger(this.protocol, this.http, this.clock).send(
               target.url,
               target.message,
               {
@@ -384,7 +392,7 @@ export class Poster {
             }
           } else if (target.kind === "tcp") {
             // The messenger owns the attempt; Poster keeps source and event-level progress.
-            yield* new TCPMessenger(this.protocol, this.services.clock).send(target.url, target.message, {
+            yield* new TCPMessenger(this.protocol, this.clock).send(target.url, target.message, {
               signal,
               replies: evt.replies,
             });
@@ -673,27 +681,36 @@ export class MailboxPoller {
   });
   static readonly ReadIdleTimeoutMs = 500;
 
+  /** Borrowed habitat collection used to select mailbox signers. */
   readonly hby: Habery;
+  /** Shared provider topics and persisted remote cursors. */
   readonly mailboxDirector: MailboxDirector;
+  /** Existing request-open and SSE-window settings, normalized once. */
   readonly timeoutPolicy: Readonly<MailboxPollingTimeoutPolicy>;
-  readonly services: RuntimeServices;
+  /** Borrowed HTTP client passed to each polling attempt. */
+  readonly http: HttpClient;
+  /** Borrowed clock for this owner's actual network deadlines. */
+  readonly clock: RuntimeClock;
+  /** Selected mailbox operation; owns each HTTP/SSE attempt. */
   readonly pollTransport: MailboxPollTransport;
+  /** Process-local progress for provider messages already consumed here. */
   private readonly localCursors = new Map<string, Record<string, number>>();
 
+  /** Bind polling inputs and dependencies without starting workers or acquiring stores. */
   constructor(
     hby: Habery,
     mailboxDirector: MailboxDirector,
+    http: HttpClient,
+    clock: RuntimeClock,
+    pollTransport: MailboxPollTransport,
     options: MailboxPollerOptions = {},
   ) {
-    const {
-      timeouts,
-      services = defaultRuntimeServices,
-      pollTransport = defaultMailboxPollTransport,
-    } = options;
+    const { timeouts } = options;
     this.hby = hby;
     this.mailboxDirector = mailboxDirector;
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
-    this.services = services;
+    this.http = http;
+    this.clock = clock;
     this.pollTransport = pollTransport;
   }
 
@@ -788,14 +805,13 @@ export class MailboxPoller {
     const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    yield* this.pollTransport.poll({
+    yield* this.pollTransport.poll(this.http, this.clock, {
       hab: target.signerHab,
       targetPre: target.targetPre,
       endpoint,
       topics: cursor,
       bodyMode: this.hby.cesrBodyMode,
       timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy),
-      services: this.services,
     }, function*(message) {
       yield* call(() =>
         onBatch({ source: "remote", pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] })
@@ -1123,19 +1139,21 @@ export interface MailboxPollTransportRequest {
   topics: Record<string, number>;
   bodyMode: "header" | "body";
   timeouts: MailboxFetchTimeoutPolicy;
-  services: RuntimeServices;
 }
 
 export interface MailboxPollTransport {
   /** Await each complete event consumer; false ends the poll without reading ahead. */
   poll(
+    http: HttpClient,
+    clock: RuntimeClock,
     args: MailboxPollTransportRequest,
     consume: (message: MailboxSseMessage) => Operation<boolean | void>,
   ): Operation<void>;
 }
 
-const defaultMailboxPollTransport: MailboxPollTransport = {
-  *poll(args, consume): Operation<void> {
+/** Concrete mailbox HTTP/SSE operation selected by composition. */
+export const httpMailboxPollTransport: MailboxPollTransport = {
+  *poll(http, clock, args, consume): Operation<void> {
     // A completed long poll releases its HTTP resource before the next poll begins.
     return yield* call(() =>
       fetchMailboxMessages(
@@ -1146,7 +1164,8 @@ const defaultMailboxPollTransport: MailboxPollTransport = {
         args.topics,
         args.bodyMode,
         args.timeouts,
-        args.services,
+        http,
+        clock,
         consume,
       )
     );
@@ -1167,7 +1186,8 @@ function* fetchMailboxMessages(
   topics: Record<string, number>,
   bodyMode: "header" | "body",
   timeouts: MailboxFetchTimeoutPolicy,
-  services: RuntimeServices,
+  http: HttpClient,
+  clock: RuntimeClock,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
 ): Operation<void> {
   // One poll window owns its headers, optional body consumption and final cleanup.
@@ -1179,7 +1199,8 @@ function* fetchMailboxMessages(
       bodyMode,
       src,
       timeouts.requestOpenTimeoutMs,
-      services,
+      http,
+      clock,
     );
     if (!handle) {
       return;
@@ -1190,16 +1211,10 @@ function* fetchMailboxMessages(
       return;
     }
 
-    yield* consumeMailboxSse(
-      response,
-      controller,
-      consume,
-      {
-        idleTimeoutMs: timeouts.readIdleTimeoutMs,
-        maxDurationMs: timeouts.maxReadDurationMs,
-        clock: services.clock,
-      },
-    );
+    yield* consumeMailboxSse(response, controller, consume, clock, {
+      idleTimeoutMs: timeouts.readIdleTimeoutMs,
+      maxDurationMs: timeouts.maxReadDurationMs,
+    });
   });
 }
 
@@ -1219,7 +1234,8 @@ function* fetchMailboxQueryResponse(
   bodyMode: "header" | "body",
   destination: string,
   timeoutMs: number,
-  services: RuntimeServices = defaultRuntimeServices,
+  http: HttpClient,
+  clock: RuntimeClock,
 ): Operation<
   {
     response: HttpStreamResponse;
@@ -1231,7 +1247,7 @@ function* fetchMailboxQueryResponse(
     destination,
   });
   const controller = new AbortController();
-  const response = yield* requestWithHeaderTimeout(services.http, services.clock, url, {
+  const response = yield* requestWithHeaderTimeout(http, clock, url, {
     method: "POST",
     headers: request.headers,
     body: request.body,

@@ -4,6 +4,7 @@ import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { sendExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import { Roles } from "../../../src/core/roles.ts";
 
 Deno.test("standalone exchange sender waits for its queued attempt and reports HTTP refusal", async () => {
@@ -26,11 +27,17 @@ Deno.test("standalone exchange sender waits for its queued attempt and reports H
         hby.db.locs.pin([recipient.pre, "http"], { url });
         let returned = false;
         const sending = yield* spawn(function*() {
-          const result = yield* sendExchangeMessage(hby, sender, {
-            dest: recipient.pre,
-            route: "/test/queued",
-            payload: { purpose: "completion" },
-          });
+          const result = yield* sendExchangeMessage(
+            hby,
+            sender,
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+            {
+              dest: recipient.pre,
+              route: "/test/queued",
+              payload: { purpose: "completion" },
+            },
+          );
           returned = true;
           return result;
         });
@@ -44,7 +51,7 @@ Deno.test("standalone exchange sender waits for its queued attempt and reports H
         const error = yield* call(() =>
           assertRejects(() =>
             run(() =>
-              sendExchangeMessage(hby, sender, {
+              sendExchangeMessage(hby, sender, defaultRuntimeServices.http, defaultRuntimeServices.clock, {
                 dest: recipient.pre,
                 route: "/test/refused",
                 payload: {},

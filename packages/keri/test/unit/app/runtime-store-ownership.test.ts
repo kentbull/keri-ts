@@ -48,8 +48,6 @@ Deno.test("runtime stores - default owners close explicitly and scope exit is ha
       yield* command.close();
       const runtime = yield* createAgentRuntime(hby, { enableMailboxStore: true });
 
-      assertEquals(runtime.delegating.services, runtime.services);
-
       registry = runtime.acdc!.baser;
       reger = runtime.vdr!.reger;
       noter = runtime.noter!;

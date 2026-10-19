@@ -25,6 +25,7 @@ import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
 import { Exchanger } from "./exchanging.ts";
+import { httpMailboxPollTransport } from "./forwarding.ts";
 import {
   ForwardHandler,
   type MailboxPollBatch,
@@ -278,7 +279,7 @@ export function* createAgentRuntime(
     }
   });
   const postman = yield* resource<Poster>(function*(provide) {
-    const postman = new Poster(hby, mailboxer, protocol, services);
+    const postman = new Poster(hby, mailboxer, protocol, services.http, services.clock);
     try {
       yield* provide(postman);
     } finally {
@@ -298,10 +299,14 @@ export function* createAgentRuntime(
       mailboxDirector.registerTopic(topic);
     }
   }
-  const mailboxPoller = new MailboxPoller(hby, mailboxDirector, {
-    services,
-    pollTransport: options.mailboxPollTransport,
-  });
+  const mailboxPoller = new MailboxPoller(
+    hby,
+    mailboxDirector,
+    services.http,
+    services.clock,
+    options.mailboxPollTransport ?? httpMailboxPollTransport,
+    {},
+  );
   for (
     const topic of [
       DELEGATE_MAILBOX_TOPIC,
@@ -314,14 +319,14 @@ export function* createAgentRuntime(
     mailboxDirector.registerTopic(topic);
   }
   const querying = yield* resource<QueryCoordinator>(function*(provide) {
-    const coordinator = new QueryCoordinator(hby, protocol, services);
+    const coordinator = new QueryCoordinator(hby, protocol, services.http, services.clock);
     try {
       yield* provide(coordinator);
     } finally {
       yield* coordinator.close();
     }
   });
-  const delegating = new Anchorer(hby, { postman, querying, services, protocol });
+  const delegating = new Anchorer(hby, postman, querying, protocol, services.http, services.clock);
   const oobiery = new Oobiery(hby, reactor, revery, services.http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
   const authenticator = new Authenticator(hby, services.http);

@@ -168,10 +168,20 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
       if (hab.kever?.wits.length) {
         if (inceptArgs.endpoint) {
-          const receiptor = new Receiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
+          const receiptor = new Receiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          );
           yield* receiptor.receipt(hab.pre, { sn: 0 });
         } else {
-          const witDoer = new WitnessReceiptor(hby, createProtocolProcessor(hby), defaultRuntimeServices);
+          const witDoer = new WitnessReceiptor(
+            hby,
+            createProtocolProcessor(hby),
+            defaultRuntimeServices.http,
+            defaultRuntimeServices.clock,
+          );
           yield* witDoer.submit(hab.pre, { sn: 0 });
         }
       }

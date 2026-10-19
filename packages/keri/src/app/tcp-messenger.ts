@@ -67,7 +67,7 @@ export class TCPMessenger {
   /** Send one source; duplex processing is explicit and never changes the local-only success contract. */
   stream(url: string, source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<TCPMessengerResult> {
     if (options.replies) return this.converse(url, source, options);
-    return streamCesrTcp(url, source, { ...options, clock: this.clock });
+    return streamCesrTcp(url, source, this.clock, { ...options });
   }
 
   /** Run concurrent native RX/TX children; cancel and join them before releasing the borrowed socket. */
@@ -76,8 +76,7 @@ export class TCPMessenger {
     if (!protocol || !kvy) throw new Error("TCP reply delivery requires a protocol processor");
     return call(function*() {
       const { replies: _replies, local = true, ...send } = options;
-      const output = { ...send, clock };
-      const connection = yield* openTcpConnection(url, output);
+      const connection = yield* openTcpConnection(url, clock, send);
       // Register RX before TX so a peer can reply while the outbound source is still open.
       let processedFrames = 0;
       const receive = yield* spawn(function*() {
@@ -137,7 +136,7 @@ export class TCPMessenger {
           }),
         ]);
       });
-      const transmission = yield* sendCesrTcpSocket(connection, source, output);
+      const transmission = yield* sendCesrTcpSocket(connection, source, clock, send);
       // Duplex completion requires processed receive EOF; transmit-only never enters this path.
       yield* receive;
       connection.signal.throwIfAborted();

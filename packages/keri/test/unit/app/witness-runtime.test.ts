@@ -544,7 +544,12 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
 
       try {
         yield* sleepOp(50);
-        const receiptor = new Receiptor(sourceHby, createProtocolProcessor(sourceHby), defaultRuntimeServices);
+        const receiptor = new Receiptor(
+          sourceHby,
+          createProtocolProcessor(sourceHby),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+        );
         yield* receiptor.catchup(controller.pre, witness.pre);
         yield* sleepOp(50);
         assertEquals(providerHby.db.getKever(controller.pre)?.sn, 0);

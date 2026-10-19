@@ -1,3 +1,4 @@
+import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
 /**
  * Mailbox operator debug report collection.
  *
@@ -132,10 +133,7 @@ function* fetchMailboxDebug(
     );
   }
 
-  return yield* readMailboxSseBody(response, controller, {
-    idleTimeoutMs: 500,
-    maxDurationMs: 5_000,
-  });
+  return yield* readMailboxSseBody(response, controller, systemClock, { idleTimeoutMs: 500, maxDurationMs: 5_000 });
 }
 
 function parseMailboxSse(text: string): MailboxSseRow[] {

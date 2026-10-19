@@ -180,6 +180,7 @@ export {
 } from "../app/exchanging.ts";
 export {
   type ExchangeDeliveryPreference,
+  httpMailboxPollTransport,
   type MailboxFetchTimeoutPolicy,
   type MailboxPollBatch,
   MailboxPoller,

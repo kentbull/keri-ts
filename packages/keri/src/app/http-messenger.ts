@@ -61,11 +61,17 @@ export class HTTPMessenger {
     yield* postCesr(url, (signal) => chunkBytes(msg, { signal }), this.http, options, function*(response) {
       if (response.headers.get("Content-Type")?.toLowerCase().startsWith("text/event-stream")) {
         // Preserve the finite query continuation window; this is not a mailbox poll worker.
-        yield* consumeMailboxSse(response, new AbortController(), function*(message) {
-          yield* processMessages((signal) => chunkBytes(message.msg, { signal }), protocol, kvy, {
-            signal: options.signal,
-          });
-        }, { idleTimeoutMs: 500, maxDurationMs: 5_000, clock, signal: options.signal });
+        yield* consumeMailboxSse(
+          response,
+          new AbortController(),
+          function*(message) {
+            yield* processMessages((signal) => chunkBytes(message.msg, { signal }), protocol, kvy, {
+              signal: options.signal,
+            });
+          },
+          clock,
+          { idleTimeoutMs: 500, maxDurationMs: 5_000, signal: options.signal },
+        );
       } else {
         // Complete response parsing and reader cleanup before the underlying HTTP owner closes.
         yield* processMessages((signal) => response.body(signal), protocol, kvy, {

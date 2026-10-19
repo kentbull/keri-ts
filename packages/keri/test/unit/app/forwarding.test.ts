@@ -171,7 +171,7 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
         oobi: "http://example.test/oobi/bob/controller",
       });
 
-      const postman = new Poster(hby, null, null, defaultRuntimeServices);
+      const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
       assertEquals(postman.resolveRecipient(local.pre), local.pre);
       assertEquals(postman.resolveRecipient("bob-contact"), remote.pre);
     } finally {
@@ -209,7 +209,7 @@ Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
       persistResolvedContact(hby, remoteA.pre, { alias: "shared" });
       persistResolvedContact(hby, remoteB.pre, { alias: "shared" });
 
-      const postman = new Poster(hby, null, null, defaultRuntimeServices);
+      const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
       assertThrows(
         () => postman.resolveRecipient("missing"),
         Error,
@@ -439,7 +439,7 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
           throw new Error("Sender first-seen ordinal is missing.");
         }
         const evt = hby.db.cloneEvtMsg(sender.pre, fn, said);
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
 
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
@@ -532,7 +532,7 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
           recipient.makeEndRole(recipient.pre, EndpointRoles.mailbox, true),
         ]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
         const { serder } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: "/ipex/grant",
@@ -667,7 +667,7 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9124", witness.pre, "http")]);
 
-        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services);
+        const postman = new Poster(hby, runtime.mailboxer, null, runtime.services.http, runtime.services.clock);
         const { serder, deliveries } = yield* deliverExchange(postman, sender, {
           recipient: recipient.pre,
           route: DELEGATE_REQUEST_ROUTE,
@@ -781,7 +781,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const introduction = yield* call(() => parseBytes(expectedIntro));
           const frameCount = introduction.length;
 
-          const postman = new Poster(hby, null, runtime.protocol, runtime.services);
+          const postman = new Poster(hby, null, runtime.protocol, runtime.services.http, runtime.services.clock);
           const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
           const prepared = yield* postman.prepareBytesTarget(sender, route, route.targets[0], message);
           assertEquals(prepared.kind, "http");
@@ -1066,7 +1066,7 @@ Deno.test("Queued CESR with direct delivery does not fall back to witnesses", as
       try {
         yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
 
-        const postman = new Poster(hby, null, null, defaultRuntimeServices);
+        const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
         yield* deliverMessage(postman, sender, {
           recipient: recipient.pre,
           message: new Uint8Array([9]),
@@ -1265,7 +1265,7 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
-        const postman = new Poster(hby, null, null, defaultRuntimeServices);
+        const postman = new Poster(hby, null, null, defaultRuntimeServices.http, defaultRuntimeServices.clock);
         for (const version of [Vrsn_1_0, Vrsn_2_0]) {
           const [body] = exchangeMessage("/application/message", { value: "retained" }, {
             sender: sender.pre,

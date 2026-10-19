@@ -7,10 +7,11 @@ import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import type { HttpClient } from "./http-client.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
 import { flattenRoleUrls } from "./mailboxing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
-import { type RuntimeServices } from "./runtime-services.ts";
+import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 
@@ -427,8 +428,10 @@ export class QueryCoordinator {
   readonly hby: Habery;
   /** Shared protocol owner used by each concrete messenger response parser. */
   private readonly protocol: ProtocolProcessor;
-  /** Borrowed HTTP and clock dependencies selected at composition. */
-  private readonly services: RuntimeServices;
+  /** Borrowed HTTP client selected at composition. */
+  private readonly http: HttpClient;
+  /** Borrowed clock for this owner's actual network deadlines. */
+  private readonly clock: RuntimeClock;
   /** Signed query packets; the delivery operation removes only completed sends. */
   private readonly deliveries = new Deck<QueryDelivery>();
   /** Prevents concurrent delivery passes over retained packets. */
@@ -451,11 +454,12 @@ export class QueryCoordinator {
   private continuations: QueryContinuation[] = [];
 
   /** Bind actual protocol and I/O collaborators; acquire no store or network lifetime. */
-  constructor(hby: Habery, protocol: ProtocolProcessor, services: RuntimeServices, hab: Hab | null = null) {
+  constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock, hab: Hab | null = null) {
     if (protocol.kvy.db !== hby.db) throw new RangeError("Query protocol must use the same database");
     this.hby = hby;
     this.protocol = protocol;
-    this.services = services;
+    this.http = http;
+    this.clock = clock;
     this.hab = hab;
   }
 
@@ -570,16 +574,16 @@ export class QueryCoordinator {
     controller: AbortController,
   ): Operation<void> {
     // Retained packet ownership stays here; the selected messenger owns only this attempt.
-    const services = this.services;
+    const http = this.http, clock = this.clock;
     if (new URL(delivery.url).protocol === "tcp:") {
-      yield* new TCPMessenger(this.protocol, services.clock).send(delivery.url, delivery.body, {
+      yield* new TCPMessenger(this.protocol, clock).send(delivery.url, delivery.body, {
         signal: controller.signal,
         replies: true,
         local: true,
       });
       return;
     }
-    yield* new HTTPMessenger(this.protocol, services.http, services.clock).query(delivery.url, delivery.body, {
+    yield* new HTTPMessenger(this.protocol, http, clock).query(delivery.url, delivery.body, {
       bodyMode: delivery.bodyMode,
       destination: delivery.destination,
       signal: controller.signal,

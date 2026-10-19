@@ -2,6 +2,7 @@ import { call, type Operation, run, spawn, suspend } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
+import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
@@ -95,15 +96,9 @@ function makePollerFixture(
     { length: endpointCount },
     (_, index) => seedMailboxEndpoint(hby, hab.pre, `remote-${index + 1}`),
   );
-  const poller = new MailboxPoller(
-    hby,
-    new MailboxDirector(hby),
-    {
-      timeouts,
-      services: fakeRuntimeServices({ clock }),
-      pollTransport: transport,
-    },
-  );
+  const poller = new MailboxPoller(hby, new MailboxDirector(hby), defaultRuntimeServices.http, clock, transport, {
+    timeouts,
+  });
   poller.registerTopic("/challenge");
   return { hab, poller, endpoints };
 }
@@ -166,7 +161,14 @@ Deno.test("MailboxPoller.pollDo keeps HTTP endpoint selection and request-open t
       try {
         yield* runtimeTurn();
         assertEquals(transport.polls.length, 0, "SSE must not attempt a TCP endpoint");
-        const defaultPoller = new MailboxPoller(hby, new MailboxDirector(hby));
+        const defaultPoller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          defaultRuntimeServices.http,
+          defaultRuntimeServices.clock,
+          httpMailboxPollTransport,
+          {},
+        );
         defaultPoller.registerTopic("/challenge");
         const defaultWorker = yield* spawn(() => defaultPoller.pollDo((_batch) => {}));
         yield* runtimeTurn();
@@ -508,9 +510,14 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
         cancelled = true;
       },
     }, { highWaterMark: 0 });
-    const poller = new MailboxPoller(hby, new MailboxDirector(hby), {
-      services: { ...defaultRuntimeServices, http: httpClient(() => Promise.resolve(new Response(responseBody))) },
-    });
+    const poller = new MailboxPoller(
+      hby,
+      new MailboxDirector(hby),
+      httpClient(() => Promise.resolve(new Response(responseBody))),
+      defaultRuntimeServices.clock,
+      httpMailboxPollTransport,
+      {},
+    );
     poller.registerTopic("/reply");
     const worker = yield* spawn(() =>
       poller.pollDo(function*(batch) {

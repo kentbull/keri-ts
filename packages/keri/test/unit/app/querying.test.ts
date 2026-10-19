@@ -129,7 +129,7 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), ambient);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, ambient);
     try {
       const request = { pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs" as const, q: {} };
       coordinator.enqueue(request);
@@ -309,7 +309,7 @@ Deno.test("query preparation retains failed heads and limits one pass to its ini
     const hab = hby.makeHab("sender");
     seedControllerEndpoint(hby, hab.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), hab);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, hab);
     const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
     const sign = hab.query, fault = new Error("signing failed");
     try {
@@ -348,7 +348,7 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
       second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), hab);
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages).http, systemClock, hab);
     const seal = { i: hab.pre, s: "0", d: hab.pre };
     const anchor = coordinator.watchAnchor(hab.pre, seal, { wits: [first.pre, second.pre] });
     try {

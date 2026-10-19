@@ -1,5 +1,6 @@
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import {
@@ -181,7 +182,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         },
       );
       assertEquals(streamed.status, 200);
-      const body = yield* readMailboxSseBody(streamed, controller, {
+      const body = yield* readMailboxSseBody(streamed, controller, systemClock, {
         idleTimeoutMs: 500,
         maxDurationMs: 5_000,
       });
@@ -214,14 +215,10 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         signal: replayController.signal,
       });
       assertEquals(replayStream.status, 200);
-      const replayBody = yield* readMailboxSseBody(
-        replayStream,
-        replayController,
-        {
-          idleTimeoutMs: 500,
-          maxDurationMs: 5_000,
-        },
-      );
+      const replayBody = yield* readMailboxSseBody(replayStream, replayController, systemClock, {
+        idleTimeoutMs: 500,
+        maxDurationMs: 5_000,
+      });
       assertStringIncludes(replayBody, "event: /replay");
       assertStringIncludes(replayBody, hab.pre);
     } finally {
@@ -415,7 +412,7 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         signal: controller.signal,
       });
       assertEquals(response.status, 200);
-      const body = yield* readMailboxSseBody(response, controller, {
+      const body = yield* readMailboxSseBody(response, controller, systemClock, {
         idleTimeoutMs: 500,
         maxDurationMs: 5_000,
       });

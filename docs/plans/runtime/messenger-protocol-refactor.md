@@ -217,9 +217,10 @@ completion explicit. Do not add HTTP PUT or a new lifetime merely to match a nam
 ### Constructors and lifecycle naming
 
 Remove PosterOptions. Make its dependencies required positional arguments; use
-`mbx: Mailboxer | null` to express real provider absence. Keep RuntimeServices as
-the existing required clock/HTTP dependency, not a component-discovery bundle.
-Default services are selected at composition or standalone entrypoints.
+`mbx: Mailboxer | null` to express real provider absence. The original decision
+to retain RuntimeServices has been superseded by the
+[explicit dependency refactor](explicit-runtime-dependencies.md): constructors
+now receive HttpClient and RuntimeClock individually.
 
 Rename `assertOpen` to `ensureOpen` with no alias. Keep admission and waiter checks.
 Remove redundant producer preflights for already-built records. Retain a preflight

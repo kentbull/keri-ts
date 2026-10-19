@@ -1,3 +1,4 @@
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 
@@ -149,7 +150,7 @@ for (const count of [1, 2]) {
                 ...(mailboxUrl ? [[receiverRuntime, receiver] as const] : []),
               ] as const
             ) {
-              yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services)
+              yield* new WitnessReceiptor(runtime.hby, runtime.protocol, runtime.services.http, runtime.services.clock)
                 .submit(
                   hab.pre,
                 );
@@ -306,29 +307,35 @@ for (const count of [1, 2]) {
               });
               assertEquals(response.status, 200);
               let received = false;
-              yield* consumeMailboxSse(response, new AbortController(), function*(event) {
-                const forwarded = parseBytes(event.msg);
-                assertEquals(forwarded.length, 1);
-                assertEquals(forwarded[0].body.raw, frame.body.raw);
-                assertEquals(
-                  forwarded[0].attachments.map((group) => group.raw),
-                  frame.attachments.map((group) => group.raw),
-                );
-                assertEquals(forwarded[0].nests?.length, 1);
-                const carried = forwarded[0].nests![0];
-                assertEquals(carried.body.raw, node.body.raw);
-                const parsed = envelopeFromFrame(carried);
-                const original = envelopeFromFrame(node);
-                // Python coalesces the two blind-state groups and puts the source seal first.
-                // Compare every ordered proof and its actual anchor, not an incidental wrapper layout.
-                assertEquals(parsed.bsqs, original.bsqs);
-                assertEquals(parsed.ssts, original.ssts);
-                assertEquals(new TextDecoder().decode(event.msg).includes("hidden-value"), false);
-                yield* call(() => post(receiverUrl, forwarded[0]));
-                cursor = event.idx + 1;
-                received = true;
-                return false;
-              }, { idleTimeoutMs: 2000, maxDurationMs: 5000 });
+              yield* consumeMailboxSse(
+                response,
+                new AbortController(),
+                function*(event) {
+                  const forwarded = parseBytes(event.msg);
+                  assertEquals(forwarded.length, 1);
+                  assertEquals(forwarded[0].body.raw, frame.body.raw);
+                  assertEquals(
+                    forwarded[0].attachments.map((group) => group.raw),
+                    frame.attachments.map((group) => group.raw),
+                  );
+                  assertEquals(forwarded[0].nests?.length, 1);
+                  const carried = forwarded[0].nests![0];
+                  assertEquals(carried.body.raw, node.body.raw);
+                  const parsed = envelopeFromFrame(carried);
+                  const original = envelopeFromFrame(node);
+                  // Python coalesces the two blind-state groups and puts the source seal first.
+                  // Compare every ordered proof and its actual anchor, not an incidental wrapper layout.
+                  assertEquals(parsed.bsqs, original.bsqs);
+                  assertEquals(parsed.ssts, original.ssts);
+                  assertEquals(new TextDecoder().decode(event.msg).includes("hidden-value"), false);
+                  yield* call(() => post(receiverUrl, forwarded[0]));
+                  cursor = event.idx + 1;
+                  received = true;
+                  return false;
+                },
+                systemClock,
+                { idleTimeoutMs: 2000, maxDurationMs: 5000 },
+              );
               assertEquals(received, true, "grant crossed provider storage and authenticated SSE retrieval");
               const state = yield* call(() => inspectMailbox(mailboxUrl, receiver.pre, [body.said!]));
               assertEquals(state.rows[0].cached, true);

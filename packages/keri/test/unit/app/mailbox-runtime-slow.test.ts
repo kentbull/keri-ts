@@ -22,6 +22,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
@@ -1332,7 +1333,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
           }
           assertEquals(response.status, 200);
           return parseMailboxSse(
-            yield* readMailboxSseBody(httpResponse(response), abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
+            yield* readMailboxSseBody(httpResponse(response), abort, systemClock, {
+              idleTimeoutMs: 250,
+              maxDurationMs: 1000,
+            }),
           );
         } finally {
           abort.abort();
@@ -1368,7 +1372,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         assertEquals(response.status, 403);
         const stolen = response.status === 200
           ? parseMailboxSse(
-            yield* readMailboxSseBody(httpResponse(response), abort, { idleTimeoutMs: 250, maxDurationMs: 1000 }),
+            yield* readMailboxSseBody(httpResponse(response), abort, systemClock, {
+              idleTimeoutMs: 250,
+              maxDurationMs: 1000,
+            }),
           )
           : (yield* textOp(response), []);
         assertEquals(stolen.length, 0, "old accepted cue cannot authorize different request attachments");

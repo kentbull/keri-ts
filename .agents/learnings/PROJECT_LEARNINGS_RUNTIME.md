@@ -10,7 +10,8 @@ owns remaining qualification. Keep this routing memory concise, not a removal lo
 One runtime serves a Habery or command invocation. Hosted AID selection is
 separate from listener topology; never auto-host all Habs or expose signatory/AEID
 as normal identities. Provider storage is explicit enableMailboxStore or a borrowed
-Mailboxer, not AgentMode/runtimeMode. RuntimeServices contains only clock/HTTP.
+Mailboxer, not AgentMode/runtimeMode. HTTP and clock dependencies are separate
+required component arguments; the remaining root services option is temporary.
 Choose concrete dependencies at construction; no parent-runtime discovery in
 Respondant, QueryCoordinator, Anchorer, receipt owners or lower TCP transport.
 
@@ -158,7 +159,7 @@ absolute, not extended by activity. Shutdown stops acceptance and joins both
 directions/listeners before stores. Recognized wire/peer failures stay connection-
 local; infrastructure/cleanup failures reach the host.
 
-Composition supplies RuntimeHttpClient.request (completed finite bytes) and open
+Composition supplies HttpClient.request (completed finite bytes) and open
 (scoped streaming response). FetchHttpClient constructs Request
 before native fetch classification and owns response-read cancellation and joined
 cleanup. Producers prepare finite HTTP bodies before requesting; no upload-source

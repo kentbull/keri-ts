@@ -1,6 +1,7 @@
 import { call, run, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { consumeMailboxSse, type MailboxSseMessage, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpResponse } from "../../support/http-client.ts";
 
 /** Encode wire fixtures with the same UTF-8 boundary as HTTP. */
@@ -35,7 +36,7 @@ Deno.test("mailbox SSE awaits each event consumer and preserves fragmented UTF-8
         yield* call(() => release.promise);
       }
       return received.length < 2;
-    });
+    }, systemClock);
   });
   await first.promise;
   assertEquals(pulls, encoder.encode(chunks[0]).length); // No second-event read while the consumer processes the first event.
@@ -59,9 +60,15 @@ Deno.test("mailbox SSE waits for a slow fragmented first event and discards a tr
     },
   }, { highWaterMark: 0 });
   await run(function*() {
-    yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*(event) {
-      received.push(event.idx);
-    }, { idleTimeoutMs: 5, maxDurationMs: 1000 });
+    yield* consumeMailboxSse(
+      httpResponse(new Response(body)),
+      new AbortController(),
+      function*(event) {
+        received.push(event.idx);
+      },
+      systemClock,
+      { idleTimeoutMs: 5, maxDurationMs: 1000 },
+    );
   });
   assertEquals(received, [7]); // An unterminated event must not advance mailbox acknowledgment.
 });
@@ -85,7 +92,7 @@ Deno.test("mailbox SSE timeout cancels and joins its sole pending read", async (
       },
     }, { highWaterMark: 0 });
     await run(function*() {
-      yield* consumeMailboxSse(httpResponse(new Response(body)), controller, function*() {}, {
+      yield* consumeMailboxSse(httpResponse(new Response(body)), controller, function*() {}, systemClock, {
         idleTimeoutMs: 2,
         maxDurationMs: 25,
       });
@@ -112,7 +119,7 @@ Deno.test("mailbox SSE propagates cleanup failure and unlocks after a consumer s
         consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {
           if (primary) throw primary;
           return false;
-        })
+        }, systemClock)
       )
     );
     if (primary) assertEquals((failure as AggregateError).errors, [primary, fault]);
@@ -137,7 +144,7 @@ Deno.test("mailbox SSE scope cancellation stops a blocked consumer and releases 
     yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {
       delivered.resolve();
       yield* suspend();
-    });
+    }, systemClock);
     continued = true;
   });
   await delivered.promise;
@@ -161,7 +168,7 @@ Deno.test("mailbox SSE halt joins asynchronous cancellation of its pending read"
     },
   }, { highWaterMark: 0 });
   const task = run(function*() {
-    yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {});
+    yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {}, systemClock);
     continued = true;
   });
   await reading.promise;
@@ -192,7 +199,7 @@ Deno.test("mailbox SSE halt joins a late cleanup failure before unlocking", asyn
     },
   }, { highWaterMark: 0 });
   const task = run(function*() {
-    yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {});
+    yield* consumeMailboxSse(httpResponse(new Response(body)), new AbortController(), function*() {}, systemClock);
     continued = true;
   });
   await reading.promise;
@@ -223,7 +230,7 @@ Deno.test("finite mailbox SSE reports wait through retry headers for the first c
     },
   }, { highWaterMark: 0 });
   const text = await run(() =>
-    readMailboxSseBody(httpResponse(new Response(body)), new AbortController(), {
+    readMailboxSseBody(httpResponse(new Response(body)), new AbortController(), systemClock, {
       idleTimeoutMs: 5,
       maxDurationMs: 1000,
     })
@@ -246,7 +253,7 @@ Deno.test("mailbox SSE rejects an already-aborted source before starting its fir
   controller.abort();
   // abortable rejects before invoking the read leaf; the earlier owner still closes and unlocks the body.
   await assertRejects(
-    () => run(() => consumeMailboxSse(httpResponse(new Response(body)), controller, function*() {})),
+    () => run(() => consumeMailboxSse(httpResponse(new Response(body)), controller, function*() {}, systemClock)),
     DOMException,
   );
   assertEquals([reads, cancelled, body.locked], [0, true, false]);
