@@ -12,6 +12,14 @@ Tevery with independent record validators and a shared composed Revery. Publishe
 1.0.0 packages do not contain this refactor. Its scoped evidence is separate from
 the release battery; see the release report's post-release section.
 
+The [cue delivery refactor](runtime/cue-delivery-refactor.md) is newly approved
+work, with implementation and qualification in progress. Its first cut persists
+the plan and moves Respondant execution into Poster while retaining current
+scheduling and retry policy. Single-queue caller migration, eager FIFO delivery,
+explicit failures and transport lifecycle qualification remain later phases.
+The [reliability roadmap](runtime/cue-reliability-roadmap.md) separates deferred
+reliability features from this scope; the completed release does not qualify it.
+
 ## Retained architecture
 
 [ADR-0013](../adr/adr-0013-simple-component-flows.md) governs concrete
@@ -23,7 +31,8 @@ name does not justify a forwarding wrapper.
 - Reactor orders protocol intake/escrows, captures correlated replies and publishes
   after commit. It is not an application callback scheduler or universal executor.
 - QueryCoordinator, Respondant, Poster, mailbox, registry and concrete input owners
-  do their actual work through narrow dependencies. Lower transport knows sockets,
+  do their actual work through narrow dependencies. Respondant interprets and
+  publishes reply work; Poster owns queued execution and cleanup. Lower transport knows sockets,
   not AgentRuntime; independent siblings communicate through concrete records.
 - CLI and long-lived hosts share workers. Finite commands observe accepted state
   under elapsed deadlines and join workers before closing owned stores. Borrowed

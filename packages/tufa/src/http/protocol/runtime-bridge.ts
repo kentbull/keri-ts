@@ -10,5 +10,5 @@ export function* drainRuntimeCues(
   if (cues !== runtime.cues) throw new RangeError("HTTP cue drain requires the runtime source deck");
   yield* processCuesOnce(runtime, { hab: serviceHab });
   yield* runtime.querying.deliverOnce();
-  yield* runtime.respondant.process();
+  yield* runtime.poster.process();
 }

@@ -400,8 +400,8 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       }
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
-      for (let pass = 0; pass < 8 && runtime.respondant.hasPending; pass++) yield* runtime.respondant.process();
-      assertEquals(runtime.respondant.hasPending, false);
+      for (let pass = 0; pass < 8 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
+      assertEquals(runtime.poster.hasPending, false);
       const deniedBody = query("logs", { i: bob.pre, src: alice.pre }, { pre: alice.pre, pvrsn: Vrsn_2_0 });
       // An older matching capture must not authorize this exact denied frame's ordinary delivery.
       runtime.cues.push({

@@ -43,15 +43,15 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       failure = new Error("foreign fetch failure");
       finish();
       assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(draining))), failure);
-      assertEquals(runtime.respondant.hasPending, true);
+      assertEquals(runtime.poster.hasPending, true);
       assertEquals(posted, wire);
       failure = undefined;
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
       assertEquals(runtime.querying.pending.length, 1, "unresolved query transfers to its existing owned queue");
-      for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) {
-        yield* runtime.respondant.process();
+      for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) {
+        yield* runtime.poster.process();
       }
-      assertEquals(runtime.respondant.hasPending, false);
+      assertEquals(runtime.poster.hasPending, false);
 
       started = new Promise<void>((resolve) => start = resolve);
       gate = new Promise<void>((resolve) => finish = resolve);
@@ -65,8 +65,8 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
 
       finish();
       yield* call(() => halted);
-      assertEquals(runtime.respondant.hasPending, true, "cancelled transport retains independent delivery");
-      for (let pass = 0; pass < 4 && runtime.respondant.hasPending; pass++) yield* runtime.respondant.process();
+      assertEquals(runtime.poster.hasPending, true, "cancelled transport retains independent delivery");
+      for (let pass = 0; pass < 4 && runtime.poster.hasPending; pass++) yield* runtime.poster.process();
 
       hby.db.ends.rem([recipient.pre, Roles.controller, recipient.pre]);
       const beforeSends = sends, interpret = sender.interpretCue.bind(sender);
@@ -77,7 +77,7 @@ Deno.test("HTTP cue drain transfers guarded wire then waits outside Reactor with
       };
       runtime.cues.push(cue);
       yield* drainRuntimeCues(runtime, sender, runtime.cues);
-      assertEquals([interpretations, sends, runtime.cues.length, runtime.respondant.hasPending], [
+      assertEquals([interpretations, sends, runtime.cues.length, runtime.poster.hasPending], [
         1,
         beforeSends,
         0,

@@ -8,6 +8,11 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
+- [Cue delivery refactor](runtime/cue-delivery-refactor.md): active phases 0–4;
+  phase 1 moves execution ownership without changing retry or scheduling policy.
+  The [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
+  features and the evidence required before pursuing them.
+
 - [CESR parser](cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) and [Mapper](cesr/MAPPER_PLAN.md).
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),
   [exchange proofs and v2 admission](exchange/EXCHANGE_ADMISSION_PLAN.md).

@@ -325,7 +325,7 @@ function* consumeWitnessCues(
     });
     if (deliver) {
       yield* runtime.querying.deliverOnce();
-      yield* runtime.respondant.process();
+      yield* runtime.poster.process();
     }
     if (!more) break;
   }

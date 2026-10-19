@@ -59,11 +59,16 @@ Prepare/sign/publish before source removal; preparation failure retains the reco
 Poster accepts one complete CESR message. Target preparation is an owned operation
 using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
 independently authenticated nested message; legacy messages use pathed embeds.
-Qualified selectors must not reach the legacy body-only reaper. Respondant awaits
+Qualified selectors must not reach the legacy body-only reaper. Poster awaits
 preparation and retains the exact prepared packet for retry; no replacement codec
 or generic output executor is needed.
-Finite passes use their initial extent. Respondant owns lazy cursors, ordered reply
-batches and once-signed retry packets through actual Poster/Reactor/ReplyStreams.
+Finite passes use their initial extent. Respondant interprets and publishes;
+Poster owns lazy cursors, ordered reply batches, once-signed retry packets and
+active transport cleanup. The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md)
+tracks qualification: phase 1 moves ownership only. The combined
+query/Poster worker and ingress-driven finite passes remain until phase 2; eager
+FIFO delivery and explicit failures remain phase 3 work. Do not conflate those
+future contracts with the present automatic exact-packet retries.
 QueryCoordinator owns plain requests, signed packets and joined response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish

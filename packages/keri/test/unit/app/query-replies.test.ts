@@ -147,7 +147,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       failPrepare = true;
       assertStrictEquals(assertThrows(() => runtime.respondant.openReply(sender, slot)), preparation);
       assertEquals(
-        runtime.respondant.hasPending,
+        runtime.poster.hasPending,
         false,
         "No first-cue publication on second-cue failure",
       );
@@ -159,14 +159,14 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       slot.close();
       const preparedCount = interpretations;
       const wire = yield* call(async () => new Uint8Array(await new Response(response).arrayBuffer()));
-      assertEquals(runtime.respondant.hasPending, true, "HTTP EOF leaves the independent queued delivery available");
+      assertEquals(runtime.poster.hasPending, true, "HTTP EOF leaves the independent queued delivery available");
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
+        yield* call(() => assertRejects(() => run(() => runtime.poster.process()))),
         failure,
       );
       sender.interact();
       failSend = false;
-      for (let pass = 0; pass < 6; pass++) yield* runtime.respondant.process();
+      for (let pass = 0; pass < 6; pass++) yield* runtime.poster.process();
       assertEquals(packets[0], packets[1], "Retry preserves the original proof after sender state changes");
       assertEquals(concatBytes(packets[1], packets[2]), wire, "Both consumers borrow the same once-interpreted pair");
       assertEquals(interpretations, preparedCount);
@@ -178,7 +178,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       blocked = true;
       const delivery = yield* spawn(function*() {
         try {
-          yield* runtime.respondant.process();
+          yield* runtime.poster.process();
         } catch (error) {
           if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
         }
@@ -186,7 +186,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       yield* call(() => cleanup);
       let closed = false;
       const closing = yield* spawn(function*() {
-        yield* runtime.respondant.close();
+        yield* runtime.poster.close();
         closed = true;
       });
       assertEquals(
@@ -197,7 +197,7 @@ Deno.test("direct reply pairs publish atomically and share exact signed wire thr
       unblock();
       yield* closing;
       yield* delivery;
-      assertEquals(runtime.respondant.hasPending, false);
+      assertEquals(runtime.poster.hasPending, false);
       const unreadWire = yield* call(() => new Response(unread).arrayBuffer());
       assertEquals(unreadWire.byteLength > 0, true, "Queued cleanup leaves the independent response readable");
     } finally {
@@ -259,19 +259,19 @@ Deno.test("queued replies preserve atomic slots and once-signed wire", async () 
       cues.extend(pair);
       replies.capture(cues);
       assertStrictEquals(assertThrows(() => runtime.respondant.enqueueReply(sender, slot)), preparation);
-      assertEquals(runtime.respondant.hasPending, false);
+      assertEquals(runtime.poster.hasPending, false);
       failPrepare = false;
       assertEquals(runtime.respondant.enqueueReply(sender, slot), true);
       assertEquals(slot.takeAll(), undefined);
       slot.close();
       const preparedCount = interpretations;
       assertStrictEquals(
-        yield* call(() => assertRejects(() => run(() => runtime.respondant.process()))),
+        yield* call(() => assertRejects(() => run(() => runtime.poster.process()))),
         failure,
       );
       sender.interact();
       failSend = false;
-      for (let pass = 0; pass < 6; pass++) yield* runtime.respondant.process();
+      for (let pass = 0; pass < 6; pass++) yield* runtime.poster.process();
       assertEquals(packets[0], packets[1], "Queue-only retry retains its original signed proof");
       assertEquals(interpretations, preparedCount);
 
@@ -281,7 +281,7 @@ Deno.test("queued replies preserve atomic slots and once-signed wire", async () 
       replies.capture(cues);
       assertEquals(runtime.respondant.enqueueReply(sender, absent), true);
       absent.close();
-      assertEquals(runtime.respondant.hasPending, false);
+      assertEquals(runtime.poster.hasPending, false);
 
       const later = replies.reserve("tsn");
       cues.extend(pair);
@@ -291,7 +291,7 @@ Deno.test("queued replies preserve atomic slots and once-signed wire", async () 
       blocked = true;
       const delivery = yield* spawn(function*() {
         try {
-          yield* runtime.respondant.process();
+          yield* runtime.poster.process();
         } catch (error) {
           if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
         }
@@ -299,7 +299,7 @@ Deno.test("queued replies preserve atomic slots and once-signed wire", async () 
       yield* call(() => cleanup);
       let closed = false;
       const closing = yield* spawn(function*() {
-        yield* runtime.respondant.close();
+        yield* runtime.poster.close();
         closed = true;
       });
       assertEquals(closed, false);
