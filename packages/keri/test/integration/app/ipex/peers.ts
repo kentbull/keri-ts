@@ -124,7 +124,7 @@ class TypeScriptPeer implements IpexPeer {
   private async receive(request: Request): Promise<Response> {
     try {
       for (const frame of await parseBytes(await readCesrRequestBytes(request))) {
-        const result = await run(() => this.runtime.reactor.dispatch(frame));
+        const result = await run(() => this.runtime.protocol.dispatch(frame));
         this.received.push({
           said: frame.body.said!,
           decision: result.decision ? result.decision.kind : undefined,
@@ -282,7 +282,7 @@ class TypeScriptPeer implements IpexPeer {
   /** Replay actual retained exchange evidence through ordinary HTTP ingress. */
   async replay(said: string): Promise<void> {
     const chunks: Uint8Array[] = [];
-    for await (const chunk of this.runtime.reactor.exchanger.replay(said)) chunks.push(chunk);
+    for await (const chunk of this.runtime.exc.replay(said)) chunks.push(chunk);
     for (const frame of parseBytes(concatBytes(...chunks))) await this.post(frame);
   }
 

@@ -60,7 +60,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         assertEquals(serder.route, MULTISIG_RPY_ROUTE);
         assertEquals(serder.ked?.a, { gid: group.pre, i: evt.dest });
         assertExists(serder.ked?.e);
-        assertEquals(runtime.reactor.exchanger.complete(serder.said!), true);
+        assertEquals(runtime.exc.complete(serder.said!), true);
         assertEquals(hby.db.exns.get([serder.said!])?.raw, serder.raw);
         sent.push({ recipient: evt.dest, said: serder.said! });
         sends++;

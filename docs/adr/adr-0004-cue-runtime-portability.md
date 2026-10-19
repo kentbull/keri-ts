@@ -13,7 +13,7 @@ There are three relevant scopes:
 
 1. Habery.kevery has a local Deck for habitat processing that can occur without
    a runtime.
-2. Runtime protocol processors share a separate producer Deck. Reactor captures
+2. Runtime protocol processors share a separate producer Deck. ProtocolProcessor captures
    direct request replies before publishing remaining records to the application.
 3. AgentRuntime.cues is the application Deck routed by composition to query,
    mailbox and reply owners. Oobiery can publish its committed lifecycle facts

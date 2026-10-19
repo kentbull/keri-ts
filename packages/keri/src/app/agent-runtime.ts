@@ -4,8 +4,8 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
-import type { MessagePolicy } from "../core/eventing.ts";
-import type { KramConfig } from "../core/kraming.ts";
+import { Kevery, type MessagePolicy } from "../core/eventing.ts";
+import { type KramConfig, Kramer } from "../core/kraming.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -24,6 +24,7 @@ import { Authenticator } from "./authenticating.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
+import { Exchanger } from "./exchanging.ts";
 import {
   ForwardHandler,
   type MailboxPollBatch,
@@ -39,6 +40,8 @@ import { MailboxDirector } from "./mailbox-director.ts";
 import { mailboxerOptionsForHabery } from "./mailboxing.ts";
 import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
+import { ProtocolProcessor } from "./protocol-processing.ts";
+import { QueryReplies } from "./query-replies.ts";
 import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
@@ -56,7 +59,7 @@ export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
  * - the root keeps only truly shared state: `hby` and the shared
  *   cue deck
  * - topic-local state belongs to the component that owns that flow
- * - `Reactor` owns parser ingress/routing/escrow work
+ * - `Reactor` owns byte ingress; `ProtocolProcessor` owns shared protocol work
  * - `Oobiery` owns durable OOBI queue processing
  * - `Authenticator` owns well-known auth convergence
  *
@@ -65,22 +68,41 @@ export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
  *   multiple doer-owning components, not a bag of every runtime queue
  */
 export interface AgentRuntime {
+  /** Borrowed identities and accepted-state stores; the runtime never closes the Habery. */
   hby: Habery;
+  /** Provider mailbox store, borrowed when injected and otherwise owned when enabled. */
   mailboxer: Mailboxer | null;
+  /** Persistent notice store; ownership follows explicit injection. */
   noter: Noter | null;
+  /** Configured notice producer, sharing the composed signer and signaler. */
   notifier: Notifier | null;
+  /** Transient notice hints; only a runtime-created instance is closed here. */
   signaler: Signaler | null;
   /** Ordinary protocol facts, consumed by the composed cue workers. */
   cues: Deck<AgentCue>;
-  /** Demand-driven input lifetime; protocol decisions stay with Reactor. */
+  /** Demand-driven input lifetime; protocol decisions stay with ProtocolProcessor. */
   reactor: Reactor;
+  /** Shared protocol mutations, publication and background escrow processing. */
+  protocol: ProtocolProcessor;
+  /** Request-owned correlation slots shared with protocol cue publication. */
+  replies: QueryReplies;
+  /** Configured application exchange processor; workflows observe its durable completion. */
+  exc: Exchanger;
+  /** Durable OOBI job owner, independent of outgoing delivery. */
   oobiery: Oobiery;
+  /** Well-known authentication jobs over the shared HTTP service. */
   authenticator: Authenticator;
+  /** Provider stream and mailbox correlation owner. */
   mailboxDirector: MailboxDirector;
+  /** Cue-to-signed-message producer; it publishes to postman. */
   respondant: Respondant;
+  /** Outbound mailbox SSE polling with independently owned response lifetimes. */
   mailboxPoller: MailboxPoller;
+  /** Single FIFO outgoing delivery queue and retained failure owner. */
   postman: Poster;
+  /** Delegation workflow state and delivery/accepted-state gates. */
   delegating: Anchorer;
+  /** Query continuation and request-delivery owner; independent of Poster. */
   querying: QueryCoordinator;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
@@ -88,6 +110,7 @@ export interface AgentRuntime {
   readonly vdr: VdrRegery | null;
   /** V2 registry services, separately owned from the legacy VDR environment. */
   readonly acdc: AcdcRegery | null;
+  /** Resolved shared HTTP and clock services selected at composition. */
   services: RuntimeServices;
   /** Close only runtime-owned sidecars; caller-injected resources stay caller-owned. */
   close(): Operation<void>;
@@ -211,17 +234,24 @@ export function* createAgentRuntime(
       streams.close();
     }
   });
-  const reactor = new Reactor(hby, {
-    cues,
-    protocolCues,
+  // Compose the shared semantic handlers before input owners or network delivery.
+  const now = () => services.clock.now();
+  const kramer = options.kram ? new Kramer(hby.db, { config: options.kram, cues: protocolCues, now }) : undefined;
+  const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });
+  const exc = new Exchanger(hby, { cues: protocolCues, now });
+  const replies = new QueryReplies(cues);
+  const protocol = new ProtocolProcessor(
+    kvy,
     revery,
-    tevery: vdr?.tvy,
-    verifier: vdr?.vry,
-    registry: acdc ?? undefined,
-    messagePolicy: options.messagePolicy,
-    kram: options.kram,
-    now: () => services.clock.now(),
-  });
+    exc,
+    vdr?.tvy ?? null,
+    vdr?.vry ?? null,
+    acdc,
+    protocolCues,
+    cues,
+    replies,
+  );
+  const reactor = new Reactor(protocol);
   yield* resource<void>(function*(provide) {
     try {
       yield* provide();
@@ -229,11 +259,11 @@ export function* createAgentRuntime(
       reactor.clearIngress();
     }
   });
-  loadChallengeHandlers(hby.db, reactor.exchanger);
-  loadDelegationHandlers(hby, reactor.exchanger, notifier);
-  loadOobiHandlers(hby, reactor.exchanger, notifier);
-  loadMultisigHandlers(hby, reactor.exchanger, { notifier });
-  loadIpexHandlers(hby, reactor.exchanger, {
+  loadChallengeHandlers(hby.db, exc);
+  loadDelegationHandlers(hby, exc, notifier);
+  loadOobiHandlers(hby, exc, notifier);
+  loadMultisigHandlers(hby, exc, { notifier });
+  loadIpexHandlers(hby, exc, {
     notifier,
     registry: acdc?.store ?? null,
   });
@@ -248,7 +278,7 @@ export function* createAgentRuntime(
     }
   });
   const postman = yield* resource<Poster>(function*(provide) {
-    const postman = new Poster(hby, mailboxer, reactor, services);
+    const postman = new Poster(hby, mailboxer, protocol, services);
     try {
       yield* provide(postman);
     } finally {
@@ -257,9 +287,9 @@ export function* createAgentRuntime(
   });
   const respondant = new Respondant(hby, { postman, replyStreams });
   if (mailboxer) {
-    reactor.exchanger.addHandler(new ForwardHandler(mailboxDirector));
+    exc.addHandler(new ForwardHandler(mailboxDirector));
   }
-  for (const route of reactor.exchanger.routes.keys()) {
+  for (const route of exc.routes.keys()) {
     if (route === ForwardHandler.resource) {
       continue;
     }
@@ -292,8 +322,8 @@ export function* createAgentRuntime(
     }
   });
   const delegating = new Anchorer(hby, { postman, querying, services, reactor });
-  const oobiery = new Oobiery(hby, reactor, { cues, services });
-  oobiery.registerReplyRoutes(reactor.router);
+  const oobiery = new Oobiery(hby, reactor, revery, { cues, services });
+  oobiery.registerReplyRoutes(revery.rtr);
   const authenticator = new Authenticator(hby, { services });
   return {
     hby,
@@ -303,6 +333,9 @@ export function* createAgentRuntime(
     signaler,
     cues,
     reactor,
+    protocol,
+    replies,
+    exc,
     oobiery,
     authenticator,
     mailboxDirector,
@@ -481,7 +514,7 @@ export function* settleRuntimeIngress(
   for (const message of messages) {
     yield* runtime.reactor.processBytes(message, { local, mailboxAid });
   }
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 }
 
 /**
@@ -497,7 +530,7 @@ export function* settleMailboxPollBatch(
   for (const message of batch.messages) {
     yield* runtime.reactor.processBytes(message);
   }
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 }
 
 /**
@@ -666,7 +699,7 @@ export function* runAgentRuntime(
       yield* cueDo(runtime, options);
     }),
     yield* spawn(function*() {
-      yield* runtime.reactor.escrowDo();
+      yield* runtime.protocol.escrowDo();
     }),
     yield* spawn(function*() {
       yield* runtime.oobiery.oobiDo();

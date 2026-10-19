@@ -124,7 +124,7 @@ function* deferredDirectQueryResponse(
   const expires = Date.now() + DIRECT_QUERY_RESPONSE_WAIT_MS;
   do {
     let response: Response | null = null;
-    yield* runtime.reactor.processEscrowsOnce();
+    yield* runtime.protocol.processEscrowsOnce();
     const habitats = runtime.hby.habs.values();
     const first = habitats.next();
     const hab = context.policy.serviceHab ?? (first.done || !habitats.next().done ? null : first.value);
@@ -297,11 +297,11 @@ function* ingest(
                 mailbox: route.kind === "mailboxQueryStream",
                 authorized: false,
                 reply: context.policy.directQueryResponses && route.kind !== "mailboxQueryStream" && serder.said
-                  ? runtime.reactor.replies.reserve(serder.said)
+                  ? runtime.replies.reserve(serder.said)
                   : undefined,
               };
             }
-            const { decision, mailboxQueryAuthorized } = yield* runtime.reactor.dispatch(frame, {
+            const { decision, mailboxQueryAuthorized } = yield* runtime.protocol.dispatch(frame, {
               local: route.kind === "witnessLocalIngress",
               mailboxAid: route.kind === "witnessLocalIngress" ? hosted.endpoint?.eid : route.mailboxAid,
               escrows: true,

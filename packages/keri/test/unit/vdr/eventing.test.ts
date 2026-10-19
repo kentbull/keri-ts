@@ -318,7 +318,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       const responses: Iterable<Uint8Array>[] = [];
       for (const pvrsn of [Vrsn_1_0, Vrsn_2_0]) {
         const request = query("tels", { ri: vcp.pre!, src: issuer.pre, i: iss.pre! }, { pre: issuer.pre, pvrsn });
-        const reply = runtime.reactor.replies.reserve(request.said!);
+        const reply = runtime.replies.reserve(request.said!);
         try {
           const wire = messagize(request, {
             sigers: issuer.sign(request.raw, true),
@@ -370,7 +370,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           }
         }
       }
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertRuntimeCue(runtime, "revoked", "Accepted later revocation keeps its independent cue");
       const request = (ri = vcp.pre!, i = "", route = "tels") =>
         query(route, { ri, src: issuer.pre, i }, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
@@ -781,14 +781,14 @@ Deno.test("Tevery routes both signed TSNs and completes their dependencies in on
       assertEquals(received.txnsb.current([credential.said!, issuer.pre]), null);
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
       yield* runtime.reactor.processBytes(source.cloneTvt(credential.said!, iss.said!));
-      runtime.reactor.revery.cues.clear();
+      runtime.protocol.rvy.cues.clear();
       tvy.processEscrows();
       assertEquals(received.txnsb.current([vcp.pre!, issuer.pre])?.qb64, registry.said);
       assertEquals(received.txnsb.current([credential.said!, issuer.pre])?.qb64, notice.said);
       assertEquals(received.txnsb.escrowdb.cnt(), 0);
       assertEquals(target.db.rpes.cnt(), 0, "Notice dependencies retain one Broker owner");
       assertEquals(
-        runtime.reactor.revery.cues.toArray().flatMap((cue) => cue.kin === "txnStateSaved" ? [cue.record.i] : []),
+        runtime.protocol.rvy.cues.toArray().flatMap((cue) => cue.kin === "txnStateSaved" ? [cue.record.i] : []),
         [vcp.pre!, credential.said!],
         "Registry publication precedes credential publication",
       );
@@ -909,13 +909,13 @@ Deno.test("registry TSN partial proof ownership stays in finite Broker retry", a
           seal: { i: issuer.kever!.prefixer, s: est.sner!, d: new Diger({ qb64: est.said! }) },
         });
       yield* runtime.reactor.processBytes(wire(0));
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre]), null);
       assertEquals(reger.txnsb.escrowdb.get(["registry-mae", vcp.pre!, issuer.pre]).length, 1);
       assertEquals(hby.db.rpes.cnt(), 0);
       assertEquals(hby.db.ssgs.cnt(), 0, "Unaccepted signature pool stays with its explicit Broker owner");
       yield* runtime.reactor.processBytes(wire(1));
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, serder.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       assertEquals(hby.db.rpes.cnt(), 0);
@@ -1019,7 +1019,7 @@ Deno.test("credential TSN verifies current commitment, independent attester and 
       assertRuntimeCue(runtime, "txnStateSaved");
       const rev = revoke(credential.said!, vcp.pre!, iss.said!);
       assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertRuntimeCue(runtime, "revoked");
       const stale = notice(state, stamp.replace(/2\+00:00$/, "5+00:00"));
       yield* runtime.reactor.processBytes(issuer.endorse(stale));
@@ -1161,7 +1161,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       ]);
       runtime.cues.clear();
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(reger.txnsb.escrowdb.get(["credential-mre", credential.said!, issuer.pre]).length, 0);
       assertEquals(reger.txnsb.escrowdb.get(["credential-ooo", credential.said!, issuer.pre]).length, 1);
       assertRuntimeCue(runtime, {
@@ -1174,7 +1174,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       assertExists(reger.txnsb.serderdb.get([notice.said!]));
       assertEquals(hby.db.rpys.get([notice.said!]), null, "Pending proof belongs only to Broker");
       yield* runtime.reactor.processBytes(source.cloneTvt(iss.pre!, iss.said!));
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, notice.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       assertRuntimeCue(runtime, "txnStateSaved");
@@ -1194,7 +1194,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       for (const bytes of sender.db.clonePreIter(issuer.pre, issuer.kever!.sn)) {
         yield* runtime.reactor.processBytes(bytes);
       }
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(
         reger.txnsb.current([credential.said!, issuer.pre])?.qb64,
         notice.said,
@@ -1203,7 +1203,7 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       assertExists(hby.db.rpys.get([notice.said!]), "Prior accepted proof remains in Baser");
       assertEquals([...hby.db.ssgs.getTopItemIter([fresh.said!], { topive: true })].length, 0);
       yield* runtime.reactor.processBytes(wire(1));
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(reger.txnsb.current([credential.said!, issuer.pre])?.qb64, fresh.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0);
       assertEquals(hby.db.rpes.cnt(), 0);
@@ -1291,7 +1291,7 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
         serder: query("tsn", { ri: vcp.pre!, i: credential.said! }),
         source: requester.kever!.prefixer,
       });
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["reply", "reply"]);
     } finally {
       yield* target.close();

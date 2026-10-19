@@ -176,8 +176,8 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       },
     });
     let escrowPasses = 0;
-    const advance = runtime.reactor.processEscrowsOnce.bind(runtime.reactor);
-    runtime.reactor.processEscrowsOnce = function*() {
+    const advance = runtime.protocol.processEscrowsOnce.bind(runtime.reactor);
+    runtime.protocol.processEscrowsOnce = function*() {
       escrowPasses++;
       yield* advance();
     };
@@ -285,8 +285,8 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
           current.close();
         },
       });
-      const escrows = runtime.reactor.processEscrowsOnce;
-      runtime.reactor.processEscrowsOnce = function*() {
+      const escrows = runtime.protocol.processEscrowsOnce;
+      runtime.protocol.processEscrowsOnce = function*() {
         throw fault;
       };
       try {
@@ -295,7 +295,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
       } catch (error) {
         assertEquals(error, fault);
       } finally {
-        runtime.reactor.processEscrowsOnce = escrows;
+        runtime.protocol.processEscrowsOnce = escrows;
       }
       assertEquals(fetches.length, 1, "Escrow/storage failures cannot become an alternate artifact fetch");
       clearSavedCue();

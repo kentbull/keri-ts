@@ -191,7 +191,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         yield* submitter.submit(controller.pre);
         assertEquals(connections, priorConnections, "verified persistence enables the existing convergence fast path");
         // A borrowed protocol processor remains usable after submission; receipt cleanup never closes its stores.
-        yield* runtime.reactor.processEscrowsOnce();
+        yield* runtime.protocol.processEscrowsOnce();
         yield* runtime.close();
         controller.interact();
         const next = acceptedEventReplayMessage(hby, controller.pre, 1).serder;
@@ -627,7 +627,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
       const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
       // The connection owns its intake and borrows only the protocol processor from the host.
       const replies = {
-        reactor: runtime.reactor,
+        protocol: runtime.protocol,
       };
       const options = { replies, clock: runtime.services.clock, connectTimeoutMs: 1000, drainTimeoutMs: 40 };
       const preAborted = new AbortController();
@@ -669,7 +669,7 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
             if (mode === "cancel") await txCleanup.promise;
           }
         };
-        runtime.reactor.exchanger.processEscrows = function*() {
+        runtime.exc.processEscrows = function*() {
           assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
           verified.resolve();
           if (mode === "rxFault") throw fault;

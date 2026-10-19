@@ -10,15 +10,16 @@ AgentRuntime constructs concrete components, connects their data flows and owns
 its acquisitions and worker lifetime. It is not a container passed down so a
 child can discover siblings. One runtime serves a Habery or command invocation.
 
-| Owner                           | Responsibility                                                                  |
-| ------------------------------- | ------------------------------------------------------------------------------- |
-| Reactor                         | Buffered protocol intake, routing, dispatch/escrow ordering and reply capture   |
-| Oobiery                         | Durable introduction jobs and joined retrieval/intake                           |
-| Authenticator                   | Well-known authorization retrieval                                              |
-| QueryCoordinator                | Query correspondence, selected signer/attester, signed packets and response I/O |
-| Respondant / Poster             | Reply/replay interpretation, routing, exact retry bytes and actual delivery     |
-| MailboxDirector / MailboxPoller | Provider response correlation and continuous client polling                     |
-| Regery owners                   | Distinct legacy VDR and v2 registry processing/storage                          |
+| Owner                           | Responsibility                                                                    |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| Reactor                         | Buffered byte intake and parser lifetime over an input-owned Kevery               |
+| ProtocolProcessor               | Shared dispatch/escrow ordering, semantic handlers and correlated cue publication |
+| Oobiery                         | Durable introduction jobs and joined retrieval/intake                             |
+| Authenticator                   | Well-known authorization retrieval                                                |
+| QueryCoordinator                | Query correspondence, selected signer/attester, signed packets and response I/O   |
+| Respondant / Poster             | Signed message production, FIFO delivery and explicit whole-event retry           |
+| MailboxDirector / MailboxPoller | Provider response correlation and continuous client polling                       |
+| Regery owners                   | Distinct legacy VDR and v2 registry processing/storage                            |
 
 The root retains references needed for composition and application orchestration.
 Mutable subsystem state stays with its owner: durable OOBI jobs stay in their DB

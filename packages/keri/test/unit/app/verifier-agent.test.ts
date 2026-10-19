@@ -104,7 +104,7 @@ function* ingestGrant(runtime: AgentRuntime, fixture: IssuedFixture): Operation<
   yield* runtime.reactor.processBytes(
     concatBytes(Counter.makeGVC(fixture.grant.artifacts.acdc.genus), fixture.grant.wire),
   );
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 }
 
 /** Verify grant reconstruction reaches the webhook through the configured receiver genus. */
@@ -245,7 +245,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
         yield* runtime.reactor.processBytes(message);
       }
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
 
       const revoked = runtime.cues.toArray().find((cue) => cue.kin === "revoked");
       assertExists(revoked, "actual accepted TEL processing must produce the borrowed revocation");
@@ -355,7 +355,7 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
       for (const message of issuerReger.clonePreIter(fixture.creder.said!)) {
         yield* runtime.reactor.processBytes(message);
       }
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
       runtime.cues.clear();
 
       const result = yield* agent.processOnce();

@@ -233,8 +233,8 @@ export function* importCredentialStream(
 ): Operation<CredentialImportResult> {
   const before = savedCredentials(reger);
   yield* reactor.processBytes(bytes);
-  yield* reactor.processEscrowsOnce();
-  yield* reactor.processEscrowsOnce();
+  yield* reactor.protocol.processEscrowsOnce();
+  yield* reactor.protocol.processEscrowsOnce();
   return { saved: [...savedCredentials(reger)].filter((said) => !before.has(said)) };
 }
 

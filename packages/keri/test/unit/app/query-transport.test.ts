@@ -394,7 +394,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
 
           runtime.cues.clear(); // Ordinary accepted output records carry no transport lease.
 
-          yield* runtime.reactor.processEscrowsOnce();
+          yield* runtime.protocol.processEscrowsOnce();
         } finally {
           yield* runtime.close();
         }

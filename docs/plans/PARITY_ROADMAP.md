@@ -30,7 +30,7 @@ Refactor responsibility/contracts first, then behavior. Add an abstraction only
 for a demonstrated current responsibility and caller; matching a Python class
 name does not justify a forwarding wrapper.
 
-- Reactor orders protocol intake/escrows, captures correlated replies and publishes
+- ProtocolProcessor orders protocol processing/escrows and captures correlated replies and publishes
   after commit. It is not an application callback scheduler or universal executor.
 - QueryCoordinator, Respondant, Poster, mailbox, registry and concrete input owners
   do their actual work through narrow dependencies. Respondant interprets and

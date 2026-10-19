@@ -141,7 +141,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
           assertExists(embeds);
           assertEquals(Object.keys(embeds), ["icp", "d"]);
           assertEquals(left.db.exns.get([serder.said!])?.raw, serder.raw);
-          assertEquals(runtime.reactor.exchanger.complete(serder.said!), true);
+          assertEquals(runtime.exc.complete(serder.said!), true);
           const embedded = (serder.ked!.e as { d: string }).d;
           assertEquals(left.db.maids.get([embedded]).map((p) => p.qb64), [alice.pre]);
           delivered = serder;
@@ -167,7 +167,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
           local: true,
         });
-        yield* runtime.reactor.processEscrowsOnce();
+        yield* runtime.protocol.processEscrowsOnce();
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         assertEquals(notifier.list().length, 0);
       } finally {
@@ -917,7 +917,7 @@ for (const kind of ["apply", "grant"] as const) {
                 [...left.db.esigs.getTopItemIter([embedded.said!, ""])].map(([keys, siger]) => [keys, siger.qb64]),
                 before,
               );
-              assertEquals(runtime.reactor.exchanger.complete(embedded.said!), false);
+              assertEquals(runtime.exc.complete(embedded.said!), false);
               assertEquals(outgoing, undefined);
             }
             const result = yield* approveMultisigIpex(left, { ...runtime, vdr: null }, wrapper, {
@@ -925,7 +925,7 @@ for (const kind of ["apply", "grant"] as const) {
               sendLead: false,
             });
             assertEquals(result.accepted, true);
-            assertEquals(runtime.reactor.exchanger.complete(embedded.said!), true);
+            assertEquals(runtime.exc.complete(embedded.said!), true);
             assertExists(outgoing);
             yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
             const peerResult = yield* approveMultisigIpex(right, peerRuntime, outgoing.serder, {
@@ -933,7 +933,7 @@ for (const kind of ["apply", "grant"] as const) {
               sendLead: false,
             });
             assertEquals(peerResult.accepted, true);
-            assertEquals(peerRuntime.reactor.exchanger.complete(embedded.said!), true);
+            assertEquals(peerRuntime.protocol.exc.complete(embedded.said!), true);
           } finally {
             yield* peerRuntime.close();
             yield* runtime.close();

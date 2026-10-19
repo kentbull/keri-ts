@@ -70,12 +70,16 @@ export {
 export {
   type ProtocolHostPolicy,
 } from "../app/protocol-host-policy.ts";
+export {
+  createProtocolProcessor,
+  type DispatchOptions,
+  type ProtocolDispatchResult,
+  ProtocolProcessor,
+} from "../app/protocol-processing.ts";
 export type { QueryReply } from "../app/query-replies.ts";
 export {
-  type DispatchOptions,
   type IngressOptions,
   Reactor,
-  type ReactorDispatchResult,
 } from "../app/reactor.ts";
 export {
   Respondant,

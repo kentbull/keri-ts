@@ -175,10 +175,10 @@ function* processWitnessSocket(
             }
             const pre = typeof body.ked?.i === "string" ? body.ked.i : undefined;
             let slot = body.ilk === Ilks.qry && body.said
-              ? runtime.reactor.replies.reserve(body.said)
+              ? runtime.replies.reserve(body.said)
               : ([Ilks.icp, Ilks.dip, Ilks.rot, Ilks.drt, Ilks.ixn] as readonly string[]).includes(body.ilk!) && pre
                   && body.said
-              ? runtime.reactor.replies.reserveEvent(pre, body.said)
+              ? runtime.replies.reserveEvent(pre, body.said)
               : undefined;
             let msgs: Uint8Array[] | undefined;
             yield* resource<void>(function*(provide) {
@@ -188,7 +188,7 @@ function* processWitnessSocket(
                 slot?.close();
               }
             });
-            const { decision } = yield* runtime.reactor.dispatch(frame, { local: true, escrows: true });
+            const { decision } = yield* runtime.protocol.dispatch(frame, { local: true, escrows: true });
             // SAIDs do not include signatures: this exact dispatch must authorize its output.
             if (
               body.ilk === Ilks.qry

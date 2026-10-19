@@ -62,9 +62,9 @@ function* resolveArtifacts(
     );
   });
   // EOF and parser cleanup precede convergence and any claim of a complete DID.
-  yield* reactor.processEscrowsOnce();
+  yield* reactor.protocol.processEscrowsOnce();
   // Preserve the second convergence turn previously run after settleRuntimeIngress's own pass.
-  yield* reactor.processEscrowsOnce();
+  yield* reactor.protocol.processEscrowsOnce();
   const expected = generateBareDidDocument(rgy.hby, rgy, parsed.canonical);
   const bytes = yield* abortable((signal) =>
     collectBytes(artifactBytes(http, urls.didJson, fallbackUrls.didJson, preferHttp, signal))

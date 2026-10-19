@@ -4,6 +4,7 @@ import { IdrDex, SerderKERI } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { type KeverEventEnvelope, Kevery } from "../../../src/core/eventing.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 function eventEnvelope(args: {
   serder: SerderKERI;
@@ -55,8 +56,8 @@ Deno.test("Kevery unescrows witness receipts against partially witnessed events"
         throw new Error("Expected accepted controller event.");
       }
 
-      const reactor = new Reactor(remote);
-      const kvy = reactor.kevery;
+      const reactor = new Reactor(protocolFixture(remote));
+      const kvy = reactor.kvy;
       const decision = kvy.processEvent(eventEnvelope({
         serder: event,
         sigers: controller.sign(event.raw, true),
@@ -99,7 +100,7 @@ Deno.test("historical interaction receipts use their establishment witness cohor
       controller.interact();
       const empty = controller.kever!.serder;
       controller.rotate({ adds: [after.pre], toad: 1 });
-      const reactor = new Reactor(source);
+      const reactor = new Reactor(protocolFixture(source));
       for (const event of [witnessed, empty]) {
         yield* reactor.processBytes(after.receipt(event));
         const key = [controller.pre, event.said!];

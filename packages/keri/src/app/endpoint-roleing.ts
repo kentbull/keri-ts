@@ -68,7 +68,7 @@ export function* proposeGroupEndpointRole(
   );
   const localRpy = groupEndorseReply(runtime.hby, groupHab.pre, rpySerder);
   yield* runtime.reactor.processBytes(localRpy, { local: true });
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
 
   const proposals: GroupEndpointRoleProposalResult["proposals"] = [];
   const deliveries: string[] = [];

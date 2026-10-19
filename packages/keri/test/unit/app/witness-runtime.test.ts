@@ -577,8 +577,8 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         const active = createConnection({ port: tcpPort, host: "127.0.0.1" });
         sockets.push(active);
         active.on("error", () => {});
-        const processEvent = receiver.reactor.kevery.processEvent.bind(receiver.reactor.kevery);
-        receiver.reactor.kevery.processEvent = (envelope) => {
+        const processEvent = receiver.reactor.kvy.processEvent.bind(receiver.reactor.kvy);
+        receiver.reactor.kvy.processEvent = (envelope) => {
           if (envelope.serder.pre === controller.pre) replayed++;
           else foreignReplay = true;
           return processEvent(envelope);

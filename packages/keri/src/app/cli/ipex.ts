@@ -185,7 +185,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       const genus = grant.grant.gvrsn ?? ipexArgs.gvrsn ?? grant.grant.pvrsn;
       const partialGrant = groupIpexPartial(hby, hab, grant.grant, grant.attachments, genus);
       yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), partialGrant), { local: true });
-      yield* runtime.reactor.processEscrowsOnce();
+      yield* runtime.protocol.processEscrowsOnce();
 
       const deliveries = yield* call(function*() {
         const postman = runtime.postman;
@@ -198,7 +198,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       });
       const complete = ipexArgs.approvalTimeoutSeconds > 0
         ? yield* waitForMultisigIpexCompletion(hby, runtime, hab, grant.grant.said!, ipexArgs.approvalTimeoutSeconds)
-        : runtime.reactor.exchanger.complete(grant.grant.said!);
+        : runtime.exc.complete(grant.grant.said!);
 
       if (!complete) {
         console.log(JSON.stringify({
@@ -220,7 +220,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       const stream = concatBytes(...grant.support, completedGrantWire);
       if (ipexArgs.out) {
         Deno.writeFileSync(ipexArgs.out, stream);
-      } else if (runtime.reactor.exchanger.lead(hab, completedGrant.said!)) {
+      } else if (runtime.exc.lead(hab, completedGrant.said!)) {
         const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
@@ -237,7 +237,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         credential: ipexArgs.said,
         support: grant.support.length,
         status: "multisig-complete",
-        lead: runtime.reactor.exchanger.lead(hab, completedGrant.said!),
+        lead: runtime.exc.lead(hab, completedGrant.said!),
         deliveries,
       }));
       return;
@@ -447,7 +447,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       embedded: embedded.said,
       embeddedRoute: embedded.route,
       group,
-      lead: runtime.reactor.exchanger.lead(hby.habs.get(group)!, embedded.said!),
+      lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
       deliveries: approval.deliveries,
     }));
   });
@@ -677,7 +677,7 @@ function* waitForMultisigIpexCompletion(
   try {
     while (true) {
       yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
-      if (runtime.reactor.exchanger.complete(embeddedSaid)) return true;
+      if (runtime.exc.complete(embeddedSaid)) return true;
       if (Date.now() >= deadline) return false;
       yield* sleep(Math.min(250, deadline - Date.now()));
     }

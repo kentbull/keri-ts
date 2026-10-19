@@ -401,7 +401,7 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       });
       anchor(issuee, latest);
       assertEquals(observer.processEvent(latest).kind, "accept");
-      yield* runtime.reactor.exchanger.processEscrows();
+      yield* runtime.exc.processEscrows();
       assertExists(hby.db.exns.get([grant.said!]));
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       assertEquals(hby.db.exns.get([credential.said!]), null, "parent acceptance never dispatches its child");

@@ -114,7 +114,7 @@ export class VerifierAgent {
 
     result.grantsQueued += yield* this.scanAcceptedGrants();
     result.revocationsQueued += this.processRevokedCues();
-    yield* this.reactor.processEscrowsOnce();
+    yield* this.reactor.protocol.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
     result.presentationsReady += this.processPresentations();
     result.revocationsReady += this.processRevocations();

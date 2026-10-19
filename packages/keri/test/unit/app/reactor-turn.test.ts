@@ -12,6 +12,7 @@ import { Reactor } from "../../../src/app/reactor.ts";
 import { defaultRuntimeServices } from "../../../src/app/runtime-services.ts";
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 
 /** Explicit test gates make turn ordering observable without timing sleeps. */
 function gate(): { wait: Promise<void>; open: () => void } {
@@ -97,12 +98,12 @@ Deno.test("protocol processing waits for cancelled handler cleanup before the ne
   await run(function*() {
     const hby = yield* createHabery({ name: `turn-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby);
+      const reactor = new Reactor(protocolFixture(hby));
       const started = gate();
       const cleanup = gate();
       let second = false;
       let passes = 0;
-      reactor.exchanger.processEscrows = function*() {
+      reactor.protocol.exc.processEscrows = function*() {
         if (++passes > 1) {
           second = true;
           return;
@@ -113,9 +114,9 @@ Deno.test("protocol processing waits for cancelled handler cleanup before the ne
           await cleanup.wait;
         });
       };
-      const first = yield* spawn(() => reactor.processEscrowsOnce());
+      const first = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       yield* call(() => started.wait);
-      const next = yield* spawn(() => reactor.processEscrowsOnce());
+      const next = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       const halted = yield* spawn(() => first.halt());
       yield* call(() => Promise.resolve());
       assertEquals(second, false);
@@ -133,7 +134,7 @@ Deno.test("two request reservations survive an interleaved background cue drain"
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby), reactor = runtime.reactor;
-    const first = reactor.replies.reserve("query-a"), second = reactor.replies.reserve("query-b");
+    const first = reactor.protocol.replies.reserve("query-a"), second = reactor.protocol.replies.reserve("query-b");
     const ready = gate(), release = gate();
     const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: [Uint8Array.of(1)] };
     const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: [Uint8Array.of(2)] };
@@ -145,14 +146,14 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       observe(cue);
     };
     try {
-      reactor.exchanger.processEscrows = function*() {
-        reactor.kevery.cues.push(replayB);
+      reactor.protocol.exc.processEscrows = function*() {
+        reactor.kvy.cues.push(replayB);
         ready.open();
         yield* call(() => release.wait);
-        reactor.kevery.cues.push(ordinary);
-        reactor.kevery.cues.push(replayA);
+        reactor.kvy.cues.push(ordinary);
+        reactor.kvy.cues.push(replayA);
       };
-      const producing = yield* spawn(() => reactor.processEscrowsOnce());
+      const producing = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       yield* call(() => ready.wait);
       yield* processCuesOnce(runtime);
       assertEquals(seen, [], "unfinished protocol output is not exposed to application consumers");
@@ -175,20 +176,20 @@ Deno.test("dispatch returns mailbox authorization from its exact protocol state"
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const recipient = hby.makeHab("recipient"), reactor = new Reactor(hby);
+      const recipient = hby.makeHab("recipient"), reactor = new Reactor(protocolFixture(hby));
       const [frame] = yield* call(() =>
         parseBytes(recipient.query(recipient.pre, recipient.pre, {
           route: "mbx",
           q: { topics: { "/reply": 0 } },
         }))
       );
-      const result = yield* reactor.dispatch(frame);
+      const result = yield* reactor.protocol.dispatch(frame);
       assertEquals(result.decision?.kind, "accept");
       assertEquals(result.mailboxQueryAuthorized, true);
       recipient.rotate();
-      assertEquals(reactor.kevery.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)), false);
+      assertEquals(reactor.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)), false);
       assertEquals(result.mailboxQueryAuthorized, true, "later key state cannot change this request's decision");
-      const rejected = yield* reactor.dispatch(frame);
+      const rejected = yield* reactor.protocol.dispatch(frame);
       assertEquals([rejected.decision?.kind, rejected.mailboxQueryAuthorized], ["drop", false]);
     } finally {
       yield* hby.close(true);
@@ -232,17 +233,17 @@ Deno.test("queued cues do not prevent KEL acceptance or out-of-order escrow reco
       const sender = source.makeHab("sender");
       const initial = acceptedEventReplayMessage(source, sender.pre, 0).message;
       const later = sender.interact();
-      const reactor = new Reactor(target);
+      const reactor = new Reactor(protocolFixture(target));
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
 
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
-      reactor.cues.clear();
-      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+      reactor.protocol.cues.clear();
+      reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       yield* reactor.process((signal) => chunkBytes(initial, { signal }));
-      yield* reactor.processEscrowsOnce();
+      yield* reactor.protocol.processEscrowsOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 1);
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 0);
-      assertEquals(reactor.cues.peekHead()?.kin, "replay", "existing cues remain ahead of new protocol cues");
+      assertEquals(reactor.protocol.cues.peekHead()?.kin, "replay", "existing cues remain ahead of new protocol cues");
     } finally {
       yield* target.close(true);
       yield* source.close(true);
@@ -254,27 +255,32 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
   await run(function*() {
     const hby = yield* createHabery({ name: `cue-oobi-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby);
-      const oobi = new Oobiery(hby, reactor, {
-        cues: reactor.cues,
+      const reactor = new Reactor(protocolFixture(hby));
+      const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, {
+        cues: reactor.protocol.cues,
         services: {
           ...defaultRuntimeServices,
           http: {
             fetch() {
               // Model another producer filling the shared queue while this request is suspended in transport.
-              reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+              reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
               return Promise.resolve(new Response(null, { status: 404 }));
             },
           },
         },
       });
       const url = "http://example.test/oobi";
-      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+      reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       oobi.resolve(url);
       yield* oobi.processOnce();
       assertEquals(hby.db.oobis.get(url), null);
       assertEquals(hby.db.eoobi.get(url)?.state, "http-404");
-      assertEquals(reactor.cues.toArray().map((cue) => cue.kin), ["replay", "oobiQueued", "replay", "oobiFailed"]);
+      assertEquals(reactor.protocol.cues.toArray().map((cue) => cue.kin), [
+        "replay",
+        "oobiQueued",
+        "replay",
+        "oobiFailed",
+      ]);
     } finally {
       yield* hby.close(true);
     }
@@ -285,7 +291,7 @@ Deno.test("queued ingress copies producer bytes and does not publish failed copi
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby);
+      const reactor = new Reactor(protocolFixture(hby));
       const producer = Uint8Array.of(1, 2);
       let received: Uint8Array | undefined;
       reactor.processBytes = function*(bytes) {
@@ -315,9 +321,9 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
       const sender = source.makeHab("sender");
       const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
 
-      const reactor = new Reactor(target);
+      const reactor = new Reactor(protocolFixture(target));
       reactor.ingest(wire);
-      reactor.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
+      reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       yield* reactor.processOnce();
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
       assertEquals(reactor.hasIngress, false);
@@ -332,7 +338,7 @@ Deno.test("queued processing joins cancellation and does not reinsert failed rec
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby);
+      const reactor = new Reactor(protocolFixture(hby));
       const started = gate(), cleaning = gate(), cleanup = gate();
       reactor.processBytes = function*() {
         yield* abortable(async (signal) => {
@@ -409,7 +415,7 @@ Deno.test("input cancellation is owned before source construction", async () => 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const reactor = new Reactor(hby), failure = new Error("source construction failed");
+      const reactor = new Reactor(protocolFixture(hby)), failure = new Error("source construction failed");
       let invoked = false, sourceSignal: AbortSignal | undefined;
       const source = (signal: AbortSignal): AsyncIterable<Uint8Array> => {
         invoked = true;
@@ -434,25 +440,25 @@ Deno.test("external cancellation removes an input waiting for the protocol turn"
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
+      const hab = hby.makeHab("sender"), reactor = new Reactor(protocolFixture(hby));
       const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
       const held = gate(), release = gate(), queued = gate();
-      const dispatch = reactor.dispatch;
-      reactor.dispatch = function(frame, options) {
+      const dispatch = reactor.protocol.dispatch;
+      reactor.protocol.dispatch = function(frame, options) {
         queued.open();
         return dispatch.call(this, frame, options);
       };
-      reactor.exchanger.processEscrows = function*() {
+      reactor.protocol.exc.processEscrows = function*() {
         held.open();
         yield* call(() => release.wait);
       };
       yield* call(async () => {
-        const holder = run(() => reactor.processEscrowsOnce());
+        const holder = run(() => reactor.protocol.processEscrowsOnce());
         await held.wait;
         const controller = new AbortController(), reason = new Error("input stopped while waiting");
         let dispatched = false, closed = false;
-        const processEvent = reactor.kevery.processEvent;
-        reactor.kevery.processEvent = function(envelope) {
+        const processEvent = reactor.kvy.processEvent;
+        reactor.kvy.processEvent = function(envelope) {
           dispatched = true;
           return processEvent.call(this, envelope);
         };
@@ -500,13 +506,13 @@ Deno.test("input cancellation stops buffered dispatch and cannot become successf
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const hab = hby.makeHab("sender"), reactor = new Reactor(hby);
+      const hab = hby.makeHab("sender"), reactor = new Reactor(protocolFixture(hby));
       const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
       for (const endAtSource of [false, true]) {
         const controller = new AbortController(), reason = new Error("stop input");
         let dispatches = 0, closed = false;
-        const processEvent = reactor.kevery.processEvent.bind(reactor.kevery);
-        reactor.kevery.processEvent = (envelope) => {
+        const processEvent = reactor.kvy.processEvent.bind(reactor.kvy);
+        reactor.kvy.processEvent = (envelope) => {
           const decision = processEvent(envelope);
           dispatches++;
           controller.abort(reason);
@@ -530,7 +536,7 @@ Deno.test("input cancellation stops buffered dispatch and cannot become successf
         );
         assertStrictEquals(yield* call(() => assertRejects(() => input)), reason);
         assertEquals([dispatches, closed], [endAtSource ? 0 : 1, true]);
-        reactor.kevery.processEvent = processEvent;
+        reactor.kvy.processEvent = processEvent;
       }
     } finally {
       yield* hby.close(true);
@@ -550,8 +556,8 @@ Deno.test("stream cancellation joins the actual source cleanup", async () => {
           skipConfig: true,
         });
         try {
-          const first = new Reactor(hby);
-          const second = new Reactor(hby);
+          const first = new Reactor(protocolFixture(hby));
+          const second = new Reactor(protocolFixture(hby));
           const started = gate();
           const cleaning = gate();
           const cleanup = gate();
@@ -613,8 +619,8 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
           const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
           const started = gate(), cleaning = gate(), cleanup = gate();
           let resumed = false, joined = false, handlerClosed = false;
-          const reactor = new Reactor(hby);
-          reactor.exchanger.processEscrows = function*() {
+          const reactor = new Reactor(protocolFixture(hby));
+          reactor.protocol.exc.processEscrows = function*() {
             yield* ensure(function*() {
               handlerClosed = true;
               if (mode === "handler-failure") throw expected;
@@ -686,8 +692,8 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         skipConfig: true,
       });
 
-      const reactor = new Reactor(target);
-      const resultCues = separateCues ? new Deck<AgentCue>() : reactor.cues;
+      const reactor = new Reactor(protocolFixture(target));
+      const resultCues = separateCues ? new Deck<AgentCue>() : reactor.protocol.cues;
       const hab = source.makeHab("source");
       const first = acceptedEventReplayMessage(source, hab.pre, 0).message;
       hab.interact();
@@ -714,7 +720,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           return cleanup.wait;
         },
       }, { highWaterMark: 0 });
-      const oobi = new Oobiery(target, reactor, {
+      const oobi = new Oobiery(target, reactor, reactor.protocol.rvy, {
         cues: resultCues,
         services: {
           ...defaultRuntimeServices,
@@ -732,8 +738,8 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         },
       });
 
-      const processEvent = reactor.kevery.processEvent;
-      reactor.kevery.processEvent = function(envelope) {
+      const processEvent = reactor.kvy.processEvent;
+      reactor.kvy.processEvent = function(envelope) {
         const decision = processEvent.call(this, envelope);
         if (decision.kind === "accept" && envelope.serder.sn === 0) accepted.open();
         return decision;
@@ -741,7 +747,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       const url = `http://oobi.test/oobi/${hab.pre}/controller`;
       oobi.resolve(url);
       resultCues.clear();
-      reactor.cues.clear();
+      reactor.protocol.cues.clear();
       const worker = yield* spawn(function*() {
         try {
           yield* oobi.processOnce();
@@ -797,7 +803,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
           assertEquals(target.db.getState(hab.pre)?.s, "0", "Earlier independently accepted events survive");
           assertEquals(target.db.roobi.get(url), null);
           assertEquals(target.db.oobis.get(url)?.state, "queued");
-          reactor.cues.clear();
+          reactor.protocol.cues.clear();
           yield* oobi.processOnce();
           assertEquals(target.db.getState(hab.pre)?.s, "1");
           assertEquals(target.db.roobi.get(url)?.state, "resolved");

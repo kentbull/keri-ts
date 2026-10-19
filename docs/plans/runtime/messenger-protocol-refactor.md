@@ -1,7 +1,7 @@
 # Messenger ownership and protocol processing
 
-Status: implementation in progress; phase 1 makes constructor and lifecycle
-contracts explicit. Later phases and final qualification remain outstanding. Planning baseline: local HEAD and remote `master` both verified at
+Status: implementation in progress; phase 1 is merged in PR #532; phase 2 extracts shared protocol
+processing. Later phases and final qualification remain outstanding. Planning baseline: local HEAD and remote `master` both verified at
 `d735cfef1cf5e2abaf06517fcb6b55ed694e6ea4` on 2026-10-19, after PRs #528–531.
 Recheck the base before implementation. Preserve the original checkout's unrelated
 formatting edit. This document does not change the current runtime contract.
@@ -80,14 +80,16 @@ The constructor validates compatible stores and cue flows where necessary.
 
 ProtocolProcessor owns the long-lived KEL/reply route and escrow processor. Each
 messenger instead uses its own Kevery for that input's KEL, receipt and query
-dispatch. Both use the same Baser cache and configured protocol policy. Revery
+dispatch. Both use the same Baser cache. The long-lived Kevery remains the
+authoritative v2 message-policy/KRAM owner passed explicitly to dispatchEnvelope;
+otherwise mutable allow/deny changes would diverge across copied receiver policies. Revery
 continues routing semantic replies to the long-lived registered handlers.
 
 Proposed operations:
 
 ```ts
 makeKevery(): Kevery;
-dispatch(frame: CesrFrame, kvy: Kevery, options: DispatchOptions): Operation<ProtocolDispatchResult>;
+dispatch(frame: CesrFrame, options: DispatchOptions, kvy: Kevery): Operation<ProtocolDispatchResult>;
 processEscrowsOnce(): Operation<void>;
 escrowDo(): Operation<never>;
 ```
@@ -95,8 +97,10 @@ escrowDo(): Operation<never>;
 `makeKevery()` is a concrete construction operation, not a component lookup. It
 creates a distinct Kevery bound to the same Baser, sender policy, private cue Deck,
 Revery and optional Kramer as the configured long-lived processor. It neither
-registers routes nor starts a worker. Keep those dependencies private rather than
-making callers discover them through `protocol.rvy`, `protocol.registry`, etc.
+registers routes nor starts a worker. Keep this binding knowledge inside the construction operation. The concrete owner
+exposes documented readonly semantic collaborators for composition and direct tests;
+application entrypoints receive their actual `exc` or `replies` dependency from the
+root rather than discovering handlers through Reactor.
 Verify policy equivalence across long-lived and messenger-created instances;
 do not introduce a new dynamic policy-update API.
 
@@ -134,7 +138,7 @@ into the messenger or conflate query SAIDs with Poster event identities.
 
 Reactor retains its ingress Deck, `ingest`, `clearIngress`, parser/source lifetime,
 `process`, `processBytes`, `processOnce`, `hasIngress` and `msgDo`. Its constructor
-receives a concrete ProtocolProcessor and a Kevery. Its parser calls
+receives a concrete ProtocolProcessor and constructs its own Kevery through it. Its parser calls
 `protocol.dispatch(frame, kvy, options)` directly.
 
 Remove Reactor's public protocol proxies: `dispatch`, escrow methods, handler
@@ -154,7 +158,7 @@ options contain only actual transport/protocol choices and cancellation signals.
 
 ```ts
 new Poster(hby, mbx, protocol, services);
-new Reactor(protocol, protocol.makeKevery());
+new Reactor(protocol);
 new TCPMessenger(protocol, services.clock);
 new HTTPMessenger(protocol, services.http, services.clock);
 ```

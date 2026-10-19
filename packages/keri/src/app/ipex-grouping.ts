@@ -86,18 +86,18 @@ export function* approveMultisigIpex(
       concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment),
       { local: true },
     );
-    yield* runtime.reactor.processEscrowsOnce();
+    yield* runtime.protocol.processEscrowsOnce();
   }
   const approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
-  yield* runtime.reactor.processEscrowsOnce();
+  yield* runtime.protocol.processEscrowsOnce();
   const deliveries = options.publish
     ? yield* publishGroupIpexProposal(runtime, groupHab, approved, undefined, genus)
     : [];
   if (
     (options.sendLead ?? true)
     && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
-    && runtime.reactor.exchanger.lead(groupHab, embeddedSaid)
+    && runtime.exc.lead(groupHab, embeddedSaid)
   ) {
     deliveries.push(
       ...(yield* sendCompletedGroupIpex(
@@ -228,7 +228,7 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
       continue;
     }
     const embeddedSaid = embeddedSad.d;
-    if (typeof embeddedSaid !== "string" || runtime.reactor.exchanger.complete(embeddedSaid)) {
+    if (typeof embeddedSaid !== "string" || runtime.exc.complete(embeddedSaid)) {
       continue;
     }
     return wrapper;

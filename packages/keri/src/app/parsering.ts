@@ -164,6 +164,8 @@ export function* dispatchEnvelope(
   tevery?: Tevery,
   verifier?: Verifier,
   mailboxAid?: string | null,
+  /** Long-lived v2 message policy/KRAM owner; input-specific Kevery handles KEL and legacy traffic. */
+  messageKevery: Kevery = kevery,
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
@@ -177,7 +179,7 @@ export function* dispatchEnvelope(
     serder.pvrsn.major >= 2
     && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
   ) {
-    return yield* dispatchMessage(envelope, revery, kevery, exchanger, tevery, mailboxAid);
+    return yield* dispatchMessage(envelope, revery, messageKevery, exchanger, tevery, mailboxAid);
   }
 
   switch (serder.ilk) {

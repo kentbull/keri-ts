@@ -8,6 +8,7 @@ import { parseSchemaReference, resolveCachedSchema } from "../../../src/app/sche
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
+import { protocolFixture } from "../../protocol-fixture.ts";
 import { FakeRuntimeHttpClient, fakeRuntimeServices } from "../../support/runtime-service-fakes.ts";
 
 function schemaSed(): Record<string, unknown> {
@@ -118,8 +119,8 @@ Deno.test("OOBI response publishes schema or failure state with its result cue",
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const cues = new Deck<AgentCue>();
-      const reactor = new Reactor(hby), http = new FakeRuntimeHttpClient();
-      const oobi = new Oobiery(hby, reactor, { cues, services: fakeRuntimeServices({ http }) });
+      const reactor = new Reactor(protocolFixture(hby)), http = new FakeRuntimeHttpClient();
+      const oobi = new Oobiery(hby, reactor, reactor.protocol.rvy, { cues, services: fakeRuntimeServices({ http }) });
       const schemer = new Schemer({ sed: schemaSed() }), url = `http://schema.test/oobi/${schemer.said}`;
       http.registerOrigin("http://schema.test", () =>
         new Response(
