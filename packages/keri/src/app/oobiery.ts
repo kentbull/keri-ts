@@ -12,6 +12,7 @@ import { type Role, Roles } from "../core/roles.ts";
 import type { Revery } from "../core/routing.ts";
 import { acceptReplyDecision, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { Schemer } from "../core/scheming.ts";
+import type { Baser } from "../db/basing.ts";
 import { abortable } from "./abortable.ts";
 import { collectBytes } from "./byte-source.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
@@ -41,6 +42,60 @@ export interface OobiJob {
   eid?: string;
   said?: string;
   state?: string;
+}
+
+/**
+ * Projection of one requested URL's durable terminal OOBI/authentication row.
+ */
+export interface OobiTerminalState {
+  /**
+   * Pending until a terminal row exists; resolved/failed reflects that row.
+   */
+  status: "pending" | "resolved" | "failed";
+  /**
+   * Database family supplying the terminal row, or none.
+   */
+  via: "none" | "roobi" | "eoobi" | "rmfa";
+  /**
+   * Borrowed terminal row, or null while pending.
+   */
+  record: OobiRecord | null;
+}
+
+/**
+ * Return the current terminal state projection for one requested OOBI URL.
+ *
+ * @param db Borrowed OOBI/authentication records; this read starts no workers or I/O.
+ * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
+ * @returns Current durable terminal projection.
+ */
+export function oobiTerminalState(
+  db: Baser,
+  url: string,
+): OobiTerminalState {
+  if (isWellKnownOobiUrl(url)) {
+    const record = db.rmfa.get(url);
+    if (!record) {
+      return { status: "pending", via: "none", record: null };
+    }
+    return {
+      status: record.state === "resolved" ? "resolved" : "failed",
+      via: "rmfa",
+      record,
+    };
+  }
+
+  const failed = db.eoobi.get(url);
+  if (failed) {
+    return { status: "failed", via: "eoobi", record: failed };
+  }
+
+  const resolved = db.roobi.get(url);
+  if (resolved) {
+    return { status: "resolved", via: "roobi", record: resolved };
+  }
+
+  return { status: "pending", via: "none", record: null };
 }
 
 type OobiQueueKind = "oobis" | "woobi";

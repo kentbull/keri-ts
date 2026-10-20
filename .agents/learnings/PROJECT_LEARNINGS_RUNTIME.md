@@ -52,6 +52,14 @@ Release-peer transport probes use the canonical reference profiles independently
 the mailbox fork. The 1.2.x target is GLEIF 1.2.17 with its required GLEIF HIO;
 the earlier WebOfTrust 1.2.14 Directant drops queued input at EOF.
 
+## Bootstrap and CLI boundaries
+
+Init/incept share the finite app/bootstrapping operation and borrow its Habery,
+HTTP client and clock. Database-only OOBI/authentication projections take Baser,
+not AgentRuntime. Shared CLI parsing owns primitive shapes; initialization alone
+owns credential choices, key pairing and passcode confirmation. Inception's
+finite command scope owns acquisition/cleanup without a completion queue.
+
 ## Protocol and output owners
 
 Kever returns decision/follow-up data; Kevery applies KEL policy, Revery owns BADA

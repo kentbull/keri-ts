@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { oobiTerminalState } from "../../../src/app/oobiery.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
 
@@ -11,7 +12,6 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeOobiTerminalState,
 } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -170,11 +170,11 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
         for (const { url } of witnesses) runtime.oobiery.resolve(url);
         yield* runAgentRuntimeUntil(
           runtime,
-          () => witnesses.every(({ url }) => runtimeOobiTerminalState(runtime, url).status !== "pending"),
+          () => witnesses.every(({ url }) => oobiTerminalState(runtime.hby.db, url).status !== "pending"),
           { hab: members[0], timeoutMs: 20_000, pollMailbox: false },
         );
         for (const { pre, url } of witnesses) {
-          assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
+          assertEquals(oobiTerminalState(runtime.hby.db, url).status, "resolved");
           assertExists(hbys[0].db.getKever(pre));
         }
         yield* new WitnessReceiptor(hbys[0], runtime.protocol, runtime.http, runtime.clock).submit(

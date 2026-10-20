@@ -1,9 +1,10 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
-import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
+import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged } from "../agent-runtime.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { FetchHttpClient } from "../http-client.ts";
+import { oobiTerminalState } from "../oobiery.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
 import { systemClock } from "../runtime-clock.ts";
 
@@ -208,7 +209,7 @@ export function* oobiResolveCommand(
         { timeoutMs: 30_000, pollMailbox: false },
       );
 
-      const terminal = runtimeOobiTerminalState(runtime, url);
+      const terminal = oobiTerminalState(runtime.hby.db, url);
       if (terminal.status === "failed") {
         throw new ValidationError(
           `OOBI ${url} failed: ${terminal.record?.state ?? "failed"}`,

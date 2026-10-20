@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { oobiTerminalState } from "../../../src/app/oobiery.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Witnessed TS IPEX conversations carried by a real KERIpy KRAM mailbox. */
 
@@ -25,7 +26,6 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeOobiTerminalState,
 } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -128,10 +128,10 @@ for (const count of [1, 2]) {
                 runtime.oobiery.resolve(oobis.at(-1)!);
                 yield* runAgentRuntimeUntil(
                   runtime,
-                  () => oobis.every((url) => runtimeOobiTerminalState(runtime, url).status !== "pending"),
+                  () => oobis.every((url) => oobiTerminalState(runtime.hby.db, url).status !== "pending"),
                   { hab: runtime === holderRuntime ? members[0] : hab, timeoutMs: 20_000, pollMailbox: false },
                 );
-                for (const url of oobis) assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved", url);
+                for (const url of oobis) assertEquals(oobiTerminalState(runtime.hby.db, url).status, "resolved", url);
                 yield* new WitnessReceiptor(
                   runtime.hby,
                   runtime.protocol,

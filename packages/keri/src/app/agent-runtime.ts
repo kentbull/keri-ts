@@ -13,7 +13,6 @@ import {
   REPLAY_MAILBOX_TOPIC,
   REPLY_MAILBOX_TOPIC,
 } from "../core/mailbox-topics.ts";
-import type { OobiRecord } from "../core/records.ts";
 import { Revery } from "../core/routing.ts";
 import { Mailboxer } from "../db/mailboxing.ts";
 import { Noter } from "../db/noting.ts";
@@ -39,7 +38,7 @@ import { loadIpexHandlers } from "./ipexing.ts";
 import { MailboxDirector } from "./mailbox-director.ts";
 import { mailboxerOptionsForHabery } from "./mailboxing.ts";
 import { noterOptionsForHabery, Notifier } from "./notifying.ts";
-import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
+import { loadOobiHandlers, Oobiery, type OobiJob, oobiTerminalState } from "./oobiery.ts";
 import { ProtocolProcessor } from "./protocol-processing.ts";
 import { QueryReplies } from "./query-replies.ts";
 import { Reactor } from "./reactor.ts";
@@ -191,28 +190,10 @@ export interface RuntimePendingState {
    * Whether witness, unanchored or publication delegation escrow remains.
    */
   delegationPending: boolean;
-  /** True when query continuations or deferred correspondence requests remain. */
+  /** True while unsigned query requests or their current transport attempt remain. */
   queriesPending: boolean;
   /** True while independently retained query/cue delivery owners remain. */
   deliveriesPending: boolean;
-}
-
-/**
- * Projection of one requested URL's durable terminal OOBI/authentication row.
- */
-export interface RuntimeOobiTerminalState {
-  /**
-   * Pending until a terminal row exists; resolved/failed reflects that row.
-   */
-  status: "pending" | "resolved" | "failed";
-  /**
-   * Database family supplying the terminal row, or none.
-   */
-  via: "none" | "roobi" | "eoobi" | "rmfa";
-  /**
-   * Borrowed terminal row, or null while pending.
-   */
-  record: OobiRecord | null;
 }
 
 /**
@@ -659,60 +640,6 @@ export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
 }
 
 /**
- * Return true when a well-known URL has been authorized into `wkas.`.
- *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
- * @returns Whether the documented authentication/convergence predicate currently holds.
- */
-export function runtimeHasWellKnownAuth(
-  runtime: AgentRuntime,
-  url: string,
-): boolean {
-  const cid = parseOobiUrl(url).cid;
-  if (!cid) {
-    return false;
-  }
-  return runtime.hby.db.wkas.get(cid).some((record) => record.url === url);
-}
-
-/**
- * Return the current terminal state projection for one requested OOBI URL.
- *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
- * @returns Current durable terminal projection.
- */
-export function runtimeOobiTerminalState(
-  runtime: AgentRuntime,
-  url: string,
-): RuntimeOobiTerminalState {
-  if (isWellKnownOobiUrl(url)) {
-    const record = runtime.hby.db.rmfa.get(url);
-    if (!record) {
-      return { status: "pending", via: "none", record: null };
-    }
-    return {
-      status: record.state === "resolved" ? "resolved" : "failed",
-      via: "rmfa",
-      record,
-    };
-  }
-
-  const failed = runtime.hby.db.eoobi.get(url);
-  if (failed) {
-    return { status: "failed", via: "eoobi", record: failed };
-  }
-
-  const resolved = runtime.hby.db.roobi.get(url);
-  if (resolved) {
-    return { status: "resolved", via: "roobi", record: resolved };
-  }
-
-  return { status: "pending", via: "none", record: null };
-}
-
-/**
  * Return true once OOBI acceptance and its ingress/query dependencies settle.
  * Background receipt delivery is not remote acknowledgement of OOBI acceptance;
  * static OOBI servers may refuse unsolicited posts. Runtime close still joins I/O.
@@ -726,7 +653,7 @@ export function runtimeOobiConverged(
   url: string,
 ): boolean {
   const pending = runtimePendingState(runtime);
-  return runtimeOobiTerminalState(runtime, url).status !== "pending"
+  return oobiTerminalState(runtime.hby.db, url).status !== "pending"
     && !pending.cues && !pending.replyEscrow
     && !pending.oobiQueued && !pending.oobiInFlight && !pending.multiPending
     && !pending.authQueued && !pending.authInFlight && !pending.delegationPending

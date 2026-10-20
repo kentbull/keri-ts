@@ -8,21 +8,20 @@ import {
   enqueueOobi,
   runAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeHasWellKnownAuth,
   runtimeOobiConverged,
-  runtimeOobiTerminalState,
   runtimePendingState,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { oobiTerminalState } from "../../../src/app/oobiery.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
 
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 
-import { Authenticator } from "../../../src/app/authenticating.ts";
+import { Authenticator, hasWellKnownAuth } from "../../../src/app/authenticating.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -357,9 +356,9 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         yield* runtime.authenticator.processOnce();
         yield* processCuesOnce(runtime);
         assertEquals(hby.db.rmfa.get(wellKnownUrl)?.state, "resolved");
-        assertEquals(runtimeHasWellKnownAuth(runtime, wellKnownUrl), true);
+        assertEquals(hasWellKnownAuth(runtime.hby.db, wellKnownUrl), true);
         assertEquals(
-          runtimeOobiTerminalState(runtime, wellKnownUrl).status,
+          oobiTerminalState(runtime.hby.db, wellKnownUrl).status,
           "resolved",
         );
         assertEquals(runtimeOobiConverged(runtime, wellKnownUrl), true);
@@ -370,7 +369,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         yield* runtime.authenticator.processOnce();
         assertEquals(hby.db.rmfa.get(failingWellKnownUrl)?.state, "http-404");
         assertEquals(
-          runtimeOobiTerminalState(runtime, failingWellKnownUrl).status,
+          oobiTerminalState(runtime.hby.db, failingWellKnownUrl).status,
           "failed",
         );
 
@@ -1098,7 +1097,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
           assertEquals(hby.db.roobi.get(childUrl)?.state, "resolved");
         }
         assertEquals(
-          runtimeOobiTerminalState(runtime, parentUrl).status,
+          oobiTerminalState(runtime.hby.db, parentUrl).status,
           "resolved",
         );
         yield* processCuesOnce(runtime);
@@ -1239,7 +1238,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
           assertEquals(hby.db.roobi.get(childUrl)?.state, "resolved");
         }
         assertEquals(
-          runtimeOobiTerminalState(runtime, parentUrl).status,
+          oobiTerminalState(runtime.hby.db, parentUrl).status,
           "resolved",
         );
         yield* processCuesOnce(runtime);

@@ -1,6 +1,20 @@
 import type { ThresholdSith } from "cesr-ts";
 import { ValidationError } from "../../../core/index.ts";
 
+/** Keep omission and explicit empty strings distinct; command policy handles emptiness. */
+export function parseStringOption(value: unknown, flag: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") throw new ValidationError(`${flag} must be a string`);
+  return value;
+}
+
+/** Preserve an omitted flag until command/file precedence and defaults are applied. */
+export function parseBooleanOption(value: unknown, flag: string): boolean | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "boolean") throw new ValidationError(`${flag} must be a boolean`);
+  return value;
+}
+
 /**
  * JSON file schema for `tufa incept --file` option loading.
  *

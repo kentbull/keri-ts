@@ -1,10 +1,29 @@
 import { call, type Operation, scoped } from "npm:effection@^3.6.0";
 import type { OobiRecord } from "../core/records.ts";
+import type { Baser } from "../db/basing.ts";
 import type { Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
 import { isWellKnownOobiUrl, parseOobiUrl } from "./oobiery.ts";
 import { persistResolvedContact } from "./organizing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+
+/**
+ * Return true when a well-known URL has been authorized into `wkas.`.
+ *
+ * @param db Borrowed authentication records; this read acquires no runtime or I/O lifetime.
+ * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
+ * @returns Whether the documented authentication/convergence predicate currently holds.
+ */
+export function hasWellKnownAuth(
+  db: Baser,
+  url: string,
+): boolean {
+  const cid = parseOobiUrl(url).cid;
+  if (!cid) {
+    return false;
+  }
+  return db.wkas.get(cid).some((record) => record.url === url);
+}
 
 /**
  * Well-known OOBI authenticator for one `Habery`.
