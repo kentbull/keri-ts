@@ -19,6 +19,10 @@ responsibilities into one vague "VC" layer.
   issue, revoke, accepted-state persistence, TEL escrows and TSN admission/routes/retries.
   Tevery shares the composed Revery; this TSN ownership landed after 1.0.0 in #523.
 - `db/reger.ts` owns KERIpy-shaped VDR storage and credential/TEL clone helpers.
+- `vdr/backer-state.ts` selects historical backer rosters only through accepted
+  management coordinates. Missing management evidence remains pending; Tevery
+  revalidates accumulated signatures before admission and retries partial backer
+  escrows. Exact accepted replays may add valid receipts without reapplying state.
 - `vdr/credentialing.ts` owns issuer-side registry and credential orchestration.
 - `app/verifying.ts` owns verifier acceptance, schema/registry/chain escrows,
   wallet indexes, and chain policy.
