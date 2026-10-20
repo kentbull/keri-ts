@@ -41,6 +41,8 @@ The scope includes:
 - Explicit acceptance of configurable threshold limits.
 - LMDB-owned ESSR evidence; remove the filesystem archive, unused durable
   plaintext persistence and unnecessary ESSR staging/streaming infrastructure.
+  Correct persistence against pinned KERIpy main's actual Baser ordered set in
+  PR 12e; direct legacy database compatibility is deferred, legacy wire is required.
 - Explicit ordinary/stream messenger construction and wire parity; remove the
   persisted CESR body preference and all of its public/configuration plumbing.
 - The justified architecture/readability changes described below.
@@ -298,8 +300,10 @@ deduplicated. An accepted EXN is not proof that all handler work completed;
 do not suppress required publication with a blanket duplicate-effect rule.
 
 ESSR evidence must live in LMDB with accepted/escrow state, proof unions and
-receipt metadata committed cohesively. Retain committed ciphertext bytes,
-fragment order/multiplicity and non-downgrade of acceptance. Remove private file
+receipt metadata committed cohesively. PR 12e supersedes the earlier local
+multiplicity guarantee: match pinned main's ordered-set writer, validate incoming
+commitments and reconstructed evidence separately, and explicitly expose the
+repeated-fragment limitation. Preserve non-downgrade of acceptance. Remove private file
 ownership, publication/reclamation and startup recovery rather than preserving
 those mechanisms behind interfaces. Eliminate asynchronous preparation and
 current-state rechecking whose sole purpose was file I/O; keep checks required
@@ -365,10 +369,11 @@ tests until the end.
 | 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a             |
 | 12c     | Establish consistent database close failures and command completion                                    | 12b             |
 | 12d     | Move OOBI cleanup to ordinary Baser ownership and canonical pending table                              | 12c             |
+| 12e     | Correct ESSR storage/callers against actual pinned-main Baser; expose set limitations                  | 12a, 12b, 13b   |
 | 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12d        |
 | 13a     | Separate concrete ordinary/stream messenger construction and query response ownership                  | 05, 06, 12b, 13 |
 | 13b     | Wire explicit delivery intent and remove the entire persisted CESR body preference                     | 13a             |
-| 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b             |
+| 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b, 12e        |
 | 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13c         |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
@@ -591,7 +596,12 @@ Do not add a passcode-management command, migration framework or crypto redesign
 If the existing code already satisfies the invariant under the real storage
 semantics, retain only the useful regression and omit a fabricated repair.
 
-### ESSR redirect — next PRs 12a–12b, before multisig feature work
+### ESSR archive removal — PRs 12a–12b
+
+Delivered in #598/#599. The archive/staging removal remains required; their
+ordinal-preserving and first-representation storage decisions are superseded by
+[PR 12e](#essr-storage-correction--pr-12e). Historical test results remain evidence
+of the implementation tested, not qualification of the corrected contract.
 
 Kent explicitly requires removal of the custom archive and unnecessary ESSR
 content infrastructure. This supersedes the earlier private-file preparation
@@ -633,19 +643,12 @@ protocol/application consumer; remove file-reference metadata rather than moving
 Simplify Exchanger's file-driven preparation, reference comparisons and finishing;
 keep actual route security, current-state checks and handler responsibilities.
 
-Preserve repeated fragments with the smallest ordinary LMDB representation.
-Prefer the existing ordinal CESR store keyed by exchange SAID and fragment position,
-retaining qualified Texter values, instead of set insertion that deduplicates
-values. Verify its physical layout and actual reconstruction; add no parallel
-content store or ownership index. Do not silently drop bytes, prohibit valid
-repeated fragments, add protocol maxima or rely on coalescing an arbitrarily large
-valid stream into one Texter. Record the necessary sequence-versus-set deviation
-from KERIpy and its byte-commitment reason. Reuse existing tests to prove accepted
-evidence survives close/reopen, missing-proof/dependency escrow reconstructs and
-accepts after retry, duplicate arrivals preserve accepted evidence, and a signed
-digest mismatch is rejected without accepting or corrupting prior evidence.
-Include a repeated-fragment EXN round trip through persistence and retry/replay.
-Delete tests that only verify archive files, recovery, ownership or reclamation.
+PR #598 originally retained repeated fragments with ordinal CESR writes. That
+decision is superseded: PR 12e restores ordinary main-targeted IoSet behavior
+and replaces the sequence-success expectation with an explicit limitation test.
+Keep acceptance/reopen/retry/replay successes using distinct fragments and
+signed-digest rejection without corrupting prior evidence. Archive-only recovery,
+ownership and reclamation tests remain removed.
 
 **PR 12b: ordinary authenticated data and removal of staging infrastructure.**
 With unused durable plaintext APIs removed in PR 12a, simplify the recipient's
@@ -727,6 +730,31 @@ pinned-KERIpy coverage proving the proper pending table is selected and the
 resulting store reopens. Preserve PR 12c's close contract. Keep documentation
 minimal; report removed machinery, accepted startup effects, actual checks and
 remaining binding uncertainty. Both PRs precede final qualification and 2.0.0.
+
+### ESSR storage correction — PR 12e
+
+Execute the approved [ESSR storage supplement](essr/ESSR_STORAGE_PARITY_PLAN.md)
+next after messenger PR 13b (#605), before PR 13c, expanded
+multisig feature work and final qualification. Use one cohesive corrective PR:
+restore Baser's typed `CesrIoSetSuber<Texter>` contract first, then align Exchanger
+append/set behavior and qualify against actual pinned-main `Baser.essrs`.
+Keep #598/#599 archive, staging and durable-plaintext removals.
+
+The storage target is main `424a50c03421165c5f289e07a341bd57b8d8ab78`, table
+`essrs.`; legacy 1.2.14/1.3.6 Baser binds `.essrs`. A manually constructed Suber
+cannot establish native Baser compatibility. Incoming signed bytes and stored
+reconstruction are distinct: accept the reference's repeated-fragment and
+alternate-fragmentation limitations explicitly, without weakening digest/auth
+checks or adding replacement storage. Do not reproduce main's separate
+unknown-sender escrow evidence-loss defect.
+
+The supplement specifies focused tests, actual main Baser bidirectional/reopen
+evidence, bounded wire reruns on all three pins, and concise corrections to
+contracts, compatibility/breaking-change docs, historical reports and inventory.
+Direct legacy LMDB compatibility has a [canonical deferred roadmap owner](db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility)
+outside the 2.0 gate; v1 protocol wire support remains mandatory. Preserve
+historical findings with accurate scope rather than rewriting them as current
+implementation truth. No upstream submission is authorized.
 
 ### Transport supplement: explicit messenger selection — PRs 13a–13c
 

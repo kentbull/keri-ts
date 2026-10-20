@@ -4,6 +4,13 @@ The [accepted simplification](../PARITY_ROADMAP.md) governs architecture and tak
 over conflicting older requirements here; existing protocol obligations remain.
 
 Owner: roadmap **5**, under [ADR-0013](../../adr/adr-0013-simple-component-flows.md).
+The approved [ESSR correction](../essr/ESSR_STORAGE_PARITY_PLAN.md), release PR
+12e, supersedes earlier position-preserving ESSR guidance. Its target is actual
+pinned-main `Baser.essrs` (`essrs.`), ordinary ordered-set semantics and explicit
+reconstruction limitations. Legacy Baser binds `.essrs`; direct legacy LMDB
+compatibility is [deferred outside 2.0](DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility).
+Legacy wire interoperability remains required. Do not interpret the historical
+qualification below as current universal database interchangeability.
 Storage accounting and unsupported delivery persistence are removed. Payload
 and accepted-evidence paths pass the 1.0.0 composed and installed qualification
 recorded in the [release report](../../reports/parity/CLEANUP_RELEASE_2026-10-16.md);
@@ -38,7 +45,7 @@ native addon/data-format qualification, especially mapped rows above 16 MiB.
 The native-copy removal does not authorize invalid borrowed buffers or cursors
 held past their owner. Snapshot logical replay extents where correctness needs it.
 
-Keep qualified ciphertext in KERIpy-compatible `essrs.`, accepted nested evidence
+Keep qualified ciphertext in main-targeted `essrs.`, accepted nested evidence
 and supported escrow/replay rows. Private pointers never replace required wire;
 authenticated plaintext stays separate. Read Python-origin rows with their actual
 ordering/deduplication. Current KERIpy interoperability is distinct from supporting

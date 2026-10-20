@@ -9,6 +9,38 @@ row-specific parity evidence and edge closure, not re-creating those APIs. The
 [April audit](../../reference/db/DB_PARITY_AUDIT_2026-04-03.md) is a dated baseline;
 reconcile its rows with current source before promoting them.
 
+## Present ESSR target
+
+The approved [ESSR correction](../essr/ESSR_STORAGE_PARITY_PLAN.md), release PR
+12e, targets actual `Baser.essrs` on pinned main
+`424a50c03421165c5f289e07a341bd57b8d8ab78`: `essrs.`, ordinary insertion-ordered
+Texter set and its writer semantics/limitations. The legacy 1.2.14 `bab95c16` and
+1.3.6 `4ce4cc79` Baser bindings are `.essrs`. Physical row readability through a
+manually named Suber does not establish native Baser compatibility, much less
+complete Habery/Keeper interchangeability. Legacy wire interoperability remains
+required for 2.0; direct legacy LMDB compatibility is deferred below.
+
+## Deferred legacy LMDB compatibility
+
+Canonical roadmap owner; **outside the current 2.0 release gate**. Design and
+qualify before claiming support or implementing mechanisms:
+
+- Inventory version-pinned named databases, codecs, metadata and pending-work
+  representations against the supported actual Python versions.
+- Specify opening, creation and version selection. Decide read/write interchange
+  versus one-time upgrade/export/import, rather than assuming they are equivalent.
+- Define handling when both ESSR table names exist, conflicting evidence,
+  duplicate values and alternate fragment representations occur.
+- If migration is selected, define safe boundaries, untouched backups, rollback
+  and crash recovery before implementation.
+- Qualify actual Baser/Habery and relevant Keeper owners, not arbitrary manually
+  constructed Subers. Prove bidirectional reads/writes, restart, escrow/replay and
+  semantic validity with the real supported Python versions.
+
+Do not add discovery, fallback readers, dual writes, table copies, automatic
+migration or a storage-version setting to PR 12e. This deferral does not weaken
+legacy KERI/ACDC/CESR wire requirements or defer main-targeted ESSR parity.
+
 ## Existing sequence and exit criteria
 
 | Unit               | Remaining gate                                                   |
