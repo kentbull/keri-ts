@@ -27,8 +27,14 @@ class OwnerRecord extends RawRecord<{ key: string }> {
   declare key: string;
 }
 
-/** One flushed immutable candidate; disposal never removes a committed reference's file. */
-export class PreparedPayload implements OwnedPayload {
+/** One flushed caller-owned candidate, with no reference-table or mutation internals in its public contract. */
+export interface PreparedPayload extends OwnedPayload {
+  /** Independent physical file identity for synchronous reference publication. */
+  readonly id: string;
+}
+
+/** Private physical owner; disposal never removes a committed reference's file. */
+class PreparedFile implements PreparedPayload {
   /** Idempotent cleanup also closes this handle to further publication. */
   private cleanup?: Promise<void>;
   /** A physical candidate belongs to at most one publication attempt, including a rolled-back attempt. */
@@ -214,6 +220,7 @@ export class PayloadArchive {
   /** Finish an already admitted publication even after close has stopped new work. */
   private pinPrepared(key: string, candidate: PreparedPayload): Payload {
     if (!this.db.inWriteTransaction) throw new Error("Prepared payload publication requires the owning writer");
+    if (!(candidate instanceof PreparedFile)) throw new TypeError("Payload candidate was not prepared by an archive");
     if (this.refs.get([key]) || this.owners.get([candidate.id])) {
       throw new Error("Payload reference already has an owner");
     }
@@ -349,7 +356,7 @@ export class PayloadArchive {
     const owned = await this.own(payload, signal);
     try {
       await this.flushCandidate(owned, signal);
-      return new PreparedPayload(owned, this.owners);
+      return new PreparedFile(owned, this.owners);
     } catch (error) {
       try {
         await owned.discard();
