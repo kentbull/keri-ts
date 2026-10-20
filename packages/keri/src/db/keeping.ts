@@ -4,6 +4,7 @@ import {
   type Encrypter,
   NumberPrimitive,
   Prefixer,
+  Salter,
   Signer,
   type Tier,
   Verfer,
@@ -189,6 +190,14 @@ export class PubSet extends RawRecord<PubSetShape> implements PubSetShape {
       } satisfies PubSetShape,
     );
   }
+}
+
+/** Convert one stored salt between the current and replacement at-rest policy. */
+function reencryptSalt(salt: string, encrypter: Encrypter | null, decrypter: Decrypter | null): string {
+  const salter = decrypter
+    ? decrypter.decrypt({ qb64: salt, ctor: Salter }) as Salter
+    : new Salter({ qb64: salt });
+  return encrypter ? encrypter.encrypt({ prim: salter }).qb64 : salter.qb64;
 }
 
 /**
@@ -390,6 +399,52 @@ export class Keeper {
   /** Upsert one keeper-global string value in `gbls.` under the same manager-owned key contract. */
   pinGbls(key: string, value: string): boolean {
     return this.gbls.pin(key, value);
+  }
+
+  /**
+   * Commit one authenticated AEID change and every affected secret together.
+   * Manager validates the replacement credentials; this owner rechecks the old
+   * AEID under the native writer, migrates root/prefix salts and signer seeds,
+   * and refuses false writes. A caller's outer writer cannot establish commit
+   * completion, so this operation must own its transaction. No live Manager
+   * crypto state is published here.
+   */
+  changeEncryption({ currentAeid, aeid, encrypter, decrypter }: {
+    currentAeid: string;
+    aeid: string;
+    encrypter: Encrypter | null;
+    decrypter: Decrypter | null;
+  }): void {
+    if (this.readonly) throw new DatabaseOperationError("Cannot change encryption in a read-only keeper");
+    const env = this.lmdber.env;
+    if (!env) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (this.lmdber.inWriteTransaction) {
+      throw new DatabaseOperationError("Keeper encryption change must own its write transaction");
+    }
+    env.transactionSync(() => {
+      const storedAeid = this.getGbls("aeid");
+      if ((storedAeid ?? "") !== currentAeid) {
+        throw new DatabaseOperationError("Keeper AEID changed before encryption migration; reopen the manager");
+      }
+      if (storedAeid === aeid) return;
+
+      const root = this.getGbls("salt");
+      if (root !== null) {
+        const value = reencryptSalt(root, encrypter, decrypter);
+        if (!this.pinGbls("salt", value)) throw new DatabaseOperationError("Keeper root salt write failed");
+      }
+      for (const [keys, data] of this.prms.getTopItemIter()) {
+        if (!data.salt) continue;
+        data.salt = reencryptSalt(data.salt, encrypter, decrypter);
+        if (!this.prms.pin(keys, data)) throw new DatabaseOperationError("Keeper prefix salt write failed");
+      }
+      for (const [keys, signer] of this.pris.getTopItemIter("", decrypter ?? undefined)) {
+        if (!this.pris.pin(keys, signer, encrypter ?? undefined)) {
+          throw new DatabaseOperationError("Keeper signer seed write failed");
+        }
+      }
+      if (!this.pinGbls("aeid", aeid)) throw new DatabaseOperationError("Keeper AEID write failed");
+    });
   }
 
   /** Insert the first public-key to prefix mapping in `pres.` if absent. */
