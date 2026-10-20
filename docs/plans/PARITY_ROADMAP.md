@@ -82,16 +82,14 @@ cannot satisfy negation. Do not seed accepted reference rows to manufacture pari
 Global TEL freshness, arbitrary nested-depth/topology cross-products and the broader
 unfinished protocol backlog are not activated by this completed release.
 
-## Unresolved source/contract discrepancy
+## Accepted threshold deployment limits
 
-At `e42b28cf`, `packages/cesr/src/primitives/tholder.ts` still exposes deployment
-caps `maxWeights = 1_000` and `maxSithLength = 65_536`; its unit tests enforce them,
-including qualified wire input. These are configurable local limits, not numeric
-representation or wire maxima. Frozen KERIpy coring.py also carries Limit/MaxSith,
-which explains provenance but does not settle the accepted no-quota constraint.
-A separate ownership/contract review must resolve this retained boundary before
-claiming every non-socket quota is absent. This documentation reconciliation does
-not change runtime behavior or authorize a replacement policy mechanism.
+Retain Tholder's configurable `maxWeights = 1_000` and `maxSithLength = 65_536`
+as the narrow deployment exception in [ADR-0013](../adr/adr-0013-simple-component-flows.md).
+Configure positive safe integers before concurrent processing. Existing tests
+cover default boundaries, raised caps, invalid settings and qualified wire input.
+These are local threshold-complexity limits, not numeric or protocol wire maxima;
+they do not justify new accounting, configuration frameworks or policy services.
 
 ## Deferred review questions
 

@@ -149,6 +149,12 @@ production problem and evidence that native backpressure is insufficient. It
 must not spread configuration, callbacks or outcomes upward. Hypothetical overload
 and tests mirroring invented formulas are not evidence.
 
+Tholder's existing configurable `maxWeights` and `maxSithLength` are an accepted
+narrow deployment exception. Retain the 1,000-weight and 65,536-character defaults
+and positive-safe-integer validation; configure them before concurrent processing.
+They bound threshold input complexity, not numeric threshold values or protocol
+wire maxima. This does not authorize a shared policy service or new accounting.
+
 Preserve wire framing/declared extents, crypto checks, supported numeric ranges,
 transactions, native backpressure and real reader/socket/file/iterator/DB cleanup.
 Effection scopes start, cancel and join work. External input abort stops waiting

@@ -8,7 +8,7 @@ cleanup/release baseline is qualified. The [release report](../docs/reports/pari
 owns its evidence and limits; future changes still require relevant qualification.
 Post-release Tevery ownership (#523) has separate scoped evidence and is not in
 published 1.0.0. Historical inventories must never become fresh implementation
-queues; the roadmap explicitly records unresolved contract/source contradictions.
+queues; the roadmap owns remaining parity work and accepted deployment boundaries.
 The [runtime contract](../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) owns current
 cue, protocol, transport and resource-lifetime behavior. Poster owns queued output;
 producers prepare messages, and concrete messengers own attempts and input-specific
