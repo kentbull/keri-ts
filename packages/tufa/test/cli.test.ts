@@ -116,6 +116,7 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
   ["ends", "add", "-n", "store", "-a", "aid", "-r", "mailbox", "-e", "Eendpoint"],
   ["loc", "add", "-n", "store", "-a", "aid", "-u", "http://127.0.0.1:7723"],
   ["oobi", "generate", "-n", "store", "-a", "aid", "-r", "controller"],
+  ["oobi", "clean", "-n", "store", "--key-file", "keys.json"],
   ["oobi", "resolve", "-n", "store", "-u", "http://127.0.0.1:7723/oobi/Eaid"],
   ["oobi", "request", "-n", "store", "-a", "aid", "-r", "peer", "-u", "http://127.0.0.1:7723/oobi/Eaid"],
   ["notifications", "list", "-n", "store"],

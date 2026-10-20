@@ -108,6 +108,36 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
 
   registerDispatchedCommand(
     oobi
+      .command("clean")
+      .description("Preview exact pending OOBI removals from an existing offline database")
+      .requiredOption("-n, --name <name>", "Existing database name")
+      .requiredOption("--key-file <path>", "JSON array of exact pending OOBI keys")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--compat", "Use KERIpy compatibility-mode path layout")
+      .option("--head-dir <dir>", "Select this database root explicitly; never fall back")
+      .option("--apply", "Delete the selected keys after all are found", false)
+      .addHelpText(
+        "after",
+        "\nStop and back up the service first. Default: read-only preview; only oobis. is changed.",
+      ),
+    dispatch,
+    {
+      name: "oobi.clean",
+      load: () => import("keri-ts/cli"),
+      exportName: "oobiCleanCommand",
+      args: (options: Record<string, unknown>) => ({
+        name: options.name,
+        base: options.base,
+        headDirPath: options.headDir,
+        compat: options.compat,
+        keyFile: options.keyFile,
+        apply: options.apply,
+      }),
+    },
+  );
+
+  registerDispatchedCommand(
+    oobi
       .command("generate")
       .description("Generate OOBI URL(s) for one local identifier")
       .requiredOption("-n, --name <name>", "Keystore name")

@@ -63,6 +63,7 @@ Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` f
 | `tufa loc add`                 | Add one local location scheme record through signed reply acceptance.  |
 | `tufa oobi generate`           | Generate OOBI URL(s) for one local identifier.                         |
 | `tufa oobi resolve`            | Resolve one remote OOBI URL.                                           |
+| `tufa oobi clean`              | Preview or remove exact pending OOBI keys in an offline database.      |
 | `tufa oobi request`            | Send one peer OOBI request EXN to a remote recipient.                  |
 | `tufa exchange send`           | Send one signed EXN message to a resolved remote identifier.           |
 | `tufa exn send`                | Alias for `exchange send`.                                             |

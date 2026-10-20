@@ -20,3 +20,8 @@ the intended hosted identifiers and verifying their accepted endpoint records.
 The [endpoint contract](docs/design-docs/kel/DELEGATION_AND_ENDPOINTS.md) explains
 role authorization; [test ownership](packages/keri/test/README.md) identifies the
 maintained OOBI/mailbox integration scenarios and their reference environments.
+
+To remove specific pending OOBIs, stop and back up the service, put their exact
+keys in a JSON array, then preview with
+`tufa oobi clean --name NAME --head-dir DIR --key-file keys.json`.
+Add `--compat` for KERIpy layout and `--apply` to remove only those `oobis.` rows.
