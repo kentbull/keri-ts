@@ -378,18 +378,21 @@ tests until the end.
 | 12e     | Correct ESSR storage/callers against actual pinned-main Baser; expose set limitations                  | 12a, 12b, 13b   |
 | 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b, 12e        |
 | 13d     | Name multisig reporting explicitly and move affected CLI presentation to Tufa                          | 13, 13c         |
-| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d         |
+| 13e     | Separate WitnessInquisitor sending and concrete query workflow ownership                               | 13c, 13d        |
+| 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06      |
+| 13f     | Remove custom direct HTTP query replies and compose independent receive owners                         | 13e, 19         |
+| 13g     | Close bounded query peer and installed-package evidence gaps, if not covered by 13f                    | 13f             |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d, 13g    |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
-| 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d             |
+| 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d, 13f        |
 | 18      | Emit legacy-compatible TEL replay without changing signed bodies                                       | 02, 17          |
-| 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06      |
 | 20      | Complete group revocation approval, fanout and recipient observation                                   | 15, 18, 19      |
 | 21      | Correct accepted backer-cohort selection and durable partial-receipt processing                        | 02, 20          |
 | 22      | Produce and collect real TEL backer proofs through concrete runtime owners                             | 03d, 05, 21     |
 | 23      | Add explicit backer policy and group registry inception/rotation commands                              | 13, 14, 22      |
 | 24      | Complete group BIS/BRV, backer-policy changes and legacy replay                                        | 18, 20, 23      |
-| 25      | Compose native-v2 public registry intake, dependency recovery and replay                               | 03d             |
+| 25      | Compose native-v2 public registry intake, dependency recovery and replay                               | 03d, 13f        |
 | 26      | Establish native credential/disclosure custody and explicit CLI composition                            | 14, 25          |
 | 27      | Add single-identifier native registry/credential authoring and state changes                           | 26              |
 | 28      | Coordinate exact native-v2 anchors through group approval and fanout                                   | 13, 15, 27      |
@@ -866,6 +869,53 @@ static/library-boundary and installed-package checks. Include an appropriate
 changeset and concise breaking-change guide/release-note entry for the renamed
 types, fields and JSON output. Keep this separate from pending multisig lifecycle
 features; later PRs use the resulting typed contracts.
+
+### Query composition parity — PRs 13e–13g
+
+Adopt [QUERY_COMPOSITION_PARITY_PLAN.md](runtime/QUERY_COMPOSITION_PARITY_PLAN.md)
+as required release work after messenger qualification and the reporting/layering
+cut 13d, before finishing durable proposal resume or expanding lifecycle features.
+It supersedes the messenger supplement's requirement to retain HTTPQuery-owned
+CESR/SSE response intake. Ordinary POST, whole-stream PUT, TCP reply intake and
+joined transport cleanup remain required. Advance the already planned PR 19
+(old-peer mailbox media fallback) between 13e and 13f so removing direct HTTP
+responses does not strand legacy peers waiting on an incompatible polling request.
+Do not duplicate that fallback in the new query sender.
+
+- **13e: responsibility-first ownership.** Introduce a concrete WitnessInquisitor
+  sender and scoped KeyStateNoticer/LogQuerier/SeqNoQuerier/AnchorQuerier operations.
+  Remove QueryCoordinator and its generic watch/continuation registry; wire actual
+  cues, delegation and host lifetimes explicitly. Move only affected command
+  composition/presentation into Tufa. Preserve wire/failure behavior during this
+  structural cut; any necessary direct HTTP operation stays private until 13f.
+- **13f: coherent behavior change.** Use ordinary messengers for query sends.
+  Delete HTTPQuery, custom direct HTTP replies/options/reservations, retained
+  exact-packet resend machinery and implicit CLI controller-OOBI catch-up.
+  Ordinary non-mailbox queries acknowledge intake with 204; independently
+  composed mailbox/direct endpoint/TCP receivers feed normal protocol processors.
+  Workflows complete only from accepted evidence under one elapsed command
+  deadline. Audit and retain shared ReplyStreams and genuinely required TCP
+  QueryReplies functionality. No replacement coordinator, generic continuation
+  callbacks, retry API, queue framework, aliases or dormant compatibility implementation.
+- **13g: bounded cross-peer evidence if still needed.** Reuse maintained witness,
+  mailbox and query owners for genuine main/GLEIF 1.2.17/1.3.6 progression in both
+  directions and installed public library/CLI checks. Fold this cut into 13f if
+  its required evidence is already complete; never defer a known broken path.
+
+Preserve exact-envelope mailbox authorization, awaited processing before cursor
+advancement, independent endpoint progress, signer/subject/attester distinctions,
+and the existing finite anchor-recovery candidate policy/topology. TCP can still
+receive same-socket replies; HTTP sending never interprets response bytes as
+protocol evidence. Cover KSN-to-logs progression, sequence/anchor predicates,
+simultaneous observations, real 204 plus asynchronous receipt, one refusal or
+cancellation and one absent-evidence deadline. Convert superseded direct-response
+tests to supported behavior; do not add absence guards for deleted features.
+
+Record the removed public APIs/custom HTTP behavior in the breaking guide and
+appropriate changesets. Update only affected ownership contracts; no execution
+report is needed. Carry this composition through later recovery/native-v2 work,
+ProtocolProcessor assessment and package organization, then rerun final release
+qualification. Preserve all remaining release objectives and deferred scope.
 
 ### Phase D: group credential lifecycle — PRs 13–16 and 20
 

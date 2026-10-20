@@ -1,6 +1,9 @@
 # Explicit ordinary and stream messengers
 
-Status: approved release-goal supplement; implementation and qualification pending.
+Status: approved release-goal supplement. Query response ownership is superseded
+by [QUERY_COMPOSITION_PARITY_PLAN.md](QUERY_COMPOSITION_PARITY_PLAN.md) after
+messenger qualification; its required 13e–13g cuts remove HTTPQuery/direct replies
+and compose independent receivers. The ordinary/stream wire contracts below remain.
 Date: 2026-10-20.
 
 ## Decision and scope
