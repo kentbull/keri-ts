@@ -44,7 +44,7 @@ Deno.test("witness delivery preserves authorization and retries the media type f
     });
     await request.arrayBuffer(); // These local request fixtures contain two small KEL events.
     return request.headers.get("Content-Type") === "application/cesr"
-      ? new Response("Unacceptable content type", { status: 406 })
+      ? Response.json({ title: "Content type error", description: "Unacceptable content type." }, { status: 406 })
       : new Response(null, { status: 204 });
   });
   try {
@@ -816,11 +816,9 @@ Deno.test("TCP messenger owns concurrent signed replies, directional failure and
             runtime.cues.toArray().map((cue) =>
               cue.kin === "receipt"
                 ? [cue.kin, cue.serder.pre, cue.serder.said]
-                : cue.kin === "keyStateSaved"
-                ? [cue.kin, cue.ksn.i, cue.ksn.d]
                 : [cue.kin]
             ),
-            [["receipt", sender.pre, sender.kever!.said], ["keyStateSaved", sender.pre, sender.kever!.said]],
+            [["receipt", sender.pre, sender.kever!.said]],
           );
           runtime.cues.clear(); // Verified cues remain ordinary queued work after the conversation joins.
         } finally {

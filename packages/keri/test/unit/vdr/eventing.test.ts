@@ -1367,11 +1367,8 @@ Deno.test("credential TSN missing registry, TEL and partial proofs retry through
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
       assertEquals([...runtime.cues].map((cue) => cue.kin), [
         "receipt",
-        "keyStateSaved",
         "receipt",
-        "keyStateSaved",
         "receipt",
-        "keyStateSaved",
       ]);
       runtime.cues.clear();
       yield* runtime.reactor.processBytes(source.cloneTvt(vcp.pre!, vcp.said!));

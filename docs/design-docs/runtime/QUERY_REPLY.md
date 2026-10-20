@@ -298,7 +298,7 @@ Why:
 - acceptance depends on consistency with accepted event state at the reported
   sequence number
 - successful acceptance emits `keyStateSaved`, which drives further
-  correspondence work
+  correspondence work; ordinary KEL acceptance does not emit this remote-notice cue
 
 `Revery` still verifies the reply envelope and applies BADA, but `Kevery`
 decides whether the reply is meaningful for KEL state.

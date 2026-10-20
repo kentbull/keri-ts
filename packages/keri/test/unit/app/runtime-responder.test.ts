@@ -237,11 +237,6 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         yield* call(() => halt);
         assertEquals(continued, false);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
-        assertEquals(
-          runtime.cues.toArray().map(cue => cue.kin),
-          ["keyStateSaved"],
-          "saved facts remain with the application cue owner after witness input cleanup",
-        );
 
         yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
@@ -341,15 +336,9 @@ Deno.test("runtime Respondant preserves cues on preparation failure and progress
             active.cues.toArray().map((cue) =>
               cue.kin === "receipt"
                 ? [cue.kin, cue.serder.pre, cue.serder.said]
-                : cue.kin === "keyStateSaved"
-                ? [cue.kin, cue.ksn.i, cue.ksn.d]
                 : [cue.kin]
             ),
-            [["receipt", controller.pre, controller.kever!.said], [
-              "keyStateSaved",
-              controller.pre,
-              controller.kever!.said,
-            ]],
+            [["receipt", controller.pre, controller.kever!.said]],
           );
           active.cues.clear(); // Retire verified queued test work without masking any delivery-owner leak.
         } finally {

@@ -59,10 +59,9 @@ function* awaitSequence(db: Baser, pre: string, sn: number): Operation<void> {
  * The subject needs a local Kever before a notice can drive this comparison;
  * initial evidence discovery belongs to OOBI/bootstrap composition.
  *
- * Current limitation: Kevery also emits keyStateSaved on ordinary KEL acceptance.
- * The cue kind alone therefore does not prove receipt of a remote notice. The
- * query cue ownership plan separates that publication correction from routing;
- * do not infer request/response correlation or freshness from queued cues.
+ * keyStateSaved denotes a validated, persisted remote notice. Ordinary KEL
+ * acceptance alone cannot satisfy the initial notice wait. Queued notices are
+ * not correlated to a particular request or filtered for request-time freshness.
  */
 export class KeyStateNoticer {
   private readonly options: QueryOptions;

@@ -237,8 +237,9 @@ startup. The application cue worker transfers keyStateSaved records once into
 that Deck; the one KeyStateNoticer consumer pulls/matches/appends unrelated or
 currently unusable cues, yielding between turns. The witness drain leaves these
 facts for that owner. The first usable matching notice selects a fixed catch-up
-target; accepted KEL state determines completion. Queued notices carry no request
-correlation/freshness promise. Channels require a separately evidenced production
+target; accepted KEL state determines completion. keyStateSaved is emitted only
+for a validated, persisted remote KSN, never ordinary KEL acceptance. Queued
+notices carry no request correlation/freshness promise. Channels require a separately evidenced production
 use; there is no runtime-wide query notification service.
 CueSink and its optional hooks/root adapters are deleted. Network output runs
 in their concrete delivery operations. A pass consumes its initial extent, so newly appended

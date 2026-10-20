@@ -95,8 +95,9 @@ in the [query contract](../../design-docs/runtime/QUERY_REPLY.md).
    unrelated cues and matching notices lacking local state. Its first usable
    notice either confirms accepted state is current or selects a LogQuerier target.
    Later notices stay queued; neither queue emptiness nor HTTP success completes
-   catch-up. Ordinary KEL acceptance still emits this cue pending the separate
-   13h2 publication correction; cue kind alone is not proof of a remote response.
+   catch-up. Kevery emits keyStateSaved only after validating and persisting a
+   received KSN. Ordinary KEL acceptance does not supply a remote notice target;
+   queued notices are not correlated to a particular query request.
 5. Sequence and anchor operations finish only when their accepted local condition
    holds. Anchor recovery asks
    each eligible attester once, or retains one unresolved ordinary request.
