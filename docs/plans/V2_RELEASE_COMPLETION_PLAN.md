@@ -46,6 +46,8 @@ The scope includes:
 - Explicit ordinary/stream messenger construction and wire parity; remove the
   persisted CESR body preference and all of its public/configuration plumbing.
 - The justified architecture/readability changes described below.
+- Explicit multisig message reporting contracts and Tufa-owned CLI presentation,
+  separate from the remaining approval/lifecycle behavior changes.
 - Complete multisig credential CLI coordination: registry creation, issuance,
   all six IPEX verbs, revocation, peer approval/fanout and observable completion.
 - Native-v2 credential CLI authoring, disclosure and presentation workflows.
@@ -375,7 +377,8 @@ tests until the end.
 | 13b     | Wire explicit delivery intent and remove the entire persisted CESR body preference                     | 13a             |
 | 12e     | Correct ESSR storage/callers against actual pinned-main Baser; expose set limitations                  | 12a, 12b, 13b   |
 | 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b, 12e        |
-| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13c         |
+| 13d     | Name multisig reporting explicitly and move affected CLI presentation to Tufa                          | 13, 13c         |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d         |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
 | 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d             |
@@ -813,6 +816,51 @@ Carry these contracts through reorganization, then rerun affected checks and the
 final whole-release source/artifact qualification. All other release objectives
 and deferred scope remain unchanged.
 
+### Multisig reporting names and CLI ownership — PR 13d
+
+Complete this cohesive naming-and-layering refactor after the ESSR correction
+and messenger qualification, before the remaining durable-selection work in PR
+13 and expanded lifecycle features in PRs 14–16/20. The first publication-owner
+cut already exists; this refines its contracts without changing approval behavior.
+
+| Existing reporting name       | Replacement               |
+| ----------------------------- | ------------------------- |
+| `ProposalPublication`         | `MultisigSendResult`      |
+| `ProposalIdentity`            | `MultisigMessageIdentity` |
+| `SignedGroupProposal`         | `SignedMultisigMessage`   |
+| `ProposalDelivery`            | `MultisigMessageDelivery` |
+| Result collection `proposals` | `messages`                |
+| Identity field `said`         | `exnSaid`                 |
+| Identity field `proposal`     | `payloadSaid`             |
+
+Apply fields only to these reporting records, never indiscriminately to protocol
+objects or unrelated SAIDs. `exnSaid` identifies the outer coordination EXN.
+`payloadSaid` is the existing Multiplexor aggregation key: the v1 embedded-bundle
+SAID or supported v2 signed-child SAID. `deliveries` records completed transport
+destinations, not participant approval or group acceptance. Existing `join --said`
+continues to select the outer EXN SAID. Preserve genuine proposal terminology for
+approval/grouping behavior; this is not a global vocabulary replacement.
+
+Rename associated extraction, signing, sending and aggregation helpers
+consistently, together in one cohesive keri application module with explicit
+dependencies (refine the existing publication module). Shared signing/sending
+stays in keri; its workflows return typed data. Move affected CLI JSON projection
+and presentation into Tufa command adapters, including only the necessary output
+orchestration. Do not move the whole CLI, make keri import Tufa, pass formatting
+callbacks into keri or add a renderer framework.
+
+Refactor ownership/contracts before behavior under the ten constraints and SOLID.
+Preserve wire bytes/signatures, routing, exact local-processing order, Multiplexor
+indexes, worker ownership, failure propagation and acceptance checks. Add no new
+proposal IDs, persistence, queues, lifecycle machinery or old-name aliases.
+
+Update callers, public declarations, tests and CLI output expectations. Run
+focused multisig/grouping/credential/endpoint cases, affected Tufa tests, relevant
+static/library-boundary and installed-package checks. Include an appropriate
+changeset and concise breaking-change guide/release-note entry for the renamed
+types, fields and JSON output. Keep this separate from pending multisig lifecycle
+features; later PRs use the resulting typed contracts.
+
 ### Phase D: group credential lifecycle — PRs 13–16 and 20
 
 PR 13 establishes one typed, domain-specific proposal/publication responsibility.
@@ -821,7 +869,8 @@ Keep CLI prompts/files/deadlines separate from authorization, signing and
 persistence. Refactor first without silently changing acceptance. Avoid a
 generic workflow engine, callback scheduler or runtime-shaped parameter object.
 
-Proposal output must expose its stable proposal/business identity. Define a
+After PR 13d, typed send results expose `messages` with `exnSaid` and `payloadSaid`;
+transport destinations remain distinct from approval/acceptance. Define a
 public CLI selection/resume path for the exact VCP/ISS/REV from durable evidence,
 independent of whether its notification still exists. Reuse the existing join
 selection surface where it fits. Resuming must not re-prompt recorded approval,
