@@ -30,6 +30,7 @@ import {
   incept as inceptRegistry,
   issue,
   revoke,
+  rotate as rotateRegistry,
 } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery, Router } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
@@ -121,6 +122,108 @@ Deno.test("vdr/eventing - accepts backerless registry inception and pins state",
       assertEquals(reger.states.get(vcp.pre!)?.i, vcp.pre);
       assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
       assertEquals(reger.tvts.get(dgKey(vcp.pre!, vcp.said!)), vcp.raw);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("vdr/eventing - shared accepted state does not retain another input's backer policy or cues", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const backer = hby.makeHab("backer", undefined, { transferable: false });
+      const localCues = new Deck<AgentCue>(), remoteCues = new Deck<AgentCue>();
+      const local = new Tevery({ db: hby.db, reger, local: true, cues: localCues });
+      const vcp = inceptRegistry(issuer.pre, { baks: [backer.pre], toad: 1 });
+      assertEquals(local.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const remote = new Tevery({ db: hby.db, reger, cues: remoteCues });
+      const credential = makeCredential(issuer.pre);
+      const issued = backerIssue(credential.said!, vcp.pre!, 0, vcp.said!);
+      const anchor = anchorTel(issuer, issued);
+      const missingProof = remote.processEvent({ serder: issued, ...anchor });
+      assertEquals(missingProof.kind, "escrow");
+      assertEquals(missingProof.kind === "escrow" && missingProof.escrow, "partialWitness");
+      assertEquals(reger.tels.getOn(issued.pre!, 0), null);
+      assertEquals(
+        remote.processEvent({ serder: issued, ...anchor, wigers: backer.sign(issued.raw, true) }).kind,
+        "accept",
+      );
+      const revoked = backerRevoke(credential.said!, vcp.pre!, 0, vcp.said!, issued.said!);
+      assertEquals(
+        remote.processEvent({
+          serder: revoked,
+          ...anchorTel(issuer, revoked),
+          wigers: backer.sign(revoked.raw, true),
+        }).kind,
+        "accept",
+      );
+      assertEquals(remoteCues.pull()?.kin, "revoked");
+      assertEquals(localCues.empty, true);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("vdr/eventing - failed rotation writes and commit preserve accepted TEL state", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre);
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp) }).kind, "accept");
+      const accepted = tvy.tevers.get(vcp.pre!)!;
+      const state = reger.states.get(vcp.pre!);
+      const rotation = rotateRegistry(vcp.pre!, vcp.said!, { sn: 1 });
+      const args = { serder: rotation, ...anchorTel(issuer, rotation) };
+      const pin = reger.states.pin, transaction = reger.env!.transactionSync;
+      const write = transaction.bind(reger.env);
+      for (const phase of ["write", "commit"]) {
+        const failure = new Error(`TEL ${phase} failed`);
+        try {
+          if (phase === "write") {
+            reger.states.pin = () => {
+              throw failure;
+            };
+          } else {
+            let entered = false;
+            reger.env!.transactionSync = function(callback) {
+              if (entered) return write(callback);
+              entered = true;
+              return write(() => {
+                callback();
+                throw failure;
+              });
+            };
+          }
+          assertEquals(assertThrows(() => tvy.processEvent(args)), failure);
+          assertEquals(tvy.tevers.get(vcp.pre!), accepted);
+          assertEquals(accepted.sn, 0);
+          assertEquals(accepted.serder.said, vcp.said);
+          assertEquals(reger.states.get(vcp.pre!), state);
+          assertEquals(reger.tels.getOn(vcp.pre!, 1), null);
+          assertEquals(reger.tvts.get(dgKey(vcp.pre!, rotation.said!)), null);
+        } finally {
+          reger.states.pin = pin;
+          reger.env!.transactionSync = transaction;
+        }
+      }
+      assertThrows(
+        () => reger.env!.transactionSync(() => tvy.processEvent(args)),
+        Error,
+        "Tevery must own the TEL transaction",
+      );
+      assertEquals(accepted.sn, 0);
+      assertEquals(tvy.processEvent(args).kind, "accept");
+      assertEquals(tvy.tevers.get(vcp.pre!)?.sn, 1);
+      assertEquals(reger.tels.getOn(vcp.pre!, 1)?.qb64, rotation.said);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);

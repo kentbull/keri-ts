@@ -48,6 +48,10 @@ responsibilities into one vague "VC" layer.
   Expected retry paths are not exception control flow. Revocation evidence writes
   precede ordinary cue publication. Infrastructure failures propagate unchanged;
   cue records have no reservation, credit or capacity lifetime.
+- Tevery owns each synchronous TEL transaction and refuses a caller-owned writer.
+  It evaluates a private Tever from accepted storage; cached Tevers retain neither
+  input policy nor a cue Deck. Publish registry cache changes and revocation cues
+  only after commit, so failed writes/commit leave accepted live state unchanged.
 - IPEX is EXN conversation state. It should not own TEL acceptance or wallet
   persistence.
 - Verifier webhooks are not notifier state. `Notifier` gives operator

@@ -51,6 +51,10 @@ record schemas in structing.ts and counted transport in wrappers.
 ## TEL, verifier and IPEX
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
+Tevery owns the synchronous Reger writer, using a private admission candidate from
+accepted storage. Tever retains no input policy/cue Deck; Tevery supplies policy
+and publishes cache changes/revocation cues after commit. Caller-owned writers
+are refused so an outer rollback cannot invalidate already-published live state.
 Tevery also owns registry/credential TSN routes, independent reply admission and
 Broker dependency retries. Record-only validators do not import processors.
 Broker keys endorsement proofs by numeric establishment ordinal, matching both
