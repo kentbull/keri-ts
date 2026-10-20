@@ -16,6 +16,7 @@ import type { Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { Organizer } from "../organizing.ts";
 import { systemClock } from "../runtime-clock.ts";
+import { parseBooleanOption, parseIntegerOption, parseNumberOption, parseStringOption } from "./common/parsing.ts";
 
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
@@ -45,9 +46,9 @@ interface ChallengeVerifyArgs {
   generate?: boolean;
   strength?: number;
   out?: string;
-  timeout?: number;
+  timeout: number;
   compat?: boolean;
-  pollDelayMs?: number;
+  pollDelayMs: number;
 }
 
 /** Implement `tufa challenge generate`. */
@@ -55,8 +56,8 @@ export function* challengeGenerateCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: ChallengeGenerateArgs = {
-    strength: args.strength ? Number(args.strength) : 128,
-    out: args.out as string | undefined,
+    strength: parseStrength(args.strength),
+    out: parseStringOption(args.out, "out"),
   };
 
   const out = normalizeOutput(commandArgs.out);
@@ -73,14 +74,14 @@ export function* challengeRespondCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: ChallengeRespondArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    recipient: args.recipient as string | undefined,
-    words: args.words as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    words: parseStringOption(args.words, "words"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!commandArgs.name) {
@@ -136,23 +137,30 @@ export function* challengeVerifyCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: ChallengeVerifyArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    signer: args.signer as string | undefined,
-    words: args.words as string | undefined,
-    generate: args.generate as boolean | undefined,
-    strength: args.strength ? Number(args.strength) : undefined,
-    out: args.out as string | undefined,
-    timeout: args.timeout ? Number(args.timeout) : 10,
-    compat: args.compat as boolean | undefined,
-    pollDelayMs: args.pollDelayMs ? Number(args.pollDelayMs) : undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    signer: parseStringOption(args.signer, "signer"),
+    words: parseStringOption(args.words, "words"),
+    generate: parseBooleanOption(args.generate, "generate"),
+    strength: parseStrength(args.strength),
+    out: parseStringOption(args.out, "out"),
+    timeout: parseNumberOption(args.timeout, "timeout") ?? 10,
+    compat: parseBooleanOption(args.compat, "compat"),
+    pollDelayMs: parseNumberOption(args.pollDelayMs, "pollDelayMs") ?? 250,
   };
 
   if (!commandArgs.name) {
     throw new ValidationError("Name is required and cannot be empty");
   }
+  if (commandArgs.timeout < 0 || !Number.isFinite(commandArgs.timeout * 1000)) {
+    throw new ValidationError("timeout must be finite and nonnegative seconds.");
+  }
+  if (commandArgs.pollDelayMs <= 0) {
+    throw new ValidationError("pollDelayMs must be positive.");
+  }
+  const out = normalizeOutput(commandArgs.out);
   if (!commandArgs.signer) {
     throw new ValidationError(
       "Signer identifier or contact alias is required.",
@@ -182,18 +190,18 @@ export function* challengeVerifyCommand(
       const signer = resolveSigner(hby, signerInput);
       if (commandArgs.generate) {
         console.log(
-          formatChallengeWords(words, normalizeOutput(commandArgs.out)),
+          formatChallengeWords(words, out),
         );
       }
 
       runtime.mailboxDirector.topics.clear();
       runtime.mailboxDirector.registerTopic("/challenge");
-      const timeoutMs = Math.max(1, commandArgs.timeout ?? 10) * 1000;
-      const pollDelayMs = Math.max(1, commandArgs.pollDelayMs ?? 250);
+      const timeoutMs = commandArgs.timeout * 1000;
+      const pollDelayMs = commandArgs.pollDelayMs;
       const deadline = Date.now() + timeoutMs;
       let match = findVerifiedChallengeResponse(hby.db, signer, words);
 
-      if (!match) {
+      if (!match && timeoutMs > 0) {
         const worker = yield* spawn(() => runAgentRuntime(runtime));
         try {
           while (!match && Date.now() < deadline) {
@@ -250,4 +258,11 @@ function* sleep(ms: number): Operation<void> {
     const timeoutId = setTimeout(() => resolve(undefined), ms);
     return () => clearTimeout(timeoutId);
   });
+}
+
+/** Challenge entropy is a positive whole bit count; omission selects the command default. */
+function parseStrength(value: unknown): number {
+  const strength = parseIntegerOption(value, "strength") ?? 128;
+  if (strength <= 0) throw new ValidationError("strength must be positive.");
+  return strength;
 }

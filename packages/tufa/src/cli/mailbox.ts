@@ -1,3 +1,4 @@
+import { parseBooleanOption, parseIntegerOption, parseStringOption } from "keri-ts/cli";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 /**
  * Mailbox operator commands.
@@ -186,9 +187,9 @@ export function* mailboxUpdateCommand(
 ): Operation<void> {
   const commandArgs: MailboxUpdateArgs = {
     ...parseMailboxBaseArgs(args),
-    witness: args.witness as string | undefined,
-    topic: args.topic as string | undefined,
-    index: args.index !== undefined ? Number(args.index) : undefined,
+    witness: parseStringOption(args.witness, "witness"),
+    topic: parseStringOption(args.topic, "topic"),
+    index: parseIntegerOption(args.index, "index"),
   };
   if (!commandArgs.witness) {
     throw new ValidationError("Mailbox or witness AID is required.");
@@ -196,12 +197,17 @@ export function* mailboxUpdateCommand(
   if (!commandArgs.topic) {
     throw new ValidationError("Mailbox topic is required.");
   }
-  if (!Number.isFinite(commandArgs.index)) {
+  if (commandArgs.index === undefined) {
     throw new ValidationError("Mailbox topic index is required.");
   }
 
+  if (commandArgs.index < -1 || commandArgs.index >= Number.MAX_SAFE_INTEGER) {
+    throw new ValidationError(
+      "Mailbox topic index must be -1 or a safe consumed ordinal with room for the next index.",
+    );
+  }
   const witness = commandArgs.witness;
-  const index = Number(commandArgs.index);
+  const index = commandArgs.index;
   const topic = normalizeMailboxTopic(commandArgs.topic);
 
   yield* withExistingHab(
@@ -231,8 +237,8 @@ export function* mailboxDebugCommand(
 ): Operation<void> {
   const commandArgs: MailboxDebugArgs = {
     ...parseMailboxBaseArgs(args),
-    witness: args.witness as string | undefined,
-    verbose: args.verbose as boolean | undefined,
+    witness: parseStringOption(args.witness, "witness"),
+    verbose: parseBooleanOption(args.verbose, "verbose"),
   };
   if (!commandArgs.witness) {
     throw new ValidationError("Mailbox or witness AID is required.");
@@ -408,12 +414,12 @@ function* completeMailboxAdmin(
 /** Normalize mailbox CLI shared storage/runtime open arguments. */
 function parseMailboxBaseArgs(args: Record<string, unknown>): MailboxBaseArgs {
   return {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 }
 
@@ -423,8 +429,8 @@ function parseMailboxAddRemoveArgs(
 ): MailboxAddRemoveArgs {
   const parsed = {
     ...parseMailboxBaseArgs(args),
-    mailbox: args.mailbox as string | undefined,
-    multisigMode: parseMultisigMode(args.multisigMode as string | undefined),
+    mailbox: parseStringOption(args.mailbox, "mailbox"),
+    multisigMode: parseMultisigMode(parseStringOption(args.multisigMode, "multisigMode")),
   };
   if (!parsed.mailbox) {
     throw new ValidationError("Mailbox AID or alias is required.");
@@ -448,11 +454,11 @@ function parseMailboxStartArgs(
 ): MailboxStartArgs {
   const parsed: MailboxStartArgs = {
     ...parseMailboxBaseArgs(args),
-    configFile: args.configFile as string | undefined,
-    url: args.url as string | undefined,
-    datetime: args.datetime as string | undefined,
-    port: args.port !== undefined ? Number(args.port) : undefined,
-    listenHost: args.listenHost as string | undefined,
+    configFile: parseStringOption(args.configFile, "configFile"),
+    url: parseStringOption(args.url, "url"),
+    datetime: parseStringOption(args.datetime, "datetime"),
+    port: parseIntegerOption(args.port, "port"),
+    listenHost: parseStringOption(args.listenHost, "listenHost"),
   };
   if (!parsed.name) {
     throw new ValidationError("Name is required and cannot be empty");

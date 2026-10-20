@@ -38,6 +38,10 @@ Config iurls/durls/wurls/curls are absent or arrays of nonblank strings; preserv
 accepted strings exactly. Habery validates all three preload lists before either
 OOBI store changes, even without dt; alias curls validate before signed replies. Location
 and role changes use signed Revery intake, not direct locs/lans mutation.
+Mailbox tops rows store last-consumed ordinals, not next-wanted cursors: CLI -1
+resets the next query to zero. Validate integer range before store effects and
+leave room for the poller's +1. Host ports reject zero/fractions; challenge zero
+wait checks existing acceptance without starting receive workers.
 Credential/IPEX/verifier command boundaries use shared primitive validators;
 only omission selects timeout defaults. Credential JSON shapes validate before
 store opening, and scalar/list schema or recipient input never drops bad members.

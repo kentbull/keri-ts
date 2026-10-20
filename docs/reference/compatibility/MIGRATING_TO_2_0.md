@@ -66,6 +66,19 @@ escrows remain available for their owners to retry; later operations must check
 their required accepted evidence. Authentication retains its controller-state and
 authorization requirements, with unfinished attempts reaching the finite deadline. Both commands print final success only after owned stores close.
 
+## Host, mailbox and challenge inputs
+
+Agent/mailbox ports must be decimal integers in 1–65535; zero no longer silently
+selects the agent default. Malformed schema path list members are rejected.
+Mailbox update takes the **last consumed** index: `-1` restarts from the first
+message, `0` resumes after index zero. Fractions, values below -1 and values whose
+next index cannot be represented safely are rejected.
+
+Challenge strength must be a positive whole bit count. Verification accepts
+nonnegative decimal seconds, including fractional waits; zero checks already
+accepted evidence without waiting. Poll delay must be positive. Supplied blank,
+null or boolean numeric values are errors; omission retains command defaults.
+
 ## Credential command validation
 
 Credential, IPEX and verifier commands reject supplied non-string/non-boolean

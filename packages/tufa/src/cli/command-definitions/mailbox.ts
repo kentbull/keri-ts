@@ -161,7 +161,7 @@ export function registerMailboxCmds(
       .requiredOption("-a, --alias <alias>", "Local identifier alias")
       .requiredOption("-w, --witness <aid>", "Mailbox or witness AID")
       .requiredOption("-t, --topic <topic>", "Mailbox topic")
-      .requiredOption("-i, --index <index>", "Next consumed topic index")
+      .requiredOption("-i, --index <index>", "Last consumed topic index; -1 restarts from the first message")
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
@@ -179,7 +179,7 @@ export function registerMailboxCmds(
         alias: options.alias,
         witness: options.witness,
         topic: options.topic,
-        index: options.index ? Number(options.index) : undefined,
+        index: options.index,
         base: options.base,
         compat: options.compat || false,
         headDirPath: options.headDir,

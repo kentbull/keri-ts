@@ -19,8 +19,6 @@ export function registerChallengeCmds(
       .option(
         "-s, --strength <bits>",
         "Approximate challenge entropy strength in bits",
-        (value: string) => Number(value),
-        128,
       )
       .option(
         "-o, --out <out>",
@@ -98,8 +96,6 @@ export function registerChallengeCmds(
       .option(
         "--strength <bits>",
         "Cryptographic strength in bits when used with --generate",
-        (value: string) => Number(value),
-        128,
       )
       .option(
         "-o, --out <out>",
@@ -109,8 +105,6 @@ export function registerChallengeCmds(
       .option(
         "--timeout <seconds>",
         "How long to wait for a matching response before failing",
-        (value: string) => Number(value),
-        10,
       )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")

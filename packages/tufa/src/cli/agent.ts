@@ -1,4 +1,5 @@
 import type { Operation } from "effection";
+import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import {
   type Configer,
   createConfiger,
@@ -50,16 +51,15 @@ function schemaInputsFromArgs(args: Record<string, unknown>): {
   schemaDirs: string[];
 } {
   return {
-    schemas: asStringList(args.schema),
-    schemaDirs: asStringList(args.schemaDir),
+    schemas: asStringList(args.schema, "schema"),
+    schemaDirs: asStringList(args.schemaDir, "schemaDir"),
   };
 }
 
-function asStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
-  return typeof value === "string" ? [value] : [];
+/** Accept scalar or repeated paths while rejecting malformed list members. */
+function asStringList(value: unknown, label: string): string[] {
+  if (typeof value === "string") return [value];
+  return parseStringListOption(value, label) ?? [];
 }
 
 function schemaFiles(schemaFiles: readonly string[], schemaDirs: readonly string[]): string[] {
@@ -130,14 +130,14 @@ function validateHostedControllerBootstrap(
  */
 export function* agentCommand(args: Record<string, unknown>): Operation<void> {
   const agentArgs: AgentArgs = {
-    port: args.port ? Number(args.port) : 8000,
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    configDir: args.configDir as string | undefined,
-    configFile: args.configFile as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
+    port: parseIntegerOption(args.port, "port") ?? 8000,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    configDir: parseStringOption(args.configDir, "configDir"),
+    configFile: parseStringOption(args.configFile, "configFile"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
     ...schemaInputsFromArgs(args),
   };
   const port = agentArgs.port ?? 8000;
