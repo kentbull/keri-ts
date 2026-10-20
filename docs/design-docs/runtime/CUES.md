@@ -7,7 +7,8 @@ component ownership and explicit contracts.
 
 The [runtime contract](INGRESS_AND_EGRESS.md) defines the current delivery boundary. Poster owns every queued send and runs independently of query
 delivery. Respondant eagerly constructs complete local replay sequences, and
-Poster delivers ordinary signed messages FIFO with explicit retained failures.
+Poster delivers signed message/finite-stream admissions FIFO with concrete outcomes
+and visible unobserved failures.
 
 KERIpy is the behavioral reference. Its mailbox host is supplied by the declared
 fork, not current upstream. Keep these sources distinct using the
@@ -106,20 +107,21 @@ keep their request-owned lifetime. Focused tests may explicitly process Poster.
 
 Poster processes events FIFO with an ordinary sequential loop over targets.
 An observed refusal does not prevent remaining targets from being attempted.
-A failed event leaves runnable work and enters the plain `failures` collection
-with its original signed message, actual successful URLs and failure details.
-Later events can proceed; there is no automatic retry or retry/discard API.
-Failures remain process-local terminal evidence until close, pending the separate
-unobserved-failure reporting change. They do not contribute to pending/idle state.
+A failed event leaves runnable work. An opted-in observer receives its concrete
+outcome with the original error and actual successful deliveries. Unobserved
+failures are reported at Poster with routing context and the original error;
+reported source bytes are not retained in a recovery backlog. Cancelling an
+observation or closing Poster reports unconsumed failed outcomes once. Successful
+unobserved outcomes leave no history. Later events can proceed; there is no retry,
+discard or automatic retry mechanism. See the authoritative
+[failure contract](INGRESS_AND_EGRESS.md#cue-and-query-ownership).
 
-Unexpected construction, storage, parser or cleanup exceptions are retained and
-reported before propagating. Native network failures are classified at transport
-boundaries and contained by Poster around actual send calls; arbitrary thrown
-errors must not become peer refusals. Earlier refusals and successful delivery URLs
-remain available if a later unexpected error propagates. HTTP requires complete successful response
-bodies. Transmit-only TCP requires local drain and joined cleanup; duplex also
-processes receive EOF. Closing Poster aborts and joins active I/O before
-releasing queued and failed records. These records do not survive shutdown.
+Unexpected construction, storage, parser or cleanup exceptions publish/report an
+outcome before propagating. Transport owners classify native failures; arbitrary
+thrown errors must not become peer refusals. Earlier refusals and successful URLs
+remain in the outcome if a later unexpected error propagates. HTTP requires body
+EOF; transmit-only TCP requires local drain and joined cleanup, while duplex also
+processes receive EOF. Close joins active I/O before releasing process-local work.
 
 QueryReplies reservations are request-SAID correlation, not capacity. They capture
 before ordinary cue delivery; request owners inspect and take plain records after

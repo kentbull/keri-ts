@@ -1162,15 +1162,19 @@ Deno.test("Poster direct sends report partial failure and complete only after ev
           for (const outcome of ["partial", "failed"] as const) {
             mode = outcome;
             requests.length = 0;
-            // Every direct endpoint is attempted, including after an observed refusal.
-            const error = yield* call(() => assertRejects(() => run(send)));
+            const msg = kind === "raw" ? message : createExchangeMessage(sender, {
+              dest: recipient.pre,
+              route: "/challenge/response",
+              payload: {},
+            }).msg;
+            const evt = runtime.postman.send({ src: sender.pre, dest: recipient.pre, topic: "/receipt", msg }, {
+              notify: true,
+            });
+            yield* runtime.postman.process();
+            const result = yield* runtime.postman.wait(evt);
+            assertEquals(result.kin, "failed");
             assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
-            const retained = runtime.postman.failures.at(-1)!;
-            assertEquals(retained.error, error);
-            assertEquals(
-              retained.deliveries.map((url) => new URL(url).pathname),
-              outcome === "partial" ? ["/good"] : [],
-            );
+            assertEquals(result.deliveries.map((url) => new URL(url).pathname), outcome === "partial" ? ["/good"] : []);
           }
           mode = "success";
           requests.length = 0;

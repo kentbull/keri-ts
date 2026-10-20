@@ -149,12 +149,6 @@ Deno.test("Poster contains native connection and response-body failures while la
             assertInstanceOf(error, TransportError);
             assertInstanceOf(error.cause, Error, "native failures retain their original causes");
           }
-          assertStrictEquals(postman.failures[0].evt, failed);
-          assertStrictEquals(
-            postman.failures[0].error,
-            outcome.error,
-            "observation preserves the retained failure object",
-          );
           const sent = yield* postman.wait(next);
           assertEquals(sent.kin, "sent");
           assertEquals(sent.deliveries, [`${url}/later`]);
@@ -208,7 +202,6 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
         assertEquals(outcome.kin, "failed");
         if (outcome.kin !== "failed") throw new Error("Expected failed delivery");
         assertStrictEquals(outcome.error, failure);
-        assertStrictEquals(postman.failures[0], outcome);
         assertStrictEquals(outcome.evt, evt);
         assertEquals(outcome.evt.msg, msg);
         assertEquals(outcome.deliveries, [`${url}/good`]);
@@ -221,5 +214,65 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
     });
   } finally {
     await server.shutdown();
+  }
+});
+
+Deno.test("Poster reports unobserved and abandoned failures once without retaining delivery history", async () => {
+  const reports: unknown[][] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => reports.push(args);
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const sender = hby.makeHab("sender"), dest = hby.makeHab("unrouted").pre;
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const postman = runtime.postman;
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const args = { src: sender.pre, dest, topic: "/replay", msg };
+      try {
+        const observed = postman.send(args, { notify: true });
+        yield* postman.process();
+        assertEquals(reports.length, 0);
+        assertEquals((yield* postman.wait(observed)).kin, "failed");
+
+        postman.send(args);
+        yield* postman.process();
+        assertEquals([reports.length, postman.cues.length, postman.hasPending], [1, 0, false]);
+
+        const cancelled = postman.send(args, { notify: true });
+        const before = yield* spawn(() => postman.wait(cancelled));
+        yield* before.halt();
+        yield* postman.process();
+        assertEquals(reports.length, 2, "cancellation before delivery removes observation, not reporting");
+
+        const abandoned = postman.send(args, { notify: true });
+        const after = yield* spawn(() => postman.wait(abandoned));
+        // An unrouted attempt completes synchronously before this waiter resumes.
+        yield* postman.process();
+        assertEquals(postman.cues.length, 1);
+        yield* after.halt();
+        assertEquals(reports.length, 3, "cancellation after publication reports the unconsumed failure");
+
+        postman.send(args, { notify: true });
+        yield* postman.process();
+        yield* postman.close();
+        assertEquals(reports.length, 4, "close reports the final unconsumed failure");
+        assertEquals([postman.cues.length, postman.hasPending], [0, false]);
+        assertEquals(
+          reports.map(([message, context]) => [message, context]),
+          Array.from({ length: 4 }, () => [
+            "CESR delivery failed",
+            { src: sender.pre, dest, topic: "/replay", deliveries: [] },
+          ]),
+          "diagnostics contain routing context without retaining/logging signed bytes",
+        );
+        for (const report of reports) assertInstanceOf(report[2], ValidationError);
+      } finally {
+        yield* runtime.close();
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    console.error = error;
   }
 });

@@ -115,13 +115,16 @@ the producer, with standalone callers starting and joining an explicit worker.
 
 Respondant constructs every local replay message and every correlated reply before
 atomic publication. Poster owns ordinary FIFO events and sequential target loops.
-Recognized failures retain the whole event with partial successful deliveries.
-Poster has no retry/discard API. Retention remains until the separate failure-reporting
-change supplies a concrete owner for unobserved terminal errors. Unexpected failures
-remain visible. Failures and optional completion
-cues do not determine pending work. There is no cursor, automatic retry, exact
-final-packet cache or cross-batch fairness mechanism. These omissions are explicit
-in the [deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
+Recognized failures produce outcomes with partial successful deliveries and allow
+later selected targets/events to run. Actual waiters keep concrete-event matching.
+Poster reports unobserved or abandoned failed outcomes at its delivery boundary,
+with source/destination/topic, partial delivery and the original error. It keeps
+no recovery history or retry/discard API. Reporting adds no logger dependency,
+framework, callback or replacement queue. Unexpected faults publish/report then
+propagate. Optional completion cues do not determine pending work. There is no
+cursor, automatic retry, exact final-packet cache or cross-batch fairness mechanism.
+Deferred capabilities require the evidence in the
+[reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).
 Transport boundaries distinguish local transmission from processed duplex receive
 and remote acceptance. Ordinary HTTP sends require body EOF; TCP transmit-only
 sends join local drain/cleanup without waiting for arbitrary peer EOF. Concrete

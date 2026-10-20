@@ -35,7 +35,7 @@ The application router sends routed query records to QueryCoordinator and stream
 records to MailboxDirector. Respondant interprets and publishes other
 reply/receipt/replay output. Respondant eagerly constructs complete local replay
 batches and correlated pairs before atomic publication. Poster owns FIFO delivery,
-endpoint selection, forwarding, retained whole-event failures, cancellation and
+endpoint selection, forwarding, concrete failure outcomes, cancellation and
 joined cleanup, including authorized local forwarding. Routed queries select
 an explicit local signer, a configured Hab, or the sole local Hab. An unavailable
 explicit signer stays unresolved; the runtime never guesses among local identities.
@@ -70,11 +70,12 @@ HTTP and witness ingress publish without driving delivery. Producers construct
 signed messages and callers await identity-matched sent/failed outcomes when
 transmission gates their workflow. Ordinary event and target loops replace reply
 cursors and cross-batch scheduling. Refusals attempt remaining destinations and
-retain failed events without automatic retry. Failure records remain process-local until close; Poster has no retry/discard API.
+publish failed outcomes or report unobserved failures without retaining recovery
+history. Poster has no retry/discard API or automatic retry.
 HTTP completion requires successful body EOF. Transmit-only TCP completion is
 local drain followed by joined cleanup; duplex preserves receive processing.
-Concrete network failures are retained without disguising construction or cleanup
-failures. Deferred reliability features
+Concrete network failures preserve causes without disguising construction or cleanup
+faults; unexpected faults publish/report then propagate. Deferred reliability features
 have a separate [roadmap](../plans/runtime/cue-reliability-roadmap.md).
 
 The [cue design](../design-docs/runtime/CUES.md) explains the current graph and

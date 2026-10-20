@@ -69,20 +69,17 @@ Deno.test("Respondant finishes local replay construction before publishing or re
   });
 });
 
-Deno.test("Poster retains the complete source message on exceptions without automatic retry", async () => {
+Deno.test("Poster copies complete source messages and reports exceptions without automatic retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
     const failure = new Error("transport unavailable");
-    let fail = true, attempts = 0, closed = 0, url = "https://peer.test/";
-    const destinations: string[] = [];
+    let attempts = 0, closed = 0;
     const runtime = yield* createAgentRuntime(
       hby,
-      httpClient((url) => {
+      httpClient(() => {
         attempts++;
-        destinations.push(String(url));
-        if (fail) throw failure;
-        return Promise.resolve(new Response(null, { status: 204 }));
+        throw failure;
       }),
       systemClock,
     );
@@ -98,7 +95,9 @@ Deno.test("Poster retains the complete source message on exceptions without auto
       },
     };
     hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
-    hby.db.locs.pin([hab.pre, "http"], { url });
+    hby.db.locs.pin([hab.pre, "http"], { url: "https://peer.test/" });
+    const reports: unknown[][] = [], report = console.error;
+    console.error = (...args: unknown[]) => reports.push(args);
     try {
       runtime.cues.push({ kin: "replay", msgs, src: hab.pre, dest: hab.pre });
       yield* processCuesOnce(runtime, { hab });
@@ -107,11 +106,13 @@ Deno.test("Poster retains the complete source message on exceptions without auto
       assertEquals([closed, evt.msg], [1, wire], "admission owns a copy after eager production finishes");
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.postman.process()))), failure);
       assertEquals(runtime.postman.hasPending, false);
-      assertStrictEquals(runtime.postman.failures[0].evt, evt);
-      assertStrictEquals(runtime.postman.failures[0].error, failure);
+      assertEquals(reports.length, 1);
+      assertEquals(reports[0][1], { src: evt.src, dest: evt.dest, topic: evt.topic, deliveries: [] });
+      assertStrictEquals(reports[0][2], failure);
       yield* runtime.postman.process();
-      assertEquals(attempts, 1, "a failed event is retained without automatic retry");
+      assertEquals(attempts, 1, "a failed attempt is reported without automatic retry");
     } finally {
+      console.error = report;
       yield* runtime.close();
       yield* hby.close(true);
     }
@@ -152,6 +153,8 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
       hby.db.ends.pin([second.pre, Roles.controller, eid], { allowed: true });
       hby.db.locs.pin([eid, "http"], { url: `https://${target}.test/` });
     }
+    const reports: unknown[][] = [], report = console.error;
+    console.error = (...args: unknown[]) => reports.push(args);
     try {
       runtime.cues.push({ kin: "replay", msgs, src: sender.pre, dest: second.pre });
       runtime.cues.push({ kin: "receipt", serder: second.kever!.serder });
@@ -166,24 +169,27 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
         "each complete replay message reaches all targets before the following receipt",
       );
       assertEquals(
-        runtime.postman.failures.map(({ evt, deliveries }) => ({ evt, deliveries: [...deliveries].sort() })),
+        reports.map(([, context]) => context),
         evts.slice(0, 2).map((evt, index) => ({
-          evt,
-          deliveries: index === 0 ? ["https://second.test/", "https://third.test/"] : ["https://second.test/"],
+          src: evt.src,
+          dest: evt.dest,
+          topic: evt.topic,
+          deliveries: targets.filter(({ target }) => index === 0 ? target !== "first" : target === "second")
+            .map(({ target }) => `https://${target}.test/`),
         })),
       );
-      const [one, multiple] = runtime.postman.failures;
-      assertInstanceOf(one.error, CesrHttpRefusal);
-      assertEquals(one.error.status, 503);
-      assertInstanceOf(multiple.error, AggregateError);
-      assertEquals(multiple.error.errors.length, 2);
-      for (const error of multiple.error.errors) {
+      const [one, multiple] = reports.map((report) => report[2]);
+      assertInstanceOf(one, CesrHttpRefusal);
+      assertEquals(one.status, 503);
+      assertInstanceOf(multiple, AggregateError);
+      assertEquals(multiple.errors.length, 2);
+      for (const error of multiple.errors) {
         assertInstanceOf(error, CesrHttpRefusal);
         assertEquals(error.status, 503);
       }
       assertEquals(runtime.postman.hasPending, false);
       yield* runtime.postman.process();
-      assertEquals(attempts.length, 9, "the successful receipt is complete and retained failures are not retried");
+      assertEquals(attempts.length, 9, "the successful receipt is complete and reported failures are not retried");
 
       hby.db.locs.pin([sender.pre, "http"], { url: "https://query.test/" });
       for (let index = 0; index < 9; index++) {
@@ -201,6 +207,7 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
       assertEquals(runtime.querying.hasPendingDelivery, false);
       assertEquals(queries, 9);
     } finally {
+      console.error = report;
       yield* runtime.close();
       yield* hby.close(true);
     }

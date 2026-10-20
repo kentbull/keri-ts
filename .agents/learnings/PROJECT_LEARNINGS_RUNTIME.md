@@ -87,12 +87,14 @@ Respondant eagerly materializes local KEL/TEL replay and correlated TSN pairs
 before atomic publication and source removal. Hab.processCuesIter yields raw wire;
 typed cues route queries, streams and observations directly. ReplayCue uses msgs.
 Poster evts carry src/dest/topic/msg and execute FIFO with sequential targets.
-Observed refusal attempts remaining targets; failed whole events retain partial
-successes in failures and do not block later events. Poster has no retry/discard
-API. The backlog remains until the separate unobserved-failure reporting change.
-No automatic retry, final-packet cache, manual reply cursor or cross-batch fairness
-remains. Failures are process-local and excluded from idle. Unexpected construction,
-storage, parser and cleanup failures are retained/reported then propagate.
+Observed refusal attempts remaining targets and reports partial success in the
+concrete outcome. Actual callers wait on their admission; unobserved failures are
+reported at Poster with routing context and the original error, without raw source
+bytes. Cancellation/close report unconsumed failures once. No unused failure backlog,
+retry/discard API or automatic retry remains. A reported source has no owner-retained
+recovery history. Pending work depends on evts and active execution, not outcomes.
+Unexpected construction/storage/parser/cleanup errors publish/report then propagate.
+No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
 QueryCoordinator owns plain requests and signed packets; concrete TCPMessenger/HTTPMessenger
