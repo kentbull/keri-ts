@@ -772,3 +772,37 @@ Deno.test("tufa/cli - verifier run accepts the grant child attachment genus", ()
   assertEquals(verifier.name, "verifier.run");
   assertEquals(verifier.args.gvrsn, "2.0");
 });
+
+Deno.test("tufa/cli - debug and info diagnostics preserve credential JSON stdout", async () => {
+  const head = await Deno.makeTempDir({ prefix: "tufa-logging-" });
+  const store = ["--name", "logging", "--head-dir", head];
+  try {
+    const init = await runTufa(["init", ...store, "--nopasscode"]);
+    assertEquals(init.code, 0, init.stderr);
+    const incept = await runTufa(["incept", ...store, "--alias", "alice", "--transferable", "--toad", "0"]);
+    assertEquals(incept.code, 0, incept.stderr);
+    for (const level of ["debug", "info"]) {
+      const result = await runTufa([
+        "--loglevel",
+        level,
+        "vc",
+        "registry",
+        "incept",
+        ...store,
+        "--alias",
+        "alice",
+        "--registry-name",
+        `registry-${level}`,
+      ]);
+      assertEquals(result.code, 0, result.stderr);
+      const record = JSON.parse(result.stdout);
+      assertEquals(record.name, `registry-${level}`);
+      assertEquals(typeof record.registry, "string");
+      assertEquals(record.issuer, extractPrefix(incept.stdout));
+      assertEquals(result.stdout.trim().split("\n").length, 1);
+      assertEquals(result.stderr.includes("Opening LMDB"), level === "debug");
+    }
+  } finally {
+    await Deno.remove(head, { recursive: true });
+  }
+});
