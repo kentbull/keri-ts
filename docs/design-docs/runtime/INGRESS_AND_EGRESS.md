@@ -135,7 +135,7 @@ observers, so reentrant dispatch cannot consume the outer publication. Synchrono
 escrow output is published before asynchronous EXN recovery. A new reservation also claims matching records
 already published to the application Deck synchronously. Background cue workers cannot consume unfinished
 protocol output or reserved replies. Interpretation, signing, routing and request
-slot consumption belong to Hab, Respondant, QueryCoordinator and request owners.
+slot consumption belong to Hab, Respondant, WitnessInquisitor and request owners.
 Poster target preparation is an owned operation that uses the shared codec before
 transport. One complete v2 body/genus becomes a signed `/fwd` body-digest envelope
 with an independent nested payload; legacy traffic retains its pathed-embed shape.
@@ -168,7 +168,7 @@ receive capability expresses actual absence. `ensureOpen()` guards admission and
 completion waiting; producers preflight only before constructing messages or
 opening a direct response, rather than repeating a check around already-built work.
 
-Poster.deliverDo is an independent host worker, separate from QueryCoordinator's
+Poster.deliverDo is an independent host worker, separate from WitnessInquisitor's
 delivery/response loop. HTTP and witness ingress publish outbound work without
 running Poster; the direct request response remains owned by that request.
 Standalone Poster callers start and join a worker explicitly before observing
@@ -311,7 +311,7 @@ createExchangeMessage before publishing; the standalone sendExchangeMessage help
 accepts dest and owns the same queue/worker/wait lifecycle. Poster.sendBytes,
 sendExchange and sendPreparedExchange and their old result types are removed.
 RuntimeDeliveries is deleted;
-QueryCoordinator owns both deferred requests and signed query packets. Construction
+WitnessInquisitor owns both deferred requests and signed query packets. Construction
 supplies its actual ProtocolProcessor and clock/HTTP services; query code never receives an
 AgentRuntime. Its close stops production and joins response I/O before clearing
 records or closing stores. Query requests always use this concrete output path;
@@ -335,7 +335,7 @@ cached completion; later witness replacements cannot reinterpret older proof.
 Raw witness/Poster sends construct TCPMessenger with the shared protocol processor and clock, while transport retains native
 socket ownership. Every actual HTTP/TCP operation joins cleanup before returning.
 
-QueryCoordinator owns a private ordinary Deck of QueryRequest records. Its
+WitnessInquisitor owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is
 resolved at consumption; missing signers stay pending. Signing, introductions and
 endpoint selection precede source removal and preserve exact wire across retry.
@@ -603,7 +603,7 @@ own Kevery when receive capability is supplied. Its constructor binds the URL an
 clock; an optional protocol receiver is needed only for duplex work. `send` adapts
 finite bytes to `sendSource` over the existing socket owner, without another queue. Explicit `replies` selects processed receive EOF. Socket/drain/cleanup facts
 remain in the lower TCP owner. The old conversation and prepared-target application
-wrappers are removed; QueryCoordinator and Poster retain separate queue policies.
+wrappers are removed; WitnessInquisitor and Poster retain separate queue policies.
 
 HTTPMessenger binds its URL, HTTP client and destination/authentication metadata;
 `send` and `sendSource` return typed completion/refusal after ordinary POST response
@@ -622,7 +622,7 @@ Poster selects the concrete operation from its existing admission intent. Mixed-
 forwarding declares each prepared frame's actual genus, including legacy introductions;
 entirely legacy streams keep their unqualified v1 framing. Signed bodies are unchanged.
 
-QueryCoordinator, Receiptor and WitnessReceiptor receive their ProtocolProcessor
+WitnessInquisitor, Receiptor and WitnessReceiptor receive their ProtocolProcessor
 and I/O services as structural constructor dependencies. Optional force/signatory
 choices retain their domain meaning; they do not conceal component dependencies.
 Standalone command entrypoints choose the minimal protocol composition explicitly.

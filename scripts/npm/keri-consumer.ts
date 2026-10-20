@@ -8,6 +8,9 @@ import {
   FetchHttpClient,
   type Hab,
   type IssueResult,
+  KeyStateNoticer,
+  SeqNoQuerier,
+  WitnessInquisitor,
   inceptRegistry,
   Manager,
   messagize,
@@ -77,4 +80,14 @@ export function registryIdentity(result: RegistryResult) {
     return { registry: result.registry, accepted: result.group.accepted, messages: sentMultisig(result.group) };
   }
   return { registry: result.registry, issuer: result.issuer };
+}
+
+/** Compose public query sending and independently scoped accepted-state workflows. */
+export function queries(runtime: AgentRuntime, hab: Hab, pre: string, sn: number) {
+  const sender = new WitnessInquisitor(runtime.hby, runtime.protocol, runtime.http, runtime.clock, hab);
+  return {
+    sender,
+    sequence: new SeqNoQuerier(runtime.hby.db, sender, pre, sn, { signer: hab.pre }).queryDo(),
+    state: new KeyStateNoticer(runtime.hby.db, sender, pre, runtime.keyStateUpdates, { signer: hab.pre }).queryDo(),
+  };
 }

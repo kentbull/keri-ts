@@ -12,7 +12,7 @@
  *   and the delegator's own KEL state
  */
 import { Diger, type SerderKERI } from "cesr-ts";
-import { type Operation, spawn } from "npm:effection@^3.6.0";
+import { call, type Operation, race, sleep, spawn } from "npm:effection@^3.6.0";
 import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
@@ -22,6 +22,7 @@ import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpo
 import { createExchangeMessage } from "../exchange-messaging.ts";
 import { MULTISIG_IXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
+import { SeqNoQuerier } from "../querying.ts";
 import { runtimeTurn } from "../runtime-turn.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
@@ -359,19 +360,23 @@ function* performDelegationApproval(
         30_000,
       );
     } else {
-      const querier = runtime.querying.watchSeqNo(
-        serder.pre!,
-        serder.sn ?? 0,
-        { signer: hab.pre },
-      );
       // No delegate witness exists to query. Process the local delegable
       // after the delegator has anchored approval; the delegate still
       // discovers approval through its own delegator-KEL query path.
       pinApprovalSeal(hby, hab, serder, approving);
-      yield* waitForDelegation(
-        () => querier.done,
-        30_000,
-      );
+      const observed = yield* race([
+        call(function*() {
+          yield* new SeqNoQuerier(hby.db, runtime.querying, serder.pre!, serder.sn ?? 0, {
+            signer: hab.pre,
+          }).queryDo();
+          return true;
+        }),
+        call(function*() {
+          yield* sleep(30_000);
+          return false;
+        }),
+      ]);
+      if (!observed) throw new Error("Runtime did not converge within 30000ms.");
     }
 
     // Match KERIpy sequencing: only record the approving seal and retry

@@ -96,7 +96,7 @@ export type QueryCue =
     route?: never;
     /** Unavailable on recovery notices; no endpoint selection is requested. */
     wits?: never;
-    /** Schema/credential recovery hint retained as an observation, not sent by QueryCoordinator. */
+    /** Schema/credential recovery hint retained as an observation, not sent by WitnessInquisitor. */
     q: {
       /** Recovery family; unlike routed queries this names the hint within q. */
       r: "schema";
@@ -198,13 +198,13 @@ export interface StreamCue extends CueBase {
 /**
  * Cue emitted when runtime `Kevery` persists a new key-state record.
  *
- * This is primarily a continuation signal for `QueryCoordinator`, not a direct
+ * This is an accepted-state observation for concrete query workflows, not a direct
  * wire cue.
  */
 export interface KeyStateSavedCue extends CueBase {
   /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "keyStateSaved";
-  /** Accepted key-state notice used to advance query continuations. */
+  /** Accepted key-state notice used to advance concrete query workflows. */
   ksn: KeyStateRecord;
 }
 

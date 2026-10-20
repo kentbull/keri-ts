@@ -37,11 +37,11 @@ export function* processCuesOnce(
     } else if (cue.kin === "stream") {
       runtime.mailboxDirector.retainQueryCue(cue);
     } else if (interpreter && runtime.respondant.enqueueCue(interpreter, runtime.cues, hab)) {
-      runtime.querying.observeCue(cue);
       continue;
     }
-    runtime.querying.observeCue(cue);
     runtime.cues.pull();
+    // Transfer the routed fact before yielding to its live consumers.
+    if (cue.kin === "keyStateSaved") yield* runtime.keyStateUpdates.send(cue);
   }
 }
 

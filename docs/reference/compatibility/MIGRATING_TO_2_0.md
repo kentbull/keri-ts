@@ -84,8 +84,8 @@ return `GroupRoleResult`; CLI helper types use `GroupEventResult` and
 ## Messenger ownership
 
 `HTTPMessenger` is send-only and takes `(url, http, { destination, headers })`;
-`send(bytes, options)` uses that endpoint. HTTP query response intake moves to
-`HTTPQuery(protocol, http, clock).query(url, bytes, options)`. Send-only HTTP no
+`send(bytes, options)` uses that endpoint. Query sending belongs to
+`WitnessInquisitor`; its current direct HTTP response processing is private. Send-only HTTP no
 longer requires protocol state or a clock. `TCPMessenger` takes
 `(url, clock, protocol?)`; the optional protocol owner is needed only for duplex
 replies. Its `send(bytes, options)` and `sendSource(source, options)` share the
@@ -104,3 +104,13 @@ removed. Init/setup no longer persist or read that preference. Choose ordinary o
 stream construction explicitly: ordered signed POSTs versus one opaque PUT. Peers
 receiving stream HTTP must support PUT. Queries and mailbox polling always use
 ordinary signed POSTs; specialized admin/receipt endpoints keep their contracts.
+
+## Query workflow ownership
+
+The query command now belongs to Tufa; `keri-ts/cli` no longer exports
+`queryCommand`, and `HTTPQuery` is no longer a public runtime API. Compose a
+`WitnessInquisitor` sender with `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier` or
+`AnchorQuerier` operations. Await `queryDo()` for accepted-state completion;
+transport completion is separate. AgentRuntime routes live key-state facts through
+`keyStateUpdates`. Its pending-state summary covers sending, while each invoking
+operation owns its semantic wait. The CLI syntax and display remain unchanged.

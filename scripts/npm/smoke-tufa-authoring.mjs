@@ -40,7 +40,14 @@ try {
   ) {
     throw new Error(`Installed credential adapter lost its issuance result: ${JSON.stringify(credential)}`);
   }
+  const anchorFile = join(root, "anchor.json");
+  writeFileSync(anchorFile, JSON.stringify({ i: credential.said, s: "0", d: credential.tel }));
+  const queried = command("query", ...store, "--alias", "issuer", "--prefix", pre, "--anchor", anchorFile);
+  if (!queried.includes(`Identifier: ${pre}`) || !queried.includes("Seq No:")) {
+    throw new Error("Installed query command lost its accepted anchor/state display");
+  }
+
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
-console.error("Installed Tufa registry and credential authoring adapters passed.");
+console.error("Installed Tufa registry/credential authoring and accepted-anchor query adapters passed.");

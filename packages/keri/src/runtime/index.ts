@@ -600,10 +600,12 @@ export {
 } from "../time/mod.ts";
 
 export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
-export { HTTPQuery } from "../app/http-query.ts";
 export { HTTPStreamMessenger } from "../app/http-stream-messenger.ts";
 export type { IngressOptions } from "../app/message-source.ts";
 export { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../app/messengering.ts";
 export { TCPStreamMessenger } from "../app/tcp-stream-messenger.ts";
 
 export { type RuntimeClock, systemClock } from "../app/runtime-clock.ts";
+
+export { AnchorQuerier, KeyStateNoticer, LogQuerier, SeqNoQuerier } from "../app/querying.ts";
+export { WitnessInquisitor } from "../app/witness-inquisitor.ts";
