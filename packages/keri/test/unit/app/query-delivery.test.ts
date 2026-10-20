@@ -9,7 +9,7 @@ Deno.test("query owner retains actual failed HTTP output for retry and closes or
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
+    hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
     const fault = new Error("query peer unavailable");
     const runtime = yield* createAgentRuntime(
       hby,
@@ -60,7 +60,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       systemClock,
     );
     try {
-      hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
+      hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
       runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
       yield* runtime.querying.processPending();
       const delivery = yield* spawn(function*() {
@@ -115,7 +115,7 @@ Deno.test("query shutdown after successful response consumption cannot send the 
       systemClock,
     );
     const queue = runtime.querying;
-    hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
+    hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
     for (let index = 0; index < 2; index++) {
       queue.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
     }
