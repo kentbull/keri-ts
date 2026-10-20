@@ -1,7 +1,7 @@
 /** Commander registrations for VC and IPEX credential workflows. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addDeliveryOptions, addGvrsnOption, addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
+import { addGvrsnOption, addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
 
 export function registerCredentialCmds(
@@ -139,25 +139,23 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addStoreOptions(
-        vc.command("revoke")
-          .description("Revoke a local credential")
-          .option("-a, --alias <alias>", "Human readable alias for the local identifier")
-          .requiredOption("--registry-name <name>", "Registry name")
-          .requiredOption("--said <said>", "Credential SAID")
-          .option("-r, --recipient <aid>", "Recipient AID or local alias")
-          .option(
-            "--send <recipient>",
-            "Alias or AID to send revocation events to; may be repeated",
-            (value: string, prev: string[] = []) => {
-              prev.push(value);
-              return prev;
-            },
-            [],
-          )
-          .option("--out <file>", "Write updated credential stream"),
-      ),
+    addStoreOptions(
+      vc.command("revoke")
+        .description("Revoke a local credential")
+        .option("-a, --alias <alias>", "Human readable alias for the local identifier")
+        .requiredOption("--registry-name <name>", "Registry name")
+        .requiredOption("--said <said>", "Credential SAID")
+        .option("-r, --recipient <aid>", "Recipient AID or local alias")
+        .option(
+          "--send <recipient>",
+          "Alias or AID to send revocation events to; may be repeated",
+          (value: string, prev: string[] = []) => {
+            prev.push(value);
+            return prev;
+          },
+          [],
+        )
+        .option("--out <file>", "Write updated credential stream"),
     ),
     dispatch,
     "vc.revoke",
@@ -169,16 +167,14 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   const ipex = program.command("ipex").description("IPEX credential exchange operations");
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addHabOption(
-        addStoreOptions(
-          ipex.command("apply")
-            .description("Send an IPEX apply")
-            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-            .requiredOption("--schema <said>", "Requested schema SAID")
-            .option("--attrs <json>", "Requested attributes JSON or @file")
-            .option("-m, --message <text>", "Human-readable message"),
-        ),
+    addHabOption(
+      addStoreOptions(
+        ipex.command("apply")
+          .description("Send an IPEX apply")
+          .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+          .requiredOption("--schema <said>", "Requested schema SAID")
+          .option("--attrs <json>", "Requested attributes JSON or @file")
+          .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
     dispatch,
@@ -187,16 +183,14 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addHabOption(
-        addStoreOptions(
-          ipex.command("offer")
-            .description("Send an IPEX offer")
-            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-            .requiredOption("--acdc <file>", "Embedded ACDC stream file")
-            .option("--apply <said>", "Prior apply EXN SAID")
-            .option("-m, --message <text>", "Human-readable message"),
-        ),
+    addHabOption(
+      addStoreOptions(
+        ipex.command("offer")
+          .description("Send an IPEX offer")
+          .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+          .requiredOption("--acdc <file>", "Embedded ACDC stream file")
+          .option("--apply <said>", "Prior apply EXN SAID")
+          .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
     dispatch,
@@ -205,15 +199,13 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addHabOption(
-        addStoreOptions(
-          ipex.command("agree")
-            .description("Send an IPEX agree")
-            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-            .requiredOption("--offer <said>", "Prior offer EXN SAID")
-            .option("-m, --message <text>", "Human-readable message"),
-        ),
+    addHabOption(
+      addStoreOptions(
+        ipex.command("agree")
+          .description("Send an IPEX agree")
+          .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+          .requiredOption("--offer <said>", "Prior offer EXN SAID")
+          .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
     dispatch,
@@ -222,23 +214,21 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addGvrsnOption(
-        addHabOption(
-          addStoreOptions(
-            ipex.command("grant")
-              .description("Send or write an IPEX credential grant")
-              .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-              .requiredOption("--said <said>", "Credential SAID")
-              .option("--agree <said>", "Prior agree EXN SAID")
-              .option("-m, --message <text>", "Human-readable message")
-              .option(
-                "--approval-timeout <seconds>",
-                "Seconds to wait for multisig IPEX approval before returning",
-                (value: string) => Number(value),
-              )
-              .option("--out <file>", "Write support artifacts plus grant wire"),
-          ),
+    addGvrsnOption(
+      addHabOption(
+        addStoreOptions(
+          ipex.command("grant")
+            .description("Send or write an IPEX credential grant")
+            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+            .requiredOption("--said <said>", "Credential SAID")
+            .option("--agree <said>", "Prior agree EXN SAID")
+            .option("-m, --message <text>", "Human-readable message")
+            .option(
+              "--approval-timeout <seconds>",
+              "Seconds to wait for multisig IPEX approval before returning",
+              (value: string) => Number(value),
+            )
+            .option("--out <file>", "Write support artifacts plus grant wire"),
         ),
       ),
     ),
@@ -248,17 +238,15 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addHabOption(
-        addStoreOptions(
-          ipex.command("admit")
-            .description("Send or write an IPEX admit")
-            .option("--said <said>", "Accepted grant EXN SAID")
-            .option("--grant-file <file>", "Grant wire file")
-            .option("-m, --message <text>", "Human-readable message")
-            .option("--out <file>", "Write admit wire")
-            .option("--no-wait", "Do not require the embedded credential to be saved"),
-        ),
+    addHabOption(
+      addStoreOptions(
+        ipex.command("admit")
+          .description("Send or write an IPEX admit")
+          .option("--said <said>", "Accepted grant EXN SAID")
+          .option("--grant-file <file>", "Grant wire file")
+          .option("-m, --message <text>", "Human-readable message")
+          .option("--out <file>", "Write admit wire")
+          .option("--no-wait", "Do not require the embedded credential to be saved"),
       ),
     ),
     dispatch,
@@ -267,15 +255,13 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addHabOption(
-        addStoreOptions(
-          ipex.command("spurn")
-            .description("Send an IPEX spurn")
-            .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
-            .requiredOption("--prior <said>", "Prior IPEX EXN SAID")
-            .option("-m, --message <text>", "Human-readable message"),
-        ),
+    addHabOption(
+      addStoreOptions(
+        ipex.command("spurn")
+          .description("Send an IPEX spurn")
+          .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
+          .requiredOption("--prior <said>", "Prior IPEX EXN SAID")
+          .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
     dispatch,
@@ -311,19 +297,17 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerKeriCliCommand(
-    addDeliveryOptions(
-      addGvrsnOption(
-        addStoreOptions(
-          ipex.command("join")
-            .description("Approve or validate a single-sig or multisig IPEX message")
-            .option("--said <said>", "IPEX or multisig wrapper EXN SAID")
-            .option("--auto", "Approve a multisig IPEX proposal without prompting", false)
-            .option(
-              "--approval-timeout <seconds>",
-              "Elapsed proposal wait in seconds (default 60)",
-              (value: string) => Number(value),
-            ),
-        ),
+    addGvrsnOption(
+      addStoreOptions(
+        ipex.command("join")
+          .description("Approve or validate a single-sig or multisig IPEX message")
+          .option("--said <said>", "IPEX or multisig wrapper EXN SAID")
+          .option("--auto", "Approve a multisig IPEX proposal without prompting", false)
+          .option(
+            "--approval-timeout <seconds>",
+            "Elapsed proposal wait in seconds (default 60)",
+            (value: string) => Number(value),
+          ),
       ),
     ),
     dispatch,

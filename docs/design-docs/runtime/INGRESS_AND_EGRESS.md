@@ -205,6 +205,27 @@ not retain a separate observer registration. Outcome cues are consumable output;
 queued and active work alone determine hasPending. Whole failed events live separately
 in failures until shutdown, as described above.
 
+Ordinary delivery traverses controller, agent and mailbox roles in that order:
+all controller/agent endpoints, then one random mailbox. A composed provider store
+short-circuits to any eligible local mailbox AID, even without a location. Only
+absence of these three roles permits one witness. Empty/unsupported locations fail
+at the selected endpoint; they do not promote a lower role or trigger network
+failover. HTTPS precedes HTTP, then TCP. Producer/application boundaries resolve
+aliases; Poster receives final AIDs. There are no auto/direct/indirect selectors.
+
+Poster.sendStream admits a finite ordered source batch through the same worker and
+concrete-event completion contract. It selects only the first present controller,
+agent or mailbox role (witness otherwise): every endpoint of that direct role, or
+one relay for the whole batch. Direct endpoints receive raw signed frames; a relay
+receives one `/fwd` envelope per source frame, and local storage keeps the source
+stream. No replay iterator survives admission. This corrects the reference
+StreamPoster's mixed-role wrapping/local-EID defects without copying its malformed
+wire behavior. Initial IPEX grant/admit/spurn and initial member proposals use this
+operation. IPEX join signaling and completed output use ordinary Poster sends.
+The producer chooses the operation; EXN route and topic do not infer it. The real
+apply/offer/agree implementations use ordinary EXN delivery (the pinned donor's
+corresponding commands are stubs).
+
 Exchange construction and signing live in exchange-messaging.ts. Producers call
 createExchangeMessage before publishing; the standalone sendExchangeMessage helper
 accepts dest and owns the same queue/worker/wait lifecycle. Poster.sendBytes,
@@ -331,7 +352,9 @@ signal. It starts no parser or receive callback. Lower byte transport has no
 AgentRuntime/Reactor dependency. `TCPMessenger` composes native RX/TX
 siblings and owns parsing/dispatch at the application layer. Standalone sends
 remain transmit-only; explicit reply mode enables same-socket conversations.
-HTTP/HTTPS priority, TCP fallback and mailbox/direct routing remain unchanged.
+Endpoint URL selection prefers HTTPS, then HTTP, then TCP; refusal does not retry
+another scheme. Ordinary Poster traverses controller, agent and mailbox roles,
+using a witness only when none of those roles exists.
 
 `socketBytes` acquires exclusive binary readable ownership on first pull. It
 allows one pending pull and returns independent allocations, normally at most

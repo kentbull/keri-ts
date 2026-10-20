@@ -28,7 +28,7 @@ import { serializeMessage } from "../core/protocol-exchanging.ts";
 import type { Reger } from "../db/reger.ts";
 import { type AgentRuntime } from "./agent-runtime.ts";
 import { createExchangeMessage } from "./exchange-messaging.ts";
-import type { Poster } from "./forwarding.ts";
+import type { Poster, PosterMsg } from "./forwarding.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -39,11 +39,8 @@ import {
 } from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
 
-export type IpexDeliveryPreference = "auto" | "direct" | "indirect";
-
 export interface MultisigIpexApprovalOptions {
   publish?: boolean;
-  delivery?: IpexDeliveryPreference;
   sendLead?: boolean;
   gvrsn?: Versionage;
 }
@@ -60,7 +57,7 @@ export interface MultisigIpexApprovalResult {
  * @param hby Borrowed local identities and accepted-state stores.
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param wrapper Accepted multisig exchange carrying the proposed IPEX child.
- * @param options Approval/genus/delivery policy used for the existing group workflow.
+ * @param options Approval/genus policy used for the existing group workflow.
  * @returns Approval and current group/protocol completion information.
  */
 export function* approveMultisigIpex(
@@ -100,7 +97,7 @@ export function* approveMultisigIpex(
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
   yield* runtime.protocol.processEscrowsOnce();
   const deliveries = options.publish
-    ? yield* publishGroupIpexProposal(runtime, groupHab, approved, undefined, genus)
+    ? yield* publishGroupIpexProposal(runtime, groupHab, approved, genus)
     : [];
   if (
     (options.sendLead ?? true)
@@ -114,7 +111,6 @@ export function* approveMultisigIpex(
         reger,
         groupHab,
         embedded,
-        options.delivery,
         options.gvrsn,
       )),
     );
@@ -178,7 +174,6 @@ export function groupIpexPartial(
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param groupHab Group habitat whose signing members receive the proposal.
  * @param embedded IPEX exchange body/attachments to wrap.
- * @param delivery Existing Poster route preference.
  * @param childGvrsn Attachment genus of the embedded child, independent of outer EXN framing.
  * @returns Proposal delivery results after matching Poster outcomes.
  */
@@ -186,31 +181,50 @@ export function* publishGroupIpexProposal(
   runtime: AgentRuntime,
   groupHab: Hab,
   embedded: Uint8Array,
-  delivery?: IpexDeliveryPreference,
   childGvrsn?: Versionage,
 ): Operation<string[]> {
-  const member = localGroupMember(runtime.hby, groupHab.pre);
+  const deliveries: string[] = [];
+  for (const msg of groupIpexProposals(runtime.hby, groupHab, embedded, childGvrsn)) {
+    const evt = runtime.postman.send(msg, { notify: true });
+    const outcome = yield* runtime.postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    deliveries.push(...outcome.deliveries);
+  }
+  return deliveries;
+}
+
+/**
+ * Construct member proposals before their caller chooses its real Poster operation.
+ * Initial IPEX commands use stream admission; join completion uses ordinary sends.
+ *
+ * @param hby Borrowed group/member identities and accepted state.
+ * @param groupHab Local group whose remote signing members receive proposals.
+ * @param embedded Independently signed IPEX message to embed.
+ * @param childGvrsn Optional child attachment genus, independent of outer framing.
+ * @returns Prepared source records; construction publishes no delivery work.
+ */
+export function groupIpexProposals(
+  hby: Habery,
+  groupHab: Hab,
+  embedded: Uint8Array,
+  childGvrsn?: Versionage,
+): PosterMsg[] {
+  const member = localGroupMember(hby, groupHab.pre);
   const child = new SerderKERI({ raw: embedded });
   const genus = child.gvrsn ?? childGvrsn ?? child.pvrsn;
   const payload = { gid: groupHab.pre, ...multisigChildGenusAttrs(child, genus) };
-  const deliveries: string[] = [];
-  for (const recipient of groupSigningMembers(runtime.hby, groupHab.pre)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
-      continue;
-    }
+  const msgs: PosterMsg[] = [];
+  for (const recipient of groupSigningMembers(hby, groupHab.pre)) {
+    if (recipient === member.pre || hby.habs.has(recipient)) continue;
     const { msg } = createExchangeMessage(member, {
       dest: recipient,
       route: MULTISIG_EXN_ROUTE,
       payload,
       embeds: { exn: embedded },
     });
-    const postman = runtime.postman;
-    const evt = postman.send({ src: member.pre, dest: recipient, topic: "multisig", msg, delivery }, { notify: true });
-    const outcome = yield* postman.wait(evt);
-    if (outcome.kin === "failed") throw outcome.error;
-    deliveries.push(...outcome.deliveries);
+    msgs.push({ src: member.pre, dest: recipient, topic: "multisig", msg });
   }
-  return deliveries;
+  return msgs;
 }
 
 /** Approve all stored multisig wrappers for one embedded IPEX SAID. */
@@ -267,7 +281,6 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
  * @param reger Borrowed credential evidence store for grant artifacts.
  * @param groupHab Group sender whose elected local lead publishes completed output.
  * @param embedded Completed embedded IPEX message.
- * @param delivery Existing Poster route preference.
  * @param gvrsn Attachment genus for the outgoing child/artifact stream.
  * @returns Completed delivery results when this member is the elected sender.
  */
@@ -277,7 +290,6 @@ export function* sendCompletedGroupIpex(
   reger: Reger | null,
   groupHab: Hab,
   embedded: SerderKERI,
-  delivery?: IpexDeliveryPreference,
   gvrsn: Versionage = Vrsn_1_0,
 ): Operation<string[]> {
   if (!embedded.said) {
@@ -310,7 +322,6 @@ export function* sendCompletedGroupIpex(
     localGroupMember(hby, groupHab.pre),
     recipient,
     messages,
-    delivery,
   );
 }
 
@@ -368,7 +379,6 @@ export function storedExchangeMessage(
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param dest Final recipient AID.
  * @param msgs Complete signed credential/IPEX messages in required order.
- * @param delivery Existing route preference.
  * @returns Successful destination URLs; failed concrete outcomes throw.
  */
 export function* sendCredentialBytes(
@@ -376,7 +386,6 @@ export function* sendCredentialBytes(
   hab: Hab,
   dest: string,
   msgs: Uint8Array[],
-  delivery: IpexDeliveryPreference | undefined,
 ): Operation<string[]> {
   const sent: string[] = [];
   for (const msg of msgs) {
@@ -385,13 +394,33 @@ export function* sendCredentialBytes(
       dest,
       msg,
       topic: CREDENTIAL_MAILBOX_TOPIC,
-      delivery,
     }, { notify: true });
     const outcome = yield* postman.wait(evt);
     if (outcome.kin === "failed") throw outcome.error;
     sent.push(...outcome.deliveries);
   }
   return sent;
+}
+
+/**
+ * Send an initial IPEX command's prepared batch through one stream admission.
+ *
+ * @param postman Borrowed Poster; an independently running worker owns delivery.
+ * @param hab Local source signer; bytes are already signed before admission.
+ * @param dest Resolved final recipient AID.
+ * @param msgs Finite ordered support and business messages sharing endpoint selection.
+ * @returns Actual delivered URLs; a failed concrete outcome throws its original error.
+ */
+export function* sendCredentialStream(
+  postman: Poster,
+  hab: Hab,
+  dest: string,
+  msgs: Uint8Array[],
+): Operation<string[]> {
+  const evt = postman.sendStream({ src: hab.pre, dest, topic: CREDENTIAL_MAILBOX_TOPIC, msgs }, { notify: true });
+  const outcome = yield* postman.wait(evt);
+  if (outcome.kin === "failed") throw outcome.error;
+  return outcome.deliveries;
 }
 
 function ipexRecipient(exn: SerderKERI): string | null {

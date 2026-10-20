@@ -55,21 +55,19 @@ which parts are Tufa-only extensions.
 
 - a mailbox is a recipient-side relay endpoint, not a sender-side mediator
 - mailbox authorization truth lives in accepted `/end/role` state
-- mailbox delivery is mailbox-first:
-  - if authorized mailbox endpoints exist for a recipient, send to those mailbox
-    endpoints
-  - if more than one mailbox is authorized, broadcast to all of them
-  - direct controller or agent delivery is the fallback when no mailbox is
-    configured
-- mailbox storage is owned by a shared provider-side `Mailboxer` composed by the
-  runtime/host layer above `Habery`
-- mailbox polling keeps the ownership split explicit:
-  - `MailboxDirector` coordinates topics, query cues, and durable remote cursors
-  - `MailboxPoller` owns local replay plus remote mailbox retrieval
-  - long-lived runtime polling keeps one remote worker per endpoint, while
-    bounded command-local polling stays sequential and budgeted
-  - bounded `processOnce()` returns typed mailbox batches, while long-lived
-    `pollDo()` remains sink-based for concurrent runtime flow
+- ordinary Poster traverses controller, agent and mailbox roles in that order:
+  all direct endpoints, then one random mailbox; only absence of those roles
+  permits witness delivery
+- an explicitly composed provider store short-circuits any eligible local mailbox
+  or witness AID, without requiring a URL; it does not consume the stored payload
+- this supersedes the former mailbox-first/broadcast-all selection policy
+- mailbox storage belongs to a provider-side `Mailboxer` composed above `Habery`
+- `MailboxDirector` owns provider query/stream lifetimes and topic registration;
+  `MailboxPoller` owns concurrent HTTP/SSE consumer workers and publishes durable
+  remote cursor progress only after each consumer finishes
+- poll allowed mailbox providers and current KEL witnesses together; a shared AID
+  gets one worker for its shared history. There is no local replay reader or
+  separate bounded polling driver
 - mailbox admin is handled by the remote mailbox host through `POST /mailboxes`
 - mailbox admin request shape follows ADR-0010:
   - one raw `application/cesr` stream carrying controller replay and terminal
@@ -111,12 +109,12 @@ and the `POST /mailboxes` mental model across both KERIpy and `keri-ts`, see
 
 1. A sender builds a message such as an `exn`, reply, replay, or receipt-style
    payload.
-2. `Poster` resolves the recipient.
-3. If the recipient has mailbox endpoints, `Poster` forwards to those mailbox
-   endpoints.
-4. If no mailbox exists, `Poster` falls back to direct controller or agent
-   delivery.
-5. Failed mailbox sends are reported to the caller; there is no durable retry store.
+2. The producer resolves recipient aliases and admits signed bytes to Poster.
+3. Poster sends to every controller and agent endpoint, then one mailbox;
+   witnesses apply only when none of those roles exists.
+4. Direct targets receive the original message. An indirect target receives `/fwd`,
+   or the composed provider store publishes the payload locally.
+5. Failed outcomes preserve partial success; there is no automatic or durable retry.
 
 ### Forwarding (`/fwd`) Mechanics
 
@@ -131,12 +129,10 @@ The important mental model is:
 - outer modifiers:
   - `q.pre` is the intended recipient controller prefix
   - `q.topic` is the mailbox topic bucket such as `/challenge`
-- outer payload:
-  - `a` is empty for the current forwarding path
-- embedded payload:
-  - `e.evt` contains the embedded message SAD
-  - any embedded CESR attachments are carried as pathed attachment groups for
-    `/e/evt`
+- legacy v1 payload: empty `a`, with the child SAD in `e.evt` and pathed
+  attachment evidence for `/e/evt`
+- v2 payload: signed `a.evt` digest binds one nested child body; that child retains
+  independent signature and attachment evidence
 
 So the provider receives a forwarding envelope, not the final mailbox payload as
 the top-level request message.
@@ -149,7 +145,7 @@ embedded message addressed by the `/fwd` exchange.
 
 #### Local Short-Circuit
 
-If the selected mailbox AID is local to the current habery, `Poster` does not
+If a provider store is composed and any eligible mailbox AID is local, `Poster` does not
 wrap the message in `/fwd` and round-trip through HTTP. It stores the original
 payload directly into `Mailboxer` under `recipient/topic`.
 
@@ -217,12 +213,12 @@ The important split is:
 
 - the `stream` cue starts transport work
 - `Mailboxer` supplies the payload bytes
-- bounded callers receive typed local/remote batches and decide when to run
-  follow-on reactor/escrow work between those batches
+- each HTTP consumer awaits normal protocol acceptance before its provider cursor
+  advances; finite commands use the same workers under an elapsed deadline
 - timeout policy is split too:
   - short request-open guard for transport setup
   - longer mailbox poll duration for SSE long-poll reads
-  - bounded command-local polling budget for one-shot CLI/runtime turns
+  - command deadlines cancel and join the same active workers before store closure
 
 ## Storage Model
 
@@ -344,9 +340,9 @@ Mailbox discovery and admin then use the normal KERIpy route shapes:
 
 ### Multi-Mailbox Delivery
 
-If a recipient has more than one authorized mailbox endpoint, delivery is
-broadcast to all authorized mailboxes in this phase. There is no primary mailbox
-or weighted selection policy.
+If a recipient has several authorized mailbox endpoints, ordinary Poster chooses
+one randomly (or uses an eligible local provider store). There is no broadcast-all
+mailbox policy or user delivery-mode override.
 
 ## Consequences And Non-Goals
 

@@ -269,7 +269,6 @@ for (const tsDiscloser of [true, false]) {
                               dest: py.pre,
                               topic: "/credential",
                               msg: wire,
-                              delivery: "indirect",
                             }, { notify: true });
                             const outcome = yield* postman.wait(evt);
                             if (outcome.kin === "failed") throw outcome.error;

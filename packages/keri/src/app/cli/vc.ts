@@ -17,7 +17,6 @@ import {
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
-import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { withAgentRuntime, withExistingHabery } from "./common/context.ts";
 
@@ -56,7 +55,6 @@ interface VcSaidArgs extends VcBaseArgs {
   recipient?: string;
   out?: string;
   send?: string[];
-  delivery?: ExchangeDeliveryPreference;
 }
 
 interface VcListArgs extends VcBaseArgs {
@@ -239,7 +237,6 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
     recipient: args.recipient as string | undefined,
     out: args.out as string | undefined,
     send: asStringList(args.send),
-    delivery: args.delivery as ExchangeDeliveryPreference | undefined,
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
@@ -259,7 +256,6 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
           credentialSaid: vcArgs.said!,
           sendRecipients,
           senderHab,
-          delivery: vcArgs.delivery,
         });
       } finally {
         yield* worker.halt();

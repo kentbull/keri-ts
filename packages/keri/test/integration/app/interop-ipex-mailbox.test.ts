@@ -277,7 +277,6 @@ for (const count of [1, 2]) {
                       dest: destination.pre,
                       topic: "/credential",
                       msg: message,
-                      delivery: "indirect",
                     }, { notify: true });
                     const outcome = yield* postman.wait(evt);
                     if (outcome.kin === "failed") throw outcome.error;

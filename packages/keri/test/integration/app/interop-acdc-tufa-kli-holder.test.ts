@@ -775,8 +775,6 @@ Deno.test("Interop: Tufa issuer credential presents through KLI holder and Tufa 
               "issuer-reg",
               "--said",
               credentialSaid,
-              "--delivery",
-              "indirect",
             ],
             env,
             workspaceRoot(),

@@ -13,7 +13,6 @@ import {
   parseChallengeWords,
 } from "../challenging.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
-import type { ExchangeDeliveryPreference } from "../forwarding.ts";
 import type { Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { Organizer } from "../organizing.ts";
@@ -34,7 +33,6 @@ interface ChallengeRespondArgs {
   alias?: string;
   recipient?: string;
   words?: string;
-  transport?: string;
   compat?: boolean;
   cesrBodyMode?: CesrBodyMode;
 }
@@ -85,7 +83,6 @@ export function* challengeRespondCommand(
     alias: args.alias as string | undefined,
     recipient: args.recipient as string | undefined,
     words: args.words as string | undefined,
-    transport: args.transport as string | undefined,
     compat: args.compat as boolean | undefined,
     cesrBodyMode: normalizeCesrBodyMode(
       args.cesrBodyMode as string | undefined,
@@ -133,7 +130,6 @@ export function* challengeRespondCommand(
           route: CHALLENGE_RESPONSE_ROUTE,
           topic: "challenge",
           payload: { i: hab.pre, ...payload },
-          delivery: normalizeTransport(commandArgs.transport),
         },
       );
       console.log("Sent EXN message");
@@ -258,16 +254,6 @@ function normalizeOutput(input?: string): ChallengeOutput {
     return out;
   }
   throw new ValidationError(`Unsupported challenge output ${String(input)}.`);
-}
-
-function normalizeTransport(input?: string): ExchangeDeliveryPreference {
-  const value = input ?? "auto";
-  if (value === "auto" || value === "direct" || value === "indirect") {
-    return value;
-  }
-  throw new ValidationError(
-    `Unsupported exchange transport ${String(input)}.`,
-  );
 }
 
 function* sleep(ms: number): Operation<void> {

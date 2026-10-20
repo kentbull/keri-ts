@@ -101,7 +101,6 @@ Deno.test("challenge respond and verify round-trip through direct controller del
             alias: "alice",
             recipient: "bob",
             words: JSON.stringify(words),
-            transport: "direct",
           }),
         );
         assertEquals(responded.output[0], "Sent EXN message");

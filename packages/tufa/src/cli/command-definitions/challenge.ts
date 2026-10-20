@@ -52,11 +52,6 @@ export function registerChallengeCmds(
         "-w, --words <words>",
         "Challenge words as JSON array or whitespace-separated string",
       )
-      .option(
-        "-t, --transport <transport>",
-        "Transport mode: auto, direct, or indirect",
-        "auto",
-      )
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(

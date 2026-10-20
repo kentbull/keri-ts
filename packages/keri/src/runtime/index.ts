@@ -176,14 +176,15 @@ export {
   type ExchangeRouteVerification,
 } from "../app/exchanging.ts";
 export {
-  type ExchangeDeliveryPreference,
   type MailboxFetchTimeoutPolicy,
   type MailboxPollBatch,
   MailboxPoller,
   type MailboxPollingTimeoutPolicy,
   Poster,
   type PosterEvent,
+  type PosterMsg,
   type PosterOutcome,
+  type PosterStream,
 } from "../app/forwarding.ts";
 export { isLocalGroupHab } from "../app/group-members.ts";
 export {
@@ -262,13 +263,11 @@ export {
   readMailboxSseBody,
 } from "../app/mailbox-sse.ts";
 export {
-  directDeliveryEndpoints,
   endpointBasePath,
   fetchEndpointUrls,
   type HostedEndpoint,
   type HostedEndpointPathMatch,
   type HostedRouteResolution,
-  mailboxDeliveryEndpoints,
   mailboxPollEndpoints,
   mailboxQueryTopics,
   mailboxTopicKey,

@@ -194,16 +194,12 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // Open the advertised provider before its runtime can start loopback polling.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
-      yield* waitForServer(port);
-
       const mailboxResolved = yield* testCLICommand(
         oobiResolveCommand({
           name: targetName,
@@ -222,8 +218,8 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       );
       assertEquals(agentResolved.output.at(-1), agentUrl);
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
       yield* hby.close();
     }
@@ -547,16 +543,12 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // Open the advertised provider before its runtime can start loopback polling.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
-      yield* waitForServer(port);
-
       const controllerResolved = yield* testCLICommand(
         oobiResolveCommand({
           name: targetName,
@@ -584,8 +576,8 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
       );
       assertEquals(wellKnownResolved.output.at(-1), wellKnownUrl);
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
       yield* hby.close();
     }
@@ -701,16 +693,12 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // Open the advertised provider before its runtime can start loopback polling.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
-      yield* waitForServer(port);
-
       const target = yield* createHabery({
         name: targetName,
         headDirPath: targetHeadDirPath,
@@ -742,8 +730,8 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
         yield* target.close();
       }
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
       yield* hby.close();
     }

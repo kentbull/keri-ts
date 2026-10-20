@@ -1,5 +1,5 @@
 /**
- * Mailbox-first forwarding and polling support.
+ * Queued CESR delivery and HTTP mailbox polling.
  *
  * KERIpy correspondence:
  * - ports the conceptual roles of `Poster`, `StreamPoster`, `ForwardHandler`,
@@ -47,11 +47,9 @@ import { requestWithHeaderTimeout } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
 import {
-  directDeliveryEndpoints,
-  firstSortedEndpoint,
-  mailboxDeliveryEndpoints,
   mailboxPollEndpoints,
   mailboxTopicKey,
+  preferredUrl,
 } from "./mailboxing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
@@ -59,11 +57,8 @@ import { runtimeTurn } from "./runtime-turn.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
 import { TransportError } from "./transport-error.ts";
 
-/** Delivery preference accepted by CLI and runtime exchange send helpers. */
-export type ExchangeDeliveryPreference = "auto" | "direct" | "indirect";
-
-/** One admitted source message; identity distinguishes repeated sends of the same signed bytes. */
-export interface PosterEvent {
+/** Prepared signed source; Poster copies its bytes before publishing an ordinary admission. */
+export interface PosterMsg {
   /**
    * Local sender AID used to resolve the signing habitat on each attempt.
    */
@@ -81,13 +76,21 @@ export interface PosterEvent {
    */
   readonly msg: Uint8Array;
   /**
-   * Existing route preference; omission uses mailbox-first auto selection.
-   */
-  readonly delivery?: ExchangeDeliveryPreference;
-  /**
    * Request same-socket TCP reply processing; requires a protocol processor.
    */
   readonly replies?: boolean;
+}
+
+/** One finite stream whose endpoint selection is shared by every constituent message. */
+export interface PosterStream extends Omit<PosterMsg, "msg"> {
+  /** Complete signed source messages, copied into one finite stream before publication. */
+  readonly msgs: readonly Uint8Array[];
+}
+
+/** Concrete queued operation identity, shared by execution and its optional completion waiter. */
+export interface PosterEvent extends PosterMsg {
+  /** Ordinary traversal or first-present-role stream delivery, selected by the producer operation. */
+  readonly kin: "msg" | "stream";
 }
 
 /** Optional terminal observation of one concrete delivery attempt, not remote acceptance. */
@@ -114,25 +117,13 @@ export type PosterOutcome =
 /** Recipient policy captured synchronously from current accepted routing state for one attempt. */
 interface RawCesrRoute {
   /**
-   * Local sender AID whose habitat prepared this route.
+   * Direct source transmission or forwarding through a provider.
    */
-  readonly sender: string;
+  readonly kind: "forward" | "direct";
   /**
-   * Final recipient AID after alias resolution.
+   * Ordered endpoint AIDs and URLs; null preserves a missing/unsupported location for execution failure.
    */
-  readonly recipient: string;
-  /**
-   * Mailbox topic used for indirect delivery.
-   */
-  readonly topic: string;
-  /**
-   * Selected local, direct, mailbox or witness route policy.
-   */
-  readonly kind: "mailbox" | "local" | "direct" | "witness";
-  /**
-   * Ordered selected endpoint AIDs and URLs; execution is sequential.
-   */
-  readonly targets: readonly { eid: string; url: string }[];
+  readonly targets: readonly { eid: string; url: string | null }[];
   /**
    * HTTP framing policy captured for this attempt.
    */
@@ -196,13 +187,12 @@ interface MailboxPollerOptions {
 }
 
 /**
- * Mailbox-first postman for queued signed CESR messages.
+ * Deliver queued signed messages using KERIpy's ordinary Poster role traversal.
  *
- * Responsibilities:
- * - resolve recipient aliases against organizer/contact state
- * - route to all currently authorized recipient mailbox endpoints when present
- * - fall back to direct controller/agent endpoints, then one witness endpoint,
- *   when no mailbox exists
+ * Send to every controller and agent endpoint, then one mailbox (or provider-local
+ * storage). Only recipients without those roles use one witness. Transport
+ * completion and opt-in outcomes do not prove remote protocol acceptance. Finite
+ * stream admissions use the first present role through the same execution owner.
  */
 export class Poster {
   /** Borrowed habitat collection and backing accepted protocol state. */
@@ -267,11 +257,33 @@ export class Poster {
    * @returns A fresh admitted record with copied msg bytes; admission is not transmission.
    * @throws Closed owner or unsupported reply capability rejects before queue publication.
    */
-  send(evt: PosterEvent, { notify = false }: { notify?: boolean } = {}): PosterEvent {
+  send(evt: PosterMsg, { notify = false }: { notify?: boolean } = {}): PosterEvent {
+    return this.admit(evt, "msg", notify);
+  }
+
+  /**
+   * Admit a complete finite stream using KERIpy StreamPoster's first-present-role selection.
+   * All messages share one selected direct-endpoint set or one relay for the attempt.
+   *
+   * @param stream Signed source messages in production order; no iterator survives admission.
+   * @param options Set notify to request the same concrete-event completion contract as send.
+   * @returns Copied queued stream identity; admission does not establish delivery.
+   */
+  sendStream({ msgs, ...evt }: PosterStream, { notify = false }: { notify?: boolean } = {}): PosterEvent {
+    return this.admit({ ...evt, msg: concatBytes(...msgs) }, "stream", notify);
+  }
+
+  /**
+   * Copy one source and atomically publish its concrete operation.
+   * @param evt Resolved producer record; source bytes remain caller-owned until copied.
+   * @param kin Real ordinary or finite-stream operation, not a user routing preference.
+   * @param notify Whether this admission needs one terminal observation.
+   * @returns New identity owned by the runnable queue.
+   */
+  private admit(evt: PosterMsg, kin: PosterEvent["kin"], notify: boolean): PosterEvent {
     this.ensureOpen();
     if (evt.replies && !this.protocol) throw new Error("TCP reply delivery requires a protocol processor");
-    // Admission owns the source bytes; later producer mutation cannot change queued work.
-    const admitted = { ...evt, msg: evt.msg.slice() };
+    const admitted = { ...evt, kin, msg: evt.msg.slice() };
     if (notify) this.notifications.add(admitted);
     this.evts.push(admitted);
     return admitted;
@@ -283,12 +295,12 @@ export class Poster {
    * @param evts Finite iterable for one cue/pair; every record is checked and copied before atomic queue publication.
    * @throws Any construction/capability failure leaves the runnable queue unchanged.
    */
-  sendAll(evts: Iterable<PosterEvent>): void {
+  sendAll(evts: Iterable<PosterMsg>): void {
     this.ensureOpen();
     const pending: PosterEvent[] = [];
     for (const evt of evts) {
       if (evt.replies && !this.protocol) throw new Error("TCP reply delivery requires a protocol processor");
-      pending.push({ ...evt, msg: evt.msg.slice() });
+      pending.push({ ...evt, kin: "msg", msg: evt.msg.slice() });
     }
     // Publish only after every event has passed capability checks and byte copying.
     this.evts.extend(pending);
@@ -435,12 +447,8 @@ export class Poster {
   private *deliverEvent(evt: PosterEvent, deliveries: string[], signal: AbortSignal): Operation<PosterOutcome> {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
-    const route = this.findBytesRoute(hab, {
-      recipient: evt.dest,
-      topic: evt.topic,
-      delivery: evt.delivery,
-    });
-    if (!route) {
+    const routes = this.findBytesRoutes(hab, evt.dest, evt.topic, evt.kin);
+    if (!routes.length) {
       return {
         kin: "failed",
         evt,
@@ -451,36 +459,42 @@ export class Poster {
     // A refused target does not prevent later targets from receiving this event.
     const failed: Error[] = [];
     try {
-      for (const endpoint of route.targets) {
-        const target = yield* this.prepareBytesTarget(hab, route, endpoint, evt.msg);
-        try {
-          if (target.kind === "http") {
-            const outcome = yield* new HTTPMessenger(this.protocol, this.http, this.clock).send(
-              target.url,
-              target.message,
-              {
-                bodyMode: target.bodyMode,
-                destination: target.destination,
-                signal,
-              },
-            );
-            if (outcome.kind === "refuse") {
-              failed.push(outcome.error);
-              continue;
-            }
-          } else if (target.kind === "tcp") {
-            // The messenger owns the attempt; Poster keeps source and event-level progress.
-            yield* new TCPMessenger(this.protocol, this.clock).send(target.url, target.message, {
-              signal,
-              replies: evt.replies,
-            });
+      for (const route of routes) {
+        for (const endpoint of route.targets) {
+          if (!endpoint.url) {
+            failed.push(new ValidationError(`No supported endpoint URL for ${endpoint.eid}.`));
+            continue;
           }
-        } catch (error) {
-          if (!(error instanceof TransportError)) throw error;
-          failed.push(error);
-          continue;
+          const target = yield* this.prepareBytesTarget(hab, route, { eid: endpoint.eid, url: endpoint.url }, evt);
+          try {
+            if (target.kind === "http") {
+              const outcome = yield* new HTTPMessenger(this.protocol, this.http, this.clock).send(
+                target.url,
+                target.message,
+                {
+                  bodyMode: target.bodyMode,
+                  destination: target.destination,
+                  signal,
+                },
+              );
+              if (outcome.kind === "refuse") {
+                failed.push(outcome.error);
+                continue;
+              }
+            } else if (target.kind === "tcp") {
+              // The messenger owns the attempt; Poster keeps source and event-level progress.
+              yield* new TCPMessenger(this.protocol, this.clock).send(target.url, target.message, {
+                signal,
+                replies: evt.replies,
+              });
+            }
+          } catch (error) {
+            if (!(error instanceof TransportError)) throw error;
+            failed.push(error);
+            continue;
+          }
+          deliveries.push(endpoint.url);
         }
-        deliveries.push(endpoint.url);
       }
     } catch (error) {
       if (failed.length) {
@@ -503,76 +517,77 @@ export class Poster {
    * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
    * @returns Whether current routing finds a target; this is not a connectivity probe.
    */
-  canDeliver(evt: PosterEvent): boolean {
+  canDeliver(evt: PosterMsg): boolean {
     const hab = this.hby.habs.get(evt.src);
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
-    return this.findBytesRoute(hab, {
-      recipient: evt.dest,
-      topic: evt.topic,
-      delivery: evt.delivery,
-    }) !== null;
+    return this.findBytesRoutes(hab, evt.dest, evt.topic).some((route) =>
+      route.targets.some((endpoint) => endpoint.url !== null)
+    );
   }
 
   /**
-   * Resolve the prepared destination AID; absence is explicit and other failures propagate.
+   * Snapshot ordinary Poster's current role traversal without network execution.
    *
-   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param args Resolved recipient AID, optional mailbox topic and delivery preference.
-   * @returns Current route snapshot, or null when no target is known.
-   * @throws Invalid recipient/topic policy or storage lookup failures propagate.
+   * Controller and agent roles each retain all endpoints. An indirect role picks
+   * one random provider, unless an explicitly composed store owns an eligible local
+   * AID. Empty location maps retain role selection and become execution failures.
+   *
+   * @param hab Local signing habitat borrowing accepted role/location state.
+   * @param recipient Resolved final recipient AID.
+   * @param topic Recipient mailbox topic; indirect routes require a nonempty topic.
+   * @param kin Ordinary messages traverse all primary roles; streams retain the first present role.
+   * @returns Ordered role groups; no eligible role returns an empty array.
    */
-  private findBytesRoute(
-    hab: Hab,
-    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
-  ): RawCesrRoute | null {
-    const recipient = args.recipient;
-    const topic = args.topic ?? "";
-    const delivery = args.delivery ?? "auto";
-    const base = { sender: hab.pre, recipient, topic, bodyMode: this.hby.cesrBodyMode };
-    const mailboxes = delivery === "direct" ? [] : mailboxDeliveryEndpoints(hab, recipient);
-    if (mailboxes.length > 0) {
-      if (!topic) throw new ValidationError(`Mailbox delivery requires an explicit topic for ${recipient}.`);
-      return { ...base, kind: "mailbox", targets: mailboxes };
-    }
-    if (
-      delivery !== "direct" && topic && this.mbx && this.hby.db.prefixes.has(hab.pre)
-      && this.hby.db.ends.get([recipient, Roles.mailbox, hab.pre])?.allowed
-    ) {
-      return { ...base, kind: "local", targets: [{ eid: hab.pre, url: `local-mailbox:${hab.pre}` }] };
-    }
-    const direct = directDeliveryEndpoints(hab, recipient);
-    if (direct.length > 0) return { ...base, kind: "direct", targets: direct };
-    if (delivery !== "direct") {
-      if (!topic) {
-        throw new ValidationError(`Witness fallback delivery requires an explicit topic for ${recipient}.`);
+  private findBytesRoutes(hab: Hab, recipient: string, topic: string, kin: PosterEvent["kin"] = "msg"): RawCesrRoute[] {
+    const ends = hab.endsFor(recipient);
+    const roles: string[] = [Roles.controller, Roles.agent, Roles.mailbox].filter((role) =>
+      Object.keys(ends[role] ?? {}).length
+    );
+    if (!roles.length && Object.keys(ends[Roles.witness] ?? {}).length) roles.push(Roles.witness);
+    if (kin === "stream") roles.splice(1);
+    const base = { bodyMode: this.hby.cesrBodyMode };
+    return roles.map((role) => {
+      const candidates = Object.entries(ends[role]);
+      if (role === Roles.controller || role === Roles.agent) {
+        return {
+          ...base,
+          kind: "direct",
+          targets: candidates.map(([eid, urls]) => ({ eid, url: preferredUrl(urls) })),
+        };
       }
-      const witness = firstSortedEndpoint(hab.endsFor(recipient)[Roles.witness]);
-      if (witness) return { ...base, kind: "witness", targets: [witness] };
-    }
-    return null;
+      if (!topic) throw new ValidationError(`Forwarded delivery requires an explicit topic for ${recipient}.`);
+      // A provider store may belong to another local AID, not just the sender.
+      const local = this.mbx && candidates.find(([eid]) => this.hby.db.prefixes.has(eid));
+      if (local) return { ...base, kind: "forward", targets: [{ eid: local[0], url: `local-mailbox:${local[0]}` }] };
+      const [eid, urls] = candidates[Math.floor(Math.random() * candidates.length)];
+      return {
+        ...base,
+        kind: "forward",
+        targets: [{ eid, url: preferredUrl(urls) }],
+      };
+    });
   }
 
   /**
    * Prepare a target using the supplied wire and selected endpoint.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param route Recipient/transport policy selected for this attempt; sender must match hab.
+   * @param route Selected endpoint group and HTTP framing for this attempt.
    * @param endpoint One selected endpoint AID and URL from the route.
-   * @param message Original signed CESR bytes; outer forwarding/introduction material may be rebuilt.
+   * @param evt Original signed source and concrete ordinary/stream operation.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
    */
   private *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     endpoint: { eid: string; url: string },
-    message: Uint8Array,
+    evt: PosterEvent,
   ): Operation<PreparedCesrTarget> {
-    if (hab.pre !== route.sender) throw new Error("CESR route belongs to another sender");
     if (route.kind !== "direct") {
-      const forwarded = yield* this.prepareForwardedTarget(hab, route.recipient, route.topic, message, endpoint);
+      const forwarded = yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
       return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
     }
-    return remoteCesrTarget(endpoint, message, route.bodyMode);
+    return remoteCesrTarget(endpoint, evt.msg, route.bodyMode);
   }
 
   /**
@@ -581,7 +596,7 @@ export class Poster {
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
    * @param recipient Final recipient AID, distinct from the intermediary endpoint.
    * @param topic Recipient mailbox topic used by the forwarding envelope.
-   * @param message Original signed CESR bytes; outer forwarding/introduction material may be rebuilt.
+   * @param evt Original signed source and operation; outer envelopes may be rebuilt.
    * @param endpoint Mailbox/witness endpoint selected for this attempt.
    * @returns Stored for a local endpoint, or signed forwarding wire with its introduction.
    */
@@ -589,35 +604,30 @@ export class Poster {
     hab: Hab,
     recipient: string,
     topic: string,
-    message: Uint8Array,
+    evt: PosterEvent,
     endpoint: { eid: string; url: string },
   ): Operation<PreparedCesrTarget> {
-    if (this.hby.db.prefixes.has(endpoint.eid)) {
-      const stored = this.requireMbx().storeMsg(
+    if (this.mbx && this.hby.db.prefixes.has(endpoint.eid)) {
+      const stored = this.mbx.storeMsg(
         mailboxTopicKey(recipient, topic),
-        mailboxReplyPayload(hab, recipient, topic, message),
+        mailboxReplyPayload(hab, recipient, topic, evt.msg),
       );
       if (!stored) throw new Error("Mailbox publication did not complete");
       return { kind: "stored" };
     }
-    const forwarded = yield* buildForwardedDelivery(hab, { recipient, topic, message });
-    const intro = introduce(hab, endpoint.eid);
-    return remoteCesrTarget(endpoint, concatBytes(intro, forwarded), this.hby.cesrBodyMode);
-  }
-
-  /**
-   * Require provider mailbox storage for local mailbox-target delivery.
-   *
-   * @returns Borrowed provider mailbox store.
-   * @throws ValidationError when this host has no mailbox storage.
-   */
-  private requireMbx(): Mailboxer {
-    if (!this.mbx) {
-      throw new ValidationError(
-        "Local mailbox delivery requires provider mailbox storage.",
-      );
+    const msgs: Uint8Array[] = [];
+    if (evt.kin === "stream") {
+      // Prepare every frame before opening the one selected relay attempt.
+      for (const frame of parseBytes(evt.msg)) {
+        msgs.push(yield* abortable((signal) => collectPayload(framePayload(frame), signal)));
+      }
+    } else {
+      msgs.push(evt.msg);
     }
-    return this.mbx;
+    const forwarded: Uint8Array[] = [];
+    for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(hab, { recipient, topic, message }));
+    const intro = introduce(hab, endpoint.eid);
+    return remoteCesrTarget(endpoint, concatBytes(intro, ...forwarded), this.hby.cesrBodyMode);
   }
 }
 

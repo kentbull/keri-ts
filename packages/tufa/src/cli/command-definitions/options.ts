@@ -34,10 +34,6 @@ export function addHabOption(cmd: Command): Command {
   );
 }
 
-export function addDeliveryOptions(cmd: Command): Command {
-  return cmd.option("--delivery <mode>", "Delivery mode: auto, direct, or indirect");
-}
-
 export function addGvrsnOption(cmd: Command): Command {
   return cmd.option(
     "--gvrsn <version>",
