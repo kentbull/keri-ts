@@ -598,6 +598,7 @@ export {
 } from "../time/mod.ts";
 
 export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
+export { HTTPQuery } from "../app/http-query.ts";
 export type { IngressOptions } from "../app/message-source.ts";
 
 export { type RuntimeClock, systemClock } from "../app/runtime-clock.ts";

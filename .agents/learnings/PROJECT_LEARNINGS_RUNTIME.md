@@ -116,8 +116,11 @@ Unexpected construction/storage/parser/cleanup errors publish/report then propag
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
-QueryCoordinator owns plain requests and signed packets; concrete TCPMessenger/HTTPMessenger
-operations own joined attempt and response I/O.
+QueryCoordinator owns plain requests and signed packets. HTTPQuery owns its signed
+POST/CESR/SSE response scope; send-only HTTPMessenger binds an endpoint and HTTP
+client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
+only duplex replies need a protocol receiver. Ordinary sendSource means per-message
+POST iteration for HTTP or raw source output for TCP, not a stream HTTP PUT.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
 both TSN replies before taking records. Current authorization defeats old matching

@@ -29,7 +29,7 @@ export interface TCPMessengerOptions extends TcpSendOptions {
  * Poster or QueryCoordinator owns queued source work and retry. This messenger runs
  * directly in that owner's scope, keeps no message queue or sent history, and joins
  * TX, optional RX, parser/source cleanup and connection close before returning.
- * Finite bytes and pull sources share one implementation; no stream subclass is needed.
+ * Finite bytes and pull sources share the same socket implementation.
  */
 export class TCPMessenger {
   /** Input-owned Kevery (kvy); null when no protocol receive capability was supplied. */
@@ -38,14 +38,14 @@ export class TCPMessenger {
   /**
    * Bind the actual receiver and clock without opening a socket or acquiring stores.
    *
-   * @param protocol Borrowed shared protocol owner, or null for transmit-only use. A supplied owner creates this messenger's Kevery.
+   * @param url TCP endpoint bound to this messenger.
    * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
+   * @param protocol Optional borrowed receiver; omitted means transmit-only.
    */
   constructor(
-    /** Borrowed shared protocol owner; null explicitly permits transmit-only operation. */
-    private readonly protocol: ProtocolProcessor | null,
-    /** Borrowed clock controls actual connection/drain deadlines. */
+    readonly url: string,
     private readonly clock: RuntimeClock,
+    private readonly protocol: ProtocolProcessor | null = null,
   ) {
     this.kvy = protocol?.makeKevery() ?? null;
   }
@@ -53,42 +53,39 @@ export class TCPMessenger {
   /**
    * Adapt resident signed wire to the same pull-source lifetime as streamed output.
    *
-   * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param msg Resident signed CESR bytes; copied into chunks as transmitted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
    * @returns Completion after local output; reply mode also joins receive EOF and protocol processing.
    * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
    */
-  send(url: string, msg: Uint8Array, options: TCPMessengerOptions = {}): Operation<void> {
-    return this.stream(url, (signal) => chunkBytes(msg, { signal, maxChunkBytes: options.maxChunkBytes }), options);
+  send(msg: Uint8Array, options: TCPMessengerOptions = {}): Operation<void> {
+    return this.sendSource((signal) => chunkBytes(msg, { signal, maxChunkBytes: options.maxChunkBytes }), options);
   }
 
   /**
    * Send one source; duplex processing is explicit and never changes the local-only success contract.
    *
-   * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
    * @returns Completion after local output; reply mode also joins receive EOF and protocol processing.
    * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
    */
-  stream(url: string, source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<void> {
-    if (options.replies) return this.receiptDo(url, source, options);
-    return streamCesrTcp(url, source, this.clock, { ...options });
+  sendSource(source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<void> {
+    if (options.replies) return this.receiptDo(source, options);
+    return streamCesrTcp(this.url, source, this.clock, { ...options });
   }
 
   /**
    * Send while processing replies, corresponding to KERIpy TCPMessenger.receiptDo/msgDo.
    * Cancel and join concurrent RX/TX children before releasing the borrowed socket.
    *
-   * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
    * @returns Completion after output, processed receive EOF and joined connection cleanup.
    * @throws Missing receive capability, source/parser, dispatch, transport and cleanup failures propagate.
    */
-  private receiptDo(url: string, source: TcpSourceFactory, options: TCPMessengerOptions): Operation<void> {
-    const protocol = this.protocol, kvy = this.kvy, clock = this.clock;
+  private receiptDo(source: TcpSourceFactory, options: TCPMessengerOptions): Operation<void> {
+    const protocol = this.protocol, kvy = this.kvy, clock = this.clock, url = this.url;
     if (!protocol || !kvy) throw new Error("TCP reply delivery requires a protocol processor");
     return call(function*() {
       const { replies: _replies, local = true, ...send } = options;

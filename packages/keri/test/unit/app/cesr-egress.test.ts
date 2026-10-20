@@ -19,6 +19,7 @@ import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
+import { HTTPQuery } from "../../../src/app/http-query.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
@@ -447,7 +448,7 @@ Deno.test("external HTTP query cancellation stops an accepted EXN handler and jo
           }
         },
       });
-      const messenger = new HTTPMessenger(
+      const messenger = new HTTPQuery(
         protocol,
         httpClient(() =>
           Promise.resolve(
@@ -510,7 +511,7 @@ Deno.test("HTTP query sends each valid frame before parsing a later malformed fr
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     let requests = 0;
-    const messenger = new HTTPMessenger(
+    const messenger = new HTTPQuery(
       createProtocolProcessor(hby),
       httpClient(() => {
         requests++;
@@ -718,8 +719,8 @@ Deno.test("native HTTP completion drains the response and neither redirects nor 
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
-  const messenger = new HTTPMessenger(null, new FetchHttpClient(), systemClock);
-  const send = () => run(() => messenger.send(url, fixture()));
+  const messenger = new HTTPMessenger(url, new FetchHttpClient());
+  const send = () => run(() => messenger.send(fixture()));
   try {
     let completed = false;
     const pending = send().then((result) => {
@@ -752,7 +753,7 @@ Deno.test("native HTTP completion drains the response and neither redirects nor 
   const combined = await assertRejects(
     () =>
       run(() =>
-        messenger.stream(url, async function*() {
+        messenger.sendSource(async function*() {
           try {
             yield fixture();
           } finally {

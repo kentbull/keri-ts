@@ -645,18 +645,17 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* new TCPMessenger(protocol ?? null, clock).send(url, bytes, {
+    yield* new TCPMessenger(url, clock, protocol).send(bytes, {
       replies: Boolean(protocol),
       local: true,
     });
     return;
   }
 
-  const outcome = yield* new HTTPMessenger(protocol ?? null, http, clock).send(url, bytes, {
-    bodyMode: "header",
+  const outcome = yield* new HTTPMessenger(url, http, {
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
-  });
+  }).send(bytes, { bodyMode: "header" });
   if (outcome.kind === "refuse") throw outcome.error;
 }
 

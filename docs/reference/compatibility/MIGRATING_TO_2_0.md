@@ -55,3 +55,14 @@ Group command results include `proposals`, with each remote recipient's wrapper
 v1 wrappers or signed-child SAID for v2 wrappers. These identify coordination
 evidence; delivery does not establish group acceptance. Internal publication
 helpers take explicit identity, protocol and Poster owners instead of AgentRuntime.
+
+## Messenger ownership
+
+`HTTPMessenger` is send-only and takes `(url, http, { destination, headers })`;
+`send(bytes, options)` uses that endpoint. HTTP query response intake moves to
+`HTTPQuery(protocol, http, clock).query(url, bytes, options)`. Send-only HTTP no
+longer requires protocol state or a clock. `TCPMessenger` takes
+`(url, clock, protocol?)`; the optional protocol owner is needed only for duplex
+replies. Its `send(bytes, options)` and `sendSource(source, options)` share the
+existing socket implementation. Ordinary HTTP source iteration is named
+`sendSource`; it splits messages into POSTs and does not mean whole-stream PUT.
