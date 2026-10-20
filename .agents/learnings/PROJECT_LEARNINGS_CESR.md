@@ -90,9 +90,9 @@ tracks historical readers, safe conversion boundaries and the linked Python port
 - Tholder uses exact semantic thresholds and left-to-right clause slots. Its
   1,000-weight/65,536-character defaults are deployment limits, including qualified
   input (an intentional correction to frozen Python's limen bypass). Numeric
-  thresholds retain their domain. These retained deployment caps conflict with the
-  no-quota direction; the [roadmap discrepancy](../../docs/plans/PARITY_ROADMAP.md#unresolved-sourcecontract-discrepancy)
-  owns the unresolved review. Do not treat their presence as permission for new policy plumbing.
+  thresholds retain their domain. The configurable caps are the accepted narrow
+  exception in ADR-0013; set positive safe integers before concurrent processing.
+  Do not treat their presence as permission for new policy plumbing.
 - Accessor parity includes wrapper projections (`sner`, `tholder`, `ntholder`,
   `bner`, `berfers`), and legacy intive `bt` needs normalization. `SerderKERI.uuid`
   reads `u`, falling back to `n` only for v1.0 `vcp`; `nonce` is its alias, as in 714.

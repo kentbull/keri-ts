@@ -102,6 +102,9 @@ chronology unless they are themselves durable operational knowledge.
 - No application memory budgeting: parsers, codecs, domain, queues, storage,
   replay, runtime and CLI must not carry policies, credits or estimates. Only a
   minimal private socket constraint with production evidence may remain.
+  The accepted narrow exception is Tholder's configurable `maxWeights` and
+  `maxSithLength` deployment caps. Set them before concurrent processing; they
+  are not protocol maxima or permission for general accounting/policy plumbing.
 - Remove outboxes and unsupported mailbox/KRAM acknowledgement durability. Keep
   KERIpy protocol state and actual cleanup. Old keri-ts API/data compatibility
   is not required: no shims, migration readers or new-to-old version tests.
