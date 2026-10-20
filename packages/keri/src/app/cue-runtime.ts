@@ -1,4 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
+import type { AgentCue } from "../core/cues.ts";
+import type { Deck } from "../core/deck.ts";
 import type { AgentRuntime } from "./agent-runtime.ts";
 import type { Hab } from "./habbing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -22,16 +24,17 @@ function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
  *
  * Transfer query instructions to the sender, stream cues to mailbox correlation
  * and produced responder messages to Poster. No network delivery runs inline.
- * A source fact leaves the shared Deck before a live key-state broadcast can
- * suspend, preventing another cue turn from publishing that same head twice.
- * Subscribers receive independent copies of the fact; they do not own this Deck.
+ * Saved key-state facts transfer once to the command's optional query Deck;
+ * its noticer never competes with this worker over the runtime source Deck.
+ * Admission and source removal run synchronously within this finite batch.
  *
  * @param runtime Borrowed composed runtime containing the actual cue consumers.
- * @param options Explicit signing habitat; omission requires a sole local habitat.
+ * @param options Explicit signer and optional command-owned query cue destination.
+ * Without a query destination, saved notices retain the ordinary unhandled-cue behavior.
  */
 export function* processCuesOnce(
   runtime: AgentRuntime,
-  { hab }: { hab?: Hab } = {},
+  { hab, queryCues }: { hab?: Hab; queryCues?: Deck<AgentCue> } = {},
 ): Operation<void> {
   const interpreter = resolveCueHab(runtime, hab);
   const count = runtime.cues.length;
@@ -46,8 +49,7 @@ export function* processCuesOnce(
       continue;
     }
     runtime.cues.pull();
-    // Transfer the routed fact before yielding to its live consumers.
-    if (cue.kin === "keyStateSaved") yield* runtime.keyStateUpdates.send(cue);
+    if (cue.kin === "keyStateSaved") queryCues?.append(cue);
   }
 }
 
@@ -55,9 +57,12 @@ export function* processCuesOnce(
  * Continuous cue worker; network output belongs to the concrete query and reply workers.
  *
  * @param runtime Borrowed composed runtime containing the actual cue consumers.
- * @param options Explicit signing habitat; omission requires a sole local habitat.
+ * @param options Explicit signer and optional command-owned query cue destination.
  */
-export function* cueDo(runtime: AgentRuntime, options: { hab?: Hab } = {}): Operation<never> {
+export function* cueDo(
+  runtime: AgentRuntime,
+  options: { hab?: Hab; queryCues?: Deck<AgentCue> } = {},
+): Operation<never> {
   while (true) {
     yield* processCuesOnce(runtime, options);
     yield* runtimeTurn();

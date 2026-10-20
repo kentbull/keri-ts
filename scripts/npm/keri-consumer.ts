@@ -2,15 +2,16 @@
 import { createBaser, type Keeper } from "keri-ts/db";
 import {
   type AgentRuntime,
+  type AgentCue,
   Algos,
   credential,
+  Deck,
   EssrRecipient,
   FetchHttpClient,
   type Hab,
   type IssueResult,
   KeyStateNoticer,
   SeqNoQuerier,
-  WitnessInquisitor,
   inceptRegistry,
   Manager,
   messagize,
@@ -84,10 +85,12 @@ export function registryIdentity(result: RegistryResult) {
 
 /** Compose public query sending and independently scoped accepted-state workflows. */
 export function queries(runtime: AgentRuntime, hab: Hab, pre: string, sn: number) {
-  const sender = new WitnessInquisitor(runtime.hby, runtime.protocol, runtime.http, runtime.clock, hab);
+  const sender = runtime.querying;
+  const queryCues = new Deck<AgentCue>();
   return {
     sender,
+    worker: runAgentRuntime(runtime, { hab, queryCues }),
     sequence: new SeqNoQuerier(runtime.hby.db, sender, pre, sn, { signer: hab.pre }).queryDo(),
-    state: new KeyStateNoticer(runtime.hby.db, sender, pre, runtime.keyStateUpdates, { signer: hab.pre }).queryDo(),
+    state: new KeyStateNoticer(runtime.hby.db, sender, pre, queryCues, { signer: hab.pre }).queryDo(),
   };
 }

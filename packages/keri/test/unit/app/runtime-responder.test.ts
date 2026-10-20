@@ -237,7 +237,11 @@ Deno.test("witness source verifies actual counted Hab output before EOF and join
         yield* call(() => halt);
         assertEquals(continued, false);
         assertEquals(provider.db.getKever(controller.pre)?.sn, 0, "cancelled input cannot deliver its later event");
-        assertEquals(runtime.cues.empty, true, "accepted frame cues settle before the next input read");
+        assertEquals(
+          runtime.cues.toArray().map(cue => cue.kin),
+          ["keyStateSaved"],
+          "saved facts remain with the application cue owner after witness input cleanup",
+        );
 
         yield* processWitnessIngress(runtime, witness, later, { local: true, deliver: false });
         assertEquals(provider.db.getKever(controller.pre)?.sn, 1);
@@ -400,6 +404,8 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
         wits: [subject.pre],
       });
       yield* drainWitnessCues(runtime, witness, runtime.cues);
+      assertEquals([signatures, sent, runtime.cues.length, runtime.querying.hasPendingWork()], [0, 0, 0, true]);
+      yield* runtime.querying.deliverOnce();
       assertEquals([signatures, sent, runtime.cues.length, runtime.querying.hasPendingWork()], [
         1,
         1,

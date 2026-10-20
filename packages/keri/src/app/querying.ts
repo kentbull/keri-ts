@@ -14,8 +14,9 @@
  * query. There is no workflow retry timer or implicit OOBI bootstrap here.
  */
 import type { SealEvent } from "cesr-ts";
-import { call, type Operation, race, spawn, type Stream, type Task } from "effection";
-import type { KeyStateSavedCue } from "../core/cues.ts";
+import type { Operation } from "effection";
+import type { AgentCue } from "../core/cues.ts";
+import type { Deck } from "../core/deck.ts";
 import type { Baser } from "../db/basing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import type { WitnessInquisitor } from "./witness-inquisitor.ts";
@@ -52,85 +53,68 @@ function* awaitSequence(db: Baser, pre: string, sn: number): Operation<void> {
  *
  * A saved KSN is a remote statement, not acceptance of the referenced KEL. A
  * matching notice completes immediately only when the local Kever has reached
- * its sequence. Otherwise an owned LogQuerier waits for that accepted sequence.
- * A later, higher notice replaces the lower catch-up wait within this operation.
+ * its sequence. Otherwise a LogQuerier waits for that accepted sequence. The
+ * first usable matching notice fixes this operation's target; later notices stay
+ * queued rather than introducing moving-target task replacement.
  * The subject needs a local Kever before a notice can drive this comparison;
  * initial evidence discovery belongs to OOBI/bootstrap composition.
  *
  * Current limitation: Kevery also emits keyStateSaved on ordinary KEL acceptance.
  * The cue kind alone therefore does not prove receipt of a remote notice. The
  * query cue ownership plan separates that publication correction from routing;
- * do not infer request/response correlation or freshness from this live flow.
+ * do not infer request/response correlation or freshness from queued cues.
  */
 export class KeyStateNoticer {
   private readonly options: QueryOptions;
 
   /**
-   * Bind borrowed collaborators without starting I/O or subscribing yet.
+   * Bind borrowed collaborators without starting I/O or consuming cues yet.
    *
    * @param db Baser receiving accepted KEL updates from the independently running intake.
    * @param inquisitor Query sender over that same state; its delivery worker must run concurrently.
    * @param pre Subject AID, distinct from the local signer and selected attester.
-   * @param updates Live saved key-state cues from the composition; not a durable inbox.
+   * @param cues Command-owned input Deck; this noticer is its sole consumer. The
+   * application cue owner must be wired to transfer saved notices here before I/O.
    * @param options Local signer and optional remote attesters, never transport preferences.
    */
   constructor(
     private readonly db: Baser,
     private readonly inquisitor: WitnessInquisitor,
     readonly pre: string,
-    private readonly updates: Stream<KeyStateSavedCue, void>,
+    private readonly cues: Deck<AgentCue>,
     options: QueryOptions = {},
   ) {
     this.options = copyOptions(options);
   }
 
   /**
-   * Subscribe before enqueueing `ksn`, so even an immediate reply is observable.
-   * Ignore unrelated notices within this operation's current live subscription.
-   * Returning means local KEL state reached the observed target; ending the live
-   * notice stream before completion is an error. Scope exit joins the subscription
-   * and any catch-up child. Sender/receiver failures belong to their sibling tasks
-   * and must be supervised by the caller's composition.
+   * Enqueue `ksn`, then pull/match/append one cue per cooperative turn, following
+   * KERIpy's noticer model. Unrelated cues and matching notices without local
+   * state remain queued. No queue scan, broadcast or request freshness is implied.
+   * Once a usable notice selects a target, directly await accepted catch-up.
+   * The caller supervises sibling sender/receiver failures and owns cancellation;
+   * stopping this operation does not withdraw already enqueued requests.
    */
-  queryDo(): Operation<void> {
-    const { db, inquisitor, pre, updates, options } = this;
-    return call(function*() {
-      // Subscribe before publishing the request, including synchronous/local reply paths.
-      const notices = yield* updates;
-      inquisitor.enqueue({ pre, route: "ksn", q: { fn: "0", s: "0" }, ...options });
-      let logs: Task<void> | undefined;
-      let targetSn = 0;
-      while (true) {
-        const catchingUp = logs;
-        let notice: IteratorResult<KeyStateSavedCue, void>;
-        if (catchingUp) {
-          const observed = yield* race([
-            notices.next(),
-            call(function*() {
-              yield* catchingUp;
-              return null;
-            }),
-          ]);
-          if (observed === null) return;
-          notice = observed;
-        } else {
-          notice = yield* notices.next();
-        }
-        if (notice.done) throw new Error("Key-state observation ended before accepted query completion");
-        if (notice.value.ksn.i !== pre) continue;
+  *queryDo(): Operation<void> {
+    const { db, inquisitor, pre, cues, options } = this;
+    inquisitor.enqueue({ pre, route: "ksn", q: { fn: "0", s: "0" }, ...options });
+    while (true) {
+      const cue = cues.pull();
+      if (cue) {
         const local = db.getKever(pre);
-        const ordinal = notice.value.ksn.s;
-        if (!local || typeof ordinal !== "string" || !ordinal.length) continue;
-        const remoteSn = parseInt(ordinal, 16);
-        if (Number.isNaN(remoteSn)) continue;
-        if (local.sn >= remoteSn) return;
-        if (!logs || targetSn < remoteSn) {
-          if (logs) yield* logs.halt();
-          targetSn = remoteSn;
-          logs = yield* spawn(() => new LogQuerier(db, inquisitor, pre, remoteSn, options).queryDo());
+        if (cue.kin !== "keyStateSaved" || cue.ksn.i !== pre || !local) {
+          cues.append(cue);
+        } else {
+          const ordinal = cue.ksn.s;
+          const targetSn = typeof ordinal === "string" && ordinal.length ? parseInt(ordinal, 16) : NaN;
+          if (!Number.isNaN(targetSn)) {
+            if (local.sn < targetSn) yield* new LogQuerier(db, inquisitor, pre, targetSn, options).queryDo();
+            return;
+          }
         }
       }
-    });
+      yield* runtimeTurn();
+    }
   }
 }
 

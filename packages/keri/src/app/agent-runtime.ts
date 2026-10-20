@@ -1,6 +1,6 @@
-import { call, type Channel, createChannel, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
+import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { AgentCue, KeyStateSavedCue } from "../core/cues.ts";
+import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
@@ -108,12 +108,6 @@ export interface AgentRuntime {
    * must observe accepted state and own their own deadline/cancellation.
    */
   querying: WitnessInquisitor;
-  /**
-   * Live routed keyStateSaved facts, currently observed through a subscription;
-   * this flow is not durable replay.
-   * Subscribe before enqueueing a query to avoid losing an immediate notice.
-   */
-  keyStateUpdates: Channel<KeyStateSavedCue, void>;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
   /** Concrete legacy TEL/credential owner; absent for a readonly Habery without an injected store. */
@@ -384,14 +378,6 @@ export function* createAgentRuntime(
       yield* inquisitor.close();
     }
   });
-  const keyStateUpdates = yield* resource<Channel<KeyStateSavedCue, void>>(function*(provide) {
-    const updates = createChannel<KeyStateSavedCue>();
-    try {
-      yield* provide(updates);
-    } finally {
-      yield* updates.close();
-    }
-  });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
   const oobiery = new Oobiery(hby, protocol, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
@@ -415,7 +401,6 @@ export function* createAgentRuntime(
     postman,
     delegating,
     querying,
-    keyStateUpdates,
     replyStreams,
     vdr,
     acdc,
@@ -446,7 +431,6 @@ export function* createAgentRuntime(
           yield* call(() => mailboxDirector.close());
         },
         function*() {
-          yield* keyStateUpdates.close();
           cues.clear();
         },
         function*() {
@@ -800,13 +784,17 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * order; store ownership remains with the composition scope.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param options Optional default query/cue signer and remote pollMailbox switch (default true). Provider storage never enables local consumption.
+ * @param options Optional default query/cue signer, remote pollMailbox switch
+ * (default true) and command-owned queryCues Deck. Wire queryCues before starting
+ * workers; the application cue owner transfers saved notices to its sole noticer.
+ * Provider storage never enables local consumption.
  */
 export function* runAgentRuntime(
   runtime: AgentRuntime,
   options: {
     hab?: Hab;
     pollMailbox?: boolean;
+    queryCues?: Deck<AgentCue>;
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab });

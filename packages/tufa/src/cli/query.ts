@@ -12,7 +12,9 @@ import { SealEvent } from "cesr-ts";
 import { call, type Operation, race, sleep, spawn, type Task } from "effection";
 import { dgKey } from "keri-ts/db";
 import {
+  type AgentCue,
   AnchorQuerier,
+  Deck,
   type Habery,
   KeyStateNoticer,
   runAgentRuntime,
@@ -76,9 +78,9 @@ function externalStateLines(hby: Habery, pre: string): string[] {
 
 /**
  * Query current key state, or an exact event seal from --anchor, for --prefix.
- * --alias selects the local signing Hab; it is not the queried subject. Start
- * observation before workers can emit a reply, and return final display only
- * after the shared resource owner closes. A close failure therefore prevents
+ * --alias selects the local signing Hab; it is not the queried subject. Wire the
+ * command-owned cue Deck before workers can emit a reply, and return final display
+ * only after the shared resource owner closes. A close failure therefore prevents
  * final success output even if the accepted-state predicate already passed.
  *
  * @param args Commander-mapped command values; required name/alias/prefix and
@@ -105,12 +107,17 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     alias,
     { compat: args.compat as boolean ?? false, readonly: false, skipConfig: true, skipSignator: true },
     function*({ hby, runtime, hab }) {
-      const workflow = anchor
-        ? new AnchorQuerier(hby.db, runtime.querying, prefix, anchor, { signer: hab.pre })
-        : new KeyStateNoticer(hby.db, runtime.querying, prefix, runtime.keyStateUpdates, { signer: hab.pre });
+      let queryCues: Deck<AgentCue> | undefined;
+      let workflow: AnchorQuerier | KeyStateNoticer;
+      if (anchor) {
+        workflow = new AnchorQuerier(hby.db, runtime.querying, prefix, anchor, { signer: hab.pre });
+      } else {
+        queryCues = new Deck<AgentCue>();
+        workflow = new KeyStateNoticer(hby.db, runtime.querying, prefix, queryCues, { signer: hab.pre });
+      }
       console.log(anchor ? `Checking for anchor ${JSON.stringify(anchor)}...` : "Checking for updates...");
       const observing = yield* spawn(() => workflow.queryDo());
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab }));
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab, queryCues }));
       try {
         const complete = yield* queryCompletedWithin(observing, QueryTimeoutMs);
         if (!complete) {

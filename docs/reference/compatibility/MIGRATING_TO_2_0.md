@@ -111,9 +111,13 @@ The query command now belongs to Tufa; `keri-ts/cli` no longer exports
 `queryCommand`, and `HTTPQuery` is no longer a public runtime API. Compose a
 `WitnessInquisitor` sender with `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier` or
 `AnchorQuerier` operations. Await `queryDo()` for accepted-state completion;
-transport completion is separate. AgentRuntime routes live key-state facts through
-`keyStateUpdates`. Its pending-state summary covers sending, while each invoking
-operation owns its semantic wait.
+transport completion is separate. `AgentRuntime.keyStateUpdates` is removed.
+Give `KeyStateNoticer` a command-owned `Deck<AgentCue>` and pass that same Deck as
+`queryCues` to `runAgentRuntime`. The application cue worker transfers saved
+notices once; one noticer pulls/matches/requeues them. Wire this destination before
+sender/receiver startup. The first usable notice fixes the catch-up target;
+queued notices are not request-correlated or freshness-filtered. Runtime pending
+state covers sending, while each invoking operation owns its semantic wait.
 
 Ordinary HTTP queries acknowledge intake with 204; replies arrive through normal
 Respondant/Poster delivery, mailbox polling or TCP. `directQueryResponses`, the

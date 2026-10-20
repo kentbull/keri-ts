@@ -232,15 +232,24 @@ constructs raw wire; Respondant removes its source after successful publication.
 Preparation failure preserves the source. Each consumer sequences interpretation,
 publication and source removal directly, without construction callbacks.
 Composition routes query, stream and reply cues to their concrete owners.
+A query command supplies its own queryCues Deck to runAgentRuntime before worker
+startup. The application cue worker transfers keyStateSaved records once into
+that Deck; the one KeyStateNoticer consumer pulls/matches/appends unrelated or
+currently unusable cues, yielding between turns. The witness drain leaves these
+facts for that owner. The first usable matching notice selects a fixed catch-up
+target; accepted KEL state determines completion. Queued notices carry no request
+correlation/freshness promise. Channels require a separately evidenced production
+use; there is no runtime-wide query notification service.
 CueSink and its optional hooks/root adapters are deleted. Network output runs
 in their concrete delivery operations. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
-Respondant fully constructs local KEL/TEL replay messages and correlated TSN
-pairs before atomic queue publication and source removal. Hab.processCuesIter
-returns raw wire; typed cue kin values route other work directly. HTTP openReply
-publishes independent response and delivery consumers only after complete
-construction. A failed second TSN leaves the pair pending and unpublished.
+Respondant fully constructs local KEL/TEL replay messages before atomic queue
+publication and source removal. Hab.processCuesIter returns raw wire; typed cue
+kin values route other work directly. Direct TCP response owners prepare complete
+correlated TSN pairs before taking their captured records; a failed second TSN
+leaves the pair pending and unpublished. Ordinary HTTP queries acknowledge intake
+with 204 and receive replies through independent transport owners.
 Poster owns endpoint selection, forwarding construction, sequential target loops,
 active I/O and joined cleanup. Each evts record is a signed message or finite ordered stream.
 Route snapshots and target preparation are private implementation details; callers

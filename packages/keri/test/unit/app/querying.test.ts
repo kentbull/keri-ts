@@ -1,13 +1,10 @@
-import { call, run, spawn } from "effection";
+import { call, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { parseBytes, ParserError, SerderKERI } from "../../../../cesr/mod.ts";
 import { queryCommand } from "../../../../tufa/src/cli/query.ts";
 import {
   createAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeHasPendingWork,
-  runtimeOobiConverged,
-  runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
@@ -16,9 +13,12 @@ import { type HttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
 import { AnchorQuerier, KeyStateNoticer, SeqNoQuerier } from "../../../src/app/querying.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
 import { WitnessInquisitor } from "../../../src/app/witness-inquisitor.ts";
+import { drainWitnessCues } from "../../../src/app/witnessing.ts";
 
-import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
+import type { AgentCue, QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
+import { Deck } from "../../../src/core/deck.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
@@ -180,51 +180,55 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
     const messages: Uint8Array[] = [];
     const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
+    const queryCues = new Deck<AgentCue>();
+    let current: Task<void> | undefined, ahead: Task<void> | undefined;
     try {
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();
       seedControllerEndpoint(hby, subject.pre);
       runtime.querying.configure({ hab: sender });
-      const current = yield* spawn(() =>
-        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, { signer: sender.pre })
+      current = yield* spawn(() =>
+        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, queryCues, { signer: sender.pre })
           .queryDo()
       );
-      yield* processCuesOnce(runtime, { hab: sender });
+      yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
       assertEquals(new SerderKERI({ raw: messages[0] }).route, "ksn");
       runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processCuesOnce(runtime, { hab: sender });
+      yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
       yield* current;
       assertEquals(messages.length, 1);
       let caughtUp = false;
-      const ahead = yield* spawn(function*() {
-        yield* new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
+      ahead = yield* spawn(function*() {
+        yield* new KeyStateNoticer(hby.db, runtime.querying, subject.pre, queryCues, {
           signer: sender.pre,
         }).queryDo();
         caughtUp = true;
       });
-      yield* processCuesOnce(runtime, { hab: sender });
+      yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
       const interaction = subject.interact();
       runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processCuesOnce(runtime, { hab: sender });
+      yield* processCuesOnce(runtime, { hab: sender, queryCues });
+      yield* runtimeTurn(); // The noticer consumes its Deck on a cooperative turn.
 
       yield* runtime.querying.deliverOnce();
       assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "ksn", "logs"]);
       assertEquals(caughtUp, false, "HTTP completion does not satisfy accepted-state catch-up");
       assertEquals(hby.db.getKever(subject.pre)?.sn, 0);
       yield* runtime.reactor.processBytes(interaction);
-      yield* processCuesOnce(runtime, { hab: sender });
+      yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
-      assertEquals(runtimePendingState(runtime).deliveriesPending, true);
       yield* ahead;
       assertEquals([caughtUp, hby.db.getKever(subject.pre)?.sn], [true, 1]);
     } finally {
+      if (ahead) yield* ahead.halt();
+      if (current) yield* current.halt();
       yield* runtime.close();
       yield* remote.close(true);
       yield* hby.close(true);
@@ -449,36 +453,67 @@ Deno.test("selected roles keep missing locations visible instead of promoting an
   });
 });
 
-Deno.test("independent key-state workflows both consume the same saved-state publication", async () => {
+Deno.test("query cues transfer once through the application owner after witness routing", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+    const subject = hby.makeHab("subject");
+    const runtime = yield* createAgentRuntime(hby, queryHttp([]), systemClock);
+    const queryCues = new Deck<AgentCue>();
+    const notice: AgentCue = { kin: "keyStateSaved", ksn: subject.kever!.state() };
+    const recovery: AgentCue = { kin: "query", pre: subject.pre, route: "logs", q: {} };
+    try {
+      runtime.cues.clear();
+      runtime.cues.extend([notice, { kin: "receipt", serder: subject.kever!.serder }, recovery]);
+      yield* drainWitnessCues(runtime, witness, runtime.cues);
+      assertEquals(runtime.postman.evts.length, 1, "witness receipts still reach their output owner");
+      assertEquals(runtime.querying.pending.length, 1, "recovery queries still reach their sender");
+      assertEquals(
+        runtime.cues.toArray(),
+        [notice],
+        "the witness drain leaves saved facts for the application cue owner",
+      );
+      yield* processCuesOnce(runtime, { hab: witness, queryCues });
+      assertEquals(runtime.cues.empty, true);
+      assertStrictEquals(queryCues.peekHead(), notice, "transfer the original record, without copying it");
+      yield* processCuesOnce(runtime, { hab: witness, queryCues });
+      assertEquals(queryCues.toArray(), [notice]);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("one noticer requeues unrelated and unavailable-state cues without blocking its caller", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
-    const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
+    const runtime = yield* createAgentRuntime(hby, queryHttp([]), systemClock);
+    const unrelated: AgentCue = { kin: "notice", serder: sender.kever!.serder };
+    const otherSubject: AgentCue = { kin: "keyStateSaved", ksn: sender.kever!.state() };
+    const notice: AgentCue = { kin: "keyStateSaved", ksn: subject.kever!.state() };
+    const queryCues = new Deck<AgentCue>([unrelated, otherSubject, notice]);
+    let completed = false;
+    const task = yield* spawn(function*() {
+      yield* new KeyStateNoticer(hby.db, runtime.querying, subject.pre, queryCues, { signer: sender.pre }).queryDo();
+      completed = true;
+    });
     try {
+      // spawn starts its child through the first suspension: one head moved to the tail.
+      assertEquals(queryCues.toArray(), [otherSubject, notice, unrelated]);
+      yield* runtimeTurn();
+      assertEquals(queryCues.toArray(), [notice, unrelated, otherSubject]);
+      yield* runtimeTurn();
+      assertEquals(queryCues.toArray(), [unrelated, otherSubject, notice]);
+      assertEquals(completed, false, "matching notice remains usable when prerequisite KEL evidence arrives later");
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
-      runtime.cues.clear();
-      seedControllerEndpoint(hby, subject.pre);
-      const first = yield* spawn(() =>
-        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
-          signer: sender.pre,
-        }).queryDo()
-      );
-      const second = yield* spawn(() =>
-        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
-          signer: sender.pre,
-        }).queryDo()
-      );
-
-      yield* runtime.querying.deliverOnce();
-      assertEquals(messages.map(wire => new SerderKERI({ raw: wire }).route), ["ksn", "ksn"]);
-      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
-      yield* processCuesOnce(runtime, { hab: sender });
-      yield* first;
-      yield* second;
-      assertEquals(hby.db.getKever(subject.pre)?.said, subject.kever!.said);
+      yield* task;
+      assertEquals(completed, true);
+      assertEquals(queryCues.toArray(), [unrelated, otherSubject]);
     } finally {
+      yield* task.halt();
       yield* runtime.close();
       yield* remote.close(true);
       yield* hby.close(true);
