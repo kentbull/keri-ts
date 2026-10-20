@@ -65,7 +65,7 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
       .option("--config-file <file>", "Configuration filename override")
       .option(
         "-p, --passcode <passcode>",
-        "22 character encryption passcode for keystore (is not saved)",
+        "Encryption passcode (first 21 characters used; not saved)",
       )
       .option("--nopasscode", "Create an unencrypted keystore")
       .option(

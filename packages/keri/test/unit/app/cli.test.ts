@@ -372,7 +372,6 @@ Deno.test("CLI - init command with all options", async () => {
       salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
       configDir,
       configFile: "custom.json",
-      passcode: "testpasscode123456789012",
       nopasscode: true,
     })
   );

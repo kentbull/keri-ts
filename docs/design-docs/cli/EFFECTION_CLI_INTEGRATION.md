@@ -17,7 +17,15 @@ narrowest existing-store scope (`withExistingHabery`, `withAgentRuntime`, or
 Adapting a Promise does not cancel the underlying I/O. Use the existing abortable
 leaf pattern where required: pass a signal, abort it when the scope exits, then
 join cleanup. Register owning resources before work children so pending I/O stops
-before payloads, database handles or admission credits are released.
+before payloads and database handles are closed.
+
+Initialization resolves one encryption choice before config/store effects:
+explicit plaintext, a passcode, or a matching AEID/seed pair. Missing credentials
+require a real terminal; hidden input joins cancellation and restores terminal
+mode. Blank/cancelled/mismatched input fails without creating keys. Persistent
+open failures propagate, and only explicit `--temp` selects temporary storage.
+Passcode derivation still uses the first 21 characters. Init reports the KEL and
+key stores it opens; credential stores are created by their actual owners.
 
 The CLI/application package owns command registration, role hosts and transport
 middleware; reusable domain operations may live in KERI. Test command selection,

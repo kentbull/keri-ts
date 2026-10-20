@@ -3,6 +3,7 @@ import { createKeeper, Keeper } from "../../../db/keeping.ts";
 import { type CesrBodyMode, cesrBodyModeFromGlobal, normalizeCesrBodyMode } from "../../cesr-http.ts";
 import type { Configer } from "../../configing.ts";
 import { createHabery, Habery } from "../../habbing.ts";
+import { readPasscode } from "./passcode.ts";
 
 /** Low-level habery-open knobs shared by CLI startup helpers. */
 interface OpenHaberyOptions {
@@ -112,15 +113,16 @@ export function* setupHby(
         cesrBodyMode,
       });
     } catch (error) {
+      if (!Deno.stdin.isTerminal()) throw error;
       if (retries >= 3) {
         throw new Error("too many attempts");
       }
       const message = error instanceof Error ? error.message : String(error);
-      console.log(message);
-      console.log("Valid passcode required, try again...");
+      console.error(message);
+      console.error("Valid passcode required, try again...");
       // Match the long-standing CLI operator contract: retry interactively
       // instead of failing immediately on the first decrypt/auth attempt.
-      passcode = prompt("Passcode: ") ?? undefined;
+      passcode = yield* readPasscode("Passcode:");
     }
   }
 }
