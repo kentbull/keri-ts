@@ -5,10 +5,12 @@ import { reply as replyEvent } from "../core/protocol-eventing.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
-import type { AgentRuntime } from "./agent-runtime.ts";
+import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
 import { MULTISIG_RPY_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
+import { Reactor } from "./reactor.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -52,13 +54,17 @@ export function loadAcceptedEndpointRole(
 /**
  * Propose one group endpoint-role reply under `/multisig/rpy`.
  *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param hby Borrowed identities and accepted group state.
+ * @param protocol Shared semantic owner; the proposal owns its local byte-input context.
+ * @param postman Borrowed delivery owner; the caller runs and joins its worker.
  * @param groupHab Local group habitat whose endpoint-role reply needs member approvals.
  * @param args Endpoint AID, role and allow/cut decision used to construct the signed proposal.
  * @returns Proposal identifiers, current acceptance and actual delivery URLs.
  */
 export function* proposeGroupEndpointRole(
-  runtime: AgentRuntime,
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
   groupHab: Hab,
   args: {
     eid: string;
@@ -67,20 +73,22 @@ export function* proposeGroupEndpointRole(
   },
 ): Operation<GroupEndpointRoleProposalResult> {
   const role = args.role ?? Roles.mailbox;
-  const member = localGroupMember(runtime.hby, groupHab.pre);
+  const input = new Reactor(protocol);
+  if (input.kvy.db !== hby.db) throw new TypeError("Endpoint-role proposal must use the same accepted-state store");
+  const member = localGroupMember(hby, groupHab.pre);
   const rpySerder = replyEvent(
     args.allow === false ? "/end/role/cut" : "/end/role/add",
     { cid: groupHab.pre, role, eid: args.eid },
     { pre: groupHab.pre },
   );
-  const localRpy = groupEndorseReply(runtime.hby, groupHab.pre, rpySerder);
-  yield* runtime.reactor.processBytes(localRpy, { local: true });
-  yield* runtime.protocol.processEscrowsOnce();
+  const localRpy = groupEndorseReply(hby, groupHab.pre, rpySerder);
+  yield* input.processBytes(localRpy, { local: true });
+  yield* protocol.processEscrowsOnce();
 
   const proposals: GroupEndpointRoleProposalResult["proposals"] = [];
   const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(groupSigningMembers(runtime.hby, groupHab.pre))) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
+  for (const recipient of uniqueMembers(groupSigningMembers(hby, groupHab.pre))) {
+    if (recipient === member.pre || hby.habs.has(recipient)) {
       continue;
     }
     const [serder, attachments] = exchange(MULTISIG_RPY_ROUTE, { gid: groupHab.pre }, {
@@ -89,8 +97,7 @@ export function* proposeGroupEndpointRole(
       embeds: { rpy: localRpy },
     });
     const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
-    yield* runtime.reactor.processBytes(message, { local: true });
-    const postman = runtime.postman;
+    yield* input.processBytes(message, { local: true });
     const evt = postman.send({
       src: member.pre,
       dest: recipient,
@@ -107,7 +114,7 @@ export function* proposeGroupEndpointRole(
     route: MULTISIG_RPY_ROUTE,
     proposals,
     group: groupHab.pre,
-    accepted: endpointRoleAccepted(runtime.hby, groupHab.pre, role, args.eid),
+    accepted: endpointRoleAccepted(hby, groupHab.pre, role, args.eid),
     deliveries,
     rpy: localRpy,
   };

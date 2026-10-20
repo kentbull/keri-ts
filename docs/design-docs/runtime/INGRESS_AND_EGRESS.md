@@ -534,7 +534,8 @@ Query responses own nested readers; direct responses are tracked by the director
 Close wakes pending polls and rejects new direct/query responses before stores
 close. Keep exact nonnegative safe cursor ordinals and unmatched correlation order.
 
-OOBI CESR media types enter Reactor's buffered parser directly. Independent complete
+Oobiery owns fetched CESR parsing and its own Kevery over the shared protocol domain.
+It borrows the actual reply verifier and never borrows another input's Reactor. Independent complete
 events can commit before response EOF. One actual job guard retains the original
 queue row until terminal result and outlives joined body/fetch/parser cleanup.
 Partial failure clears in-flight state, preserving retry ownership and accepted
@@ -579,6 +580,8 @@ artifact intake retains its single-pass scheduling. The
 owns the result/deadline semantics. Minimal standalone input composition
 uses createProtocolProcessor over the caller's existing Habery, opening no stores
 or background workers. Reactor has no dispatch, escrow or semantic-handler proxies.
+Group endpoint-role proposals receive Habery, ProtocolProcessor and Poster directly;
+their finite input context borrows shared accepted state. Commands own delivery-worker lifetime.
 
 TCPMessenger owns each TCP attempt, including concurrent receive parsing and its
 own Kevery when receive capability is supplied. Its required constructor receives

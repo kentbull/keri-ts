@@ -329,7 +329,7 @@ function* withMailboxWorkflow(
             const postman = runtime.postman;
             const worker = yield* spawn(() => postman.deliverDo());
             try {
-              return yield* proposeGroupEndpointRole(runtime, hab, {
+              return yield* proposeGroupEndpointRole(hby, runtime.protocol, postman, hab, {
                 eid: mailboxAid,
                 role: Roles.mailbox,
                 allow: true,
