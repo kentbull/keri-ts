@@ -201,7 +201,6 @@ Deno.test("challenge verification joins an empty mailbox wait before successful 
             alias: "alice",
             recipient: bobPre,
             words: JSON.stringify(words),
-            transport: "indirect",
           }),
         );
         assertEquals(responded.output[0], "Sent EXN message");
@@ -223,8 +222,9 @@ Deno.test("challenge verification joins an empty mailbox wait before successful 
         );
         assertStringIncludes(verified.output.at(-1) ?? "", alice.pre);
       } finally {
-        yield* waitForTaskHalt(serverTask);
+        // Join loopback consumers before closing the provider listener they use.
         yield* waitForTaskHalt(runtimeTask);
+        yield* waitForTaskHalt(serverTask);
         yield* runtime.close();
         yield* providerHby.close();
       }

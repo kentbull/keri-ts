@@ -16,7 +16,7 @@ import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
 import { createExchangeMessage } from "./exchange-messaging.ts";
-import type { ExchangeDeliveryPreference, Poster } from "./forwarding.ts";
+import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -76,7 +76,6 @@ export interface CredentialRevokeOptions {
   credentialSaid: string;
   sendRecipients?: readonly string[];
   senderHab?: Hab;
-  delivery?: ExchangeDeliveryPreference;
 }
 
 export interface CredentialRevokeResult {
@@ -293,7 +292,6 @@ export function* revokeCredential(
           dest,
           msg: message,
           topic: CREDENTIAL_MAILBOX_TOPIC,
-          delivery: options.delivery,
         }, { notify: true });
         const outcome = yield* postman.wait(evt);
         if (outcome.kin === "failed") throw outcome.error;

@@ -879,12 +879,10 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // Acquire the provider listener before consumers use its advertised URL.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
       yield* waitForServer(port);
@@ -959,8 +957,8 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
       );
       assertEquals(removed.output.at(-1), `removed ${providerPre}`);
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
       yield* providerHby.close();
     }
@@ -1061,12 +1059,10 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
       if (!mailboxer) {
         throw new Error("Expected provider runtime mailboxer.");
       }
-      const runtimeTask = yield* spawn(function*() {
-        yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-      });
-      const serverTask = yield* spawn(function*() {
-        yield* startServer(providerPort, undefined, runtime);
-      });
+      // Acquire the provider listener before consumers use its advertised URL.
+      const serverTask = yield* spawn(() => startServer(providerPort, undefined, runtime));
+      yield* waitForServer(providerPort);
+      const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
       try {
         yield* waitForServer(providerPort);
@@ -1140,7 +1136,6 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
             alias: "alice",
             recipient: bobPre,
             words: JSON.stringify(words),
-            transport: "indirect",
           }),
         );
         assertEquals(responded.output[0], "Sent EXN message");
@@ -1162,8 +1157,8 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
         );
         assertStringIncludes(verified.output.at(-1) ?? "", alice.pre);
       } finally {
-        yield* waitForTaskHalt(serverTask);
         yield* waitForTaskHalt(runtimeTask);
+        yield* waitForTaskHalt(serverTask);
         yield* runtime.close();
         yield* providerHby.close();
       }
@@ -1237,12 +1232,10 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
     if (!mailboxer) {
       throw new Error("Expected provider runtime mailboxer.");
     }
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, { hab: hab ?? undefined });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // Acquire the provider listener before consumers use its advertised URL.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
       yield* waitForServer(port);
@@ -1401,8 +1394,8 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
         yield* recipientHby.close();
       }
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
 
       yield* providerHby.close();

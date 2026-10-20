@@ -4,7 +4,7 @@ import { concatBytes, type SerderKERI } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
-import { type ExchangeDeliveryPreference, mailboxTopicForRoute, Poster } from "./forwarding.ts";
+import { mailboxTopicForRoute, Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
@@ -73,7 +73,7 @@ export function createExchangeMessage(
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param http Borrowed HTTP implementation selected by composition.
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
- * @param args Exchange fields plus optional mailbox topic/delivery preference; recipient aliases are resolved before signing.
+ * @param args Exchange fields plus optional mailbox topic; recipient aliases are resolved before signing.
  * @returns Signed EXN and successfully delivered target URLs after the worker/Poster scope joins.
  * @throws A failed terminal outcome is thrown; admission alone never returns success.
  */
@@ -82,7 +82,7 @@ export function sendExchangeMessage(
   hab: Hab,
   http: HttpClient,
   clock: RuntimeClock,
-  args: ExchangeMessageArgs & { topic?: string; delivery?: ExchangeDeliveryPreference },
+  args: ExchangeMessageArgs & { topic?: string },
 ): Operation<{ serder: SerderKERI; deliveries: string[] }> {
   return call(function*() {
     const postman = new Poster(hby, null, null, http, clock);
@@ -98,7 +98,7 @@ export function sendExchangeMessage(
     if (!topic) throw new ValidationError(`Unable to derive mailbox topic from route ${args.route}.`);
     const { serder, msg } = createExchangeMessage(hab, { ...args, dest });
     yield* spawn(() => postman.deliverDo());
-    const evt = postman.send({ src: hab.pre, dest, topic, msg, delivery: args.delivery }, { notify: true });
+    const evt = postman.send({ src: hab.pre, dest, topic, msg }, { notify: true });
     const outcome = yield* postman.wait(evt);
     if (outcome.kin === "failed") throw outcome.error;
     return { serder, deliveries: outcome.deliveries };

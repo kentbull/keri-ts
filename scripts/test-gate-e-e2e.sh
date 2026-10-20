@@ -435,9 +435,9 @@ assert_line_equals "$(last_non_empty_line "${SOURCE_TARGET_RESOLVE_OUTPUT}")" "$
 assert_line_equals "$(last_non_empty_line "${SOURCE_TARGET_MAILBOX_RESOLVE_OUTPUT}")" "${TARGET_MAILBOX_OOBI}"
 
 # -----------------------------------------------------------------------------
-# Challenge-response delivery modes
+# Challenge completion through accepted endpoint routing
 # -----------------------------------------------------------------------------
-log "Exercise challenge generate/respond/verify over direct delivery"
+log "Exercise challenge over published controller/mailbox endpoints"
 DIRECT_CHALLENGE_WORDS="$(capture_challenge_words string)"
 [[ -n "${DIRECT_CHALLENGE_WORDS}" ]] || fail "challenge generate returned no direct words"
 DIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond \
@@ -446,8 +446,7 @@ DIRECT_RESPOND_OUTPUT="$(capture_tufa challenge respond \
   --passcode "${PASSCODE}" \
   --alias "${SOURCE_ALIAS}" \
   --recipient "${TARGET_ALIAS}" \
-  --words "${DIRECT_CHALLENGE_WORDS}" \
-  --transport direct)"
+  --words "${DIRECT_CHALLENGE_WORDS}")"
 assert_line_contains "${DIRECT_RESPOND_OUTPUT}" "Sent EXN message"
 stop_target_host
 DIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify \
@@ -459,7 +458,7 @@ DIRECT_VERIFY_OUTPUT="$(capture_tufa challenge verify \
   --timeout 5)"
 assert_line_contains "$(last_non_empty_line "${DIRECT_VERIFY_OUTPUT}")" "${SOURCE_PRE}"
 
-log "Exercise challenge generate/respond/verify over source-to-target mailbox delivery"
+log "Exercise source-to-target challenge completion after host restart"
 start_target_host
 SOURCE_TO_TARGET_MAILBOX_WORDS="$(capture_challenge_words string)"
 [[ -n "${SOURCE_TO_TARGET_MAILBOX_WORDS}" ]] || fail "challenge generate returned no source-to-target mailbox words"
@@ -469,8 +468,7 @@ SOURCE_TO_TARGET_MAILBOX_RESPOND_OUTPUT="$(capture_tufa challenge respond \
   --passcode "${PASSCODE}" \
   --alias "${SOURCE_ALIAS}" \
   --recipient "${TARGET_ALIAS}" \
-  --words "${SOURCE_TO_TARGET_MAILBOX_WORDS}" \
-  --transport indirect)"
+  --words "${SOURCE_TO_TARGET_MAILBOX_WORDS}")"
 assert_line_contains "${SOURCE_TO_TARGET_MAILBOX_RESPOND_OUTPUT}" "Sent EXN message"
 stop_target_host
 SOURCE_TO_TARGET_MAILBOX_VERIFY_OUTPUT="$(capture_tufa challenge verify \
@@ -484,7 +482,7 @@ assert_line_contains \
   "$(last_non_empty_line "${SOURCE_TO_TARGET_MAILBOX_VERIFY_OUTPUT}")" \
   "${SOURCE_PRE}"
 
-log "Exercise challenge generate/respond/verify over target-to-source mailbox delivery"
+log "Exercise reverse challenge completion through published recipient endpoints"
 start_source_host
 TARGET_TO_SOURCE_MAILBOX_WORDS="$(capture_challenge_words string)"
 [[ -n "${TARGET_TO_SOURCE_MAILBOX_WORDS}" ]] || fail "challenge generate returned no target-to-source mailbox words"
@@ -494,8 +492,7 @@ TARGET_TO_SOURCE_MAILBOX_RESPOND_OUTPUT="$(capture_tufa challenge respond \
   --passcode "${PASSCODE}" \
   --alias "${TARGET_ALIAS}" \
   --recipient "${SOURCE_ALIAS}" \
-  --words "${TARGET_TO_SOURCE_MAILBOX_WORDS}" \
-  --transport indirect)"
+  --words "${TARGET_TO_SOURCE_MAILBOX_WORDS}")"
 assert_line_contains "${TARGET_TO_SOURCE_MAILBOX_RESPOND_OUTPUT}" "Sent EXN message"
 stop_source_host
 TARGET_TO_SOURCE_MAILBOX_VERIFY_OUTPUT="$(capture_tufa challenge verify \

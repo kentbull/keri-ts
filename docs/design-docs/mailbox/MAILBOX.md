@@ -20,10 +20,15 @@ POST /mailboxes updates authorization rather than creating a mailbox AID.
 
 ## Delivery
 
-Tufa's sender policy prefers accepted mailbox endpoints, sends to all selected
-mailboxes and otherwise falls back to direct controller/agent delivery. Failed
-sends are reported to the caller without durable retry state. This selection is
-distinct from the inner message's validity.
+Ordinary Poster follows KERIpy `71438328`: send to every controller endpoint,
+then every agent endpoint, then one random mailbox. When a composed provider store
+owns an eligible local mailbox AID, publish there without requiring a URL. Only
+recipients without controller, agent or mailbox roles use one random witness (or
+the same local-provider shortcut). This replaces the former mailbox-first broadcast
+policy. Role selection is not failover: a refusal does not choose another relay or
+scheme, while later selected destinations still run. HTTPS precedes HTTP, then TCP.
+Missing/unsupported selected locations remain visible failures. Producers supply
+resolved AIDs; no CLI delivery preference overrides accepted endpoint state.
 
 Mailbox SSE polling selects HTTPS, then HTTP, and polls every allowed mailbox
 provider plus every current KEL witness, following KERIpy `71438328` MailboxDirector.

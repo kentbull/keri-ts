@@ -61,7 +61,10 @@ state describes its real owners, not a dormant input queue. Explicit close and
 scope exit clear cues after dependent work joins.
 
 Prepare/sign/publish before source removal; preparation failure retains the record.
-Poster accepts one complete CESR message. Target preparation is an owned operation
+Poster.send accepts one complete CESR message; sendStream admits a finite ordered
+stream with first-role endpoint selection. Initial IPEX grant/admit/spurn use stream
+operation; join signaling/completed output use ordinary sends. This is producer
+context, not a flag or route/topic inference. Target preparation is an owned operation
 using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
 independently authenticated nested message; legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
@@ -153,8 +156,12 @@ null. Finite wrappers close their source iterators. Ordinary records need no lea
 ## Transport and protocol completion
 
 Lower TCP lends sockets/bytes without AgentRuntime/Reactor knowledge;
-TCPMessenger owns application RX/TX and its parser/Kevery. HTTP-first/TCP fallback, direct/mailbox
-routing and signed introductions remain. Explicit replies enable duplex; standalone
+TCPMessenger owns application RX/TX and its parser/Kevery. Endpoint schemes prefer
+HTTPS, HTTP, then TCP; no refusal-driven scheme fallback. Ordinary Poster traverses
+controller/agent/mailbox roles, all direct endpoints then one random relay. A local
+provider shortcut requires the composed store, not a sender match. Witness delivery
+applies only without those roles. No delivery-mode selector remains. Signed
+introductions retain their protocol role. Explicit replies enable duplex; standalone
 send is transmit-only. It completes local end then joins close without requiring
 peer EOF; a later receive reset does not downgrade completed output. Duplex still
 requires processed receive EOF. Never open a second runtime just to receive replies.

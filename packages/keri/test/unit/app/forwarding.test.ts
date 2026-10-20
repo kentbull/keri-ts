@@ -1,12 +1,8 @@
 import { httpClient } from "../../support/http-client.ts";
 /**
- * Focused mailbox forwarding and cursor utility tests.
- *
- * These scenarios document the smaller behavioral rules that the broader
- * mailbox runtime tests rely on:
- * - recipient resolution
- * - alias error semantics
- * - shared mailbox storage and remote cursor progression
+ * Exercise queued ordinary/stream delivery, forwarding wire and provider storage.
+ * Alias resolution is exercised at Organizer; accepted endpoint records drive
+ * routing through the supported Poster admission and completion operations.
  */
 import { call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
@@ -28,7 +24,6 @@ import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import {
-  type ExchangeDeliveryPreference,
   ForwardHandler,
   introduce,
   introductionMessages,
@@ -62,7 +57,6 @@ function* deliverMessage(postman: Poster, hab: Hab, args: {
   recipient: string;
   message: Uint8Array;
   topic?: string;
-  delivery?: ExchangeDeliveryPreference;
 }, reactor?: Reactor): Operation<{ deliveries: string[] }> {
   const worker = yield* spawn(() => postman.deliverDo());
   try {
@@ -71,7 +65,6 @@ function* deliverMessage(postman: Poster, hab: Hab, args: {
       dest: args.recipient,
       msg: args.message,
       topic: args.topic ?? "",
-      delivery: args.delivery,
       replies: Boolean(reactor),
     }, { notify: true });
     const outcome = yield* postman.wait(evt);
@@ -89,7 +82,6 @@ function* deliverExchange(
   args: Omit<Parameters<typeof createExchangeMessage>[1], "dest"> & {
     recipient: string;
     topic?: string;
-    delivery?: ExchangeDeliveryPreference;
   },
 ) {
   const { serder, msg } = createExchangeMessage(hab, {
@@ -100,7 +92,6 @@ function* deliverExchange(
     recipient: args.recipient,
     message: msg,
     topic: args.topic ?? mailboxTopicForRoute(args.route),
-    delivery: args.delivery,
   });
   return { serder, deliveries: outcome.deliveries };
 }
@@ -688,7 +679,7 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
           payload: { delpre: recipient.pre },
         });
 
-        assertEquals(deliveries, ["http://127.0.0.1:9124"]);
+        assertEquals(deliveries, [`local-mailbox:${witness.pre}`]);
         assertEquals(serder.route, DELEGATE_REQUEST_ROUTE);
         const stored = runtime.mailboxer?.getTopicMsgs(
           mailboxTopicKey(recipient.pre, DELEGATE_MAILBOX_TOPIC),
@@ -1027,66 +1018,6 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
   });
 });
 
-/** Proves `direct` delivery mode stays strict and does not silently fall back to witnesses. */
-Deno.test("Queued CESR with direct delivery does not fall back to witnesses", async () => {
-  const attempt = run(function*() {
-    const hby = yield* createHabery({
-      name: `poster-direct-strict-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-    });
-
-    try {
-      const sender = hby.makeHab("sender", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        toad: 0,
-      });
-      const witness = hby.makeHab("witness", undefined, {
-        transferable: false,
-        icount: 1,
-        isith: "1",
-        toad: 0,
-      });
-      const recipient = hby.makeHab("recipient", undefined, {
-        transferable: true,
-        icount: 1,
-        isith: "1",
-        ncount: 1,
-        nsith: "1",
-        wits: [witness.pre],
-        toad: 1,
-      });
-
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-      try {
-        yield* settleRuntimeIngress(runtime, [witness.makeLocScheme("http://127.0.0.1:9126", witness.pre, "http")]);
-
-        const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
-        yield* deliverMessage(postman, sender, {
-          recipient: recipient.pre,
-          message: new Uint8Array([9]),
-          topic: "/receipt",
-          delivery: "direct",
-        });
-      } finally {
-        yield* runtime.close();
-      }
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-
-  await assertRejects(
-    () => attempt,
-    Error,
-    "No end roles for",
-  );
-});
-
 /** Proves inbound `/fwd` storage accepts mailbox-like hosts but not controller-only hosts. */
 Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects controller-only hosts", async () => {
   await run(function*() {
@@ -1194,7 +1125,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
 });
 
 /** Real HTTP targets report partial/total failures without claiming durable enqueue. */
-Deno.test("Poster mailbox sends report partial failure and complete only after every target succeeds", async () => {
+Deno.test("Poster direct sends report partial failure and complete only after every target succeeds", async () => {
   let mode: "partial" | "failed" | "success" = "partial";
   const requests: string[] = [];
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
@@ -1216,7 +1147,7 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
           yield* runtime.reactor.processBytes(
             mailbox.makeLocScheme(`http://127.0.0.1:${server.addr.port}/${name}`, mailbox.pre, "http"),
           );
-          yield* runtime.reactor.processBytes(recipient.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true));
+          yield* runtime.reactor.processBytes(recipient.makeEndRole(mailbox.pre, EndpointRoles.controller, true));
         }
         const message = concatBytes(...hby.db.clonePreIter(sender.pre));
         for (const kind of ["raw", "exchange"]) {
@@ -1231,7 +1162,7 @@ Deno.test("Poster mailbox sends report partial failure and complete only after e
           for (const outcome of ["partial", "failed"] as const) {
             mode = outcome;
             requests.length = 0;
-            // Introduction and forwarded frames use separate POSTs; endpoint coverage is the invariant.
+            // Every direct endpoint is attempted, including after an observed refusal.
             const error = yield* call(() => assertRejects(() => run(send)));
             assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
             const retained = runtime.postman.failures.at(-1)!;
@@ -1306,6 +1237,162 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
         yield* remote.close(true);
       }
     } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("ordinary Poster traverses direct roles before one random mailbox and does not add witness delivery", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender");
+    const wit = hby.makeHab("wit", undefined, { transferable: false, ncount: 0 });
+    const recipient = hby.makeHab("recipient", undefined, { wits: [wit.pre], toad: 1 });
+    const roles = [EndpointRoles.controller, EndpointRoles.agent, EndpointRoles.mailbox];
+    for (const role of roles) {
+      for (let idx = 0; idx < 2; idx++) {
+        const endpoint = hby.makeHab(`${role}-${idx}`);
+        hby.db.ends.pin([recipient.pre, role, endpoint.pre], { allowed: true });
+        hby.db.locs.pin([endpoint.pre, "http"], { url: "http://unpreferred.test/" });
+        hby.db.locs.pin([endpoint.pre, "https"], { url: `https://${role}-${idx}.test/` });
+      }
+    }
+    hby.db.locs.pin([wit.pre, "http"], { url: "http://witness.test/" });
+    const attempts: { url: string; route: string | null }[] = [];
+    const postman = new Poster(
+      hby,
+      null,
+      null,
+      httpClient(async (url, init) => {
+        const serder = new SerderKERI({ raw: await readCesrRequestBytes(new Request(url, init)) });
+        if (serder.ilk === "qry" || serder.route === "/fwd") attempts.push({ url, route: serder.route });
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+    );
+    const random = Math.random;
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const ends = sender.endsFor(recipient.pre);
+      for (const fraction of [0, 0.999]) {
+        attempts.length = 0;
+        const evt = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/replay", msg }, { notify: true });
+        Math.random = () => fraction;
+        yield* postman.process();
+        Math.random = random;
+        const result = yield* postman.wait(evt);
+        assertEquals(result.kin, "sent");
+        const direct = [EndpointRoles.controller, EndpointRoles.agent].flatMap((role) =>
+          Object.values(ends[role]).map((urls) => ({ url: urls.https, route: "logs" }))
+        );
+        const mailboxes = Object.values(ends[EndpointRoles.mailbox]);
+        assertEquals(attempts, [...direct, { url: mailboxes[fraction === 0 ? 0 : 1].https, route: "/fwd" }]);
+        assertEquals(result.deliveries, attempts.map(({ url }) => url));
+      }
+      attempts.length = 0;
+      const stream = postman.sendStream({ src: sender.pre, dest: recipient.pre, topic: "/replay", msgs: [msg, msg] }, {
+        notify: true,
+      });
+      yield* postman.process();
+      assertEquals((yield* postman.wait(stream)).kin, "sent");
+      assertEquals(
+        attempts,
+        Object.values(ends[EndpointRoles.controller]).flatMap((urls) => [
+          { url: urls.https, route: "logs" },
+          { url: urls.https, route: "logs" },
+        ]),
+        "stream delivery uses only the first present role and sends raw source frames",
+      );
+    } finally {
+      Math.random = random;
+      yield* postman.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a local provider different from the sender stores without a URL even after another target has no location", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), provider = hby.makeHab("provider");
+    hby.db.ends.pin([recipient.pre, EndpointRoles.controller, recipient.pre], { allowed: true });
+    hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, provider.pre], { allowed: true });
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => {
+        throw new Error("No network endpoint was selected");
+      }),
+      systemClock,
+      { enableMailboxStore: true },
+    );
+    try {
+      const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
+      const evt = runtime.postman.send({ src: sender.pre, dest: recipient.pre, topic: "/credential", msg }, {
+        notify: true,
+      });
+      yield* runtime.postman.process();
+      const result = yield* runtime.postman.wait(evt);
+      assertEquals(result.kin, "failed");
+      if (result.kin === "failed") assertEquals(result.error instanceof ValidationError, true);
+      assertEquals(result.deliveries, [`local-mailbox:${provider.pre}`]);
+      assertEquals(runtime.mailboxer!.getTopicMsgs(`${recipient.pre}/credential`), [msg]);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("queued streams keep all source messages ordered at one randomly selected relay", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+    const peers = ["one", "two"].map((name) => hby.makeHab(name));
+    for (const peer of peers) {
+      hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, peer.pre], { allowed: true });
+      hby.db.locs.pin([peer.pre, "http"], { url: `http://${peer.name}.relay.test/` });
+    }
+    const received: { url: string; subject: unknown }[] = [];
+    const postman = new Poster(
+      hby,
+      null,
+      null,
+      httpClient(async (url, init) => {
+        const frame = parseBytes(await readCesrRequestBytes(new Request(url, init)))[0];
+        const outer = frame.body;
+        if (outer instanceof SerderKERI && outer.route === "/fwd") {
+          const embeds = outer.ked?.e as Record<string, Record<string, unknown>>;
+          received.push({ url, subject: (embeds.evt.q as Record<string, unknown>).s });
+        }
+        return new Response(null, { status: 204 });
+      }),
+      systemClock,
+    );
+    const msgs = ["0", "1"].map((s) => sender.query(sender.pre, sender.pre, { route: "logs", q: { s } }));
+    const original = concatBytes(...msgs);
+    const random = Math.random;
+    let choices = 0;
+    try {
+      const evt = postman.sendStream({ src: sender.pre, dest: recipient.pre, topic: "/replay", msgs }, {
+        notify: true,
+      });
+      msgs[0].fill(0);
+      Math.random = () => {
+        choices++;
+        return 0.999;
+      };
+      yield* postman.process();
+      Math.random = random;
+      const result = yield* postman.wait(evt);
+      assertEquals(result.kin, "sent");
+      assertEquals(evt.msg, original, "admission captures complete signed source bytes");
+      assertEquals(choices, 1, "one relay is chosen for the entire batch");
+      const selected = Object.values(sender.endsFor(recipient.pre)[EndpointRoles.mailbox])[1].http;
+      assertEquals(received, ["0", "1"].map((subject) => ({ url: selected, subject })));
+      assertEquals(result.deliveries, [selected]);
+    } finally {
+      Math.random = random;
+      yield* postman.close();
       yield* hby.close(true);
     }
   });

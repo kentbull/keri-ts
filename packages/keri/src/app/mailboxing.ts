@@ -162,43 +162,6 @@ export function mailboxPollEndpoints(hab: Hab): Array<{ key: string; eid: string
 }
 
 /**
- * Return the currently authorized mailbox endpoints for one remote recipient.
- *
- * `Poster` treats this as the mailbox-first broadcast target set.
- *
- * @param hab Local signing habitat; its state/store lifetime remains with the caller.
- * @param recipient Final recipient AID whose endpoint roles are inspected.
- * @returns Current endpoint AIDs with preferred URLs; no network reachability check.
- */
-export function mailboxDeliveryEndpoints(
-  hab: Hab,
-  recipient: string,
-): Array<{ eid: string; url: string }> {
-  return flattenRoleUrls(hab.endsFor(recipient)[Roles.mailbox]);
-}
-
-/**
- * Return the direct controller and agent endpoints for one remote recipient.
- *
- * These are fallback transport targets only when no mailbox endpoints are
- * configured or when the caller explicitly forces direct delivery.
- *
- * @param hab Local signing habitat; its state/store lifetime remains with the caller.
- * @param recipient Final recipient AID whose endpoint roles are inspected.
- * @returns Current endpoint AIDs with preferred URLs; no network reachability check.
- */
-export function directDeliveryEndpoints(
-  hab: Hab,
-  recipient: string,
-): Array<{ eid: string; url: string }> {
-  const ends = hab.endsFor(recipient);
-  return [
-    ...flattenRoleUrls(ends[Roles.controller]),
-    ...flattenRoleUrls(ends[Roles.agent]),
-  ];
-}
-
-/**
  * Read one endpoint's currently stored URLs directly from shared DB state.
  *
  * This stays DB-oriented on purpose so CLI, server, and forwarding code can
@@ -487,32 +450,16 @@ export function flattenRoleUrls(
 }
 
 /**
- * Return the deterministic first preferred endpoint from one role map.
- *
- * Forwarding fallback chooses one witness deterministically; mailbox polling
- * enumerates its eligible witnesses separately.
- *
- * @param roleUrls Accepted endpoint-AID to scheme/URL map for one role, possibly absent.
- * @returns First deterministic endpoint with a preferred URL, or null.
- */
-export function firstSortedEndpoint(
-  roleUrls?: Record<string, Record<string, string>>,
-): { eid: string; url: string } | null {
-  const flattened = flattenRoleUrls(roleUrls).sort((left, right) => left.eid.localeCompare(right.eid));
-  return flattened[0] ?? null;
-}
-
-/**
  * Return the preferred URL for one endpoint location set.
  *
  * HTTPS wins when present because mailbox and admin URLs are externally
  * advertised endpoints.
  *
  * @param urls Accepted scheme-to-URL map for one endpoint.
- * @returns HTTPS, then HTTP, then the first remaining recorded URL; null for an empty map.
+ * @returns HTTPS, then HTTP, then TCP; null when no supported location is recorded.
  */
 export function preferredUrl(urls: Record<string, string>): string | null {
-  return urls.https ?? urls.http ?? Object.values(urls)[0] ?? null;
+  return urls.https ?? urls.http ?? urls.tcp ?? null;
 }
 
 /**

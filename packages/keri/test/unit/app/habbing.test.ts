@@ -28,7 +28,7 @@ import {
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { introduce, type Poster, type PosterEvent } from "../../../src/app/forwarding.ts";
+import { introduce, type Poster, type PosterEvent, type PosterMsg } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -307,9 +307,9 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
       > = [];
       const queuedQueries: QueryRequest[] = [];
       const postman = {
-        send(evt: PosterEvent) {
+        send(evt: PosterMsg) {
           sent.push({ sender: evt.src, recipient: evt.dest, topic: evt.topic, message: evt.msg });
-          return evt;
+          return { ...evt, kin: "msg" };
         },
         *wait(evt: PosterEvent) {
           return { kin: "sent", evt, deliveries: ["mock"] };
@@ -442,8 +442,8 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
         });
 
         const postman = {
-          send(evt: PosterEvent) {
-            return evt;
+          send(evt: PosterMsg) {
+            return { ...evt, kin: "msg" };
           },
           *wait(evt: PosterEvent) {
             return { kin: "sent", evt, deliveries: ["mock"] };
@@ -654,9 +654,9 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
       > = [];
       const queuedQueries: QueryRequest[] = [];
       const postman = {
-        send(evt: PosterEvent) {
+        send(evt: PosterMsg) {
           sent.push({ sender: evt.src, recipient: evt.dest, message: evt.msg });
-          return evt;
+          return { ...evt, kin: "msg" };
         },
         *wait(evt: PosterEvent) {
           return { kin: "sent", evt, deliveries: ["mock"] };

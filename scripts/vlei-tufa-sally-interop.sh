@@ -750,7 +750,7 @@ grant_group_credential() {
   local recipient="$4"
   local said="$5"
   log "starting group IPEX grant ${said} from ${group} to ${recipient}"
-  run tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --delivery indirect --approval-timeout 0
+  run tufa ipex grant -n "${issuer1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${recipient}" --said "${said}" --approval-timeout 0
   run tufa ipex join -n "${issuer2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
   run tufa ipex join -n "${issuer1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000
 }
@@ -762,9 +762,9 @@ present_group_to_sally() {
   local said="$4"
   local expected="$5"
   log "presenting ${expected} ${said} from ${group} to Sally"
-  run tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --delivery direct --approval-timeout 0 --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex grant -n "${holder1}" --head-dir "${TUFA_HEAD}" -a "${group}" -r "${SALLY_PRE}" --said "${said}" --approval-timeout 0 --counter-profile "${SALLY_COUNTER_PROFILE}"
   run tufa ipex join -n "${holder2}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
-  run tufa ipex join -n "${holder1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --delivery direct --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex join -n "${holder1}" --head-dir "${TUFA_HEAD}" --auto --poll-turns 100 --poll-budget-ms 2000 --counter-profile "${SALLY_COUNTER_PROFILE}"
   wait_hook "${expected}"
 }
 
@@ -773,7 +773,7 @@ present_single_to_sally() {
   local alias="$2"
   local said="$3"
   local expected="$4"
-  run tufa ipex grant -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -r "${SALLY_PRE}" --said "${said}" --delivery direct --counter-profile "${SALLY_COUNTER_PROFILE}"
+  run tufa ipex grant -n "${store}" --head-dir "${TUFA_HEAD}" -a "${alias}" -r "${SALLY_PRE}" --said "${said}" --counter-profile "${SALLY_COUNTER_PROFILE}"
   wait_hook "${expected}"
 }
 

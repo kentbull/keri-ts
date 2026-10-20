@@ -1,6 +1,6 @@
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { Poster, PosterEvent } from "./forwarding.ts";
+import type { Poster, PosterMsg } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { QueryReply } from "./query-replies.ts";
 import type { ReplyStreams } from "./reply-streams.ts";
@@ -134,8 +134,8 @@ export class Respondant {
    * @param cues Borrowed complete captured batch, already in registry-before-credential order.
    * @returns All produced response msgs and only the events with an available outbound route.
    */
-  private prepareReplies(hab: Hab, cues: readonly AgentCue[]): { msgs: Uint8Array[]; evts: PosterEvent[] } {
-    const msgs: Uint8Array[] = [], evts: PosterEvent[] = [];
+  private prepareReplies(hab: Hab, cues: readonly AgentCue[]): { msgs: Uint8Array[]; evts: PosterMsg[] } {
+    const msgs: Uint8Array[] = [], evts: PosterMsg[] = [];
     for (const cue of cues) {
       const produced = [...hab.processCuesIter([cue])];
       for (const msg of produced) msgs.push(msg);

@@ -242,8 +242,9 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
           yield* recipientHby.close();
         }
       } finally {
-        yield* waitForTaskHalt(serverTask);
+        // Join loopback polling before closing the listener it reads from.
         yield* waitForTaskHalt(runtimeTask);
+        yield* waitForTaskHalt(serverTask);
         yield* runtime.close();
         yield* providerHby.close();
       }

@@ -23,9 +23,9 @@ import {
   approveStoredMultisigIpexWrappers,
   findPendingMultisigIpex,
   groupIpexPartial,
-  publishGroupIpexProposal,
+  groupIpexProposals,
   requireStoredExchange,
-  sendCredentialBytes,
+  sendCredentialStream,
   storedExchangeMessage,
 } from "../ipex-grouping.ts";
 import {
@@ -48,7 +48,6 @@ interface IpexBaseArgs {
   recipient?: string;
   message?: string;
   out?: string;
-  delivery?: "auto" | "direct" | "indirect";
   gvrsn?: Versionage;
 }
 
@@ -102,7 +101,6 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
         dest: recipient,
         msg,
         topic: CREDENTIAL_MAILBOX_TOPIC,
-        delivery: ipexArgs.delivery,
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
@@ -142,7 +140,6 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
         dest: recipient,
         msg,
         topic: CREDENTIAL_MAILBOX_TOPIC,
-        delivery: ipexArgs.delivery,
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
@@ -158,9 +155,30 @@ export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void
   yield* sendPriorResponse(args, IPEX_AGREE_ROUTE, "offer");
 }
 
-/** Implement `tufa ipex spurn` as a rejection response in an IPEX thread. */
+/**
+ * Send an initial IPEX rejection using the donor's stream-delivery operation.
+ * @param args Command values identifying recipient, prior exchange and optional message.
+ */
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
-  yield* sendPriorResponse(args, IPEX_SPURN_ROUTE, "prior");
+  const ipexArgs = ipexBaseArgs(args);
+  const prior = requireString(args.prior as string | undefined, "Prior message");
+  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+    const hab = requireHab(hby, ipexArgs.alias);
+    const dest = new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const { serder, msg } = createExchangeMessage(hab, {
+      dest,
+      route: IPEX_SPURN_ROUTE,
+      payload: { m: ipexArgs.message ?? "" },
+      dig: prior,
+    });
+    const worker = yield* spawn(() => runtime.postman.deliverDo());
+    try {
+      const deliveries = yield* sendCredentialStream(runtime.postman, hab, dest, [msg]);
+      console.log(JSON.stringify({ said: serder.said, deliveries }));
+    } finally {
+      yield* worker.halt();
+    }
+  });
 }
 /**
  * Implement `tufa ipex grant` and optional grant artifact export/delivery.
@@ -208,7 +226,14 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
-          return yield* publishGroupIpexProposal(runtime, hab, partialGrant, undefined, genus);
+          const deliveries: string[] = [];
+          for (const { msg, ...evt } of groupIpexProposals(hby, hab, partialGrant, genus)) {
+            const admitted = postman.sendStream({ ...evt, msgs: [msg] }, { notify: true });
+            const outcome = yield* postman.wait(admitted);
+            if (outcome.kin === "failed") throw outcome.error;
+            deliveries.push(...outcome.deliveries);
+          }
+          return deliveries;
         } finally {
           yield* worker.halt();
         }
@@ -241,10 +266,10 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
-          yield* sendCredentialBytes(postman, localGroupMember(hby, hab.pre), recipient, [
+          yield* sendCredentialStream(postman, localGroupMember(hby, hab.pre), recipient, [
             ...grant.support,
             completedGrantWire,
-          ], ipexArgs.delivery);
+          ]);
         } finally {
           yield* worker.halt();
         }
@@ -267,7 +292,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
       const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
-        yield* sendCredentialBytes(postman, hab, recipient, [...grant.support, grant.wire], ipexArgs.delivery);
+        yield* sendCredentialStream(postman, hab, recipient, [...grant.support, grant.wire]);
       } finally {
         yield* worker.halt();
       }
@@ -305,7 +330,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
       const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
-        yield* sendCredentialBytes(postman, hab, recipient, [admit.wire], ipexArgs.delivery);
+        yield* sendCredentialStream(postman, hab, recipient, [admit.wire]);
       } finally {
         yield* worker.halt();
       }
@@ -458,7 +483,6 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       try {
         return yield* approveMultisigIpex(hby, runtime, exn, {
           publish: true,
-          delivery: ipexArgs.delivery,
           gvrsn: ipexArgs.gvrsn,
         });
       } finally {
@@ -514,7 +538,6 @@ function* sendPriorResponse(
         dest: recipient,
         msg,
         topic: CREDENTIAL_MAILBOX_TOPIC,
-        delivery: ipexArgs.delivery,
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
@@ -536,7 +559,6 @@ function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
     recipient: args.recipient as string | undefined,
     message: args.message as string | undefined,
     out: args.out as string | undefined,
-    delivery: args.delivery as "auto" | "direct" | "indirect" | undefined,
     gvrsn: parseGvrsn(args.gvrsn),
   };
 }
