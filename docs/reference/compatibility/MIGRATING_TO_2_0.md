@@ -76,6 +76,12 @@ booleans, lists, counts and thresholds now fail before opening stores. Counts us
 decimal integer syntax; thresholds retain CESR hexadecimal/weighted syntax and
 Tholder's configurable limits. Null or empty thresholds are invalid supplied values.
 
+Multisig configuration now rejects malformed member or witness entries instead
+of silently removing them. Supplied null/blank/nonfinite approval timeouts fail;
+omission retains the command default, and zero/fractional seconds remain valid.
+Group rotation preserves file data and witness changes when flags are omitted;
+explicit empty arrays override those file fields.
+
 ## Multisig publication
 
 Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`

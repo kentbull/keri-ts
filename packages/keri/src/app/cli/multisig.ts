@@ -45,8 +45,15 @@ import {
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
 import {
+  loadOptionObject,
   loadRotateFileOptions,
+  parseBooleanOption,
+  parseCountOption,
   parseDataItems,
+  parseFileData,
+  parseNumberOption,
+  parseStringListOption,
+  parseStringOption,
   parseThresholdOption,
   type RotateFileOptions,
 } from "./common/parsing.ts";
@@ -94,8 +101,8 @@ interface MultisigInteractArgs extends MultisigBaseArgs {
 
 interface MultisigRotateArgs extends MultisigBaseArgs {
   file?: string;
-  isith?: string;
-  nsith?: string;
+  isith?: ThresholdSith;
+  nsith?: ThresholdSith;
   toad?: number;
   witnesses?: string[];
   cuts?: string[];
@@ -140,20 +147,19 @@ function requireText(value: string | undefined, label: string): string {
   return value;
 }
 
+/** Validate every supplied group member and policy field before opening the group store. */
 function loadMultisigInceptFile(path: string): MultisigInceptFileOptions {
-  const loaded = JSON.parse(Deno.readTextFileSync(path)) as MultisigInceptFileOptions;
+  const loaded = loadOptionObject(path);
   return {
-    ...loaded,
-    aids: Array.isArray(loaded.aids) ? loaded.aids.filter(isString) : loaded.aids,
-    rmids: Array.isArray(loaded.rmids) ? loaded.rmids.filter(isString) : loaded.rmids,
+    aids: parseStringListOption(loaded.aids, "aids"),
+    rmids: parseStringListOption(loaded.rmids, "rmids"),
     isith: parseThresholdOption(loaded.isith),
     nsith: parseThresholdOption(loaded.nsith),
-    wits: Array.isArray(loaded.wits) ? loaded.wits.filter(isString) : loaded.wits,
+    toad: parseCountOption(loaded.toad, "toad"),
+    wits: parseStringListOption(loaded.wits, "wits"),
+    data: parseFileData(loaded.data),
+    delpre: parseStringOption(loaded.delpre, "delpre"),
   };
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === "string";
 }
 
 /** Create or begin a distributed group identifier from a KLI-style file. */
@@ -161,24 +167,24 @@ export function* multisigInceptCommand(
   args: Record<string, unknown>,
 ): Operation<GroupEventResult> {
   const commandArgs: MultisigInceptArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    group: args.group as string | undefined,
-    compat: args.compat as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    file: args.file as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    group: parseStringOption(args.group, "group"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    file: parseStringOption(args.file, "file"),
     approvalTimeoutSeconds: nonNegativeNumber(
       args.approvalTimeoutSeconds,
       10,
       "approval timeout seconds",
     ),
-    proxy: args.proxy as string | undefined,
+    proxy: parseStringOption(args.proxy, "proxy"),
   };
   const name = requireText(commandArgs.name, "Name");
   const alias = requireText(commandArgs.alias, "Alias");
@@ -252,22 +258,22 @@ export function* multisigJoinCommand(
   args: Record<string, unknown>,
 ): Operation<ApprovalResult> {
   const commandArgs: MultisigJoinArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    group: args.group as string | undefined,
-    compat: args.compat as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    auto: args.auto as boolean | undefined,
-    registryName: args.registryName as string | undefined,
-    said: args.said as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    group: parseStringOption(args.group, "group"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    auto: parseBooleanOption(args.auto, "auto"),
+    registryName: parseStringOption(args.registryName, "registryName"),
+    said: parseStringOption(args.said, "said"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
-    proxy: args.proxy as string | undefined,
+    proxy: parseStringOption(args.proxy, "proxy"),
   };
   const name = requireText(commandArgs.name, "Name");
 
@@ -310,18 +316,18 @@ export function* multisigInteractCommand(
   args: Record<string, unknown>,
 ): Operation<GroupEventResult> {
   const commandArgs: MultisigInteractArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    group: args.group as string | undefined,
-    compat: args.compat as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    data: args.data as string[] | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    group: parseStringOption(args.group, "group"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    data: parseStringListOption(args.data, "data"),
     approvalTimeoutSeconds: nonNegativeNumber(
       args.approvalTimeoutSeconds,
       10,
@@ -374,28 +380,28 @@ export function* multisigRotateCommand(
   args: Record<string, unknown>,
 ): Operation<GroupEventResult> {
   const commandArgs: MultisigRotateArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    group: args.group as string | undefined,
-    compat: args.compat as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    file: args.file as string | undefined,
-    isith: args.isith as string | undefined,
-    nsith: args.nsith as string | undefined,
-    toad: args.toad as number | undefined,
-    witnesses: args.witnesses as string[] | undefined,
-    cuts: args.cuts as string[] | undefined,
-    witnessAdd: args.witnessAdd as string[] | undefined,
-    data: args.data as string[] | undefined,
-    smids: args.smids as string[] | undefined,
-    rmids: args.rmids as string[] | undefined,
-    proxy: args.proxy as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    group: parseStringOption(args.group, "group"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    file: parseStringOption(args.file, "file"),
+    isith: parseThresholdOption(args.isith),
+    nsith: parseThresholdOption(args.nsith),
+    toad: parseCountOption(args.toad, "toad"),
+    witnesses: parseStringListOption(args.witnesses, "witnesses"),
+    cuts: parseStringListOption(args.cuts, "cuts"),
+    witnessAdd: parseStringListOption(args.witnessAdd, "witnessAdd"),
+    data: parseStringListOption(args.data, "data"),
+    smids: parseStringListOption(args.smids, "smids"),
+    rmids: parseStringListOption(args.rmids, "rmids"),
+    proxy: parseStringOption(args.proxy, "proxy"),
     approvalTimeoutSeconds: nonNegativeNumber(
       args.approvalTimeoutSeconds,
       10,
@@ -468,16 +474,16 @@ export function* multisigRpyCommand(
   args: Record<string, unknown>,
 ): Operation<GroupRoleResult> {
   const commandArgs: MultisigRpyArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    group: args.group as string | undefined,
-    compat: args.compat as boolean | undefined,
-    eid: args.eid as string | undefined,
-    role: args.role as string | undefined,
-    allow: args.allow as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    group: parseStringOption(args.group, "group"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    eid: parseStringOption(args.eid, "eid"),
+    role: parseStringOption(args.role, "role"),
+    allow: parseBooleanOption(args.allow, "allow"),
     approvalTimeoutSeconds: nonNegativeNumber(
       args.approvalTimeoutSeconds,
       0,
@@ -562,22 +568,22 @@ function requireHabByAlias(hby: Habery, alias: string): Hab {
 function mergeRotateOptions(args: MultisigRotateArgs): RotateFileOptions {
   const options = args.file && args.file !== "" ? loadRotateFileOptions(args.file) : {};
   if (args.isith !== undefined) {
-    options.isith = parseThresholdOption(args.isith);
+    options.isith = args.isith;
   }
   if (args.nsith !== undefined) {
-    options.nsith = parseThresholdOption(args.nsith);
+    options.nsith = args.nsith;
   }
   if (args.toad !== undefined) {
-    options.toad = Number(args.toad);
+    options.toad = args.toad;
   }
-  if ((args.witnesses?.length ?? 0) > 0) {
-    options.wits = [...args.witnesses!];
+  if (args.witnesses !== undefined) {
+    options.wits = [...args.witnesses];
   }
-  if ((args.cuts?.length ?? 0) > 0) {
-    options.witsCut = [...args.cuts!];
+  if (args.cuts !== undefined) {
+    options.witsCut = [...args.cuts];
   }
-  if ((args.witnessAdd?.length ?? 0) > 0) {
-    options.witsAdd = [...args.witnessAdd!];
+  if (args.witnessAdd !== undefined) {
+    options.witsAdd = [...args.witnessAdd];
   }
   if (args.data !== undefined) {
     options.data = parseDataItems(args.data);
@@ -712,13 +718,11 @@ function* receiptAcceptedEvent(
   }
 }
 
+/** Approval waits allow fractional seconds and zero, but never coerce absence or overflow a deadline. */
 function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new ValidationError(`${label} must be a finite nonnegative number.`);
+  const parsed = parseNumberOption(value, label) ?? fallback;
+  if (parsed < 0 || !Number.isFinite(parsed * 1000)) {
+    throw new ValidationError(`${label} must be a finite nonnegative duration.`);
   }
   return parsed;
 }

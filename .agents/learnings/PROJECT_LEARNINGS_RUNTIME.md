@@ -68,7 +68,9 @@ owns credential choices, key pairing and passcode confirmation. Inception/rotati
 validate supplied options before storage, preserve omission through file merging,
 and apply defaults afterward. Explicit false/zero/empty arrays override file
 values; malformed list members are rejected rather than filtered. Tholder owns
-threshold syntax and configurable caps. Inception's
+threshold syntax and configurable caps. Multisig validates complete member lists,
+booleans and supplied timeouts before stores; never silently filter participants.
+Approval waits allow fractional seconds and default only on omission. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.
 
 ## Protocol and output owners
