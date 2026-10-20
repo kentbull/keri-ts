@@ -321,32 +321,6 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       assertEquals(hby.db.exns.get([stale.said!]), null);
       assertEquals(hby.db.exchangeMeta.get([stale.said!]), null);
       assertEquals(handled, [receipt, receipt], "expired proof dependency never invokes handling");
-      const competing = body("competing"), winning = makeNowIso8601(new Date(now));
-      runtime.exc.routes.set("/receipt", {
-        resource: "/receipt",
-        verify: () => {
-          hby.db.exchangeMeta.pin([competing.said!], { mailboxAid: null, receiverTime: winning });
-          return true;
-        },
-        handle: () => {
-          throw new Error("must not consume stale admission");
-        },
-      });
-      yield* call(() =>
-        assertRejects(
-          () =>
-            run(() =>
-              runtime.exc.processEvent({
-                serder: competing,
-                tsgs: [group(competing)],
-              })
-            ),
-          Error,
-          "Exchange receiver receipt changed during admission",
-        )
-      );
-      assertEquals(hby.db.exchangeMeta.get([competing.said!])?.receiverTime, winning);
-      assertEquals(hby.db.exns.get([competing.said!]), null);
       hby.db.exchangeMeta.pin([pending.said!], { mailboxAid: null, receiverTime: "corrupt" });
       yield* call(() =>
         assertRejects(

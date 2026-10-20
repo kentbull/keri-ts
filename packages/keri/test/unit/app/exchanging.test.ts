@@ -385,12 +385,12 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
       for (const parts of [[], [essrs[0]], [...essrs].reverse()]) {
         assertEquals((yield* exchanger.processEvent({ serder, tsgs, essrs: parts })).kind, "reject");
         assertEquals(hby.db.exns.get([serder.said!]), null);
-        assertEquals(hby.db.essrs.get([serder.said!]), []);
+        assertEquals(hby.db.getEssrs(serder.said!), null);
       }
       // Concatenation order is semantic even though fragment boundaries are not hashed.
       assertEquals((yield* exchanger.processEvent({ serder, tsgs, essrs })).kind, "accept");
       assertEquals(hby.db.exns.get([serder.said!])?.said, serder.said);
-      assertEquals(hby.db.essrs.get([serder.said!]).map((item) => item.text), ["abc", "xyz"]);
+      assertEquals(hby.db.getEssrs(serder.said!)!.map((item) => item.text), ["abc", "xyz"]);
     } finally {
       yield* hby.close(true);
     }

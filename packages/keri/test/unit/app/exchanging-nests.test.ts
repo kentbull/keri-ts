@@ -33,7 +33,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../src/core/protocol-serialization.ts";
-import { loadNests, publishNests, stageNests } from "../../../src/db/exchange-nests.ts";
+import { loadNests, prepareNests, publishNests } from "../../../src/db/exchange-nests.ts";
 
 import { encodeDateTimeToDater } from "../../../src/time/mod.ts";
 
@@ -265,9 +265,8 @@ Deno.test("imported nested rows retain Python insertion order and dedup", async 
     await attachEssr(second);
     const owner = exchange("/fwd", {}, { sender: sender.pre, pvrsn: Vrsn_2_0 })[0];
     hby.db.epse.pin([owner.said!], owner);
-    await hby.db.openPayloads();
-    await stageNests(hby.db, owner.said!, [first, second, first]);
-    hby.db.env!.transactionSync(() => publishNests(hby.db, owner.said!, owner.said!));
+    const wires = await prepareNests([first, second, first]);
+    hby.db.env!.transactionSync(() => publishNests(hby.db, owner.said!, wires));
     assertEquals(hby.db.enst.get([owner.said!]).length, 2);
     assertEquals(hby.db.exchangeMeta.get([owner.said!]), null);
     const loaded = await loadNests(hby.db, owner.said!);
@@ -297,7 +296,6 @@ Deno.test("nested replacement rolls back publication failure and preserves earli
       );
       assertEquals(hby.db.enst.get([input.serder.said!]), originalRows);
       assertExists(hby.db.exns.get([input.serder.said!]));
-      assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
       // Existing signature escrow without children must not adopt failed provisional evidence.
       const another = forward(sender, recipient, provider, await child(sender, "pending"));
       hby.db.epse.pin([another.serder.said!], another.serder);
@@ -305,29 +303,22 @@ Deno.test("nested replacement rolls back publication failure and preserves earli
       assertExists(hby.db.epse.get([another.serder.said!]));
       assertEquals(hby.db.exns.get([another.serder.said!]), null);
       assertEquals(hby.db.enst.get([another.serder.said!]), []);
-      assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
     } finally {
       metadata.pin = pin;
     }
   });
 });
 
-Deno.test("nested recovery removes abandoned staging and unowned wire, retaining Python rows until escrow expiry", async () => {
+Deno.test("nested escrow evidence survives reopen until its owning escrow expires", async () => {
   await scenario(async (hby, sender, recipient, provider, _director, exchanger) => {
     const nest = await child(sender, "recover");
     const input = forward(sender, recipient, provider, nest);
     assertEquals((await run(() => exchanger.processEvent({ ...input, tsgs: [] }))).kind, "escrow");
     const retained = hby.db.enst.get([input.serder.said!]);
-    // Simulate process interruption at both private staging and historical unowned public-row boundaries.
-    await stageNests(hby.db, input.serder.said!, [{ ...nest, attachments: [] }]);
-    hby.db.enst.add(["orphan"], retained[0]);
     hby.db.exchangeMeta.rem([input.serder.said!]);
     await run(function*() {
       yield* hby.db.reopen();
     });
-    await hby.db.openPayloads();
-    assertEquals(Array.from(hby.db.enstStaging.sdb.getKeys()).length, 0);
-    assertEquals(hby.db.enst.get(["orphan"]), []);
     assertEquals(hby.db.enst.get([input.serder.said!]), retained);
     hby.db.epsd.pin(
       [input.serder.said!],

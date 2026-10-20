@@ -33,65 +33,24 @@ function nextRow(
 
 /** Test row presence without hydrating a potentially large wire value. */
 export function hasNests(db: Baser, said: string, ordinal = 0): boolean {
-  return hasRow(db.enst, said, ordinal);
-}
-
-/** Check a public or private bucket without hydrating any wire value. */
-function hasRow(table: IoSetSuber<string>, said: string, ordinal = 0): boolean {
-  for (const key of table.sdb.getKeys({ start: suffix(b(said), ordinal) })) return t(unsuffix(key)[0]) === said;
+  for (const key of db.enst.sdb.getKeys({ start: suffix(b(said), ordinal) })) return t(unsuffix(key)[0]) === said;
   return false;
 }
 
-/** Preserve exact-value set semantics without building hex strings or a collection of prior rows. */
-function sameWire(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+/** Serialize resident children before the caller enters its synchronous evidence writer. */
+export async function prepareNests(nests: readonly CesrFrame[], signal?: AbortSignal): Promise<Uint8Array[]> {
+  const wires: Uint8Array[] = [];
+  for (const child of nests) wires.push(await collectPayload(nestedPayload(child, Vrsn_2_0), signal));
+  return wires;
 }
 
-/**
- * Prepare replacement rows one child wire at a time in private staging.
- * The caller supplies a unique admission key and removes that bucket on every exit; accepted evidence is untouched.
- */
-export async function stageNests(
-  db: Baser,
-  stage: string,
-  nests: readonly CesrFrame[],
-  signal?: AbortSignal,
-): Promise<void> {
-  if (hasRow(db.enstStaging, stage)) throw new Error("Nested stage is already owned");
-  for (const child of nests) {
-    const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
-    let ordinal = 0;
-    let duplicate = false;
-    // One finite comparison row at a time preserves Python IoSet ordering and deduplication.
-    for (
-      let row = nextRow(db, db.enstStaging, stage, ordinal);
-      row;
-      row = nextRow(db, db.enstStaging, stage, ordinal)
-    ) {
-      if (sameWire(row.wire, wire)) {
-        duplicate = true;
-        break;
-      }
-      ordinal = row.next;
-    }
-    signal?.throwIfAborted();
-    if (!duplicate) db.enstStaging.sdb.putSync(suffix(b(stage), ordinal), wire);
+/** Publish ordinary KERIpy nested wire rows inside the caller's exchange transaction. */
+export function publishNests(db: Baser, said: string, wires: readonly Uint8Array[]): void {
+  if (!wires.length) {
+    db.enst.rem([said]);
+    return;
   }
-}
-
-/** Replace the public IoSet within the caller's accepted/escrow transaction; never retain an array of rows. */
-export function publishNests(db: Baser, said: string, stage: string): void {
-  db.enst.rem([said]);
-  let ordinal = 0;
-  for (
-    let row = nextRow(db, db.enstStaging, stage, ordinal);
-    row;
-    row = nextRow(db, db.enstStaging, stage, ordinal)
-  ) {
-    db.enst.sdb.putSync(suffix(b(said), ordinal), row.wire);
-    ordinal = row.next;
-  }
-  db.enstStaging.rem([stage]);
+  if (!db.enst.pin([said], wires.map((wire) => t(wire)))) throw new Error("Nested evidence write failed");
 }
 
 /** Hydrate each stored wrapper through the finite decoder without parser-owned files. */

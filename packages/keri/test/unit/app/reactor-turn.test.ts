@@ -100,21 +100,24 @@ Deno.test("finite runtime workers progress independently and join blocked HTTP c
   }
 });
 
-Deno.test("KEL and query recovery progress while another input prepares EXN payload bytes", async () => {
+Deno.test("KEL and query recovery progress while an accepted EXN handler awaits I/O", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const sender = source.makeHab("sender"), requester = target.makeHab("requester");
+    const sender = source.makeHab("sender"),
+      queried = source.makeHab("queried"),
+      requester = target.makeHab("requester");
     const protocol = protocolFixture(target), input = new Reactor(protocol);
     const ready = gate(), release = gate();
-    const archive = yield* call(() => target.db.openPayloads());
-    const stage = archive.files.stage.bind(archive.files);
-    archive.files.stage = async (signal) => {
-      ready.open();
-      await release.wait;
-      return await stage(signal);
-    };
-    const query = parseBytes(requester.query(sender.pre, requester.pre, { route: "logs", q: {} }))[0];
+    protocol.exc.addHandler({
+      resource: "/flow",
+      *handle() {
+        ready.open();
+        yield* call(() => release.wait);
+      },
+    });
+    yield* input.processBytes(acceptedEventReplayMessage(source, sender.pre, 0).message);
+    const query = parseBytes(requester.query(queried.pre, requester.pre, { route: "logs", q: {} }))[0];
     const reply = protocol.replies.reserve(query.body.said!);
     const serder = exchange("/flow", {}, {
       sender: sender.pre,
@@ -143,19 +146,19 @@ Deno.test("KEL and query recovery progress while another input prepares EXN payl
         yield* call(() => ready.wait);
         yield* race([
           call(function*() {
-            sender.rotate();
+            queried.rotate();
             for (const sn of [0, 1]) {
-              yield* input.processBytes(acceptedEventReplayMessage(source, sender.pre, sn).message);
+              yield* input.processBytes(acceptedEventReplayMessage(source, queried.pre, sn).message);
             }
             yield* protocol.processEscrowsOnce();
-            assertEquals(target.db.getKever(sender.pre)?.sn, 1);
+            assertEquals(target.db.getKever(queried.pre)?.sn, 1);
             assertEquals(reply.ready, true);
             assertEquals(reply.peekAll()?.cues[0].kin, "replay");
             assertEquals(finished, false);
           }),
           call(function*() {
             yield* sleep(1000);
-            throw new Error("independent KEL/query work waited for EXN file preparation");
+            throw new Error("independent KEL/query work waited for an EXN handler");
           }),
         ]);
         release.open();
@@ -167,14 +170,13 @@ Deno.test("KEL and query recovery progress while another input prepares EXN payl
       }
     } finally {
       reply.close();
-      archive.files.stage = stage;
       yield* target.close(true);
       yield* source.close(true);
     }
   });
 });
 
-Deno.test("mailbox authorization is captured before an unrelated escrow payload read", async () => {
+Deno.test("mailbox authorization is captured before unrelated escrow work", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const recipient = hby.makeHab("recipient"), protocol = protocolFixture(hby);
@@ -185,13 +187,11 @@ Deno.test("mailbox authorization is captured before an unrelated escrow payload 
     yield* protocol.exc.processEvent({ serder, essrs: [new Texter({ raw: b("pending"), code: "4B" })] });
     const frame =
       parseBytes(recipient.query(recipient.pre, recipient.pre, { route: "mbx", q: { topics: { "/reply": 0 } } }))[0];
-    const ready = gate(), release = gate(), get = hby.db.getEssrs.bind(hby.db);
-    hby.db.getEssrs = async (said, signal) => {
-      if (said === serder.said) {
-        ready.open();
-        await release.wait;
-      }
-      return await get(said, signal);
+    const ready = gate(), release = gate(), processEscrows = protocol.exc.processEscrows;
+    protocol.exc.processEscrows = function*() {
+      ready.open();
+      yield* call(() => release.wait);
+      yield* processEscrows.call(this);
     };
     try {
       const pending = yield* spawn(() => protocol.dispatch(frame, { escrows: true }));
@@ -208,7 +208,7 @@ Deno.test("mailbox authorization is captured before an unrelated escrow payload 
         yield* pending.halt();
       }
     } finally {
-      hby.db.getEssrs = get;
+      protocol.exc.processEscrows = processEscrows;
       yield* hby.close(true);
     }
   });

@@ -518,7 +518,6 @@ for (const remoteFirst of [false, true]) {
         assertEquals((await run(() => exchanger.processEvent(offered))).kind, "accept");
         assertEquals(left.db.enst.get([offered.serder.said!]), rows);
         assertEquals(left.db.meids.get([local.serder.said!]).length, 2);
-        assertEquals(Array.from(Deno.readDirSync(`${left.db.path}/payloads/staging`)).length, 0);
       }
     });
   });
@@ -555,7 +554,6 @@ Deno.test("nested multisig rejects bad commitments and parent signatures before 
       const mismatch = { ...child, body: alice.kever!.serder };
       assertEquals((await run(() => exchanger.processEvent({ ...input, nests: [mismatch] }))).kind, "reject");
       assertEquals(left.db.enst.get([input.serder.said!]), rows);
-      assertEquals(left.db.enstStaging.getTopItemIter().next().done, true);
     }
   });
 });
@@ -713,7 +711,6 @@ Deno.test("nested multisig publication failure preserves rows and cannot record 
       assertEquals(left.db.enst.get([input.serder.said!]), rows);
       assertEquals(left.db.exns.get([approval.serder.said!]), null);
       assertEquals(left.db.maids.get([child.body.said!]).map((member) => member.qb64), [bob.pre]);
-      assertEquals(Array.from(left.db.enstStaging.sdb.getKeys()).length, 0);
       assertEquals(notifier.list().length, 1);
     }
   });

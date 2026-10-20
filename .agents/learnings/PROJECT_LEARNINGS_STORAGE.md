@@ -82,40 +82,24 @@ dump selectors. Reacquire named handles after close/reopen.
 Sender retry outbox storage and its records are removed. Provider Mailboxer
 payloads and Baser topic cursors remain separate protocol stores.
 
-## Payload ownership
+## Exchange evidence
 
-PayloadStore.stage(signal) uses awaited Deno operations and private stages; finish
-transfers an owner. No stage quota or before-write byte ceiling exists. Actual file
-lengths, payload declarations and digest consistency remain validated by their
-consuming owners. Fsync/close, concurrent-write rejection and joined abort cleanup
-remain independent of accounting. Claiming an unpromoted local stage transfers mutation ownership while preserving
-borrowed readers; other sources are copied. Stale cleanup cannot delete published
-content. Each prepared file keeps its own UUID; scoped application keys such as
-essr/SAID and plain/SAID live in the archive references, not filenames.
+LMDB owns accepted and escrowed ESSR evidence. `essrs.` maps EXN SAID plus a
+32-digit hexadecimal ordinal to qualified Texter bytes, matching KERIpy's
+physical IoSet layout. TS preserves equal values at distinct positions because
+the signed digest commits to their concatenated raw bytes. Python's typed reader
+can read these rows; Python's writer currently deduplicates equal values.
+`Baser.getEssrs` reads owned evidence synchronously. Validation, proofs, fragments,
+receipt provenance and state publish in one ordinary LMDB transaction. Replay
+checks retained bytes; a valid duplicate keeps the first fragment representation.
+No archive, file references, recovery sweep or durable plaintext store remains.
 
-PayloadArchive publishes private references only after file/directory flushes,
-with the owning DB commit. Startup scans incrementally, removes only unreferenced
-owned content, and fails closed on missing referenced objects. The host exclusively
-owns its archive directory across processes. File preparations may overlap; the
-synchronous writer selects a reference after comparing bytes and rechecking current
-ownership. Failed/duplicate candidates clean only their own files. Close joins
-all admitted I/O; publish/remove convenience operations refuse caller-owned writers.
-Domain owners may prepare a physical candidate, recheck referenceId and pin it in
-their own writer. Dispose each candidate before DB close; committed references
-protect its file. Domain removal unpins both reference directions in its writer;
-reclaim waits for the flush and deletes only that retired ID, never a replacement
-under the same application key. Wire tables remain interoperable.
-
-Baser owns archive lifetime. Qualified essrs rows preserve original ciphertext;
-plaintext has separate storage and views. Private canonical wire retains repeated
-fragments that IoSet rows may deduplicate. Python-origin rows without metadata
-retain only the order/repetitions actually stored; the signed digest still decides
-validity. Valid new evidence cannot silently bless corrupt retained evidence.
-
-enst rows preserve child substreams. Private unique-admission stages replace rows
-atomically with accepted/escrow state; failed replacement preserves prior rows.
-Fresh children remain hydrated; reopened children own temporary ESSR files.
-Cancellation claims/disposes every untransferred descendant.
+`enst.` retains ordinary qualified child substreams. Resident child serialization
+precedes the synchronous writer; publication replaces its rows inside that writer.
+Failure rolls back the body, proofs and nested rows together. Retry and replay
+hydrate ordinary finite frames; no private staging database or file lifetime exists.
+Recipient decryption still uses the separate transient PayloadStore pending its
+scheduled ordinary-data refactor; it does not persist plaintext in Baser.
 
 Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
 replacement can merge different binary members; never decode wire just to obtain
@@ -132,10 +116,8 @@ and accepted/replay state remain protocol-owned.
 
 Nested storage uses ordinary owned native row copies with no preflight billing,
 parent-tree budget or storage-copy reservation. Key cursors close before suspension;
-publication stays inside its caller's transaction. Reopened frames are claimed
-before cardinality checks and disposed after handler/replay completion or failure.
-ESSR rows retain their actual insertion order, qualified framing and exact
-size/count metadata without storage quotas. Parser and runtime/transport accounting are removed; actual file ownership remains.
+publication stays inside its caller's transaction. Reopened frames are ordinary values with no disposal obligation.
+ESSR rows retain their order, multiplicity and qualified framing without storage quotas.
 
 Stored reply reconstruction uses the typed reply store, 714 key-ordered groups
 and exactly one optional cigar. The shared serializer owns framing; do not duplicate

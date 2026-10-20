@@ -63,11 +63,11 @@ The caller must publish or discard the owner after processing. The recipient
 releases every untransferred file, including when sink cleanup fails after
 finish. Scope cancellation joins input and
 file cleanup before returning.
-`Baser.savePlaintext(said, plaintext, plaintext.size - body.size, signal)` publishes
-its file and inner-stream offset; `getPlaintext(said)` reopens both views.
+Baser does not persist plaintext. The transient file result is scheduled for
+replacement with ordinary authenticated data in the next ESSR refactor.
 
 Ciphertext evidence remains separately owned by the accepted exchange. This
-service neither deletes `.essrs` nor replaces its KERIpy-readable qualified
+service neither deletes `essrs.` nor replaces its KERIpy-readable qualified
 values with plaintext or pointers. Relays and replay consumers need not invoke
 recipient decryption. Transport route wiring selects whether to invoke this
 recipient operation for a hosted habitat.

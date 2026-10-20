@@ -1,9 +1,9 @@
-import type { OwnedPayload, Payload, PayloadSink } from "cesr-ts";
+import type { OwnedPayload, PayloadSink } from "cesr-ts";
 import { join, resolve } from "jsr:@std/path";
 
 /** A caller-owned file; promotion is separate from publishing a database reference. */
 export interface FilePayload extends OwnedPayload {
-  /** Immutable file basename; an archive keeps the stage UUID through promotion. */
+  /** Current file basename. */
   readonly id: string;
   /** Publish under a SAID or scoped digest name without replacing an existing object. */
   promote(id: string): Promise<void>;
@@ -86,13 +86,6 @@ export class PayloadStore {
     }
   }
 
-  /** Claim an unpromoted local stage; all borrowed/promoted files must be copied. */
-  claimStage(payload: Payload): FilePayload | null {
-    if (this.closed) throw new Error("Payload store is closed");
-    if (!(payload instanceof FileValue) || !payload.belongsTo(this.root) || !payload.isUnclaimedStage()) return null;
-    return payload.transfer();
-  }
-
   /** Abort unfinished writes only; completed files have transferred to callers. */
   async close(): Promise<void> {
     this.closed = true;
@@ -102,8 +95,6 @@ export class PayloadStore {
 
 /** A finished stage or promoted object; each read owns its own file descriptor. */
 class FileValue implements FilePayload {
-  /** Revokes only mutation rights after another owner adopts this handle. */
-  private transferred = false;
   /** Shared identity and location keep borrowed views valid after owner publication. */
   private readonly state: { id: string; staged: boolean; removed: boolean; busy: boolean };
 
@@ -114,31 +105,13 @@ class FileValue implements FilePayload {
     readonly size: number,
     private readonly chunkSize: number,
     staged: boolean,
-    state?: { id: string; staged: boolean; removed: boolean; busy: boolean },
   ) {
-    this.state = state ?? { id, staged, removed: false, busy: false };
+    this.state = { id, staged, removed: false, busy: false };
   }
 
   /** Resolve the current final identity through the shared owner state. */
   get id(): string {
     return this.state.id;
-  }
-
-  /** Test private store provenance without exposing filesystem paths. */
-  belongsTo(root: string): boolean {
-    return this.root === root;
-  }
-
-  /** Only a finished, unclaimed stage can transfer into an independent archive preparation. */
-  isUnclaimedStage(): boolean {
-    return this.state.staged && !this.transferred && !this.state.removed && !this.state.busy;
-  }
-
-  /** Move mutation rights to a new handle sharing the same file lifetime. */
-  transfer(): FilePayload {
-    this.checkOwner();
-    this.transferred = true;
-    return new FileValue(this.root, this.id, this.size, this.chunkSize, this.state.staged, this.state);
   }
 
   /** Resolve the current stage/object location after any completed promotion. */
@@ -177,7 +150,7 @@ class FileValue implements FilePayload {
 
   /** Publish a completed file under its final identity without overwriting another owner. */
   async promote(id: string): Promise<void> {
-    this.checkOwner();
+    this.check();
     checkPayloadId(id);
     if (!this.state.staged) {
       if (id !== this.id) throw new Error("Payload is already promoted under another ID");
@@ -199,8 +172,8 @@ class FileValue implements FilePayload {
 
   /** Remove this owned file once, rejecting concurrent ownership mutations. */
   async discard(): Promise<void> {
-    if (this.transferred || this.state.removed) return;
-    this.checkOwner();
+    if (this.state.removed) return;
+    this.check();
     this.state.busy = true;
     try {
       await Deno.remove(this.path);
@@ -208,12 +181,6 @@ class FileValue implements FilePayload {
     } finally {
       this.state.busy = false;
     }
-  }
-
-  /** Reject mutation by a stale transferred handle before inspecting file state. */
-  private checkOwner(): void {
-    if (this.transferred) throw new Error("Payload ownership was transferred");
-    this.check();
   }
 
   /** Ensure this file remains readable and is not changing ownership. */

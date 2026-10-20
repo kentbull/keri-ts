@@ -8,9 +8,9 @@ it cannot authenticate a nested child. Routes explicitly select verified
 supplemental factors and may return an escrow decision for unavailable
 credential/KEL/TEL dependencies. Invalidity and missing evidence stay distinct.
 
-Exchanger prepares immutable file evidence before its final synchronous admission
-turn. Recheck the evidence snapshot, authenticate current accepted state, verify
-route policy and commit evidence in that writer. `verifyEvidence` and `verify`
+Exchanger serializes resident nested evidence before its synchronous admission
+turn. Authenticate current accepted state, verify the ESSR commitment and route
+policy, and commit ordinary LMDB evidence in that writer. `verifyEvidence` and `verify`
 cannot suspend. Handlers run after durable commit in the caller's operation.
 First acceptance replaces provisional proof rows; verified accepted duplicates
 accumulate proofs without borrowing old proofs to authenticate the current input.
@@ -39,14 +39,13 @@ signatures, source seals, nested/ESSR wire and mailbox/receiver provenance acros
 reopen. The deadline is first admission plus 20 seconds, or existing TMSC `xdt + pxl`; receiver receipt time is not the transaction opener. Sequential schema
 dependencies keep that deadline. Equality remains eligible; strict expiry or
 terminal rejection releases pending evidence, acceptance retains its wire.
-Retries re-read stored proofs and deadlines in the final writer. Terminal removal
-and reference retirement commit together; file reclamation follows the flush and
-joins cancellation. Overlapping scans skip accepted/obsolete candidates, preserving
+Retries re-read stored proofs and deadlines in the final writer. Terminal removal clears pending evidence in the same transaction;
+completion joins the ordinary LMDB flush. Overlapping scans skip accepted/obsolete candidates, preserving
 each scan's captured horizon without an asynchronous Exchanger admission lock.
 TS retains and enforces this deadline through partial-proof migrations; inspected
 714 removes it after moving the final missing-schema branch to partial escrow.
-ESSR commitment and qualified-payload syntax failures reject. Unexpected payload
-read or hashing failures propagate before escrow retry can delete pending evidence.
+ESSR commitment and qualified-payload syntax failures reject. Unexpected evidence
+read or hashing failures propagate and roll back the retry transaction.
 Storage/corruption failures propagate and retain pending ownership. Readonly
 legacy opens leave absent schema-escrow tables absent. S3 owns IPEX schema gates.
 
