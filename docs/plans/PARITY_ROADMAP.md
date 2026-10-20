@@ -101,13 +101,36 @@ with unverified review ideas. Its duplicate tracker is retired. The existing
 [CLI parity reference](../reference/cli/KLI_TUFA_COMMAND_PARITY_MATRIX.md) and
 [qualification plan][qualification] own command and interop coverage.
 
-Still-unresolved review questions from that scratchpad are logging-level behavior,
-passcode interoperability, cue mapping/filtering, and the scope of audits for
+Other unresolved review questions from that scratchpad are passcode
+interoperability, cue mapping/filtering, and the scope of audits for
 key management/encryption, reply routing/watchers, challenge/authentication and
 well-known OOBIs. These are deferred questions, not confirmed defects or an
 activated implementation queue. A proposal to hide DB access, replace reflective
 dispatch, rename records or simplify generics needs a demonstrated current problem
 under ADR-0013; the old scratchpad does not authorize new facades or cleanup.
+
+## Deferred escrow logging review
+
+The credential-import work leaves a separate logging follow-up. This is roadmap
+work, outside its implementation and qualification goal; no logging upgrade has
+been implemented. Keep the existing logger rather than adding a wrapper, logger
+service dependency, diagnostic queue or retained history.
+
+- Compare KEL, reply, TEL/TSN, credential, EXN and v2 registry diagnostics with the
+  [recorded KERIpy references](../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#version-vocabulary-and-reference-limits).
+  Distinguish repeated pending attempts, accepted cleanup and actual terminal
+  ejections before selecting severity. Preserve original causes and identifying
+  fields; logging must never determine protocol decisions or removal.
+- Review the existing debug/info/warn/error threshold and Tufa's loglevel flag.
+  Decide whether TRACE and CRITICAL have concrete production uses; retain useful
+  level selection without building a logging framework or speculative hooks.
+- Keep CLI diagnostics on stderr at every enabled level so structured stdout
+  remains usable. The current logger's debug/info console methods can write to
+  stdout and need correction at the existing logger owner.
+- Qualify threshold filtering, stderr/stdout separation and repeated pending work.
+  Pending retries, successful cleanup, family migration and EXN preserveEscrow
+  must not create warning floods or false ejection claims. Actual ejections
+  remain diagnosable after committed removal. Use focused owner/CLI tests.
 
 ## Future change and release discipline
 
