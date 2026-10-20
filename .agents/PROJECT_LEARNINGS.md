@@ -52,7 +52,8 @@ remote polling remain; the minimum-timeout fix (#555) still applies.
 The [runtime simplification plan](../docs/plans/runtime/runtime-simplification-and-routing-parity.md)
 tracks removal of unsupported seams and adoption of the recorded donor's routing.
 MailboxPoller now owns its concrete HTTP/SSE operation over explicit HTTP/clock
-dependencies; the extra polling transport interface and fake are retired.
+dependencies; the extra polling transport interface and fake are retired. Reactor
+accepts awaited scoped/direct input; its unused queue and idle worker are removed.
 
 ## Read by subject
 

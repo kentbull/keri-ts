@@ -58,9 +58,8 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       yield* reactor.processBytes(query);
       assertExists(seen);
       seen = null;
-      // Queued complete records finish independently of the open stream.
-      reactor.ingest(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
-      yield* reactor.processOnce();
+      // A finite input finishes dispatch within the caller's scope.
+      yield* reactor.processBytes(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
 
       if (!seen) {
         throw new Error("Expected normalized query envelope.");
@@ -123,9 +122,8 @@ Deno.test("app/reactor - cloned events replay attached non-transferable receipt 
 
       const reactor = new Reactor(protocolFixture(remote));
       for (const msg of source.db.clonePreIter(controller.pre, 0)) {
-        reactor.ingest(msg);
+        yield* reactor.processBytes(msg);
       }
-      yield* reactor.processOnce();
 
       assertEquals(
         remote.db.rcts.get(dgKey(controller.pre, event.said)).length,
@@ -195,12 +193,11 @@ Deno.test("app/reactor - cloned events replay stored transferable receipts into 
 
       const reactor = new Reactor(protocolFixture(remote));
       for (const msg of source.db.clonePreIter(validator.pre, 0)) {
-        reactor.ingest(msg);
+        yield* reactor.processBytes(msg);
       }
       for (const msg of source.db.clonePreIter(controller.pre, 0)) {
-        reactor.ingest(msg);
+        yield* reactor.processBytes(msg);
       }
-      yield* reactor.processOnce();
 
       assertEquals(
         remote.db.vrcs.get(dgKey(controller.pre, event.said)).length,
@@ -267,8 +264,7 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
 
         const reactor = new Reactor(protocolFixture(remote));
         if (known) {
-          for (const message of source.db.clonePreIter(validator.pre)) reactor.ingest(message);
-          yield* reactor.processOnce();
+          for (const message of source.db.clonePreIter(validator.pre)) yield* reactor.processBytes(message);
         }
         yield* reactor.processBytes(bundle);
         // A receipt with unavailable validator state must not hide the following replies.
@@ -277,8 +273,8 @@ async function assertGroupedReceiptReplay(known: boolean): Promise<void> {
         if (!known) {
           assertEquals(remote.db.vrcs.get(key).length, 0);
           assertEquals(remote.db.vres.cnt(), 2); // The missing first group is escrowed as two signatures.
-          for (const message of source.db.clonePreIter(validator.pre)) reactor.ingest(message);
-          yield* reactor.processOnce();
+          for (const message of source.db.clonePreIter(validator.pre)) yield* reactor.processBytes(message);
+
           reactor.kvy.processEscrowUnverTrans();
           assertEquals(remote.db.vrcs.get(key).length, 2);
           assertEquals(remote.db.vres.cnt(), 0);
@@ -330,8 +326,7 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
         seen = envelope;
       }) as typeof reactor.kvy.processQuery;
 
-      reactor.ingest(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }));
 
       if (!seen) {
         throw new Error("Expected normalized query envelope.");
@@ -370,8 +365,7 @@ Deno.test("app/reactor - reply parsing normalizes transferable groups into dispa
         seenTsg = args.tsgs?.[0] ?? null;
       }) as typeof reactor.protocol.rvy.processReply;
 
-      reactor.ingest(hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true));
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(hab.makeEndRole(hab.pre, EndpointRoles.mailbox, true));
 
       assertInstanceOf(seenTsg, TransIdxSigGroup);
       if (!seenTsg) {
@@ -408,10 +402,9 @@ Deno.test("app/reactor - reply parsing normalizes non-transferable receipt coupl
         seenCigar = args.cigars?.[0] ?? null;
       }) as typeof reactor.protocol.rvy.processReply;
 
-      reactor.ingest(
+      yield* reactor.processBytes(
         hab.makeLocScheme("http://127.0.0.1:9723/", hab.pre, "http"),
       );
-      yield* reactor.processOnce();
 
       assertInstanceOf(seenCigar, Cigar);
       const captured = seenCigar as Cigar;
@@ -438,10 +431,9 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
         toad: 0,
       });
       const ingestingReactor = new Reactor(protocolFixture(hby));
-      ingestingReactor.ingest(
+      yield* ingestingReactor.processBytes(
         hab.makeLocScheme("http://127.0.0.1:9724/", hab.pre, "http"),
       );
-      yield* ingestingReactor.processOnce();
 
       const replay = hab.loadLocScheme(hab.pre, "http");
       assertExists(replay);
@@ -453,8 +445,7 @@ Deno.test("app/reactor - reloaded reply cigars are rehydrated with verifier cont
         seenCigar = args.cigars?.[0] ?? null;
       }) as typeof replayReactor.protocol.rvy.processReply;
 
-      replayReactor.ingest(replay);
-      yield* replayReactor.processOnce();
+      yield* replayReactor.processBytes(replay);
 
       assertInstanceOf(seenCigar, Cigar);
       const captured = seenCigar as Cigar;
@@ -507,8 +498,7 @@ Deno.test("app/reactor - receipt parsing dispatches `rct` envelopes to Kevery", 
         assertEquals(envelope.wigers[0]?.index, 0);
       }) as typeof reactor.kvy.processReceipt;
 
-      reactor.ingest(witness.witness(event));
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(witness.witness(event));
 
       assertEquals(seen, 1);
     } finally {
@@ -536,14 +526,13 @@ Deno.test("app/reactor - malformed and unsupported queries do not throw, and uns
       });
       const reactor = new Reactor(protocolFixture(hby));
 
-      reactor.ingest(
+      yield* reactor.processBytes(
         hab.endorse(makeQuerySerder("ksn", { i: hab.pre })),
       );
-      yield* reactor.processOnce();
+
       assertEquals(reactor.protocol.cues.pull(), undefined);
 
-      reactor.ingest(hab.endorse(makeQuerySerder("bogus", { i: hab.pre, src: hab.pre })));
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(hab.endorse(makeQuerySerder("bogus", { i: hab.pre, src: hab.pre })));
 
       const cue = reactor.protocol.cues.pull();
       assertExists(cue);
@@ -590,14 +579,13 @@ Deno.test("app/reactor - unverified `/ksn` replies stay recoverable through escr
       );
 
       const reactor = new Reactor(protocolFixture(remote));
-      reactor.ingest(icp);
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(icp);
+
       while (!reactor.protocol.cues.empty) {
         reactor.protocol.cues.pull();
       }
 
-      reactor.ingest(rotatedReply);
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(rotatedReply);
 
       assertEquals(remote.db.rpes.cnt(), 1);
       const cue = reactor.protocol.cues.pull();

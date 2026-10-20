@@ -721,8 +721,7 @@ Deno.test("Kevery stores non-transferable receipt escrows under snKey and replay
       assertExists(event.said);
 
       const reactor = new Reactor(protocolFixture(remote));
-      reactor.ingest(receiptor.receipt(event));
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(receiptor.receipt(event));
 
       const kvy = reactor.kvy;
       assertEquals(remote.db.ures.cnt(), 1);

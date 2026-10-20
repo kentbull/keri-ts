@@ -1,5 +1,5 @@
 import { call, ensure, race, run, sleep, spawn, suspend } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes, parseBytes } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
@@ -66,7 +66,9 @@ Deno.test("finite runtime workers progress independently and join blocked HTTP c
       });
       try {
         yield* call(() => fetched.wait);
-        if (mode !== "deadline") runtime.reactor.ingest(acceptedEventReplayMessage(source, sender.pre, 0).message);
+        if (mode !== "deadline") {
+          yield* runtime.reactor.processBytes(acceptedEventReplayMessage(source, sender.pre, 0).message);
+        }
         yield* race([
           call(() => cancelling.wait),
           call(function*() {
@@ -287,33 +289,7 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
   });
 });
 
-Deno.test("queued ingress copies producer bytes and does not publish failed copies", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    try {
-      const reactor = new Reactor(protocolFixture(hby));
-      const producer = Uint8Array.of(1, 2);
-      let received: Uint8Array | undefined;
-      reactor.processBytes = function*(bytes) {
-        received = bytes;
-      };
-      reactor.ingest(producer);
-      producer.fill(0);
-      yield* reactor.processOnce();
-      assertEquals(received, Uint8Array.of(1, 2));
-      const bytes = new Uint8Array(4);
-      bytes.slice = () => {
-        throw new Error("copy failed");
-      };
-      assertThrows(() => reactor.ingest(bytes), Error, "copy failed");
-      assertEquals(reactor.hasIngress, false);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("queued ingress processes without waiting for cue delivery", async () => {
+Deno.test("direct ingress processes without waiting for cue delivery", async () => {
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -322,11 +298,10 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
       const wire = acceptedEventReplayMessage(source, sender.pre, 0).message;
 
       const reactor = new Reactor(protocolFixture(target));
-      reactor.ingest(wire);
       reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
-      yield* reactor.processOnce();
+      yield* reactor.processBytes(wire);
+
       assertEquals(target.db.getKever(sender.pre)!.sn, 0);
-      assertEquals(reactor.hasIngress, false);
     } finally {
       yield* target.close(true);
       yield* source.close(true);
@@ -334,60 +309,7 @@ Deno.test("queued ingress processes without waiting for cue delivery", async () 
   });
 });
 
-Deno.test("queued processing joins cancellation and does not reinsert failed records", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    try {
-      const reactor = new Reactor(protocolFixture(hby));
-      const started = gate(), cleaning = gate(), cleanup = gate();
-      reactor.processBytes = function*() {
-        yield* abortable(async (signal) => {
-          started.open();
-          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-          cleaning.open();
-          await cleanup.wait;
-          signal.throwIfAborted();
-        });
-      };
-      reactor.ingest(new Uint8Array(4));
-      const task = yield* spawn(() => reactor.processOnce());
-      yield* call(() => started.wait);
-      assertEquals(reactor.hasIngress, false, "record transfers out of queued ownership before yielding");
-      reactor.clearIngress();
-      let joined = false;
-      const halted = yield* spawn(function*() {
-        yield* task.halt();
-        joined = true;
-      });
-      yield* call(() => cleaning.wait);
-      try {
-        assertEquals(joined, false);
-      } finally {
-        cleanup.open();
-      }
-      yield* halted;
-      assertEquals(joined, true);
-      reactor.ingest(new Uint8Array(4));
-      reactor.processBytes = function*() {
-        reactor.clearIngress();
-        throw new Error("late processing failure");
-      };
-      yield* call(() => assertRejects(() => run(() => reactor.processOnce()), Error, "late processing failure"));
-      assertEquals(reactor.hasIngress, false);
-
-      reactor.ingest(new Uint8Array(4));
-      reactor.processBytes = function*() {
-        throw new Error("processing failed");
-      };
-      yield* call(() => assertRejects(() => run(() => reactor.processOnce()), Error, "processing failed"));
-      assertEquals(reactor.hasIngress, false);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("runtime explicit close and scope exit clear queued ingress and cues", async () => {
+Deno.test("runtime explicit close and scope exit clear cues", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
@@ -395,15 +317,13 @@ Deno.test("runtime explicit close and scope exit clear queued ingress and cues",
       for (const explicit of [true, false]) {
         yield* call(function*() {
           runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-          runtime.reactor.ingest(new Uint8Array(4));
           runtime.cues.push({ kin: "oobiQueued", url: "https://peer.test/" });
-          assertEquals(runtime.reactor.hasIngress, true);
           if (explicit) {
             yield* runtime.close();
-            assertEquals([runtime.reactor.hasIngress, runtime.cues.length], [false, 0]);
+            assertEquals(runtime.cues.length, 0);
           }
         });
-        assertEquals([runtime.reactor.hasIngress, runtime.cues.length], [false, 0]);
+        assertEquals(runtime.cues.length, 0);
       }
     } finally {
       yield* hby.close(true);

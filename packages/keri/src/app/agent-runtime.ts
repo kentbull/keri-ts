@@ -156,10 +156,6 @@ export interface AgentRuntimeOptions {
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
 export interface RuntimePendingState {
   /**
-   * Whether Reactor has queued input.
-   */
-  ingress: boolean;
-  /**
    * Whether ordinary application cues await routing.
    */
   cues: boolean;
@@ -313,13 +309,6 @@ export function* createAgentRuntime(
     replies,
   );
   const reactor = new Reactor(protocol);
-  yield* resource<void>(function*(provide) {
-    try {
-      yield* provide();
-    } finally {
-      reactor.clearIngress();
-    }
-  });
   loadChallengeHandlers(hby.db, exc);
   loadDelegationHandlers(hby, exc, notifier);
   loadOobiHandlers(hby, exc, notifier);
@@ -420,7 +409,6 @@ export function* createAgentRuntime(
      * borrowed. Continue remaining cleanups after a failure and preserve all failures.
      */
     *close(): Operation<void> {
-      reactor.clearIngress();
       const failures: unknown[] = [];
       const cleanup = [
         function*() {
@@ -548,22 +536,6 @@ function* openRegerForHabery(hby: Habery): Operation<Reger> {
 }
 
 /**
- * Queue one CESR/KERI message byte sequence for runtime parsing.
- *
- * This is the supported ingress seam for both local synthetic messages and
- * remotely fetched OOBI material.
- *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param bytes Complete resident input copied for later Reactor processing.
- */
-export function ingestKeriBytes(
-  runtime: AgentRuntime,
-  bytes: Uint8Array,
-): void {
-  runtime.reactor.ingest(bytes);
-}
-
-/**
  * Queue one OOBI resolution job through the durable OOBI component.
  *
  * Unlike the older bootstrap runtime, this no longer stages jobs on a root
@@ -652,7 +624,6 @@ export function runtimePendingState(
   runtime: AgentRuntime,
 ): RuntimePendingState {
   return {
-    ingress: runtime.reactor.hasIngress,
     cues: !runtime.cues.empty,
     replyEscrow: runtime.hby.db.rpes.cnt() > 0,
     oobiQueued: runtime.hby.db.oobis.cnt() > 0,
@@ -676,7 +647,7 @@ export function runtimePendingState(
  */
 export function runtimeHasPendingWork(runtime: AgentRuntime): boolean {
   const state = runtimePendingState(runtime);
-  return state.ingress || state.cues || state.replyEscrow
+  return state.cues || state.replyEscrow
     || state.oobiQueued || state.oobiInFlight || state.multiPending
     || state.authQueued || state.authInFlight
     || state.delegationPending
@@ -753,7 +724,7 @@ export function runtimeOobiConverged(
 ): boolean {
   const pending = runtimePendingState(runtime);
   return runtimeOobiTerminalState(runtime, url).status !== "pending"
-    && !pending.ingress && !pending.cues && !pending.replyEscrow
+    && !pending.cues && !pending.replyEscrow
     && !pending.oobiQueued && !pending.oobiInFlight && !pending.multiPending
     && !pending.authQueued && !pending.authInFlight && !pending.delegationPending
     && !pending.queriesPending;
@@ -804,7 +775,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
 
 /**
  * Start the independently progressing runtime workers and suspend until halted.
- * Compose query delivery, Poster delivery, Reactor ingress, cue routing,
+ * Compose query delivery, Poster delivery, cue routing,
  * ProtocolProcessor escrows, OOBI/authentication, optional notice/mailbox workers,
  * delegation and query continuations. The finalizer halts children in reverse
  * order; store ownership remains with the composition scope.
@@ -828,9 +799,6 @@ export function* runAgentRuntime(
       }
     }),
     yield* spawn(() => runtime.postman.deliverDo()),
-    yield* spawn(function*() {
-      yield* runtime.reactor.msgDo();
-    }),
     yield* spawn(function*() {
       yield* cueDo(runtime, options);
     }),

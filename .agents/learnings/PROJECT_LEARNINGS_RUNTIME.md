@@ -55,9 +55,10 @@ captures request replies before application publication, including synchronous
 capture when a new correlation claims already-published output. No application
 callback gate remains. Waiting cancellation removes the waiter; active ownership
 joins handler cleanup before passing the protocol turn. Reactor owns byte ingress
-and its parser. Queued ingress copies
-bytes, then pulls/processes without reinsertion on failure. clearIngress clears
-queued data, not active I/O. Explicit close and scope exit clear ingress/cues.
+and its parser. Actual callers await process/processBytes through input cleanup;
+there is no duplicate queued-ingress API or idle msgDo worker. Runtime pending
+state describes its real owners, not a dormant input queue. Explicit close and
+scope exit clear cues after dependent work joins.
 
 Prepare/sign/publish before source removal; preparation failure retains the record.
 Poster accepts one complete CESR message. Target preparation is an owned operation
