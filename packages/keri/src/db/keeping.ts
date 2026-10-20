@@ -590,6 +590,7 @@ export function* createKeeper(
 ): Operation<Keeper> {
   const keeper = new Keeper(options);
   let delivered = false;
+  let failure: { error: unknown } | undefined;
   try {
     const opened = yield* keeper.reopen(options);
     if (!opened) {
@@ -597,7 +598,23 @@ export function* createKeeper(
     }
     delivered = true;
     return keeper;
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
-    if (!delivered) yield* keeper.close();
+    if (!delivered) {
+      try {
+        yield* keeper.close();
+      } catch (error) {
+        if (failure) {
+          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
+          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
+            cause: failure.error,
+          });
+        }
+        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
+        throw error;
+      }
+    }
   }
 }

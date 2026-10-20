@@ -1,5 +1,5 @@
 import { type Operation, run } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
 import {
   type CommandContextDependencies,
@@ -8,7 +8,7 @@ import {
   withExistingHabery,
   withHabAndAgentRuntime,
 } from "../../../src/app/cli/common/context.ts";
-import type { Hab, Habery } from "../../../src/app/habbing.ts";
+import { type Hab, Habery } from "../../../src/app/habbing.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 
 function fakeHabery(events: string[], hab?: Hab): Habery {
@@ -264,4 +264,63 @@ Deno.test("cli context - invalid alias is rejected and opened resources are clos
   );
 
   assertEquals(events, ["setup:store", "runtime", "runtime.close", "hby.close"]);
+});
+
+Deno.test("cli context - command, runtime and Habery failures remain observable", async () => {
+  const events: string[] = [];
+  const commandFailure = new Error("command failed");
+  const runtimeFailure = new Error("runtime close failed");
+  const databaseFailure = new Error("database close failed");
+  const hby = fakeHabery(events);
+  hby.close = function*() {
+    events.push("hby.close");
+    throw databaseFailure;
+  };
+  const runtime = fakeRuntime(events);
+  runtime.close = function*() {
+    events.push("runtime.close");
+    throw runtimeFailure;
+  };
+  const error = await assertRejects(() =>
+    run(() =>
+      withAgentRuntime(
+        { name: "store" },
+        { dependencies: fakeDependencies(events, hby, runtime) },
+        function*() {
+          throw commandFailure;
+        },
+      )
+    ), AggregateError);
+  const outer = error as AggregateError;
+  assertStrictEquals(outer.errors[1], databaseFailure);
+  assertEquals((outer.errors[0] as AggregateError).errors, [commandFailure, runtimeFailure]);
+  assertEquals(events, ["setup:store", "runtime", "runtime.close", "hby.close"]);
+});
+
+Deno.test("cli context - Habery attempts every owned close and preserves failures", async () => {
+  const events: string[] = [];
+  const dbFailure = new Error("Baser close failed");
+  const ksFailure = new Error("Keeper close failed");
+  const hby = {
+    db: {
+      *close() {
+        events.push("db");
+        throw dbFailure;
+      },
+    },
+    ks: {
+      *close() {
+        events.push("ks");
+        throw ksFailure;
+      },
+    },
+    cf: {
+      *close() {
+        events.push("cf");
+      },
+    },
+  } as unknown as Habery;
+  const error = await assertRejects(() => run(() => Habery.prototype.close.call(hby)), AggregateError);
+  assertEquals((error as AggregateError).errors, [dbFailure, ksFailure]);
+  assertEquals(events, ["db", "ks", "cf"]);
 });

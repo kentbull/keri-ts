@@ -24,3 +24,15 @@ against published 1.0.0 before final release qualification.
 - CESR's unused `OwnedPayload`, `PayloadSink`, `MemoryPayloadSink`, `essrRaw` and
   `essrWire` are removed. Read ordinary Texter raw/qualified bytes directly.
   Shared frame serializers, counters, parsing and actual transport sources remain.
+
+## Database shutdown
+
+- Every observable LMDB close failure now propagates, including ordinary handles.
+  A failed close leaves the wrapper unavailable: create a new owner after
+  resolving the shutdown fault; do not reuse it or clear its storage.
+- `LMDBer.env` is read-only and exposes only a usable handle. Native shutdown
+  starts before asynchronous completion; retained raw handles must not be used.
+- Repeated close after confirmed closure is harmless. `openExisting` still
+  refuses missing storage, new tables and whole-environment clearing.
+- Affected acquisition and command owners preserve operation plus cleanup errors
+  in `AggregateError`; Habery attempts all owned closures before returning.

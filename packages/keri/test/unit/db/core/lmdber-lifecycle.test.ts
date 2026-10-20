@@ -1,5 +1,5 @@
 import { run } from "effection";
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";
 import { DatabaseNotOpenError } from "../../../../src/core/errors.ts";
 import { LMDBer } from "../../../../src/db/core/lmdber.ts";
@@ -115,4 +115,132 @@ Deno.test("db/core lmdber lifecycle - openDB changes duplicate semantics for nam
 
     yield* lmdber.close(true);
   });
+});
+
+for (const existingOnly of [false, true]) {
+  for (const throwsSynchronously of [false, true]) {
+    Deno.test(`db/core lmdber lifecycle - ${existingOnly ? "existing-only" : "ordinary"} failed close (${throwsSynchronously ? "throw" : "reject"}) refuses reuse and deletion`, async () => {
+      const headDirPath = await Deno.makeTempDir();
+      const db = new LMDBer({ headDirPath, name: "uncertain" });
+      await run(() => db.reopen());
+      const path = db.path!;
+      db.setVal(db.openDB("proof."), b("key"), b("retained"));
+      if (existingOnly) {
+        await run(() => db.close());
+        await run(() => db.openExisting(path));
+      }
+      const native = db.env!;
+      const originalClose = native.close.bind(native);
+      const failure = new Error("injected native shutdown failure");
+      let calls = 0;
+      native.close = () => {
+        calls++;
+        if (throwsSynchronously) throw failure;
+        return Promise.reject(failure);
+      };
+      try {
+        assertStrictEquals(await assertRejects(() => run(() => db.close(!existingOnly))), failure);
+        assertEquals(db.opened, false);
+        assertEquals(db.env, null);
+        assertThrows(() => db.openDB("unsafe."), DatabaseNotOpenError);
+        assertStrictEquals(await assertRejects(() => run(() => db.reopen({ name: "replacement" }))), failure);
+        assertStrictEquals(await assertRejects(() => run(() => db.close())), failure);
+        await assertRejects(() => run(() => db.openExisting(path)));
+        if (existingOnly) await assertRejects(() => run(() => db.close(true)), Error, "cannot clear");
+        assertEquals(calls, 1);
+        assertEquals(db.path, path);
+        assert((await Deno.stat(`${path}/data.mdb`)).isFile);
+        assertEquals([...Deno.readDirSync(`${headDirPath}/keri/db`)].map(entry => entry.name), ["uncertain"]);
+      } finally {
+        await originalClose(); // Fault injection did not close this real native owner.
+        await Deno.remove(headDirPath, { recursive: true });
+      }
+    });
+  }
+}
+
+Deno.test("db/core lmdber lifecycle - native completion callback is joined and known-closed repetition is harmless", async () => {
+  const db = new LMDBer({ temp: true });
+  await run(() => db.reopen());
+  const native = db.env!;
+  const originalClose = native.close.bind(native);
+  let release!: () => Promise<void>;
+  let calls = 0;
+  const started = new Promise<void>(resolve => {
+    native.close = ((done: () => void) => {
+      calls++;
+      release = async () => {
+        await originalClose();
+        done();
+      };
+      resolve();
+      return Promise.resolve(); // 3.5.3's deferred-read branch can do this.
+    }) as typeof native.close;
+  });
+  let completed = false;
+  const closing = run(() => db.close()).then(() => {
+    completed = true;
+  });
+  await started;
+  await Promise.resolve();
+  assertEquals(completed, false);
+  assertEquals(db.env, null);
+  await release();
+  await closing;
+  await run(() => db.close());
+  assertEquals(calls, 1);
+  assertEquals(db.opened, false);
+  await run(() => db.close(true));
+});
+
+Deno.test("db/core lmdber lifecycle - cancelling close joins native completion before returning", async () => {
+  const db = new LMDBer({ temp: true });
+  await run(() => db.reopen());
+  const native = db.env!;
+  const originalClose = native.close.bind(native);
+  let release!: () => Promise<void>;
+  const started = new Promise<void>(resolve => {
+    native.close = ((done: () => void) => {
+      release = async () => {
+        await originalClose();
+        done();
+      };
+      resolve();
+      return Promise.resolve();
+    }) as typeof native.close;
+  });
+  const closing = run(() => db.close());
+  await started;
+  let halted = false;
+  const halt = Promise.resolve(closing.halt()).then(() => {
+    halted = true;
+  });
+  await Promise.resolve();
+  assertEquals(halted, false);
+  await release();
+  await halt;
+  assertEquals(db.opened, false);
+  await run(() => db.close(true));
+});
+
+Deno.test("db/core lmdber lifecycle - cancellation preserves a late native close rejection", async () => {
+  const db = new LMDBer({ temp: true });
+  await run(() => db.reopen());
+  const native = db.env!;
+  const originalClose = native.close.bind(native);
+  const failure = new Error("late native close failure");
+  let reject!: (error: Error) => void;
+  native.close = () =>
+    new Promise<void>((_, failed) => {
+      reject = failed;
+    });
+  const closing = run(() => db.close());
+  const halted = Promise.resolve(closing.halt());
+  // The injected rejection follows real native cleanup, so the test leaks no handle.
+  await originalClose();
+  reject(failure);
+  assertStrictEquals(await assertRejects(() => halted), failure);
+  assertStrictEquals(await assertRejects(() => Promise.resolve(closing)), failure);
+  assertStrictEquals(await assertRejects(() => run(() => db.reopen())), failure);
+  await Deno.remove(db.path!, { recursive: true });
 });

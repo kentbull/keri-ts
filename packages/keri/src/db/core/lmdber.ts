@@ -3,7 +3,7 @@
  */
 
 import { b, bytesEqual, bytesHex, t, toBytes } from "cesr-ts";
-import { action, type Operation } from "npm:effection@^3.6.0";
+import { action, call, ensure, type Operation } from "npm:effection@^3.6.0";
 import { open } from "npm:lmdb@3.5.3";
 import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
@@ -268,7 +268,14 @@ const DEFAULT_DB_VERSION = "1.0.0";
  */
 export class LMDBer {
   private pathManager: PathManager;
-  public env: RootDatabase<any, Key> | null;
+  private root: RootDatabase<any, Key> | null;
+  /** A rejected close remains authoritative: the binding may have disabled only part of the handle. */
+  private closing: Promise<void> | null = null;
+
+  /** Expose only a usable environment, never one whose shutdown has started or failed. */
+  get env(): RootDatabase<any, Key> | null {
+    return this.closing ? null : this.root;
+  }
   public readonly: boolean;
   private defaults: LMDBerDefaults;
   private readonly logger: Logger;
@@ -310,7 +317,7 @@ export class LMDBer {
     };
 
     this.pathManager = new PathManager(options, pathDefaults);
-    this.env = null;
+    this.root = null;
     this.readonly = options.readonly || false;
   }
 
@@ -365,24 +372,32 @@ export class LMDBer {
     );
   }
 
-  /** Bridge async LMDB close into an Effection operation. */
-  private *closeEnv(env: RootDatabase<any, Key>): Operation<void> {
-    yield* action<void>((resolve, reject) => {
-      env.close().then(() => resolve(undefined)).catch(reject);
-      return () => {};
-    });
-  }
-
-  /**
-   * Allow LMDB-js internal read-reset timers to flush before test/resource
-   * teardown completes. LMDB uses setTimeout(0/1) internally around read txn
-   * renewal/reset and deferred close paths.
-   */
-  private *quiesceEnvTimers(): Operation<void> {
-    yield* action<void>((resolve) => {
-      const timeout = setTimeout(() => resolve(undefined), 1);
-      return () => clearTimeout(timeout);
-    });
+  /** Join native shutdown even when the caller is cancelled; failed handles cannot be reused. */
+  private *closeEnv(): Operation<void> {
+    if (!this.closing && this.root) {
+      const root = this.root;
+      // lmdb-js disables reads/writes before completion. A rejection cannot prove
+      // whether the environment is usable or fully closed; retain it as failed.
+      this.closing = new Promise<void>((resolve, reject) => {
+        // In 3.5.3 the callback runs after doClose, including outstanding reads.
+        // The returned Promise alone can resolve before that deferred branch.
+        const native = root as typeof root & { close(done: () => void): Promise<void> };
+        native.close(resolve).catch(reject);
+      }).then(() => {
+        this.root = null;
+        this.pathManager.opened = false;
+      });
+    }
+    const pending = this.closing;
+    if (pending) {
+      yield* call(function*() {
+        // Register joining before the async leaf. Effection reports a failing
+        // ensure as destruction failure, including when its task is halted.
+        yield* ensure(() => call(() => pending));
+        yield* call(() => pending);
+      });
+      this.closing = null;
+    }
   }
 
   /**
@@ -393,21 +408,9 @@ export class LMDBer {
    * and stamps the default version marker on newly-created writable envs.
    */
   *reopen(options: Partial<LMDBerOptions> = {}): Operation<boolean> {
+    yield* this.closeEnv();
     const readonly = options.readonly ?? this.readonly;
     this.readonly = readonly;
-
-    // Close existing database if open (prevents double-free when reopening)
-    if (this.env) {
-      try {
-        yield* this.closeEnv(this.env);
-      } catch (error) {
-        // Ignore close errors (database might already be closed)
-        this.logger.warn(
-          `Warning: Error closing existing LMDB environment: ${error}`,
-        );
-      }
-      this.env = null;
-    }
 
     // Reopen path manager (now an Effection operation)
     yield* this.pathManager.reopen(options);
@@ -425,7 +428,7 @@ export class LMDBer {
       this.logger.error(
         `Cannot open readonly database: database files do not exist at ${dbPath}`,
       );
-      this.env = null;
+      this.root = null;
       return false;
     }
 
@@ -445,7 +448,7 @@ export class LMDBer {
    * All subsequent named-table bindings refuse creation, including writable ones.
    */
   *openExisting(path: string): Operation<void> {
-    if (this.env || this.temp) {
+    if (this.root || this.closing || this.temp) {
       throw new DatabaseOperationError("Existing-store opening requires a closed, persistent LMDBer");
     }
     const data = yield* this.pathManager.statFileOp(`${path}/data.mdb`);
@@ -492,10 +495,10 @@ export class LMDBer {
     try {
       // do sync because wrapping synchronous native operations in action() can cause
       // memory management issues with native bindings (double-free errors)
-      this.env = open(dbConfig);
+      this.root = open(dbConfig);
       this.logger.debug(`LMDB environment opened successfully`);
     } catch (error) {
-      this.env = null;
+      this.root = null;
       const message = error instanceof Error ? error.message : String(error);
       throw new DatabaseOperationError(
         `Failed to open LMDB environment: ${message}`,
@@ -517,31 +520,16 @@ export class LMDBer {
   }
 
   /**
-   * Close the root LMDB env and path manager.
-   *
-   * This waits for LMDB-js async close completion and its internal read-reset
-   * timers before optional path cleanup, so test/resource teardown does not
-   * leak across later work.
+   * Close the environment before path cleanup. Observable binding failures
+   * propagate and permanently prevent this wrapper from reusing or deleting it.
+   * Repeated closure of a known-closed environment is harmless.
    */
   *close(clear = false): Operation<boolean> {
     if (clear && this.existingOnly) {
       throw new DatabaseOperationError("Existing-store maintenance cannot clear its environment");
     }
-    if (this.env) {
-      try {
-        yield* this.closeEnv(this.env);
-        yield* this.quiesceEnvTimers(); // lmdb-js uses internal teardown timers to manage post-close; this lets them finish
-      } catch (error) {
-        if (this.existingOnly) throw error;
-        // Intentional recovery: close errors are non-fatal during shutdown paths.
-        this.logger.warn(`Error closing LMDB: ${error}`);
-      }
-      this.env = null;
-    }
-
-    // Close path manager (now an Effection operation)
+    yield* this.closeEnv();
     yield* this.pathManager.close(clear);
-
     return true;
   }
 

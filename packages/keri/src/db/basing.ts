@@ -1845,6 +1845,7 @@ export class BaserDoer {
 export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
   const baser = new Baser(options);
   let delivered = false;
+  let failure: { error: unknown } | undefined;
   try {
     const opened = yield* baser.reopen(options);
     if (!opened) {
@@ -1852,7 +1853,23 @@ export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
     }
     delivered = true;
     return baser;
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
-    if (!delivered) yield* baser.close();
+    if (!delivered) {
+      try {
+        yield* baser.close();
+      } catch (error) {
+        if (failure) {
+          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
+          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
+            cause: failure.error,
+          });
+        }
+        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
+        throw error;
+      }
+    }
   }
 }
