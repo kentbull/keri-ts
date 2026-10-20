@@ -13,7 +13,7 @@ explicit profile limits; they do not resume the completed cleanup sequence.
   1.x/2.x target assessment and ports tied to the maintained v1/v2 compatibility inventory.
 - [2.0.0 release completion](V2_RELEASE_COMPLETION_PLAN.md): approved execution plan;
   operator fixes, native-v2 CLI, multisig/backer lifecycle, protocol interoperability
-  and three-package release.
+  cohesive package organization and three-package release.
 
 Completed runtime execution plans and the historical declaration-coverage ledger
 are removed. Keep current behavior in design documents and decisions in ADRs;
