@@ -21,6 +21,7 @@ import {
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
+import { consoleLogger } from "../core/logger.ts";
 import type { VcStateRecordShape } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
@@ -40,7 +41,14 @@ export type VerifierRejectReason =
 export type VerifierDecision =
   | { kind: "accept"; said: string }
   | { kind: "escrow"; reason: VerifierEscrowReason; said: string }
-  | { kind: "reject"; reason: VerifierRejectReason; said: string; detail?: string };
+  | {
+    kind: "reject";
+    reason: VerifierRejectReason;
+    said: string;
+    detail?: string;
+    /** Original validation failure, retained for owner diagnostics without changing the decision. */
+    cause?: unknown;
+  };
 
 export type VerifierCue = Extract<
   AgentCue,
@@ -157,11 +165,13 @@ export class Verifier {
     try {
       schemer.verify(creder.raw);
     } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
       return {
         kind: "reject",
         reason: "invalidSchema",
         said,
         detail: error instanceof Error ? error.message : String(error),
+        cause: error,
       };
     }
 
@@ -193,11 +203,13 @@ export class Verifier {
         try {
           chainState = this.verifyChain(node.n, op, issuer);
         } catch (error) {
+          if (!(error instanceof ValidationError)) throw error;
           return {
             kind: "reject",
             reason: "unsupportedChainOperator",
             said,
             detail: error instanceof Error ? error.message : String(error),
+            cause: error,
           };
         }
         if (!chainState) {
@@ -343,6 +355,16 @@ export class Verifier {
     return tever?.vcState(nodeSaid) ?? null;
   }
 
+  /**
+   * Retry one dependency family and report terminal removals after they succeed.
+   *
+   * Acceptance and migration to another family are ordinary progress, not ejection.
+   * Storage failures propagate with the original evidence still owned by its escrow.
+   *
+   * @param db Pending credential identities and their original admission timestamps.
+   * @param expectedReason Dependency family whose membership this pass owns.
+   * @param timeoutMs Maximum pending age in milliseconds; equality remains eligible.
+   */
   private processEscrow(
     db: { getTopItemIter(): Iterable<[string[], Dater]>; rem(keys: string[]): boolean },
     expectedReason: VerifierEscrowReason,
@@ -354,14 +376,32 @@ export class Verifier {
         continue;
       }
       if (Date.now() - new Date(dater.dts).getTime() > timeoutMs) {
-        db.rem([said]);
+        if (db.rem([said])) {
+          consoleLogger.warn("Verifier ejected credential escrow", {
+            family: expectedReason,
+            said,
+            reason: "expired",
+            detail: `Credential dependency remained unresolved beyond ${timeoutMs} ms.`,
+          });
+        }
         continue;
       }
       const [creder, prefixer, seqner, saider] = this.reger.cloneCred(said);
       // Remote validation outcomes are typed; thrown failures retain their exact identity and escrow owner.
       const decision = this.processCredential({ creder, prefixer, seqner, saider });
       if (decision.kind === "accept" || decision.kind === "reject") {
-        db.rem([said]);
+        const removed = db.rem([said]);
+        if (removed && decision.kind === "reject") {
+          consoleLogger.warn("Verifier ejected credential escrow", {
+            family: expectedReason,
+            said,
+            issuer: creder.issuer,
+            registry: creder.regid,
+            reason: decision.reason,
+            detail: decision.detail,
+            cause: decision.cause,
+          });
+        }
         continue;
       }
       if (decision.reason !== expectedReason) {

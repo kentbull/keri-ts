@@ -31,6 +31,7 @@ import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from
 import { ValidationError } from "../core/errors.ts";
 import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import { Kever } from "../core/kever.ts";
+import { consoleLogger } from "../core/logger.ts";
 import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { hasNests, loadNests, publishNests, stageNests } from "../db/exchange-nests.ts";
@@ -181,6 +182,8 @@ export type ExchangeDecision =
     said: string;
     /** MissingSignatureError preserves an existing escrow but does not authorize creating one. */
     preserveEscrow?: true;
+    /** Original malformed-wire failure when a rejected attempt was classified from a caught error. */
+    cause?: unknown;
   };
 /**
  * Peer-to-peer `exn` processor for one `Habery`.
@@ -268,7 +271,12 @@ export class Exchanger {
   private *admit(args: ExchangeInput): Operation<ExchangeDecision> {
     const said = args.serder.said ?? "<unknown>";
     /** Keep normal remote admission failures in the decision channel. */
-    const reject = (reason: string): ExchangeDecision => ({ kind: "reject", reason, said });
+    const reject = (reason: string, cause?: unknown): ExchangeDecision => ({
+      kind: "reject",
+      reason,
+      said,
+      ...(cause !== undefined ? { cause } : {}),
+    });
     let nestStage: string | undefined;
     let nests: readonly CesrFrame[] = args.nests ?? [];
     // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
@@ -316,7 +324,10 @@ export class Exchanger {
         diger = new Diger({ qb64: args.serder.a });
       } catch (error) {
         if (!malformedEssr(error)) throw error;
-        return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
+        return reject(
+          `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
       }
       try {
         if (!essrs || !(yield* abortable((signal) => diger.verifyStream(essrRaw(essrs).open(signal))))) {
@@ -330,7 +341,10 @@ export class Exchanger {
         }
       } catch (error) {
         if (!malformedEssr(error)) throw error;
-        return reject(`Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`);
+        return reject(
+          `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
+          error,
+        );
       }
     }
     const attachments = normalizeAttachments(args.ptds ?? []);
@@ -468,7 +482,12 @@ export class Exchanger {
     yield* this.retryEscrowType(false);
     if (this.hby.db.emse) yield* this.retryEscrowType(true);
   }
-  /** Close each bounded cursor before replay; newly discovered dependencies wait for the next finite pass. */
+  /**
+   * Close each cursor before replay; newly discovered dependencies wait for the next finite pass.
+   * Terminal diagnostics follow joined evidence cleanup, while acceptance and dependency migration stay silent.
+   *
+   * @param schema Select missing-schema escrow instead of partial-signature/proof escrow.
+   */
   private *retryEscrowType(schema: boolean): Operation<void> {
     const table = schema ? this.hby.db.emse! : this.hby.db.epse;
     let end: Uint8Array | undefined;
@@ -506,6 +525,14 @@ export class Exchanger {
       if (date === null || date === undefined) {
         if (schema) throw new Error("Corrupt missing-schema deadline.");
         yield* call(() => this.dropEscrow(said));
+        consoleLogger.warn("Exchanger ejected exchange escrow", {
+          family: "epse",
+          said,
+          pre: serder.pre,
+          route: serder.route,
+          reason: "missingTimestamp",
+          detail: "Pending exchange has no valid admission timestamp.",
+        });
         continue;
       }
       const now = this.nowMicros();
@@ -514,6 +541,14 @@ export class Exchanger {
         || absolute !== null && absolute !== undefined && now > absolute
       ) {
         yield* call(() => this.dropEscrow(said));
+        consoleLogger.warn("Exchanger ejected exchange escrow", {
+          family: schema ? "emse" : "epse",
+          said,
+          pre: serder.pre,
+          route: serder.route,
+          reason: "expired",
+          detail: "Exchange dependency exceeded its pending lifetime or absolute schema deadline.",
+        });
         continue;
       }
       const decision = yield* this.processEvent({
@@ -524,7 +559,17 @@ export class Exchanger {
         ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
         mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
       });
-      if (decision.kind === "reject" && !decision.preserveEscrow) yield* call(() => this.dropEscrow(said));
+      if (decision.kind === "reject" && !decision.preserveEscrow) {
+        yield* call(() => this.dropEscrow(said));
+        consoleLogger.warn("Exchanger ejected exchange escrow", {
+          family: schema ? "emse" : "epse",
+          said,
+          pre: serder.pre,
+          route: serder.route,
+          reason: decision.reason,
+          cause: decision.cause,
+        });
+      }
     }
   }
   /** Own accepted-evidence replay and its actual payload readers through completion or cancellation. */

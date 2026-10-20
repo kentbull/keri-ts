@@ -3,6 +3,7 @@ import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/asser
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../../../src/core/kever-decisions.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import { Broker } from "../../../src/db/escrowing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -172,6 +173,9 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on typed retry decisions
 Deno.test("db/escrowing - Broker propagates processing failures and drops only on typed decisions", async () => {
   await run(function*() {
     const lmdber = yield* createLMDBer({ name: crypto.randomUUID(), temp: true });
+    const warnings: Parameters<typeof consoleLogger.warn>[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (...args) => warnings.push(args);
     try {
       const broker = new Broker(lmdber, "txn");
       const { diger } = createBrokerEscrowFixture(broker);
@@ -186,10 +190,35 @@ Deno.test("db/escrowing - Broker propagates processing failures and drops only o
       );
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 1);
       assertExists(broker.serderdb.get([diger.qb64]));
-      assertEquals(broker.retryStateNotices("txn", () => dropEscrow("processingError")), { processed: 1, done: true });
+      assertEquals(warnings, []);
+      const rem = broker.escrowdb.rem;
+      try {
+        broker.escrowdb.rem = () => {
+          throw failure;
+        };
+        assertEquals(assertThrows(() => broker.retryStateNotices("txn", () => dropEscrow("processingError"))), failure);
+        assertEquals(warnings, [], "A failed index removal must not claim an ejection");
+      } finally {
+        broker.escrowdb.rem = rem;
+      }
+      assertEquals(
+        broker.retryStateNotices("txn", () => dropEscrow("processingError", "Untrusted state attester.")),
+        { processed: 1, done: true },
+      );
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 0);
       assertExists(broker.serderdb.get([diger.qb64]));
+      assertEquals(warnings.length, 1);
+      assertEquals(warnings[0][1], {
+        family: "txn",
+        said: diger.qb64,
+        pre: "Eregistry",
+        aid: "Eaid",
+        route: "/tsn/registry/Eaid",
+        reason: "processingError",
+        detail: "Untrusted state attester.",
+      });
     } finally {
+      consoleLogger.warn = warn;
       yield* lmdber.close(true);
     }
   });
@@ -201,6 +230,9 @@ Deno.test("db/escrowing - Broker removes stale escrow entries without purging st
       name: `broker-stale-${crypto.randomUUID()}`,
       temp: true,
     });
+    const warnings: Parameters<typeof consoleLogger.warn>[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (...args) => warnings.push(args);
     try {
       const broker = new Broker(lmdber, "txn", { timeout: 1 });
       const serder = makeReplySerder("/tsn/registry/Eaid", "Eregistry");
@@ -232,7 +264,18 @@ Deno.test("db/escrowing - Broker removes stale escrow entries without purging st
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 0);
       assertExists(broker.serderdb.get([diger.qb64]));
       assertExists(broker.daterdb.get([diger.qb64]));
+      assertEquals(warnings.length, 1);
+      assertEquals(warnings[0][1], {
+        family: "txn",
+        said: diger.qb64,
+        pre: "Eregistry",
+        aid: "Eaid",
+        route: "/tsn/registry/Eaid",
+        reason: "stale",
+        detail: undefined,
+      });
     } finally {
+      consoleLogger.warn = warn;
       yield* lmdber.close(true);
     }
   });

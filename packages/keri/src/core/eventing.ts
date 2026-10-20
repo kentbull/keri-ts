@@ -52,6 +52,7 @@ import {
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
 import type { Kramer } from "./kraming.ts";
+import { consoleLogger } from "./logger.ts";
 import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
 import { reply as replyEvent } from "./protocol-eventing.ts";
 import { KeyStateRecord, ObservedRecord } from "./records.ts";
@@ -1030,11 +1031,12 @@ export class Kevery {
         said,
         new Siger({ qb64: wigerQb64 }),
       );
-      logEscrowDecision("Kevery UWE", decision);
       switch (decision.kind) {
         case "accept":
         case "drop":
-          this.db.uwes.remOn([pre], sn, couple);
+          if (this.db.uwes.remOn([pre], sn, couple)) {
+            logEscrowDecision(`Kevery UWE pre=${pre} sn=${sn} said=${said}`, decision);
+          }
           break;
         case "keep":
           break;
@@ -1070,11 +1072,12 @@ export class Kevery {
         diger,
         hydrated,
       );
-      logEscrowDecision("Kevery URE", decision);
       switch (decision.kind) {
         case "accept":
         case "drop":
-          this.db.ures.rem([pre, snh], triple);
+          if (this.db.ures.rem([pre, snh], triple)) {
+            logEscrowDecision(`Kevery URE pre=${pre} sn=${sn} said=${diger.qb64}`, decision);
+          }
           break;
         case "keep":
           break;
@@ -1109,11 +1112,12 @@ export class Kevery {
         sn,
         quintuple,
       );
-      logEscrowDecision("Kevery VRE", decision);
       switch (decision.kind) {
         case "accept":
         case "drop":
-          this.db.vres.rem([pre, snh], quintuple);
+          if (this.db.vres.rem([pre, snh], quintuple)) {
+            logEscrowDecision(`Kevery VRE pre=${pre} sn=${sn} said=${quintuple[0].qb64}`, decision);
+          }
           break;
         case "keep":
           break;
@@ -1167,13 +1171,14 @@ export class Kevery {
         requester,
         qsaid,
       );
-      logEscrowDecision("Kevery QNF", decision);
       switch (decision.kind) {
         case "accept":
-        case "drop":
-          this.db.qnfs.rem([requester, qsaid], escrowedSaid);
+        case "drop": {
+          const removed = this.db.qnfs.rem([requester, qsaid], escrowedSaid);
           this.clearEscrowedQueryMaterial(requester, qsaid);
+          if (removed) logEscrowDecision(`Kevery QNF requester=${requester} said=${qsaid}`, decision);
           break;
+        }
         case "keep":
           break;
       }
@@ -1546,6 +1551,7 @@ export class Kevery {
           `QNF Failed to reconstruct requester=${requester} at dig=${qsaid}: ${
             error instanceof Error ? error.message : String(error)
           }`,
+          error,
         );
       }
     }
@@ -2910,6 +2916,11 @@ export class Kevery {
    * - the escrowed event is reconstructed back into a normal event envelope
    * - the same native writer and explicit processing path as live intake is reused
    * - escrow movement/removal commits with event effects before state/cue publication
+   *
+   * @param currentEscrow Family currently retaining the event.
+   * @param pre Event AID in qualified Base64 form.
+   * @param on Event sequence number, or null for a set-keyed family.
+   * @param said Event digest identifying its stored body and detached proofs.
    */
   private replayEscrowEntry(
     currentEscrow: EscrowKind,
@@ -2917,10 +2928,22 @@ export class Kevery {
     on: number | null,
     said: string,
   ): void {
-    this.settleEventDecision(
+    const decision = this.settleEventDecision(
       () => this.rehydrateEscrowEnvelope(currentEscrow, pre, said),
       { kind: currentEscrow, pre, on, said },
     );
+    // The transaction above has committed the removal. Acceptance and movement
+    // to another dependency family are ordinary recovery, not ejections.
+    if (decision === null || decision.kind === "reject") {
+      consoleLogger.warn("KEL escrow removed", {
+        family: currentEscrow,
+        pre,
+        sn: on,
+        said,
+        reason: decision?.code ?? "missingEscrowedEvent",
+        detail: decision?.message ?? "Stored event body is missing.",
+      });
+    }
   }
 
   /** Remove one stored escrow pointer from its current bucket. */

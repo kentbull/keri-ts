@@ -7,6 +7,7 @@ import {
   SerderACDC,
 } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
+import { consoleLogger } from "../core/logger.ts";
 import type { Baser } from "../db/basing.ts";
 import {
   type RegistryEvent,
@@ -137,32 +138,65 @@ export class RegistryEventer {
       for (const event of candidates) {
         const result = this.processEvent(event.serder);
         if (result.kind === "reject" || result.kind === "duplicate") {
-          this.store.clearEscrows(this.regk, sn, event.said);
+          const removed = this.store.clearEscrows(this.regk, sn, event.said);
+          if (removed && result.kind === "reject") {
+            consoleLogger.warn("RegistryEventer ejected registry candidate from escrow", {
+              family: "registry",
+              said: event.said,
+              regk: this.regk,
+              sn,
+              reason: result.reason,
+            });
+          }
         }
       }
     }
   }
 
-  /** Prune unrecoverable candidates; corrupt records and storage failures still propagate. */
+  /**
+   * Prune unrecoverable candidates and report completed removals; accepted duplicates stay quiet.
+   * @param said Candidate event SAID loaded from the current escrow snapshot.
+   * @param sn TEL ordinal under which the candidate was indexed.
+   * @returns The validated candidate, or null after obsolete or invalid membership cleanup.
+   */
   private replayCandidate(said: string, sn: number): RegistryEvent | null {
     const serder = this.store.event(said);
     if (!serder) {
-      this.store.clearEscrows(this.regk!, sn, said);
+      if (this.store.clearEscrows(this.regk!, sn, said)) {
+        consoleLogger.warn("RegistryEventer ejected registry candidate from escrow", {
+          family: "registry",
+          said,
+          regk: this.regk,
+          sn,
+          reason: "missingEvent",
+        });
+      }
       return null;
     }
     if (serder.said !== said) throw new Error("Corrupt escrowed registry event.");
     const result = serder.ilk === Ilks.rip
       ? validateRip(serder, this.issuer)
       : validateUpdate(serder, this.regk!);
+    let reason: string | null = result.kind === "reject" ? result.reason : "registryOrOrdinal";
     if (result.kind === "valid") {
       const event = result.event;
       if (event.regid === this.regk && event.sn === BigInt(sn)) {
         const existing = this.acceptedEvent(event);
         const prior = sn > 0 ? this.acceptedAt(event.regid, sn - 1) : null;
         if (!existing && (!prior || prior.said === event.prior)) return event;
+        reason = existing?.kind === "duplicate" ? null : existing?.kind === "reject" ? existing.reason : "prior";
       }
     }
-    this.store.clearEscrows(this.regk!, sn, said);
+    const removed = this.store.clearEscrows(this.regk!, sn, said);
+    if (removed && reason !== null) {
+      consoleLogger.warn("RegistryEventer ejected registry candidate from escrow", {
+        family: "registry",
+        said,
+        regk: this.regk,
+        sn,
+        reason,
+      });
+    }
     return null;
   }
 

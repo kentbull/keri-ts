@@ -55,6 +55,9 @@ Verifier owns cached schemas, registry/schema/chain dependencies and saved index
 direct revoked saves and revoked-chain rejection are distinct. Publish ordinary
 dependency/saved cues after writes. Registry/schema cues follow new escrow
 membership; chain retries emit again. Storage failure preserves the retry family.
+Escrow ejection warnings belong after actual owner removal/commit and include the
+message identity and refusal detail. Acceptance cleanup, dependency migration and
+EXN `preserveEscrow` are not rejection ejections; unexpected failures propagate.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 

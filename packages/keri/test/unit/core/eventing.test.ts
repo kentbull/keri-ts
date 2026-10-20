@@ -19,6 +19,7 @@ import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
 import { dgKey, snKey } from "../../../src/db/core/keys.ts";
 import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
@@ -2326,6 +2327,52 @@ Deno.test("Kevery.decideEvent returns ooo escrow for out-of-order ixn", async ()
         throw new Error("Expected escrow decision.");
       }
       assertEquals(decision.reason, "ooo");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Kevery reports a rejected escrow only after its removal commits", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    try {
+      const hab = hby.makeHab("alice", undefined, { transferable: true, toad: 0 });
+      const prior = hab.kever!.said;
+      const kvy = new Kevery(hby.db, { local: true });
+      const event = (sn: string) =>
+        new SerderKERI({ sad: { t: "ixn", i: hab.pre, s: sn, p: prior, a: [] }, makify: true });
+      const later = event("2");
+      acceptEvent(kvy, hab, later, true);
+      assertEquals(hby.db.ooes.getOn(hab.pre, 2), [later.said]);
+
+      let warnings = 0;
+      withPatchedMethod(consoleLogger, "warn", (message, detail) => {
+        warnings++;
+        assertEquals(message, "KEL escrow removed");
+        assertEquals(detail, {
+          family: "ooo",
+          pre: hab.pre,
+          sn: 2,
+          said: later.said,
+          reason: "invalidPriorDigest",
+          detail: `Interaction prior ${prior} does not match current SAID ${hab.kever!.said}.`,
+        });
+        assertEquals(hby.db.inWriteTransaction, false);
+        assertEquals(hby.db.ooes.getOn(hab.pre, 2), []);
+      }, () => {
+        kvy.processEscrowOutOfOrders();
+        assertEquals(warnings, 0, "An unchanged missing predecessor remains silent.");
+        acceptEvent(kvy, hab, event("1"), true);
+        const failure = new Error("escrow removal failed");
+        withPatchedMethod(hby.db.ooes, "remOn", () => {
+          throw failure;
+        }, () => assertEquals(assertThrows(() => kvy.processEscrowOutOfOrders()), failure));
+        assertEquals(warnings, 0, "A rolled-back removal cannot report an ejection.");
+        assertEquals(hby.db.ooes.getOn(hab.pre, 2), [later.said]);
+        kvy.processEscrowOutOfOrders();
+        assertEquals(warnings, 1);
+      });
     } finally {
       yield* hby.close(true);
     }

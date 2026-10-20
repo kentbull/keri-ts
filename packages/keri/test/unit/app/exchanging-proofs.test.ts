@@ -20,6 +20,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { serializeMessage } from "../../../src/core/protocol-serialization.ts";
 
@@ -64,6 +65,63 @@ async function replay(exchanger: Exchanger, said: string): Promise<Uint8Array> {
   for await (const chunk of exchanger.replay(said)) chunks.push(chunk);
   return concatBytes(...chunks);
 }
+
+Deno.test("EXN escrow diagnostics follow terminal cleanup and exclude preserved refusals", async () => {
+  await parties(async (hby, alice, bob) => {
+    const serder = exchange("/proof", {}, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
+    const sender = endorse(alice, serder), supplemental = endorse(bob, serder), said = serder.said!;
+    const foreignEvent = hby.db.evts.get([bob.pre, supplemental.said])!;
+    let reject = false;
+    const exchanger = new Exchanger(hby, {
+      handlers: [{
+        resource: "/proof",
+        verifyEvidence: ({ factors }) => factors,
+        verify: () => reject ? false : { kind: "escrow", reason: "waiting for proof" },
+        handle() {
+          throw new Error("This fixture never accepts its exchange.");
+        },
+      }],
+    });
+    const warn = consoleLogger.warn, warnings: unknown[][] = [];
+    consoleLogger.warn = (...args) => {
+      assertEquals(hby.db.epse.get([said]), null, "report only after terminal cleanup commits");
+      assertEquals([...hby.db.esigs.getTopItemIter([said, ""])], []);
+      warnings.push(args);
+    };
+    try {
+      assertEquals((await run(() => exchanger.processEvent({ serder, tsgs: [sender, supplemental] }))).kind, "escrow");
+      // Missing historical supplemental state refuses this attempt while preserving its durable evidence.
+      hby.db.evts.rem([bob.pre, supplemental.said]);
+      await run(() => exchanger.processEscrows());
+      assertExists(hby.db.epse.get([said]));
+      assertEquals(warnings, []);
+      hby.db.evts.pin([bob.pre, supplemental.said], foreignEvent);
+      reject = true;
+      const remove = hby.db.epse.rem.bind(hby.db.epse);
+      hby.db.epse.rem = () => {
+        throw new Error("Escrow removal failed");
+      };
+      try {
+        await assertRejects(() => run(() => exchanger.processEscrows()), Error, "Escrow removal failed");
+        assertExists(hby.db.epse.get([said]));
+        assertEquals(warnings, [], "failed removal cannot claim an ejection");
+      } finally {
+        hby.db.epse.rem = remove;
+      }
+      await run(() => exchanger.processEscrows());
+      assertEquals(warnings, [["Exchanger ejected exchange escrow", {
+        family: "epse",
+        said,
+        pre: alice.pre,
+        route: "/proof",
+        reason: "Exchange route /proof failed handler verification.",
+        cause: undefined,
+      }]]);
+    } finally {
+      consoleLogger.warn = warn;
+    }
+  });
+});
 
 Deno.test("EXN sender interaction seals authenticate independently and survive parser storage and replay", async () => {
   await parties(async (hby, alice) => {

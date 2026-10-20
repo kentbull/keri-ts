@@ -1,5 +1,5 @@
 import { run } from "effection";
-import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import {
   Dater,
   Diger,
@@ -12,6 +12,7 @@ import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import {
   BasicReplyRouteHandler,
@@ -165,8 +166,11 @@ Deno.test("Router validates semantic reply outcomes returned by reflective handl
       { kind: "unverified", reason: "unknown", message: "unknown reason" },
     ]
   ) {
-    assertThrows(() => dispatch(invalid), ValidationError, "valid reply decision");
+    assertThrows(() => dispatch(invalid), TypeError, "valid reply decision");
   }
+  const missingHandler = new Router();
+  missingHandler.addRoute("/decision", {});
+  assertThrows(() => missingHandler.dispatch({ serder, diger }), TypeError, "does not implement");
   for (
     const valid of [
       { kind: "accept" },
@@ -573,7 +577,9 @@ Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified rep
           return unverifiedReplyDecision("retry later");
         },
       });
-      replyVerifier.processEscrowReply();
+      withPatchedMethod(consoleLogger, "warn", () => {
+        throw new Error("A recoverable reply must not report an escrow ejection.");
+      }, () => replyVerifier.processEscrowReply());
 
       assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 1);
       assertExists(hby.db.rpys.get([saider.qb64]));
@@ -597,7 +603,16 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
       );
 
       hby.db.rpys.rem([saider.qb64]);
-      replyVerifier.processEscrowReply();
+      let warnings = 0;
+      withPatchedMethod(consoleLogger, "warn", (message) => {
+        warnings++;
+        assertStringIncludes(message, saider.qb64);
+        assertStringIncludes(message, "/escrow/reply");
+        assertStringIncludes(message, "missingEscrowArtifact");
+        assertEquals(hby.db.rpes.get(["/escrow/reply"]), []);
+        assertEquals(hby.db.sdts.get([saider.qb64]), null);
+      }, () => replyVerifier.processEscrowReply());
+      assertEquals(warnings, 1);
 
       assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 0);
       assertEquals(hby.db.rpys.get([saider.qb64]), null);
@@ -609,7 +624,7 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
   });
 });
 
-Deno.test("Revery escrow replay preserves processing error detail on drop decisions", async () => {
+Deno.test("Revery escrow replay reports expected validation ejections with the original cause", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `revery-escrow-processing-detail-${crypto.randomUUID()}`,
@@ -621,7 +636,7 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
         "reply-detail",
         "/escrow/reply/detail",
       );
-      const fault = new Error("boom");
+      const fault = new ValidationError("invalid reply evidence");
       replyVerifier.rtr.addRoute("/escrow/reply/detail", {
         processReply() {
           throw fault;
@@ -633,7 +648,55 @@ Deno.test("Revery escrow replay preserves processing error detail on drop decisi
 
       const drop = expectKind(decision, "drop");
       assertEquals(drop.reason, "processingError");
-      assertEquals(drop.message, `boom (said=${saider.qb64}, route=/escrow/reply/detail)`);
+      assertEquals(drop.message, `invalid reply evidence (said=${saider.qb64}, route=/escrow/reply/detail)`);
+      assertEquals(drop.cause, fault);
+      let warnings = 0;
+      withPatchedMethod(consoleLogger, "warn", (message, cause) => {
+        warnings++;
+        assertStringIncludes(message, saider.qb64);
+        assertStringIncludes(message, fault.message);
+        assertEquals(cause, fault);
+        assertEquals(hby.db.rpes.get(["/escrow/reply/detail"]), []);
+        assertEquals(hby.db.rpys.get([saider.qb64]), null);
+      }, () => replyVerifier.processEscrowReply());
+      assertEquals(warnings, 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Revery escrow replay preserves unexpected failures and evidence without reporting an ejection", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    try {
+      const { replyVerifier, saider } = createEscrowedReplyFixture(hby, "reply-failure", "/escrow/failure");
+      let failure: Error = new Error("storage failed");
+      replyVerifier.rtr.addRoute("/escrow/failure", {
+        processReply() {
+          throw failure;
+        },
+      });
+      withPatchedMethod(consoleLogger, "warn", () => {
+        throw new Error("An unsuccessful removal must not report an escrow ejection.");
+      }, () => {
+        for (const error of [failure, new TypeError("handler contract failed")]) {
+          failure = error;
+          assertEquals(assertThrows(() => replyVerifier.processEscrowReply()), failure);
+          assertEquals(hby.db.rpes.get(["/escrow/failure"]).map((value) => value.qb64), [saider.qb64]);
+          assertExists(hby.db.rpys.get([saider.qb64]));
+          assertExists(hby.db.sdts.get([saider.qb64]));
+        }
+        // Expected validation can remove the row, but a failed storage write
+        // still owns its original exception and must leave the pending evidence.
+        failure = new ValidationError("invalid evidence");
+        const storageFailure = new Error("escrow removal failed");
+        withPatchedMethod(hby.db.rpes, "rem", () => {
+          throw storageFailure;
+        }, () => assertEquals(assertThrows(() => replyVerifier.processEscrowReply()), storageFailure));
+        assertEquals(hby.db.rpes.get(["/escrow/failure"]).map((value) => value.qb64), [saider.qb64]);
+        assertExists(hby.db.rpys.get([saider.qb64]));
+      });
     } finally {
       yield* hby.close(true);
     }

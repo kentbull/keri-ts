@@ -164,10 +164,17 @@ export class RegistryStore {
     sn = registryOrdinal(sn);
     return this.baser.ooes.add(regk, sn, [said]);
   }
-  /** Remove this candidate from both escrow families. */
-  clearEscrows(regk: string, sn: number, said: string): void {
+  /**
+   * Remove this candidate from both escrow families.
+   * @param regk Registry identifier whose candidate slots are being cleared.
+   * @param sn TEL ordinal shared by the candidate's escrow memberships.
+   * @param said Candidate event SAID; other candidates in the slot remain.
+   * @returns Whether either family contained a removed membership.
+   */
+  clearEscrows(regk: string, sn: number, said: string): boolean {
     sn = registryOrdinal(sn);
-    this.baser.maes.rem(regk, sn, [said]);
-    this.baser.ooes.rem(regk, sn, [said]);
+    const missingAnchor = this.baser.maes.rem(regk, sn, [said]);
+    const outOfOrder = this.baser.ooes.rem(regk, sn, [said]);
+    return missingAnchor || outOfOrder;
   }
 }
