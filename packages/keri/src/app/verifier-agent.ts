@@ -28,7 +28,7 @@ import {
   storedGrantArtifacts,
 } from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
-import type { Reactor } from "./reactor.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export interface VerifierAgentProcessResult {
@@ -79,8 +79,8 @@ export class VerifierAgent {
   readonly reger: Reger;
   /** Verifier workflow store for pending, ready and acknowledged webhook records. */
   readonly cdb: VerifierCueBaser;
-  /** Borrowed input owner whose shared protocol processor advances credential prerequisites. */
-  readonly reactor: Reactor;
+  /** Borrowed serialized protocol owner; artifact intake owns its own parser and Kevery. */
+  readonly protocol: ProtocolProcessor;
   /** Application cue flow; this owner consumes revocation cues and preserves unrelated records. */
   readonly cues: Deck<AgentCue>;
   /** Borrowed scoped HTTP client used for webhook attempts. */
@@ -99,12 +99,12 @@ export class VerifierAgent {
   readonly requireKnownSchemas: boolean;
 
   /**
-   * Borrow the configured stores, input owner and webhook policy; open no runtime or background worker.
+   * Borrow the configured stores, protocol owner and webhook policy; open no runtime or background worker.
    *
    * @param hby Borrowed local identities and accepted-state stores.
    * @param reger Borrowed credential/TEL evidence store.
    * @param cdb Borrowed durable pending/ready/acknowledged webhook store.
-   * @param reactor Borrowed input owner for grant prerequisites.
+   * @param protocol Borrowed shared processor for grant prerequisites and scheduled escrow advancement.
    * @param cues Application cue Deck; only matching revocation cues are consumed.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param now Required epoch-millisecond function, bound to its clock; used for local admission, webhook headers and expiry.
@@ -115,7 +115,7 @@ export class VerifierAgent {
     hby: Habery,
     reger: Reger,
     cdb: VerifierCueBaser,
-    reactor: Reactor,
+    protocol: ProtocolProcessor,
     cues: Deck<AgentCue>,
     http: HttpClient,
     now: () => number,
@@ -125,7 +125,7 @@ export class VerifierAgent {
     this.hby = hby;
     this.reger = reger;
     this.cdb = cdb;
-    this.reactor = reactor;
+    this.protocol = protocol;
     this.cues = cues;
     this.http = http;
     this.now = now;
@@ -155,7 +155,7 @@ export class VerifierAgent {
     // Settle grant evidence and capture revocations before advancing shared protocol dependencies.
     result.grantsQueued += yield* this.scanAcceptedGrants();
     result.revocationsQueued += this.processRevokedCues();
-    yield* this.reactor.protocol.processEscrowsOnce();
+    yield* this.protocol.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
     // Project accepted evidence into ready work, then observe real webhook delivery outcomes.
     result.presentationsReady += this.processPresentations();
@@ -182,7 +182,7 @@ export class VerifierAgent {
       }
 
       const artifacts = storedGrantArtifacts(this.hby, grant, this.gvrsn);
-      yield* processCredentialPresentationArtifacts(this.reactor, artifacts);
+      yield* processCredentialPresentationArtifacts(this.protocol, artifacts);
       const creder = this.reger.creds.get([credentialSaid]);
       if (!creder) {
         throw new ValidationError(`Credential ${credentialSaid} was not saved after grant artifact processing.`);

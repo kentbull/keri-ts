@@ -669,7 +669,7 @@ function* processStoredCredentialGrants(
       continue;
     }
     yield* processCredentialPresentationArtifacts(
-      runtime.reactor,
+      runtime.protocol,
       storedGrantArtifacts(hby, grant, gvrsn),
     );
   }

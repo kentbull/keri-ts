@@ -244,7 +244,7 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
       assertExists(storedGrant);
       const artifacts = storedGrantArtifacts(holderHby, storedGrant, genus);
       assertEquals(artifacts, grant.artifacts);
-      yield* processCredentialPresentationArtifacts(holderReactor, artifacts);
+      yield* processCredentialPresentationArtifacts(holderReactor.protocol, artifacts);
 
       assertEquals(holderReger.saved.get([creder.said!])?.qb64, creder.said);
       assertEquals(new CredentialWallet(holderReger).list({ aid: holder.pre }), [creder.said]);

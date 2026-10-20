@@ -66,7 +66,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
           hby,
           reger,
           cdb,
-          runtime.reactor,
+          runtime.protocol,
           runtime.cues,
           runtime.http,
           () => runtime.clock.now(),
