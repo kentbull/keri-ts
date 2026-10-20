@@ -114,21 +114,16 @@ refusal with `preserveEscrow` retains earlier evidence. Unexpected reply-handler
 storage and programming failures propagate instead of becoming rejected peers
 and deleting their escrow evidence.
 
-`processEscrowsOnce()` returns whether committed acceptance, escrow membership or
-dependency/proof evidence changed. Every configured owner runs in the existing
-KEL, reply, TEL, credential, v2 registry and exchange order before those results
-are combined. A pending decision can still make progress by repairing a source
-seal or retaining new proof. Repeated cues, identical writes and KRAM cache pruning
-do not count. An unchanged complete sweep means another immediate sweep cannot
-recover more from currently available local evidence, not that external
-dependencies will never arrive.
+`processEscrowsOnce()` runs the configured KEL, reply, TEL, credential, v2
+registry and exchange owners in their existing order. Each owner retains its
+normal pending, acceptance, expiry and rejection rules. The operation returns
+no progress status and introduces no proof snapshots or change-detection policy.
 
 Each Tevery sweep finishes the TSN Broker's captured finite horizons using bounded
 pages. This can make one turn longer than the former one-page scheduling, but
 keeps row order, page-sized materialization and closed cursors between pages.
-Changed evidence or new work outside that horizon requires another sweep.
-Progress is returned after successful writes; an exception or cancellation
-returns no sweep result and still joins active cleanup.
+New work beyond the horizon waits for another sweep. Exceptions propagate and
+cancellation joins active cleanup before releasing the serialized protocol turn.
 
 Protocol producers write to their own Deck, wired with the legacy TEL/verifier
 processors at composition. Before publishing to `AgentRuntime.cues`, ProtocolProcessor

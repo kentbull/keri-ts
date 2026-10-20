@@ -381,10 +381,9 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       const unanchored = engine.processEvent(second);
       assertEquals(unanchored.kind === "escrow" && unanchored.reason, "anchor");
       assertEquals(baser.maes!.get(rip.said!, 2), [[second.said!]]);
-      assertEquals(engine.processEscrows(), false, "Unchanged missing anchors make no local progress");
       issuer.interact({ data: [{ i: rip.said!, s: "2", d: second.said! }] });
-      assertEquals(engine.processEscrows(), true, "Discovered anchor and family migration count before acceptance");
-      assertEquals(engine.processEscrows(), false, "A retained anchor and unchanged ordering dependency are stable");
+      const unordered = engine.processEvent(second);
+      assertEquals(unordered.kind === "escrow" && unordered.reason, "order");
       assertEquals(baser.maes!.get(rip.said!, 2), []);
       assertEquals(baser.ooes!.get(rip.said!, 2), [[second.said!]]);
       assertEquals(store.seqSaider(rip.said!, 1), null);
@@ -401,7 +400,6 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       assertEquals(engine.processEvent(second).kind, "duplicate");
       assertEquals(store.seqSaider(rip.said!, 2)!.qb64, second.said);
       assertEquals(store.head(rip.said!)!.qb64, second.said);
-      assertEquals(engine.processEscrows(), false, "An accepted chain does not repeatedly report progress");
       assertEquals(baser.ooes!.get(rip.said!, 2), []);
       assertEquals(engine.processEvent(competitor), { kind: "reject", reason: "duplicity" });
       assertEquals(store.event(competitor.said!), null);

@@ -53,15 +53,11 @@ export class RegistryObserver {
     });
   }
 
-  /**
-   * Retry one registry after inception/KEL dependencies arrive.
-   * @param regid Registry identifier whose stored inception supplies the issuer.
-   * @returns Whether retained evidence or membership changed; absent inception is stable pending work.
-   */
-  processEscrows(regid: string): boolean {
+  /** Retry one registry after inception/KEL dependencies arrive; never scan every registry implicitly. */
+  processEscrows(regid: string): void {
     const engine = this.engine(regid);
-    if (!(engine instanceof RegistryEventer)) return false;
-    return engine.processEscrows();
+    if (!(engine instanceof RegistryEventer)) return;
+    engine.processEscrows();
   }
 
   /** Stored inception is durable issuer identity, including while its anchor is still absent. */

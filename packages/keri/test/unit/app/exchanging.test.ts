@@ -232,12 +232,10 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
       assertExists(said);
       assertEquals(initial.kind, "escrow");
       assertExists(hby.db.epse.get([said]));
-      assertEquals(yield* exchanger.processEscrows(), false, "identical incomplete signatures do not advance escrow");
 
       const quadKey = [said, group.pre, group.snh, group.said] as const;
       hby.db.esigs.add(quadKey, sigers[1]);
-      assertEquals(yield* exchanger.processEscrows(), true, "new signatures permit durable acceptance");
-      assertEquals(yield* exchanger.processEscrows(), false);
+      yield* call(() => exchanger.processEscrows());
 
       assertEquals(hby.db.epse.get([said]), null);
       assertEquals(hby.db.exns.get([said])?.said, said);
@@ -459,12 +457,12 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       exchanger = new Exchanger(hby, { handlers, now: () => now });
       now += 10_000;
       proof = true;
-      assertEquals(yield* exchanger.processEscrows(), true, "schema to proof migration changes membership");
+      yield* exchanger.processEscrows();
       assertExists(hby.db.epse.get([said]));
       assertEquals(hby.db.emsd!.get([said])!.dts, deadline, "proof migration keeps the absolute schema deadline");
       proof = false;
       missing = second;
-      assertEquals(yield* exchanger.processEscrows(), true, "new schema dependency changes membership");
+      yield* exchanger.processEscrows();
       assertEquals(hby.db.emse!.get([said, first]), null);
       assertExists(hby.db.emse!.get([said, second]));
       assertEquals(hby.db.emsd!.get([said])!.dts, deadline);
@@ -473,10 +471,10 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
         q: { r: "schema", said: second },
       }]);
       now += 10_000;
-      assertEquals(yield* exchanger.processEscrows(), false, "replacing an identical schema row is not progress");
+      yield* exchanger.processEscrows();
       assertExists(hby.db.emse!.get([said, second]), "deadline equality remains eligible");
       missing = undefined;
-      assertEquals(yield* exchanger.processEscrows(), true);
+      yield* exchanger.processEscrows();
       assertEquals(handled, 1);
       assertExists(hby.db.exns.get([said]));
       assertEquals(hby.db.emsd!.get([said]), null);
@@ -494,7 +492,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       yield* exchanger.processEvent(expiredInput);
       now += 19_000;
       proof = true;
-      assertEquals(yield* exchanger.processEscrows(), true);
+      yield* exchanger.processEscrows();
       assertExists(hby.db.epse.get([expired.said!]));
       now += 1_001;
       consoleLogger.warn = (...args) => {
@@ -502,7 +500,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
         assertEquals(hby.db.enst.get([expired.said!]), [], "report expiry only after evidence cleanup");
         warnings.push(args);
       };
-      assertEquals(yield* exchanger.processEscrows(), true, "joined terminal cleanup changes membership");
+      yield* exchanger.processEscrows();
       assertEquals(hby.db.emsd!.get([expired.said!]), null);
       assertEquals(hby.db.enst.get([expired.said!]), []);
       assertEquals([...hby.db.esigs.getTopItemIter([expired.said!, ""])], []);

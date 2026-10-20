@@ -56,11 +56,10 @@ export class RegistryEventer {
     return this.regk ? this.acceptedAt(this.regk, 0) : null;
   }
 
-  /** Retry anchors and contiguous successors; return whether committed evidence or membership changed. */
-  processEscrows(): boolean {
-    const anchorsChanged = this.processMissingAnchors();
-    const queuedChanged = this.processQueued();
-    return anchorsChanged || queuedChanged;
+  /** Retry newly visible anchors, then advance the contiguous accepted chain. */
+  processEscrows(): void {
+    this.processMissingAnchors();
+    this.processQueued();
   }
 
   /** Authenticate a complete explicit source couple or discover one for a stored event. */
@@ -92,38 +91,33 @@ export class RegistryEventer {
     return this.processEvent(serder);
   }
 
-  /** Advance only the next ordinal; return completed candidate cleanup or committed chain progress. */
-  private processQueued(): boolean {
-    if (this.regk === null) return false;
-    let changed = false;
+  /** Advance only the next ordinal, committing one verified winner per transaction. */
+  private processQueued(): void {
+    if (this.regk === null) return;
     while (true) {
       const head = this.acceptedHead(this.regk);
-      if (!head) return changed;
+      if (!head) return;
       const sn = head.sn + 1n;
-      if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return changed;
+      if (sn > BigInt(Number.MAX_SAFE_INTEGER)) return;
       const candidates = this.store.baser.ooes.get(this.regk, Number(sn)).map(([said]) => said);
       candidates.sort((a, b) => this.compareAnchors(a, b));
       let advanced = false;
       for (const said of candidates) {
-        const result = this.replayCandidate(said, Number(sn));
-        changed = result.changed || changed;
-        const { event } = result;
+        const event = this.replayCandidate(said, Number(sn));
         if (!event || !this.store.anchor(said)) continue;
         const decision = this.processOne(event.serder);
         if (decision.kind === "accept") {
           advanced = true;
-          changed = true;
           break;
         }
       }
-      if (!advanced) return changed;
+      if (!advanced) return;
     }
   }
 
-  /** Retry anchors by ordinal; new anchors and family migrations count even before event acceptance. */
-  processMissingAnchors(): boolean {
-    if (this.regk === null) return false;
-    let changed = false;
+  /** Retry anchor escrow by ordinal, arbitrating siblings before entering normal acceptance. */
+  processMissingAnchors(): void {
+    if (this.regk === null) return;
     const slots = new Map<number, string[]>();
     // Finish the read cursor before writes.
     for (const [, sn, [said]] of this.store.baser.maes.getTopItemIter(this.regk)) {
@@ -135,22 +129,16 @@ export class RegistryEventer {
     for (const [sn, saids] of [...slots].sort(([a], [b]) => a - b)) {
       const candidates: RegistryEvent[] = [];
       for (const said of saids) {
-        const replay = this.replayCandidate(said, sn);
-        changed = replay.changed || changed;
-        const { event } = replay;
+        const event = this.replayCandidate(said, sn);
         if (!event) continue;
-        changed = this.discoverAnchor(event) || changed;
+        this.discoverAnchor(event);
         candidates.push(event);
       }
       candidates.sort((a, b) => this.compareAnchors(a.said, b.said));
       for (const event of candidates) {
-        const wasMissing = this.store.baser.maes.get(this.regk, sn).some(([said]) => said === event.said);
         const result = this.processEvent(event.serder);
-        changed = result.kind === "accept" || (wasMissing && result.kind === "escrow" && result.reason === "order")
-          || changed;
         if (result.kind === "reject" || result.kind === "duplicate") {
           const removed = this.store.clearEscrows(this.regk, sn, event.said);
-          changed = removed || changed;
           if (removed && result.kind === "reject") {
             consoleLogger.warn("RegistryEventer ejected registry candidate from escrow", {
               family: "registry",
@@ -163,20 +151,18 @@ export class RegistryEventer {
         }
       }
     }
-    return changed;
   }
 
   /**
    * Prune unrecoverable candidates and report completed removals; accepted duplicates stay quiet.
    * @param said Candidate event SAID loaded from the current escrow snapshot.
    * @param sn TEL ordinal under which the candidate was indexed.
-   * @returns The validated candidate or null, plus whether obsolete membership was removed.
+   * @returns The validated candidate, or null after obsolete or invalid membership cleanup.
    */
-  private replayCandidate(said: string, sn: number): { event: RegistryEvent | null; changed: boolean } {
+  private replayCandidate(said: string, sn: number): RegistryEvent | null {
     const serder = this.store.event(said);
     if (!serder) {
-      const removed = this.store.clearEscrows(this.regk!, sn, said);
-      if (removed) {
+      if (this.store.clearEscrows(this.regk!, sn, said)) {
         consoleLogger.warn("RegistryEventer ejected registry candidate from escrow", {
           family: "registry",
           said,
@@ -185,7 +171,7 @@ export class RegistryEventer {
           reason: "missingEvent",
         });
       }
-      return { event: null, changed: removed };
+      return null;
     }
     if (serder.said !== said) throw new Error("Corrupt escrowed registry event.");
     const result = serder.ilk === Ilks.rip
@@ -197,7 +183,7 @@ export class RegistryEventer {
       if (event.regid === this.regk && event.sn === BigInt(sn)) {
         const existing = this.acceptedEvent(event);
         const prior = sn > 0 ? this.acceptedAt(event.regid, sn - 1) : null;
-        if (!existing && (!prior || prior.said === event.prior)) return { event, changed: false };
+        if (!existing && (!prior || prior.said === event.prior)) return event;
         reason = existing?.kind === "duplicate" ? null : existing?.kind === "reject" ? existing.reason : "prior";
       }
     }
@@ -211,7 +197,7 @@ export class RegistryEventer {
         reason,
       });
     }
-    return { event: null, changed: removed };
+    return null;
   }
 
   /** Earliest verified anchor wins; digest then event SAID break ties using code-point order. */
@@ -354,24 +340,19 @@ export class RegistryEventer {
     this.store.baser.ooes.rem(event.regid, Number(event.sn));
   }
 
-  /**
-   * Keep an already verified anchor or discover the earliest fully witnessed seal.
-   * @param event Validated candidate whose issuer KEL may now contain its anchor.
-   * @returns Whether a newly verified source couple was retained.
-   */
-  private discoverAnchor(event: RegistryEvent): boolean {
-    if (this.store.anchor(event.said)) return false;
+  /** Keep an already verified anchor or discover the earliest fully witnessed seal. */
+  private discoverAnchor(event: RegistryEvent): void {
+    if (this.store.anchor(event.said)) return;
     const anchor = this.db.fetchLastSealingEventByEventSeal(this.issuer, {
       i: event.regid,
       s: event.serder.sad!.n,
       d: event.said,
     });
-    if (!anchor) return false;
+    if (!anchor) return;
     const number = NumberPrimitive.fromNum(BigInt(anchor.sn!));
     const diger = new Diger({ qb64: anchor.said! });
     if (verifyRegistryAnchor(event, { db: this.db, issuer: this.issuer, number, diger })) {
-      return this.store.putAnchor(event.said, number, diger);
+      this.store.putAnchor(event.said, number, diger);
     }
-    return false;
   }
 }

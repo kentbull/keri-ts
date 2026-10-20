@@ -119,26 +119,18 @@ export class Broker {
   }
 
   /** Retry a finite captured family horizon with typed outcomes and no exception adapter.
-   * Release key cursors before hydration, callbacks or index writes. Failures
-   * propagate and reset this family's checkpoint, so a later sweep revisits
-   * earlier rows unblocked before the failure. Kept rows and insertions behind
+   * Release key cursors before hydration, callbacks or index writes. Failed callbacks
+   * propagate and leave that row eligible for retry. Kept rows and insertions behind
    * the checkpoint return next pass; new rows beyond the horizon cannot extend it.
    * Removing an index retains artifacts that another dependency family may own.
    * Terminal drops are reported only after the index removal succeeds; dependency
    * migration must return accept for the relinquished family, rather than drop.
-   * @param typ Escrow family whose existing finite key horizon is traversed.
-   * @param processReply Synchronous semantic owner; reports its decision and actual
-   * retained evidence changes, including insertions outside this page or horizon.
-   * @param maxRows Maximum rows materialized in this page, from 1 through 1024.
-   * @param now ISO timestamp used to compare the notice age against timeout seconds.
-   * @returns Page position and whether callback writes or completed index removals
-   * changed evidence. Merely visiting a kept row does not count as progress.
    */
   retryStateNotices(
     typ: string,
-    processReply: (args: BrokerProcessReplyArgs) => { decision: EscrowProcessDecision; changed: boolean },
+    processReply: (args: BrokerProcessReplyArgs) => EscrowProcessDecision,
     { maxRows = 64, now = makeNowIso8601() }: { maxRows?: number; now?: string } = {},
-  ): { processed: number; done: boolean; changed: boolean } {
+  ): { processed: number; done: boolean } {
     if (!/^[a-z-]+$/.test(typ) || !Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > 1024) {
       throw new Error("Invalid Broker retry family or row ceiling.");
     }
@@ -154,7 +146,7 @@ export class Broker {
         for (const key of this.escrowdb.sdb.getKeys({ start: ceiling, end: start, reverse: true, limit: 1 })) {
           tail = key.slice();
         }
-        if (!tail) return { processed: 0, done: true, changed: false };
+        if (!tail) return { processed: 0, done: true };
         scan = { start, end: encode(`${decode(tail)}\0`) };
         this.retryScans.set(typ, scan);
       }
@@ -162,7 +154,6 @@ export class Broker {
       for (const key of this.escrowdb.sdb.getKeys({ start: scan.start, end: scan.end, limit: maxRows })) {
         rows.push(key.slice());
       }
-      let changed = false;
       for (const key of rows) {
         const parts = decode(key).split(".");
         if (
@@ -181,7 +172,7 @@ export class Broker {
         }
         const stamp = timestampMicros(dater.dts);
         if (stamp === null) throw new Error("Corrupt Broker retry timestamp.");
-        const result = when - stamp > BigInt(ttl) ? { decision: dropEscrow("stale"), changed: false } : processReply({
+        const decision = when - stamp > BigInt(ttl) ? dropEscrow("stale") : processReply({
           aid: parts[2],
           diger,
           serder,
@@ -189,11 +180,8 @@ export class Broker {
           tsgs,
           cigars: couples.map(([verfer, cigar]) => new Cigar(cigar, verfer)),
         });
-        const { decision } = result;
-        changed = result.changed || changed;
         if (decision.kind === "accept" || decision.kind === "drop") {
           const removed = this.escrowdb.rem(parts.slice(0, 3), diger);
-          changed = removed || changed;
           if (removed && decision.kind === "drop") {
             consoleLogger.warn("Broker ejected transaction-state notice from escrow", {
               family: typ,
@@ -210,9 +198,9 @@ export class Broker {
       }
       const done = rows.length < maxRows;
       if (done) this.retryScans.delete(typ);
-      return { processed: rows.length, done, changed };
+      return { processed: rows.length, done };
     } catch (error) {
-      // A failed sweep cannot resume behind earlier rows whose dependencies may now be ready.
+      // Restart after failure so earlier kept rows can use evidence recovered before the fault.
       this.retryScans.delete(typ);
       throw error;
     }
@@ -230,10 +218,6 @@ export class Broker {
    * - `tigerdb` for transferable endorsement groups
    * - `cigardb` for non-transferable endorsement couples
    * - `escrowdb` for the broker-specific `(typ, pre, aid)` index
-   *
-   * The returned `added` describes only new family membership. `changed` also
-   * includes new retained bodies, timestamps and signatures under an existing
-   * member; identical retries return false for both fields.
    */
   escrowStateNotice(
     {
@@ -255,18 +239,17 @@ export class Broker {
       cigars?: readonly Cigar[];
       tsgs?: readonly TransIdxSigGroup[];
     },
-  ): { added: boolean; changed: boolean } {
+  ): boolean {
     const keys = [diger.qb64] as const;
-    let changed = this.daterdb.put(keys, dater);
-    changed = this.serderdb.put(keys, serder) || changed;
+    this.daterdb.put(keys, dater);
+    this.serderdb.put(keys, serder);
 
     for (const group of tsgs) {
-      // KERIpy 71438328 and b8626e1d key proofs by numeric ordinal padded to 32 hex digits.
-      // Primitive wrappers/codes do not identify genus; equivalent ordinals must share partial signatures.
-      changed = this.tigerdb.put(
+      // Both Python references key equivalent ordinal encodings by the same numeric value.
+      this.tigerdb.put(
         [diger.qb64, group.pre, group.sn.toString(16).padStart(32, "0"), group.said],
         group.sigers,
-      ) || changed;
+      );
     }
 
     for (const cigar of cigars) {
@@ -275,11 +258,10 @@ export class Broker {
           `Escrowed cigar for ${diger.qb64} is missing verifier context.`,
         );
       }
-      changed = this.cigardb.put(keys, [[cigar.verfer, cigar]]) || changed;
+      this.cigardb.put(keys, [[cigar.verfer, cigar]]);
     }
 
-    const added = this.escrowdb.put([typ, pre, aid], [diger]);
-    return { added, changed: added || changed };
+    return this.escrowdb.put([typ, pre, aid], [diger]);
   }
 
   /**
