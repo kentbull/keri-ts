@@ -31,6 +31,7 @@ import { BasicReplyRouteHandler, Revery, Router } from "../core/routing.ts";
 import { abortable, rethrowCleanupFailure } from "./abortable.ts";
 import { Exchanger, type ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
+import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messaging.ts";
 import type { Notifier } from "./notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "./parsering.ts";
 
@@ -94,23 +95,6 @@ export function prepareMultisigVdrExn(
   options: MultisigBuilderOptions = {},
 ): MultisigMessage {
   return exchange(proposal.route, proposal.attrs, { ...options, sender, embeds: proposal.embeds });
-}
-
-/**
- * Read the proposal index identity without authenticating its evidence.
- * V1 commits the embedded bundle; v2 signs one child SAID. Multiplexor verifies
- * those commitments and owns accepted proposal/submitter indexes separately.
- */
-export function multisigProposalSaid(serder: SerderKERI): string | null {
-  const ked = serder.ked;
-  if (!ked) return null;
-  if (serder.pvrsn.major === 1) {
-    const said = embeddedSection(ked)?.d;
-    return typeof said === "string" && said.length > 0 ? said : null;
-  }
-  const route = serder.route ?? "";
-  const said = payloadSection(ked)[route.slice(route.lastIndexOf("/") + 1)];
-  return typeof said === "string" && said.length > 0 ? said : null;
 }
 
 interface RawMessage {
@@ -529,7 +513,7 @@ export class Multiplexor {
   }
   /** Replay v1 children with their own stored proofs and signed attachment genus, as KERIpy does. */
   private *processLegacyApproved(wrapper: SerderKERI): Operation<void> {
-    const embeds = embeddedSection(wrapper.ked!);
+    const embeds = multisigEmbeddedSection(wrapper.ked!);
     for (const label of Object.keys(embeds ?? {})) {
       const sad = embeds?.[label];
       if (!isRecord(sad)) {
@@ -604,7 +588,7 @@ export class Multiplexor {
     const route = serder.route ?? "";
     let embeddedSaid: string;
     if (serder.pvrsn.major === 1) {
-      const commitment = multisigProposalSaid(serder);
+      const commitment = multisigPayloadSaid(serder);
       if (!commitment || nests.length) {
         return { ok: false, said, reason: "Missing multisig embedded SAID or unexpected v1 nesting." };
       }
@@ -618,7 +602,7 @@ export class Multiplexor {
         return { ok: false, said, reason: "Unsupported nested multisig route or child count." };
       }
       const child = nests[0];
-      const signed = multisigProposalSaid(serder);
+      const signed = multisigPayloadSaid(serder);
       if (
         typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
         || !(child.body instanceof SerderKERI) || child.nests?.length
@@ -688,7 +672,7 @@ export class Multiplexor {
 
 /** Extract the embedded business EXN SAD from a `/multisig/exn` wrapper. */
 export function embeddedBusinessExnSAD(serder: SerderKERI): Record<string, unknown> | null {
-  const embed = serder.ked ? embeddedSection(serder.ked) : null;
+  const embed = serder.ked ? multisigEmbeddedSection(serder.ked) : null;
   const exn = embed && isRecord(embed["exn"]) ? embed["exn"] : null;
   return exn ? { ...exn } : null;
 }
@@ -701,7 +685,7 @@ export interface MultisigChild {
 }
 /** Read one stored v1 child at the wire boundary, without authenticating its independent proof. */
 export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): MultisigChild | null {
-  const sad = embeddedSection(wrapper.ked ?? {})?.[label];
+  const sad = multisigEmbeddedSection(wrapper.ked ?? {})?.[label];
   if (!isRecord(sad)) {
     return null;
   }
@@ -776,13 +760,6 @@ function exchangeOptions(member: Hab, options: MultisigBuilderOptions) {
   };
 }
 
-function embeddedSection(ked: Record<string, unknown>): Record<string, unknown> | null {
-  if (isRecord(ked.e) && typeof ked.e.d === "string") {
-    return ked.e;
-  }
-  const attrs = payloadSection(ked);
-  return isRecord(attrs.e) && typeof attrs.e.d === "string" ? attrs.e : null;
-}
 /** Decode the signed legacy child-genus hint before it can select attachment parsing. */
 function childGenusHint(attrs: unknown): Versionage | null | undefined {
   if (!isRecord(attrs) || attrs.cgvrsn === undefined) return undefined;

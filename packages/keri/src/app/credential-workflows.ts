@@ -15,20 +15,22 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
+import type { TelProcessDecision } from "../vdr/eventing.ts";
 import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE, type MultisigVdrProposal, prepareMultisigVdrExn } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
+import type { VerifierDecision } from "./verifying.ts";
 
 import {
-  type ProposalDelivery,
-  type ProposalPublication,
-  proposalPublication,
-  remoteProposalMembers,
-  sendGroupProposal,
-  signGroupProposal,
-} from "./multisig-publication.ts";
+  type MultisigMessageDelivery,
+  type MultisigSendResult,
+  multisigSendResult,
+  remoteMultisigMembers,
+  sendMultisigMessage,
+  signMultisigMessage,
+} from "./multisig-messaging.ts";
 
 export interface CredentialRegistryInceptOptions {
   registryName: string;
@@ -60,10 +62,38 @@ export interface CredentialListItem {
   status: string | null;
 }
 
+/** Registry identity created locally, independently of group approval. */
+export interface CredentialRegistryInceptResult {
+  name: string;
+  registry: string | null;
+  issuer: string;
+}
+
+/** Group registry proposal state and completed coordination-message transports. */
+export interface GroupCredentialRegistryInceptResult extends CredentialRegistryInceptResult, MultisigSendResult {
+  route: typeof MULTISIG_VCP_ROUTE;
+  status: TelProcessDecision["kind"];
+  accepted: boolean;
+}
+
+/** Actual credential/TEL processing result, independent of CLI formatting. */
+export interface CredentialIssuanceResult {
+  tel: string | null;
+  status: VerifierDecision["kind"];
+}
+
+/** Group issuance can still await member contributions after successful transport. */
+export interface GroupCredentialIssuanceResult extends CredentialIssuanceResult, MultisigSendResult {
+  route: typeof MULTISIG_ISS_ROUTE;
+  telStatus: TelProcessDecision["kind"];
+  saved: boolean;
+}
+
+/** Credential data and typed issuance facts; consumers project their own presentation. */
 export interface CredentialCreateResult {
   creder: SerderACDC;
   recipient: string;
-  output: Record<string, unknown>;
+  issuance: CredentialIssuanceResult | GroupCredentialIssuanceResult;
 }
 
 export interface CredentialExportResult {
@@ -108,7 +138,7 @@ export function* inceptCredentialRegistry(
   postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
-) {
+): Operation<CredentialRegistryInceptResult | GroupCredentialRegistryInceptResult> {
   const { hby } = rgy;
   if (isLocalGroupHab(hby, hab)) {
     return yield* proposeGroupRegistryIncept(rgy, postman, hab, options);
@@ -184,20 +214,15 @@ export function* createCredential(
   const recipient = options.recipient ?? creder.issuee ?? "";
 
   if (isLocalGroupHab(hby, registry.hab)) {
-    const output = yield* proposeGroupCredentialIssue(rgy, postman, registry, creder);
-    return { creder, recipient, output };
+    const issuance = yield* proposeGroupCredentialIssue(rgy, postman, registry, creder);
+    return { creder, recipient, issuance };
   }
 
   const result = credentialer.issue(registry, creder);
   return {
     creder,
     recipient,
-    output: {
-      said: creder.said,
-      registry: creder.regid,
-      issuer: creder.issuer,
-      issuee: creder.issuee,
-      schema: creder.schema,
+    issuance: {
       tel: result.tel.said,
       status: result.verifierDecision.kind,
     },
@@ -340,7 +365,7 @@ function* proposeGroupRegistryIncept(
   postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
-) {
+): Operation<GroupCredentialRegistryInceptResult> {
   const { hby, reger } = rgy;
   const noBackers = options.noBackers ?? true;
   const estOnly = options.estOnly ?? false;
@@ -402,7 +427,7 @@ function* proposeGroupCredentialIssue(
   postman: Poster,
   registry: Registry,
   creder: SerderACDC,
-) {
+): Operation<GroupCredentialIssuanceResult> {
   const { hby, reger } = rgy;
   const regk = requireRegistryKey(registry);
   const iss = issueEvent(requireCredentialSaid(creder), regk);
@@ -459,11 +484,6 @@ function* proposeGroupCredentialIssue(
   });
 
   return {
-    said: creder.said,
-    registry: creder.regid,
-    issuer: creder.issuer,
-    issuee: creder.issuee,
-    schema: creder.schema,
     tel: iss.said,
     route: MULTISIG_ISS_ROUTE,
     status: verifierDecision.kind,
@@ -488,14 +508,14 @@ function* publishGroupVcProposal(
   postman: Poster,
   groupHab: Hab,
   proposal: MultisigVdrProposal,
-): Operation<ProposalPublication> {
+): Operation<MultisigSendResult> {
   const member = localGroupMember(hby, groupHab.pre);
-  const outcomes: ProposalDelivery[] = [];
-  for (const recipient of remoteProposalMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
+  const outcomes: MultisigMessageDelivery[] = [];
+  for (const recipient of remoteMultisigMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient });
-    outcomes.push(yield* sendGroupProposal(postman, signGroupProposal(member, recipient, prepared)));
+    outcomes.push(yield* sendMultisigMessage(postman, signMultisigMessage(member, recipient, prepared)));
   }
-  return proposalPublication(outcomes);
+  return multisigSendResult(outcomes);
 }
 
 function registerRegistry(

@@ -53,7 +53,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       hby.habs.delete(remote.pre);
       hby.habs.delete(other.pre);
 
-      const sent: { recipient: string; said: string }[] = [];
+      const sent: { recipient: string; exnSaid: string; payloadSaid: string }[] = [];
       let sends = 0;
       runtime.postman.send = function(evt) {
         const serder = new SerderKERI({ raw: evt.msg });
@@ -64,7 +64,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         assertExists(serder.ked?.e);
         assertEquals(runtime.exc.complete(serder.said!), true);
         assertEquals(hby.db.exns.get([serder.said!])?.raw, serder.raw);
-        sent.push({ recipient: evt.dest, said: serder.said! });
+        sent.push({ recipient: evt.dest, exnSaid: serder.said!, payloadSaid: (serder.ked!.e as { d: string }).d });
         sends++;
         return { ...evt, kin: "msg" };
       };
@@ -81,8 +81,8 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       assertEquals(isLocalGroupHab(hby, group), true);
       assertEquals(result.route, MULTISIG_RPY_ROUTE);
       assertEquals(result.group, group.pre);
-      assertEquals(result.proposals, sent);
-      assertEquals(new Set(sent.map((proposal) => proposal.said)).size, 2);
+      assertEquals(result.messages, sent);
+      assertEquals(new Set(sent.map((message) => message.exnSaid)).size, 2);
       assertEquals(result.deliveries, ["https://mailbox.test/", "https://mailbox.test/"]);
       assertEquals(sends, 2);
 

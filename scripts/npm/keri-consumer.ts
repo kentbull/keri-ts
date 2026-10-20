@@ -4,6 +4,7 @@ import {
   type AgentRuntime,
   Algos,
   credential,
+  type CredentialCreateResult,
   EssrRecipient,
   FetchHttpClient,
   type Hab,
@@ -11,6 +12,7 @@ import {
   Manager,
   messagize,
   messengerFrom,
+  type MultisigSendResult,
   runAgentRuntime,
   settleRuntimeIngress,
   streamMessengerFrom,
@@ -46,4 +48,14 @@ export function messengers(destination: string, url: string, wire: Uint8Array) {
     ordinary: messengerFrom(destination, { http: url }, http, systemClock),
     stream: streamMessengerFrom(destination, { http: url }, wire, http, systemClock),
   };
+}
+
+/** Consume the documented coordination identities without treating transport as group approval. */
+export function sentMultisig(result: MultisigSendResult) {
+  return result.messages.map(message => [message.recipient, message.exnSaid, message.payloadSaid]);
+}
+
+/** Read typed issuance status independently of any CLI JSON projection. */
+export function issuance(result: CredentialCreateResult) {
+  return { credential: result.creder.said, status: result.issuance.status };
 }

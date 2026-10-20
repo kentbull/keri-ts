@@ -59,11 +59,22 @@ directories. Results include `status: "complete"` only after closure, or
 
 ## Multisig publication
 
-Group command results include `proposals`, with each remote recipient's wrapper
-`said` and shared `proposal` index key. The latter is the embedded-bundle SAID for
-v1 wrappers or signed-child SAID for v2 wrappers. These identify coordination
-evidence; delivery does not establish group acceptance. Internal publication
-helpers take explicit identity, protocol and Poster owners instead of AgentRuntime.
+Multisig send reporting uses `MultisigSendResult`, `MultisigMessageIdentity`,
+`SignedMultisigMessage` and `MultisigMessageDelivery` in place of
+`ProposalPublication`, `ProposalIdentity`, `SignedGroupProposal` and `ProposalDelivery`.
+Result collections are `messages`; each reporting identity has `recipient`,
+`exnSaid` (outer coordination EXN) and `payloadSaid` (the existing Multiplexor key:
+v1 embedded-bundle SAID or supported v2 signed-child SAID). `deliveries` lists
+completed transport destinations, not participant approval or group acceptance.
+`join --said` still selects the outer EXN. Other protocol/result SAIDs retain
+their existing names; this is not a global rename of proposal concepts.
+
+Shared helpers live in `multisig-messaging.ts`. Tufa owns the affected JSON
+projection and identifier display. The KERI CLI helpers for multisig, endpoint
+add, registry inception and credential creation now return typed results instead
+of printing their final results. `CredentialCreateResult.output` is replaced by
+`issuance`, with `CredentialIssuanceResult` / `GroupCredentialIssuanceResult` facts;
+read credential identity from `creder`. No old-name aliases are provided.
 
 ## Messenger ownership
 

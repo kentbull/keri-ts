@@ -56,6 +56,9 @@ if [ ! -x "${TUFA_BIN}" ]; then
   exit 1
 fi
 
+cp /smoke-scripts/smoke-tufa-authoring.mjs "${WORK_DIR}/"
+node ./smoke-tufa-authoring.mjs
+
 V1="$("${TUFA_BIN}" version | tr -d "\r")"
 V2="$("${TUFA_BIN}" --version | tr -d "\r")"
 if [ "${V1}" != "${V2}" ]; then

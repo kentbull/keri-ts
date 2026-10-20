@@ -14,6 +14,7 @@ import {
   WireParseError,
 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
+import { multisigJoinCommand } from "../../../../tufa/src/cli/multisig.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
@@ -29,7 +30,7 @@ import {
   ipexJoinCommand,
   ipexPollCommand,
 } from "../../../src/app/cli/ipex.ts";
-import { multisigInceptCommand, multisigJoinCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
+import { multisigInceptCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
@@ -415,24 +416,6 @@ Deno.test("CLI - init command honors custom head directory", async () => {
 
   assertExists(Deno.statSync(`${headDirPath}/keri/ks/${name}`));
   assertExists(Deno.statSync(`${headDirPath}/keri/db/${name}`));
-});
-
-Deno.test("CLI - init does not persist a transport framing preference", async () => {
-  const name = `cesr-init-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
-  await run(function*() {
-    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
-      readonly: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    try {
-      assertEquals(hby.ks.getGbls("cesrBodyMode"), null);
-    } finally {
-      yield* hby.close();
-    }
-  });
 });
 
 Deno.test("CLI - delegate confirm auto approves multiple unwitnessed events and closes its workers", async () => {

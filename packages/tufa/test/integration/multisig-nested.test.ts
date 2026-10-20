@@ -131,7 +131,8 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           bob,
           "team",
         ));
-        assertEquals(parseLastJson(interact.proposer.stdout).accepted, true);
+        const interactStatus = parseLastJson(interact.proposer.stdout);
+        assertEquals(interactStatus.accepted, true);
         assertEquals(parseLastJson(interact.joiner.stdout).accepted, true);
 
         const rpy = yield* waitForPromise(runProposalWithJoin(
@@ -154,8 +155,13 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           bob,
           "team",
         ));
-        assertEquals(parseLastJson(rpy.proposer.stdout).accepted, true);
+        const rpyStatus = parseLastJson(rpy.proposer.stdout);
+        assertEquals(rpyStatus.accepted, true);
         assertEquals(parseLastJson(rpy.joiner.stdout).accepted, true);
+
+        yield* waitForPromise(
+          assertStoredMessageIdentities(alice, [inceptStatus, interactStatus, rpyStatus], [bob.pre, carol.pre]),
+        );
 
         const dwsPort = reserveTcpPort();
         const did = `did:webs:127.0.0.1%3A${dwsPort}:dws:${groupPre}`;
@@ -199,6 +205,33 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
     await Deno.remove(headRoot, { recursive: true }).catch(() => undefined);
   }
 });
+
+/** Compare CLI send identities with actual persisted wrappers and Multiplexor indexes. */
+async function assertStoredMessageIdentities(
+  store: StoreSpec,
+  reports: Record<string, unknown>[],
+  recipients: string[],
+): Promise<void> {
+  await run(function*() {
+    const hby = yield* createHabery({ name: store.name, headDirPath: store.headDirPath, skipConfig: true });
+    try {
+      for (const report of reports) {
+        const messages = report.messages;
+        if (!Array.isArray(messages)) throw new Error("Expected coordination messages in the CLI result");
+        assertEquals(messages.map(message => message.recipient), recipients);
+        for (const message of messages) {
+          const wrapper = hby.db.exns.get([message.exnSaid]);
+          assertExists(wrapper);
+          assertEquals(wrapper.said, message.exnSaid);
+          assertEquals((wrapper.ked!.e as { d: string }).d, message.payloadSaid);
+          assertEquals(hby.db.meids.get([message.payloadSaid]).some(said => said.qb64 === message.exnSaid), true);
+        }
+      }
+    } finally {
+      yield* hby.close();
+    }
+  });
+}
 
 async function seedMailboxProvider(headRoot: string, url: string): Promise<MailboxProvider> {
   const name = `mailbox-provider-${crypto.randomUUID()}`;

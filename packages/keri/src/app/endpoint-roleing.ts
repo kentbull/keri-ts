@@ -1,4 +1,4 @@
-import { concatBytes, Diger, Ilks, SerderKERI, Siger, type Versionage } from "cesr-ts";
+import { Diger, Ilks, SerderKERI, Siger, type Versionage } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { reply as replyEvent } from "../core/protocol-eventing.ts";
@@ -6,23 +6,28 @@ import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { Roles } from "../core/roles.ts";
 import type { Poster } from "./forwarding.ts";
-import { groupSigningMembers, localGroupMember, uniqueMembers } from "./group-members.ts";
+import { groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { MULTISIG_RPY_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
 
-const MULTISIG_TOPIC = "multisig";
+import {
+  type MultisigMessageDelivery,
+  type MultisigSendResult,
+  multisigSendResult,
+  processAndSendMultisigMessage,
+  remoteMultisigMembers,
+  signMultisigMessage,
+} from "./multisig-messaging.ts";
 
 export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 
 /** Result of proposing one group endpoint-role authorization reply. */
-export interface GroupEndpointRoleProposalResult {
+export interface GroupEndpointRoleProposalResult extends MultisigSendResult {
   route: typeof MULTISIG_RPY_ROUTE;
-  proposals: { recipient: string; said: string }[];
   group: string;
   accepted: boolean;
-  deliveries: string[];
   rpy: Uint8Array;
 }
 
@@ -85,37 +90,22 @@ export function* proposeGroupEndpointRole(
   yield* input.processBytes(localRpy, { local: true });
   yield* protocol.processEscrowsOnce();
 
-  const proposals: GroupEndpointRoleProposalResult["proposals"] = [];
-  const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(groupSigningMembers(hby, groupHab.pre))) {
-    if (recipient === member.pre || hby.habs.has(recipient)) {
-      continue;
-    }
+  const outcomes: MultisigMessageDelivery[] = [];
+  for (const recipient of remoteMultisigMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const [serder, attachments] = exchange(MULTISIG_RPY_ROUTE, { gid: groupHab.pre }, {
       sender: member.pre,
       recipient,
       embeds: { rpy: localRpy },
     });
-    const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
-    yield* input.processBytes(message, { local: true });
-    const evt = postman.send({
-      src: member.pre,
-      dest: recipient,
-      msg: message,
-      topic: MULTISIG_TOPIC,
-    }, { notify: true });
-    const outcome = yield* postman.wait(evt);
-    if (outcome.kin === "failed") throw outcome.error;
-    proposals.push({ recipient, said: serder.said! });
-    deliveries.push(...outcome.deliveries);
+    const prepared = signMultisigMessage(member, recipient, [serder, attachments]);
+    outcomes.push(yield* processAndSendMultisigMessage(input, postman, prepared));
   }
 
   return {
     route: MULTISIG_RPY_ROUTE,
-    proposals,
+    ...multisigSendResult(outcomes),
     group: groupHab.pre,
     accepted: endpointRoleAccepted(hby, groupHab.pre, role, args.eid),
-    deliveries,
     rpy: localRpy,
   };
 }

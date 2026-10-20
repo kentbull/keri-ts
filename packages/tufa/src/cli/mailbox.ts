@@ -1,3 +1,4 @@
+import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 /**
  * Mailbox operator commands.
  *
@@ -334,13 +335,7 @@ function* withMailboxWorkflow(
               yield* worker.halt();
             }
           });
-          writeJsonLine({
-            route: result.route,
-            proposals: result.proposals,
-            group: result.group,
-            accepted: result.accepted,
-            deliveries: result.deliveries,
-          });
+          writeGroupEndpointRoleProposal(result);
           return;
         }
         if (!endpointRoleAccepted(hby, hab.pre, Roles.mailbox, mailboxAid)) {

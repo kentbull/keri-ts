@@ -128,14 +128,18 @@ export {
   type CredentialCreateOptions,
   type CredentialCreateResult,
   type CredentialExportResult,
+  type CredentialIssuanceResult,
   type CredentialListItem,
   type CredentialListOptions,
   type CredentialRegistryInceptOptions,
+  type CredentialRegistryInceptResult,
   credentialRegistryRecords,
   credentialRegistryStatus,
   type CredentialRevokeOptions,
   type CredentialRevokeResult,
   exportCredentialStream,
+  type GroupCredentialIssuanceResult,
+  type GroupCredentialRegistryInceptResult,
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
@@ -270,6 +274,12 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailboxing.ts";
+export type {
+  MultisigMessageDelivery,
+  MultisigMessageIdentity,
+  MultisigSendResult,
+  SignedMultisigMessage,
+} from "../app/multisig-messaging.ts";
 export {
   Notifier,
 } from "../app/notifying.ts";

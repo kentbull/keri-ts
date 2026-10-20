@@ -10,9 +10,11 @@
 import { type SerderKERI, type ThresholdSith } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import type { KeyStateRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
+import type { GroupEndpointRoleProposalResult } from "../endpoint-roleing.ts";
 import {
   endpointRoleAccepted,
   groupSigningMembers,
@@ -28,6 +30,8 @@ import {
   MULTISIG_RPY_ROUTE,
 } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
+import type { MultisigSendResult } from "../multisig-messaging.ts";
+import type { MultisigKelRoute } from "../multisig-workflows.ts";
 import {
   type ApprovalPromptContext,
   type ApprovalResult,
@@ -49,6 +53,15 @@ import {
 import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 const MULTISIG_TOPIC = "multisig";
+
+/** Accepted-state snapshot and message outcomes retained after owned stores close. */
+export interface MultisigEventCommandResult extends MultisigSendResult {
+  route: MultisigKelRoute;
+  group: string;
+  accepted: boolean;
+  state: KeyStateRecord | null;
+  delegationPhase: string | null;
+}
 
 interface MultisigBaseArgs {
   name?: string;
@@ -142,7 +155,7 @@ function isString(value: unknown): value is string {
 /** Create or begin a distributed group identifier from a KLI-style file. */
 export function* multisigInceptCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<MultisigEventCommandResult> {
   const commandArgs: MultisigInceptArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -174,7 +187,7 @@ export function* multisigInceptCommand(
     throw new ValidationError("Multisig inception config must include non-empty aids.");
   }
 
-  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+  return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const member = requireHabByAlias(hby, alias);
     const created = hby.makeGroupHab(group, member, smids, rmids, undefined, {
       isith: options.isith,
@@ -184,7 +197,7 @@ export function* multisigInceptCommand(
       delpre: options.delpre,
       data: options.data ?? [],
     });
-    const { deliveries, proposals } = yield* publishProposal(
+    const { deliveries, messages } = yield* publishProposal(
       hby,
       runtime.protocol,
       runtime.postman,
@@ -218,21 +231,22 @@ export function* multisigInceptCommand(
       );
     }
 
-    printIdentifier(hby, created.hab.pre, delegationPhase);
-    console.log(JSON.stringify({
+    return {
       route: MULTISIG_ICP_ROUTE,
       group: created.hab.pre,
       accepted,
-      proposals,
+      messages,
       deliveries,
-    }));
+      state: hby.db.getState(created.hab.pre),
+      delegationPhase: delegationPhase,
+    };
   });
 }
 
 /** Poll for and approve one pending group multisig event. */
 export function* multisigJoinCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<ApprovalResult> {
   const commandArgs: MultisigJoinArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -253,7 +267,7 @@ export function* multisigJoinCommand(
   };
   const name = requireText(commandArgs.name, "Name");
 
-  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+  return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const approval = multisigApprovalOptions(hby, commandArgs);
     const result = yield* waitForOneApproval(hby, runtime, approval);
     if (!result) {
@@ -267,8 +281,7 @@ export function* multisigJoinCommand(
           yield* completeDelegationIfNeeded(hby, runtime, local.group, commandArgs.proxy);
         }
       }
-      console.log(JSON.stringify(local));
-      return;
+      return local;
     }
     if (result.accepted) {
       yield* receiptAcceptedEvent(hby, result.group, commandArgs, runtime);
@@ -284,14 +297,14 @@ export function* multisigJoinCommand(
         );
       }
     }
-    console.log(JSON.stringify(result));
+    return result;
   });
 }
 
 /** Create or begin one group interaction event. */
 export function* multisigInteractCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<MultisigEventCommandResult> {
   const commandArgs: MultisigInteractArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -315,10 +328,10 @@ export function* multisigInteractCommand(
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
   const data = parseDataItems(commandArgs.data);
 
-  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+  return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const created = hby.interactGroupHab(group, undefined, { data });
     const smids = groupSigningMembers(hby, created.hab.pre);
-    const { deliveries, proposals } = yield* publishProposal(
+    const { deliveries, messages } = yield* publishProposal(
       hby,
       runtime.protocol,
       runtime.postman,
@@ -340,21 +353,22 @@ export function* multisigInteractCommand(
     if (accepted) {
       yield* receiptAcceptedEvent(hby, created.hab.pre, commandArgs, runtime);
     }
-    printIdentifier(hby, created.hab.pre);
-    console.log(JSON.stringify({
+    return {
       route: MULTISIG_IXN_ROUTE,
       group: created.hab.pre,
       accepted,
-      proposals,
+      messages,
       deliveries,
-    }));
+      state: hby.db.getState(created.hab.pre),
+      delegationPhase: null,
+    };
   });
 }
 
 /** Rotate or begin rotation of one group identifier. */
 export function* multisigRotateCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<MultisigEventCommandResult> {
   const commandArgs: MultisigRotateArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -388,7 +402,7 @@ export function* multisigRotateCommand(
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
   const options = mergeRotateOptions(commandArgs);
 
-  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+  return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const rotated = hby.rotateGroupHab(
       group,
       commandArgs.smids,
@@ -404,7 +418,7 @@ export function* multisigRotateCommand(
     );
     const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
     const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
-    const { deliveries, proposals } = yield* publishProposal(
+    const { deliveries, messages } = yield* publishProposal(
       hby,
       runtime.protocol,
       runtime.postman,
@@ -433,21 +447,22 @@ export function* multisigRotateCommand(
         commandArgs.proxy,
       );
     }
-    printIdentifier(hby, rotated.hab.pre, delegationPhase);
-    console.log(JSON.stringify({
+    return {
       route: MULTISIG_ROT_ROUTE,
       group: rotated.hab.pre,
       accepted,
-      proposals,
+      messages,
       deliveries,
-    }));
+      state: hby.db.getState(rotated.hab.pre),
+      delegationPhase: delegationPhase,
+    };
   });
 }
 
 /** Propose one group multisig reply such as `/end/role/add`. */
 export function* multisigRpyCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<GroupEndpointRoleProposalResult> {
   const commandArgs: MultisigRpyArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -470,7 +485,7 @@ export function* multisigRpyCommand(
   const eid = requireText(commandArgs.eid, "Endpoint identifier");
   const role = commandArgs.role ?? Roles.mailbox;
 
-  yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+  return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const groupHab = requireHabByAlias(hby, group);
     const result = yield* proposeGroupEndpointRole(
       hby,
@@ -494,13 +509,7 @@ export function* multisigRpyCommand(
       )
       : result.accepted;
 
-    console.log(JSON.stringify({
-      route: result.route,
-      proposals: result.proposals,
-      group: result.group,
-      accepted,
-      deliveries: result.deliveries,
-    }));
+    return { ...result, accepted };
   });
 }
 
@@ -710,22 +719,6 @@ function nonNegativeNumber(value: unknown, fallback: number, label: string): num
   return parsed;
 }
 
-function printIdentifier(
-  hby: Habery,
-  pre: string,
-  delegationPhase?: string | null,
-): void {
-  const state = hby.db.getState(pre);
-  console.log(`Prefix  ${pre}`);
-  console.log(`New Sequence No.  ${state?.s ?? ""}`);
-  for (const [idx, key] of (state?.k ?? []).entries()) {
-    console.log(`\tPublic key ${idx + 1}:  ${key}`);
-  }
-  if (delegationPhase) {
-    console.log(`Delegation status  ${delegationPhase}`);
-  }
-}
-
 /** Approve stored proposals until the target event is accepted or the deadline expires. */
 function* waitForGroupAcceptance(
   hby: Habery,
@@ -793,7 +786,7 @@ function* waitForLocalGroupCompletion(
     group: groupHab.pre,
     accepted,
     deliveries: [],
-    proposals: [],
+    messages: [],
   };
 }
 

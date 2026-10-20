@@ -2,7 +2,12 @@ import { call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";
 import { settleRuntimeIngress } from "../agent-runtime.ts";
-import { endpointRoleAccepted, isLocalGroupHab, proposeGroupEndpointRole } from "../endpoint-roleing.ts";
+import {
+  endpointRoleAccepted,
+  type GroupEndpointRoleProposalResult,
+  isLocalGroupHab,
+  proposeGroupEndpointRole,
+} from "../endpoint-roleing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 
 type MultisigEndpointRoleMode = "propose" | "complete";
@@ -20,6 +25,9 @@ interface EndsAddArgs {
   compat?: boolean;
 }
 
+/** Typed endpoint result; Tufa decides how to present the completed operation. */
+export type EndsAddResult = GroupEndpointRoleProposalResult | { role: string; eid: string };
+
 /**
  * Implement `tufa ends add` on top of the shared local runtime.
  *
@@ -36,7 +44,7 @@ interface EndsAddArgs {
  */
 export function* endsAddCommand(
   args: Record<string, unknown>,
-): Operation<void> {
+): Operation<EndsAddResult> {
   const commandArgs: EndsAddArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -66,7 +74,7 @@ export function* endsAddCommand(
   const eid = commandArgs.eid;
   const role = commandArgs.role;
 
-  yield* withHabAndAgentRuntime(
+  return yield* withHabAndAgentRuntime(
     commandArgs,
     commandArgs.alias,
     {
@@ -96,22 +104,14 @@ export function* endsAddCommand(
               yield* worker.halt();
             }
           });
-          console.log(JSON.stringify({
-            route: result.route,
-            proposals: result.proposals,
-            group: result.group,
-            accepted: result.accepted,
-            deliveries: result.deliveries,
-          }));
-          return;
+          return result;
         }
         if (!endpointRoleAccepted(hby, hab.pre, role, eid)) {
           throw new ValidationError(
             `Endpoint role ${role} for ${eid} is not yet approved for group ${hab.pre}.`,
           );
         }
-        console.log(`${role} ${eid}`);
-        return;
+        return { role, eid };
       }
 
       if (commandArgs.multisigMode) {
@@ -126,7 +126,7 @@ export function* endsAddCommand(
         );
       }
 
-      console.log(`${role} ${eid}`);
+      return { role, eid };
     },
   );
 }

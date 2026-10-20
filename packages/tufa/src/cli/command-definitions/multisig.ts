@@ -2,7 +2,7 @@
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 import { addStoreOptions, addWitnessAuthOptions, collectOption, witnessAuthArgs } from "./options.ts";
-import { registerKeriCliCommand } from "./shared.ts";
+import { registerDispatchedCommand } from "./shared.ts";
 
 /** Register group multisig lifecycle commands. */
 export function registerMultisigCmd(program: Command, dispatch: CommandDispatch): void {
@@ -18,7 +18,7 @@ export function registerMultisigCmd(program: Command, dispatch: CommandDispatch)
 }
 
 function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addWitnessAuthOptions(
       addStoreOptions(
         multisig.command("incept")
@@ -45,26 +45,29 @@ function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch)
         ),
     ),
     dispatch,
-    "multisig.incept",
-    "multisigInceptCommand",
-    (options) => ({
-      name: options.name,
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      alias: options.alias,
-      group: options.group,
-      file: options.file,
-      ...witnessAuthArgs(options),
-      proxy: options.proxy,
-      approvalTimeoutSeconds: options.approvalTimeout,
-    }),
+    {
+      name: "multisig.incept",
+      load: () => import("../multisig.ts"),
+      exportName: "multisigInceptCommand",
+      args: (options) => ({
+        name: options.name,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        alias: options.alias,
+        group: options.group,
+        file: options.file,
+        ...witnessAuthArgs(options),
+        proxy: options.proxy,
+        approvalTimeoutSeconds: options.approvalTimeout,
+      }),
+    },
   );
 }
 
 function registerMultisigInteractCmd(multisig: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addWitnessAuthOptions(
       addStoreOptions(
         multisig.command("interact")
@@ -83,24 +86,27 @@ function registerMultisigInteractCmd(multisig: Command, dispatch: CommandDispatc
       ),
     ),
     dispatch,
-    "multisig.interact",
-    "multisigInteractCommand",
-    (options) => ({
-      name: options.name,
-      alias: options.alias,
-      group: options.group,
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      data: options.data || [],
-      ...witnessAuthArgs(options),
-    }),
+    {
+      name: "multisig.interact",
+      load: () => import("../multisig.ts"),
+      exportName: "multisigInteractCommand",
+      args: (options) => ({
+        name: options.name,
+        alias: options.alias,
+        group: options.group,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        data: options.data || [],
+        ...witnessAuthArgs(options),
+      }),
+    },
   );
 }
 
 function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addWitnessAuthOptions(
       addStoreOptions(
         multisig.command("join")
@@ -126,27 +132,30 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
     ),
     dispatch,
-    "multisig.join",
-    "multisigJoinCommand",
-    (options) => ({
-      name: options.name,
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      group: options.group,
-      registryName: options.registryName,
-      said: options.said,
-      auto: options.auto || false,
-      approvalTimeoutSeconds: options.approvalTimeout,
-      ...witnessAuthArgs(options),
-      proxy: options.proxy,
-    }),
+    {
+      name: "multisig.join",
+      load: () => import("../multisig.ts"),
+      exportName: "multisigJoinCommand",
+      args: (options) => ({
+        name: options.name,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        group: options.group,
+        registryName: options.registryName,
+        said: options.said,
+        auto: options.auto || false,
+        approvalTimeoutSeconds: options.approvalTimeout,
+        ...witnessAuthArgs(options),
+        proxy: options.proxy,
+      }),
+    },
   );
 }
 
 function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addWitnessAuthOptions(
       addStoreOptions(
         multisig.command("rotate")
@@ -198,34 +207,37 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
     ),
     dispatch,
-    "multisig.rotate",
-    "multisigRotateCommand",
-    (options) => ({
-      name: options.name,
-      alias: options.alias,
-      group: options.group,
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      file: options.file,
-      isith: options.isith,
-      nsith: options.nsith,
-      toad: options.toad,
-      witnesses: options.witnesses || [],
-      cuts: options.witnessCut || [],
-      witnessAdd: options.witnessAdd || [],
-      data: options.data || [],
-      smids: options.smids || [],
-      rmids: options.rmids || [],
-      ...witnessAuthArgs(options),
-      proxy: options.proxy,
-    }),
+    {
+      name: "multisig.rotate",
+      load: () => import("../multisig.ts"),
+      exportName: "multisigRotateCommand",
+      args: (options) => ({
+        name: options.name,
+        alias: options.alias,
+        group: options.group,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        file: options.file,
+        isith: options.isith,
+        nsith: options.nsith,
+        toad: options.toad,
+        witnesses: options.witnesses || [],
+        cuts: options.witnessCut || [],
+        witnessAdd: options.witnessAdd || [],
+        data: options.data || [],
+        smids: options.smids || [],
+        rmids: options.rmids || [],
+        ...witnessAuthArgs(options),
+        proxy: options.proxy,
+      }),
+    },
   );
 }
 
 function registerMultisigRpyCmd(multisig: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addStoreOptions(
       multisig.command("rpy")
         .description("Propose a group endpoint-role authorization reply")
@@ -245,20 +257,23 @@ function registerMultisigRpyCmd(multisig: Command, dispatch: CommandDispatch): v
         ),
     ),
     dispatch,
-    "multisig.rpy",
-    "multisigRpyCommand",
-    (options) => ({
-      name: options.name,
-      alias: options.alias,
-      group: options.group,
-      eid: options.eid,
-      role: options.role,
-      allow: !(options.cut || false),
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      approvalTimeoutSeconds: options.approvalTimeout,
-    }),
+    {
+      name: "multisig.rpy",
+      load: () => import("../multisig.ts"),
+      exportName: "multisigRpyCommand",
+      args: (options) => ({
+        name: options.name,
+        alias: options.alias,
+        group: options.group,
+        eid: options.eid,
+        role: options.role,
+        allow: !(options.cut || false),
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        approvalTimeoutSeconds: options.approvalTimeout,
+      }),
+    },
   );
 }
