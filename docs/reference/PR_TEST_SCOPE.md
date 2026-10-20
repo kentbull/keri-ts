@@ -34,7 +34,9 @@ introduced. Existing suite isolation and participant topology remain in force.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
 graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
 changes can select that file alone. `interop-kram` separately owns the live
-single/group mailbox-authentication cases. Full mode includes all these owners.
+single/group mailbox-authentication cases. These native owners and ESSR storage
+use the manifest's pinned main checkout in CI; separate legacy/mailbox owners
+retain their own peers. Full mode includes all these owners.
 Empty arrays explicitly select no owners for that lane.
 
 For the periodic broad run, use:

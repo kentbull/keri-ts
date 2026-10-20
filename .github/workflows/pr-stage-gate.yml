@@ -169,9 +169,9 @@ jobs:
           KERIPY_PATH: ${{ github.workspace }}/.cache/keripy-source
         run: deno run -A packages/cesr/scripts/verify-tables.ts
 
-      - name: Prepare actual main Baser storage peer
-        if: matrix.target == 'interop-essr-storage'
-        uses: ./.github/actions/setup-essr-storage-peer
+      - name: Prepare pinned main protocol and storage peer
+        if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure", "interop-kram"]'), matrix.target)
+        uses: ./.github/actions/setup-keripy-main-peer
 
       - name: run selected KERIpy interop owner
         if: matrix.target != 'interop-reference-profiles'

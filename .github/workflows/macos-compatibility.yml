@@ -150,8 +150,8 @@ jobs:
           python scripts/ci/report-sodium-environment.py "$(brew --prefix libsodium)/lib/libsodium.dylib"
           bash scripts/ci/assert-environment.sh
 
-      - name: Prepare actual main Baser storage peer
-        uses: ./.github/actions/setup-essr-storage-peer
+      - name: Prepare pinned main protocol and storage peer
+        uses: ./.github/actions/setup-keripy-main-peer
 
       - name: run macOS quality and test suites
         # Re-run the main quality and test surface on macOS so native/runtime
