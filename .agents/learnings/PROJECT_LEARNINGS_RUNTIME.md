@@ -90,8 +90,8 @@ attempt from source bytes and consumes the failure; discard(evt) removes it.
 No automatic retry, final-packet cache, manual reply cursor or cross-batch fairness
 remains. Failures are process-local and excluded from idle. Unexpected construction,
 storage, parser and cleanup failures are retained/reported then propagate.
-The [cue delivery plan](../../docs/plans/runtime/cue-delivery-refactor.md) tracks
-the reference source and qualification evidence.
+The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
+current behavior; Git and PR checks retain implementation evidence.
 QueryCoordinator owns plain requests and signed packets; concrete TCPMessenger/HTTPMessenger
 operations own joined attempt and response I/O.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op

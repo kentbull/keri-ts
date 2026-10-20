@@ -105,7 +105,7 @@ concurrency. Preserve existing completion semantics without a general RPC layer.
 Actual source/payload handles can cross a flow when their lifetime requires it;
 ordinary records do not need a synthetic resource protocol.
 
-The [cue delivery refactor](../plans/runtime/cue-delivery-refactor.md) makes Poster
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) defines Poster as
 the single queued execution owner. Respondant and other producers construct and
 publish source messages; the host runs Poster.deliverDo independently of query
 delivery. Ingress publishes without driving the postman. Optional outcomes refer

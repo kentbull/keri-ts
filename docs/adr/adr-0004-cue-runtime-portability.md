@@ -64,7 +64,7 @@ CLI and hosts run the same component workers with different completion/deadline
 conditions. Serial runtime and finite mailbox pumps, CueSink hooks, delivery
 wrappers and callback-based reply admission are removed.
 
-The [cue delivery plan](../plans/runtime/cue-delivery-refactor.md) first moved
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) assigns
 execution ownership to Poster. All sends now use its independently running queue;
 HTTP and witness ingress publish without driving delivery. Producers construct
 signed messages and callers await identity-matched sent/failed outcomes when

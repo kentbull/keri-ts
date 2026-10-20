@@ -8,21 +8,15 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
-- [Runtime simplification and KERIpy routing parity](runtime/runtime-simplification-and-routing-parity.md): planned removal of unsupported runtime machinery, producer-side alias resolution, owner-specific routing parity and separately gated failure reporting.
-- [Remove automatic local mailbox consumption](runtime/remove-local-mailbox-consumption.md): completed in #556; provider storage, remote polling and direct intake remain.
-- [Runtime maintainer documentation](runtime/runtime-maintainer-documentation.md): completed source-contract review, coverage ledger and separately recorded behavior findings.
-- [Explicit runtime dependencies](runtime/explicit-runtime-dependencies.md): completed removal of RuntimeServices/dependency options and the separate verifier clock correction, with full post-merge qualification.
-- [HTTP client simplification](runtime/http-client-simplification.md): phased reduction to prepared bodies, finite responses and a small scoped streaming path.
+- [Runtime simplification and KERIpy routing parity](runtime/runtime-simplification-and-routing-parity.md): active removals, producer-side alias resolution, owner-specific routing parity and separately gated failure reporting.
+- [Cue reliability roadmap](runtime/cue-reliability-roadmap.md): deferred capabilities and the evidence needed before design.
 - [KERIpy compatibility ports](compatibility/KERIPY_COMPATIBILITY_PORTS.md): proposed
   1.x/2.x target assessment and ports tied to the maintained v1/v2 compatibility inventory.
-- [HTTP request ownership refactor](runtime/http-request-ownership-refactor.md): Request validation before fetch, one concrete request/body owner,
-  and composition-supplied HTTP behavior without client identity checks.
-- [Messenger and protocol refactor](runtime/messenger-protocol-refactor.md): phased extraction of shared protocol processing, concrete TCP/HTTP messengers,
-  and explicit constructor dependencies; final qualification follows the last merge.
-- [Cue delivery refactor](runtime/cue-delivery-refactor.md): completed message
-  production, FIFO Poster execution, retained failures and transport completion work.
-  The [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
-  features and the evidence required before pursuing them.
+
+Completed runtime execution plans and the historical declaration-coverage ledger
+are removed. Keep current behavior in design documents and decisions in ADRs;
+use Git/PR history for completed work. Edit active plans when scope, contracts or
+gates change, rather than recording each commit, test run or PR transition.
 
 - [CESR parser](cesr/CESR_PROGRESSIVE_PARSER_PLAN.md) and [Mapper](cesr/MAPPER_PLAN.md).
 - [Multisig](exchange/MULTISIG_PLAN.md), [IPEX](exchange/IPEX_PLAN.md),

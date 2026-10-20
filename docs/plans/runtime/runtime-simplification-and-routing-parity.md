@@ -1,8 +1,8 @@
 # Runtime simplification and KERIpy routing parity
 
-Status: execution authorized; goal active. Phase 1 is merged in [#557](https://github.com/kentbull/keri-ts/pull/557).
-Phase 2 removes the dormant Reactor queue. Later phase gates remain outstanding;
-routing source choices must close before Phase 4.
+Status: active implementation plan. Edit this document only when scope, contracts,
+source decisions or acceptance gates change. Git commits, PR descriptions and CI
+own progress, completed phase evidence and delivery chronology.
 
 Inspected baseline: clean local `master` at
 `20da8bad16f3ef09fd82846bb8d050fbd2184afa`, after local mailbox consumption removal
@@ -316,11 +316,11 @@ do not describe the whole plan as complete.
 - Review complete cue, query, forwarding/mailbox, IPEX, delegation and finite CLI
   flows against source and tests.
 - Reconcile runtime contracts, QUERY_REPLY, CUES, mailbox design, ADR-0009,
-  ADR-0013, the maintainer coverage ledger, relevant learnings and plan routing.
+  ADR-0013, relevant learnings and plan routing.
 - Correct ADR-0009's already-stale local replay/bounded batch claims; rewrite its
   former mailbox-first policy as superseded. Do not describe planned behavior as
   implemented before its phase lands.
-- Update cue-delivery/reliability plans to distinguish historical retry/retention
+- Update the reliability roadmap to distinguish historical retry/retention
   decisions from the new implemented contract. Preserve accurate historical evidence.
 - Run final composed qualification after the implementation PRs are merged, per
   the validation discipline below, and repair failures before completion.
