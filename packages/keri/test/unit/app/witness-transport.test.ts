@@ -44,7 +44,7 @@ Deno.test("witness delivery preserves authorization and retries the media type f
     });
     await request.arrayBuffer(); // These local request fixtures contain two small KEL events.
     return request.headers.get("Content-Type") === "application/cesr"
-      ? new Response("Unacceptable content type", { status: 406 })
+      ? Response.json({ title: "Content type error", description: "Unacceptable content type." }, { status: 406 })
       : new Response(null, { status: 204 });
   });
   try {
