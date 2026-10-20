@@ -184,8 +184,10 @@ export function* multisigInceptCommand(
       delpre: options.delpre,
       data: options.data ?? [],
     });
-    const deliveries = yield* publishProposal(
-      runtime,
+    const { deliveries, proposals } = yield* publishProposal(
+      hby,
+      runtime.protocol,
+      runtime.postman,
       member,
       uniqueMembers([...smids, ...rmids]),
       {
@@ -221,6 +223,7 @@ export function* multisigInceptCommand(
       route: MULTISIG_ICP_ROUTE,
       group: created.hab.pre,
       accepted,
+      proposals,
       deliveries,
     }));
   });
@@ -315,8 +318,10 @@ export function* multisigInteractCommand(
   yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const created = hby.interactGroupHab(group, undefined, { data });
     const smids = groupSigningMembers(hby, created.hab.pre);
-    const deliveries = yield* publishProposal(
-      runtime,
+    const { deliveries, proposals } = yield* publishProposal(
+      hby,
+      runtime.protocol,
+      runtime.postman,
       localGroupMember(hby, created.hab.pre),
       smids,
       { route: MULTISIG_IXN_ROUTE, attrs: { gid: created.hab.pre, smids } },
@@ -340,6 +345,7 @@ export function* multisigInteractCommand(
       route: MULTISIG_IXN_ROUTE,
       group: created.hab.pre,
       accepted,
+      proposals,
       deliveries,
     }));
   });
@@ -398,8 +404,10 @@ export function* multisigRotateCommand(
     );
     const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);
     const rmids = commandArgs.rmids?.length ? commandArgs.rmids : smids;
-    const deliveries = yield* publishProposal(
-      runtime,
+    const { deliveries, proposals } = yield* publishProposal(
+      hby,
+      runtime.protocol,
+      runtime.postman,
       localGroupMember(hby, rotated.hab.pre),
       uniqueMembers([...smids, ...rmids]),
       { route: MULTISIG_ROT_ROUTE, attrs: { gid: rotated.hab.pre, smids, rmids } },
@@ -430,6 +438,7 @@ export function* multisigRotateCommand(
       route: MULTISIG_ROT_ROUTE,
       group: rotated.hab.pre,
       accepted,
+      proposals,
       deliveries,
     }));
   });
@@ -784,6 +793,7 @@ function* waitForLocalGroupCompletion(
     group: groupHab.pre,
     accepted,
     deliveries: [],
+    proposals: [],
   };
 }
 

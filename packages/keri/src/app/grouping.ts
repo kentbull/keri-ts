@@ -74,6 +74,45 @@ export type MultisigEventProposal =
   }
   | { route: typeof MULTISIG_RPY_ROUTE; attrs: { gid: string } };
 
+/** Legacy registry proposals require their own named evidence, not arbitrary embed bags. */
+export type MultisigVdrProposal =
+  | {
+    route: typeof MULTISIG_VCP_ROUTE;
+    attrs: { gid: string; usage?: string; cgvrsn?: readonly [number, number] };
+    embeds: { vcp: Uint8Array; anc: Uint8Array };
+  }
+  | {
+    route: typeof MULTISIG_ISS_ROUTE;
+    attrs: { gid: string; cgvrsn?: readonly [number, number] };
+    embeds: { acdc: Uint8Array; iss: Uint8Array; anc: Uint8Array };
+  };
+
+/** Build an unsigned legacy VDR wrapper with its required named children. */
+export function prepareMultisigVdrExn(
+  sender: string,
+  proposal: MultisigVdrProposal,
+  options: MultisigBuilderOptions = {},
+): MultisigMessage {
+  return exchange(proposal.route, proposal.attrs, { ...options, sender, embeds: proposal.embeds });
+}
+
+/**
+ * Read the proposal index identity without authenticating its evidence.
+ * V1 commits the embedded bundle; v2 signs one child SAID. Multiplexor verifies
+ * those commitments and owns accepted proposal/submitter indexes separately.
+ */
+export function multisigProposalSaid(serder: SerderKERI): string | null {
+  const ked = serder.ked;
+  if (!ked) return null;
+  if (serder.pvrsn.major === 1) {
+    const said = embeddedSection(ked)?.d;
+    return typeof said === "string" && said.length > 0 ? said : null;
+  }
+  const route = serder.route ?? "";
+  const said = payloadSection(ked)[route.slice(route.lastIndexOf("/") + 1)];
+  return typeof said === "string" && said.length > 0 ? said : null;
+}
+
 interface RawMessage {
   readonly raw: Uint8Array;
 }
@@ -212,16 +251,11 @@ export function multisigRegistryInceptExn(
   anc: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): MultisigMessage {
-  return exchange(MULTISIG_VCP_ROUTE, {
-    gid: groupPrefix(group),
-    usage,
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: {
-      vcp: rawMessage(vcp),
-      anc: rawMessage(anc),
-    },
-  });
+  return prepareMultisigVdrExn(member.pre, {
+    route: MULTISIG_VCP_ROUTE,
+    attrs: { gid: groupPrefix(group), usage },
+    embeds: { vcp: rawMessage(vcp), anc: rawMessage(anc) },
+  }, exchangeOptions(member, options));
 }
 
 /** Coordinate one proposed multisig credential issuance. */
@@ -233,16 +267,11 @@ export function multisigIssueExn(
   anc: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): MultisigMessage {
-  return exchange(MULTISIG_ISS_ROUTE, {
-    gid: groupPrefix(group),
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: {
-      acdc: rawMessage(acdc),
-      iss: rawMessage(iss),
-      anc: rawMessage(anc),
-    },
-  });
+  return prepareMultisigVdrExn(member.pre, {
+    route: MULTISIG_ISS_ROUTE,
+    attrs: { gid: groupPrefix(group) },
+    embeds: { acdc: rawMessage(acdc), iss: rawMessage(iss), anc: rawMessage(anc) },
+  }, exchangeOptions(member, options));
 }
 
 /** Coordinate one proposed multisig credential revocation. */
@@ -573,24 +602,23 @@ export class Multiplexor {
 
     const sender = serder.pre ?? "";
     const route = serder.route ?? "";
-    const payload = payloadSection(ked);
     let embeddedSaid: string;
     if (serder.pvrsn.major === 1) {
-      const embed = embeddedSection(ked);
-      if (!embed || typeof embed.d !== "string" || !embed.d || nests.length) {
+      const commitment = multisigProposalSaid(serder);
+      if (!commitment || nests.length) {
         return { ok: false, said, reason: "Missing multisig embedded SAID or unexpected v1 nesting." };
       }
       if (childGenusHint(ked.a) === null) {
         return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
-      embeddedSaid = embed.d;
+      embeddedSaid = commitment;
     } else {
       const allowed = nestedMultisigIlks(route);
       if (!allowed || nests.length !== 1) {
         return { ok: false, said, reason: "Unsupported nested multisig route or child count." };
       }
       const child = nests[0];
-      const signed = payload[route.slice(route.lastIndexOf("/") + 1)];
+      const signed = multisigProposalSaid(serder);
       if (
         typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
         || !(child.body instanceof SerderKERI) || child.nests?.length

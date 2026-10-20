@@ -28,6 +28,7 @@ import {
   assertThrows,
 } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
 import { groupEndorseReply } from "../../../src/app/endpoint-roleing.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
 import {
@@ -41,6 +42,7 @@ import {
   multisigRotateExn,
   type MultisigRoute,
   multisigRpyExn,
+  type MultisigVdrProposal,
   prepareMultisigEventExn,
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
@@ -62,13 +64,26 @@ import { credential, serializeCredential } from "../../../src/vdr/credentialing.
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error Event publication cannot accept a registry proposal.
-void ({ route: "/multisig/vcp", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[3]);
+void ({ route: "/multisig/vcp", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[5]);
 // @ts-expect-error Inception derives gid from its child instead of accepting a second identity.
 void ({ route: "/multisig/icp", attrs: { gid: "group", smids: [], rmids: [] } } satisfies MultisigEventProposal);
 // @ts-expect-error Rotation requires its rotation members as well as signing members.
 void ({ route: "/multisig/rot", attrs: { gid: "group", smids: [] } } satisfies MultisigEventProposal);
 // @ts-expect-error Reply proposals do not carry interaction member fields.
 void ({ route: "/multisig/rpy", attrs: { gid: "group", smids: [] } } satisfies MultisigEventProposal);
+
+void ({
+  route: "/multisig/vcp",
+  attrs: { gid: "group" },
+  // @ts-expect-error Registry inception requires its anchor as well as the VCP.
+  embeds: { vcp: new Uint8Array() },
+} satisfies MultisigVdrProposal);
+void ({
+  route: "/multisig/iss",
+  attrs: { gid: "group" },
+  // @ts-expect-error Issuance requires the credential, TEL event and anchor together.
+  embeds: { iss: new Uint8Array(), anc: new Uint8Array() },
+} satisfies MultisigVdrProposal);
 
 /** Sign just the wrapper body with its sender's accepted establishment keys. */
 function proof(sender: Hab, serder: SerderKERI): TransIdxSigGroup[] {
@@ -154,12 +169,17 @@ Deno.test("multisig publication records its actual local proposal before deliver
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test-transmission"] };
         };
-        const deliveries = yield* publishProposal(runtime, alice, mids, {
+        const publication = yield* publishProposal(left, runtime.protocol, runtime.postman, alice, mids, {
           route: "/multisig/icp",
           attrs: { smids: mids, rmids: mids },
         }, messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_1_0 }));
-        assertEquals(deliveries, ["test-transmission"]);
+        assertEquals(publication.deliveries, ["test-transmission"]);
         assertExists(delivered);
+        assertEquals(publication.proposals, [{
+          recipient: bob.pre,
+          said: delivered.said,
+          proposal: (delivered.ked!.e as { d: string }).d,
+        }]);
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, 0);
         const [peer, paths] = yield* multisigInceptExn(
@@ -1052,6 +1072,62 @@ Deno.test("VDR approval without a registry preserves decline and fails before ac
         assertEquals(runtime.vdr!.reger.tels.getOn(registry.pre!, 0), null);
         assertNotEquals(notifier.count(), 0);
       } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("group credential producers publish typed evidence and usable proposal-index identities", async () => {
+  await participants(async (left, right, alice, bob) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+      const peerRuntime = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        const wires: Uint8Array[] = [];
+        runtime.postman.send = function(evt) {
+          assertEquals(evt.dest, bob.pre);
+          wires.push(evt.msg);
+          return { ...evt, kin: "msg" };
+        };
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["peer"] };
+        };
+        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+          registryName: "typed",
+        });
+        const vcp = new SerderKERI({ raw: wires[0] });
+        const vcpEmbeds = vcp.ked!.e as { d: string };
+        assertEquals(Object.keys(vcpEmbeds), ["vcp", "anc", "d"]);
+        assertEquals("proposals" in registry ? registry.proposals : null, [{
+          recipient: bob.pre,
+          said: vcp.said,
+          proposal: vcpEmbeds.d,
+        }]);
+        const schema = new Schemer({ sed: { type: "object" } });
+        left.db.schema.pin(schema.said, schema);
+        const issued = yield* createCredential(runtime.vdr!, runtime.postman, {
+          registryName: "typed",
+          schema: schema.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+        const iss = new SerderKERI({ raw: wires[1] });
+        const issEmbeds = iss.ked!.e as { d: string };
+        assertEquals(Object.keys(issEmbeds), ["acdc", "iss", "anc", "d"]);
+        assertEquals(issued.output.proposals, [{ recipient: bob.pre, said: iss.said, proposal: issEmbeds.d }]);
+        for (const wire of wires) {
+          const wrapper = new SerderKERI({ raw: wire });
+          const identity = (wrapper.ked!.e as { d: string }).d;
+          yield* peerRuntime.reactor.processBytes(wire, { local: true });
+          assertEquals(peerRuntime.exc.complete(wrapper.said!), true);
+          assertEquals(right.db.meids.get([identity]).map(said => said.qb64), [wrapper.said]);
+        }
+      } finally {
+        yield* peerRuntime.close();
         yield* runtime.close();
       }
     });

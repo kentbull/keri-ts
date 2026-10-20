@@ -23,7 +23,6 @@ import {
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import { exchange } from "../core/protocol-exchanging.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RegistryRecord } from "../core/records.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
@@ -38,6 +37,7 @@ import {
   localGroupMember,
   signLocalGroupEvent,
 } from "./endpoint-roleing.ts";
+import type { Poster } from "./forwarding.ts";
 import { findLocalGroupMember as findLocalMember, uniqueMembers } from "./group-members.ts";
 import {
   MULTISIG_ICP_ROUTE,
@@ -50,12 +50,22 @@ import {
   multisigChild,
   multisigChildGenusAttrs,
   type MultisigEventProposal,
-  type MultisigMessage,
+  type MultisigVdrProposal,
   prepareMultisigEventExn,
+  prepareMultisigVdrExn,
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
-
-const MULTISIG_TOPIC = "multisig";
+import {
+  type ProposalDelivery,
+  type ProposalPublication,
+  proposalPublication,
+  remoteProposalMembers,
+  sendGroupProposal,
+  type SignedGroupProposal,
+  signGroupProposal,
+} from "./multisig-publication.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
+import { Reactor } from "./reactor.ts";
 
 export type MultisigKelRoute =
   | typeof MULTISIG_ICP_ROUTE
@@ -71,13 +81,12 @@ type KelApproval = MultisigChild & {
   proposal: Extract<MultisigEventProposal, { route: MultisigKelRoute }>;
 };
 
-export interface ApprovalResult {
+export interface ApprovalResult extends ProposalPublication {
   route: MultisigProposalRoute;
   said: string;
   embedded: string;
   group: string;
   accepted: boolean;
-  deliveries: string[];
 }
 
 export interface ApprovalPromptContext {
@@ -106,107 +115,66 @@ interface NoticeLike {
 /**
  * Publish a route-correlated event proposal; grouping owns child identity and label derivation.
  *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param hby Borrowed group identities and accepted state.
+ * @param protocol Shared semantic owner; this publication owns its byte-input context.
+ * @param postman Borrowed delivery owner; the caller runs and joins its worker.
  * @param member Local member signing habitat, distinct from the group AID.
  * @param recipients Member AIDs; local recipients are skipped.
  * @param proposal Route-correlated group proposal with its named business fields.
  * @param embeddedMessage Signed child wire to include under the route-derived label.
  * @param childGvrsn Optional explicit attachment genus for the child.
- * @returns Completed proposal delivery URLs, independent of group acceptance.
+ * @returns Stable proposal/wrapper identities and completed deliveries, independent of group acceptance.
  */
 export function* publishProposal(
-  runtime: AgentRuntime,
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
   member: Hab,
   recipients: readonly string[],
   proposal: MultisigEventProposal,
   embeddedMessage: Uint8Array,
   childGvrsn?: Versionage,
-): Operation<string[]> {
-  const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(recipients)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) continue;
-    const destination = new Organizer(runtime.hby.db, runtime.hby.signator).resolveRecipient(recipient);
+): Operation<ProposalPublication> {
+  const input = new Reactor(protocol);
+  const outcomes: ProposalDelivery[] = [];
+  for (const recipient of remoteProposalMembers(hby, member, recipients)) {
+    const destination = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
       childGvrsn,
     });
-    deliveries.push(...yield* registerAndSendProposal(runtime, member, destination, prepared));
+    outcomes.push(yield* processAndSendProposal(input, postman, signGroupProposal(member, destination, prepared)));
   }
-  return deliveries;
+  return proposalPublication(outcomes);
 }
 
-/** VDR routes carry their own required children and only known publication attributes. */
-type VdrPublication =
-  | {
-    route: typeof MULTISIG_VCP_ROUTE;
-    payload: { gid: string; usage?: string; cgvrsn?: readonly [number, number] };
-    embeds: { vcp: Uint8Array; anc: Uint8Array };
-  }
-  | {
-    route: typeof MULTISIG_ISS_ROUTE;
-    payload: { gid: string; cgvrsn?: readonly [number, number] };
-    embeds: { acdc: Uint8Array; iss: Uint8Array; anc: Uint8Array };
-  };
-
-/**
- * Publish a registry or issuance proposal with its required named children.
- *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param member Local member signing habitat, distinct from the group AID.
- * @param recipients Member AIDs; local recipients are skipped.
- * @param proposal Route-correlated group proposal with its named business fields.
- * @returns Completed proposal delivery URLs, independent of group acceptance.
- */
+/** Publish typed registry evidence, processing each exact local wrapper before delivery. */
 function* publishVdrProposal(
-  runtime: AgentRuntime,
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
   member: Hab,
   recipients: readonly string[],
-  proposal: VdrPublication,
-): Operation<string[]> {
-  const { route, payload, embeds } = proposal;
-  const deliveries: string[] = [];
-  for (const recipient of uniqueMembers(recipients)) {
-    if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
-      continue;
-    }
-    const destination = new Organizer(runtime.hby.db, runtime.hby.signator).resolveRecipient(recipient);
-    const [serder, attachments] = exchange(route, payload, {
-      sender: member.pre,
-      recipient: destination,
-      embeds,
-    });
-    deliveries.push(...yield* registerAndSendProposal(runtime, member, destination, [serder, attachments]));
+  proposal: MultisigVdrProposal,
+): Operation<ProposalPublication> {
+  const input = new Reactor(protocol);
+  const outcomes: ProposalDelivery[] = [];
+  for (const recipient of remoteProposalMembers(hby, member, recipients)) {
+    const destination = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
+    const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient: destination });
+    outcomes.push(yield* processAndSendProposal(input, postman, signGroupProposal(member, destination, prepared)));
   }
-  return deliveries;
+  return proposalPublication(outcomes);
 }
 
-/**
- * Register the exact signed proposal before peers can reply to its delivery.
- *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param member Local signing member habitat.
- * @param recipient Remote member AID.
- * @param message Signed proposal Serder and attachments tuple; registered before delivery can elicit a reply.
- * @returns Successful target URLs for this exact admission.
- */
-function* registerAndSendProposal(
-  runtime: AgentRuntime,
-  member: Hab,
-  recipient: string,
-  [serder, attachments]: MultisigMessage,
-): Operation<string[]> {
-  const message = concatBytes(member.endorse(serder, { pipelined: false }), attachments);
-  yield* runtime.reactor.processBytes(message, { local: true });
-  const postman = runtime.postman;
-  const evt = postman.send({
-    src: member.pre,
-    dest: recipient,
-    msg: message,
-    topic: MULTISIG_TOPIC,
-  }, { notify: true });
-  const outcome = yield* postman.wait(evt);
-  if (outcome.kin === "failed") throw outcome.error;
-  return [...outcome.deliveries];
+/** Process the exact local contribution before delivery can elicit a peer response. */
+function* processAndSendProposal(
+  input: Reactor,
+  postman: Poster,
+  prepared: SignedGroupProposal,
+): Operation<ProposalDelivery> {
+  yield* input.processBytes(prepared.message, { local: true });
+  return yield* sendGroupProposal(postman, prepared);
 }
 
 /** True when a KEL event is accepted locally. */
@@ -271,11 +239,14 @@ export function* approvePendingMultisigProposal(
       continue;
     }
     const rgy = isVdrRoute(route) ? runtime.vdr : null;
-    const result = isKelRoute(route)
-      ? yield* approveKelProposal(hby, runtime, exn, route, options)
-      : isVdrRoute(route)
-      ? yield* approveVdrProposal(hby, rgy, runtime, exn, route, options)
-      : yield* approveRpyProposal(hby, runtime, exn, route, options);
+    let result: ApprovalResult | null;
+    if (isKelRoute(route)) {
+      result = yield* approveKelProposal(hby, runtime, exn, route, options);
+    } else if (isVdrRoute(route)) {
+      result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
+    } else {
+      result = yield* approveRpyProposal(hby, runtime, exn, route, options);
+    }
     if (result) {
       notifier.remove(note.rid);
       return result;
@@ -332,8 +303,10 @@ function* approveRpyProposal(
   yield* runtime.protocol.processEscrowsOnce();
 
   const attrs = rpyAttrs(rpySerder);
-  const deliveries = yield* publishProposal(
-    runtime,
+  const publication = yield* publishProposal(
+    hby,
+    runtime.protocol,
+    runtime.postman,
     member,
     groupSigningMembers(hby, groupPre),
     { route, attrs: { gid: groupPre } },
@@ -342,7 +315,7 @@ function* approveRpyProposal(
   );
   const accepted = endpointRoleAccepted(hby, attrs.cid, attrs.role, attrs.eid);
 
-  return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, deliveries };
+  return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, ...publication };
 }
 
 /**
@@ -403,8 +376,10 @@ function* approveKelProposal(
   );
   yield* runtime.protocol.processEscrowsOnce();
 
-  const deliveries = yield* publishProposal(
-    runtime,
+  const publication = yield* publishProposal(
+    hby,
+    runtime.protocol,
+    runtime.postman,
     member,
     members,
     proposal,
@@ -417,7 +392,7 @@ function* approveKelProposal(
     hby.commitGroupHabMembers(groupPre, smids, rmids.length > 0 ? rmids : smids);
   }
 
-  return { route, said: wrapperSaid, embedded: embeddedSaid ?? "", group: groupPre, accepted, deliveries };
+  return { route, said: wrapperSaid, embedded: embeddedSaid ?? "", group: groupPre, accepted, ...publication };
 }
 
 /**
@@ -464,12 +439,13 @@ function* approveVdrProposal(
   const embeddedSerder = new SerderKERI({ sad: embeddedSad });
   // Required children must be decoded before approval can sign or accept the anchor.
   const acdcSad = embed?.acdc;
-  const proposal = route === MULTISIG_VCP_ROUTE
-    ? { route }
-    : isRecord(acdcSad)
-    ? { route, credential: new SerderACDC({ sad: acdcSad }) }
-    : null;
-  if (!proposal) return null;
+  let proposal: { route: typeof MULTISIG_VCP_ROUTE } | { route: typeof MULTISIG_ISS_ROUTE; credential: SerderACDC };
+  if (route === MULTISIG_VCP_ROUTE) {
+    proposal = { route };
+  } else {
+    if (!isRecord(acdcSad)) return null;
+    proposal = { route, credential: new SerderACDC({ sad: acdcSad }) };
+  }
   const { event: anchorSerder, attachment, genus } = anchor;
   const embeddedSaid = embeddedSerder.said ?? "";
   if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
@@ -488,13 +464,13 @@ function* approveVdrProposal(
   yield* runtime.protocol.processEscrowsOnce();
 
   let accepted = false;
-  let publication: VdrPublication;
+  let publication: MultisigVdrProposal;
   const attrs = { gid: groupPre, ...multisigChildGenusAttrs(anchorSerder, genus) };
   if (proposal.route === MULTISIG_VCP_ROUTE) {
     accepted = approveRegistryIncept(rgy, groupHab, embeddedSerder, anchorSerder, options);
     publication = {
       route: proposal.route,
-      payload: { ...attrs, ...(typeof payload.usage === "string" ? { usage: payload.usage } : {}) },
+      attrs: { ...attrs, ...(typeof payload.usage === "string" ? { usage: payload.usage } : {}) },
       embeds: { vcp: embeddedSerder.raw, anc: localAnchor },
     };
   } else {
@@ -503,7 +479,7 @@ function* approveVdrProposal(
     const seal = telCredentialSeal(embeddedSerder);
     publication = {
       route: proposal.route,
-      payload: attrs,
+      attrs,
       embeds: {
         acdc: serializeCredential(creder, seal.prefixer, seal.seqner, seal.saider, genus),
         iss: embeddedSerder.raw,
@@ -512,13 +488,20 @@ function* approveVdrProposal(
     };
   }
 
-  const deliveries = yield* publishVdrProposal(runtime, member, smids, publication);
-  return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, deliveries };
+  const published = yield* publishVdrProposal(hby, runtime.protocol, runtime.postman, member, smids, publication);
+  return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, ...published };
 }
 
 /** The supported route determines its one named KEL child. */
 function kelProposalLabel(route: MultisigKelRoute): "icp" | "rot" | "ixn" {
-  return route === MULTISIG_ICP_ROUTE ? "icp" : route === MULTISIG_ROT_ROUTE ? "rot" : "ixn";
+  switch (route) {
+    case MULTISIG_ICP_ROUTE:
+      return "icp";
+    case MULTISIG_ROT_ROUTE:
+      return "rot";
+    case MULTISIG_IXN_ROUTE:
+      return "ixn";
+  }
 }
 
 /** Decode the fields used by approval, preserving existing missing-embed and member-list behavior. */

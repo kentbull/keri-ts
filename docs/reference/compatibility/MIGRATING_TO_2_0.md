@@ -47,3 +47,11 @@ runs ordinary writable Baser startup, including table initialization and habitat
 reload/cleanup. Missing databases fail; normal path preparation may create empty
 directories. Results include `status: "complete"` only after closure, or
 `status: "failed"` with completed deletions preserved.
+
+## Multisig publication
+
+Group command results include `proposals`, with each remote recipient's wrapper
+`said` and shared `proposal` index key. The latter is the embedded-bundle SAID for
+v1 wrappers or signed-child SAID for v2 wrappers. These identify coordination
+evidence; delivery does not establish group acceptance. Internal publication
+helpers take explicit identity, protocol and Poster owners instead of AgentRuntime.
