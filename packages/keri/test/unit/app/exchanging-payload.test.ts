@@ -8,6 +8,7 @@ import {
   MtrDex,
   NumberPrimitive,
   parse,
+  type Payload,
   Prefixer,
   type SerderKERI,
   Texter,
@@ -299,17 +300,18 @@ Deno.test("exchange escrow retry imports KERIpy ESSR rows through ordinary publi
     }
     assertEquals(hby.db.exchangeMeta.get([serder.said!]), null);
     await hby.db.openPayloads();
-    const blocked = join(hby.db.path!, "payloads", "objects", `essr.${serder.said!}`);
-    await Deno.mkdir(blocked);
+    const blocked = join(hby.db.path!, "payloads", "objects");
+    await Deno.remove(blocked);
+    await Deno.writeFile(blocked, b("not a directory"));
     // A real publication failure must preserve the prior KERIpy rows and retry ownership.
     await assertRejects(
       () => Promise.resolve(run(() => new Exchanger(hby).processEscrows())),
-      Error,
-      "Unexpected entry",
+      Deno.errors.AlreadyExists,
     );
     assertEquals(hby.db.essrs.get([serder.said!]).map((texter) => texter.text), ["abc", "xyz"]);
     assertExists(hby.db.epse.get([serder.said!]));
     await Deno.remove(blocked);
+    await Deno.mkdir(blocked);
     await run(() => new Exchanger(hby).processEscrows());
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
@@ -342,6 +344,43 @@ Deno.test("plaintext references reopen the inner stream separately from cipherte
     assertEquals(await collectPayload(reopened.body), b("inside"));
     assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(serder.said!))!)), b("abcxyz"));
     await assertRejects(() => hby.db.savePlaintext("unaccepted", reopened.plaintext, 6), Error, "unaccepted");
+  });
+});
+
+Deno.test("plaintext publication validates its offset against the current committed reference", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender);
+    await run(() => new Exchanger(hby).processEvent({ serder, tsgs: signatures(sender, serder), essrs: payload() }));
+    let resume!: () => void, entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const pending: Payload = {
+      size: 3,
+      /** Hold byte preparation while a competing authenticated offset is committed. */
+      async *open() {
+        entered();
+        await gate;
+        yield b("abc");
+      },
+    };
+    const saving = hby.db.savePlaintext(serder.said!, pending, 1);
+    await reading;
+    try {
+      await hby.db.savePlaintext(serder.said!, {
+        size: 3,
+        async *open() {
+          yield b("abc");
+        },
+      }, 2);
+    } finally {
+      resume();
+    }
+    await assertRejects(() => saving, Error, "offset conflicts");
+    assertEquals(await collectPayload((await hby.db.getPlaintext(serder.said!))!.body), b("c"));
   });
 });
 
