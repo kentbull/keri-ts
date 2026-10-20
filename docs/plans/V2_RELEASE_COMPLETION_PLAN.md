@@ -383,7 +383,10 @@ tests until the end.
 | 13f     | Remove custom direct HTTP query replies and compose independent receive owners                         | 13e, 19         |
 | 13g     | Close bounded query peer and installed-package evidence gaps, if not covered by 13f                    | 13f             |
 | 13h     | Restore human maintainer documentation across recent query, transport and reporting refactors          | 13g             |
-| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d, 13h    |
+| 13i     | Separate shared CLI bootstrap ownership and primitive parsing without changing behavior                | 13h             |
+| 13j     | Compose finite OOBI/authentication bootstrap with invocation-specific completion                       | 13i             |
+| 13k     | Apply consistent CLI boundary validation and option precedence by command family                       | 13j             |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d, 13k    |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
 | 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d, 13f        |
@@ -917,6 +920,23 @@ KERIpy correspondence wherever maintainers would otherwise have to reconstruct
 intent from implementation. Explain real contracts without restating types,
 adding a play-by-play report or changing behavior. This targeted review supersedes
 the earlier minimal-docs preference where source documentation became too terse.
+
+**13i–13k: CLI bootstrap and validation.** After the maintainer-docs cut and
+before group CLI lifecycle expansion, execute the approved
+[three-PR bootstrap composition plan](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md).
+First extract the shared finite operation and give state inspection Baser directly,
+preserving behavior. Then replace whole-AgentRuntime bootstrap with explicit
+Oobiery/Authenticator and the actual required protocol, escrow and query owners.
+Scope success/failure/deadline to the selected bootstrap records and fresh
+authentication attempts; unrelated historical failure or pending work must not
+determine completion. Keep multi-OOBI/dependency recovery and joined cleanup.
+Finally consolidate equivalent primitive CLI validation with correct omission,
+false/zero/empty semantics, file/CLI precedence and command-local policy. Retain
+all #595 credential guarantees. Keep delegated inception's legitimate runtime,
+coordinate physical relocation with the later organization cuts, and do not make
+ProtocolProcessor removal a prerequisite. Use focused existing tests and relevant
+interop/package checks; no new scheduler, persistence, ESSR wrappers or exhaustive
+matrix. These are implementation PRs before final qualification, not release steps.
 
 Preserve exact-envelope mailbox authorization, awaited processing before cursor
 advancement, independent endpoint progress, signer/subject/attester distinctions,

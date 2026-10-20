@@ -1,4 +1,13 @@
-/** Signed group proposal records and concrete Poster delivery, independent of approval policy. */
+/**
+ * Common signing, exact local admission and sending for multisig coordination.
+ * KERI workflows own proposal/approval policy; Tufa projects returned facts into
+ * CLI output. This module neither formats output nor starts a delivery worker.
+ *
+ * The outer EXN is recipient-specific. Its exnSaid is the join --said selector;
+ * payloadSaid identifies the Multiplexor aggregation shared by contributions.
+ * Neither completed transport nor collection of these identities proves group
+ * acceptance. Callers must check their own accepted KEL/RPY/TEL/credential state.
+ */
 import { concatBytes, type SerderKERI } from "cesr-ts";
 import type { Operation } from "effection";
 import type { Poster } from "./forwarding.ts";
@@ -9,6 +18,7 @@ import type { Reactor } from "./reactor.ts";
 
 /** Recipient-specific wrapper identity and its shared Multiplexor proposal index key. */
 export interface GroupMessageRef {
+  /** Intended participant AID; this is not a resolved transport URL. */
   recipient: string;
   /** Outer multisig coordination EXN SAID; also selected by join --said. */
   exnSaid: string;
@@ -24,12 +34,15 @@ interface SignedGroupMessage extends GroupMessageRef {
 
 /** Completed transport destinations, not participant approval or group acceptance. */
 export interface GroupDelivery extends GroupMessageRef {
+  /** Successful transport destinations reported by this one concrete Poster admission. */
   deliveries: string[];
 }
 
 /** Public publication facts for exact selection, without treating transport as approval. */
 export interface GroupSendResult {
+  /** Recipient-specific outer/aggregate identities, in completed send order. */
   messages: GroupMessageRef[];
+  /** Flattened completed destinations, preserving order and any repeats across messages. */
   deliveries: string[];
 }
 
@@ -74,7 +87,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Sign one prepared wrapper once; callers decide when to admit its exact bytes locally. */
+/**
+ * Endorse one prepared outer EXN once, retaining its accompanying child evidence.
+ * Extracting payloadSaid here checks shape, not authentication or approval;
+ * Multiplexor validates the commitment during normal protocol intake.
+ * The prepared tuple supplies the EXN Serder and accompanying child attachments.
+ *
+ * @param member Local participant signing Hab, distinct from the group AID.
+ * @param recipient Intended remote participant, already resolved by the workflow.
+ * @returns One signed packet reused for local admission and remote publication.
+ */
 export function signGroupMessage(
   member: Hab,
   recipient: string,
@@ -91,7 +113,13 @@ export function signGroupMessage(
   };
 }
 
-/** Send the prepared bytes and await Poster completion; no worker or protocol policy is created here. */
+/**
+ * Publish prepared bytes on the multisig topic and await this admission's outcome.
+ * The caller must run Poster.deliverDo concurrently and keep its stores alive.
+ * A failed outcome throws its original error; earlier successful fanout is not
+ * rolled back. Cancellation stops observation, not already admitted delivery.
+ * Returning reports completed destinations, never participant approval.
+ */
 export function* sendGroupMessage(
   postman: Poster,
   prepared: SignedGroupMessage,
@@ -120,7 +148,12 @@ export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendRe
   };
 }
 
-/** Admit the exact signed local contribution before sending can elicit a peer response. */
+/**
+ * Process the exact signed local contribution before admitting remote delivery,
+ * so an immediate peer reply cannot outrun local Multiplexor evidence. Await
+ * normal intake, then send the same bytes without signing again. Intake or send
+ * failures propagate; no cross-store/network transaction is implied.
+ */
 export function* admitAndSendGroupMessage(
   input: Reactor,
   postman: Poster,

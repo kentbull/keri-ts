@@ -4,7 +4,12 @@ import { chunkBytes } from "./byte-source.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { streamCesrTcp, type TcpSendOptions } from "./tcp-egress.ts";
 
-/** Bind one payload without a second queue, socket implementation or receive loop. */
+/**
+ * KERIpy-style TCPStreamMessenger over one already prepared opaque payload.
+ * Borrow bytes until send finishes, with no CESR parsing, receive processor or
+ * private queue. Reuse the ordinary socket owner for connection, local drain and
+ * joined cancellation; producers retain preparation and any delivery policy.
+ */
 export class TCPStreamMessenger {
   /** Construction borrows prepared bytes and opens no connection. */
   constructor(
@@ -13,7 +18,12 @@ export class TCPStreamMessenger {
     private readonly payload: Uint8Array,
   ) {}
 
-  /** Send every admitted byte and join local output/cleanup without awaiting remote EOF. */
+  /**
+   * Send all bytes and join local drain/cleanup without awaiting remote EOF.
+   * Completion does not prove the peer parsed, accepted or durably stored them.
+   * Connection/drain deadlines use the borrowed clock; source, transport and
+   * genuine cleanup failures propagate to this operation's caller.
+   */
   send(options: TcpSendOptions = {}): Operation<void> {
     return streamCesrTcp(
       this.url,

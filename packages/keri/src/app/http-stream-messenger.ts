@@ -4,7 +4,12 @@ import { buildCesrStreamRequest, CESR_ATTACHMENT_HEADER, CESR_DESTINATION_HEADER
 import type { HttpClient, HttpResponse } from "./http-client.ts";
 import type { HTTPMessengerOptions } from "./http-messenger.ts";
 
-/** Bind prepared bytes; request execution and joined response cleanup belong to send. */
+/**
+ * Bind one complete prepared payload to KERIpy-style HTTPStreamMessenger PUT.
+ * This component does not inspect CESR frames or own a producer queue. The
+ * producer prepares introductions, genus transitions and any sealing before
+ * construction; send owns only the actual request and joined response cleanup.
+ */
 export class HTTPStreamMessenger {
   /** Construction borrows a finite payload; its producer must not mutate it during delivery. */
   constructor(
@@ -18,6 +23,9 @@ export class HTTPStreamMessenger {
    * Send exactly one PUT without parsing, re-encoding or fallback to POST.
    * Return ordinary owned response bytes after request cleanup; HTTP success
    * alone does not establish protocol acceptance. Cancellation/failures propagate.
+   * Non-success status is returned to the caller as HttpResponse for interpretation.
+   * The complete payload is the body with explicit length; CESR-ATTACHMENT is
+   * removed because this is not ordinary detached-attachment POST framing.
    */
   send(options: { signal?: AbortSignal } = {}): Operation<HttpResponse> {
     const prepared = buildCesrStreamRequest(this.payload, this.options);

@@ -1,3 +1,9 @@
+/**
+ * ESSR recipient authentication and finite sealed-box decryption.
+ * Exchanger owns signed envelope acceptance and Baser owns retained Texters;
+ * this module reads that accepted evidence for one explicitly selected local Hab.
+ * Protocol authentication is independent of storage and plaintext is not saved.
+ */
 import { Diger, MtrDex, parseBexter, parsePrefixer, ParserError, parseTagger } from "cesr-ts";
 import type { Hab } from "./habbing.ts";
 
@@ -7,7 +13,11 @@ export type EssrDecision =
   | { kind: "refuse"; reason: "unaccepted" }
   | { kind: "reject"; reason: "envelope" | "digest" | "decrypt" | "framing" };
 
-/** Authenticated inner bytes, owned by the caller until released or overwritten. */
+/**
+ * Authenticated inner bytes owned by the caller. No disposal API or persistent
+ * plaintext record is created. body is a view into the decrypted allocation;
+ * consumers decide how long to retain it and whether to overwrite sensitive data.
+ */
 export interface EssrMessage {
   /** Sender authenticated by both the signed EXN and decrypted SCS prefix. */
   sender: string;
@@ -27,6 +37,20 @@ export class EssrRecipient {
    *
    * Processing is synchronous: LMDB and sealed-box crypto already expose finite bytes.
    * The result has no file/disposal lifecycle and is never persisted automatically.
+   * Envelope checks bind the EXN sender/source and destination to this local Hab;
+   * the decrypted SCS header must repeat the authenticated sender. Verify the
+   * signed digest over stored Texter raw bytes before attempting decryption.
+   *
+   * Baser follows pinned-main ordered-set semantics: repeated identical Texters
+   * can be lost during persistence. Such retained evidence fails this digest check
+   * rather than returning unauthenticated plaintext. See the repeated-fragment
+   * report in docs/reports/essr for the known reference limitation.
+   *
+   * @param said Accepted outer ESSR EXN SAID, not the payload digest.
+   * @returns Typed absence, authentication/framing rejection or authenticated bytes.
+   * @throws Corrupt stored identity, missing local key state and storage/crypto
+   * infrastructure failures propagate; only actual sealed-box authentication failure
+   * becomes a decrypt rejection.
    */
   decrypt(said: string): EssrDecision {
     const serder = this.hab.db.exns.get([said]);

@@ -1,4 +1,18 @@
-/** KERIpy-shaped query workflows; accepted protocol state determines completion. */
+/**
+ * Finite query workflows corresponding to `keri.app.querying` doers in KERIpy.
+ *
+ * Each operation expresses a particular accepted-state predicate. It enqueues
+ * unsigned work with WitnessInquisitor, then observes local protocol state;
+ * sending a query or receiving HTTP 204 never satisfies that predicate.
+ * Composition must run the sender, cue worker and actual reply intake alongside
+ * the workflow. HTTP replies arrive through independent mailbox/direct intake;
+ * TCP may process replies on the sending connection.
+ *
+ * Unlike KERIpy's nested DoDoers, these operations borrow one composed sender.
+ * Their caller owns cancellation/deadlines and keeps the Baser open until all
+ * children have joined. Cancelling a wait does not withdraw an already enqueued
+ * query. There is no workflow retry timer or implicit OOBI bootstrap here.
+ */
 import type { SealEvent } from "cesr-ts";
 import { call, type Operation, race, spawn, type Stream, type Task } from "effection";
 import type { KeyStateSavedCue } from "../core/cues.ts";
@@ -6,9 +20,11 @@ import type { Baser } from "../db/basing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import type { WitnessInquisitor } from "./witness-inquisitor.ts";
 
-/** Local signer and optional remote attesters; neither selects a transport implementation. */
+/** Identity selection shared by the concrete workflows; copied on construction. */
 interface QueryOptions {
+  /** Local AID endorsing the query; omission uses the sender's configured/sole Hab. */
   signer?: string;
+  /** Remote attester overrides; omission uses the subject's accepted endpoint roles. */
   wits?: string[];
 }
 
@@ -31,11 +47,28 @@ function* awaitSequence(db: Baser, pre: string, sn: number): Operation<void> {
   }
 }
 
-/** Query key state, then compose log recovery when the saved notice is ahead of local state. */
+/**
+ * Ask an attester for current key state and recover the KEL if its notice is ahead.
+ *
+ * A saved KSN is a remote statement, not acceptance of the referenced KEL. A
+ * matching notice completes immediately only when the local Kever has reached
+ * its sequence. Otherwise an owned LogQuerier waits for that accepted sequence.
+ * A later, higher notice replaces the lower catch-up wait within this operation.
+ * The subject needs a local Kever before a notice can drive this comparison;
+ * initial evidence discovery belongs to OOBI/bootstrap composition.
+ */
 export class KeyStateNoticer {
   private readonly options: QueryOptions;
 
-  /** Borrow accepted state, a running sender and the composition's live key-state notice flow. */
+  /**
+   * Bind borrowed collaborators without starting I/O or subscribing yet.
+   *
+   * @param db Baser receiving accepted KEL updates from the independently running intake.
+   * @param inquisitor Query sender over that same state; its delivery worker must run concurrently.
+   * @param pre Subject AID, distinct from the local signer and selected attester.
+   * @param updates Live broadcast of saved key-state cues from the composition; not a durable inbox.
+   * @param options Local signer and optional remote attesters, never transport preferences.
+   */
   constructor(
     private readonly db: Baser,
     private readonly inquisitor: WitnessInquisitor,
@@ -46,7 +79,14 @@ export class KeyStateNoticer {
     this.options = copyOptions(options);
   }
 
-  /** Own observation and follow-on work within this operation; returning means accepted catch-up. */
+  /**
+   * Subscribe before enqueueing `ksn`, so even an immediate reply is observable.
+   * Unrelated notices are ignored without consuming another subscriber's copy.
+   * Returning means local KEL state reached the observed target; ending the live
+   * notice stream before completion is an error. Scope exit joins the subscription
+   * and any catch-up child. Sender/receiver failures belong to their sibling tasks
+   * and must be supervised by the caller's composition.
+   */
   queryDo(): Operation<void> {
     const { db, inquisitor, pre, updates, options } = this;
     return call(function*() {
@@ -89,11 +129,22 @@ export class KeyStateNoticer {
   }
 }
 
-/** Request logs from the beginning and wait for the saved remote sequence to be accepted. */
+/**
+ * Recover a KEL through the target sequence learned from a remote key-state notice.
+ * Like KERIpy LogQuerier, request logs from the beginning (`fn=0`, `s=0`) and
+ * finish when the local Kever reaches the target. This is a minimum sequence
+ * condition, not a promise that the remote peer has no newer events.
+ */
 export class LogQuerier {
   private readonly options: QueryOptions;
 
-  /** Borrow accepted state and a running sender; construction starts no work. */
+  /**
+   * @param db Borrowed accepted-state store, kept open for the operation's lifetime.
+   * @param inquisitor Concurrently running sender; this workflow does not drive it.
+   * @param pre Subject whose KEL should catch up.
+   * @param targetSn Minimum accepted sequence, as a number rather than wire hex text.
+   * @param options Local signing AID and optional remote attester overrides.
+   */
   constructor(
     private readonly db: Baser,
     private readonly inquisitor: WitnessInquisitor,
@@ -111,12 +162,26 @@ export class LogQuerier {
   }
 }
 
-/** Request a specific KEL sequence and first-seen start, as KERIpy's SeqNoQuerier does. */
+/**
+ * Request logs starting at selected KEL and first-seen ordinals.
+ *
+ * `s` selects the event sequence and `fn` selects first-seen replay position;
+ * they are different coordinates. As in KERIpy SeqNoQuerier, completion depends
+ * on accepted KEL sequence reaching targetSn, not on a first-seen cursor or a
+ * transport outcome. Even an already satisfied target still enqueues the request.
+ */
 export class SeqNoQuerier {
   private readonly options: QueryOptions;
   private readonly fn: number;
 
-  /** Snapshot query selection; the caller composes the sender independently of this wait. */
+  /**
+   * @param db Borrowed accepted-state store updated by independent protocol intake.
+   * @param inquisitor Concurrent sender borrowing the same accepted state.
+   * @param pre Subject AID whose KEL is requested.
+   * @param targetSn Numeric sequence used both in the query and the completion predicate.
+   * @param options Numeric first-seen start (default zero), local signer and remote attesters.
+   * Wire ordinals use lowercase hex; the existing encoder clamps negatives to zero.
+   */
   constructor(
     private readonly db: Baser,
     private readonly inquisitor: WitnessInquisitor,
@@ -140,12 +205,27 @@ export class SeqNoQuerier {
   }
 }
 
-/** Query an exact event seal and complete only when its sealing KEL event is accepted. */
+/**
+ * Find an accepted KEL event containing the exact supplied event seal.
+ *
+ * `pre` identifies the sealing KEL; anchor.i/s/d identify the event sealed in it.
+ * Mere knowledge of the subject's latest sequence does not satisfy this wait.
+ * Existing accepted sealing evidence completes without sending. Otherwise one
+ * request is enqueued per current eligible attester, preserving the bounded
+ * candidate pass needed when a retired witness never learned the anchor. This
+ * differs deliberately from KERIpy's single randomly selected attester.
+ */
 export class AnchorQuerier {
   readonly anchor: ReturnType<typeof SealEvent.toSad>;
   private readonly options: QueryOptions;
 
-  /** Snapshot the seal's protocol fields before the caller can mutate its input. */
+  /**
+   * @param db Borrowed store containing accepted sealing events and their indexes.
+   * @param inquisitor Concurrent sender; candidates are selected when queryDo starts.
+   * @param pre AID whose KEL must contain the seal.
+   * @param anchor Exact event-seal fields, copied so later caller mutation cannot change the query.
+   * @param options Local signing AID and optional remote attesters.
+   */
   constructor(
     private readonly db: Baser,
     private readonly inquisitor: WitnessInquisitor,
@@ -157,7 +237,11 @@ export class AnchorQuerier {
     this.options = copyOptions(options);
   }
 
-  /** Ask the finite candidate set once, then observe accepted sealing evidence. */
+  /**
+   * Ask the finite candidate set once, then observe accepted sealing evidence.
+   * No available candidate leaves unresolved work with the sender; it is not
+   * success. The caller supplies a deadline or cancels this otherwise open wait.
+   */
   *queryDo(): Operation<void> {
     if (this.db.fetchLastSealingEventByEventSeal(this.pre, this.anchor)) return;
     // Deliberate difference from KERIpy's single random choice: a retired witness

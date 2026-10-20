@@ -1387,6 +1387,11 @@ export interface MailboxFetchTimeoutPolicy {
  * Query one endpoint and consume complete SSE events within one request scope.
  * Header timeout or non-success status ends this attempt without events. Successful
  * body processing and its cleanup finish before the endpoint worker begins another poll.
+ * The sole alternate submission is the exact pre-intake KERIpy media refusal:
+ * drain/close that request, then reuse the same signed query and attachments with
+ * legacy metadata. Authentication or protocol refusals do not take that branch.
+ * consume runs inline and is awaited before the caller persists its cursor; this
+ * callback is a scoped event-consumer boundary, not deferred workflow scheduling.
  *
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param targetPre Mailbox subject AID; may be a group distinct from hab.

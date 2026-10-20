@@ -62,11 +62,19 @@ export interface CredentialListItem {
   status: string | null;
 }
 
-/** Created registry identity, with group coordination distinct from transport and acceptance. */
+/**
+ * Registry creation/proposal facts for one operation. The same result shape
+ * covers single-author and group paths; group adds coordination facts without
+ * changing registry identity into a different variant. Consumers must distinguish
+ * successful member delivery from accepted registry state.
+ */
 export interface RegistryResult {
   name: string;
+  /** Registry identifier when constructed; null if this operation has none to report. */
   registry: string | null;
+  /** Registry controller AID; may identify a group rather than the signing member. */
   issuer: string;
+  /** Present for group coordination, with acceptance assessed separately from sending. */
   group?: GroupSendResult & {
     route: typeof MULTISIG_VCP_ROUTE;
     status: TelProcessDecision["kind"];
@@ -74,15 +82,25 @@ export interface RegistryResult {
   };
 }
 
-/** Credential issuance facts; successful group transport does not imply saved credential state. */
+/**
+ * Credential issuance facts, leaving JSON projection to the command adapter.
+ * A constructed ACDC and successful transport do not establish accepted TEL or
+ * saved verifier state. Those results are reported independently below.
+ */
 export interface IssueResult {
+  /** Constructed credential; ordinary Serder data remains usable after store closure. */
   creder: SerderACDC;
+  /** Resolved issuee retained for later export/delivery, not a transport endpoint. */
   recipient: string;
+  /** Issuance TEL event SAID, when available. */
   tel: string | null;
+  /** Credential verifier decision for this issuance attempt. */
   status: VerifierDecision["kind"];
   group?: GroupSendResult & {
     route: typeof MULTISIG_ISS_ROUTE;
+    /** Registry event processor decision, independent of the credential verifier decision. */
     telStatus: TelProcessDecision["kind"];
+    /** Whether the credential is actually saved; sending a proposal does not make it so. */
     saved: boolean;
   };
 }

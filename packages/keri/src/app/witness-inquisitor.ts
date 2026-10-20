@@ -1,4 +1,13 @@
-/** Signed query sending; concrete workflows own accepted-state completion. */
+/**
+ * Outbound query selection, signing and transport, corresponding to KERIpy's
+ * `agenting.WitnessInquisitor`. Query workflows live in querying.ts; this sender
+ * neither decides that a KEL is caught up nor waits for an HTTP protocol reply.
+ *
+ * `signer` means a locally controlled AID, `pre` is the queried subject and `src`
+ * is an explicitly selected remote attester. Resolve/sign just before sending,
+ * using accepted endpoint evidence. One worker owns the unsigned request Deck
+ * and current network attempt; there is no retained signed retry backlog.
+ */
 import { concatBytes } from "cesr-ts";
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
@@ -115,6 +124,13 @@ interface QueryDelivery {
  * - turn incomplete portable `query` cues into honest outbound `qry` wire
  *   packets when a local habitat and remote attester can be resolved
  * - capture signed requests and own their concrete, joined transport attempts
+ *
+ * Unresolved signer/attester work stays unsigned for a later pass. Once a packet
+ * is prepared, the request leaves the Deck before transport: a failed attempt is
+ * reported, not automatically retried. Preparation failures leave the source
+ * head available and propagate. HTTP completion includes response EOF/cleanup;
+ * same-socket TCP completion also includes received protocol processing. Neither
+ * is a substitute for the calling workflow's accepted-state predicate.
  */
 export class WitnessInquisitor {
   /** Borrowed local signers and accepted-state stores. */
@@ -208,13 +224,23 @@ export class WitnessInquisitor {
     return this.delivering;
   }
 
-  /** Run one finite pending pass; transport/refusal failures propagate after joined cleanup. */
+  /**
+   * Attempt at most the work present when this pass starts, preserving new work
+   * for a later pass. Unresolved records rotate to the tail. A recognized send
+   * failure ends the pass and throws after cleanup; remaining requests stay queued.
+   * Calling during an active pass or after close performs no work.
+   */
   *deliverOnce(): Operation<void> {
     const failure = yield* this.deliveryPass();
     if (failure) throw failure;
   }
 
-  /** Keep expected send failures as data so background reporting cannot swallow preparation or cleanup faults. */
+  /**
+   * Own one joined output scope for the pass. Catch only the actual post attempt's
+   * TransportError/CesrHttpRefusal as expected send outcomes. Resolution and
+   * signing failures stay outside that catch even when they use the same error
+   * type; joined-scope teardown failures also escape background reporting.
+   */
   private deliveryPass(): Operation<TransportError | CesrHttpRefusal | undefined> {
     // deno-lint-ignore no-this-alias -- The operation owns one finite output pass.
     const self = this;
@@ -257,7 +283,9 @@ export class WitnessInquisitor {
   }
 
   /**
-   * One delivery scope owns upload frames and all response readers through completion or cancellation.
+   * Use ordinary POST delivery for HTTP, draining successful bytes without
+   * parsing them. The independent mailbox/direct receiver accepts HTTP replies.
+   * TCP explicitly enables same-connection reply processing before completion.
    *
    * @param delivery Retained signed packet including introduction and destination.
    * @param controller Sender attempt cancellation; its signal covers response parsing and cleanup.
@@ -281,7 +309,11 @@ export class WitnessInquisitor {
     if (outcome.kind === "refuse") throw outcome.error;
   }
 
-  /** Abort and join real output before clearing pending instructions. */
+  /**
+   * Stop admission, abort/join active transport and parser cleanup, then discard
+   * unsigned pending work. Does not close borrowed collaborators or Baser.
+   * Repeating close is harmless; genuine cleanup failures remain visible.
+   */
   *close(): Operation<void> {
     this.closed = true;
     this.output?.abort();
@@ -289,7 +321,12 @@ export class WitnessInquisitor {
     this.requests.clear();
   }
 
-  /** Report expected peer/transport failures once, then continue unrelated requests; unexpected faults terminate. */
+  /**
+   * Long-lived sender worker, run once by composition. Report an expected send
+   * failure once, then continue remaining requests on a later turn. Unexpected
+   * preparation/cleanup faults terminate the worker. Caller cancellation joins
+   * the current attempt; it does not close the borrowed state or HTTP service.
+   */
   *deliverDo(): Operation<never> {
     while (true) {
       const failure = yield* this.deliveryPass();

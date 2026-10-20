@@ -1,4 +1,10 @@
-/** Endpoint-role command presentation, shared by the explicit group command adapters. */
+/**
+ * Tufa presentation for endpoint authorization commands, shared with group adapters.
+ * KERI returns the accepted-state predicate and coordination send facts after
+ * owned resources close. Project those into JSON without serializing signed rpy
+ * bytes, inferring approval from delivery, or adding presentation callbacks to
+ * the library's workflow dependencies.
+ */
 import type { Operation } from "effection";
 import { endsAddCommand as addEndpointRole } from "keri-ts/cli";
 import type { GroupRoleResult } from "keri-ts/runtime";

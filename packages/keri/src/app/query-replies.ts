@@ -45,7 +45,13 @@ export interface QueryReply {
   close(): void;
 }
 
-/** Reserve direct query replies before any background cue consumer can take them. */
+/**
+ * Capture connection-owned proof/reply cues before background output consumes them.
+ * Direct TCP queries and request-owned event receipts need this correlation;
+ * ordinary HTTP queries use independent output/receive paths instead. Reserving
+ * a SAID creates a lifetime slot, never authorization to read a mailbox or proof
+ * that protocol processing accepted the request. Each borrower must close its slot.
+ */
 export class QueryReplies {
   /** One replay or a registry/credential pair per request, grouped by query SAID for fanout. */
   private readonly active = new Map<string, Set<Slot>>();

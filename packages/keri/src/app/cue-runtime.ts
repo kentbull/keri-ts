@@ -20,6 +20,12 @@ function resolveCueHab(runtime: AgentRuntime, hab?: Hab): Hab | null {
 /**
  * Route one initial cue batch to its concrete owners before removing source records.
  *
+ * Transfer query instructions to the sender, stream cues to mailbox correlation
+ * and produced responder messages to Poster. No network delivery runs inline.
+ * A source fact leaves the shared Deck before a live key-state broadcast can
+ * suspend, preventing another cue turn from publishing that same head twice.
+ * Subscribers receive independent copies of the fact; they do not own this Deck.
+ *
  * @param runtime Borrowed composed runtime containing the actual cue consumers.
  * @param options Explicit signing habitat; omission requires a sole local habitat.
  */

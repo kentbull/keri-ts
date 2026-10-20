@@ -26,10 +26,15 @@ export interface TCPMessengerOptions extends TcpSendOptions {
 /**
  * Own one TCP delivery attempt and its parser/Kevery, following KERIpy TCPMessenger.
  *
- * Poster or WitnessInquisitor owns queued source work and retry. This messenger runs
+ * Poster or WitnessInquisitor owns queued source work and delivery policy. This messenger runs
  * directly in that owner's scope, keeps no message queue or sent history, and joins
  * TX, optional RX, parser/source cleanup and connection close before returning.
  * Finite bytes and pull sources share the same socket implementation.
+ *
+ * Transmit-only is the default. Reply mode starts RX before TX so the peer may
+ * answer during upload, then waits for receive EOF and dispatch completion.
+ * Those are socket/protocol-processing facts, not the calling workflow's
+ * accepted-state predicate or an application acknowledgement from the peer.
  */
 export class TCPMessenger {
   /** Input-owned Kevery (kvy); null when no protocol receive capability was supplied. */

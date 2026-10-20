@@ -1,4 +1,10 @@
-/** Credential authoring presentation; KERI workflows return typed issuance and registry facts. */
+/**
+ * Tufa projection of KERI's typed registry and credential operation results.
+ * Await the library command's owned-resource closure before writing final JSON.
+ * Group coordination adds message identities and completed transport destinations;
+ * accepted/saved/TEL/verifier fields remain separate protocol facts. Formatting
+ * here never turns a successful proposal send into credential lifecycle success.
+ */
 import type { Operation } from "effection";
 import { vcCreateCommand as create, vcRegistryInceptCommand as incept } from "keri-ts/cli";
 import { writeJsonLine } from "./support/rendering.ts";

@@ -1,4 +1,13 @@
-/** Query command composition and presentation; protocol workflows return only after accepted-state completion. */
+/**
+ * Tufa composition/presentation for the KERIpy-style query workflows.
+ *
+ * Start a concrete state/anchor wait alongside ordinary runtime workers and
+ * independent reply intake. One ten-second elapsed deadline covers the query;
+ * timeout is command failure, not permission to print stale state as success.
+ * Capture the accepted-state display while Baser is open, join workers and close
+ * owned resources, then print it. KERI's query library has no CLI formatting or
+ * hidden OOBI recovery path; prerequisite discovery is a separate operation.
+ */
 import { SealEvent } from "cesr-ts";
 import { call, type Operation, race, sleep, spawn, type Task } from "effection";
 import { dgKey } from "keri-ts/db";
@@ -24,7 +33,12 @@ function loadAnchor(path: string): ReturnType<typeof SealEvent.toSad> {
   return anchor;
 }
 
-/** Observe a running concrete workflow without cancelling it when this observation times out. */
+/**
+ * Observe completion within this window without transferring task ownership.
+ * The race cancels only its observation when the timer wins. queryCommand's
+ * finally owns halting/joining the original query and runtime tasks, so both
+ * successful and timed-out commands finish cleanup before stores can close.
+ */
 function queryCompletedWithin(query: Task<void>, ms: number): Operation<boolean> {
   return race([
     call(function*() {
@@ -60,7 +74,18 @@ function externalStateLines(hby: Habery, pre: string): string[] {
   return lines;
 }
 
-/** Compose reception and a concrete query workflow, join workers, then display the captured local view. */
+/**
+ * Query current key state, or an exact event seal from --anchor, for --prefix.
+ * --alias selects the local signing Hab; it is not the queried subject. Start
+ * observation before workers can emit a reply, and return final display only
+ * after the shared resource owner closes. A close failure therefore prevents
+ * final success output even if the accepted-state predicate already passed.
+ *
+ * @param args Commander-mapped command values; required name/alias/prefix and
+ * anchor syntax are checked before opening stores.
+ * @throws Invalid input, unmet deadline, worker/processing and cleanup failures
+ * propagate to the CLI's normal nonzero-exit handling.
+ */
 export function* queryCommand(args: Record<string, unknown>): Operation<void> {
   const name = args.name as string | undefined;
   const alias = args.alias as string | undefined;

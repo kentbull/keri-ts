@@ -102,9 +102,17 @@ export interface AgentRuntime {
   postman: Poster;
   /** Delegation workflow state and delivery/accepted-state gates. */
   delegating: Anchorer;
-  /** Background query sender; semantic workflows belong to their invoking operations. */
+  /**
+   * Background unsigned-request sender, run independently of reply intake.
+   * Pending sender work excludes semantic query waits; their invoking operations
+   * must observe accepted state and own their own deadline/cancellation.
+   */
   querying: WitnessInquisitor;
-  /** Live saved key-state facts for independently scoped query workflows. */
+  /**
+   * Live broadcast of routed keyStateSaved facts. Each active workflow gets its
+   * own subscription; this is neither a competing Deck nor durable replay.
+   * Subscribe before enqueueing a query to avoid losing an immediate notice.
+   */
   keyStateUpdates: Channel<KeyStateSavedCue, void>;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
