@@ -126,7 +126,6 @@ export {
 export {
   createCredential,
   type CredentialCreateOptions,
-  type CredentialCreateResult,
   type CredentialExportResult,
   type CredentialListItem,
   type CredentialListOptions,
@@ -137,8 +136,10 @@ export {
   type CredentialRevokeResult,
   exportCredentialStream,
   inceptCredentialRegistry,
+  type IssueResult,
   listCredentials,
   pinSchemaBytes,
+  type RegistryResult,
   revokeCredential,
 } from "../app/credential-workflows.ts";
 export {
@@ -149,7 +150,7 @@ export {
 } from "../app/delegating.ts";
 export {
   endpointRoleAccepted,
-  type GroupEndpointRoleProposalResult,
+  type GroupRoleResult,
   loadAcceptedEndpointRole,
   proposeGroupEndpointRole,
 } from "../app/endpoint-roleing.ts";
@@ -270,6 +271,10 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailboxing.ts";
+export type {
+  GroupMessageRef,
+  GroupSendResult,
+} from "../app/multisig-messaging.ts";
 export {
   Notifier,
 } from "../app/notifying.ts";

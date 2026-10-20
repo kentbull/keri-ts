@@ -245,7 +245,7 @@ export function* testConcurrentCLICommands(
  * Assert that an operation throws with expected error message
  */
 export async function assertOperationThrows(
-  operation: Operation<void>,
+  operation: Operation<unknown>,
   expectedError: string,
 ): Promise<void> {
   await assertRejects(() => run(() => operation), Error, expectedError);

@@ -381,12 +381,16 @@ Deno.test("credential workflows share the supplied registry store and processors
       hby.db.schema.pin(schema.said, schema);
       const registry = yield* inceptCredentialRegistry(rgy, runtime.postman, hab, { registryName: "explicit" });
       assertEquals(credentialRegistryStatus(rgy, "explicit").registry, registry.registry);
-      const { creder } = yield* createCredential(rgy, runtime.postman, {
+      const issued = yield* createCredential(rgy, runtime.postman, {
         registryName: "explicit",
         schema: schema.said,
         recipient: hab.pre,
         data: { role: "holder" },
       });
+      const { creder } = issued;
+      assertEquals(issued.recipient, hab.pre);
+      assertEquals(issued.status, "accept");
+      assertEquals(rgy.reger.tels.getOn(creder.said!, 0)?.qb64, issued.tel);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre }).map((item) => item.said), [creder.said]);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "iss");
       yield* revokeCredential(rgy, runtime.postman, { registryName: "explicit", credentialSaid: creder.said! });

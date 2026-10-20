@@ -59,11 +59,27 @@ directories. Results include `status: "complete"` only after closure, or
 
 ## Multisig publication
 
-Group command results include `proposals`, with each remote recipient's wrapper
-`said` and shared `proposal` index key. The latter is the embedded-bundle SAID for
-v1 wrappers or signed-child SAID for v2 wrappers. These identify coordination
-evidence; delivery does not establish group acceptance. Internal publication
-helpers take explicit identity, protocol and Poster owners instead of AgentRuntime.
+Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`
+in place of `ProposalPublication` and `ProposalIdentity`. Signed transport inputs
+and per-message delivery records are internal helpers, not package exports.
+Result collections are `messages`; each reporting identity has `recipient`,
+`exnSaid` (outer coordination EXN) and `payloadSaid` (the existing Multiplexor key:
+v1 embedded-bundle SAID or supported v2 signed-child SAID). `deliveries` lists
+completed transport destinations, not participant approval or group acceptance.
+`join --said` still selects the outer EXN. Other protocol/result SAIDs retain
+their existing names; this is not a global rename of proposal concepts.
+
+Shared helpers live in `multisig-messaging.ts`. Tufa owns the affected JSON
+projection and identifier display. The KERI CLI helpers for multisig, endpoint
+add, registry inception and credential creation now return typed results instead
+of printing their final results. Registry inception returns `RegistryResult`;
+credential creation returns `IssueResult` with `creder`, `recipient`, `tel` and
+`status`, replacing `CredentialCreateResult.output`. Each operation has one
+optional `group` block for coordination messages, deliveries and its existing
+acceptance/saved facts, even when no remote member was contacted. Tufa explicitly
+projects those facts into the existing flat CLI JSON. Endpoint-role workflows
+return `GroupRoleResult`; CLI helper types use `GroupEventResult` and
+`EndRoleResult`. No old-name aliases are provided.
 
 ## Messenger ownership
 

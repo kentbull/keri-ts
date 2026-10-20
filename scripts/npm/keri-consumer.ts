@@ -7,10 +7,13 @@ import {
   EssrRecipient,
   FetchHttpClient,
   type Hab,
+  type IssueResult,
   inceptRegistry,
   Manager,
   messagize,
   messengerFrom,
+  type GroupSendResult,
+  type RegistryResult,
   runAgentRuntime,
   settleRuntimeIngress,
   streamMessengerFrom,
@@ -46,4 +49,32 @@ export function messengers(destination: string, url: string, wire: Uint8Array) {
     ordinary: messengerFrom(destination, { http: url }, http, systemClock),
     stream: streamMessengerFrom(destination, { http: url }, wire, http, systemClock),
   };
+}
+
+/** Consume the documented coordination identities without treating transport as group approval. */
+export function sentMultisig(result: GroupSendResult) {
+  return result.messages.map(message => [message.recipient, message.exnSaid, message.payloadSaid]);
+}
+
+/** Read typed issuance status independently of any CLI JSON projection. */
+export function issuance(result: IssueResult) {
+  const issued = { credential: result.creder.said, tel: result.tel, status: result.status };
+  if (result.group) {
+    return {
+      ...issued,
+      route: result.group.route,
+      telStatus: result.group.telStatus,
+      saved: result.group.saved,
+      messages: sentMultisig(result.group),
+    };
+  }
+  return issued;
+}
+
+/** Narrow group registry coordination while preserving its independent acceptance observation. */
+export function registryIdentity(result: RegistryResult) {
+  if (result.group) {
+    return { registry: result.registry, accepted: result.group.accepted, messages: sentMultisig(result.group) };
+  }
+  return { registry: result.registry, issuer: result.issuer };
 }

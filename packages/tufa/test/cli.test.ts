@@ -2,7 +2,7 @@
 
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
-import { DISPLAY_VERSION as KERI_DISPLAY_VERSION, ValidationError } from "keri-ts/runtime";
+import { createHabery, DISPLAY_VERSION as KERI_DISPLAY_VERSION, Schemer, ValidationError } from "keri-ts/runtime";
 import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
@@ -799,6 +799,67 @@ Deno.test("tufa/cli - debug and info diagnostics preserve credential JSON stdout
       assertEquals(result.stdout.trim().split("\n").length, 1);
       assertEquals(result.stderr.includes("Opening LMDB"), level === "debug");
     }
+  } finally {
+    await Deno.remove(head, { recursive: true });
+  }
+});
+
+Deno.test("tufa/cli - local group credential authoring reports coordination separately from transport", async () => {
+  const head = await Deno.makeTempDir({ prefix: "tufa-group-results-" });
+  const name = "group-results";
+  const store = ["--name", name, "--head-dir", head, "--alias", "team"];
+  let groupPre = "";
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath: head, skipConfig: true });
+      try {
+        const member = hby.makeHab("member");
+        groupPre = hby.makeGroupHab("team", member, [member.pre], [member.pre], undefined, {
+          isith: "1",
+          nsith: "1",
+          toad: 0,
+        }).hab.pre;
+      } finally {
+        yield* hby.close();
+      }
+    });
+    const inception = await runTufa(["vc", "registry", "incept", ...store, "--registry-name", "registry"]);
+    assertEquals(inception.code, 0, inception.stderr);
+    const registry = JSON.parse(inception.stdout);
+    assertEquals(registry.issuer, groupPre);
+    assertEquals(registry.route, "/multisig/vcp");
+    assertEquals(registry.status, "accept");
+    assertEquals(registry.accepted, true);
+    assertEquals(registry.messages, []);
+    assertEquals(registry.deliveries, []);
+
+    const schema = new Schemer({ sed: { type: "object" } });
+    const schemaFile = `${head}/schema.json`;
+    await Deno.writeFile(schemaFile, schema.raw);
+    const creation = await runTufa([
+      "vc",
+      "create",
+      ...store,
+      "--registry-name",
+      "registry",
+      "--schema-file",
+      schemaFile,
+      "--data",
+      "{}",
+    ]);
+    assertEquals(creation.code, 0, creation.stderr);
+    const issued = JSON.parse(creation.stdout);
+    assertEquals(issued.registry, registry.registry);
+    assertEquals(issued.issuer, groupPre);
+    assertEquals(issued.schema, schema.said);
+    assertEquals(typeof issued.said, "string");
+    assertEquals(typeof issued.tel, "string");
+    assertEquals(issued.status, "accept");
+    assertEquals(issued.route, "/multisig/iss");
+    assertEquals(issued.telStatus, "accept");
+    assertEquals(issued.saved, true);
+    assertEquals(issued.messages, []);
+    assertEquals(issued.deliveries, []);
   } finally {
     await Deno.remove(head, { recursive: true });
   }

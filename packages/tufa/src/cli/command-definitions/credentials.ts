@@ -44,7 +44,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   const registry = vc.command("registry").description("Credential registry operations");
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         registry.command("incept")
@@ -56,14 +56,17 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "vc.registry.incept",
-    "vcRegistryInceptCommand",
-    (options) => ({
-      ...dispatchArgs(options),
-      noBackers: !(options.backers || false),
-      estOnly: options.estOnly || false,
-      usage: options.usage,
-    }),
+    {
+      name: "vc.registry.incept",
+      load: () => import("../credentials.ts"),
+      exportName: "vcRegistryInceptCommand",
+      args: (options) => ({
+        ...dispatchArgs(options),
+        noBackers: !(options.backers || false),
+        estOnly: options.estOnly || false,
+        usage: options.usage,
+      }),
+    },
   );
   registerKeriCliCommand(
     addStoreOptions(
@@ -85,7 +88,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
     "vcRegistryStatusCommand",
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         vc.command("create")
@@ -101,8 +104,12 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "vc.create",
-    "vcCreateCommand",
+    {
+      name: "vc.create",
+      load: () => import("../credentials.ts"),
+      exportName: "vcCreateCommand",
+      args: dispatchArgs,
+    },
   );
 
   registerKeriCliCommand(

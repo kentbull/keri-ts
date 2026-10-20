@@ -12,8 +12,10 @@ import {
   credentialStreamBytes,
   exportCredentialStream,
   inceptCredentialRegistry,
+  type IssueResult,
   listCredentials,
   pinSchemaBytes,
+  type RegistryResult,
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
@@ -92,9 +94,11 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
+export function* vcRegistryInceptCommand(
+  args: Record<string, unknown>,
+): Operation<RegistryResult> {
   const vcArgs = registryArgs(args);
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
+  return yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
     const result = yield* call(function*() {
       const postman = runtime.postman;
@@ -110,7 +114,7 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
         yield* worker.halt();
       }
     });
-    console.log(JSON.stringify(result));
+    return result;
   });
 }
 
@@ -137,7 +141,7 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
+export function* vcCreateCommand(args: Record<string, unknown>): Operation<IssueResult> {
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
     alias: args.alias as string | undefined,
@@ -153,7 +157,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   requireNonEmpty(vcArgs.alias, "Alias");
   requireNonEmpty(vcArgs.registryName, "Registry name");
 
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
+  return yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
     const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
@@ -176,7 +180,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     if (vcArgs.out) {
       writeBytes(credentialStreamBytes(hby, reger, result.creder, result.recipient), vcArgs.out);
     }
-    console.log(JSON.stringify(result.output));
+    return result;
   });
 }
 

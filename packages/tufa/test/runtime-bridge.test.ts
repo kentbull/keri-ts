@@ -29,7 +29,7 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       systemClock,
     );
     try {
-      hby.db.locs.pin([recipient.pre, "http"], { url: "https://recipient.test/" });
+      hby.db.locs.pin([recipient.pre, "https"], { url: "https://recipient.test/" });
       hby.db.ends.pin([recipient.pre, Roles.controller, recipient.pre], { allowed: true });
       const wire = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
       const cue = { kin: "replay" as const, src: sender.pre, dest: recipient.pre, msgs: [wire] };

@@ -79,6 +79,14 @@ there is no duplicate queued-ingress API or idle msgDo worker. Runtime pending
 state describes its real owners, not a dormant input queue. Explicit close and
 scope exit clear cues after dependent work joins.
 
+Multisig message signing, exact local admission and concrete sending share one
+cohesive module. Typed `messages` identify outer EXNs and Multiplexor payload keys;
+completed destinations never imply participant approval. Tufa projects the affected
+CLI results after owned resources close; KERI returns one `RegistryResult` or
+`IssueResult` per operation, with optional group facts even when no remote member
+was contacted. Public send identities are `GroupMessageRef`/`GroupSendResult`;
+signed inputs and individual delivery helpers remain internal.
+
 Prepare/sign/publish before source removal; preparation failure retains the record.
 TCP output returns operation completion, without byte/frame telemetry. Reply-mode
 TCPMessenger.receiptDo additionally joins receive EOF; accepted state and verified

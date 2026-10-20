@@ -17,6 +17,7 @@ import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import { agentCommand } from "../../../../tufa/src/cli/agent.ts";
+import { endsAddCommand } from "../../../../tufa/src/cli/endpoints.ts";
 import {
   mailboxAddCommand,
   mailboxDebugCommand,
@@ -33,7 +34,6 @@ import {
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
-import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { MailboxPoller } from "../../../src/app/forwarding.ts";

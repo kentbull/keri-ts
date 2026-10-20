@@ -10,8 +10,8 @@ import {
   SerderKERI,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import { endsAddCommand } from "../../../../tufa/src/cli/endpoints.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
-import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
