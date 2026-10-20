@@ -7,9 +7,9 @@ import {
   framePayload,
   parse,
 } from "cesr-ts";
-import { call, ensure, on, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
+import { call, ensure, type Operation, race, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import { abortable, rethrowCleanupFailure } from "./abortable.ts";
+import { abortable, cleanupFailures, throwOnAbort } from "./abortable.ts";
 import {
   CESR_ATTACHMENT_HEADER,
   CESR_CONTENT_TYPE,
@@ -34,10 +34,10 @@ export class CesrHttpRefusal extends ValidationError {
 
 /** Expected remote HTTP refusal; infrastructure and cleanup failures still throw. */
 export type CesrPostResult = {
-  /** Complete means all selected response consumers and cleanup finished; refuse is an observed non-success status. */
+  /** Complete means response EOF and cleanup finished; refuse is an observed non-success status. */
   kind: "complete";
 } | {
-  /** Complete means all selected response consumers and cleanup finished; refuse is an observed non-success status. */
+  /** Complete means response EOF and cleanup finished; refuse is an observed non-success status. */
   kind: "refuse";
   /** Completed peer refusal, retaining its HTTP status and decoded detail. */
   error: CesrHttpRefusal;
@@ -254,17 +254,15 @@ function* sendFrame(
  * @param source Creates the CESR byte source for this invocation; it must observe the supplied abort signal.
  * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
  * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
- * @param consume Optional response consumer, run within each successful request scope. Its completion gates the next frame; omission drains and discards successful bodies.
- * @throws Source/parser, consumer, transport and cleanup failures propagate without becoming peer refusals. A completed refusal throws CesrHttpRefusal.
+ * @throws Source/parser, transport and cleanup failures propagate without becoming peer refusals. A completed refusal throws CesrHttpRefusal.
  */
 export function* postCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
   http: HttpClient,
   options: EgressOptions = {},
-  consume?: (response: HttpStreamResponse) => Operation<void>,
 ): Operation<void> {
-  const result = yield* attemptPostCesr(url, source, http, options, consume);
+  const result = yield* attemptPostCesr(url, source, http, options);
   if (result.kind === "refuse") throw result.error;
 }
 /**
@@ -278,16 +276,14 @@ export function* postCesr(
  * @param source Creates the CESR byte source for this invocation; it must observe the supplied abort signal.
  * @param http Borrowed HTTP implementation supplied by composition; owns native request/body I/O.
  * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
- * @param consume Optional response consumer, run within each successful request scope. Its completion gates the next frame; omission drains and discards successful bodies.
  * @returns The attempt result after all frames or the first refusal, with source/request cleanup joined.
- * @throws Source/parser, consumer, transport and cleanup failures propagate without becoming peer refusals.
+ * @throws Source/parser, transport and cleanup failures propagate without becoming peer refusals.
  */
 export function attemptPostCesr(
   url: string,
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
   http: HttpClient,
   options: EgressOptions = {},
-  consume?: (response: HttpStreamResponse) => Operation<void>,
 ): Operation<CesrPostResult> {
   // Isolate joining cleanup so a halt cannot resume a delegated caller after payload disposal.
   const posting = call(function*(): Operation<CesrPostResult> {
@@ -306,9 +302,7 @@ export function attemptPostCesr(
          * @param error Rejection from joining a pending pull or returning the parser.
          */
         const noteCleanup = (error: unknown) => {
-          try {
-            rethrowCleanupFailure(error, signal);
-          } catch (remaining) {
+          for (const remaining of cleanupFailures(error, signal)) {
             if (!(failure && remaining === failure.error) && !cleanup.includes(remaining)) cleanup.push(remaining);
           }
         };
@@ -345,13 +339,7 @@ export function attemptPostCesr(
         if (result.done) break;
         const frame = result.value;
         // Each request closes before the next input frame; it owns its separate HTTP cancellation.
-        const posted = yield* scoped(function*(): Operation<CesrPostResult> {
-          if (!consume) return yield* sendFrame(url, frame, http, options);
-          const response = yield* openFrameResponse(url, frame, http, options);
-          if (response.kind === "refuse") return response;
-          yield* consume(response.response);
-          return { kind: "complete" };
-        });
+        const posted = yield* sendFrame(url, frame, http, { ...options, signal });
         if (posted.kind === "refuse") return posted;
       }
     } catch (error) {
@@ -362,17 +350,6 @@ export function attemptPostCesr(
     }
     return { kind: "complete" };
   });
-  const signal = options.signal;
-  const attempt = signal
-    ? race([
-      posting,
-      call(function*(): Operation<never> {
-        const abort = yield* on(signal, "abort");
-        signal.throwIfAborted();
-        yield* abort.next();
-        throw signal.reason;
-      }),
-    ])
-    : posting;
-  return attempt;
+  if (!options.signal) return posting;
+  return race([posting, throwOnAbort(options.signal)]);
 }

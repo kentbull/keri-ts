@@ -398,8 +398,11 @@ The header-media alternative is the narrow [COMP-01 compatibility rule](../../re
 not a retry after arbitrary transport failure. Its source owner documents the exact
 status/text predicate, retained headers and unchanged signed content.
 
-`postCesr` sends successive framed POSTs and completes each response scope before
-advancing. Success headers alone do not establish completion: Content-Length or
+`postCesr` sends successive framed POSTs and drains each ordinary response before
+advancing. It accepts no injected response consumer. HTTPMessenger.query instead
+pulls one resident input frame, obtains requestFrame's scoped response and visibly
+processes its CESR/SSE bytes before the next frame. It does not eagerly parse later
+frames; earlier valid sends survive a later malformed input. Success headers alone do not establish completion: Content-Length or
 chunked truncation fails the attempt. Redirects are refused without following or
 replaying the application message. Native fetch/body-read failures retain their
 original causes in TransportError. Injected implementations use that same explicit

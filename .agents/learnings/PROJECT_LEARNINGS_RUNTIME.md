@@ -200,7 +200,9 @@ no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
 refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
 sends require full successful response EOF, refuse redirects without replay and
 wrap only native fetch/body failures in TransportError with their original cause.
-Caller-owned bounded SSE consumers retain their response lifetime. Poster contains
+HTTPMessenger.query owns its one-frame-at-a-time response processing directly;
+postCesr/attemptPostCesr have no response callback. requestFrame lends response
+metadata/body only within that request scope. Caller-owned bounded SSE consumers retain their response lifetime. Poster contains
 TransportError only around actual send calls; unknown errors still propagate.
 postCesr sends successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
 Preserve authentication through media retries. Post-header failure terminates the

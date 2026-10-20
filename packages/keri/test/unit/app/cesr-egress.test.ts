@@ -18,9 +18,12 @@ import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { 
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../src/app/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
+import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { exchange } from "../../../src/core/protocol-exchanging.ts";
 
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
@@ -424,52 +427,108 @@ Deno.test("CESR input cancellation also aborts the request consuming its deliver
   }
 });
 
-Deno.test("external HTTP input cancellation stops an active response consumer", async () => {
-  for (const cleanupFailure of [undefined, new Error("late input cleanup failure")]) {
-    const ready = Promise.withResolvers<void>(), controller = new AbortController();
-    const reason = new Error("stop response consumer");
-    let closed = false, resumed = false;
-    const task = run(function*() {
-      yield* postCesr(
-        "https://peer.test/",
-        async function*() {
+Deno.test("external HTTP query cancellation stops an accepted EXN handler and joins response cleanup", async () => {
+  for (const cleanupFailure of [undefined, new Error("late response cleanup failure")]) {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const sender = hby.makeHab("sender"), protocol = createProtocolProcessor(hby);
+      const serder = exchange("/cancel", {}, { sender: sender.pre })[0];
+      const wire = sender.endorse(serder);
+      const ready = Promise.withResolvers<void>(), controller = new AbortController();
+      const reason = new Error("stop query handler");
+      let closed = false, handlerClosed = false, resumed = false;
+      protocol.exc.addHandler({
+        resource: "/cancel",
+        *handle() {
           try {
-            yield fixture();
+            ready.resolve();
+            yield* suspend();
+            resumed = true;
           } finally {
-            closed = true;
-            // deno-lint-ignore no-unsafe-finally -- A foreign cleanup failure must survive external abort.
-            if (cleanupFailure) throw cleanupFailure;
+            handlerClosed = true;
           }
         },
-        httpClient(() => Promise.resolve(new Response(null, { status: 204 }))),
-        { signal: controller.signal },
-        function*() {
-          ready.resolve();
-          yield* suspend();
-          resumed = true;
-        },
+      });
+      const messenger = new HTTPMessenger(
+        protocol,
+        httpClient(() =>
+          Promise.resolve(
+            new Response(
+              new ReadableStream<Uint8Array>({
+                start(body) {
+                  // A following body completes the first frame without closing the response.
+                  body.enqueue(concatBytes(wire, wire));
+                },
+                cancel() {
+                  closed = true;
+                  if (cleanupFailure) throw cleanupFailure;
+                },
+              }),
+            ),
+          )
+        ),
+        systemClock,
       );
-      resumed = true;
+      const task = run(function*() {
+        yield* messenger.query("https://peer.test/", fixture(), { signal: controller.signal });
+        resumed = true;
+      });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        yield* call(() =>
+          Promise.race([
+            ready.promise,
+            task,
+            new Promise<never>((_, reject) =>
+              timer = setTimeout(() => reject(new Error("query handler not reached")), 1000)
+            ),
+          ])
+        );
+        clearTimeout(timer);
+        assertEquals(protocol.exc.complete(serder.said!), true, "handler runs after accepted evidence commits");
+        controller.abort(reason);
+        const failure = yield* call(() =>
+          assertRejects(() =>
+            Promise.race([
+              task,
+              new Promise<never>((_, reject) =>
+                timer = setTimeout(() => reject(new Error("query handler still active")), 1000)
+              ),
+            ])
+          )
+        );
+        assertStrictEquals(failure, cleanupFailure ?? reason);
+        assertEquals([closed, handlerClosed, resumed], [true, true, false]);
+      } finally {
+        clearTimeout(timer);
+        yield* call(() => task.halt().catch(() => {}));
+        yield* hby.close(true);
+      }
     });
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      await ready.promise;
-      controller.abort(reason);
-      const failure = await assertRejects(() =>
-        Promise.race([
-          task,
-          new Promise<never>((_, reject) =>
-            timer = setTimeout(() => reject(new Error("response consumer still active")), 1000)
-          ),
-        ])
-      );
-      assertStrictEquals(failure, cleanupFailure ?? reason);
-      assertEquals([closed, resumed], [true, false]);
-    } finally {
-      clearTimeout(timer);
-      await task.halt().catch(() => {});
-    }
   }
+});
+
+Deno.test("HTTP query sends each valid frame before parsing a later malformed frame", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    let requests = 0;
+    const messenger = new HTTPMessenger(
+      createProtocolProcessor(hby),
+      httpClient(() => {
+        requests++;
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }),
+      systemClock,
+    );
+    try {
+      yield* call(() =>
+        assertRejects(() => run(() => messenger.query("https://peer.test/", concatBytes(fixture(), b("!")))))
+      );
+      assertEquals(requests, 1);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });
 
 Deno.test("CESR transport headers preserve authorization without replacing frame metadata", async () => {
@@ -568,15 +627,7 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
             }),
           );
         }
-        if (origin === "cleanup") {
-          return new Response(
-            new ReadableStream<Uint8Array>({
-              cancel() {
-                throw failure;
-              },
-            }),
-          );
-        }
+        if (origin === "cleanup") return new Response(null, { status: 204 });
         return new Response("peer refusal", { status: 503 });
       });
       const send = () =>
@@ -585,11 +636,15 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
             "https://peer.test/",
             async function*() {
               if (origin === "source") throw failure;
-              yield fixture();
+              try {
+                yield fixture();
+              } finally {
+                // deno-lint-ignore no-unsafe-finally -- Preserve a source cleanup failure after successful HTTP I/O.
+                if (origin === "cleanup") throw failure;
+              }
             },
             transport,
             { bodyMode: "body" },
-            origin === "cleanup" ? function*() {} : undefined,
           )
         );
       if (origin === "peer") {
