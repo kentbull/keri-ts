@@ -22,7 +22,9 @@ the source commands from Deno or promising half the process memory.
 ## Method and results
 
 Five rounds alternated which image ran first. Each case used a fresh Node process
-and the same exit probe, without forced GC or heap tuning. `tufa version` measures
+and the same exit probe, without forced GC or heap tuning. The probe runs inside
+the measured CLI process, so its import/allocation overhead is included in both
+variants. Normal CLI launchers do not load it. `tufa version` measures
 CLI startup/imports. `tufa incept` follows an unmeasured `init` into a fresh store
 with the same public fixture salt/config, without a passcode or witnesses.
 `tephra bench` parses 256 repetitions of
@@ -56,10 +58,12 @@ separate compatibility evidence; it does not extend these memory numbers.
 
 ## Reproduction artifacts
 
-The exact [exit probe](node-pointer-compression-2026-10-19/observer.mjs),
+The [exit probe](node-pointer-compression-2026-10-19/observer.mjs),
 [case driver](node-pointer-compression-2026-10-19/cases.mjs) and
 [raw samples](node-pointer-compression-2026-10-19/samples.jsonl) retain the experiment.
-They are dated measurement artifacts, not application hooks or a new test framework.
+They preserve the executed operations; repository formatting and explanatory
+comments were added afterward. These are dated measurement artifacts, not
+application hooks or a new test framework.
 
 Install the same three tarballs under `/profile` in each digest-pinned image;
 make the recorded source/samples available at `/workspace/keri-ts` from a Linux

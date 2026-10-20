@@ -1,4 +1,4 @@
-/** Dated, out-of-process CLI experiment probe; application startup and dependencies are unchanged. */
+/** Measurement-only preloader for this dated CLI experiment; normal application launchers never import it. */
 import { writeFileSync } from "node:fs";
 import { getHeapStatistics } from "node:v8";
 const started = performance.now();
