@@ -1,0 +1,1004 @@
+# Complete and release the 2.0.0 package family
+
+Date: 2026-10-20.
+Status: approved for execution by Kent on 2026-10-20.
+Planning source: `777fc8d2d250358290b84aefa60126ce0dda86fc`.
+
+## Outcome and authorization
+
+Deliver and publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
+The release must support the agreed KERI/ACDC/CESR v1/v2 protocol lanes and
+interoperate with independently identified KERIpy main, 1.2.x and 1.3.x peers.
+Previous keri-ts API and database compatibility is not a requirement. Do not add
+aliases, migration readers or old-keri-ts compatibility tests.
+
+Kent authorized committing this plan, opening its PR to master and executing it
+as the release goal. Execution covers implementation, commits, PRs, merges,
+qualification and publication of the three packages. Preserve the review and
+qualification gates below and any subsequent narrower boundaries Kent sets.
+
+The scope includes:
+
+- Correct logging, strict configuration validation and exact-key OOBI cleanup.
+- Explicit acceptance of configurable threshold limits.
+- The justified architecture/readability changes described below.
+- Complete multisig credential CLI coordination: registry creation, issuance,
+  all six IPEX verbs, revocation, peer approval/fanout and observable completion.
+- Native-v2 credential CLI authoring, disclosure and presentation workflows.
+- Legacy group backer registries with actual backer receipts and rotation.
+- Legacy TEL replay and real old-peer HTTP/mailbox reachability.
+- Two bounded reconciliation findings concerning initialization and AEID changes.
+- Fresh qualification and actual publication of all three 2.0.0 packages.
+
+**Scope confirmed by Kent:** include native-v2 CLI authoring and group backer
+registries in 2.0.0. These are required implementation and qualification work,
+not optional follow-ups. Keep the different protocol models explicit:
+
+| Surface                    | Proposed 2.0.0 release acceptance                                                                                                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Legacy credential CLI      | Complete no-backer and backer-enabled lifecycle, including single/group participants, ordinary/establishment-only anchors and issuer KEL witnesses; prove supported interoperability with main, 1.2.x and 1.3.x.  |
+| Group backer registries    | Implement explicit backer membership/thresholds, VCP/VRT, BIS/BRV, actual TEL backer receipts, peer approval/fanout and restart/replay. KEL witness receipts are a separate obligation.                           |
+| Native-v2 credential CLI   | Author genuine-v2 credentials and registry events; complete single/group issuance, disclosure, IPEX receipt, presentation, state changes and vacuous updates through public commands.                             |
+| Native-v2 interoperability | Qualify against implemented main reference capabilities and independent TS public intake; keep reference gaps explicit. Old 1.2/1.3 peers retain the legacy lane and are not expected to accept native-v2 bodies. |
+
+Automatic delivery retries, durable outboxes, delivery acknowledgements, generic
+database providers and broad Python porting remain future v2.x candidates, not
+promises for the next minor release. Keep existing protocol escrows and their
+ordinary recovery; they are not the deferred outbound retry feature.
+
+## Baseline and evidence
+
+The prior chat, **keri-ts Responder refactor**
+(`01a14d08-bc45-7203-9e9c-d196828bc08b`), reports qualification after #573/#574:
+**1,393 passed, none ignored**, four resolver cases using Python 3.13.16, and
+installed-package checks on three Node profiles. Manual endurance was excluded.
+Credit that baseline; do not repeat the full battery merely to begin this work.
+It does not qualify the changes proposed here.
+
+Current source establishes these gaps:
+
+| Area                  | Concrete finding                                                                                                                                                   | Owning source                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Logging               | debug/info use stdout; escrow diagnostic review remains deferred                                                                                                   | `src/core/logger.ts`, `docs/plans/PARITY_ROADMAP.md`                                           |
+| Configuration         | scalar/non-string URL entries disappear silently; later malformed fields can follow earlier writes                                                                 | `src/app/habbing.ts`                                                                           |
+| Thresholds            | both deployment caps are already configurable, with boundary tests                                                                                                 | `packages/cesr/src/primitives/tholder.ts`                                                      |
+| OOBI cleanup          | no command; ordinary Baser opening can initialize unrelated state                                                                                                  | `src/db/basing.ts`, `src/db/core/lmdber.ts`, Tufa endpoint command definitions                 |
+| Group VDR             | VCP/ISS exist, but proposal registration and completion differ from the working group paths                                                                        | `src/app/credential-workflows.ts`, `multisig-workflows.ts`, `src/vdr/credentialing.ts`         |
+| Group IPEX            | grant coordinates group initiation; the other verbs do not uniformly use it                                                                                        | `src/app/cli/ipex.ts`, `src/app/ipex-grouping.ts`                                              |
+| Revocation            | REV wire construction exists, but CLI VDR approval/issuance orchestration does not include it                                                                      | `src/app/grouping.ts`, `multisig-workflows.ts`                                                 |
+| Replay                | Tevery requests v2 proof framing unconditionally; query normalization discards attachment genus                                                                    | `src/vdr/eventing.ts`, `src/app/parsering.ts`                                                  |
+| Old mailbox HTTP      | polling bypasses the existing narrow legacy-media fallback                                                                                                         | `src/app/forwarding.ts`, `cesr-egress.ts`                                                      |
+| Initialization        | empty/cancelled prompts can omit encryption; persistent-path failure retries as temporary                                                                          | `src/app/cli/init.ts`                                                                          |
+| AEID mutation         | live crypto state and secret rows change before the final AEID write, without one encompassing transaction                                                         | `src/app/keeping.ts`                                                                           |
+| Backer evidence       | historical backer lookup uses raw rows rather than the full accepted management coordinate; partial receipts overwrite and partial-witness escrows are not retried | `src/vdr/eventing.ts`                                                                          |
+| Group backer CLI      | group creation rejects backers; the CLI has only a boolean backer flag and no roster/threshold or registry rotation command                                        | `src/app/credential-workflows.ts`, Tufa credential command definitions                         |
+| Native-v2 composition | ordinary ProtocolProcessor dispatch does not install RegistryObserver; presentation tests use a custom `/_registry` intake path                                    | `src/app/protocol-processing.ts`, `src/acdc/observing.ts`, `interop-ipex-presentation.test.ts` |
+| Native-v2 authoring   | registry/disclosure APIs exist, but CLI composition, durable disclosure handling and public group approval are incomplete                                          | `src/acdc/registraring.ts`, `src/app/cli/vc.ts`, `src/app/cli/ipex.ts`                         |
+
+Unqualified `src/` paths above are under `packages/keri/`. These are static
+findings, not newly executed regression results.
+
+The active [parity roadmap](PARITY_ROADMAP.md), [compatibility inventory](../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
+and [qualification standard](qualification/QUALIFICATION_PLAN.md) remain their
+respective owners. ENCTX's historical main-reconciliation plan and test-family
+inventory were checked against current source; their old gap labels are not
+an implementation queue.
+
+## Design rules and explicit decisions
+
+Apply Kent's [ten constraints](/Users/kbull/enc/enctx/adrs/ten-constraints.md)
+and [ADR-0013](../adr/adr-0013-simple-component-flows.md).
+**Refactor responsibility first, then change behavior.** A preparation PR is
+justified when it makes a substantial behavior change independently reviewable.
+A small local rearrangement may be the first separate commit in one cohesive PR;
+do not manufacture empty abstraction PRs or temporary APIs.
+
+| Constraint                   | Application in this work                                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Separation of concerns       | CLI handles input/output and deadlines; protocol owners validate; stores persist; messengers own network lifetimes.        |
+| Encapsulation                | Pass the actual subordinate dependencies; keep routing, locks and storage initialization private.                          |
+| Cohesion and loose coupling  | One owner for group proposal publication/completion; independent workers exchange concrete records.                        |
+| DRY                          | Share protocol knowledge, such as media-refusal policy and group evidence rules; do not unify unlike send/query lifetimes. |
+| KISS                         | Prefer ordinary branches, typed records and existing transactions over frameworks.                                         |
+| Single responsibility        | A cleanup command cannot start protocol processing; a diagnostic cannot determine acceptance.                              |
+| Depend on abstractions       | Retain narrow HTTP/time contracts where used; do not invent an interface for every concrete domain owner.                  |
+| YAGNI                        | No speculative negotiation, compatibility service, outbox, event bus or future extension hooks.                            |
+| Composition over inheritance | Compose existing parser, protocol, store and messenger owners; add no stream-messenger hierarchy.                          |
+| Disciplined open/closed      | Extend proven route and encoding boundaries; introduce a new extensibility point only for demonstrated variation.          |
+
+SOLID additionally requires preserving substitutability and small interfaces:
+injected clients must obey the same cancellation/failure contract; collaborators
+must not be identified by concrete-object equality; send-only users should not
+receive irrelevant receive-result machinery. Do not weaken a real same-store
+invariant just to remove a reach-through expression.
+
+Accepted decisions:
+
+1. **Keep configurable Tholder deployment caps.** Retain `maxWeights` and
+   `maxSithLength`, their existing defaults and positive-safe-integer validation.
+   Configure them before concurrent processing begins. This is an explicitly
+   accepted local exception, not a wire maximum or permission to restore global
+   accounting. Existing tests already prove tunability; add no configuration
+   framework or CLI flags without a real caller. Correct only directly
+   contradictory policy sentences when adopting the plan.
+2. **Prefer synchronous semantic boundaries over a global protocol mutex.**
+   Preserve coherent validation, commit and publication, not `acquireProtocol`
+   itself. Prepare immutable evidence asynchronously; make the final decision
+   against current state and commit synchronously in the concrete protocol owner.
+   Keep existing exclusion during the responsibility/storage refactor, then
+   remove it only after the focused overlap tests below pass. A single protocol
+   worker is an alternative to evaluate if a concrete remaining invariant
+   requires it, not the default replacement. Neither extra processor instances
+   nor LMDB writer serialization alone makes an earlier asynchronous decision safe.
+3. **Keep request-specific mailbox authorization.** A query SAID identifies its
+   body, not its current attached proofs. Preserve exact-envelope authorization,
+   post-escrow reevaluation and capture before application publication.
+4. **Keep exact-event Poster waits.** `send` admits work; `wait(evt)` observes
+   that admission while the worker delivers. Python also waits on `sent(said)`
+   or a delivery doer's completion. Event identity avoids stale same-SAID
+   successes. Neither form proves remote acceptance.
+5. **Keep clocks at actual time owners.** RuntimeClock is a small existing
+   dependency for deadlines and trusted timestamps, including deterministic
+   tests. Effection scheduling does not remove wall-time requirements. Remove
+   only unused forwarding of the clock, not the contract wholesale.
+6. **Keep structured resource cleanup.** Effection `resource`, `call`, `ensure`
+   and native abort integration are not inherently callback architecture.
+   Simplify control flow while preserving cancellation, joined cleanup,
+   original failure identity and independent cleanup failures.
+
+## Review of the supplied architecture comments
+
+| Comment                                | Disposition and planned work                                                                                                                                                                                                                           |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `endpoint-roleing.ts` receives runtime | Confirmed. Give subordinate proposal work explicit Habery, protocol/input and Poster dependencies; composition stays with the command. Do not replace runtime with a smaller service bag.                                                              |
+| Oobiery receives Reactor               | Confirmed coupling between independent input owners. Oobiery should own its input Kevery/parser context and borrow its actual semantic/store dependencies, matching Python's OOBI-specific parsing responsibility.                                     |
+| `consume` callbacks                    | Distinguish resource acquisition callbacks from protocol-consumer inversion. Move HTTP query processing visibly into HTTPMessenger; expose complete SSE records to their processing owner. No new callback runner or event bus.                        |
+| `attemptPostCesr` cleanup and race     | Name the cancellation and cleanup policies; replace throw/catch-as-filter where simpler. Retain abort of an active consumer, cleanup registration before work, and aggregation of distinct failures.                                                   |
+| Monolithic protocol processor          | Make concrete semantic owners independently usable. Keep a thin normalized-message dispatcher only where an input genuinely handles multiple protocols; do not make it a required runtime service bag or a new scheduler.                              |
+| `acquireProtocol`                      | Refactor asynchronous evidence preparation, synchronous admission and subsequent effects before removing whole-turn exclusion. Compare ownership alternatives below; do not replace it with `withLock(callback)`, per-family locks or queued closures. |
+| `mailboxQueryAuthorized`               | Security-relevant result, not a smell by itself. Keep policy in Kevery and eliminate duplicate interpretation only if the post-escrow contract is preserved. No authorization-token/cache framework.                                                   |
+| Reactor in witnessing                  | Comment is stale: Receiptor now takes ProtocolProcessor. Keep same-store validation, expressed through direct ownership or composition instead of `protocol.kvy.db` reach-through.                                                                     |
+| TCP conversation/result types          | Confirmed unused production result language. Remove `TCPConversation`, nested receive telemetry and unused `TcpTransmission` counters after caller audit; return normal operation completion. Preserve send-only versus receive-through-EOF execution. |
+| `converse` naming                      | Use a name describing the actual operation, such as `sendAndReceive`. Use `msgDo`/`receiptDo` only for genuinely corresponding worker responsibilities, not cosmetic Python naming.                                                                    |
+| `http-client.ts`                       | Keep native Fetch and scoped response cleanup here. No speculative redesign was identified; HTTP policy and domain parsing belong above it.                                                                                                            |
+| `postman.wait(evt)`                    | Retain. Consolidate repeated domain-specific CLI handling where useful, including partial successes and original causes. Do not introduce a generic completion broker.                                                                                 |
+
+### How the HTTP query response currently reaches processing
+
+```text
+QueryCoordinator -> HTTPMessenger.query -> postCesr -> attemptPostCesr
+  -> openFrameResponse -> HttpClient.open -> provide(FrameResponse)
+  -> query's consume(response) closure
+  -> processMessages, or consumeMailboxSse followed by processMessages
+  -> ProtocolProcessor -> accepted state and cues
+```
+
+The response does not return to QueryCoordinator. The callback consumes it while
+its scope is alive; posting returns completion/refusal and the public query
+operation returns void. The refactor makes that response processing visible in
+HTTPMessenger without allowing a live response to escape its owning scope.
+
+### Protocol ownership exploration and recommended boundary
+
+This is a source-grounded recommendation, not a completed concurrency proof.
+The inspected Python checkout is `71438328`; repeat the relevant comparison
+against the unmodified main pin selected by PR 02.
+
+KERIpy combines per-input processing context with shared accepted state.
+TCP Reactants and Oobiery construct their own parser/Kevery contexts, while
+Kevery shares `Baser.kevers` and Tevery shares `Reger.tevers`. Some compositions
+share an Exchanger/Verifier. Regery also owns local registry/storage lifetime;
+it is not an object to duplicate per message. Ordinary semantic handlers run
+synchronously, without a scheduler suspension between their decisions and writes.
+Copy that boundary where appropriate, rather than mechanically copying object counts.
+
+TS already creates input-local Keverys. Independent operations enter the common
+ProtocolProcessor because HTTP, TCP, OOBI and mailbox input each progress under
+their own lifetime, while background and finite-command escrow work also calls
+it. Those separate input lifetimes are valid. Coupling them to one asynchronous
+state-mutating operation is the part to change.
+
+Current source gives concrete reasons for the split:
+
+- `core/eventing.ts` already performs KEL decisions/writes synchronously, then
+  publishes the accepted cache and cues. `acdc/regengine.ts` also rechecks
+  registry state inside its synchronous writer.
+- `app/exchanging.ts` authenticates, reads prior admission state, then suspends
+  for ESSR reads/hashing, nested evidence, file publication, flush and handlers.
+  Its receiver-time assertion does not revalidate every earlier assumption.
+- `app/ipexing.ts` checks that a predecessor has no response; accepted EXN
+  publication later pins `erpy`. With independent asynchronous admissions,
+  both responses can pass the check before their sequential writes. The
+  transaction must contain the final state-dependent check as well as the write.
+- `vdr/eventing.ts` shares cached Tevers whose original constructor captured
+  input policy and cues. Rotation also mutates live fields before logging.
+  Separate accepted state from input context and publish only after commit.
+- `db/payload-archive.ts` promotes deterministic filenames before reference
+  publication and rejects overlapping mutations. Its filesystem ownership,
+  cleanup and durability cannot be supplied by LMDB's writer lock.
+
+| Design                                                               | Assessment                                                                                                                                                                       |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Input-local parsing/policy with concrete synchronous semantic owners | Preferred. Existing stores and accepted-state caches remain shared; state-sensitive work cannot suspend.                                                                         |
+| One worker consuming concrete prepared messages                      | Valid if a remaining ownership constraint justifies its queue, completion/cancellation contract and mandatory worker lifetime. Not required merely because several inputs exist. |
+| One worker awaiting today's asynchronous dispatch                    | Does not solve the long shared critical section; retains head-of-line blocking and can deadlock recursive group replay.                                                          |
+| Independent asynchronous processors relying only on database locks   | Reject. Stale decisions, shared caches/cues and filesystem publication remain outside the protected transaction.                                                                 |
+
+The intended operation shape is:
+
+```text
+input-owned Effection operation
+  receive / parse / prepare immutable evidence and private payload files
+  concrete semantic owner: validate current state -> commit -> publish live state
+  finish required durability and perform the named asynchronous consequences
+```
+
+The middle step is synchronous. It accepts normalized domain input without
+depending on a parser instance, transport, Effection scope or arbitrary operation.
+It owns its transaction; callers must not hold a writer across a yield.
+Re-resolve protocol-correct historical/current key coordinates, response winners,
+proof unions, approval state and registry anchors at this boundary. Async
+preparation may verify byte commitments, but cannot carry a final authorization
+decision across suspension. Keep routine accept/duplicate/escrow/reject outcomes
+as concrete data rather than an extensible command framework.
+
+Capture each operation's own cue/reply result at the semantic boundary; do not
+leave a shared unpublished Deck to be drained after unrelated asynchronous work.
+Preserve the required durability point before exposing completion or external
+effects. LMDB commit visibility and completed disk flush are distinct in
+[lmdb-js](https://github.com/kriszyp/lmdb-js#overlapping-sync-options);
+moving a flush wait must not silently weaken the existing contract.
+
+This is not a promise that every effect can be detached after acceptance.
+Forwarding prepares child wire; multisig handling reopens and processes approved
+children. Keep those responsibilities explicit, recheck state after preparation,
+and preserve required causal ordering and duplicate/replay behavior. A dependent
+child must not overtake the parent work it requires. Do not introduce a durable
+outbox, generic task queue or promise of exactly-once network delivery.
+
+Two existing handlers make that condition concrete. ForwardHandler checks
+recipient authority before asynchronously collecting child bytes; the final
+current-authority check must accompany synchronous mailbox publication after
+collection, preserving the request's exact mailbox identity. Multiplexor reads
+known wrappers, awaits replay, then records local approval. A new wrapper arriving
+during that replay can miss both the old snapshot and the approval flag.
+Make local approval and arrival handling converge on independently verified
+child processing without another approval or a third-message wakeup.
+Preserve Mailboxer's intentional per-topic appearances even when bytes are
+deduplicated. An accepted EXN is not proof that all handler work completed;
+do not suppress required publication with a blanket duplicate-effect rule.
+
+File preparation needs independently owned immutable objects, followed by
+synchronous selection of references with the domain commit. An unselected
+candidate may reclaim only its own file. Preserve exact retained ESSR/nested
+bytes, first receipt time, non-downgrade of acceptance, startup recovery and
+reader/delete lifetimes. Revalidate changed references or repeat the relevant
+preparation; never reuse a stale payload-equality result. Do not make file I/O
+blocking merely to remove yields.
+
+The guarantee here is one process's cooperative protocol execution plus each
+store's real transaction. It does not create atomic transactions across Baser,
+Reger and RegBaser, or make in-memory caches coherent across multiple processes.
+Retain the existing host/storage ownership contract.
+
+### Readability inventory
+
+A TypeScript AST scan of 344 production files found 1,284 conditional
+expressions; 89 contain nested conditionals and 26 contain an await/yield.
+These are candidate counts, not defect counts or a target to eliminate.
+
+Prioritize these actual policy/control-flow sites in their owning refactors:
+
+- `cli/ipex.ts`: recipient resolution, approval waiting and proposal lookup.
+- `multisig-workflows.ts`: route dispatch, embedded credential validation and
+  group/anchor selection.
+- `ipex-grouping.ts`: conditional proposal publication.
+- `cesr-egress.ts`: body/attachment preparation and abort-versus-post operation.
+- `oobiery.ts`: multi-OOBI terminal result/cue construction.
+- `cli/multisig.ts` and Tufa `generic-cesr-ingress.ts`: awaited result selection.
+- `vdr/eventing.ts` and `query-replies.ts`: multi-branch dependency/correlation
+  decisions when those owners change.
+
+Use `if`/`switch` or a named private function when it labels real policy. Retain
+clear scalar choices, comparisons, defaults and simple encoding arithmetic.
+Do not add a blanket ternary lint ban or rewrite crypto/codec code for style.
+The grant recipient refactor must initially preserve its offline-versus-network
+resolution rules; validating exported recipient AIDs is a separate behavior
+change, not formatting.
+
+## Phases and cohesive PR sequence
+
+One implementation PR at a time. Numbers describe review order; dependencies
+are explicit below. Every feature PR contains its focused regression evidence.
+The final integration PR fills cross-boundary gaps rather than postponing all
+tests until the end.
+
+| PR      | Reviewable result                                                                                      | Dependency  |
+| ------- | ------------------------------------------------------------------------------------------------------ | ----------- |
+| 01      | Adopt this release scope and configurable-threshold exception; correct minimal contradictory contracts | Approval    |
+| 02      | Pin and verify independent Python main, 1.2.x and 1.3.x test profiles                                  | 01          |
+| 03      | Narrow endpoint/OOBI/receipt input dependencies; preserve behavior during the ownership refactor       | 01          |
+| 03a     | Separate TEL input policy from accepted state and publish Tever cache changes after commit             | 02, 03      |
+| 03b     | Separate immutable payload preparation from synchronous reference publication                          | 03          |
+| 03c     | Make EXN admission synchronous against current state; give asynchronous consequences explicit owners   | 03b         |
+| 03d     | Remove whole-protocol exclusion after proving input, escrow, reply and cancellation invariants         | 03a, 03c    |
+| 04      | Simplify TCP completion API and remove unused bookkeeping                                              | 03d         |
+| 05      | Make HTTP query response ownership and cancellation flow explicit                                      | 03d         |
+| 06      | Separate SSE event delivery from parsing/timing/cursor policy                                          | 05          |
+| 07      | Correct log streams, filtering and actual escrow-ejection diagnostics                                  | 01          |
+| 08      | Validate URL configuration before all affected writes                                                  | 03          |
+| 09      | Add narrow existing-store access for typed OOBI maintenance                                            | 01          |
+| 10      | Add `tufa oobi clean` preview/apply                                                                    | 09          |
+| 11      | Make init honor encryption and persistence choices                                                     | 07, 08      |
+| 12      | Prove AEID failure atomicity; repair only if the regression confirms the gap                           | 02          |
+| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d         |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13          |
+| 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14  |
+| 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15          |
+| 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d         |
+| 18      | Emit legacy-compatible TEL replay without changing signed bodies                                       | 02, 17      |
+| 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06  |
+| 20      | Complete group revocation approval, fanout and recipient observation                                   | 15, 18, 19  |
+| 21      | Correct accepted backer-cohort selection and durable partial-receipt processing                        | 02, 20      |
+| 22      | Produce and collect real TEL backer proofs through concrete runtime owners                             | 03d, 05, 21 |
+| 23      | Add explicit backer policy and group registry inception/rotation commands                              | 13, 14, 22  |
+| 24      | Complete group BIS/BRV, backer-policy changes and legacy replay                                        | 18, 20, 23  |
+| 25      | Compose native-v2 public registry intake, dependency recovery and replay                               | 03d         |
+| 26      | Establish native credential/disclosure custody and explicit CLI composition                            | 14, 25      |
+| 27      | Add single-identifier native registry/credential authoring and state changes                           | 26          |
+| 28      | Coordinate exact native-v2 anchors through group approval and fanout                                   | 13, 15, 27  |
+| 29      | Connect native-v2 CLI IPEX delivery and wallet acceptance                                              | 16, 28      |
+| 30      | Complete native-v2 presentation and vacuous-update workflows                                           | 28, 29      |
+| 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30       |
+| 32      | Prepare all three 2.0.0 versions and qualify the final candidate                                       | 31          |
+| Release | Publish and verify CESR -> KERI -> Tufa 2.0.0                                                          | 32          |
+
+This is an estimated decomposition, not a quota of PRs or a promise to finish
+in one night. A confirmed issue may justify a small sibling PR. Skip an empty
+repair PR with evidence rather than inventing a change. Do not merge unrelated
+concerns to save PR count, or split a cohesive removal using temporary APIs.
+
+### Phase A: contracts and actual reference profiles — PRs 01–02
+
+Capture exact immutable commits for **unmodified WebOfTrust main**, a selected
+1.2.x release and a selected 1.3.x release, with their actual Python/HIO/Falcon
+dependencies and loaded module paths. Check live remote state at execution start,
+then freeze pins for the run; do not chase main while qualifying.
+
+Observed local candidates, not newly verified remote selections:
+
+- main `c102367ea0b8416ffb3c01403d18b3fd4a6a38bf`;
+- 1.2.15 `76c5cd568d07f17ae317ea54f39b163ae8823cba`;
+- 1.3.6 `3fb88ce9007d46415099972189cbaae784e14905`.
+
+The frozen CESR/reference pin `71438328` and mailbox fork `331f32e4` retain their
+own provenance. Neither substitutes for the three requested native peer lanes.
+Use the direct Python repository and existing isolated reference environments;
+do not move or alter an unrelated Python working tree.
+
+Extend existing `keripy-runtime.ts`, `probe-keripy.py`, reference configuration
+and suite selection with small explicit profile data. Old CLI `init/incept`
+does not accept the current harness's `--version` option. Express these known
+test-launch differences without production shims or a generic adapter system.
+Prove the intended interpreter/imports before running a scenario. A missing
+required environment is a failed gate, not a silently skipped lane.
+
+PR 01 records the narrow threshold exception in the owning ADR/roadmap and
+directly conflicting instruction text. Preserve numeric/wire checks, and
+retain the existing raised-cap, invalid-setting and qb64/qb2 regressions.
+
+### Phase B: ownership and readable control flow — PRs 03–06
+
+PR 03 narrows the confirmed runtime bundles, gives OOBI input its own Kevery
+over shared semantic state, and preserves same-store composition. Inventory all
+mutating entry points, including direct Exchanger/group calls, so a dispatcher
+refactor cannot leave a second unsafe route. Keep current exclusion while these
+responsibilities are separated.
+
+PR 03a separates Tever's accepted state from per-input policy/cue ownership.
+Compute candidate state before persistence and publish cache changes after a
+successful transaction. Prove a failed TEL write leaves the prior live state
+intact. Keep protocol acceptance changes for the later backer feature PRs.
+
+PR 03b gives the existing payload store a concrete private-file preparation and
+reference-publication contract. Preserve file-before-reference durability,
+same-SAID conflict handling, reader lifetime, recovery and joined cleanup.
+Remove no guard until its protected invariant has a proven owner. This is
+actual immutable-file storage work, not a generic transaction abstraction.
+
+PR 03c separates EXN evidence preparation from synchronous current-state
+validation and commit. Built-in route verification is synchronous today; remove
+the unused permission for arbitrary suspending validation hooks after the caller
+audit. Keep asynchronous forwarding and group-child work in explicit operations,
+with concrete inputs/results and required ordering. Preserve exact evidence,
+proof accumulation, first receipt, duplicate semantics and handler completion.
+
+PR 03d updates dispatch/escrow callers to the resulting boundaries and removes
+`acquireProtocol` when the proof passes. Escrow scans process concrete candidates
+against current state, release cursors before suspension and retain their
+existing captured horizon. Do not lock the whole engine across a scan's file I/O.
+If a real invariant still needs serialization, identify the exact owner and
+compare the smallest scoped mechanism with one concrete-message worker before
+changing this design. Do not silently restore global exclusion or introduce a
+queue of callbacks. Combine adjacent preparation PRs only if keeping them separate
+would create temporary APIs rather than independently reviewable changes.
+
+Use a bounded set of focused tests at the owning PR, reusing existing cases:
+
+- Pause real EXN payload preparation while independent KEL/query processing
+  completes; resume and verify protocol-correct evidence after a related rotation.
+- Prepare competing IPEX responses and same-SAID proof/payload admissions;
+  only the allowed response wins, proofs accumulate and retained bytes/receipt
+  remain stable. Include an escrow retry overlapping new proof arrival.
+- Cancel before commit and during post-commit finishing; no abandoned staging,
+  rollback of accepted evidence, unjoined cleanup or duplicate group side effects.
+- Change forwarding authority during child preparation and deliver another
+  peer wrapper during local approval replay. Recheck authority before mailbox
+  publication; every eligible wrapper must be processed without another approval.
+- Preserve exact mailbox authorization through forged matching-SAID attachments,
+  partial proofs, recovered dependencies and the final query of a multi-frame
+  request. Correlated replies must survive unrelated cue publication.
+
+Retain behavioral cleanup/isolation assertions; remove tests that merely assert
+the old mutex/waiter implementation. No large scheduling matrix or new generic
+test harness is required. Existing lifecycle tests and the later native/group
+interop PRs provide their separate end-to-end evidence.
+
+PR 04 removes unused TCP result variants/counting and their exports without
+compatibility aliases. Keep real peer-byte, accepted-input, half-close,
+concurrent RX/TX, source/parser failure, deadline, abort and joined-close checks.
+Replace assertions about removed result shapes with observable protocol/I/O
+assertions; receive EOF remains required only when receive processing is requested.
+
+PR 05 separates send-only posting from response-consuming query execution.
+HTTPMessenger visibly obtains the scoped frame response and processes CESR/SSE.
+CESR egress owns prepared framing and the narrow media-refusal rule; HttpClient
+owns native request/read cleanup. Use small named private operations for real
+branches. Preserve one-frame-at-a-time processing: eagerly parsing the entire
+input would change behavior when a later malformed frame follows a valid send.
+
+Cleanup must preserve pre-abort behavior, active-consumer cancellation, exact
+owned cancellation reasons, foreign AbortErrors, primary plus cleanup failure,
+parser iterator return and no caller resumption after halt. A value-returning
+cleanup-error filter may replace throw/catch-as-filter; no cleanup manager.
+
+PR 06 exposes complete mailbox SSE records through a scoped pull boundary so
+the owner visibly consumes, processes and then advances its cursor. Keep
+fragmented UTF-8/CRLF, complete events before EOF, unfinished-tail discard,
+idle-after-first-complete-event behavior, absolute deadlines and backpressure.
+Do not add a producer queue/task merely to remove a local callback. If a pull
+design increases lifetime machinery, retain the minimal immediately awaited
+local consumer with named responsibilities and record that concrete review
+decision; arbitrary injected protocol consumers still leave CESR egress.
+
+### Phase C: operator contracts — PRs 07–12
+
+**Logging.** Route all enabled diagnostic levels to stderr at the existing
+logger. Retain the current four levels and loglevel selection. Compare actual
+KEL/reply/TEL/TSN/credential/EXN/v2-registry removal paths with the selected
+references. Pending retries, acceptance cleanup, family migration and EXN
+`preserveEscrow` must not become warning floods or false ejections. Report
+terminal ejection/expiry after committed removal, with family, identity,
+reason and original cause where available. Failed writes must not report
+successful removal; unexpected infrastructure errors still propagate.
+No logging wrapper, service injection, callback, history or new level is needed.
+
+Use focused owner tests and actual CLI subprocess stdout/stderr assertions at
+debug/info. Combined output assertions cannot detect JSON contamination.
+
+**URL configuration.** One shape validator owns collection knowledge for
+`iurls`, `durls`, `wurls` and the existing alias `curls` caller. Absent means
+`[]`; `[]` is valid. Present null/scalar/mixed array/empty or whitespace-only
+entry fails with field/index. Preserve accepted strings exactly and retain TCP;
+do not introduce URL normalization, scheme restrictions or new datetime policy.
+Validate all Habery URL fields even without `dt`, before any OOBI pin. Preserve
+alias endpoint URL parsing and validate before signed reply effects.
+
+The decisive regression is valid early fields plus invalid late `wurls`:
+both OOBI stores and existing records remain unchanged. Cover malformed
+`curls`, absence, empty arrays, mixed types, valid HTTP/TCP and reopen.
+This resolves the older ENCTX proposal's inconsistent statement about empty
+arrays in favor of its explicit collection-shape contract.
+
+**Existing-store access and cleanup.** Ordinary `createBaser({readonly:true})`
+is insufficient: path setup can create/fallback, and full Baser initialization
+binds tables and hydrates unrelated state. First add the smallest storage-owned
+seam that opens an existing resolved database and existing typed `oobis.` only.
+Reuse LMDBer/Komer and authoritative path knowledge; no generic DB editor,
+provider hierarchy or full-Habery maintenance mode. Refuse missing target/table,
+creation, silent path fallback and unrelated schema/version initialization.
+
+Then expose:
+
+```text
+tufa oobi clean --name NAME [--compat] --head-dir DIR --key-file keys.json
+tufa oobi clean --name NAME [--compat] --head-dir DIR --key-file keys.json --apply
+```
+
+Selection is a nonempty JSON array of exact string keys; deduplicate without
+altering bytes. Preview is read-only and shows the resolved target, selections
+and presence. Apply preflights all requested keys, deletes only those existing
+pending `oobis.` entries through typed removal and reports actual counts.
+Missing keys or delete failures exit nonzero. Sequential deletion is sufficient;
+on an actual mid-apply failure report completed and remaining work honestly,
+without claiming rollback. Do not add wildcard/age/URL heuristics or clear
+`woobi.`, `coobi.` or `roobi.`.
+
+Open no Keeper, Habery, Configer, Signator, payload archive or runtime. Add no
+passcode option. Preserve map-size/path conventions. Help and one short example
+state that the operator stops and backs up the service; the CLI performs no
+Docker/SSH/backup orchestration. Test missing-path non-creation, preview
+nonmutation, exact deletions, partial failure reporting, unchanged table
+inventory/version/unrelated rows and real Python-store reopening.
+
+**Initialization.** Separate resolved init choices from prompt/open effects.
+Use hidden terminal input with correct restoration, or explicit noninteractive
+credentials, including the existing valid `--aeid` plus `--seed` path without
+an unnecessary passcode prompt. Reject incomplete or contradictory credential
+combinations. Empty, cancelled, mismatched or absent noninteractive credentials
+fail before key material is created. `--nopasscode` and `--temp` are explicit;
+reject contradictory encryption choices. Preserve passcode derivation.
+Persistent-path failures propagate; never retry in temporary mode. Qualify
+blank/cancel/EOF, wrong passcode, encrypted reopen, explicit plaintext/temp and
+an invalid persistent parent with no temporary fallback.
+
+**AEID failure atomicity.** The risk is source-grounded, not reproduced yet.
+Use real disposable Keeper stores and failure injection after early salt/seed
+writes to check rollback and reopen. If confirmed, use one existing keeper
+transaction for affected rows and AEID; publish live encrypter/decrypter/seed
+only after commit. Validate inputs before mutations. Prove old state is readable
+after failure and new state after success, including signing and wrong-key refusal.
+Exercise several affected `prms`/`pris` rows and preserve read-only-open
+nonmutation and the existing documented AEID transition matrix. Atomicity must
+not silently redefine passcode policy.
+Do not add a passcode-management command, migration framework or crypto redesign.
+If the existing code already satisfies the invariant under the real storage
+semantics, retain only the useful regression and omit a fabricated repair.
+
+### Phase D: group credential lifecycle — PRs 13–16 and 20
+
+PR 13 establishes one typed, domain-specific proposal/publication responsibility.
+Remove untyped VCP/ISS payload/embed bags and duplicated publication knowledge.
+Keep CLI prompts/files/deadlines separate from authorization, signing and
+persistence. Refactor first without silently changing acceptance. Avoid a
+generic workflow engine, callback scheduler or runtime-shaped parameter object.
+
+Proposal output must expose its stable proposal/business identity. Define a
+public CLI selection/resume path for the exact VCP/ISS/REV from durable evidence,
+independent of whether its notification still exists. Reuse the existing join
+selection surface where it fits. Resuming must not re-prompt recorded approval,
+construct another event or require accepted rows to be manually seeded.
+
+PR 14 inventories every CLI entry point that selects, signs with or mutates a
+group habitat: inception, interaction, rotation, delegation, endpoint roles,
+credential commands, IPEX and ordinary commands accepting a group alias.
+Each uses the appropriate group proposal/approval/fanout path, or rejects with
+the correct supported group command before effects. In particular, verify
+ordinary `interact`/`rotate` against their multisig counterparts; endpoint-role
+commands already have explicit group handling. Raw contribution output must
+identify partial evidence. Preserve existing KEL/delegation/endpoint approval
+tests and add focused subprocess regressions for uncovered entry points.
+
+PR 15 finishes existing VCP/ISS paths. Register the exact signed local wrapper
+before transmission so returning proofs can recognize local approval. One
+command-owned host runs the existing workers and observes accepted state.
+Persist the actual protocol progression required across group anchor signatures,
+witness receipts and TEL publication. Existing `tmse/tpwe/tede` definitions are
+not proof that their lifecycle is implemented; inspect their real writers/readers.
+
+Before local signing or KEL mutation, preflight the VCP/ISS group, issuer,
+registry identifier, credential/schema validity, TEL event, source seal and
+exact anchor relationship. This applies to both initiation and peer approval.
+Reuse pure validation responsibilities; add no generic preflight framework.
+Missing dependencies remain pending without signing. Malformed or inconsistent
+proposals produce no new local signature, anchor or alias writes.
+
+Assign completion to one concrete VDR owner. Restore no historical Registrar
+facade by name; add a domain owner only for the demonstrated work. Do not mark
+`ctel` complete at mere local TEL admission when group anchor/witness obligations
+remain. Match reference completion semantics without describing fire-and-forget
+TEL publication or local transmission as remote acceptance. Prove remote state
+separately. Honor advertised establishment-only anchoring through rotation.
+
+PR 16 applies group initiation to **apply, offer, agree, grant, admit and spurn**,
+reusing existing wrapped-IPEX approval, group-index signing, threshold aggregation
+and leader selection. Preserve verb-specific predecessors, parties, recipient
+selection, support proofs and admit wallet acceptance. Member fanout, group
+business acceptance and elected external delivery are separate facts.
+Offline output must not label partial group evidence as a completed grant.
+Preserve actual Poster partial-success diagnostics at CLI boundaries.
+
+PR 20 extends VDR proposal approval with REV and uses the completed owner:
+
+- Validate group membership, credential issuer, registry, prior TEL event and
+  exact anchor relationship before a member signs.
+- Aggregate proofs for the original event; duplicate approval/revocation does
+  not create a replacement credential, another REV or another KEL anchor.
+- Fan out to peers, then disseminate completed evidence to the issuee/selected
+  recipients using their supported protocol lane.
+- Prove holder/verifier revoked state through actual delivery or fresh replay.
+  Old issuance or stale TSN replay must not revive a revoked credential.
+
+This phase completes the legacy no-backer baseline, including ordinary and
+establishment-only anchors, single/group counterparties and witnessed operation.
+The required backer phase extends that same lifecycle with separate TEL backer
+evidence; the required native-v2 phase supplies genuine-v2 CLI authoring.
+Do not treat success in this baseline as completion of either expansion.
+
+Required adversarial/lifetime cases:
+
+- Declined or unauthorized proposal produces no local signature or publication.
+- Parent signatures cannot authenticate child events/credentials.
+- Duplicate signature indices and foreign endorsements cannot satisfy thresholds
+  or select leader; weighted thresholds do not require every member.
+- Local-first and remote-first arrival, stale/mismatched anchors, changed group
+  key state, late signatures and missing witnesses retain honest pending results.
+- Restart after proposal receipt, approval before threshold, anchor before
+  receipts, and TEL acceptance before publication. Resume the same protocol
+  event from durable evidence through explicit command execution. Include a
+  subprocess restart after notification consumption and resume using only the
+  public CLI.
+- Deadlines/cancellation join workers before stores close; no durable network
+  outbox or new retry guarantee is added.
+- Every participating member converges on the same accepted business state;
+  elected external delivery is independently observed.
+
+### Phase E: legacy replay and peer interoperability — PRs 17–19
+
+PR 17 carries parsed attachment genus through `queryEnvelopeFromDispatch` into
+the TEL query policy owner, preserving current emitted bytes. Keep body protocol
+version, attachment genus and HTTP media type separate. Introduce no peer
+capability registry or inferred protocol downgrade.
+
+PR 18 selects replay framing from the actual request context. Genuine unselected
+legacy requests receive v1-compatible attachment counters/source seals without
+a v2-only selector. Explicit v2 contexts retain v2 framing. Direct library
+callers select their intended wire settings explicitly. Reuse `Reger.cloneTvt`
+and known semantic attachment conversion; preserve raw signed bodies, SAIDs,
+signatures and source-seal meaning.
+
+Reger currently treats requested genus as a floor. A v1 request for an event
+whose signed body or proof requires v2 must receive an explicit unsupported
+outcome; do not silently raise the floor and call it v1 compatibility. Missing,
+opaque or unmappable proof material must never be rewritten into plausible wire.
+Preserve replay horizons, order, lazy reads and cursor cleanup.
+
+Define refusal at the replay owner: incompatible later evidence may be discovered
+after a valid prefix has been sent. Return a typed unsupported outcome and
+terminate the stream without reporting completion; preserve any prefix the
+receiver already accepted. Preflight available metadata when sufficient, but
+do not eagerly materialize every body merely to hide this streaming boundary.
+Test incompatibility both at the first event and after a valid emitted prefix.
+
+PR 19 adds the existing narrow legacy-media fallback to mailbox query polling.
+Share the exact pre-processing media-refusal predicate; close the refused
+response before the one alternate `application/cesr+json` attempt. Reuse identical
+signed query/attachments and Authorization. No fallback on unrelated 406,
+authentication/KRAM refusal, parser failure, transport failure or later application
+rejection. Preserve SSE response lifetime and consume-before-cursor behavior.
+This specific HTTP accommodation is not the deferred generic delivery retry.
+
+### Phase F: real group backer registries — PRs 21–24
+
+**PR 21: accepted cohorts and accumulated evidence.** Extract the narrow
+backer-state selection responsibility before changing admission. Resolve
+`ra.i/ra.s/ra.d` against accepted registry management evidence, not a raw or
+escrowed body. VCP uses its validated initial roster; VRT uses its validated
+rotated ordered roster and threshold; BIS/BRV use their exact historical
+management tuple. Reuse existing signature verification and merge valid proofs
+by unique index. Retry and reopen partial-witness `twes` evidence; repeated
+bodies may contribute missing proofs without reapplying business state.
+Preserve earlier valid contributions instead of replacing `tibs`.
+
+**PR 22: real backer participation.** Add one concrete backer-operation owner,
+composed with explicitly hosted nontransferable backer signers, the parser,
+existing endpoint resolution and Poster/messengers. It validates the exact
+event, issuer anchor, registry history and its authorized index before signing.
+Expose activation through the existing agent/witness hosting CLI composition,
+with an explicit selected backer AID and role; do not auto-host or sign as every
+local Hab. Use the established listener and endpoint ownership. B1 must launch
+backers through this public command, not a test-only service constructor.
+Eligibility to endorse is separate from observer acceptance: requiring a full
+backer threshold before producing a contribution would deadlock the workflow.
+Do not bypass verification by globally enabling local processing.
+
+Use the existing wire: original TEL body, indexed backer signatures
+(`WitnessIdxSigs`) and issuer source proof (`SealSourceCouples`), in the selected
+CESR genus. Both parsers already deliver these to Tevery. Add no new receipt
+message or KEL `rct`. Collect verified contributions, then disseminate the
+threshold-complete evidence. Persist received evidence and protocol progression;
+delivery retries/outboxes remain outside scope.
+
+**PR 23: backer policy and management.** Replace the inadequate boolean-only
+input with explicit ordered backer roster and threshold input, retaining a
+clear no-backer choice. Add registry rotation with cuts/additions/threshold.
+Validate the proposed policy before effects and display the policy change for
+group approval. Remove the group-backers rejection only when the actual receipt
+path is available.
+
+There is no inspected standard `/multisig/vrt` handler or Python registry-rotation
+CLI. Use existing `/multisig/ixn` or `/multisig/rot` approval for the exact issuer
+anchor, with the VRT evidence supplied separately and verified before signing.
+Prove the binding between both parts. Do not invent a TS-only route and label
+it Python CLI compatibility. Keep establishment-only anchoring distinct from
+registry management rotation.
+
+**PR 24: issuance/revocation and completion.** Select BIS/BRV from accepted
+registry mode and historical management state. Existing issuance/revocation
+coordination must validate the actual embedded ilk and relationships. Complete
+three separate obligations: group authority over the issuer anchor, required
+issuer KEL witness evidence, and TEL backer quorum with completed dissemination.
+None alone establishes remote acceptance.
+
+Exercise a nonempty roster and a real threshold, change the backer roster
+between issuance and revocation, then replay both states to a fresh observer.
+The old event retains its original authorized cohort. Use existing protocol
+tests for signature/ordering invariants; add focused regressions only for the
+accepted-coordinate and partial-proof bugs and the new concrete owner.
+
+Inspected Python main, 1.2.x and 1.3.x do not automatically produce TEL backer
+receipts; their Tevery comments disable that cue path. Python Registrar's
+witness progression does not implement it. Qualify TS backer services against
+real Python observer intake. A helper invoking the unmodified Python signer
+can independently produce proof bytes, but must be labeled a Python API driver,
+not a native autonomous backer service.
+
+### Phase G: native-v2 credential CLI — PRs 25–30
+
+**PR 25: production intake and recovery.** Compose the existing RegistryObserver
+into ordinary parsed runtime ingress for `rip`/`bup`, sharing the correct public
+KEL and native registry store. Keep its validation separate from legacy Tevery.
+Give missing inception/anchor/order dependencies explicit progression on relevant
+input and after reopen, discovering foreign registry work from durable escrows
+without requiring local aliases. Preserve source-seal hints and verify them
+against accepted, witnessed KEL evidence. Preserve injected/owned/readonly store
+lifetimes. Provide native registry replay/export through existing input/output
+paths. Remove the need for a custom `/_registry` HTTP branch or direct
+accepted-row writes in feature tests.
+
+**PR 26: explicit composition and persisted disclosure state.** At command
+composition, select legacy or native-v2 owners explicitly. Proposed input is
+`--protocol v1|v2` for registry/credential authoring and any ambiguous store
+selection; do not infer body version from package version or `--gvrsn`.
+Keep `vdr.rgy` and `acdc.rgy` concrete. No generic registry adapter or service bag.
+
+Retain the exact credential, event and authorized disclosure opening needed
+after restart; the blinded event alone cannot recreate an opening.
+Reuse evidence stores where their contracts fit; keep local disclosure custody
+separate from public registry rows, using a narrow typed owner for missing
+records. Do not expose openings in routine logs or broadcast undisclosed
+credential content.
+
+Distinguish prepared/staged, anchored and accepted state in command output.
+Persist preparation before anchor coordination and recover deterministically
+across separate KEL/registry environments; do not claim a cross-database atomic
+transaction. Never generate a new nonce/event on a resumed operation.
+
+**PR 27: single-identifier native authoring.** Expose native registry inception,
+credential construction/issuance, revocation/state changes, list and status using
+existing `regcept`, credential builders and `Registry.blind`. `vc create --protocol v2` constructs and issues; `vc revoke --protocol v2` commits the native
+`revoked` state. Validate schema, issuer, registry and disclosure inputs before
+local signatures or durable creation. Complete real KEL anchoring, witness
+obligations and evidence publication.
+
+Export/import genuine-v2 credentials, accepted registry chains, necessary KEL
+evidence and authorized disclosure material through ordinary CLI/runtime intake.
+A staged body or local alias is not an accepted chain. Preserve ordering and
+original signed bytes. Use explicit export/replay to a fresh receiver; this does
+not add subscriptions, automatic freshness guarantees or a synchronization service.
+
+**PR 28: group authoring.** Reuse standard `/multisig/ixn` or `/multisig/rot`
+approval for the exact `rip`/`bup` anchor seal. Distribute the corresponding
+native event and authorized support separately; members validate its identity,
+schema/state relationship and anchor before signing. Reuse group KEL authority,
+threshold and witness completion; keep native registry acceptance with its
+existing engine. Do not invent `/multisig/rip` or overload legacy VCP/ISS/REV.
+Resumption selects the original proposal and retained opening after a member
+has already consumed its notification.
+
+**PR 29: native IPEX.** Select the native proof-building and verification owners
+for all six CLI IPEX verbs. Openers select their protocol explicitly; responses
+derive it from the accepted predecessor and reject a contradictory flag.
+Grant/admit must use native accepted-chain
+and disclosure evidence, not legacy `iss`/`anc` assumptions. Distinguish EXN
+acceptance from credential wallet acceptance and prove both. Persist received
+native credential/disclosure selection for later list/export/presentation;
+accepting an EXN does not imply possession of an undisclosed full credential.
+Keep recipient and group fanout behavior consistent with PR 16.
+
+For native group IPEX, verify the existing v1 `/multisig/exn` coordination
+envelope carrying a genuinely v2 child with its original nested evidence.
+The inspected v2 nested-multisig contract permits only KEL/endpoint routes;
+do not silently enable a v2 `/multisig/exn` wrapper. Body and attachment versions
+remain independent and their admissible combinations require exact tests.
+
+**PR 30: presentation and state changes.** Expose domain-named native operations
+such as `vc registry blind --protocol v2 --said ... --state ...`,
+`present --grant ...` and `vacate`, composing existing methods. Provide
+presentation-registry creation and integrate presentation preparation into grant
+orchestration. Complete holder/group presentation through its registry and anchor,
+retaining the issuer's independent state-change semantics. Validate the referenced grant and
+authorized holder before a CLI presentation commitment; library syntax checking
+alone is insufficient. Presentations bind the grant and its receiver cutoff.
+A vacuous update preserves the prior binding; it is not credential revocation.
+Reuse supported disclosure/Mapper forms without adding new operators or porting
+reference stubs. Cover supported command forms with focused owner tests.
+
+### Phase H: bounded actual-peer confidence — PR 31
+
+Kent explicitly requested sufficient happy-path interoperability with limited,
+justified sad paths. Build a small scenario set, reusing maintained helpers and
+existing tests; do not multiply every feature by every transport, threshold,
+runtime and Python version. Use HTTP for the new end-to-end cases; retain the
+existing transport suite for TCP/lifetime coverage.
+
+The additions have five scenario families, not a Cartesian product:
+
+| Case                                        | Focused happy path                                                                                                                                                                                                                               | Independent interoperability evidence                                                                                                                                                                                                                                |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| N1: native CLI lifecycle                    | Independent Tufa group issuer/holder/verifier stores complete registry inception, issue, IPEX delivery/admit, presentation, vacate and issuer revocation. Use one ordinary and one establishment-only anchor, with a reopen before presentation. | Real Python witnesses/mailbox where those roles are implemented; Tufa public commands and ordinary ingress, without the custom registry endpoint or direct row seeding. This proves CLI composition, not Python recipient parity by itself.                          |
+| N2: native evidence in both directions      | Python authors native registry/credential evidence for ordinary Tufa import/intake; Tufa CLI authors genuine-v2 evidence for Python's implemented registry/disclosure vetting APIs.                                                              | Unmodified pinned main, live Python construction/verification and independently owned state; assert body identity, authentic anchors, disclosed state and accepted state where the API actually accepts events. No historical fixture-only pass.                     |
+| N3: native IPEX in both directions          | One representative grant/admit conversation in each direction using real Python v2 APIs, including a disclosed subset and presentation proof. Reuse N1's group CLI orchestration and existing verb tests.                                        | Python-produced proofs are verified by Tufa; Tufa-produced nested proofs and grants are verified by Python. Assert recipient/credential state as well as transport/EXN completion, labeling any narrower Python proof-verification result accurately.                |
+| B1: group-backed lifecycle to Python        | Tufa group issuer uses separate real backer processes with a nonempty roster and meaningful threshold: VCP -> BIS -> VRT -> BRV. Rotate the roster between issuance and revocation, then replay to a fresh Python observer.                      | Run the same compact verifier case against main, 1.2.x and 1.3.x; each parses original TEL plus real backer/source proofs and reaches issued then revoked state. Assert the historic management tuple as well as the final status.                                   |
+| B2: Python-produced backed evidence to Tufa | Python's real constructors/signers produce a short VCP/BIS/VRT/BRV chain; ordinary Tufa CLI/runtime ingestion reaches matching accepted/revoked state.                                                                                           | Reuse the three pinned profiles and their genuine crypto/parser APIs, with no TS-built fixture substituted for Python output. A minimal API driver is allowed; it must not patch reference code, preaccept rows, or claim to be an autonomous KERIpy backer service. |
+
+Use only a few targeted failure checks for this expansion:
+
+- One altered child/anchor proof must not become an accepted native credential.
+  Reuse an existing real-verifier regression if it already exercises the new path.
+- Withhold one required backer contribution, observe honest pending state, reopen
+  and deliver it; the same event must complete. This also checks the concrete
+  partial-proof recovery bug without a separate broad failure matrix.
+- Keep the accepted-management-coordinate regression local to Tevery; raw or
+  escrowed management evidence must not authorize a historical backer cohort.
+
+Existing threshold, duplicate-index, wrong-signer, cancellation and ordering
+tests remain relevant; do not reproduce all of them as new multi-process interop
+scenarios. Add another negative only for a newly demonstrated defect.
+
+Native-v2 evidence uses main. The old peer profiles are tested on their legacy
+lane, without attempting to downgrade native credentials. At the inspected main
+pin, Python's production parser still rejects nonempty ACDC ilks and its native
+KLI path is incomplete. Use actual supported APIs for N2/N3 and report exactly
+which operations are proof verification versus full receiver acceptance.
+Recheck that limitation at the execution pin. Do not patch Python or seed its
+accepted registry rows to make a nonexistent foreign-intake path appear complete.
+TS public intake and CLI composition must pass regardless of that upstream gap.
+This is a documented interoperability boundary, not permission to skip an
+implemented Python capability or count an unexecuted assertion as passed.
+
+PR 31 closes the actual-peer matrix, using public CLI/protocol intake and
+independent stores rather than seeding accepted rows:
+
+| Scenario               | Required evidence                                                                                                                                                                                                                                         |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Native peer identities | Unmodified main, selected 1.2.x and selected 1.3.x each execute with verified imports; fork results are separate.                                                                                                                                         |
+| TEL both directions    | TS-generated v1 evidence accepted by each peer; peer-generated issuance/revocation accepted and replayable by TS.                                                                                                                                         |
+| Late observer          | Fresh state obtains issuer KEL, registry and credential TEL, reaches issued then revoked, reopens and remains revoked.                                                                                                                                    |
+| Wire combinations      | All three peer families accept supported v1 body/v1 genus. Main/TS exercise supported v1 body/v2 genus and genuine v2; 1.2/1.3 unsupported-v2 rejection is a negative test, not an expected acceptance cell. Unsupported downgrade is explicitly refused. |
+| Transport              | Actual HTTP and supported TCP paths; old witness-mailbox polling, not only standalone fork-mailbox APIs.                                                                                                                                                  |
+| Multisig roles         | TS proposer/Python approver and Python proposer/TS approver where actual reference commands exist; independent member stores.                                                                                                                             |
+| Complete lifecycle     | Registry -> issue -> apply/offer/agree/grant/admit -> revoke -> holder/observer revoked state; separate spurn path.                                                                                                                                       |
+| Threshold/topology     | Existing single/group directions, witnessed/delegated setups and a weighted threshold with a non-required absent member.                                                                                                                                  |
+| Negative/recovery      | Tampered or missing child proof, wrong issuer/anchor, duplicate indices, partial signatures, hostile ordering, restart and stale replay.                                                                                                                  |
+| Operator/store         | Config no-write failures, cleanup Python reopen, encrypted-store compatibility and initialization intent.                                                                                                                                                 |
+
+Python-main apply/offer/agree CLI files and some group-join recipient handlers
+are stubs at inspected references. Test real Python protocol ingestion for
+those lanes and actual KLI commands where implemented. Label CLI, protocol and
+fixture evidence separately. Do not patch the reference silently, claim full KLI
+command parity from TS-only tests, or make a TS feature imitate an upstream stub.
+Any required lane blocked by a genuine reference defect must be reported with
+its exact source and reproducer; do not count it as passing.
+The broad negative/recovery row above is an existing regression boundary, not a
+request to multiply the five added interop families. Preserve its current useful
+coverage and add only the limited cases justified here.
+
+### Reconciliation dispositions beyond the selected work
+
+The old Gate F/G messaging, mailbox and challenge gaps are stale; those commands
+and interop tests now exist. Generic `fetchTsgs`, DB provider extraction, broad
+Komer/Suber rewrites and passcode-derivation replacement have no newly established
+need. Preserve affected existing regressions and qualify touched rows/escrows.
+Do not create work from a symbol-name mismatch or historical unchecked box.
+
+The init correction and AEID atomicity gate above are the additional significant
+findings selected from that review. AEID atomicity is a first-principles custody
+requirement even where Python has the same sequential-write pattern; it is not
+misrepresented as a missing Python port.
+
+## PR review, validation and documentation discipline
+
+Each PR description states the concrete before/after behavior, ownership,
+reading order, relevant Python source/version, deliberate divergence, executed
+checks and unqualified limits. Include tests/docs in review size. Use the
+repository's human-oriented commit workflow when execution is authorized.
+Attach each created PR to the execution chat and finish it before its successor.
+
+Run the smallest tests capable of falsifying each change, then the affected
+maintained owners. Keep formatting/lint/type/quality/manifest/changeset checks
+appropriate to the touched paths. Use [PR test scope](../reference/PR_TEST_SCOPE.md):
+exact-head local credit only for tests actually run; select relevant interop and
+package checks. Every PR needs a release-impacting or empty changeset.
+
+Existing owner tests cover most protocol/lifetime boundaries. Extend them where
+possible. New fault, actual-peer or subprocess tests are justified by the specific
+gaps above. Preserve participant topology and independent cryptographic/storage
+oracles. Do not replace interoperability with mocks, reduce witnesses/members to
+obtain a pass, or add tests that merely assert a new helper's internal shape.
+
+Use disposable test state. Native-heavy qualification on this Mac should use
+the established Linux/named-volume setup without macOS LMDB bind mounts. Before
+Python pytest/CLI execution, follow the workspace's KERIpy test skill. Resource
+exhaustion or a crashed runner is not a failed assertion or passing evidence;
+repair the environment without changing protocol limits to hide it.
+
+Keep documentation minimal:
+
+- Update the owning contract/help only when behavior changes.
+- Correct the directly conflicting threshold policy once.
+- Update compatibility entries only when the corresponding capability is proven.
+- Keep detailed commands and review discussion in PRs/CI artifacts.
+- Maintain no per-PR plan diary, coverage ledger or duplicated ENCTX tracker.
+- Produce one concise final release report with source/artifact/reference identity,
+  results, failures/skips and supported-profile limits.
+
+After every final file/Git-state mutation under the workspace, run the prescribed
+ENCTX maintenance and require healthy/no-stale-source results. Do not silently
+change source selection or indexing policy.
+
+## Final qualification and 2.0.0 publication — PR 32 and release
+
+1. **Prepare exactly 2.0.0 for all three packages.** Reconcile accumulated
+   changesets, including explicit CESR major-version intent for this coordinated
+   release. Do not accidentally publish CESR 1.x or advance another package to
+   3.0.0. Use `release:version`, `manifest:sync/check` and `version:check`; inspect
+   Deno mirrors, npm lock entries, generated modules and internal dependencies.
+   The Changesets version PR is version preparation, not publication.
+2. **Qualify the final candidate.** After implementation and version inputs are
+   settled, run the complete maintained KERI/CESR/Tufa and actual-peer matrix,
+   including required manual delegation and witness endurance owners. The prior
+   baseline excluded manual endurance; do not carry that exclusion silently.
+   Use ordinary PR CI and authorized local/manual execution; maintainer-only
+   hosted dispatch follows its explicit authorization rule.
+3. **Qualify exact packed artifacts.** Test the declared Node minimum (currently
+   20.3), selected current Node, applicable established runtime/platform profiles,
+   and source Deno. Prove strict NodeNext declarations without `skipLibCheck`,
+   crypto/tamper refusal, CLI/HTTP, real TCP and >16 MiB LMDB read/reopen/owned
+   bytes. Install compiler tools after runtime smoke. Test all three tarballs
+   together with their actual declared dependency graph. Record qualified
+   tarball digests. The published artifact must match that qualified artifact;
+   if the release workflow rebuilds, prove deterministic equality or run the
+   required installed-artifact qualification on the workflow-built tarball
+   before publication.
+4. **Repair before release.** A regression receives a focused fix and relevant
+   retesting. Record the exact final clean source, matrix and artifacts. If a
+   merge changes qualified source, requalify affected evidence; do not call
+   pre-change results final. Run the broad battery again when the repair changes
+   shared protocol/runtime behavior or leaves cross-feature uncertainty.
+5. **Merge reviewed version preparation.** Verify clean, synchronized master
+   and release commit; inspect live npm versions and existing remote tags before
+   mutation. Never rewrite an existing published version/tag.
+6. **Publish CESR first.** Create the annotated `cesr-v2.0.0` tag at the verified
+   release commit and push that tag explicitly. Wait for the package workflow,
+   then verify `cesr-ts@2.0.0` and its exact registry artifact.
+7. **Publish KERI second.** Verify its CESR dependency resolves to the intended
+   published version, then explicitly push `keri-v2.0.0` at the same verified
+   release commit. Verify `keri-ts@2.0.0`.
+8. **Publish Tufa third.** Verify both dependency versions are available, then
+   explicitly push `tufa-v2.0.0`. Verify `@keri-ts/tufa@2.0.0`. Use the existing
+   package tag workflows and shared npm release workflow.
+9. **Verify publication, not just workflow success.** Check npm metadata,
+   internal dependencies and qualified/workflow/npm/GitHub tarball equality for
+   every package. Perform clean registry-only installs and installed Tufa/native/runtime/
+   declaration checks. Source tarball smoke does not prove published dependency
+   resolution. Verify all three GitHub releases and assets separately.
+10. **Finish with evidence.** Report the three published versions and links,
+    source/tag/artifact identity, actual peer pins and qualification results.
+    Preserve any failed release side effect for targeted recovery; do not
+    republish another artifact under an existing version. Confirm final clean
+    repository and healthy ENCTX state.
+
+If time expires, report the exact completed PR, remaining gate and any active
+work. Do not reduce scope, relabel a skip, publish a partially qualified release
+or claim the complete multisig lifecycle from transport success alone.
