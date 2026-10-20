@@ -1,55 +1,121 @@
-/** Finite configured introduction bootstrap, shared by environment creation and inception. */
-import { call, type Operation } from "effection";
-import { ValidationError } from "../core/errors.ts";
+/** Finite introduction/authentication composition shared by environment creation and inception. */
+import { type Operation, scoped, spawn } from "effection";
 import type { Baser } from "../db/basing.ts";
-import { createAgentRuntime, runAgentRuntimeUntil, runtimeHasPendingWork } from "./agent-runtime.ts";
-import { hasWellKnownAuth } from "./authenticating.ts";
+import { Authenticator, hasWellKnownAuth } from "./authenticating.ts";
 import type { Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
-import { oobiTerminalState } from "./oobiery.ts";
-import type { RuntimeClock } from "./runtime-clock.ts";
+import { Oobiery, oobiTerminalState } from "./oobiery.ts";
+import { createProtocolProcessor } from "./protocol-processing.ts";
+import { runtimeTurn } from "./runtime-turn.ts";
+
+/** Expected remote outcomes; infrastructure and cleanup failures still propagate. */
+export type BootstrapResult =
+  | { kind: "complete" }
+  | { kind: "failed"; failures: { url: string; state: string }[] }
+  | { kind: "timeout"; pending: string[] };
+
+/** In-memory selection mirrors the two durable work families, including overlapping URLs. */
+interface BootstrapWork {
+  oobis: Set<string>;
+  woobi: Set<string>;
+}
 
 /**
- * Resolve queued OOBIs and configured well-known authentication before continuing.
+ * Resolve this command's pending introductions and well-known authentication.
  *
- * This ownership cut preserves the existing whole-runtime completion predicate,
- * global failed-OOBI check and 30-second deadline. The approved bootstrap plan's
- * next cut replaces them with explicit Oobiery/Authenticator composition and
- * selected-work completion. KERIpy init composes those concrete owners directly.
+ * The command is the sole OOBI/authentication worker owner for its borrowed Habery.
+ * Select existing oobis/coobi/moobi and woobi/mfa rows, then include children and
+ * introductions queued by processing them. Old terminal rows alone select no work.
+ * Surviving coobi/mfa/moobi rows resume through their ordinary component owners.
+ * A queued attempt takes precedence over any older terminal/authorization row.
+ * The actual table family selects its terminal evidence: a well-known URL may
+ * be an ordinary introduction, a separate authentication, or both.
  *
- * @param hby Borrowed identity/configuration and Baser; kept open through cleanup.
- * @param http Borrowed request implementation, shared with the calling workflow.
- * @param clock Borrowed transport/escrow clock; the current runtime deadline uses wall time.
- * @throws Remote resolution/authentication refusal, worker, deadline and cleanup
- * failures propagate. This operation closes its own runtime, never the Habery.
+ * Like KERIpy init, compose Oobiery and Authenticator directly. Resolution means
+ * that Oobiery processed the response, not that all its protocol evidence was
+ * accepted. KEL/reply escrow processing lets evidence arriving in separate
+ * responses unlock introductions and authentication's required controller state.
+ * Escrow contents never determine bootstrap completion. Later operations must
+ * check the accepted evidence they actually require.
+ *
+ * @param hby Borrowed identities/configuration/Baser; kept open through cleanup.
+ * @param http Borrowed request implementation used by OOBIs and authentication.
+ * @param options Finite positive elapsed deadline, default 30 seconds.
+ * @returns Selected terminal success, refusal or deadline after all children/I/O join.
+ * @throws Invariant, parser, storage, transport and cleanup failures propagate unchanged.
  */
-export function resolveBootstrap(hby: Habery, http: HttpClient, clock: RuntimeClock): Operation<void> {
-  return call(function*() {
-    if (hby.db.oobis.cnt() === 0 && hby.db.woobi.cnt() === 0) return;
-    const runtime = yield* createAgentRuntime(hby, http, clock);
-    try {
-      yield* runAgentRuntimeUntil(runtime, () => !runtimeHasPendingWork(runtime), {
-        timeoutMs: 30_000,
-        pollMailbox: false,
-      });
-      if (hby.db.eoobi.cnt() > 0) throw new ValidationError("Bootstrap OOBI resolution failed.");
-      const urls = Array.isArray(hby.config.wurls)
-        ? hby.config.wurls.filter((entry): entry is string => typeof entry === "string")
-        : [];
-      assertWellKnownAuth(hby.db, urls);
-    } finally {
-      yield* runtime.close();
+export function resolveBootstrap(
+  hby: Habery,
+  http: HttpClient,
+  { timeoutMs = 30_000 }: { timeoutMs?: number } = {},
+): Operation<BootstrapResult> {
+  return scoped(function* bootstrapScope() {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+      throw new RangeError("Bootstrap timeout must be finite and positive");
+    }
+    const selected: BootstrapWork = { oobis: new Set(), woobi: new Set() };
+    collectPendingUrls(hby.db, selected);
+    if (selected.oobis.size === 0 && selected.woobi.size === 0) return { kind: "complete" };
+
+    const protocol = createProtocolProcessor(hby);
+    const oobiery = new Oobiery(hby, protocol, protocol.rvy, http, protocol.cues);
+    oobiery.registerReplyRoutes();
+    const authenticator = new Authenticator(hby, http);
+    yield* spawn(() => oobiery.oobiDo());
+    yield* spawn(() => authenticator.authDo());
+    yield* spawn(function*() {
+      while (true) {
+        protocol.processKelReplyEscrowsOnce();
+        yield* runtimeTurn();
+      }
+    });
+    const deadline = performance.now() + timeoutMs;
+    while (true) {
+      collectPendingUrls(hby.db, selected);
+      const result = inspectBootstrap(hby.db, selected);
+      if (result) return result;
+      if (performance.now() >= deadline) {
+        const pending: string[] = [];
+        for (const kind of ["oobis", "woobi"] as const) {
+          for (const url of selected[kind]) if (!bootstrapUrlComplete(hby.db, url, kind)) pending.push(url);
+        }
+        return {
+          kind: "timeout",
+          pending: [...new Set(pending)],
+        };
+      }
+      yield* runtimeTurn();
     }
   });
 }
 
-/** Inspect successful authorization and existing terminal detail without acquiring runtime services. */
-function assertWellKnownAuth(db: Baser, urls: readonly string[]): void {
-  const failed = urls.filter(url => !hasWellKnownAuth(db, url));
-  if (!failed.length) return;
-  const details = failed.map(url => {
-    const terminal = oobiTerminalState(db, url);
-    return `${url} (${terminal.record?.state ?? terminal.status})`;
-  }).join(", ");
-  throw new ValidationError(`Bootstrap well-known auth failed: ${details}`);
+/** Select actual queued/in-flight records; Oobiery owns multi-OOBI child completion. */
+function collectPendingUrls(db: Baser, selected: BootstrapWork): void {
+  for (const store of [db.oobis, db.coobi, db.moobi]) {
+    for (const [keys] of store.getTopItemIter()) if (keys[0]) selected.oobis.add(keys[0]);
+  }
+  for (const store of [db.woobi, db.mfa]) {
+    for (const [keys] of store.getTopItemIter()) if (keys[0]) selected.woobi.add(keys[0]);
+  }
+}
+
+/** Require current terminal evidence; a saved authorization cannot mask a queued retry. */
+function bootstrapUrlComplete(db: Baser, url: string, kind: "oobis" | "woobi"): boolean {
+  if (oobiTerminalState(db, url, kind).status !== "resolved") return false;
+  return kind === "oobis" || hasWellKnownAuth(db, url);
+}
+
+/** Decide only from selected URLs; absence of queue rows alone never establishes success. */
+function inspectBootstrap(db: Baser, selected: BootstrapWork): BootstrapResult | null {
+  const failures: { url: string; state: string }[] = [];
+  let pending = false;
+  for (const kind of ["oobis", "woobi"] as const) {
+    for (const url of selected[kind]) {
+      const terminal = oobiTerminalState(db, url, kind);
+      if (terminal.status === "failed") failures.push({ url, state: terminal.record?.state ?? "failed" });
+      else if (!bootstrapUrlComplete(db, url, kind)) pending = true;
+    }
+  }
+  if (failures.length) return { kind: "failed", failures };
+  return pending ? null : { kind: "complete" };
 }

@@ -569,6 +569,18 @@ Partial failure clears in-flight state, preserving retry ownership and accepted
 events. Errors propagate without a local busy/limit requeue path. Resolved means
 retrieval completion, not independent acceptance of every incoming event.
 JSON/schema documents collect and validate without admission credit or a size cap.
+Init/incept compose finite OOBI/authentication work without AgentRuntime: minimal
+protocol intake, Oobiery, Authenticator and KEL/reply retry. Select queued/in-flight
+records and resume surviving coobi/mfa/moobi work through their owners. Ordinary
+resolution reports response processing, even when protocol evidence remains
+escrowed. Later workflows check their required accepted evidence. Authentication
+reports the current attempt's authorization; historical results cannot hide new
+work or refusal. Escrows, including older proofs about the same AID, do not gate
+bootstrap completion. KEL/reply retry allows separately arriving evidence to
+unlock introductions and authentication, without inferring protocol dependencies.
+One scope checks a monotonic deadline and cancels/joins workers and HTTP before
+returning a typed outcome; command success follows Habery closure. Delegated
+inception retains its separate host composition.
 Authenticator performs status-only GETs; cleanup failure cannot publish successful
 authorization. It accepts actual clock/HTTP services without Baser policy identity.
 

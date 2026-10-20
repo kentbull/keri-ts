@@ -57,6 +57,15 @@ reload/cleanup. Missing databases fail; normal path preparation may create empty
 directories. Results include `status: "complete"` only after closure, or
 `status: "failed"` with completed deletions preserved.
 
+Initialization and inception now complete selected introduction/authentication
+work, including resumed records and multi-OOBI children, without waiting for whole
+agent quiescence. Historical failures do not fail new work; a fresh authentication
+refusal is not hidden by old authorization. Ordinary OOBI resolution means the
+response was processed, not that every contained proof was accepted. Protocol
+escrows remain available for their owners to retry; later operations must check
+their required accepted evidence. Authentication retains its controller-state and
+authorization requirements, with unfinished attempts reaching the finite deadline. Both commands print final success only after owned stores close.
+
 ## Multisig publication
 
 Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`

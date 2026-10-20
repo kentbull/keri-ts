@@ -34,9 +34,9 @@ export interface ProtocolDispatchResult extends DispatchResult {
  * Dispatch to synchronous semantic owners and publish their committed output.
  *
  * KERIpy supplies parsers with concrete Kevery/Revery/Exchanger owners. Domain
- * writers decide and commit without suspension; EXN file preparation and handlers
- * run in their input's operation. Independent inputs and escrow scans may progress
- * during that I/O. This owner captures query replies before application delivery
+ * writers decide and commit without suspension; exchange durability and application
+ * handlers run in their input's operation. Independent inputs and escrow scans may
+ * progress during that I/O. This owner captures query replies before application delivery
  * and registers shared semantic routes once; it owns no lock, input queue or transport.
  */
 export class ProtocolProcessor {
@@ -164,11 +164,31 @@ export class ProtocolProcessor {
     }
   }
 
+  /**
+   * Retry only KEL/reply dependencies and publish their committed cues.
+   *
+   * Finite introduction bootstrap needs these synchronous owners, without
+   * advancing unrelated exchange, credential or registry application work.
+   * Full host escrow processing retains its existing family/publication order.
+   */
+  processKelReplyEscrowsOnce(): void {
+    try {
+      this.advanceKelReplyEscrows();
+    } finally {
+      this.publishCues();
+    }
+  }
+
+  /** Shared synchronous KEL/reply retry unit; the invoking composition owns publication. */
+  private advanceKelReplyEscrows(): void {
+    this.kvy.processEscrows();
+    this.rvy.processEscrowReply();
+  }
+
   /** Publish synchronous escrow facts before progressing asynchronous EXN recovery. */
   private *advanceEscrows(): Operation<void> {
     this.kvy.kramer?.prune();
-    this.kvy.processEscrows();
-    this.rvy.processEscrowReply();
+    this.advanceKelReplyEscrows();
     this.tvy?.processEscrows();
     this.vry?.processEscrows();
     this.registry?.processEscrows();
