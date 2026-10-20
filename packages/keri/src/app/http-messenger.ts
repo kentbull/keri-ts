@@ -132,7 +132,7 @@ export class HTTPMessenger {
       yield* consumeMailboxSse(
         response,
         new AbortController(),
-        function*(message) {
+        function* processMailboxQueryMessage(message) {
           yield* processMessages((signal) => chunkBytes(message.msg, { signal }), protocol, kvy, { signal });
         },
         this.clock,

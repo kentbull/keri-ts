@@ -202,7 +202,10 @@ sends require full successful response EOF, refuse redirects without replay and
 wrap only native fetch/body failures in TransportError with their original cause.
 HTTPMessenger.query owns its one-frame-at-a-time response processing directly;
 postCesr/attemptPostCesr have no response callback. requestFrame lends response
-metadata/body only within that request scope. Caller-owned bounded SSE consumers retain their response lifetime. Poster contains
+metadata/body only within that request scope. Bounded SSE consumers remain immediately awaited in their source owner, preserving
+backpressure, cursor ordering and consumer-plus-cleanup failures. A pull-only borrowed
+iterator cannot observe consumer failure; add no queue/task or new closing protocol
+solely to remove this local call. Named query/cursor consumers retain their response lifetime. Poster contains
 TransportError only around actual send calls; unknown errors still propagate.
 postCesr sends successive framed POSTs; KERIpy714 bulk PUT is a documented wire difference.
 Preserve authentication through media retries. Post-header failure terminates the

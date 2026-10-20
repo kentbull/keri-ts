@@ -922,7 +922,7 @@ export class MailboxPoller {
         mailboxFetchTimeoutPolicy(this.timeoutPolicy),
         this.http,
         this.clock,
-        function*(message) {
+        function* deliverThenAdvanceCursor(message) {
           yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
           self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
         },
