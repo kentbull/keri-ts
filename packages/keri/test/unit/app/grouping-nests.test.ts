@@ -149,7 +149,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
           const embedded = (serder.ked!.e as { d: string }).d;
           assertEquals(left.db.maids.get([embedded]).map((p) => p.qb64), [alice.pre]);
           delivered = serder;
-          return evt;
+          return { ...evt, kin: "msg" };
         };
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test-transmission"] };
@@ -221,7 +221,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               assertEquals([seals[0].i.qb64, seals[0].s.num, seals[0].d.qb64], [issuance.pre, 0n, issuance.said]);
             }
           }
-          return evt;
+          return { ...evt, kin: "msg" };
         };
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
@@ -785,7 +785,7 @@ for (const route of ["ixn", "vcp"] as const) {
         });
         try {
           runtime.postman.send = function(evt) {
-            return evt;
+            return { ...evt, kin: "msg" };
           };
           runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
@@ -916,7 +916,7 @@ for (const kind of ["apply", "grant"] as const) {
               const serder = new SerderKERI({ raw: evt.msg });
               assertEquals(serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
               outgoing = { serder: serder, message: evt.msg };
-              return evt;
+              return { ...evt, kin: "msg" };
             };
             runtime.postman.wait = function*(evt) {
               return { kin: "sent", evt, deliveries: ["test"] };
