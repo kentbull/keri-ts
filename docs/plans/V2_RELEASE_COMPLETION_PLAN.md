@@ -48,6 +48,8 @@ The scope includes:
 - Legacy group backer registries with actual backer receipts and rotation.
 - Legacy TEL replay and real old-peer HTTP/mailbox reachability.
 - Two bounded reconciliation findings concerning initialization and AEID changes.
+- Move the Sally-style verifier application, command and workflow store into Tufa;
+  retain protocol Verifier, evidence validation and reusable IPEX operations in keri-ts.
 - A final ProtocolProcessor assessment and cohesive source organization within all three packages.
 - Fresh qualification, accumulated-changeset changelogs, prominent breaking-change
   release notes and a dedicated migration document, withdrawal of the three
@@ -379,7 +381,9 @@ tests until the end.
 | 28      | Coordinate exact native-v2 anchors through group approval and fanout                                   | 13, 15, 27  |
 | 29      | Connect native-v2 CLI IPEX delivery and wallet acceptance                                              | 16, 28      |
 | 30      | Complete native-v2 presentation and vacuous-update workflows                                           | 28, 29      |
-| 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30       |
+| 30a     | Expose the narrow public protocol operations required by the Tufa verifier application                 | 30          |
+| 30b     | Move the verifier application, command, workflow store and maintained tests into Tufa                  | 30a, 12c    |
+| 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30b      |
 | 31a     | Assess remaining ProtocolProcessor responsibility; remove it if explicit dependencies suffice          | 31          |
 | 31b     | Organize CESR sources and cohesive large-file units for human navigation                               | 31a         |
 | 31c     | Organize KERI protocol/application sources and cohesive large-file units                               | 31b         |
@@ -987,6 +991,57 @@ alone is insufficient. Presentations bind the grant and its receiver cutoff.
 A vacuous update preserves the prior binding; it is not credential revocation.
 Reuse supported disclosure/Mapper forms without adding new operators or porting
 reference stubs. Cover supported command forms with focused owner tests.
+
+### Verifier application ownership — PRs 30a–30b
+
+Implement the accepted [Tufa verifier separation supplement](credentials/TUFA_VERIFIER_SEPARATION_PLAN.md)
+after credential features, before the actual-peer matrix, final ProtocolProcessor
+assessment, package organization and qualification. Recheck its inspected paths
+and exports against the completed feature work; skip an empty export PR if those
+operations are already public. The supplement's original planning-only status is
+superseded by Kent's instruction to include it in this execution goal.
+
+**PR 30a** exposes only existing reusable IPEX evidence operations, the grant route
+constant and the necessary transitional CLI parser through appropriate public
+entrypoints. Keep semantics unchanged and verify installed declarations and the
+browser-safe root. Do not add APIs merely to preserve an obsolete facade.
+
+**PR 30b** moves the Sally-style application, cue store and command atomically to
+Tufa, splitting workflow sequencing, business policy and webhook delivery into
+cohesive units as the supplement specifies. Remove original files and keri-ts
+application exports in the same PR; no re-exports, compatibility shims, sibling
+source imports or new dependency containers. Protocol Verifier, KEL/TEL/native-v2
+validation, accepted evidence, escrows and reusable IPEX operations remain in
+keri-ts. Tufa depends on public keri-ts APIs; never reverse that dependency or
+retain ProtocolProcessor solely for this consumer.
+
+Preserve current command and application behavior during relocation, including
+its explicit legacy-Reger profile. This move does not add native-v2 application
+verification, Sally parity, delivery guarantees, retries or durable outboxes.
+Existing local webhook delivery markers are application records, not KERI
+acknowledgements. Reproduced behavior defects justify a separately reviewed
+follow-up, not silent semantic changes during the move. Apply the close contract:
+the command owns its cue store and closes it before runtime/Habery; overall
+success follows required cleanup.
+
+Move the existing five agent cases and real issuer/holder/verifier CLI workflow
+without reducing topology. Retain protocol tests in keri-ts. Include one saved,
+protocol-valid credential refused by business policy without a webhook or change
+to protocol validity, one unsuccessful HTTP delivery and a focused cleanup-failure
+case. Update suite ownership, Tufa nested-test checking and maintained execution
+tasks with the move; do not leave deleted test paths or duplicate runs. This local
+CLI workflow is not a Python interoperability test. Run established peer cases
+only if shared protocol behavior changes.
+
+Installed coordinated tarballs must prove public imports/declarations, absence of
+the application from keri-ts, the Tufa runtime API and real cue-store lifecycle,
+and one `tufa verifier run --once` issuance to a loopback webhook. Preserve package
+build guards against bundled sibling source and direct native LMDB dependencies.
+Record removed APIs and replacement imports prominently in the 2.0.0 migration
+guide/release notes. Broad final qualification follows this move and all remaining
+implementation and organization work. Old keri-ts APIs and private formats impose
+no compatibility requirement; preserve protocol interoperability and document
+intentional breaks.
 
 ### Phase H: bounded actual-peer confidence — PR 31
 
