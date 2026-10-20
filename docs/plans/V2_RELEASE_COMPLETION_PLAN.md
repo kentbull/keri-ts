@@ -85,7 +85,7 @@ Current source establishes these gaps:
 | Logging               | debug/info use stdout; escrow diagnostic review remains deferred                                                                                                   | `src/core/logger.ts`, `docs/plans/PARITY_ROADMAP.md`                                           |
 | Configuration         | scalar/non-string URL entries disappear silently; later malformed fields can follow earlier writes                                                                 | `src/app/habbing.ts`                                                                           |
 | Thresholds            | both deployment caps are already configurable, with boundary tests                                                                                                 | `packages/cesr/src/primitives/tholder.ts`                                                      |
-| OOBI cleanup          | no command; ordinary Baser opening can initialize unrelated state                                                                                                  | `src/db/basing.ts`, `src/db/core/lmdber.ts`, Tufa endpoint command definitions                 |
+| OOBI cleanup          | exact-key command exists; replace its special store with ordinary Baser loading                                                                                    | `src/db/basing.ts`, `src/db/core/lmdber.ts`, Tufa endpoint command definitions                 |
 | Group VDR             | VCP/ISS exist, but proposal registration and completion differ from the working group paths                                                                        | `src/app/credential-workflows.ts`, `multisig-workflows.ts`, `src/vdr/credentialing.ts`         |
 | Group IPEX            | grant coordinates group initiation; the other verbs do not uniformly use it                                                                                        | `src/app/cli/ipex.ts`, `src/app/ipex-grouping.ts`                                              |
 | Revocation            | REV wire construction exists, but CLI VDR approval/issuance orchestration does not include it                                                                      | `src/app/grouping.ts`, `multisig-workflows.ts`                                                 |
@@ -359,7 +359,9 @@ tests until the end.
 | 12      | Prove AEID failure atomicity; repair only if the regression confirms the gap                           | 02          |
 | 12a     | Replace the ESSR file archive with ordered LMDB evidence and synchronous publication                   | 12          |
 | 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a         |
-| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12b    |
+| 12c     | Establish consistent database close failures and command completion                                    | 12b         |
+| 12d     | Move OOBI cleanup to ordinary Baser ownership and canonical pending table                              | 12c         |
+| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12d    |
 | 14      | Route or guard every group-capable CLI entry point before effects                                      | 13          |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14  |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15          |
@@ -533,36 +535,28 @@ both OOBI stores and existing records remain unchanged. Cover malformed
 This resolves the older ENCTX proposal's inconsistent statement about empty
 arrays in favor of its explicit collection-shape contract.
 
-**Existing-store access and cleanup.** Ordinary `createBaser({readonly:true})`
-is insufficient: path setup can create/fallback, and full Baser initialization
-binds tables and hydrates unrelated state. First add the smallest storage-owned
-seam that opens an existing resolved database and existing typed `oobis.` only.
-Reuse LMDBer/Komer and authoritative path knowledge; no generic DB editor,
-provider hierarchy or full-Habery maintenance mode. Refuse missing target/table,
-creation, silent path fallback and unrelated schema/version initialization.
-
-Then expose:
+**Existing-store access and cleanup.** PRs 09–10 introduced exact-key cleanup
+and a separate maintenance opener. PR 12d supersedes that ownership design:
+load an ordinary Baser and use its canonical `oobis` table, including KERIpy's
+`>` separator. Normal table initialization and habitat reload/cleanup are
+accepted startup effects. Do not promise that preview leaves all storage bytes,
+metadata or unrelated startup state untouched.
 
 ```text
 tufa oobi clean --name NAME [--compat] --head-dir DIR --key-file keys.json
 tufa oobi clean --name NAME [--compat] --head-dir DIR --key-file keys.json --apply
 ```
 
-Selection is a nonempty JSON array of exact string keys; deduplicate without
-altering bytes. Preview is read-only and shows the resolved target, selections
-and presence. Apply preflights all requested keys, deletes only those existing
-pending `oobis.` entries through typed removal and reports actual counts.
-Missing keys or delete failures exit nonzero. Sequential deletion is sufficient;
-on an actual mid-apply failure report completed and remaining work honestly,
-without claiming rollback. Do not add wildcard/age/URL heuristics or clear
-`woobi.`, `coobi.` or `roobi.`.
-
-Open no Keeper, Habery, Configer, Signator, payload archive or runtime. Add no
-passcode option. Preserve map-size/path conventions. Help and one short example
-state that the operator stops and backs up the service; the CLI performs no
-Docker/SSH/backup orchestration. Test missing-path non-creation, preview
-nonmutation, exact deletions, partial failure reporting, unchanged table
-inventory/version/unrelated rows and real Python-store reopening.
+Selection remains a nonempty JSON array of exact string keys, deduplicated
+without altering bytes. Preview does not delete selected rows. Apply preflights
+all requested keys, deletes only pending `oobis` rows and reports completed and
+remaining operations honestly. Missing keys or failures exit nonzero; close
+failure does not roll back completed deletions. Final success follows resource
+closure. Do not add wildcard/age/URL heuristics or clear other OOBI tables.
+Missing target storage must fail before ordinary loading can create a database.
+Keep generic LMDBer `openExisting` non-creating semantics separate from this CLI's
+ordinary Baser lifecycle. Open no Keeper, Habery, Configer or agent runtime.
+The operator stops and backs up the service; the CLI performs no orchestration.
 
 **Initialization.** Separate resolved init choices from prompt/open effects.
 Use hidden terminal input with correct restoration, or explicit noninteractive
@@ -682,6 +676,48 @@ report must state removals, the LMDB evidence owner, justified deviations, actua
 checks and whether this small upstream correctness improvement remains warranted.
 Split a PR further only when a real independently reviewable responsibility needs
 it; do not leave dead compatibility layers as a finished intermediate outcome.
+
+### Database lifecycle and OOBI ownership — PRs 12c–12d
+
+**PR 12c: close correctness.** Inspect LMDBer close/reopen, actual pinned lmdb-js
+and Effection implementation, and the affected owners before changing behavior.
+Retain `openExisting`, refusal to create missing storage/tables, and its clearing
+restriction. Shutdown failures propagate for every handle, independent of opening
+policy. Repeated close is harmless only when the wrapper knows closure succeeded;
+never classify arbitrary native failures as already closed. Failed close prevents
+reopen, reuse and directory removal. Model only the uncertainty the binding
+actually leaves, with a small explicit implementation rather than lifecycle
+frameworks or policy flags. Inspect `quiesceEnvTimers`: elapsed time is not proof
+of closure; retain a teardown drain only if source and focused runtime evidence
+justify it.
+
+Verify Effection's operation/cleanup failure semantics. Preserve both failures
+with minimal local handling where the runtime loses one, and attempt closure of
+all resources an affected owner owns. `tufa oobi clean` emits overall success
+only after its resources finish closing. Keep useful completed/remaining deletion
+reporting on failure without claiming rollback. Test ordinary and existing-only
+close failures, known-closed repetition, refused reopen/delete after close failure,
+simultaneous operation/cleanup failures, with CLI shutdown-failure output qualified in PR 12d. Use a
+small native-close fault boundary and real storage checks. Record binding limits
+and public behavior changes in the breaking-changes guide.
+
+**PR 12d: ordinary Baser cleanup.** Inspect KERIpy's Baser lifecycle and current
+CLI, then remove `openOobiStore`, `OobiStore`, dedicated options/exports, duplicate
+pending-table construction and tests enforcing the abandoned startup isolation.
+Use established Baser loading and `Baser.oobis`. Do not replace the opener with
+another maintenance mode, partial Baser, lazy schema or special loading bypass.
+Reassess path/default helpers and remove those with no remaining purpose; retain
+the separately required generic `openExisting` contract. Use the smallest target
+presence check compatible with ordinary loading. Normal table/metadata creation
+and habitat reloading/cleanup are accepted, including during preview.
+
+Retain exact selection, preview/apply, protected adjacent tables and truthful
+partial-failure reporting. Test through real Baser loading, missing-target refusal,
+canonical separator behavior and successful database reopening. Keep focused
+pinned-KERIpy coverage proving the proper pending table is selected and the
+resulting store reopens. Preserve PR 12c's close contract. Keep documentation
+minimal; report removed machinery, accepted startup effects, actual checks and
+remaining binding uncertainty. Both PRs precede final qualification and 2.0.0.
 
 ### Phase D: group credential lifecycle — PRs 13–16 and 20
 

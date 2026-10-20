@@ -58,6 +58,15 @@ pass both native metadata and emitted V1-format probes before reuse. A lockfile
 can retain older packages; inspect the imported addon. Map sizing respects explicit
 options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
+LMDBer joins native close completion and cancellation. Observable failures propagate
+for every handle; an uncertain wrapper exposes no usable env and cannot reopen
+or delete storage. Known-closed repetition is harmless. `openExisting` remains
+non-creating and cannot clear storage; this policy is independent from shutdown.
+Pinned lmdb-js 3.5.3's callback follows actual doClose, while its Promise can resolve
+early for deferred reads; its internal native-close catch is a binding limitation.
+The old arbitrary timer drain is removed. Explicit owners preserve simultaneous
+operation/cleanup failures and Habery attempts all owned closes.
+
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
 Pending-OOBI maintenance uses scoped `openOobiStore`, not Baser/Habery startup.

@@ -621,3 +621,29 @@ Deno.test("db/basing - an unaccepted candidate cannot inherit a zero witness thr
     }
   });
 });
+
+Deno.test("db/basing - failed acquisition preserves its error and the native close failure", async () => {
+  const originalReopen = Baser.prototype.reopen;
+  const acquisitionFailure = new Error("acquisition failed after opening");
+  const closeFailure = new Error("native close failed");
+  let path: string | null = null;
+  Baser.prototype.reopen = function*(options) {
+    yield* originalReopen.call(this, options);
+    path = this.path;
+    const native = this.env!;
+    const close = native.close.bind(native);
+    native.close = () =>
+      close().then(() => {
+        throw closeFailure;
+      });
+    throw acquisitionFailure;
+  };
+  try {
+    const error = await assertRejects(() => run(() => createBaser({ temp: true })), AggregateError);
+    assertEquals((error as AggregateError).errors, [acquisitionFailure, closeFailure]);
+    assertStrictEquals(error.cause, acquisitionFailure);
+  } finally {
+    Baser.prototype.reopen = originalReopen;
+    if (path) await Deno.remove(path, { recursive: true });
+  }
+});

@@ -488,6 +488,7 @@ export class Reger extends LMDBer {
 export function* createReger(options: RegerOptions = {}): Operation<Reger> {
   const reger = new Reger(options);
   let delivered = false;
+  let failure: { error: unknown } | undefined;
   try {
     const opened = yield* reger.reopen(options);
     if (!opened) {
@@ -495,7 +496,23 @@ export function* createReger(options: RegerOptions = {}): Operation<Reger> {
     }
     delivered = true;
     return reger;
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
-    if (!delivered) yield* reger.close();
+    if (!delivered) {
+      try {
+        yield* reger.close();
+      } catch (error) {
+        if (failure) {
+          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
+          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
+            cause: failure.error,
+          });
+        }
+        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
+        throw error;
+      }
+    }
   }
 }

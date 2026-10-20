@@ -79,10 +79,23 @@ export function* withExistingHabery<TResult>(
     },
   );
 
+  let failure: { error: unknown } | undefined;
   try {
     return yield* use({ hby });
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
-    yield* hby.close();
+    try {
+      yield* hby.close();
+    } catch (error) {
+      if (failure) {
+        // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
+        throw new AggregateError([failure.error, error], "Command and database close failed", { cause: failure.error });
+      }
+      // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
+      throw error;
+    }
   }
 }
 
@@ -122,10 +135,25 @@ export function* withAgentRuntime<TResult>(
       new FetchHttpClient(),
       systemClock,
     );
+    let failure: { error: unknown } | undefined;
     try {
       return yield* use({ hby, runtime });
+    } catch (error) {
+      failure = { error };
+      throw error;
     } finally {
-      yield* runtime.close();
+      try {
+        yield* runtime.close();
+      } catch (error) {
+        if (failure) {
+          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
+          throw new AggregateError([failure.error, error], "Command and runtime close failed", {
+            cause: failure.error,
+          });
+        }
+        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
+        throw error;
+      }
     }
   });
 }

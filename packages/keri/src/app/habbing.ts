@@ -2068,11 +2068,18 @@ export class Habery {
 
   /** Closes backing databases and optionally clears temp storage. */
   *close(clear = false): Operation<void> {
-    yield* this.db.close(clear);
-    yield* this.ks.close(clear);
-    if (this.cf) {
-      yield* this.cf.close(clear && this.temp);
+    const failures: unknown[] = [];
+    const closing = [this.db.close(clear), this.ks.close(clear)];
+    if (this.cf) closing.push(this.cf.close(clear && this.temp));
+    for (const operation of closing) {
+      try {
+        yield* operation;
+      } catch (error) {
+        failures.push(error);
+      }
     }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "Habery resource close failed", { cause: failures[0] });
   }
 }
 
@@ -2118,6 +2125,7 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
   let ks: Keeper | undefined;
   let cf: Configer | undefined;
   let delivered = false;
+  let failure: { error: unknown } | undefined;
   try {
     db = yield* createBaser({
       name,
@@ -2183,17 +2191,30 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     );
     delivered = true;
     return hby;
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
     if (!delivered) {
-      // Failed acquisition retains ownership; never clear persistent data or caller config.
-      try {
-        if (cf && cf !== providedCf) yield* cf.close();
-      } finally {
+      // Failed acquisition still owns these resources; attempt every close.
+      const failures: unknown[] = [];
+      if (failure) failures.push(failure.error);
+      const closing: Operation<unknown>[] = [];
+      if (cf && cf !== providedCf) closing.push(cf.close());
+      if (ks) closing.push(ks.close());
+      if (db) closing.push(db.close());
+      for (const operation of closing) {
         try {
-          if (ks) yield* ks.close();
-        } finally {
-          if (db) yield* db.close();
+          yield* operation;
+        } catch (error) {
+          failures.push(error);
         }
+      }
+      if (failures.length > (failure ? 1 : 0)) {
+        // deno-lint-ignore no-unsafe-finally -- Cancellation must also report cleanup failure.
+        if (failures.length === 1) throw failures[0];
+        // deno-lint-ignore no-unsafe-finally -- Preserve acquisition and every failed cleanup.
+        throw new AggregateError(failures, "Habery acquisition and close failed", { cause: failures[0] });
       }
     }
   }
