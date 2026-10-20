@@ -150,6 +150,9 @@ jobs:
           python scripts/ci/report-sodium-environment.py "$(brew --prefix libsodium)/lib/libsodium.dylib"
           bash scripts/ci/assert-environment.sh
 
+      - name: Prepare actual main Baser storage peer
+        uses: ./.github/actions/setup-essr-storage-peer
+
       - name: run macOS quality and test suites
         # Re-run the main quality and test surface on macOS so native/runtime
         # issues do not hide behind Linux-only PR validation.

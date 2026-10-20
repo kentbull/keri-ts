@@ -42,4 +42,7 @@ No reference source was patched, and no failed peer result was credited as a pas
 A small upstream correction would carry ordered ESSR evidence through each
 partial-proof/dependency escrow path, persist it with that escrow's evidence,
 and add one missing-sender -> KEL introduction -> retry regression. Preserve
-fragment positions while doing so; see the companion repeated-fragment report.
+fragment positions as a separate conceptual improvement; see the companion
+[repeated-fragment report](KERIPY_REPEATED_FRAGMENTS_2026-10-20.md). Current
+keri-ts deliberately follows main's ordinary IoSet, including its deduplication
+limitation, while preserving ESSR evidence through unknown-sender escrow.

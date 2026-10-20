@@ -2,6 +2,11 @@
 
 Observed: 2026-10-20. Status: reproduced locally; not submitted upstream.
 
+Local decision, 2026-10-20: the ordinal-preserving #598 implementation is
+superseded by [main-targeted storage parity](../../plans/essr/ESSR_STORAGE_PARITY_PLAN.md).
+keri-ts now follows the reference set semantics and exposes this limitation;
+the conceptual sequence-storage correction below remains future upstream work.
+
 ## Finding
 
 ESSR commits to the concatenation of Texter **raw bytes, in order and with
@@ -100,13 +105,30 @@ can prove that invariant for every supported payload size. Simply coalescing all
 fragments into one Texter needs a representability check and must not introduce a
 new protocol rejection or payload limit.
 
-A small regression should commit repeated fragments, persist/reopen, then verify
-the original digest and escrow/replay reconstruction. keri-ts uses the same physical
+A small upstream regression should commit repeated fragments, persist/reopen,
+then verify the original digest and escrow/replay reconstruction.
+
+## Historical local implementation and qualification scope
+
+PR #598 used the same physical
 `essrs.` layout: EXN SAID plus a dot and 32-digit hexadecimal ordinal, with
-qualified Texter bytes as the value. Equal values at different positions are
-retained. Focused TS tests cover signed acceptance, restart, escrow retry and
-replay with repeated fragments. A separate test against all three pins confirms
-that KERIpy's typed reader reads the repeated TS rows, and that TS reopens
-ordinary rows written by KERIpy. This is storage interoperability evidence, not
-a claim that the upstream deduplicating writer is fixed. No filesystem archive
-is needed to solve it.
+qualified Texter bytes as the value. Its ordinal writer retained equal values at
+different positions; its signed acceptance/restart/retry/replay tests qualified
+that historical implementation. That writer and its multiplicity guarantee are
+superseded, not the archive removal or the finding above.
+
+The three-pin typed-reader fixture manually constructed `CesrIoSetSuber` with
+`essrs.` for every profile. It proved those physical rows were readable through
+that explicitly named typed reader, and TS could reopen its writes. It did **not**
+prove actual legacy Baser compatibility: 1.2.14/1.3.6 bind `.essrs`, while main
+binds `essrs.`. The replacement storage fixture uses actual pinned-main Baser
+only, with bidirectional rows, set returns and reopen. Direct legacy LMDB support
+is [deferred](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility);
+three-pin wire exchanges remain a separate requirement.
+
+Current signed tests demonstrate that repeated incoming fragments verify, then
+deduplicate and fail the original reconstructed digest. Identical redelivery is
+idempotent; valid alternate fragmentation can append distinct Texters and also
+invalidate reconstruction. Distinct-fragment fixtures retain successful restart,
+escrow retry and replay coverage. No filesystem archive or substitute evidence
+store is introduced to conceal these reference-compatible limitations.

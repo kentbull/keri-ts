@@ -5,6 +5,13 @@ Use the [DB parity plan](../../plans/db/DB_PARITY_PLAN.md) and current typed
 sub-database declarations before promoting a row to supported parity.
 `tufa db dump` is the maintained inspection surface.
 
+ESSR qualification (2026-10-20): the historical `.essars` row below is retained
+as transcribed, without an original source revision establishing that spelling.
+Inspected `basing.py` at main `424a50c` (also `7143832`) binds `essrs.`;
+1.2.14 `bab95c16` and 1.3.6 `4ce4cc79` bind `.essrs`, not `.essars`.
+Use the [current compatibility entry](../compatibility/KERI_V1_V2_COMPATIBILITY.md#essr-storage-target-and-table-bindings),
+not this historical row, for support claims. It is not a current universal schema.
+
 ## Baser:
 
 ```org

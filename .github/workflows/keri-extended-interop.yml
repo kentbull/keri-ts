@@ -144,6 +144,10 @@ jobs:
           EXPECTED_NODE_VERSION: ${{ env.NODE_VERSION }}
         run: bash scripts/ci/assert-environment.sh
 
+      - name: Prepare actual main Baser storage peer
+        if: contains(fromJSON('["interop-essr-storage", "extended-interop", "qualification", "full"]'), inputs.target)
+        uses: ./.github/actions/setup-essr-storage-peer
+
       - name: run selected extended interop target
         shell: bash
         run: |

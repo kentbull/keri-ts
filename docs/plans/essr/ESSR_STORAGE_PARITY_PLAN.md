@@ -1,6 +1,6 @@
 # ESSR persistence against pinned KERIpy main
 
-Status: approved release-plan redirect, 2026-10-20; implementation pending.
+Status: approved release-plan redirect, 2026-10-20.
 Owner: [release PR 12e](../V2_RELEASE_COMPLETION_PLAN.md#essr-storage-correction--pr-12e).
 Execute next after messenger selection PR 13b, before PR 13c and final qualification.
 This supersedes the position-preserving and first-representation decisions in

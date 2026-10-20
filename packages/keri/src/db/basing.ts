@@ -78,7 +78,7 @@ import {
 } from "../core/records.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { baserDefaults } from "./baser-defaults.ts";
-import { dgKey, onKey, splitOnKey } from "./core/keys.ts";
+import { dgKey, splitOnKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord } from "./exchange-records.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./kel-replay.ts";
@@ -247,31 +247,11 @@ export class Baser {
   /** Receiver receipt, mailbox provenance and attachment genus; no payload ownership. */
   public exchangeMeta!: Komer<ExchangeRecord>;
 
-  /** Read the ordered ESSR evidence belonging to an accepted or escrowed exchange. */
+  /** Read main's ordered-set evidence only for an accepted or escrowed exchange. */
   getEssrs(said: string): Texter[] | null {
     if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
-    const fragments: Texter[] = [];
-    for (const key of this.essrs.sdb.getKeys({ start: onKey(said, 0) })) {
-      if (t(splitOnKey(key)[0]) !== said) break;
-      const wire = this.getVal(this.essrs.sdb, key);
-      if (!wire) throw new Error("Stored ESSR row disappeared during traversal");
-      const texter = new Texter({ qb64b: wire });
-      if (texter.qb64b.length !== wire.length) throw new Error("Stored ESSR row has trailing bytes");
-      fragments.push(texter);
-    }
+    const fragments = this.essrs.get([said]);
     return fragments.length ? fragments : null;
-  }
-
-  /** Replace one ordered fragment sequence atomically; equal values at different positions are distinct. */
-  pinEssrs(said: string, fragments: readonly Texter[]): void {
-    const env = this.env;
-    if (!env) throw new DatabaseNotOpenError("Exchange database is not open");
-    env.transactionSync(() => {
-      this.essrs.trim([said, ""]);
-      for (const [ordinal, texter] of fragments.entries()) {
-        if (!this.essrs.pinOn([said], ordinal, texter)) throw new DatabaseOperationError("ESSR fragment write failed");
-      }
-    });
   }
 
   public tops!: Komer<TopicsRecord>; // Witness mailbox retrieval cursors.
@@ -293,7 +273,7 @@ export class Baser {
   /** Qualified nested substreams in KERIpy insertion order with exact-value deduplication. */
   public enst!: IoSetSuber<string>;
   public epath!: IoSetSuber<string>; // Exchange-message pathed attachments.
-  public essrs!: CesrOnSuber<Texter>; // ESSR fragments keyed by exchange digest and position.
+  public essrs!: CesrIoSetSuber<Texter>; // Main's qualified-Texter set, in first-insertion order.
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
   public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
@@ -724,7 +704,7 @@ export class Baser {
       this.enst = new IoSetSuber<string>(this.lmdber, { subkey: "enst." });
 
       // Encrypt-Sender-Sign-Receiver payloads keyed by exchange digest.
-      this.essrs = new CesrOnSuber<Texter>(this.lmdber, {
+      this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {
         subkey: "essrs.",
         ctor: Texter,
       });

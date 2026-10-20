@@ -110,7 +110,8 @@ Deno.test("ESSR recipient rejects digest corruption, sealed-box authentication f
     const cipher = seal(recipient, plaintext(sender, body)), said = await accept(hby, sender, recipient, cipher);
     const tampered = cipher.slice();
     tampered[tampered.length - 1] ^= 1;
-    hby.db.pinEssrs(said, [new Texter({ raw: tampered, code: MtrDex.Bytes_L0 })]);
+    hby.db.essrs.rem([said]);
+    hby.db.essrs.add([said], new Texter({ raw: tampered, code: MtrDex.Bytes_L0 }));
     assertEquals(receiver.decrypt(said), { kind: "reject", reason: "digest" });
     // A valid signed commitment to bad ciphertext isolates authenticated-decryption failure.
     const corrupt = await accept(hby, sender, recipient, tampered);

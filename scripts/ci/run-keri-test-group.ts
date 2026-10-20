@@ -4,6 +4,7 @@ import { dirname } from "jsr:@std/path/dirname";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { join } from "jsr:@std/path/join";
 import { groups, suites, type TestSuite } from "./keri-test-suites.ts";
+import reference from "./keripy-reference.json" with { type: "json" };
 
 /** Package root for child processes and file ownership discovery. */
 const packageDir = new URL("../../packages/keri/", import.meta.url);
@@ -83,6 +84,19 @@ function jobs(suite: TestSuite): number {
 /** Execute a suite; isolated files remain separate processes while safe files share a bounded pool. */
 async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
   const suite = suites[name];
+  const env = { ...suite.env };
+  // Only this owner targets actual main Baser; other suites keep their selected wire/fork peer.
+  const storageRoot = Deno.env.get("KERIPY_ESSR_STORAGE_ROOT");
+  if (name === "interop-essr-storage" && storageRoot) {
+    const python = Deno.env.get("KERIPY_ESSR_STORAGE_PYTHON");
+    if (!python) throw new Error("ESSR storage peer requires KERIPY_ESSR_STORAGE_PYTHON.");
+    Object.assign(env, {
+      KERIPY_INTEROP_PROFILE: "main",
+      KERIPY_INTEROP_ROOT: storageRoot,
+      KERIPY_INTEROP_PYTHON: python,
+      KERIPY_INTEROP_EXPECTED_COMMIT: reference.profiles.main.commit,
+    });
+  }
   const batches = suite.jobs ? [suite.files] : suite.files.map((file) => [file]);
   for (const files of batches) {
     const args = ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
@@ -92,7 +106,7 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
     const child = new Deno.Command(Deno.execPath(), {
       args,
       cwd: packageDir,
-      env: { DENO_JOBS: String(jobs(suite)), ...suite.env },
+      env: { DENO_JOBS: String(jobs(suite)), ...env },
       stdin: "inherit",
       stdout: "inherit",
       stderr: "inherit",

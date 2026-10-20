@@ -1,0 +1,26 @@
+name: Set up actual main Baser peer
+description: Isolate the pinned-main ESSR storage peer from the mailbox-fork runtime
+runs:
+  using: composite
+  steps:
+    - id: pin
+      shell: bash
+      run: node -p 'Object.entries(require("./scripts/ci/keripy-reference.json").profiles.main).map(([key, value]) => key + "=" + value).join("\n")' >> "$GITHUB_OUTPUT"
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        repository: WebOfTrust/keripy
+        ref: ${{ steps.pin.outputs.commit }}
+        path: .cache/keripy-essr-main
+
+    - name: Install isolated main peer
+      shell: bash
+      env:
+        HIO: ${{ steps.pin.outputs.hio }}
+        LMDB: ${{ steps.pin.outputs.lmdb }}
+        FALCON: ${{ steps.pin.outputs.falcon }}
+      run: |
+        python3.14 -m venv "$RUNNER_TEMP/keripy-essr-main-venv"
+        "$RUNNER_TEMP/keripy-essr-main-venv/bin/python" -m pip install -e .cache/keripy-essr-main "hio==$HIO" "lmdb==$LMDB" "falcon==$FALCON"
+        echo "KERIPY_ESSR_STORAGE_ROOT=$GITHUB_WORKSPACE/.cache/keripy-essr-main" >> "$GITHUB_ENV"
+        echo "KERIPY_ESSR_STORAGE_PYTHON=$RUNNER_TEMP/keripy-essr-main-venv/bin/python" >> "$GITHUB_ENV"

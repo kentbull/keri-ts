@@ -23,6 +23,12 @@ box shorter than its 48-byte overhead is malformed. Only authenticated-decryptio
 failure becomes `reject/decrypt`; keeper, storage and unexpected backend failures
 propagate.
 
+Retained Texters use pinned-main Baser's insertion-ordered set. Deduplication of
+repeated fragments or accumulation of alternate fragmentations can damage the
+original concatenated commitment. Durable EXN acceptance therefore does not alone
+guarantee decryptable evidence: reconstructed bytes must pass the digest check
+or return `reject/digest` before sealed-box opening. See the [storage contract](../db/PAYLOAD_STORAGE.md).
+
 Authenticated plaintext must contain the SCS tag, authenticated sender Prefixer,
 complete Bexter padding and a nonempty inner stream. Callers may submit `body`
 through an independent parser; decryption does not recursively dispatch it.

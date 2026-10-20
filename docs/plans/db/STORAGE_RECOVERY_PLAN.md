@@ -29,9 +29,9 @@ staging; the buffered implementation and its qualification are delivered.
    Keep provider Mailboxer messages/topics and Baser `tops` polling cursors.
 4. Keep KERIpy partial-signature/factor escrows and replay/timeliness caches;
    remove accounting and downstream acknowledgement coupling around them.
-5. Retain actual payload file/reference publication and joined cleanup only for
-   demonstrated storage consumers. Delete parser-only sinks, stage registries and
-   reconstruction wrappers. Keep digest/size consistency and actual disposal.
+5. Remove ESSR archives, private file references, stage registries and plaintext
+   persistence. Keep ordinary LMDB evidence, authenticated finite recipient data
+   and independently justified transport/parser functionality.
 
 No old keri-ts API/data compatibility or new-to-old tests are required. Do not
 build export/recovery tools, dual writes or dormant readers for retired stores.
@@ -51,22 +51,24 @@ authenticated plaintext stays separate. Read Python-origin rows with their actua
 ordering/deduplication. Current KERIpy interoperability is distinct from supporting
 an obsolete keri-ts storage layout.
 
-File publication must not leave a published reference to missing content. Recovery
-of current task-owned stages removes only proven unreferenced files. Keep actual
-size/digest checks, accepted payload reopening and cleanup on failed publication.
-No general delivery journal or application acknowledgement is introduced.
+ESSR publication adds qualified Texters through main's ordinary insertion-ordered
+set in the exchange transaction. Repeated values deduplicate; alternate valid
+representations may append members. Stored reconstruction can fail the original
+digest: preserve that check and the explicit limitation. There is no ESSR file
+publication/recovery protocol, delivery journal or application acknowledgement.
 
 ## Verification
 
 Reuse meaningful tests for exact replay bytes/order, accepted horizons, cursor
 closure, close/reopen, ordered Texters, nested rejection, cancellation, supported
-escrow retry, duplicate rollback and cleanup errors. Inject failures around
-stage/finish/file/DB publication as needed. Delete reservation/formula-only tests.
+escrow retry, duplicate insertion and cleanup errors. Inject actual storage
+exceptions around publication; duplicate-add false is normal set behavior.
+Delete archive/staging-only and reservation/formula-only tests.
 Do not add compatibility fixtures for retired versions or stores.
 
 The [DB parity plan](DB_PARITY_PLAN.md) owns row-level protocol compatibility;
-the [payload contract](../../design-docs/db/PAYLOAD_STORAGE.md) owns real file
-lifetime, subject to the removal boundary. Final interop and installed-package
+the [payload contract](../../design-docs/db/PAYLOAD_STORAGE.md) owns exchange
+evidence and its reconstruction limitations. Final interop and installed-package
 qualification remain mandatory.
 
 KEL/TEL replay and stored endpoint-reply output no longer carry accounting options.
@@ -75,7 +77,7 @@ qualified ordinal/framing rules and current proof reconstruction. General bounde
 helpers and before-copy callbacks are removed. Mailbox output accounting is removed; do not reintroduce row/replay
 ceilings during future maintenance.
 
-Payload collectors and memory/file stages no longer accept quotas. Keep exact
+Payload collectors and transport sources accept no quotas. Keep exact
 Payload.size validation, truncated/overlong source failures and actual file/reader
 ownership. Nested/ESSR aggregate budgets, storage caps and recipient crypto/concurrency
 quotas are removed. Parser-internal accounting is removed. Do not restore storage/sink policy

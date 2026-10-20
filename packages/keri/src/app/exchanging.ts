@@ -153,7 +153,7 @@ export interface ExchangeInput {
   sourceSeals?: readonly SealEvent[];
   /** Ordinary pathed attachments. */
   ptds?: readonly PathedMaterialGroup[];
-  /** Ordered qualified fragments; LMDB preserves position and multiplicity. */
+  /** Incoming qualified fragments; persistence uses main's insertion-ordered set. */
   essrs?: readonly Texter[];
   /** Parent-owned children; admission borrows and snapshots their original wire. */
   nests?: readonly CesrFrame[];
@@ -185,8 +185,6 @@ export type ExchangeDecision =
   };
 /** Concrete evidence passed to the synchronous admission turn. */
 interface PreparedExchangeEvidence {
-  retained: readonly Texter[] | null;
-  essrs?: readonly Texter[];
   attachments: ExchangeAttachment[];
   nests?: readonly Uint8Array[];
 }
@@ -326,14 +324,10 @@ export class Exchanger {
         }
       }
       const current = retry ? this.escrowInput(args.serder) : args;
-      const retained = this.hby.db.getEssrs(said);
-      const essrs = retained ?? current.essrs;
-      const failure = this.verifyEssr(current.serder, essrs, retained ? current.essrs : undefined);
+      const failure = this.verifyEssr(current.serder, current.essrs);
       const admission = failure
         ? { decision: failure, cues: [] }
         : this.admitCurrent(current, retry ? this.resolveProofs(current) : resolved, handler, {
-          retained,
-          essrs,
           attachments: normalizeAttachments(current.ptds ?? []),
           nests,
         });
@@ -359,21 +353,17 @@ export class Exchanger {
     return { decision: result.decision, ejection: result.ejection };
   }
 
-  /** Verify the signed raw-byte commitment synchronously, retaining repeated fragment values. */
+  /** Verify this attempt's bytes before ordered-set persistence can deduplicate them. */
   private verifyEssr(
     serder: SerderKERI,
-    retained: readonly Texter[] | undefined,
-    incoming?: readonly Texter[],
+    fragments: readonly Texter[] | undefined,
   ): Extract<ExchangeDecision, { kind: "reject" }> | undefined {
     if (typeof serder.a !== "string") return undefined;
     const said = serder.said!;
     try {
       const diger = new Diger({ qb64: serder.a });
-      if (!retained || !diger.verifyChunks(retained.map((texter) => texter.raw))) {
+      if (!fragments || !diger.verifyChunks(fragments.map((texter) => texter.raw))) {
         return { kind: "reject", said, reason: "Exchange ESSR payload digest does not match its signed commitment." };
-      }
-      if (incoming && !diger.verifyChunks(incoming.map((texter) => texter.raw))) {
-        return { kind: "reject", said, reason: "Duplicate ESSR payload digest does not match its signed commitment." };
       }
     } catch (cause) {
       if (!malformedEssr(cause)) throw cause;
@@ -417,7 +407,7 @@ export class Exchanger {
     const handling = {
       serder: args.serder,
       attachments: prepared.attachments,
-      essrs: prepared.essrs,
+      essrs: args.essrs,
       nests,
       mailboxAid,
       receiverTime,
@@ -464,9 +454,8 @@ export class Exchanger {
         ? this.escrowPartialSigned(args.serder, factors, args.ptds ?? [])
         : this.escrowMissingSchema(args.serder, missingSchema, factors, args.ptds ?? []);
     }
-    if (prepared.essrs && !prepared.retained) {
-      this.hby.db.pinEssrs(said, prepared.essrs);
-    }
+    // False means an existing qualified member, not a failed write. Exceptions abort the writer.
+    for (const texter of args.essrs ?? []) this.hby.db.essrs.add([said], texter);
     this.hby.db.exchangeMeta.pin([said], {
       mailboxAid,
       ...(receiverTime !== undefined ? { receiverTime } : {}),
@@ -1119,7 +1108,7 @@ export class Exchanger {
     }
     this.hby.db.epath.rem([said]);
     if (!keepEvidence) {
-      this.hby.db.essrs.trim([said, ""]);
+      this.hby.db.essrs.rem([said]);
       this.hby.db.enst.rem([said]);
       this.hby.db.exchangeMeta.rem([said]);
     }
@@ -1134,6 +1123,7 @@ export class Exchanger {
       sourceSeals: this.storedSeals(said),
       ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
       mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
+      essrs: this.hby.db.getEssrs(said) ?? undefined,
     };
   }
 
