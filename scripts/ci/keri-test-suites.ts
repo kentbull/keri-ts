@@ -216,6 +216,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/core/path-manager.test.ts",
       "test/unit/db/escrowing.test.ts",
       "test/unit/db/keeping.test.ts",
+      "test/unit/db/keeping-aeid.test.ts",
       "test/unit/db/koming.test.ts",
       "test/unit/db/mailboxing.test.ts",
       "test/unit/db/oobi-store.test.ts",

@@ -129,6 +129,13 @@ KERIpy:
    `Baser` stores such as `states.`, `kels.`, `fels.`, and related event
    indices, not in process-local app state alone.
 
+Keeper encryption changes are one synchronous storage operation: migrate root
+salt, prefix salts, signer seeds and AEID within the same native transaction.
+Manager authenticates and prepares crypto first, then publishes its live state
+only after commit. False writes abort; read-only and borrowed-writer changes are
+refused. Plaintext-to-encrypted changes cover existing secrets as well as future
+ones. This is a custody atomicity guarantee, not a new wire-protocol requirement.
+
 ## Core Storage Models
 
 ### `dupsort=True` Model (LMDB Native Duplicates)

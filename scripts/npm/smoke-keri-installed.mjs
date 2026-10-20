@@ -118,6 +118,59 @@ try {
 }
 console.error("Installed native LMDB >16 MiB read/reopen and owned-byte checks passed.");
 
+// Prove the installed native writer rolls back a late secret-policy failure.
+const keeperRoot = await mkdtemp(join(tmpdir(), "keri-aeid-smoke-"));
+try {
+  await run(function*() {
+    const keeper = yield* db.createKeeper({ name: "installed-aeid", headDirPath: keeperRoot });
+    try {
+      const first = Signer.random({ transferable: false });
+      const second = Signer.random({ transferable: false });
+      const manager = new runtime.Manager({ ks: keeper, seed: first.qb64, aeid: first.verfer.qb64 });
+      const [verfers] = manager.incept({ icount: 2, ncount: 2, transferable: true, temp: true });
+      const pubs = verfers.map((verfer) => verfer.qb64);
+      const message = new TextEncoder().encode("installed AEID commit proof");
+      const before = manager.sign(message, pubs, true).map((signature) => signature.qb64).join();
+      const rootSalt = keeper.getGbls("salt");
+      const prefixSalt = keeper.getPrms(pubs[0]).salt;
+      const failure = new Error("Injected installed AEID write failure");
+      const pin = keeper.pinGbls;
+      keeper.pinGbls = function(key, value) {
+        const result = pin.call(this, key, value);
+        if (key === "aeid") throw failure;
+        return result;
+      };
+      let observed;
+      try {
+        manager.updateAeid(second.verfer.qb64, second.qb64);
+      } catch (error) {
+        observed = error;
+      } finally {
+        keeper.pinGbls = pin;
+      }
+      assert(observed === failure, "installed AEID change lost its late failure");
+      assert(keeper.getGbls("salt") === rootSalt && keeper.getPrms(pubs[0]).salt === prefixSalt,
+        "installed AEID failure changed secret rows");
+      assert(manager.aeid === first.verfer.qb64 && manager.seed === first.qb64,
+        "installed AEID failure changed manager policy");
+      assert(manager.sign(message, pubs, true).map((signature) => signature.qb64).join() === before,
+        "installed AEID rollback lost signing keys");
+      manager.updateAeid(second.verfer.qb64, second.qb64);
+      yield* keeper.close(false);
+      assert(yield* keeper.reopen({ reuse: true }), "installed keeper did not reopen");
+      const reopened = new runtime.Manager({ ks: keeper, seed: second.qb64 });
+      const signatures = reopened.sign(message, pubs, true);
+      assert(signatures.every((signature, index) => verfers[index].verify(signature.raw, message)),
+        "installed AEID commit lost signing keys on reopen");
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+} finally {
+  await rm(keeperRoot, { recursive: true, force: true });
+}
+console.error("Installed AEID late-failure rollback and committed signing/reopen passed.");
+
 const signedBytes = new TextEncoder().encode("installed CESR crypto and TCP qualification");
 const signer = Signer.random();
 const signature = signer.sign(signedBytes);

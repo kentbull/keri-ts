@@ -8,6 +8,12 @@ LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processor
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.
 
+Manager authenticates AEID changes and prepares replacement crypto before writes.
+Keeper.changeEncryption owns one native transaction for root/prefix salts, signer
+seeds and AEID, rechecks expected policy under the writer and rejects false writes.
+Readonly and borrowed writers cannot change this policy. Publish Manager crypto
+only after commit; same-AEID changes preserve stored ciphertext.
+
 ## Database truth
 
 Baser owns accepted KEL row layout and prospective first-seen metadata. Its

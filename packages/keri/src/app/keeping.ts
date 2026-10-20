@@ -622,83 +622,36 @@ export class Manager {
    * - `current AEID -> new AEID`: decrypt with old seed, re-encrypt with new
    *   public box key
    * - `current AEID -> empty`: decrypt and persist plaintext secrets
-   * - `empty -> new AEID`: encrypt newly managed secrets going forward
+   * - `empty -> new AEID`: encrypt existing and subsequently managed secrets
    *
    * Failure model:
    * - current seed must authenticate the currently stored AEID before any
    *   secret migration is attempted
    * - new seed must authenticate the new AEID before any re-encryption is
    *   attempted
+   * - Keeper owns one synchronous native transaction for all affected rows;
+   *   refusal or failure leaves durable and live crypto state unchanged
+   * - publish encrypter/decrypter/seed only after that transaction commits;
+   *   readonly and borrowed-writer changes are refused
    */
   updateAeid(aeid: string, seed: string): void {
     const currentAeid = this.aeid;
-
-    if (currentAeid) {
-      if (
-        !this.seed || !this.encrypter
-        || !this.encrypter.verifySeed(this.seed)
-      ) {
-        throw new Error(
-          `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
-        );
-      }
+    if (currentAeid && (!this.seed || !new Encrypter({ verkey: currentAeid }).verifySeed(this.seed))) {
+      throw new Error(
+        `Last seed missing or provided last seed not associated with last aeid=${currentAeid}.`,
+      );
     }
 
-    if (aeid) {
-      const nextEncrypter = new Encrypter({ verkey: aeid });
-      if (!seed || !nextEncrypter.verifySeed(seed)) {
-        throw new Error(
-          `Seed missing or provided seed not associated with aeid=${aeid}.`,
-        );
-      }
-      this.encrypter = nextEncrypter;
-    } else {
-      this.encrypter = null;
+    const encrypter = aeid ? new Encrypter({ verkey: aeid }) : null;
+    if (encrypter && (!seed || !encrypter.verifySeed(seed))) {
+      throw new Error(`Seed missing or provided seed not associated with aeid=${aeid}.`);
     }
-
-    const salt = this.salt;
-    if (salt !== null) {
-      this.salt = salt;
-    }
-
-    if (this.decrypter) {
-      // `prms.salt` stores derivation salt per managed prefix, so AEID changes
-      // must migrate that state in lockstep with keeper-global salt.
-      for (const [keys, data] of this.ks.prms.getTopItemIter()) {
-        if (!data.salt) {
-          continue;
-        }
-        data.salt = this.encrypter
-          ? this.encrypter.encrypt({
-            prim: this.decrypter.decrypt({
-              qb64: data.salt,
-              ctor: Salter,
-            }) as Salter,
-          }).qb64
-          : (this.decrypter.decrypt({
-            qb64: data.salt,
-            ctor: Salter,
-          }) as Salter).qb64;
-        this.ks.prms.pin(keys, data);
-      }
-
-      // `pris.` stores signer seeds keyed by their public verifier. Reads here
-      // are intentionally plaintext through the decrypter so the subdb can
-      // immediately re-pin under the new encryption policy.
-      for (
-        const [keys, signer] of this.ks.pris.getTopItemIter("", this.decrypter)
-      ) {
-        this.ks.pris.pin(keys, signer, this.encrypter ?? undefined);
-      }
-    }
-
+    const decrypter = seed ? new Decrypter({ seed }) : null;
+    this.ks.changeEncryption({ currentAeid, aeid, encrypter, decrypter: this.decrypter });
+    // All fallible preparation and durable work precedes publication of live state.
+    this.encrypter = encrypter;
+    this.decrypter = decrypter;
     this._seed = seed;
-    this.decrypter = seed ? new Decrypter({ seed }) : null;
-
-    if (this.ks.readonly) {
-      return;
-    }
-    this.ks.pinGbls("aeid", aeid);
   }
 
   private signerDecrypter(): Decrypter | undefined {
