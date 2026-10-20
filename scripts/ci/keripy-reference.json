@@ -8,16 +8,22 @@
       "lmdb": "2.3.0",
       "falcon": "4.3.1",
       "exportGenus": 2,
-      "protocolVersionArgument": true
+      "protocolVersionArgument": true,
+      "repository": "WebOfTrust/keripy",
+      "distribution": "keri",
+      "hioDistribution": "hio"
     },
     "1.2": {
-      "commit": "bab95c16e949b61398129a3e41a8f68bad84c94f",
+      "commit": "b8626e1d58770a4a480ea72a01acc5580278a9f2",
       "python": "3.13",
-      "hio": "0.6.14",
+      "hio": "0.6.21",
       "lmdb": "1.7.5",
       "falcon": "4.3.1",
       "exportGenus": 1,
-      "protocolVersionArgument": false
+      "protocolVersionArgument": false,
+      "repository": "GLEIF-IT/keripy",
+      "distribution": "gleif-keri",
+      "hioDistribution": "gleif-hio"
     },
     "1.3": {
       "commit": "4ce4cc79e06653f77342be1bf604086b89b1f090",
@@ -26,7 +32,10 @@
       "lmdb": "1.7.5",
       "falcon": "4.3.1",
       "exportGenus": 1,
-      "protocolVersionArgument": false
+      "protocolVersionArgument": false,
+      "repository": "WebOfTrust/keripy",
+      "distribution": "keri",
+      "hioDistribution": "hio"
     }
   }
 }

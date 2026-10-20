@@ -16,6 +16,7 @@ import { keripyProtocolVersionArgs, selectedKeripyProfile } from "./keripy-runti
 Deno.test("selected KERIpy CLI creates and exports a signed v1 inception accepted by TypeScript", async () => {
   const ctx = await createInteropContext();
   try {
+    const name = `profile-${crypto.randomUUID()}`;
     const config = `${ctx.home}/inception.json`;
     await Deno.writeTextFile(
       config,
@@ -32,7 +33,7 @@ Deno.test("selected KERIpy CLI creates and exports a signed v1 inception accepte
     const versions = keripyProtocolVersionArgs(ctx.env, "1.0");
     await requireSuccess(
       "reference init",
-      runCmdWithTimeout(ctx.kliCommand, ["init", ...versions, "--name", "profile", "--nopasscode"], ctx.env, 20_000),
+      runCmdWithTimeout(ctx.kliCommand, ["init", ...versions, "--name", name, "--nopasscode"], ctx.env, 20_000),
     );
     const inception = await requireSuccess(
       "reference inception",
@@ -42,7 +43,7 @@ Deno.test("selected KERIpy CLI creates and exports a signed v1 inception accepte
           "incept",
           ...versions,
           "--name",
-          "profile",
+          name,
           "--alias",
           "alice",
           "--file",
@@ -55,7 +56,7 @@ Deno.test("selected KERIpy CLI creates and exports a signed v1 inception accepte
     const pre = extractPrefix(inception.stdout);
     const exported = await requireSuccess(
       "reference export",
-      runCmdWithTimeout(ctx.kliCommand, ["export", "--name", "profile", "--alias", "alice"], ctx.env, 20_000),
+      runCmdWithTimeout(ctx.kliCommand, ["export", "--name", name, "--alias", "alice"], ctx.env, 20_000),
     );
     await run(function*() {
       const hby = yield* createHabery({ name: `profile-${crypto.randomUUID()}`, temp: true, skipConfig: true });

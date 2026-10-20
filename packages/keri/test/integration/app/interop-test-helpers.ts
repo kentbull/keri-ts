@@ -77,6 +77,8 @@ export interface TufaWitnessNode {
 export interface KeriPyWitnessHarnessOptions {
   aliases?: readonly string[];
   base?: string;
+  /** Test-only observation/factory commands; normal protocol intake is unchanged. */
+  messengerProbe?: boolean;
 }
 
 /** Options for the explicit Tufa witness harness. */
@@ -1562,6 +1564,7 @@ export async function startKeriPyWitnessHarness(
         // Current `witness start` cannot select protocol/genus; the fixture does.
         `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
         ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
+        ...(options.messengerProbe ? ["--messenger-probe"] : []),
         "--name",
         node.name,
         "--base",

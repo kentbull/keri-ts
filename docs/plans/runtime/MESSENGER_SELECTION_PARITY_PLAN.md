@@ -34,14 +34,14 @@ is a navigation aid rather than a promise that line numbers will remain stable.
 
 KERIpy sources inspected:
 
-| Reference                      | Commit                                     | Purpose                                     |
-| ------------------------------ | ------------------------------------------ | ------------------------------------------- |
-| Local frozen reference         | `7143832813cac6a394ab1faf9be83bb3372be87c` | Existing repository reconciliation baseline |
-| Release profile `main`         | `424a50c03421165c5f289e07a341bd57b8d8ab78` | Native-v2 reference behavior                |
-| Release profile `1.2` / 1.2.14 | `bab95c16e949b61398129a3e41a8f68bad84c94f` | Legacy peer behavior                        |
-| Release profile `1.3` / 1.3.6  | `4ce4cc79e06653f77342be1bf604086b89b1f090` | Legacy peer behavior                        |
+| Reference                            | Commit                                     | Purpose                                     |
+| ------------------------------------ | ------------------------------------------ | ------------------------------------------- |
+| Local frozen reference               | `7143832813cac6a394ab1faf9be83bb3372be87c` | Existing repository reconciliation baseline |
+| Release profile `main`               | `424a50c03421165c5f289e07a341bd57b8d8ab78` | Native-v2 reference behavior                |
+| Release profile `1.2` / GLEIF 1.2.17 | `b8626e1d58770a4a480ea72a01acc5580278a9f2` | Accepted legacy target with stabilized TCP  |
+| Release profile `1.3` / 1.3.6        | `4ce4cc79e06653f77342be1bf604086b89b1f090` | Legacy peer behavior                        |
 
-The three release-profile cache checkouts had matching HEADs, and the inspected
+The original three release-profile cache checkouts had matching HEADs, and the inspected
 `agenting.py`, `forwarding.py`, `httping.py`, and `indirecting.py` bytes matched
 their Git objects. These are source observations, not runtime qualification.
 Use `scripts/ci/keripy-reference.json` and
@@ -72,6 +72,13 @@ Ten current-state findings:
    introduce HTTP framing or duplicate the socket implementation.
 10. The pinned main and 1.3 Python stream factories omit TCP payload admission;
     1.2.14 admits it. Match the working contract, not that omission.
+
+The 1.2.x target now uses unmodified GLEIF-IT/keripy v1.2.17 and its required
+`gleif-hio==0.6.21`. The original WebOfTrust 1.2.14 pin
+`bab95c16e949b61398129a3e41a8f68bad84c94f` discarded 868 queued bytes at
+Directant EOF before creating a Reactant in the transport probe; it is no longer
+the release compatibility target. Preserve that limitation rather than attributing
+the fork fix to the original pin. Main/1.3 factory limitations above remain.
 
 Primary Python navigation:
 
@@ -362,9 +369,8 @@ the main task still owns final whole-release qualification.
 6. Poster: ordinary multi-role delivery, stream first-present-role delivery,
    ordered forwarded contents, local-provider bypass, partial failure, and
    concrete-admission outcome matching. Retain established witness/group topology.
-7. CLI: no help/definition exposes the removed option; unsupported-option handling
-   is explicit; init/setup no longer write the key. Do not add old-store migration
-   compatibility scenarios.
+   Validate retained CLI behavior through its existing command and package probes.
+   Do not retain tests or lint blacklists solely to prove deleted APIs/options remain absent.
 
 ### Actual Python peers
 
@@ -374,13 +380,13 @@ must not impersonate the messenger or insert records to make delivery appear
 successful. Existing `ipex_peer.py` mounts normal HttpEnd; the mailbox fixture
 already constructs real StreamPoster. Extend those seams where appropriate.
 
-| Scenario                                                                                     | Profiles                                                            | Evidence                                                                                                                        |
-| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| keri-ts ordinary POST into Python; Python ordinary messenger into Tufa                       | main, 1.2.14, 1.3.6                                                 | Signed KEL accepted/persisted; method/header assertions; legacy media path genuinely exercised                                  |
-| keri-ts stream PUT into Python; Python stream messenger into Tufa                            | main, 1.2.14, 1.3.6                                                 | Multi-message stream accepted in order with expected identifiers/SAIDs; exact outbound bytes and method                         |
-| Initial IPEX grant/admit with supporting artifacts and a group notification; join completion | main for native-v2; a compatible legacy workflow under 1.2 and 1.3  | Credential/evidence and EXNs accepted, correct initial PUT versus join POST, correct recipients and no missing support messages |
-| Forwarded stream plus ordinary mailbox query/SSE retrieval                                   | maintained composed mailbox environment, labeled by actual fork pin | Provider storage contains all intended messages; recipient processes them; poll remains signed POST                             |
-| TCP stream send into real Python intake                                                      | at least 1.2.14; retain existing main TCP coverage where available  | Admitted bytes arrive and valid messages enter accepted state; no HTTP route masks TCP selection                                |
+| Scenario                                                                                     | Profiles                                                                 | Evidence                                                                                                                        |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
+| keri-ts ordinary POST into Python; Python ordinary messenger into Tufa                       | main, GLEIF 1.2.17, 1.3.6                                                | Signed KEL accepted/persisted; method/header assertions; legacy media path genuinely exercised                                  |
+| keri-ts stream PUT into Python; Python stream messenger into Tufa                            | main, GLEIF 1.2.17, 1.3.6                                                | Multi-message stream accepted in order with expected identifiers/SAIDs; exact outbound bytes and method                         |
+| Initial IPEX grant/admit with supporting artifacts and a group notification; join completion | main for native-v2; a compatible legacy workflow under 1.2 and 1.3       | Credential/evidence and EXNs accepted, correct initial PUT versus join POST, correct recipients and no missing support messages |
+| Forwarded stream plus ordinary mailbox query/SSE retrieval                                   | maintained composed mailbox environment, labeled by actual fork pin      | Provider storage contains all intended messages; recipient processes them; poll remains signed POST                             |
+| TCP stream send into real Python intake                                                      | at least GLEIF 1.2.17; retain existing main TCP coverage where available | Admitted bytes arrive and valid messages enter accepted state; no HTTP route masks TCP selection                                |
 
 Parameterize the small transport probes across three profiles. Do not multiply
 every IPEX verb, role, failure, and framing combination across every profile.

@@ -174,12 +174,20 @@ jobs:
         uses: ./.github/actions/setup-essr-storage-peer
 
       - name: run selected KERIpy interop owner
+        if: matrix.target != 'interop-reference-profiles'
         shell: bash
         env:
           INTEROP_TARGET: ${{ matrix.target }}
         run: |
           mkdir -p .test-timings
           deno run -A scripts/ci/run-keri-test-group.ts "$INTEROP_TARGET" 2>&1 | tee .test-timings/parity.log
+
+      - name: Qualify frozen release peers
+        if: matrix.target == 'interop-reference-profiles'
+        shell: bash
+        run: |
+          mkdir -p .test-timings
+          python scripts/ci/qualify-reference-profiles.py 2>&1 | tee .test-timings/parity.log
 
       - name: retain parity timings and provenance
         if: ${{ always() }}

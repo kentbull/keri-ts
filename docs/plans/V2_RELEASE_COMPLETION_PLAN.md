@@ -762,6 +762,12 @@ implementation truth. No upstream submission is authorized.
 
 ### Transport supplement: explicit messenger selection — PRs 13a–13c
 
+The approved 1.2.x release target is now GLEIF-IT/keripy v1.2.17, immutable
+commit `b8626e1d58770a4a480ea72a01acc5580278a9f2`, with `gleif-hio==0.6.21`.
+It replaces WebOfTrust 1.2.14 after the finite TCP probe exposed queued-input
+loss at EOF. Main/1.3 and the separately labeled mailbox fork remain unchanged.
+Use the canonical reference JSON for execution pins throughout the remaining work.
+
 Adopt [MESSENGER_SELECTION_PARITY_PLAN.md](runtime/MESSENGER_SELECTION_PARITY_PLAN.md)
 as an approved, required supplement to this goal. Execute it next, after the
 initial typed publication cut of PR 13 and before expanding group CLI/IPEX
@@ -795,8 +801,8 @@ Follow the supplement's caller inventory and review boundaries:
   owners, not a new harness. Exercise signed ordinary POST and multi-message PUT
   in both directions with unmodified pinned main/1.2/1.3, accepted semantic state,
   and exact method/framing assertions. Cover actual TCP payload admission with
-  1.2.14, the separately labeled composed mailbox environment, and installed Node
-  factories/CLI removal. Preserve the upstream main/1.3 TCP factory limitation
+  GLEIF 1.2.17, the separately labeled composed mailbox environment, and installed Node
+  factories and supported CLI behavior. Do not add retired-feature absence guards. Preserve the upstream main/1.3 TCP factory limitation
   rather than patching it. Omit an empty third PR if the evidence fits 13a/13b.
 
 Use the supplement's small contract/lifetime matrix and existing topology. Before
@@ -1230,7 +1236,7 @@ independent stores rather than seeding accepted rows:
 
 | Scenario               | Required evidence                                                                                                                                                                                                                                         |
 | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native peer identities | Unmodified main, selected 1.2.x and selected 1.3.x each execute with verified imports; fork results are separate.                                                                                                                                         |
+| Native peer identities | Unmodified main, GLEIF 1.2.17 and selected 1.3.x execute with verified imports; the mailbox fork remains separate.                                                                                                                                        |
 | TEL both directions    | TS-generated v1 evidence accepted by each peer; peer-generated issuance/revocation accepted and replayable by TS.                                                                                                                                         |
 | Late observer          | Fresh state obtains issuer KEL, registry and credential TEL, reaches issued then revoked, reopens and remains revoked.                                                                                                                                    |
 | Wire combinations      | All three peer families accept supported v1 body/v1 genus. Main/TS exercise supported v1 body/v2 genus and genuine v2; 1.2/1.3 unsupported-v2 rejection is a negative test, not an expected acceptance cell. Unsupported downgrade is explicitly refused. |
