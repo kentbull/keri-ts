@@ -1215,8 +1215,9 @@ export class Kevery {
    * Why `Kevery` owns this route:
    * - trust-source policy depends on KEL state and configured watchers
    * - accepted replies must stay consistent with the accepted event log at `sn`
-   * - successful acceptance emits `keyStateSaved`, which drives follow-on query
-   *   continuation work
+   * - successful validation/persistence emits `keyStateSaved`, supplying the
+   *   remote notice target for query workflows; ordinary KEL acceptance does not
+   *   imply receipt of such a notice
    */
   processReplyKeyStateNotice(args: {
     serder: SerderKERI;
@@ -1406,7 +1407,6 @@ export class Kevery {
     if (!group && !this.prefixes.has(pre)) cues.push({ kin: "receipt", serder });
     else if (!local) cues.push({ kin: "notice", serder });
     if (local && (state.b ?? []).some((wit) => this.db.getHab(wit) !== null)) cues.push({ kin: "witness", serder });
-    cues.push({ kin: "keyStateSaved", ksn: state });
     return cues;
   }
 

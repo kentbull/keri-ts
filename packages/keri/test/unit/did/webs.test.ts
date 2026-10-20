@@ -223,15 +223,12 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         runtime.cues.toArray().map((cue) =>
           cue.kin === "receipt"
             ? [cue.kin, cue.serder.pre, cue.serder.said]
-            : cue.kin === "keyStateSaved"
-            ? [cue.kin, cue.ksn.i, cue.ksn.d]
             : cue.kin === "saved"
             ? [cue.kin, cue.creder.said]
             : [cue.kin]
         ),
-        [...issuer.db.getKelItemIter(hab.pre)].flatMap(([, said]) =>
-          ["receipt", "keyStateSaved"].map((kin) => [kin, hab.pre, said])
-        ).concat([["saved", aliases.issued]]),
+        [...issuer.db.getKelItemIter(hab.pre)].map(([, said]) => ["receipt", hab.pre, said])
+          .concat([["saved", aliases.issued]]),
       );
       assertEquals(target.db.getState(hab.pre)?.d, hab.kever!.said);
       assertEquals(runtime.vdr!.reger.saved.get([aliases.issued])?.qb64, aliases.issued);

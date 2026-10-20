@@ -196,15 +196,17 @@ export interface StreamCue extends CueBase {
 }
 
 /**
- * Cue emitted when runtime `Kevery` persists a new key-state record.
+ * Cue emitted after Kevery validates and persists a received key-state notice.
  *
- * This is an accepted-state observation for concrete query workflows, not a direct
- * wire cue.
+ * A received remote KSN has passed reply verification and been persisted. This
+ * supplies a query target, not proof that the referenced KEL is locally accepted
+ * or that this notice answers a particular request. Ordinary KEL acceptance does
+ * not produce it; workflows inspect Baser for accepted catch-up completion.
  */
 export interface KeyStateSavedCue extends CueBase {
   /** Discriminator used by the exclusive cue consumer to select handling. */
   kin: "keyStateSaved";
-  /** Accepted key-state notice used to advance concrete query workflows. */
+  /** Validated persisted remote key-state notice used to advance query workflows. */
   ksn: KeyStateRecord;
 }
 

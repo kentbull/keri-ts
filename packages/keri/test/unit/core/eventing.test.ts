@@ -478,7 +478,7 @@ Deno.test("Kevery.processEvent returns accept for an in-order local ixn", async 
   });
 });
 
-Deno.test("Kevery publishes clone/state cues after commit and leaves duplicate logging cue-free", async () => {
+Deno.test("Kevery commits clone metadata and witness cues before duplicate logging", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `kel-cue-admit-${crypto.randomUUID()}`, temp: true });
     try {
@@ -563,7 +563,7 @@ Deno.test("Kevery publishes clone/state cues after commit and leaves duplicate l
       unchanged();
       expectKind(kvy.processEvent(envelope), "accept");
       const batch = cues.toArray();
-      assertEquals(batch.map((cue) => cue.kin), ["noticeBadCloneFN", "witness", "keyStateSaved"]);
+      assertEquals(batch.map((cue) => cue.kin), ["noticeBadCloneFN", "witness"]);
       const clone = batch[0];
       assert(clone.kin === "noticeBadCloneFN");
       assertEquals(clone.fn, 1);
@@ -573,10 +573,8 @@ Deno.test("Kevery publishes clone/state cues after commit and leaves duplicate l
       const notice = batch[1];
       assert(notice.kin === "witness");
       assertEquals(notice.serder === serder, true);
-      const stateCue = batch[2];
-      assert(stateCue.kin === "keyStateSaved");
-      assertEquals(stateCue.ksn, hby.db.getKever(hab.pre)?.state());
-      assertEquals([stateCue.ksn.f, stateCue.ksn.dt], ["1", frc.dt.dts]);
+      const savedState = hby.db.getKever(hab.pre)!.state();
+      assertEquals([savedState.f, savedState.dt], ["1", frc.dt.dts]);
       assertEquals(hby.db.dtss.get(key)?.dts, frc.dt.dts);
       assertEquals(hby.db.sigs.get(key).map((s) => s.qb64), [sigers[0].qb64]);
       cues.clear();
@@ -2749,8 +2747,7 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         makify: true,
       });
       const sigers = hab.sign(serder.raw, true);
-      const cues = new Deck<AgentCue>();
-      const kvy = new Kevery(hby.db, { local: true, cues });
+      const kvy = new Kevery(hby.db, { local: true });
       const priorState = kever.state();
       const key = dgKey(hab.pre, serder.said!);
 
@@ -2773,7 +2770,6 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         throw new Error("same-bucket replay must not rewrite escrow material");
       }, () => kvy.processEscrowPartialSigs());
       assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
-      assertEquals(cues.length, 0);
       hby.db.sigs.put(key, [sigers[1]]);
 
       const accepted = kvy.decideEvent({
@@ -2802,7 +2798,6 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
         withPatchedMethod(native, "commitTxn", () => {
           if (native.writeTxn !== writer) return commit();
           assertEquals(kever.state(), priorState);
-          assertEquals(cues.length, 0, "promotion cues wait for the owning commit");
           assertEquals(hby.db.pses.getOn(hab.pre, 1), [], "bucket removal shares the event writer");
           native.abortTxn();
           throw failure;
@@ -2812,13 +2807,10 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said], "failed commit restores the original bucket");
       assertEquals(hby.db.getFel(hab.pre, 1), null);
       assertEquals(hby.db.fons.get(key), null);
-      assertEquals(cues.length, 0);
       kvy.processEscrowPartialSigs();
       assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
       assertEquals(hby.db.getFel(hab.pre, 1), serder.said);
       assertEquals(hby.db.pses.getOn(hab.pre, 1), []);
-      assertEquals(cues.toArray().map((cue) => cue.kin), ["keyStateSaved"]);
-      cues.clear();
     } finally {
       yield* hby.close(true);
     }

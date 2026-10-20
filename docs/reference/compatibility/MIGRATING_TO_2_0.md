@@ -118,6 +118,10 @@ notices once; one noticer pulls/matches/requeues them. Wire this destination bef
 sender/receiver startup. The first usable notice fixes the catch-up target;
 queued notices are not request-correlated or freshness-filtered. Runtime pending
 state covers sending, while each invoking operation owns its semantic wait.
+`keyStateSaved` now means a validated, persisted remote KSN. Consumers needing
+ordinary KEL acceptance must inspect accepted database state rather than treating
+that remote-notice cue as a generic state-change event. A query waiting for a KSN
+cannot complete from ordinary KEL ingestion alone.
 
 Ordinary HTTP queries acknowledge intake with 204; replies arrive through normal
 Respondant/Poster delivery, mailbox polling or TCP. `directQueryResponses`, the

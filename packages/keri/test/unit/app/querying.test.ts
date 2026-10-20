@@ -20,6 +20,7 @@ import { drainWitnessCues } from "../../../src/app/witnessing.ts";
 import type { AgentCue, QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
+import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -195,7 +196,8 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
 
       yield* runtime.querying.deliverOnce();
       assertEquals(new SerderKERI({ raw: messages[0] }).route, "ksn");
-      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      const notice = replyEvent(`/ksn/${subject.pre}`, subject.kever!.state().asDict());
+      yield* runtime.reactor.processBytes(subject.endorse(notice, { pipelined: false }));
       yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
@@ -212,7 +214,8 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
 
       yield* runtime.querying.deliverOnce();
       const interaction = subject.interact();
-      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      const aheadNotice = replyEvent(`/ksn/${subject.pre}`, subject.kever!.state().asDict());
+      yield* runtime.reactor.processBytes(subject.endorse(aheadNotice, { pipelined: false }));
       yield* processCuesOnce(runtime, { hab: sender, queryCues });
       yield* runtimeTurn(); // The noticer consumes its Deck on a cooperative turn.
 
@@ -229,6 +232,47 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
     } finally {
       if (ahead) yield* ahead.halt();
       if (current) yield* current.halt();
+      yield* runtime.close();
+      yield* remote.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a noticer requires a validated remote KSN even when its KEL is already accepted", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer"), subject = remote.makeHab("subject");
+    const runtime = yield* createAgentRuntime(hby, queryHttp([]), systemClock);
+    const queryCues = new Deck<AgentCue>();
+    let completed = false;
+    const task = yield* spawn(function*() {
+      yield* new KeyStateNoticer(hby.db, runtime.querying, subject.pre, queryCues, { signer: signer.pre }).queryDo();
+      completed = true;
+    });
+    try {
+      yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
+      yield* processCuesOnce(runtime, { hab: signer, queryCues });
+      yield* runtimeTurn();
+      assertEquals(hby.db.getKever(subject.pre)?.said, subject.kever!.said);
+      assertEquals(completed, false, "accepted KEL evidence does not establish a received remote notice");
+
+      const notice = replyEvent(`/ksn/${subject.pre}`, subject.kever!.state().asDict());
+      // The body claims the subject as its attester, but this endorsement is by another AID.
+      yield* runtime.reactor.processBytes(signer.endorse(notice, { pipelined: false }));
+      yield* processCuesOnce(runtime, { hab: signer, queryCues });
+      yield* runtimeTurn();
+      assertEquals(completed, false, "an invalid attester endorsement cannot complete the query");
+      assertEquals(hby.db.ksns.get([subject.kever!.said]), null);
+
+      yield* runtime.reactor.processBytes(subject.endorse(notice, { pipelined: false }));
+      assertEquals(hby.db.ksns.get([subject.kever!.said]), subject.kever!.state());
+      yield* processCuesOnce(runtime, { hab: signer, queryCues });
+      yield* task;
+      assertEquals(completed, true, "the persisted valid notice supplies a target already met by accepted state");
+    } finally {
+      yield* task.halt();
       yield* runtime.close();
       yield* remote.close(true);
       yield* hby.close(true);

@@ -1329,7 +1329,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
         yield* settleRuntimeIngress(runtime, remote.db.clonePreIter(peer.pre));
         assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
         assertEquals(runtime.reactor.kvy.cues.empty, true);
-        assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["receipt", "keyStateSaved"]);
+        assertEquals(runtime.cues.toArray().map((cue) => cue.kin), ["receipt"]);
         assertEquals(hby.kevery.cues.toArray(), localCues);
       } finally {
         yield* runtime.close();

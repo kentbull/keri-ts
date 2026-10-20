@@ -384,11 +384,9 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             runtime.cues.toArray().map((cue) =>
               cue.kin === "receipt"
                 ? [cue.kin, cue.serder.pre, cue.serder.said]
-                : cue.kin === "keyStateSaved"
-                ? [cue.kin, cue.ksn.i, cue.ksn.d]
                 : [cue.kin]
             ),
-            ["receipt", "keyStateSaved"].map((kin) => [kin, remoteController.pre, remoteController.kever!.said]),
+            [["receipt", remoteController.pre, remoteController.kever!.said]],
           );
 
           runtime.cues.clear(); // Ordinary accepted output records carry no transport lease.
