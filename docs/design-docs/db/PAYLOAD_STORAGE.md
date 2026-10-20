@@ -30,8 +30,8 @@ The ownership sequence is:
    to keep their ownership independent. A byte digest is appropriate when no
    protocol SAID exists; it does not make arbitrary bytes a self-addressed document.
 4. `payload.discard()` explicitly deletes the owned stage or object. It is
-   idempotent on that handle. All readers must be finished before discarding or
-   promoting their file.
+   idempotent on that handle. Already-open readers keep their descriptors; future
+   opens require the file to remain owned. Promotion preserves borrowed views.
 
 Aborting a finished sink does not revoke the payload. Closing a store aborts its
 unfinished sinks but does not delete completed caller-owned files. Storage abort therefore cannot revoke an already transferred file.
@@ -49,8 +49,8 @@ the native Deno implementation has no Node filesystem imports.
 Final IDs are flat, at most 240 characters, and contain ASCII letters, digits,
 underscores, hyphens, and nonempty dot-separated scopes. The caller supplies and
 verifies the identity; the file store does not interpret protocol content or
-introduce shared-content reference counting. Temporary names are discarded at
-promotion because an incomplete stream has no final digest yet.
+introduce shared-content reference counting. A caller may keep the stage UUID
+as an independent immutable object identity, as PayloadArchive does.
 
 This module does not publish database references, sweep orphan files, or claim a
 transaction spanning file promotion and LMDB. Those operations require explicit
@@ -68,33 +68,33 @@ host requirement, not a PID-file lock or a lease.
 
 `publish(key, payload, commit, signal)` stores immutable bytes under an
 application key.
-A previously unclaimed local file transfers ownership through `PayloadStore.adopt`; stale readers
-remain usable, stale disposal is harmless, and stale promotion rejects. Other
-sources copy through awaited bounded writes. A reopened file already referenced
-by the archive is borrowed: publication under a new key copies it, and duplicate
-publication never consumes the original. The synchronous `commit` callback
-runs in the same LMDB transaction as the reference, after file contents and
-all required directory entries have been flushed. Identical duplicate bytes
-reuse the reference; conflicting bytes reject. Reference keys are nonempty ASCII
-segments separated by `/`, at most 240 characters.
-Final filenames replace separators with dots, so `essr/SAID` becomes `essr.SAID`
-and `plain/SAID` becomes `plain.SAID`. Dots are forbidden in reference keys to keep
-this mapping unambiguous. These names identify immutable owners; they are not
-independent hashes of the qualified wire or plaintext. Equal bytes under distinct
-keys keep separate lifetimes. Random UUIDs identify staging files only.
+An unpromoted local stage transfers ownership through `PayloadStore.claimStage`;
+borrowed readers remain usable, stale disposal is harmless, and stale promotion
+rejects. Other sources copy through awaited writes. Each candidate keeps its own
+UUID through promotion, independent of its application key. The synchronous
+`commit` callback runs with reference publication in the same LMDB transaction,
+after file contents and directory entries have been flushed. Byte comparison may
+suspend; recheck the compared reference before selecting it in the synchronous
+writer. Identical duplicates reuse the retained file; conflicting bytes reject.
+Reference keys are nonempty ASCII segments separated by `/`, at most 240
+characters. Scoped keys such as `essr/SAID` and `plain/SAID` keep representations
+independent; equal bytes under distinct keys keep separate file lifetimes.
 
 The private `payload.refs.` and `payload.owners.` tables belong together. They
 must not be edited independently. Recovery scans files and records incrementally,
 deletes unfinished stages and unreferenced objects, and fails closed on a missing
-referenced object or inconsistent ownership. A failure after promotion but before
-reference commit can leave a recoverable orphan. Removal commits reference
-absence before unlinking its file. Mutations reject concurrent admission, and
-close waits for already admitted work before releasing the runtime owner.
-Admission is reserved before invoking callbacks, so reentrant mutations reject.
+referenced object or inconsistent ownership. Ordinary failed/duplicate candidates clean only their own files; interruption
+between promotion and commit can leave a recoverable orphan. Removal commits
+reference absence and waits for its flush before unlinking that exact object.
+Independent preparation, comparison and deletion may overlap. Close joins all
+admitted I/O before releasing the runtime owner. Caller-owned writers are refused
+so an outer rollback cannot invalidate a completed publication/removal.
 
-Archive views expose only reads. Existing readers must finish before reference
-removal; removal does not provide reader leases. KERIpy-readable wire tables
-remain separate from private file references and retain their protocol schema.
+Archive views expose only reads. Already-open readers survive reference removal;
+future opens have no lifetime guarantee after removal. There are no reader leases.
+KERIpy-readable wire tables remain separate from private file references and
+retain their protocol schema. Plaintext offset metadata is checked against current
+accepted metadata in its reference-publication transaction.
 
 `Baser.getEssrs` returns ordinary ordered Texters. Private archive bytes retain
 exact qualified codes, fragment order and multiplicity; KERIpy IoSet rows alone
