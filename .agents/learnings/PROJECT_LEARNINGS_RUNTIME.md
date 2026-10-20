@@ -36,6 +36,12 @@ startup reconciles required signed endpoints before listening. Bootstrap uses al
 dt/curls, then accepted endpoints, with localhost only if both are absent. Location
 and role changes use signed Revery intake, not direct locs/lans mutation.
 
+Source CLI/tests and the DID container run Deno; packaged CLI launchers run Node.
+[runtime memory](../../docs/design-docs/runtime/RUNTIME_MEMORY.md) owns executable
+selection, the digest-pinned caged Node profile and RSS/heap measurement limits.
+A different Node base cannot compress Deno, and runtime tuning is not an application
+memory budget. Native-heavy macOS qualification uses Linux volumes without host binds.
+
 ## Protocol and output owners
 
 Kever returns decision/follow-up data; Kevery applies KEL policy, Revery owns BADA

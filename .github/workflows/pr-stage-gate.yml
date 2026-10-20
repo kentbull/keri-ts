@@ -232,6 +232,20 @@ jobs:
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
             "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
 
+      - name: smoke test exact packages on pointer-compressed Node
+        env:
+          SMOKE_NODE_IMAGE: platformatic/node-caged:26-slim@sha256:fa80c7804a23484a3b707733f8b3d0e45a93babd7ce6ae6e29312ed2c1eb8403
+        run: |
+          docker run --rm "$SMOKE_NODE_IMAGE" node -e '
+            const enabled = process.config.variables.v8_enable_pointer_compression;
+            console.log(JSON.stringify({ node: process.version, v8: process.versions.v8, pointerCompression: enabled }));
+            if (enabled !== 1) throw new Error("Expected a pointer-compressed Node build");
+          '
+          bash scripts/smoke-test-pr-packages-npm.sh \
+            "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
+            "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
+
       - name: retain packages on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
