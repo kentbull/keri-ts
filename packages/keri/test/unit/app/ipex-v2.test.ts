@@ -328,11 +328,11 @@ for (const foreign of [false, true]) {
         assert(grantSeal.s.num < BigInt(receiver.db.getKever(issuer.pre)!.lastEst.s));
         const exchanger = new Exchanger(receiver);
         loadIpexHandlers(receiver, exchanger);
-        const frame = (body: SerderKERI): CesrFrame => ({
+        const frame = (body: SerderKERI, seal = grantSeal): CesrFrame => ({
           body,
           gvrsn: Vrsn_2_0,
           attachments: messageAttachmentGroups({
-            sourceSeals: [grantSeal],
+            sourceSeals: [seal],
             tsgs: [
               new TransIdxSigGroup(
                 new Prefixer({ qb64: sender.pre }),
@@ -360,6 +360,13 @@ for (const foreign of [false, true]) {
           exchanger,
         );
         assertEquals(bad.decision?.kind, "reject", "a fresh sender signature cannot replace the required exact anchor");
+        const wrongDigest = yield* dispatchEnvelope(
+          envelopeFromFrame(frame(grant, { ...grantSeal, d: childSeal.d })),
+          receiver.rvy,
+          receiver.kevery,
+          exchanger,
+        );
+        assertEquals(wrongDigest.decision?.kind, "reject", "the historical event's sequence and digest must agree");
         const accepted = yield* dispatchEnvelope(
           envelopeFromFrame(frame(grant)),
           receiver.rvy,
