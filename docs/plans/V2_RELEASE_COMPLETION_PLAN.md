@@ -382,7 +382,8 @@ tests until the end.
 | 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06      |
 | 13f     | Remove custom direct HTTP query replies and compose independent receive owners                         | 13e, 19         |
 | 13g     | Close bounded query peer and installed-package evidence gaps, if not covered by 13f                    | 13f             |
-| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d, 13g    |
+| 13h     | Restore human maintainer documentation across recent query, transport and reporting refactors          | 13g             |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13d, 13h    |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
 | 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d, 13f        |
@@ -906,6 +907,16 @@ Do not duplicate that fallback in the new query sender.
   mailbox and query owners for genuine main/GLEIF 1.2.17/1.3.6 progression in both
   directions and installed public library/CLI checks. Fold this cut into 13f if
   its required evidence is already complete; never defer a known broken path.
+
+**13h: maintainer documentation follow-up.** Immediately after the current query
+interop PR and before further feature work, review #612 and the related recent
+transport, ESSR and reporting refactors for lost explanatory documentation.
+Restore useful module/class/function explanations, parameter meaning, invariants,
+accepted-state versus transport completion, cancellation/failure behavior and
+KERIpy correspondence wherever maintainers would otherwise have to reconstruct
+intent from implementation. Explain real contracts without restating types,
+adding a play-by-play report or changing behavior. This targeted review supersedes
+the earlier minimal-docs preference where source documentation became too terse.
 
 Preserve exact-envelope mailbox authorization, awaited processing before cursor
 advancement, independent endpoint progress, signer/subject/attester distinctions,

@@ -114,7 +114,9 @@ export function handleOobiRoute(
   return new Response(body, {
     status: 200,
     headers: {
-      "Content-Type": "application/cesr",
+      // Both pinned v1 Oobiery implementations require this label; main also
+      // accepts it. OOBI media is distinct from attachment-header POST media.
+      "Content-Type": "application/json+cesr",
       "KERI-AID": aid,
       "Oobi-Aid": aid,
     },

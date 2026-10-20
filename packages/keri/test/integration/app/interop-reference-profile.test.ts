@@ -1,14 +1,22 @@
-import { run } from "effection";
+import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
-import { concatBytes, Counter } from "../../../../cesr/mod.ts";
+import { concatBytes, Counter, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
+import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
+import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
+import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { Roles } from "../../../src/core/roles.ts";
+import { waitForTaskHalt } from "../../effection-http.ts";
 import {
   createInteropContext,
   extractPrefix,
   requireSuccess,
   runCmdWithTimeout,
+  runTufaWithTimeout,
   startKeriPyWitnessHarness,
 } from "./interop-test-helpers.ts";
 import { keripyProtocolVersionArgs, selectedKeripyProfile } from "./keripy-runtime.ts";
@@ -96,6 +104,245 @@ Deno.test("selected KERIpy profile serves its real v1 witness OOBI", async () =>
       assertEquals(bytes.length > 0, true);
     } finally {
       await witnesses.close();
+    }
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
+Deno.test("selected Python and Tufa query commands converge from stale accepted state through independent mailboxes", async () => {
+  const ctx = await createInteropContext();
+  try {
+    const python = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
+    try {
+      await run(function*() {
+        const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+        const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+          enableMailboxStore: true,
+        });
+        const handler = createProtocolHandler(runtime, {
+          serviceHab: witness,
+          witnessHab: witness,
+          hostedPrefixes: [witness.pre],
+        });
+        const traffic: { route: string | null; status: number }[] = [];
+        const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async req => {
+          let route: string | null = null;
+          if (req.method === "POST" && new URL(req.url).pathname === "/") {
+            const frames = await parseBytes(await readCesrRequestBytes(req.clone()));
+            route = (frames[0].body as SerderKERI).route;
+          }
+          const response = await handler(req);
+          if (route) traffic.push({ route, status: response.status });
+          return response;
+        });
+        const origin = `http://127.0.0.1:${server.addr.port}`;
+        yield* runtime.reactor.processBytes(witness.makeLocScheme(origin, witness.pre, "http"));
+        yield* runtime.reactor.processBytes(witness.makeEndRole(witness.pre, Roles.controller, true));
+        const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: witness }));
+        try {
+          yield* call(async () => {
+            const versions = keripyProtocolVersionArgs(ctx.env, "1.0");
+            const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+            const head = `${ctx.home}/tufa`,
+              issuer = `issuer-${crypto.randomUUID()}`,
+              reader = `reader-${crypto.randomUUID()}`;
+            const pyReader = `query-${crypto.randomUUID()}`, pyWitness = python.node("wan");
+            /** Invoke public Tufa commands with this fixture's isolated store root. */
+            const tufa = (label: string, args: string[]) =>
+              requireSuccess(label, runTufaWithTimeout(args, ctx.env, ctx.repoRoot, 30_000));
+            /** Select real reference CLI arguments without rewriting the peer implementation. */
+            const kli = (label: string, args: string[]) =>
+              requireSuccess(label, runCmdWithTimeout(ctx.kliCommand, args, ctx.env, 30_000));
+            /** Reopen accepted Tufa state after each command relinquishes its store. */
+            const state = async (name: string, pre: string) =>
+              await run(function*() {
+                const store = yield* createHabery({ name, headDirPath: head, skipConfig: true, skipSignator: true });
+                try {
+                  const kever = store.db.getKever(pre);
+                  assertExists(kever);
+                  return { sn: kever.sn, said: kever.said };
+                } finally {
+                  yield* store.close();
+                }
+              });
+            /** Read Python's own persisted state, rather than infer query success from its exit code. */
+            const pythonState = async (pre: string): Promise<{ sn: number; said: string }> => {
+              const result = await requireSuccess(
+                "read accepted Python query state",
+                runCmdWithTimeout(
+                  ctx.pythonCommand,
+                  [
+                    "scripts/ci/read-query-state.py",
+                    "--name",
+                    pyReader,
+                    "--prefix",
+                    pre,
+                    ...(legacy ? ["--legacy"] : []),
+                  ],
+                  ctx.env,
+                  20_000,
+                  ctx.repoRoot,
+                ),
+              );
+              return JSON.parse(result.stdout);
+            };
+            for (const name of [issuer, reader]) {
+              await tufa("initialize Tufa query store", ["init", "--name", name, "--head-dir", head, "--nopasscode"]);
+            }
+            const resolve = (name: string, url: string) =>
+              tufa("resolve query prerequisite", ["oobi", "resolve", "--name", name, "--head-dir", head, "--url", url]);
+            await resolve(issuer, pyWitness.controllerOobi);
+            await resolve(issuer, `${origin}/oobi/${witness.pre}/controller`);
+            await resolve(reader, pyWitness.controllerOobi);
+            /** Author a genuinely witnessed AID through the CLI, with one explicit witness. */
+            const incept = async (name: string, alias: string, wit: string) =>
+              extractPrefix(
+                (await tufa("incept query participant", [
+                  "incept",
+                  "--name",
+                  name,
+                  "--head-dir",
+                  head,
+                  "--alias",
+                  alias,
+                  "--transferable",
+                  "--icount",
+                  "1",
+                  "--ncount",
+                  "1",
+                  "--toad",
+                  "1",
+                  "--receipt-endpoint",
+                  "--wits",
+                  wit,
+                ])).stdout,
+              );
+            const pySubject = await incept(issuer, "python-subject", pyWitness.pre);
+            const tsSubject = await incept(issuer, "tufa-subject", witness.pre);
+            await incept(reader, "reader", pyWitness.pre);
+            await resolve(reader, `${pyWitness.httpOrigin}/oobi/${pySubject}/witness/${pyWitness.pre}`);
+            assertEquals((await state(reader, pySubject)).sn, 0);
+
+            await kli("initialize Python reader", ["init", ...versions, "--name", pyReader, "--nopasscode"]);
+            await kli("resolve Tufa witness", [
+              "oobi",
+              "resolve",
+              ...versions,
+              "--name",
+              pyReader,
+              "--oobi",
+              `${origin}/oobi/${witness.pre}/controller`,
+            ]);
+            const config = `${ctx.home}/python-reader.json`;
+            await Deno.writeTextFile(
+              config,
+              JSON.stringify({
+                transferable: true,
+                icount: 1,
+                isith: "1",
+                ncount: 1,
+                nsith: "1",
+                toad: 1,
+                wits: [witness.pre],
+              }),
+            );
+            await kli("incept Python mailbox recipient", [
+              "incept",
+              ...versions,
+              "--name",
+              pyReader,
+              "--alias",
+              "reader",
+              "--file",
+              config,
+              "--receipt-endpoint",
+            ]);
+            await kli("bootstrap stale Python state", [
+              "oobi",
+              "resolve",
+              ...versions,
+              "--name",
+              pyReader,
+              "--oobi",
+              `${origin}/oobi/${tsSubject}/witness/${witness.pre}`,
+            ]);
+            assertEquals((await pythonState(tsSubject)).sn, 0);
+
+            for (const alias of ["python-subject", "tufa-subject"]) {
+              await tufa("advance query subject", [
+                "rotate",
+                "--name",
+                issuer,
+                "--head-dir",
+                head,
+                "--alias",
+                alias,
+                "--receipt-endpoint",
+                "--toad",
+                "1",
+              ]);
+            }
+            const expectedPy = await state(issuer, pySubject), expectedTs = await state(issuer, tsSubject);
+            assertEquals([expectedPy.sn, expectedTs.sn], [1, 1]);
+            const observed = await fetch(`${pyWitness.httpOrigin}/_messenger`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "snapshot", prefixes: [] }),
+            });
+            const before = (await observed.json()).traffic.length;
+            await tufa("Tufa query Python-backed newer state", [
+              "query",
+              "--name",
+              reader,
+              "--head-dir",
+              head,
+              "--alias",
+              "reader",
+              "--prefix",
+              pySubject,
+            ]);
+            assertEquals(await state(reader, pySubject), expectedPy);
+            const snapshot = await fetch(`${pyWitness.httpOrigin}/_messenger`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "snapshot", prefixes: [] }),
+            });
+            const queried: { status: number }[] = (await snapshot.json()).traffic.slice(before);
+            assert(queried.some(row => row.status === 204));
+            assert(queried.some(row => row.status === 200));
+            const start = traffic.length;
+            await kli("Python query Tufa-backed newer state", [
+              "query",
+              ...versions,
+              "--name",
+              pyReader,
+              "--alias",
+              "reader",
+              "--prefix",
+              tsSubject,
+            ]);
+            assertEquals(await pythonState(tsSubject), expectedTs);
+            const queries = traffic.slice(start);
+            for (const route of ["ksn", "logs"]) {
+              assert(
+                queries.some(row => row.route === route && row.status === 204),
+                `Expected acknowledged ${route}: ${JSON.stringify(queries)}`,
+              );
+            }
+            assert(queries.some(row => row.route === "mbx" && row.status === 200));
+          });
+        } finally {
+          yield* waitForTaskHalt(worker);
+          yield* runtime.close();
+          yield* call(() => server.shutdown());
+          yield* call(() => handler.close!());
+          yield* hby.close(true);
+        }
+      });
+    } finally {
+      await python.close();
     }
   } finally {
     await Deno.remove(ctx.home, { recursive: true });
