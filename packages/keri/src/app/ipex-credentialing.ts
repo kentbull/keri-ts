@@ -23,9 +23,11 @@ import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
 import { CredentialWallet, serializeCredential } from "../vdr/credentialing.ts";
+import { chunkBytes } from "./byte-source.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { IPEX_GRANT_ROUTE, ipexAdmitExn, type IpexBuilderOptions, ipexGrantExn } from "./ipexing.ts";
-import type { Reactor } from "./reactor.ts";
+import { processMessages } from "./message-source.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 
 const textEncoder = new TextEncoder();
 
@@ -288,17 +290,21 @@ export function ipexCredentialAdmit(args: {
 /**
  * Parse grant-embedded artifacts in KERIpy admit order: `anc`, `iss`, `acdc`.
  *
- * @param reactor Borrowed byte-intake owner connected to the credential processors.
+ * @param protocol Borrowed shared protocol processor; this operation owns its parser and input-specific Kevery.
  * @param artifacts Grant-embedded anchor, issuance and credential streams in their named fields.
  */
 export function* processCredentialPresentationArtifacts(
-  reactor: Reactor,
+  protocol: ProtocolProcessor,
   artifacts: CredentialPresentationArtifacts,
 ): Operation<void> {
-  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.anc.genus), artifacts.anc.wire));
-  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.iss.genus), artifacts.iss.wire));
-  yield* reactor.processBytes(concatBytes(Counter.makeGVC(artifacts.acdc.genus), artifacts.acdc.wire));
-  yield* reactor.protocol.processEscrowsOnce();
+  const kvy = protocol.makeKevery();
+  // Each artifact carries its own attachment genus; finish its dispatch before opening the next.
+  for (const artifact of [artifacts.anc, artifacts.iss, artifacts.acdc]) {
+    const bytes = concatBytes(Counter.makeGVC(artifact.genus), artifact.wire);
+    yield* processMessages((signal) => chunkBytes(bytes, { signal }), protocol, kvy);
+  }
+  // Recurring IPEX/verifier callers retain their existing single-pass escrow scheduling.
+  yield* protocol.processEscrowsOnce();
 }
 
 /** Rebuild grant-embedded `anc`, `iss`, and `acdc` streams from exchange storage. */

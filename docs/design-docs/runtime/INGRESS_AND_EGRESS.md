@@ -550,7 +550,9 @@ implementation directly. No callback executor or additional receiver facade exis
 
 Host composition exposes actual `protocol`, `replies` and `exc` owners. HTTP/TCP
 request slots borrow `replies`; IPEX workflows observe `exc`. Poster borrows the
-shared ProtocolProcessor rather than Reactor. Minimal standalone input composition
+shared ProtocolProcessor rather than Reactor. Credential import, grant artifact
+intake and VerifierAgent also borrow ProtocolProcessor directly; their finite input
+operations own parsing and input-specific Kevery instances. Minimal standalone input composition
 uses createProtocolProcessor over the caller's existing Habery, opening no stores
 or background workers. Reactor has no dispatch, escrow or semantic-handler proxies.
 

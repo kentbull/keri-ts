@@ -243,3 +243,17 @@ presentation because the TEL source seal and KEL anchor are separate evidence.
   message's own route and prior-response rules.
 - Sending raw ACDC support over `/fwd` as if every forwarded SAD were KERI
   breaks mixed KLI/Tufa credential transport.
+
+## Credential input ownership
+
+`importCredentialStream(protocol, reger, bytes)` borrows the configured
+`ProtocolProcessor` and credential store. The finite input operation owns its
+parser and input-specific Kevery, dispatching each complete frame before pulling
+the next. A malformed later frame does not roll back already accepted evidence.
+Source and suspending-handler cleanup join before the operation exits.
+
+`processCredentialPresentationArtifacts(protocol, artifacts)` separately consumes
+`anc`, `iss`, then `acdc`, honoring each artifact's genus selector. It advances
+escrows once after intake; its recurring IPEX/VerifierAgent callers own subsequent
+scheduling. VerifierAgent borrows the same shared processor directly. Neither
+operation uses Reactor or starts delivery, discovery, or mailbox workers.

@@ -60,7 +60,7 @@ export interface VerifierOptions {
 }
 
 /**
- * Concrete credential verifier supplied directly to `Reactor`.
+ * Concrete credential verifier supplied to the shared `ProtocolProcessor`.
  *
  * The verifier owns only credential validation/indexing and its own VDR escrows.
  * TEL processing remains delegated to `Tevery`, and webhook/application policy
