@@ -81,6 +81,7 @@ import {
   type WellKnownAuthNShape,
 } from "../core/records.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
+import { baserDefaults } from "./baser-defaults.ts";
 import { dgKey, splitOnKey, suffix, unsuffix } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord, PlaintextRecord } from "./exchange-records.ts";
@@ -473,23 +474,9 @@ export class Baser {
   public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
   public tmqs!: CatCesrIoSetSuber<TypedMediaQuadrupleTuple>; // Type-media quadruples.
 
-  static readonly TailDirPath = "keri/db";
-  static readonly AltTailDirPath = ".tufa/db";
-  static readonly CompatAltTailDirPath = ".keri/db";
-  static readonly TempPrefix = "keri_db_";
-  static readonly MaxNamedDBs = 128;
-
   constructor(options: BaserOptions = {}) {
     this.logger = options.logger ?? consoleLogger;
-    const compat = options.compat ?? false;
-    this.lmdber = new LMDBer(options, {
-      tailDirPath: Baser.TailDirPath,
-      cleanTailDirPath: "keri/clean/db",
-      altTailDirPath: compat ? Baser.CompatAltTailDirPath : Baser.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/db" : ".tufa/clean/db",
-      tempPrefix: Baser.TempPrefix,
-      maxNamedDBs: Baser.MaxNamedDBs,
-    });
+    this.lmdber = new LMDBer(options, baserDefaults(options.compat));
   }
 
   /** Expose the resolved logical database name delegated from the root LMDBer. */

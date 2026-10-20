@@ -274,6 +274,8 @@ export class LMDBer {
   private readonly logger: Logger;
   /** Optional constructor-level map size override applied on every reopen. */
   private configuredMapSize?: number;
+  /** Existing-store maintenance may neither create tables nor clear its target. */
+  private existingOnly = false;
 
   // Class constants
   static readonly HeadDirPath: string = "/usr/local/var";
@@ -427,13 +429,41 @@ export class LMDBer {
       return false;
     }
 
-    // Prefer reopen-time option, then constructor option, then env, then default.
+    if (options.mapSize !== undefined) this.configuredMapSize = options.mapSize;
+    this.existingOnly = false;
+    this.openEnvironment(dbPath, dbExists);
+
+    // KERIpy parity: stamp version metadata on newly-created DBs and temp DBs.
+    if (this.opened && !readonly && (!dbExists || this.temp)) {
+      this.setVer(DEFAULT_DB_VERSION);
+    }
+    return this.opened;
+  }
+
+  /**
+   * Open a resolved existing environment without path creation or version writes.
+   * All subsequent named-table bindings refuse creation, including writable ones.
+   */
+  *openExisting(path: string): Operation<void> {
+    if (this.env || this.temp) {
+      throw new DatabaseOperationError("Existing-store opening requires a closed, persistent LMDBer");
+    }
+    const data = yield* this.pathManager.statFileOp(`${path}/data.mdb`);
+    if (!data.isFile) {
+      throw new DatabaseOperationError(`Existing database not found at ${path}`);
+    }
+    this.existingOnly = true;
+    this.openEnvironment(path, true);
+    this.pathManager.path = path;
+    this.pathManager.opened = true;
+  }
+
+  /** Open the native environment with the shared binary and map-size contract. */
+  private openEnvironment(dbPath: string, dbExists: boolean): void {
+    // Prefer the configured option, then env, then default.
     // When data.mdb already exists, raise to at least the stored map size so
     // KERIpy databases opened with KERI_BASER_MAP_SIZE=10GiB (etc.) do not abort
     // under an undersized lmdb-js virtual mapping.
-    if (options.mapSize !== undefined) {
-      this.configuredMapSize = options.mapSize;
-    }
     const dataMdbPath = dbExists ? `${dbPath}/data.mdb` : null;
     const effectiveMapSize = resolveLmdbMapSize({
       optionMapSize: this.configuredMapSize,
@@ -445,15 +475,16 @@ export class LMDBer {
     });
     const dbConfig = {
       path: dbPath, // Use directory path (Node.js lmdb should handle this)
+      noSubdir: false, // A dotted directory name must not select LMDB's single-file layout.
       maxDbs: this.defaults.maxNamedDBs,
       mapSize: effectiveMapSize,
-      readOnly: readonly,
+      readOnly: this.readonly,
       compression: false, // Disable compression for compatibility
       encoding: "binary" as const, // to mimic KERIpy behavior
       keyEncoding: "binary" as const, // to mimic KERIpy behavior
     };
     this.logger.debug(
-      `Opening LMDB at: ${dbPath} (readonly: ${readonly}, mapSize: ${effectiveMapSize})`,
+      `Opening LMDB at: ${dbPath} (readonly: ${this.readonly}, mapSize: ${effectiveMapSize})`,
     );
 
     // Open LMDB environment
@@ -463,13 +494,6 @@ export class LMDBer {
       // memory management issues with native bindings (double-free errors)
       this.env = open(dbConfig);
       this.logger.debug(`LMDB environment opened successfully`);
-
-      // KERIpy parity: stamp version metadata on newly-created DBs and temp DBs.
-      if (this.opened && !readonly && (!dbExists || this.temp)) {
-        this.setVer(DEFAULT_DB_VERSION);
-      }
-
-      return this.opened;
     } catch (error) {
       this.env = null;
       const message = error instanceof Error ? error.message : String(error);
@@ -500,11 +524,15 @@ export class LMDBer {
    * leak across later work.
    */
   *close(clear = false): Operation<boolean> {
+    if (clear && this.existingOnly) {
+      throw new DatabaseOperationError("Existing-store maintenance cannot clear its environment");
+    }
     if (this.env) {
       try {
         yield* this.closeEnv(this.env);
         yield* this.quiesceEnvTimers(); // lmdb-js uses internal teardown timers to manage post-close; this lets them finish
       } catch (error) {
+        if (this.existingOnly) throw error;
         // Intentional recovery: close errors are non-fatal during shutdown paths.
         this.logger.warn(`Error closing LMDB: ${error}`);
       }
@@ -560,11 +588,20 @@ export class LMDBer {
    */
   openDB(name: string, dupsort = false): Database<BinVal, BinKey> {
     const env = this.requireEnv();
-    return env.openDB(name, {
+    // lmdb-js 3.5.3 supports create:false in open.js even though its public
+    // DatabaseOptions declaration omits it. Keep that native detail here.
+    const options = {
       keyEncoding: "binary",
       encoding: "binary", // Use binary encoding for values (raw bytes) to match KERIpy
       dupSort: dupsort,
-    });
+      create: !this.existingOnly,
+    } as const;
+    const table = env.openDB<BinVal, BinKey>(name, options);
+    // The native API returns undefined for an absent non-creating binding,
+    // despite declaring a non-null result. Maintenance must reject it; ordinary
+    // readonly Baser bindings already tolerate tables absent from Python layouts.
+    if (this.existingOnly && !table) throw new DatabaseOperationError(`Database not found: ${name}`);
+    return table;
   }
 
   /*
