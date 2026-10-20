@@ -14,7 +14,7 @@ import type { KeyStateRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
-import type { GroupEndpointRoleProposalResult } from "../endpoint-roleing.ts";
+import type { GroupRoleResult } from "../endpoint-roleing.ts";
 import {
   endpointRoleAccepted,
   groupSigningMembers,
@@ -30,7 +30,7 @@ import {
   MULTISIG_RPY_ROUTE,
 } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
-import type { MultisigSendResult } from "../multisig-messaging.ts";
+import type { GroupSendResult } from "../multisig-messaging.ts";
 import type { MultisigKelRoute } from "../multisig-workflows.ts";
 import {
   type ApprovalPromptContext,
@@ -55,7 +55,7 @@ import { resolveWitnessAuths } from "./common/witness-auth.ts";
 const MULTISIG_TOPIC = "multisig";
 
 /** Accepted-state snapshot and message outcomes retained after owned stores close. */
-export interface MultisigEventCommandResult extends MultisigSendResult {
+export interface GroupEventResult extends GroupSendResult {
   route: MultisigKelRoute;
   group: string;
   accepted: boolean;
@@ -155,7 +155,7 @@ function isString(value: unknown): value is string {
 /** Create or begin a distributed group identifier from a KLI-style file. */
 export function* multisigInceptCommand(
   args: Record<string, unknown>,
-): Operation<MultisigEventCommandResult> {
+): Operation<GroupEventResult> {
   const commandArgs: MultisigInceptArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -304,7 +304,7 @@ export function* multisigJoinCommand(
 /** Create or begin one group interaction event. */
 export function* multisigInteractCommand(
   args: Record<string, unknown>,
-): Operation<MultisigEventCommandResult> {
+): Operation<GroupEventResult> {
   const commandArgs: MultisigInteractArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -368,7 +368,7 @@ export function* multisigInteractCommand(
 /** Rotate or begin rotation of one group identifier. */
 export function* multisigRotateCommand(
   args: Record<string, unknown>,
-): Operation<MultisigEventCommandResult> {
+): Operation<GroupEventResult> {
   const commandArgs: MultisigRotateArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,
@@ -462,7 +462,7 @@ export function* multisigRotateCommand(
 /** Propose one group multisig reply such as `/end/role/add`. */
 export function* multisigRpyCommand(
   args: Record<string, unknown>,
-): Operation<GroupEndpointRoleProposalResult> {
+): Operation<GroupRoleResult> {
   const commandArgs: MultisigRpyArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,

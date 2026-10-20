@@ -13,18 +13,18 @@ import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
 
 import {
-  type MultisigMessageDelivery,
-  type MultisigSendResult,
-  multisigSendResult,
-  processAndSendMultisigMessage,
-  remoteMultisigMembers,
-  signMultisigMessage,
+  admitAndSendGroupMessage,
+  type GroupDelivery,
+  type GroupSendResult,
+  groupSendResult,
+  remoteGroupMembers,
+  signGroupMessage,
 } from "./multisig-messaging.ts";
 
 export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 
 /** Result of proposing one group endpoint-role authorization reply. */
-export interface GroupEndpointRoleProposalResult extends MultisigSendResult {
+export interface GroupRoleResult extends GroupSendResult {
   route: typeof MULTISIG_RPY_ROUTE;
   group: string;
   accepted: boolean;
@@ -76,7 +76,7 @@ export function* proposeGroupEndpointRole(
     role?: string;
     allow?: boolean;
   },
-): Operation<GroupEndpointRoleProposalResult> {
+): Operation<GroupRoleResult> {
   const role = args.role ?? Roles.mailbox;
   const input = new Reactor(protocol);
   if (input.kvy.db !== hby.db) throw new TypeError("Endpoint-role proposal must use the same accepted-state store");
@@ -90,20 +90,20 @@ export function* proposeGroupEndpointRole(
   yield* input.processBytes(localRpy, { local: true });
   yield* protocol.processEscrowsOnce();
 
-  const outcomes: MultisigMessageDelivery[] = [];
-  for (const recipient of remoteMultisigMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
+  const outcomes: GroupDelivery[] = [];
+  for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const [serder, attachments] = exchange(MULTISIG_RPY_ROUTE, { gid: groupHab.pre }, {
       sender: member.pre,
       recipient,
       embeds: { rpy: localRpy },
     });
-    const prepared = signMultisigMessage(member, recipient, [serder, attachments]);
-    outcomes.push(yield* processAndSendMultisigMessage(input, postman, prepared));
+    const prepared = signGroupMessage(member, recipient, [serder, attachments]);
+    outcomes.push(yield* admitAndSendGroupMessage(input, postman, prepared));
   }
 
   return {
     route: MULTISIG_RPY_ROUTE,
-    ...multisigSendResult(outcomes),
+    ...groupSendResult(outcomes),
     group: groupHab.pre,
     accepted: endpointRoleAccepted(hby, groupHab.pre, role, args.eid),
     rpy: localRpy,

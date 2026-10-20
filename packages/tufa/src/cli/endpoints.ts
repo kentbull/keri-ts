@@ -1,11 +1,11 @@
 /** Endpoint-role command presentation, shared by the explicit group command adapters. */
 import type { Operation } from "effection";
 import { endsAddCommand as addEndpointRole } from "keri-ts/cli";
-import type { GroupEndpointRoleProposalResult } from "keri-ts/runtime";
+import type { GroupRoleResult } from "keri-ts/runtime";
 import { writeJsonLine } from "./support/rendering.ts";
 
 /** Project protocol/transport facts without serializing the internal signed reply bytes. */
-export function writeGroupEndpointRoleProposal(result: GroupEndpointRoleProposalResult): void {
+export function writeGroupEndpointRoleProposal(result: GroupRoleResult): void {
   writeJsonLine({
     route: result.route,
     messages: result.messages,

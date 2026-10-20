@@ -49,7 +49,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { approveMultisigIpex, groupIpexPartial } from "../../../src/app/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../src/app/ipexing.ts";
-import { signMultisigMessage } from "../../../src/app/multisig-messaging.ts";
+import { signGroupMessage } from "../../../src/app/multisig-messaging.ts";
 import { approvePendingMultisigProposal, publishProposal } from "../../../src/app/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -643,7 +643,7 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         await run(() => dispatchEnvelope(normalized, left.rvy, left.kevery, exchanger));
         assertEquals(exchanger.complete(serder.said!), true);
         assertEquals(left.db.enst.get([serder.said!]).length, 1);
-        const sent = signMultisigMessage(bob, alice.pre, [serder, nested]);
+        const sent = signGroupMessage(bob, alice.pre, [serder, nested]);
         assertEquals(sent.exnSaid, serder.said);
         assertEquals(sent.payloadSaid, body.said);
         assertEquals(left.db.meids.get([sent.payloadSaid]).map(value => value.qb64), [sent.exnSaid]);
@@ -1105,9 +1105,14 @@ Deno.test("group credential producers publish typed evidence and usable proposal
           registryName: "typed",
         });
         const vcp = new SerderKERI({ raw: wires[0] });
-        const vcpEmbeds = vcp.ked!.e as { d: string };
+        const vcpEmbeds = vcp.ked!.e as { d: string; vcp: { d: string } };
         assertEquals(Object.keys(vcpEmbeds), ["vcp", "anc", "d"]);
-        assertEquals("messages" in registry ? registry.messages : null, [{
+        assertExists(registry.group);
+        assertEquals(registry.group.status, "accept");
+        assertEquals(registry.group.accepted, true);
+        assertEquals(registry.group.deliveries, ["peer"]);
+        assertEquals(runtime.vdr!.reger.tels.getOn(registry.registry!, 0)?.qb64, vcpEmbeds.vcp.d);
+        assertEquals(registry.group.messages, [{
           recipient: bob.pre,
           exnSaid: vcp.said,
           payloadSaid: vcpEmbeds.d,
@@ -1123,7 +1128,14 @@ Deno.test("group credential producers publish typed evidence and usable proposal
         const iss = new SerderKERI({ raw: wires[1] });
         const issEmbeds = iss.ked!.e as { d: string };
         assertEquals(Object.keys(issEmbeds), ["acdc", "iss", "anc", "d"]);
-        assertEquals("messages" in issued.issuance ? issued.issuance.messages : null, [{
+        assertExists(issued.group);
+        assertEquals(issued.recipient, bob.pre);
+        assertEquals(issued.status, "accept");
+        assertEquals(issued.group.telStatus, "accept");
+        assertEquals(issued.group.saved, true);
+        assertEquals(issued.group.deliveries, ["peer"]);
+        assertEquals(runtime.vdr!.reger.tels.getOn(issued.creder.said!, 0)?.qb64, issued.tel);
+        assertEquals(issued.group.messages, [{
           recipient: bob.pre,
           exnSaid: iss.said,
           payloadSaid: issEmbeds.d,

@@ -4,7 +4,7 @@ import { isEndpointRole } from "../../core/roles.ts";
 import { settleRuntimeIngress } from "../agent-runtime.ts";
 import {
   endpointRoleAccepted,
-  type GroupEndpointRoleProposalResult,
+  type GroupRoleResult,
   isLocalGroupHab,
   proposeGroupEndpointRole,
 } from "../endpoint-roleing.ts";
@@ -26,7 +26,7 @@ interface EndsAddArgs {
 }
 
 /** Typed endpoint result; Tufa decides how to present the completed operation. */
-export type EndsAddResult = GroupEndpointRoleProposalResult | { role: string; eid: string };
+export type EndRoleResult = GroupRoleResult | { role: string; eid: string };
 
 /**
  * Implement `tufa ends add` on top of the shared local runtime.
@@ -44,7 +44,7 @@ export type EndsAddResult = GroupEndpointRoleProposalResult | { role: string; ei
  */
 export function* endsAddCommand(
   args: Record<string, unknown>,
-): Operation<EndsAddResult> {
+): Operation<EndRoleResult> {
   const commandArgs: EndsAddArgs = {
     name: args.name as string | undefined,
     base: args.base as string | undefined,

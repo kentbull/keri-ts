@@ -7,16 +7,15 @@ import { type AgentRuntime } from "../agent-runtime.ts";
 import { importCredentialStream } from "../credential-importing.ts";
 import {
   createCredential,
-  type CredentialCreateResult,
-  type CredentialRegistryInceptResult,
   credentialRegistryRecords,
   credentialRegistryStatus,
   credentialStreamBytes,
   exportCredentialStream,
-  type GroupCredentialRegistryInceptResult,
   inceptCredentialRegistry,
+  type IssueResult,
   listCredentials,
   pinSchemaBytes,
+  type RegistryResult,
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
@@ -97,7 +96,7 @@ export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation
  */
 export function* vcRegistryInceptCommand(
   args: Record<string, unknown>,
-): Operation<CredentialRegistryInceptResult | GroupCredentialRegistryInceptResult> {
+): Operation<RegistryResult> {
   const vcArgs = registryArgs(args);
   return yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
@@ -142,7 +141,7 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* vcCreateCommand(args: Record<string, unknown>): Operation<CredentialCreateResult> {
+export function* vcCreateCommand(args: Record<string, unknown>): Operation<IssueResult> {
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
     alias: args.alias as string | undefined,

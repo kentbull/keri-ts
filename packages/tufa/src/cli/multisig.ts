@@ -1,7 +1,7 @@
 /** Tufa presentation for typed multisig command results; KERI owns signing and acceptance. */
 import type { Operation } from "effection";
 import {
-  type MultisigEventCommandResult,
+  type GroupEventResult,
   multisigInceptCommand as incept,
   multisigInteractCommand as interact,
   multisigJoinCommand as join,
@@ -12,7 +12,7 @@ import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 import { writeJsonLine } from "./support/rendering.ts";
 
 /** Display the captured key state, then the exact coordination-message send result. */
-function printEvent(result: MultisigEventCommandResult): void {
+function printEvent(result: GroupEventResult): void {
   console.log(`Prefix  ${result.group}`);
   console.log(`New Sequence No.  ${result.state?.s ?? ""}`);
   for (const [index, key] of (result.state?.k ?? []).entries()) {

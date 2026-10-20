@@ -8,7 +8,7 @@ import type { Hab, Habery } from "./habbing.ts";
 import type { Reactor } from "./reactor.ts";
 
 /** Recipient-specific wrapper identity and its shared Multiplexor proposal index key. */
-export interface MultisigMessageIdentity {
+export interface GroupMessageRef {
   recipient: string;
   /** Outer multisig coordination EXN SAID; also selected by join --said. */
   exnSaid: string;
@@ -17,24 +17,24 @@ export interface MultisigMessageIdentity {
 }
 
 /** Complete signed proposal ready for local admission or concrete transmission. */
-export interface SignedMultisigMessage extends MultisigMessageIdentity {
+interface SignedGroupMessage extends GroupMessageRef {
   src: string;
   message: Uint8Array;
 }
 
 /** Completed transport destinations, not participant approval or group acceptance. */
-export interface MultisigMessageDelivery extends MultisigMessageIdentity {
+export interface GroupDelivery extends GroupMessageRef {
   deliveries: string[];
 }
 
 /** Public publication facts for exact selection, without treating transport as approval. */
-export interface MultisigSendResult {
-  messages: MultisigMessageIdentity[];
+export interface GroupSendResult {
+  messages: GroupMessageRef[];
   deliveries: string[];
 }
 
 /** Select unique remote member AIDs, preserving the supplied member order. */
-export function remoteMultisigMembers(hby: Habery, member: Hab, recipients: readonly string[]): string[] {
+export function remoteGroupMembers(hby: Habery, member: Hab, recipients: readonly string[]): string[] {
   return uniqueMembers(recipients).filter(recipient => recipient !== member.pre && !hby.habs.has(recipient));
 }
 
@@ -75,11 +75,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Sign one prepared wrapper once; callers decide when to admit its exact bytes locally. */
-export function signMultisigMessage(
+export function signGroupMessage(
   member: Hab,
   recipient: string,
   [serder, attachments]: MultisigMessage,
-): SignedMultisigMessage {
+): SignedGroupMessage {
   const payloadSaid = multisigPayloadSaid(serder);
   if (!serder.said || !payloadSaid) throw new Error("Constructed multisig wrapper lacks its proposal identity");
   return {
@@ -92,10 +92,10 @@ export function signMultisigMessage(
 }
 
 /** Send the prepared bytes and await Poster completion; no worker or protocol policy is created here. */
-export function* sendMultisigMessage(
+export function* sendGroupMessage(
   postman: Poster,
-  prepared: SignedMultisigMessage,
-): Operation<MultisigMessageDelivery> {
+  prepared: SignedGroupMessage,
+): Operation<GroupDelivery> {
   const evt = postman.send({
     src: prepared.src,
     dest: prepared.recipient,
@@ -113,7 +113,7 @@ export function* sendMultisigMessage(
 }
 
 /** Collect successful recipient outcomes into message identities and completed target URLs. */
-export function multisigSendResult(outcomes: readonly MultisigMessageDelivery[]): MultisigSendResult {
+export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendResult {
   return {
     messages: outcomes.map(({ recipient, exnSaid, payloadSaid }) => ({ recipient, exnSaid, payloadSaid })),
     deliveries: outcomes.flatMap(outcome => outcome.deliveries),
@@ -121,11 +121,11 @@ export function multisigSendResult(outcomes: readonly MultisigMessageDelivery[])
 }
 
 /** Admit the exact signed local contribution before sending can elicit a peer response. */
-export function* processAndSendMultisigMessage(
+export function* admitAndSendGroupMessage(
   input: Reactor,
   postman: Poster,
-  prepared: SignedMultisigMessage,
-): Operation<MultisigMessageDelivery> {
+  prepared: SignedGroupMessage,
+): Operation<GroupDelivery> {
   yield* input.processBytes(prepared.message, { local: true });
-  return yield* sendMultisigMessage(postman, prepared);
+  return yield* sendGroupMessage(postman, prepared);
 }

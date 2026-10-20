@@ -126,23 +126,20 @@ export {
 export {
   createCredential,
   type CredentialCreateOptions,
-  type CredentialCreateResult,
   type CredentialExportResult,
-  type CredentialIssuanceResult,
   type CredentialListItem,
   type CredentialListOptions,
   type CredentialRegistryInceptOptions,
-  type CredentialRegistryInceptResult,
   credentialRegistryRecords,
   credentialRegistryStatus,
   type CredentialRevokeOptions,
   type CredentialRevokeResult,
   exportCredentialStream,
-  type GroupCredentialIssuanceResult,
-  type GroupCredentialRegistryInceptResult,
   inceptCredentialRegistry,
+  type IssueResult,
   listCredentials,
   pinSchemaBytes,
+  type RegistryResult,
   revokeCredential,
 } from "../app/credential-workflows.ts";
 export {
@@ -153,7 +150,7 @@ export {
 } from "../app/delegating.ts";
 export {
   endpointRoleAccepted,
-  type GroupEndpointRoleProposalResult,
+  type GroupRoleResult,
   loadAcceptedEndpointRole,
   proposeGroupEndpointRole,
 } from "../app/endpoint-roleing.ts";
@@ -275,10 +272,8 @@ export {
   resolveHostedEndpointPath,
 } from "../app/mailboxing.ts";
 export type {
-  MultisigMessageDelivery,
-  MultisigMessageIdentity,
-  MultisigSendResult,
-  SignedMultisigMessage,
+  GroupMessageRef,
+  GroupSendResult,
 } from "../app/multisig-messaging.ts";
 export {
   Notifier,

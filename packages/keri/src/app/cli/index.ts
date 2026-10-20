@@ -27,7 +27,7 @@ export { resolveWitnessAuths, type WitnessAuthOptions } from "./common/witness-a
 export { dumpEvts } from "./db-dump.ts";
 export { delegateConfirmCommand } from "./delegate.ts";
 export { dkrResolveCommand, dwsBindCommand, dwsGenerateCommand, dwsResolveCommand } from "./did.ts";
-export { endsAddCommand, type EndsAddResult } from "./ends.ts";
+export { type EndRoleResult, endsAddCommand } from "./ends.ts";
 export { exchangeSendCommand } from "./exchange.ts";
 export { exportCommand } from "./export.ts";
 export { inceptCommand } from "./incept.ts";
@@ -47,7 +47,7 @@ export {
 export { listCommand } from "./list.ts";
 export { locAddCommand } from "./loc.ts";
 export {
-  type MultisigEventCommandResult,
+  type GroupEventResult,
   multisigInceptCommand,
   multisigInteractCommand,
   multisigJoinCommand,

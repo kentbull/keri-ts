@@ -832,15 +832,20 @@ and messenger qualification, before the remaining durable-selection work in PR
 13 and expanded lifecycle features in PRs 14–16/20. The first publication-owner
 cut already exists; this refines its contracts without changing approval behavior.
 
-| Existing reporting name       | Replacement               |
-| ----------------------------- | ------------------------- |
-| `ProposalPublication`         | `MultisigSendResult`      |
-| `ProposalIdentity`            | `MultisigMessageIdentity` |
-| `SignedGroupProposal`         | `SignedMultisigMessage`   |
-| `ProposalDelivery`            | `MultisigMessageDelivery` |
-| Result collection `proposals` | `messages`                |
-| Identity field `said`         | `exnSaid`                 |
-| Identity field `proposal`     | `payloadSaid`             |
+| Existing reporting name       | Replacement          |
+| ----------------------------- | -------------------- |
+| `ProposalPublication`         | `GroupSendResult`    |
+| `ProposalIdentity`            | `GroupMessageRef`    |
+| `SignedGroupProposal`         | `SignedGroupMessage` |
+| `ProposalDelivery`            | `GroupDelivery`      |
+| Result collection `proposals` | `messages`           |
+| Identity field `said`         | `exnSaid`            |
+| Identity field `proposal`     | `payloadSaid`        |
+
+Apply the adopted [result contract simplification](exchange/RESULT_CONTRACT_SIMPLIFICATION_PLAN.md)
+in this same cut: keep signed/delivery helper records internal, expose one
+`RegistryResult` and one `IssueResult` with optional group facts, and preserve
+flat Tufa JSON through explicit projection.
 
 Apply fields only to these reporting records, never indiscriminately to protocol
 objects or unrelated SAIDs. `exnSaid` identifies the outer coordination EXN.

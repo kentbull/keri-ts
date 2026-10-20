@@ -56,12 +56,12 @@ import {
 } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import {
-  type MultisigMessageDelivery,
-  type MultisigSendResult,
-  multisigSendResult,
-  processAndSendMultisigMessage,
-  remoteMultisigMembers,
-  signMultisigMessage,
+  admitAndSendGroupMessage,
+  type GroupDelivery,
+  type GroupSendResult,
+  groupSendResult,
+  remoteGroupMembers,
+  signGroupMessage,
 } from "./multisig-messaging.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
@@ -80,7 +80,7 @@ type KelApproval = MultisigChild & {
   proposal: Extract<MultisigEventProposal, { route: MultisigKelRoute }>;
 };
 
-export interface ApprovalResult extends MultisigSendResult {
+export interface ApprovalResult extends GroupSendResult {
   route: MultisigProposalRoute;
   said: string;
   embedded: string;
@@ -133,20 +133,20 @@ export function* publishProposal(
   proposal: MultisigEventProposal,
   embeddedMessage: Uint8Array,
   childGvrsn?: Versionage,
-): Operation<MultisigSendResult> {
+): Operation<GroupSendResult> {
   const input = new Reactor(protocol);
-  const outcomes: MultisigMessageDelivery[] = [];
-  for (const recipient of remoteMultisigMembers(hby, member, recipients)) {
+  const outcomes: GroupDelivery[] = [];
+  for (const recipient of remoteGroupMembers(hby, member, recipients)) {
     const destination = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
       childGvrsn,
     });
     outcomes.push(
-      yield* processAndSendMultisigMessage(input, postman, signMultisigMessage(member, destination, prepared)),
+      yield* admitAndSendGroupMessage(input, postman, signGroupMessage(member, destination, prepared)),
     );
   }
-  return multisigSendResult(outcomes);
+  return groupSendResult(outcomes);
 }
 
 /** Publish typed registry evidence, processing each exact local wrapper before delivery. */
@@ -157,17 +157,17 @@ function* publishVdrProposal(
   member: Hab,
   recipients: readonly string[],
   proposal: MultisigVdrProposal,
-): Operation<MultisigSendResult> {
+): Operation<GroupSendResult> {
   const input = new Reactor(protocol);
-  const outcomes: MultisigMessageDelivery[] = [];
-  for (const recipient of remoteMultisigMembers(hby, member, recipients)) {
+  const outcomes: GroupDelivery[] = [];
+  for (const recipient of remoteGroupMembers(hby, member, recipients)) {
     const destination = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
     const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient: destination });
     outcomes.push(
-      yield* processAndSendMultisigMessage(input, postman, signMultisigMessage(member, destination, prepared)),
+      yield* admitAndSendGroupMessage(input, postman, signGroupMessage(member, destination, prepared)),
     );
   }
-  return multisigSendResult(outcomes);
+  return groupSendResult(outcomes);
 }
 
 /** True when a KEL event is accepted locally. */
