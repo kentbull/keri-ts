@@ -30,9 +30,20 @@ against published 1.0.0 before final release qualification.
 - Every observable LMDB close failure now propagates, including ordinary handles.
   A failed close leaves the wrapper unavailable: create a new owner after
   resolving the shutdown fault; do not reuse it or clear its storage.
-- `LMDBer.env` is read-only and exposes only a usable handle. Native shutdown
+- `LMDBer.env` is now a getter exposing only a usable handle. Native shutdown
   starts before asynchronous completion; retained raw handles must not be used.
 - Repeated close after confirmed closure is harmless. `openExisting` still
   refuses missing storage, new tables and whole-environment clearing.
 - Affected acquisition and command owners preserve operation plus cleanup errors
   in `AggregateError`; Habery attempts all owned closures before returning.
+
+## OOBI cleanup ownership
+
+`openOobiStore`, `OobiStore`, `OpenOobiStoreOptions` and
+`PathManager.existingDirectoryPath` are removed. Use normal Baser ownership and
+`Baser.oobis`; generic LMDBer `openExisting` remains available for non-creating
+storage access. `tufa oobi clean` preview deletes no selected pending rows but
+runs ordinary writable Baser startup, including table initialization and habitat
+reload/cleanup. Missing databases fail; normal path preparation may create empty
+directories. Results include `status: "complete"` only after closure, or
+`status: "failed"` with completed deletions preserved.

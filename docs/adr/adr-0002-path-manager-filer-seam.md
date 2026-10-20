@@ -89,11 +89,11 @@ Concretely:
   `PathManager`.
 - Changes to LMDB env ownership belong in `LMDBer`.
 - Changes to config file naming/serialization/durability belong in `Configer`.
-- Existing-store maintenance uses `PathManager.existingDirectoryPath` without
-  directory preparation: an explicit head never falls back, and default lookup
-  refuses ambiguity. `LMDBer.openExisting` checks `data.mdb`, disables named-table
-  creation and skips version initialization. The scoped pending-OOBI owner binds
-  only `oobis.`; it never invokes full Baser or Habery startup.
+- Generic `LMDBer.openExisting` checks `data.mdb`, disables named-table creation
+  and skips version initialization. Its non-creating policy is independent of
+  close-error propagation. OOBI cleanup instead uses ordinary path preparation,
+  refuses a missing database, then loads full Baser and its canonical pending
+  table. Preview accepts normal initialization and habitat reload/cleanup.
 - When porting a KERIpy class that currently inherits `Filer`, first decide
   whether `keri-ts` needs shared path policy only or a new resource owner with
   its own lifecycle. Do not reintroduce Python-style inheritance by reflex.
