@@ -261,7 +261,8 @@ export class Broker {
     changed = this.serderdb.put(keys, serder) || changed;
 
     for (const group of tsgs) {
-      // V1 Seqner and v2 Number spell the same ordinal differently; one proof has one stored key.
+      // KERIpy 71438328 and b8626e1d key proofs by numeric ordinal padded to 32 hex digits.
+      // Primitive wrappers/codes do not identify genus; equivalent ordinals must share partial signatures.
       changed = this.tigerdb.put(
         [diger.qb64, group.pre, group.sn.toString(16).padStart(32, "0"), group.said],
         group.sigers,

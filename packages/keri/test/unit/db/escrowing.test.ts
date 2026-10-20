@@ -1,9 +1,22 @@
 import { run } from "effection";
 import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Signer } from "../../../../cesr/mod.ts";
+import {
+  Cigar,
+  Dater,
+  Diger,
+  NumberPrimitive,
+  Prefixer,
+  Seqner,
+  SerderKERI,
+  Siger,
+  Signer,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../../../src/core/kever-decisions.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
+import { reply } from "../../../src/core/protocol-eventing.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import { Broker } from "../../../src/db/escrowing.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -180,6 +193,54 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on typed retry decisions
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 1);
     } finally {
       yield* lmdber.close(true);
+    }
+  });
+});
+
+Deno.test("Broker combines equivalent ordinal proofs independently of primitive encoding and body version", async () => {
+  await run(function*() {
+    const db = yield* createLMDBer({ name: crypto.randomUUID(), temp: true });
+    try {
+      const broker = new Broker(db, "ordinal");
+      for (const pvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+        const serder = reply("/tsn/registry/Eaid", { i: "Eregistry" }, { pvrsn });
+        const diger = new Diger({ qb64: serder.said! });
+        const dater = makeFreshDater(), proof = makeTsg(serder.raw);
+        const other = Signer.random({ transferable: true }).sign(serder.raw, { index: 1 });
+        assert(other instanceof Siger);
+        const fixed = new TransIdxSigGroup(proof.prefixer, makeSeqner(17), proof.diger, proof.sigers);
+        const compact = new TransIdxSigGroup(proof.prefixer, NumberPrimitive.fromNum(17n), proof.diger, [other]);
+        const store = (tsgs: TransIdxSigGroup[]) =>
+          broker.escrowStateNotice({ typ: "registry-mae", pre: "Eregistry", aid: "Eaid", serder, diger, dater, tsgs });
+        assertEquals(store([fixed]), { added: true, changed: true });
+        assertEquals(store([compact]), { added: false, changed: true });
+        // Parsing may hydrate the same explicit 0A bytes as Number in either attachment genus.
+        const explicit = new TransIdxSigGroup(
+          proof.prefixer,
+          new NumberPrimitive(fixed.seqner),
+          proof.diger,
+          proof.sigers,
+        );
+        assertEquals(store([explicit]), { added: false, changed: false });
+        assertEquals(
+          broker.tigerdb.get([diger.qb64, proof.pre, "00000000000000000000000000000011", proof.said]).length,
+          2,
+        );
+        assertEquals(
+          broker.retryStateNotices("registry-mae", ({ tsgs }) => {
+            assertEquals(tsgs.length, 1, "Equivalent ordinals form one threshold-proof group");
+            assertEquals(tsgs[0].sn, 17n);
+            assertEquals(tsgs[0].sigers.map((siger) => siger.index), [0, 1]);
+            const retained = store(tsgs);
+            assertEquals(retained, { added: false, changed: false });
+            return { decision: keepEscrow("recoverableError"), changed: retained.changed };
+          }),
+          { processed: 1, done: true, changed: false },
+        );
+        broker.escrowdb.rem(["registry-mae", "Eregistry", "Eaid"], diger);
+      }
+    } finally {
+      yield* db.close(true);
     }
   });
 });

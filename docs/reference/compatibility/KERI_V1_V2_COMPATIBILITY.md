@@ -45,20 +45,21 @@ are claimed here.
 the receiver and workflow must explicitly support the selected form. "Not
 provided" is an intentional boundary or an unresolved need, not a silent fallback.
 
-| Traffic / transition                                          | keri-ts behavior                                                                            | Peer boundary                                                                                                                        | Catalogue        |
-| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
-| Old or new CESR HTTP media type into keri-ts                  | Implemented: recognize both `application/cesr+json` and `application/cesr`.                 | Endpoint still validates framing, messages and proofs.                                                                               | COMP-01          |
-| Detached-header send from keri-ts to G1                       | Implemented: try `application/cesr`, then the legacy type after the specific 406 rejection. | Same message; only the media type changes. W2 accepts the first type.                                                                | COMP-01          |
-| Full CESR body sent to an older HTTP endpoint                 | Conditional: keri-ts supports explicit body mode.                                           | No general full-body capability discovery or header-mode fallback; G1/W2 detached request parsers are not qualified by this feature. | COMP-02          |
-| v1 or v2 CESR input into cesr-ts                              | Implemented for supported bodies/counters, explicit selectors and scoped mixed genera.      | Parse success does not establish an application handler or peer support for every form.                                              | COMP-03, COMP-04 |
-| Known attachments re-encoded in another genus                 | Conditional: semantic conversion; original non-native signed body remains unchanged.        | Opaque content, missing target counters and unsupported inner widths reject.                                                         | COMP-05, COMP-06 |
-| Native/v2 body or v2-only feature sent to a v1-only processor | Not provided as a general downgrade.                                                        | HTTP relabeling cannot make the message or feature a v1 artifact.                                                                    | GAP-01           |
-| Forwarded legacy versus v2 message                            | Implemented: legacy pathed embed versus signed v2 digest plus nested child.                 | Source body/genus selects the shape; no recipient capability negotiation.                                                            | COMP-07          |
-| Multisig child whose body and attachment versions differ      | Implemented: explicit child genus, including a signed hint for legacy wrappers when needed. | Peer must implement the same hint/selection rules; not universal 1.x support.                                                        | COMP-08          |
-| Existing v1 credentials alongside new ACDC registry workflows | Implemented as separate VDR and ACDC lanes.                                                 | No in-place credential, registry or database conversion.                                                                             | COMP-09, GAP-03  |
-| Legacy versus v2 IPEX                                         | Implemented with version-specific construction/verification.                                | Conversation graphs, disclosures and proof requirements differ; no automatic downgrade.                                              | COMP-10          |
-| KRAM adoption alongside existing intake                       | Explicit opt-in and scoped v2 intake.                                                       | Sender policy, receiver time and application proof verification remain independent.                                                  | COMP-11          |
-| Legacy TEL replay requested by an older peer                  | keri-ts currently emits the reference's v2 proof genus with an explicit selector.           | A v1 query/body alone does not make that response readable by a v1-genus-only peer.                                                  | GAP-02           |
+| Traffic / transition                                          | keri-ts behavior                                                                             | Peer boundary                                                                                                                        | Catalogue        |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | ---------------- |
+| Old or new CESR HTTP media type into keri-ts                  | Implemented: recognize both `application/cesr+json` and `application/cesr`.                  | Endpoint still validates framing, messages and proofs.                                                                               | COMP-01          |
+| Detached-header send from keri-ts to G1                       | Implemented: try `application/cesr`, then the legacy type after the specific 406 rejection.  | Same message; only the media type changes. W2 accepts the first type.                                                                | COMP-01          |
+| Full CESR body sent to an older HTTP endpoint                 | Conditional: keri-ts supports explicit body mode.                                            | No general full-body capability discovery or header-mode fallback; G1/W2 detached request parsers are not qualified by this feature. | COMP-02          |
+| v1 or v2 CESR input into cesr-ts                              | Implemented for supported bodies/counters, explicit selectors and scoped mixed genera.       | Parse success does not establish an application handler or peer support for every form.                                              | COMP-03, COMP-04 |
+| Known attachments re-encoded in another genus                 | Conditional: semantic conversion; original non-native signed body remains unchanged.         | Opaque content, missing target counters and unsupported inner widths reject.                                                         | COMP-05, COMP-06 |
+| Native/v2 body or v2-only feature sent to a v1-only processor | Not provided as a general downgrade.                                                         | HTTP relabeling cannot make the message or feature a v1 artifact.                                                                    | GAP-01           |
+| Forwarded legacy versus v2 message                            | Implemented: legacy pathed embed versus signed v2 digest plus nested child.                  | Source body/genus selects the shape; no recipient capability negotiation.                                                            | COMP-07          |
+| Multisig child whose body and attachment versions differ      | Implemented: explicit child genus, including a signed hint for legacy wrappers when needed.  | Peer must implement the same hint/selection rules; not universal 1.x support.                                                        | COMP-08          |
+| Existing v1 credentials alongside new ACDC registry workflows | Implemented as separate VDR and ACDC lanes.                                                  | No in-place credential, registry or database conversion.                                                                             | COMP-09, GAP-03  |
+| Legacy versus v2 IPEX                                         | Implemented with version-specific construction/verification.                                 | Conversation graphs, disclosures and proof requirements differ; no automatic downgrade.                                              | COMP-10          |
+| KRAM adoption alongside existing intake                       | Explicit opt-in and scoped v2 intake.                                                        | Sender policy, receiver time and application proof verification remain independent.                                                  | COMP-11          |
+| Legacy TEL replay requested by an older peer                  | keri-ts currently emits the reference's v2 proof genus with an explicit selector.            | A v1 query/body alone does not make that response readable by a v1-genus-only peer.                                                  | GAP-02           |
+| TSN endorsement ordinals stored from different encodings      | Broker indexes the numeric ordinal in zero-padded hexadecimal, as both Python references do. | This is a database key convention, not a body/genus conversion or a general database migration.                                      | COMP-12, GAP-03  |
 
 ## Implemented features and preservation rules
 
@@ -202,6 +203,34 @@ failed KRAM must not trigger an automatic legacy retry. Evidence:
 [policy](../../../packages/keri/test/unit/core/kram-policy.test.ts),
 [authentication](../../../packages/keri/test/unit/core/kram-auth.test.ts)
 and [mailbox interop](../../../packages/keri/test/integration/app/interop-kram-mailbox.test.ts).
+
+### COMP-12 — Stable TSN proof identity across ordinal encodings
+
+**Shared storage convention.** Both G1's
+[Broker](https://github.com/GLEIF-IT/keripy/blob/b8626e1d58770a4a480ea72a01acc5580278a9f2/src/keri/db/escrowing.py#L168-L170)
+and W2's
+[Broker](https://github.com/WebOfTrust/keripy/blob/7143832813cac6a394ab1faf9be83bb3372be87c/src/keri/db/escrowing.py#L202-L204)
+format the establishment ordinal in the transferable-signature key as
+`f"{seqner.sn:032x}"`. The key identifies the reply, signer, numeric establishment
+ordinal and establishment digest. There is no v1-to-v2 key-format break between
+these references.
+
+[TypeScript Broker](../../../packages/keri/src/db/escrowing.ts) uses the same
+numeric key. `Seqner.snh` is padded, while `NumberPrimitive.numh` is unpadded;
+using those projections interchangeably would create different rows when a
+retry reconstructs the ordinal. Canonical indexing keeps the same proof under
+the same key and combines partial signatures received with equivalent ordinal
+encodings. An identical retry must not manufacture new evidence or recovery progress.
+
+Do not choose this key from the reply's body version, the JavaScript primitive
+class, or the `0A` code. Body and attachment versions are independent (COMP-03);
+the [attachment parser](../../../packages/cesr/src/parser/attachments.ts) uses
+`NumberPrimitive` for transferable signature groups in both genera, including
+explicit `0A` ordinals. The index does not rewrite signed bodies or signatures,
+and it is not an archive of the original attachment encoding. Evidence:
+[Broker storage/retry tests](../../../packages/keri/test/unit/db/escrowing.test.ts)
+and [TSN recovery tests](../../../packages/keri/test/unit/vdr/eventing.test.ts).
+General database transition qualification remains GAP-03.
 
 ## Known compatibility needs and explicit limits
 
