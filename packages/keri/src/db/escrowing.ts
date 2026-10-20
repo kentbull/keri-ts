@@ -191,6 +191,7 @@ export class Broker {
               route: serder.route,
               reason: decision.reason,
               detail: decision.message,
+              ...(decision.cause !== undefined ? { cause: decision.cause } : {}),
             });
           }
         } else if (decision.kind !== "keep") throw new Error("Invalid Broker retry decision.");

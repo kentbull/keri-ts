@@ -1,5 +1,5 @@
 import { run } from "effection";
-import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
   Cigar,
   Dater,
@@ -262,8 +262,9 @@ Deno.test("db/escrowing - Broker propagates processing failures and drops only o
       } finally {
         broker.escrowdb.rem = rem;
       }
+      const rejection = new Error("Untrusted state attester.", { cause: new Error("Unrecognized attester policy") });
       assertEquals(
-        broker.retryStateNotices("txn", () => dropEscrow("processingError", "Untrusted state attester.")),
+        broker.retryStateNotices("txn", () => dropEscrow("processingError", "Untrusted state attester.", rejection)),
         { processed: 1, done: true },
       );
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 0);
@@ -277,7 +278,9 @@ Deno.test("db/escrowing - Broker propagates processing failures and drops only o
         route: "/tsn/registry/Eaid",
         reason: "processingError",
         detail: "Untrusted state attester.",
+        cause: rejection,
       });
+      assertStrictEquals((warnings[0][1] as { cause: unknown }).cause, rejection);
     } finally {
       consoleLogger.warn = warn;
       yield* lmdber.close(true);
