@@ -70,6 +70,9 @@ state describes its real owners, not a dormant input queue. Explicit close and
 scope exit clear cues after dependent work joins.
 
 Prepare/sign/publish before source removal; preparation failure retains the record.
+TCP output returns operation completion, without byte/frame telemetry. Reply-mode
+TCPMessenger.receiptDo additionally joins receive EOF; accepted state and verified
+receipts remain the protocol-success evidence.
 Poster.send accepts one complete CESR message; sendStream admits a finite ordered
 stream with first-role endpoint selection. Initial IPEX grant/admit/spurn use stream
 operation; join signaling/completed output use ordinary sends. This is producer
