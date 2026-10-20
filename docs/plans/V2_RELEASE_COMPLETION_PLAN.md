@@ -1,4 +1,4 @@
-# Complete the 1.1.0 package family and withdraw 1.0.0
+# Complete the 2.0.0 package family and withdraw 1.0.0
 
 Date: 2026-10-20.
 Status: approved for execution by Kent on 2026-10-20.
@@ -6,18 +6,25 @@ Planning source: `777fc8d2d250358290b84aefa60126ce0dda86fc`.
 
 ## Outcome and authorization
 
-Deliver and publish **cesr-ts 1.1.0, keri-ts 1.1.0 and @keri-ts/tufa 1.1.0**.
-Kent amended the package release target to 1.1.0 and authorized withdrawal of
-1.0.0 at the final release stage. npm permanently reserves a published name/version
-even after unpublishing, so recreating 1.0.0 is not an available release strategy
-([npm policy](https://docs.npmjs.com/policies/unpublish/)). Keep this plan's existing
-path so the active goal and references continue to resolve.
+Deliver and publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
+Kent restored the coordinated 2.0.0 target because the accepted library changes
+break public contracts and warrant a major version. This supersedes the interim
+1.1.0 target. Keep this plan's existing path so the active goal and references
+continue to resolve.
 
-The new package number changes neither protocol scope nor the accepted removal of
-old keri-ts APIs. Preserve explicit breaking-change notes rather than implying
-API compatibility from the minor version number. Withdrawal/publication happens
-only after the remaining implementation, interop, ownership assessment, source
-organization and final qualification; do not remove releases during implementation.
+Provide a prominent breaking-changes list in the release notes and a dedicated
+1.0.0-to-2.0.0 changes and migration document, as specified in PR 32 below. The
+package version does not change the agreed protocol scope. Previous keri-ts API
+compatibility remains outside scope; explain replacements rather than adding
+compatibility shims.
+
+Kent's earlier authorization to withdraw 1.0.0 remains in effect. npm permanently
+reserves a published name/version even after unpublishing, so recreating 1.0.0 is
+not an available release strategy
+([npm policy](https://docs.npmjs.com/policies/unpublish/)). Withdrawal/publication
+happens only after the remaining implementation, interop, ownership assessment,
+source organization and final qualification; do not remove releases during
+implementation.
 The release must support the agreed KERI/ACDC/CESR v1/v2 protocol lanes and
 interoperate with independently identified KERIpy main, 1.2.x and 1.3.x peers.
 Previous keri-ts API and database compatibility is not a requirement. Do not add
@@ -40,14 +47,15 @@ The scope includes:
 - Legacy TEL replay and real old-peer HTTP/mailbox reachability.
 - Two bounded reconciliation findings concerning initialization and AEID changes.
 - A final ProtocolProcessor assessment and cohesive source organization within all three packages.
-- Fresh qualification, accumulated-changeset changelogs, withdrawal of the three
-  1.0.0 distributions and actual publication of all three 1.1.0 packages.
+- Fresh qualification, accumulated-changeset changelogs, prominent breaking-change
+  release notes and a dedicated migration document, withdrawal of the three
+  1.0.0 distributions and actual publication of all three 2.0.0 packages.
 
 **Scope confirmed by Kent:** include native-v2 CLI authoring and group backer
-registries in 1.1.0. These are required implementation and qualification work,
+registries in 2.0.0. These are required implementation and qualification work,
 not optional follow-ups. Keep the different protocol models explicit:
 
-| Surface                    | Proposed 1.1.0 release acceptance                                                                                                                                                                                 |
+| Surface                    | Proposed 2.0.0 release acceptance                                                                                                                                                                                 |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Legacy credential CLI      | Complete no-backer and backer-enabled lifecycle, including single/group participants, ordinary/establishment-only anchors and issuer KEL witnesses; prove supported interoperability with main, 1.2.x and 1.3.x.  |
 | Group backer registries    | Implement explicit backer membership/thresholds, VCP/VRT, BIS/BRV, actual TEL backer receipts, peer approval/fanout and restart/replay. KEL witness receipts are a separate obligation.                           |
@@ -367,8 +375,8 @@ tests until the end.
 | 31b     | Organize CESR sources and cohesive large-file units for human navigation                               | 31a         |
 | 31c     | Organize KERI protocol/application sources and cohesive large-file units                               | 31b         |
 | 31d     | Organize Tufa command/hosting sources and validate the resulting package graph                         | 31c         |
-| 32      | Prepare all three 1.1.0 versions and qualify the reorganized final candidate                           | 31d         |
-| Release | Withdraw 1.0.0 distributions, then publish and verify CESR -> KERI -> Tufa 1.1.0                       | 32          |
+| 32      | Prepare 2.0.0 versions and breaking-change guide; qualify the reorganized candidate                    | 31d         |
+| Release | Withdraw 1.0.0 distributions, then publish and verify CESR -> KERI -> Tufa 2.0.0                       | 32          |
 
 This is an estimated decomposition, not a quota of PRs or a promise to finish
 in one night. A confirmed issue may justify a small sibling PR. Skip an empty
@@ -998,20 +1006,48 @@ affected actual-peer paths when moving their composed owners. PR 32's complete
 final qualification must run after every ownership and organization change;
 pre-reorganization feature evidence alone cannot authorize publication.
 
-## Final qualification, 1.0.0 withdrawal and 1.1.0 publication — PR 32 and release
+## Final qualification, 1.0.0 withdrawal and 2.0.0 publication — PR 32 and release
 
-1. **Prepare exactly 1.1.0 and consume the accumulated changesets.** Audit all
-   pending release intents and reconcile their bump levels to Kent's coordinated
-   1.1.0 target, including CESR, while retaining their substantive change and
-   breaking-change descriptions. Do not let earlier major intents produce 2.x.
+1. **Prepare exactly 2.0.0 and consume the accumulated changesets.** Audit all
+   pending release intents and reconcile their bump levels to the coordinated
+   2.0.0 major target, including CESR, while retaining their substantive change
+   and breaking-change descriptions. Supersede any interim 1.1.0 preparation;
+   do not downgrade major changes to minor bumps or reuse 1.0.0.
    Use `release:version` to generate/update all three local package changelogs
    and remove the consumed changeset files; do not delete pending notes without
    carrying their information into the changelogs. Retain accurate prior release
    history and identify 1.0.0 as withdrawn where appropriate. Use
    `manifest:sync/check` and `version:check`; inspect Deno mirrors, npm lock
    entries, generated modules and internal dependencies. The version-preparation
-   PR must show the three 1.1.0 versions, resulting changelogs and consumed-note
+   PR must show the three 2.0.0 versions, resulting changelogs and consumed-note
    deletions. It is not publication; no release tag is pushed here.
+
+   **Breaking-change documentation is a release gate.** Create
+   `docs/reference/compatibility/MIGRATING_TO_2_0.md` from the actual final diff
+   against the published 1.0.0 package artifacts and their public entrypoints,
+   supported exports and CLI contracts, rather than treating changesets as a
+   complete inventory. Organize the document by CESR, KERI and Tufa. Cover
+   removed or changed public APIs/types/imports, component ownership and calling
+   patterns, CLI options/output/configuration validation, runtime/dependency
+   requirements and any storage/encryption implications that actually change.
+   For each break, state the old behavior, the replacement or lack of one, and
+   the caller/operator action, with small before/after examples where useful.
+   Document package reorganization only where it changes supported imports;
+   distinguish public breaks from internal moves. State explicitly that old
+   keri-ts API/database compatibility is not promised, while preserving the
+   supported KERI/ACDC/CESR protocol and independently tested KERIpy peer lanes.
+   Do not invent breaks for a package solely to justify its coordinated version.
+
+   Put a **Breaking changes** section near the top of each package's 2.0.0
+   changelog entry and GitHub release notes, before the general change list.
+   Include the package's concrete breaks and a link to the dedicated document;
+   if a package has no public break, say so and explain its coordinated major
+   version. Ensure published notes use a working, version-pinned public link.
+   Review the lists, migration document and generated changelogs against the
+   final APIs, CLI behavior and qualified runtime/protocol profiles before
+   publication, and read back the actual GitHub notes after release. These are
+   final user-facing release artifacts, not an implementation diary; retain
+   the minimal-documentation policy during the preceding feature PRs.
 2. **Qualify the final candidate.** After implementation, final ownership assessment,
    source reorganization and version inputs are
    settled, run the complete maintained KERI/CESR/Tufa and actual-peer matrix,
@@ -1063,21 +1099,21 @@ pre-reorganization feature evidence alone cannot authorize publication.
      deletion does not free a version number there either
      ([JSR version policy](https://jsr.io/docs/packages#versions)). Record absent
      surfaces as not published and any platform-enforced retention explicitly.
-7. **Publish CESR first.** Create the annotated `cesr-v1.1.0` tag at the verified
+7. **Publish CESR first.** Create the annotated `cesr-v2.0.0` tag at the verified
    release commit and push that tag explicitly. Wait for the package workflow,
-   then verify `cesr-ts@1.1.0` and its exact registry artifact.
+   then verify `cesr-ts@2.0.0` and its exact registry artifact.
 8. **Publish KERI second.** Verify its CESR dependency resolves to the intended
-   published version, then explicitly push `keri-v1.1.0` at the same verified
-   release commit. Verify `keri-ts@1.1.0`.
+   published version, then explicitly push `keri-v2.0.0` at the same verified
+   release commit. Verify `keri-ts@2.0.0`.
 9. **Publish Tufa third.** Verify both dependency versions are available, then
-   explicitly push `tufa-v1.1.0`. Verify `@keri-ts/tufa@1.1.0`. Use the existing
+   explicitly push `tufa-v2.0.0`. Verify `@keri-ts/tufa@2.0.0`. Use the existing
    package tag workflows and shared npm release workflow.
 10. **Verify publication, not just workflow success.** Check npm metadata,
     internal dependencies and qualified/workflow/npm/GitHub tarball equality for
     every package. Perform clean registry-only installs and installed Tufa/native/runtime/
     declaration checks. Source tarball smoke does not prove published dependency
     resolution. Verify all three GitHub releases and assets separately. Ensure
-    current/latest aliases select 1.1.0, and read back the withdrawal/deprecation
+    current/latest aliases select 2.0.0, and read back the withdrawal/deprecation
     state of every 1.0.0 distribution; do not call a deprecation a deletion.
 11. **Finish with evidence.** Report the three published versions and links,
     source/tag/artifact identity, actual peer pins and qualification results,
