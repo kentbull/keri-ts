@@ -15,6 +15,7 @@ references; one result must not be attributed to another.
 | Ordinary table CI       | Upstream 714                 | `pr-stage-gate.yml`          |
 | Extended interop        | Mailbox fork                 | `keri-extended-interop.yml`  |
 | Shared local CLI        | Mailbox fork                 | `interop-test-helpers.ts`    |
+| ESSR storage            | Actual pinned-main Baser     | `interop-essr-storage` owner |
 | CESR/live wire probes   | Upstream 714                 | CESR reference / qualifiers  |
 | Historical KERI vectors | Upstream 927                 | Fixture generators           |
 | macOS compatibility     | Mailbox fork                 | `macos-compatibility.yml`    |
@@ -22,6 +23,13 @@ references; one result must not be attributed to another.
 | Embedded DID Webs       | Resolver 839 / KERIpy 1.2.14 | Separate Python environment  |
 
 ## Explicit 2.0.0 release peer profiles
+
+`setup-essr-storage-peer` prepares a separate main checkout/venv for the storage
+owner in PR, extended and macOS workflows. The suite runner scopes it to that
+owner; it does not change other suites' mailbox-fork or explicitly selected wire
+peer. Local direct storage runs require the explicit `main` profile/root/Python;
+suite runs may instead supply `KERIPY_ESSR_STORAGE_ROOT` and
+`KERIPY_ESSR_STORAGE_PYTHON`. No legacy Baser qualification is implied.
 
 `scripts/ci/keripy-reference.json` freezes independent upstream profiles selected
 on 2026-10-20. These supplement the mailbox-fork default; they do not relabel it.

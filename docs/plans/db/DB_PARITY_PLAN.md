@@ -19,6 +19,8 @@ Texter set and its writer semantics/limitations. The legacy 1.2.14 `bab95c16` an
 manually named Suber does not establish native Baser compatibility, much less
 complete Habery/Keeper interchangeability. Legacy wire interoperability remains
 required for 2.0; direct legacy LMDB compatibility is deferred below.
+The `interop-essr-storage` owner uses actual main Baser only. The separate wire
+owner retains main/1.2/1.3 exchanges; neither proves complete database interchange.
 
 ## Deferred legacy LMDB compatibility
 

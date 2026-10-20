@@ -96,14 +96,19 @@ payloads and Baser topic cursors remain separate protocol stores.
 
 ## Exchange evidence
 
-LMDB owns accepted and escrowed ESSR evidence. `essrs.` maps EXN SAID plus a
-32-digit hexadecimal ordinal to qualified Texter bytes, matching KERIpy's
-physical IoSet layout. TS preserves equal values at distinct positions because
-the signed digest commits to their concatenated raw bytes. Python's typed reader
-can read these rows; Python's writer currently deduplicates equal values.
+LMDB owns accepted and escrowed ESSR evidence. Target actual pinned-main Baser
+`essrs.` through `CesrIoSetSuber<Texter>`: qualified-value deduplication and
+first-insertion order, including append/set semantics on redelivery. False from
+duplicate add is normal; actual storage exceptions abort publication. Repeated
+fragments can lose committed bytes; alternate representations can append bytes.
+Keep incoming and reconstructed digest verification distinct; do not restore
+ordinal writes or a first-representation policy to conceal this reference limitation.
 `Baser.getEssrs` reads owned evidence synchronously. Validation, proofs, fragments,
 receipt provenance and state publish in one ordinary LMDB transaction. Replay
-checks retained bytes; a valid duplicate keeps the first fragment representation.
+uses stored members, as do retry and recipient processing. Recipients reject a
+damaged reconstructed digest before decryption. Legacy pins bind `.essrs`, not
+main's `essrs.`; manually named typed readers do not prove actual Baser parity.
+Direct legacy LMDB support is deferred in the DB roadmap; legacy wire remains required.
 No archive, file references, recovery sweep or durable plaintext store remains.
 
 `enst.` retains ordinary qualified child substreams. Resident child serialization

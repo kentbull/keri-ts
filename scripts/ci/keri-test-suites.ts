@@ -90,6 +90,7 @@ export const suites: Record<string, TestSuite> = {
     files: ["test/integration/app/interop-essr-exchange.test.ts"],
   },
   "interop-essr-storage": {
+    // Actual pinned-main Baser only; legacy protocol traffic belongs to interop-essr-exchange.
     files: ["test/integration/app/interop-essr-storage.test.ts"],
   },
   "interop-acdc-deep": {

@@ -59,20 +59,25 @@ function signatures(sender: Hab, serder: SerderKERI): TransIdxSigGroup[] {
   ];
 }
 
-Deno.test("ESSR persistence preserves repeated fragments, first wire and receipt; digest mismatch cannot replace them", async () => {
+Deno.test("ESSR redelivery follows main's append/set behavior without replacing first receipt", async () => {
   await scenario(async (hby, sender) => {
-    const serder = message(sender, "abcabc"), exchanger = new Exchanger(hby);
+    const serder = message(sender), exchanger = new Exchanger(hby);
     const tsgs = signatures(sender, serder), receipt = "2026-10-20T12:00:00.000000+00:00";
-    const input = { serder, tsgs, essrs: payload(["abc", "abc"]), receiverTime: receipt };
+    const input = { serder, tsgs, essrs: payload(), receiverTime: receipt };
     assertEquals((await run(() => exchanger.processEvent(input))).kind, "accept");
-    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "abc"]);
-    assertEquals(hby.db.essrs.getOn([serder.said!], 0)!.qb64, hby.db.essrs.getOn([serder.said!], 1)!.qb64);
-    assertEquals((await run(() => exchanger.processEvent({ ...input, essrs: payload(["abcabc"]) }))).kind, "accept");
-    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "abc"]);
+    assertEquals((await run(() => exchanger.processEvent(input))).kind, "accept");
+    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "xyz"]);
+    assertEquals((await run(() => exchanger.processEvent({ ...input, essrs: payload(["abcxyz"]) }))).kind, "accept");
+    // Each incoming representation verifies; the reference appends distinct Texters to the same bucket.
+    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "xyz", "abcxyz"]);
+    assertEquals(
+      new Diger({ qb64: serder.a as string }).verifyChunks(hby.db.essrs.get([serder.said!]).map((p) => p.raw)),
+      false,
+    );
     assertEquals((await run(() => exchanger.processEvent({ ...input, essrs: payload(["abc"]) }))).kind, "reject");
-    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "abc"]);
+    assertEquals(hby.db.getEssrs(serder.said!)!.map((texter) => texter.text), ["abc", "xyz", "abcxyz"]);
     assertEquals(hby.db.exchangeMeta.get([serder.said!])!.receiverTime, receipt);
-    assertEquals((await run(() => exchanger.processEvent({ serder }))).kind, "escrow");
+    assertEquals((await run(() => exchanger.processEvent({ serder }))).kind, "reject");
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertExists(hby.db.exns.get([serder.said!]));
     await assertRejects(() => Deno.stat(`${hby.db.path}/payloads`), Deno.errors.NotFound);
@@ -82,7 +87,26 @@ Deno.test("ESSR persistence preserves repeated fragments, first wire and receipt
   });
 });
 
-Deno.test("ESSR accepted evidence survives restart and replays its v1/v2 genus with repeated byte commitments", async () => {
+Deno.test("ESSR signed repeated-fragment input verifies but main-compatible storage loses its committed multiplicity", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender, "abcabc"), essrs = payload(["abc", "abc"]);
+    const diger = new Diger({ qb64: serder.a as string });
+    assertEquals(diger.verifyChunks(essrs.map((p) => p.raw)), true);
+    assertEquals(
+      (await run(() => new Exchanger(hby).processEvent({ serder, tsgs: signatures(sender, serder), essrs }))).kind,
+      "accept",
+    );
+    const retained = hby.db.getEssrs(serder.said!)!;
+    assertEquals(retained.map((p) => p.text), ["abc"]);
+    assertEquals(diger.verifyChunks(retained.map((p) => p.raw)), false);
+    // False is expected set behavior and did not roll back body/signature publication.
+    assertEquals(hby.db.essrs.add([serder.said!], essrs[1]), false);
+    assertExists(hby.db.exns.get([serder.said!]));
+    assertEquals(hby.db.esigs.getTopItemIter([serder.said!]).next().done, false);
+  });
+});
+
+Deno.test("ESSR distinct evidence survives restart and replays its v1/v2 genus", async () => {
   const headDirPath = await Deno.makeTempDir(), name = "essr-restart";
   try {
     await run(function*() {
@@ -91,13 +115,13 @@ Deno.test("ESSR accepted evidence survives restart and replays its v1/v2 genus w
         const sender = hby.makeHab("sender"), exchanger = new Exchanger(hby);
         const messages: SerderKERI[] = [];
         for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
-          const text = `v${gvrsn.major}`, serder = message(sender, text + text);
+          const parts = [`v${gvrsn.major}`, `tail${gvrsn.major}`], serder = message(sender, parts.join(""));
           messages.push(serder);
           assertEquals(
             (yield* exchanger.processEvent({
               serder,
               tsgs: signatures(sender, serder),
-              essrs: payload([text, text]),
+              essrs: payload(parts),
               gvrsn,
             })).kind,
             "accept",
@@ -107,7 +131,7 @@ Deno.test("ESSR accepted evidence survives restart and replays its v1/v2 genus w
         hby = yield* createHabery({ name, headDirPath, skipConfig: true });
         const restarted = new Exchanger(hby);
         for (const [index, serder] of messages.entries()) {
-          const raw = b(`v${index + 1}v${index + 1}`);
+          const raw = b(`v${index + 1}tail${index + 1}`);
           const retained = hby.db.getEssrs(serder.said!)!;
           assertEquals(retained.length, 2);
           assertEquals(new Diger({ qb64: serder.a as string }).verifyChunks(retained.map((part) => part.raw)), true);
@@ -132,18 +156,18 @@ Deno.test("ESSR accepted evidence survives restart and replays its v1/v2 genus w
   }
 });
 
-Deno.test("ESSR missing-state escrow reconstructs repeated fragments after restart and public KEL recovery", async () => {
+Deno.test("ESSR missing-state escrow reconstructs distinct fragments after restart and public KEL recovery", async () => {
   const headDirPath = await Deno.makeTempDir();
   try {
     await run(function*() {
       const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       let target = yield* createHabery({ name: "essr-retry", headDirPath, skipConfig: true });
       try {
-        const sender = source.makeHab("sender"), serder = message(sender, "abcabc");
+        const sender = source.makeHab("sender"), serder = message(sender);
         const input = {
           serder,
           tsgs: signatures(sender, serder),
-          essrs: payload(["abc", "abc"]),
+          essrs: payload(),
           mailboxAid: "endpoint-provenance",
         };
         assertEquals((yield* new Exchanger(target).processEvent(input)).kind, "escrow");
@@ -156,7 +180,7 @@ Deno.test("ESSR missing-state escrow reconstructs repeated fragments after resta
             resource: "/essr/test",
             handle(args) {
               handled++;
-              assertEquals(args.essrs!.map((part) => part.text), ["abc", "abc"]);
+              assertEquals(args.essrs!.map((part) => part.text), ["abc", "xyz"]);
               assertEquals(args.mailboxAid, "endpoint-provenance");
             },
           }],
@@ -169,7 +193,7 @@ Deno.test("ESSR missing-state escrow reconstructs repeated fragments after resta
         yield* exchanger.processEscrows();
         assertEquals(exchanger.complete(serder.said!), true);
         assertEquals(target.db.epse.get([serder.said!]), null);
-        assertEquals(target.db.getEssrs(serder.said!)!.map((part) => part.text), ["abc", "abc"]);
+        assertEquals(target.db.getEssrs(serder.said!)!.map((part) => part.text), ["abc", "xyz"]);
         yield* exchanger.processEscrows();
         assertEquals(handled, 1);
       } finally {
@@ -184,27 +208,25 @@ Deno.test("ESSR missing-state escrow reconstructs repeated fragments after resta
 
 Deno.test("ESSR fragment publication failure rolls back body, proofs, fragments and receipt", async () => {
   await scenario(async (hby, sender) => {
-    const serder = message(sender, "abcabc"), exchanger = new Exchanger(hby);
-    const pin = hby.db.essrs.pinOn;
-    hby.db.essrs.pinOn = function(keys, on, texter) {
-      const result = pin.call(this, keys, on, texter);
-      return on === 1 ? false : result;
+    const serder = message(sender), exchanger = new Exchanger(hby);
+    const add = hby.db.essrs.add;
+    hby.db.essrs.add = function(keys, texter) {
+      const result = add.call(this, keys, texter);
+      if (texter?.text === "xyz") throw new Error("Injected ESSR storage failure");
+      return result;
     };
     try {
       await assertRejects(
-        () =>
-          run(() =>
-            exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: payload(["abc", "abc"]) })
-          ),
+        () => run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: payload() })),
         Error,
-        "ESSR fragment write failed",
+        "Injected ESSR storage failure",
       );
       assertEquals(hby.db.exns.get([serder.said!]), null);
       assertEquals(hby.db.esigs.getTopItemIter([serder.said!]).next().done, true);
-      assertEquals(hby.db.essrs.cntOn([serder.said!]), 0);
+      assertEquals(hby.db.essrs.cnt([serder.said!]), 0);
       assertEquals(hby.db.exchangeMeta.get([serder.said!]), null);
     } finally {
-      hby.db.essrs.pinOn = pin;
+      hby.db.essrs.add = add;
     }
   });
 });
@@ -220,7 +242,7 @@ Deno.test("ESSR expired escrow removes only pending evidence and retains its fir
     await run(() => exchanger.processEscrows());
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals(hby.db.getEssrs(serder.said!), null);
-    assertEquals(hby.db.essrs.cntOn([serder.said!]), 0);
+    assertEquals(hby.db.essrs.cnt([serder.said!]), 0);
   });
 });
 Deno.test("EXN pending cues follow persisted escrow transitions without duplicate publication", async () => {

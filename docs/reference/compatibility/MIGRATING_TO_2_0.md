@@ -8,13 +8,22 @@ against published 1.0.0 before final release qualification.
 ## ESSR evidence
 
 - `PayloadArchive` and `PreparedPayload` are removed from the database exports.
-  Exchange evidence is stored directly in LMDB's KERIpy-shaped `essrs.` table.
+  Exchange evidence is stored directly in pinned-main Baser's `essrs.` table.
 - `Baser.openPayloads`, archive recovery/lifecycle integration, `savePlaintext`
   and `getPlaintext` are removed. There is no automatic durable plaintext store.
-- `Baser.getEssrs(said)` is synchronous and returns ordered Texters. The table
-  uses ordinal keys rather than value-set operations; equal fragments at
-  different positions are retained. Use the evidence operations rather than
-  applying set semantics to payload bytes.
+- `Baser.essrs` is `CesrIoSetSuber<Texter>`; use ordinary typed `add/get/rem`.
+  `pinEssrs` is removed. Synchronous `getEssrs(said)` reads accepted/escrow-owned
+  evidence. Qualified values deduplicate in first-insertion order, matching main
+  `424a50c03421165c5f289e07a341bd57b8d8ab78`. Identical redelivery is idempotent;
+  valid alternate fragmentations append distinct members. Repeated fragments can
+  lose committed bytes, and alternate representations can add bytes: incoming
+  digest validity does not guarantee valid stored reconstruction. Digest and
+  recipient authentication checks remain; no archive or normalization masks this
+  [reference limitation](../../reports/essr/KERIPY_REPEATED_FRAGMENTS_2026-10-20.md).
+- Main binds `essrs.`; pinned 1.2.14/1.3.6 Baser binds `.essrs`. Direct legacy
+  LMDB compatibility is [deferred](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility),
+  with no fallback reader, migration or dual write. Legacy **wire** interoperability
+  remains required. Main ESSR parity does not prove full Habery/Keeper interchangeability.
 - Exchange metadata retains `gvrsn` directly, without an archive ownership record.
   Private file-reference, ownership, plaintext and nested-staging tables are gone.
 - `PayloadStore`, `FilePayload`, `FilePayloadSink` and file-range views are removed.

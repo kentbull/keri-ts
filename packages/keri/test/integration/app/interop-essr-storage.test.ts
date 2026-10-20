@@ -27,19 +27,24 @@ function input(sender: Hab, raw: string) {
   };
 }
 
-Deno.test("interop/essr-storage - Python reads repeated TS rows; TS reopens Python-written evidence", async () => {
+Deno.test("interop/essr-storage - actual pinned-main Baser reads/writes ordered sets; both owners reopen", async () => {
+  assertEquals(
+    Deno.env.get("KERIPY_INTEROP_PROFILE"),
+    "main",
+    "ESSR storage requires explicit pinned main; legacy wire has a separate owner.",
+  );
   const ctx = await createScenarioContext(), name = "essr-storage";
   const options = { name, headDirPath: ctx.env.HOME, compat: true, skipConfig: true };
   try {
-    const { accepted, pending } = await run(function*() {
+    const { accepted, pending, repeated } = await run(function*() {
       const hby = yield* createHabery(options);
       try {
         const sender = hby.makeHab("sender"), exchanger = new Exchanger(hby);
-        const accepted = input(sender, "abcabc"), pending = input(sender, "xyzuvw");
+        const accepted = input(sender, "abcxyz"), pending = input(sender, "xyzuvw"), repeated = input(sender, "abcabc");
         assertEquals(
           (yield* exchanger.processEvent({
             ...accepted,
-            essrs: ["abc", "abc"].map((raw) => new Texter({ raw: b(raw), code: "4B" })),
+            essrs: ["abc", "xyz"].map((raw) => new Texter({ raw: b(raw), code: "4B" })),
           })).kind,
           "accept",
         );
@@ -50,7 +55,15 @@ Deno.test("interop/essr-storage - Python reads repeated TS rows; TS reopens Pyth
           })).kind,
           "accept",
         );
-        return { accepted: accepted.serder.said!, pending: pending.serder.said! };
+        assertEquals(
+          (yield* exchanger.processEvent({
+            ...repeated,
+            essrs: ["abc", "abc"].map((raw) => new Texter({ raw: b(raw), code: "4B" })),
+          })).kind,
+          "accept",
+        );
+        assertEquals(hby.db.essrs.add([accepted.serder.said!], new Texter({ raw: b("abc"), code: "4B" })), false);
+        return { accepted: accepted.serder.said!, pending: pending.serder.said!, repeated: repeated.serder.said! };
       } finally {
         yield* hby.close();
       }
@@ -63,17 +76,24 @@ Deno.test("interop/essr-storage - Python reads repeated TS rows; TS reopens Pyth
         name,
         accepted,
         pending,
+        repeated,
       ],
       ctx.env,
       ctx.packageRoot,
     );
     assertEquals(result.code, 0, `${result.stderr}\n${result.stdout}`);
-    assertEquals(JSON.parse(result.stdout), { read: ["abc", "abc"], written: ["xyz", "uvw"] });
+    assertEquals(JSON.parse(result.stdout), {
+      read: ["abc", "xyz"],
+      redelivery: [false, true, false],
+      writes: [true, true, false],
+      written: ["xyz", "uvw"],
+    });
     await run(function*() {
       const hby = yield* createHabery(options);
       try {
         const exchanger = new Exchanger(hby);
-        assertEquals(hby.db.getEssrs(accepted)!.map((part) => part.text), ["abc", "abc"]);
+        assertEquals(hby.db.getEssrs(accepted)!.map((part) => part.text), ["abc", "xyz", "abcxyz"]);
+        assertEquals(hby.db.getEssrs(repeated)!.map((part) => part.text), ["abc"]);
         assertEquals(hby.db.getEssrs(pending)!.map((part) => part.text), ["xyz", "uvw"]);
         assertEquals(exchanger.complete(pending), true);
         assertEquals(hby.db.epse.get([pending]), null);

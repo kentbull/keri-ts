@@ -232,16 +232,35 @@ and it is not an archive of the original attachment encoding. Evidence:
 and [TSN recovery tests](../../../packages/keri/test/unit/vdr/eventing.test.ts).
 General database transition qualification remains GAP-03.
 
+## ESSR storage target and table bindings
+
+| Frozen Python reference | Actual `Baser.essrs` binding |
+| ----------------------- | ---------------------------- |
+| main `424a50c`          | `essrs.`                     |
+| 1.2.14 `bab95c16`       | `.essrs`                     |
+| 1.3.6 `4ce4cc79`        | `.essrs`                     |
+
+Current ESSR storage targets actual pinned-main Baser, with ordinary qualified
+Texter set equality and insertion order. Repeated fragments deduplicate; valid
+alternate fragmentations can append members. Incoming commitments can therefore
+verify while stored reconstruction fails. See the [storage contract](../../design-docs/db/PAYLOAD_STORAGE.md)
+and [reproducer/scope correction](../../reports/essr/KERIPY_REPEATED_FRAGMENTS_2026-10-20.md).
+Actual main Baser reads/writes and reopen are qualified separately from the
+required main/1.2/1.3 ESSR wire exchanges. Manually binding `essrs.` in each Python
+version does not test its native Baser binding or full Habery/Keeper interchange.
+Direct legacy LMDB support has a [deferred canonical roadmap owner](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility)
+outside the 2.0 gate; legacy wire support remains required.
+
 ## Known compatibility needs and explicit limits
 
-| ID     | Need / limit                                         | Current disposition                                                                                                                                                                                                                                                                   |
-| ------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GAP-01 | Capability selection and v2-to-v1 feature fallback   | No general peer negotiation or downgrade engine. Keep caller-selected versions explicit. A v2-only message, nested proof or disclosure cannot be relabeled into v1.                                                                                                                   |
-| GAP-02 | Legacy replay, forwarding and mailbox reachability   | Audit actual send paths and peer genera. Tevery currently emits legacy TEL replay with v2 proof counters and an explicit selector; header-only mailbox polling does not inherit COMP-01 automatically. See the [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md). |
-| GAP-03 | Database upgrade, rollback and pending-work recovery | No general KERIpy 1.x-to-2.x DB migration is supplied by these features. Inventory layouts and prove copy/rewrite/rebuild decisions on real state; retain untouched backups. Old keri-ts pre-1.0 storage compatibility remains outside scope.                                         |
-| GAP-04 | Broad historical archive acceptance                  | COMP-04 covers named extensions, not every old large-counter encoding or removed Matter code. Audit actual archives; never reinterpret removed codes under a new meaning.                                                                                                             |
-| GAP-05 | New feature rollout to old peers                     | Native messages, new registry/disclosure workflows and KRAM need explicit adoption profiles. TS DI2I/NOT and RegistryObserver integration have separate Python reference gaps; they are not already qualified forward-compatibility bridges.                                          |
-| GAP-06 | Python application/API and operational parity        | Source, HTTP, CLI and Python API differences need independent checks. GLEIF completion/connection fixes are relevant donor evidence, not proof that WebOfTrust 2.x includes every 1.x fix. Preserve [transport boundaries](../../design-docs/runtime/INGRESS_AND_EGRESS.md).          |
+| ID     | Need / limit                                         | Current disposition                                                                                                                                                                                                                                                                                                                                  |
+| ------ | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GAP-01 | Capability selection and v2-to-v1 feature fallback   | No general peer negotiation or downgrade engine. Keep caller-selected versions explicit. A v2-only message, nested proof or disclosure cannot be relabeled into v1.                                                                                                                                                                                  |
+| GAP-02 | Legacy replay, forwarding and mailbox reachability   | Audit actual send paths and peer genera. Tevery currently emits legacy TEL replay with v2 proof counters and an explicit selector; header-only mailbox polling does not inherit COMP-01 automatically. See the [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md).                                                                |
+| GAP-03 | Database upgrade, rollback and pending-work recovery | ESSR targets main `essrs.`; legacy Baser binds `.essrs`. Direct legacy LMDB interchange/migration is deferred outside 2.0 to the [DB roadmap](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility). No discovery, dual writes or migration supplied. Legacy wire remains required; older keri-ts private formats remain unsupported. |
+| GAP-04 | Broad historical archive acceptance                  | COMP-04 covers named extensions, not every old large-counter encoding or removed Matter code. Audit actual archives; never reinterpret removed codes under a new meaning.                                                                                                                                                                            |
+| GAP-05 | New feature rollout to old peers                     | Native messages, new registry/disclosure workflows and KRAM need explicit adoption profiles. TS DI2I/NOT and RegistryObserver integration have separate Python reference gaps; they are not already qualified forward-compatibility bridges.                                                                                                         |
+| GAP-06 | Python application/API and operational parity        | Source, HTTP, CLI and Python API differences need independent checks. GLEIF completion/connection fixes are relevant donor evidence, not proof that WebOfTrust 2.x includes every 1.x fix. Preserve [transport boundaries](../../design-docs/runtime/INGRESS_AND_EGRESS.md).                                                                         |
 
 ## Maintenance rule
 
