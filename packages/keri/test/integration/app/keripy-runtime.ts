@@ -1,6 +1,7 @@
 /** Exact KERIpy runtime selection shared by every CLI and Python interop subprocess. */
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { join } from "jsr:@std/path/join";
+import reference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 
 /** Independently observed interpreter and source identity, persisted with qualification logs. */
 export interface KeripyProvenance {
@@ -22,6 +23,8 @@ export interface KeripyProvenance {
   loadedModules: Record<string, { path: string; sha256: string }>;
   /** Runtime dependency versions; a missing distribution is recorded as null. */
   dependencies: Record<string, string | null>;
+  /** Actual dependency import paths and bytes, distinct from KERI Git verification. */
+  dependencyModules: Record<string, { path: string; sha256: string }>;
 }
 
 /** Selected command plus the Python interpreter that must accompany it. */
@@ -45,14 +48,37 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+/** Select only the frozen release peers; absence retains the separate mailbox-fork lane. */
+export function selectedKeripyProfile(env: Record<string, string>): typeof reference.profiles.main | undefined {
+  const name = env.KERIPY_INTEROP_PROFILE;
+  if (name === undefined) return undefined;
+  if (!Object.hasOwn(reference.profiles, name)) throw new Error(`Unknown KERIpy profile: ${name}`);
+  return reference.profiles[name as keyof typeof reference.profiles];
+}
+
+/** Express the known init/incept CLI difference without rewriting peer commands. */
+export function keripyProtocolVersionArgs(env: Record<string, string>, version: "1.0" | "2.0"): string[] {
+  const profile = selectedKeripyProfile(env);
+  if (profile?.protocolVersionArgument === false) {
+    if (version !== "1.0") throw new Error("Legacy KERIpy profiles only support protocol v1.");
+    return [];
+  }
+  return ["--version", version];
+}
+
 /** Validate the selected import before emitting a CLI wrapper or starting test state. */
 export async function verifyKeripy(
   workDir: string,
   env: Record<string, string>,
   pinned: { python: string; commit: string },
 ): Promise<KeripyRuntime> {
+  const profile = selectedKeripyProfile(env);
   const root = env.KERIPY_INTEROP_ROOT?.trim();
-  const expected = root ? env.KERIPY_INTEROP_EXPECTED_COMMIT?.trim() : pinned.commit;
+  if (profile && !root) throw new Error("A KERIpy release profile requires KERIPY_INTEROP_ROOT.");
+  if (profile && env.KERIPY_INTEROP_EXPECTED_COMMIT && env.KERIPY_INTEROP_EXPECTED_COMMIT !== profile.commit) {
+    throw new Error("KERIpy profile and KERIPY_INTEROP_EXPECTED_COMMIT disagree.");
+  }
+  const expected = profile?.commit ?? (root ? env.KERIPY_INTEROP_EXPECTED_COMMIT?.trim() : pinned.commit);
   if (!expected || !/^[0-9a-f]{40}$/.test(expected)) {
     throw new Error("KERIPY_INTEROP_ROOT requires a full KERIPY_INTEROP_EXPECTED_COMMIT SHA.");
   }
@@ -61,7 +87,18 @@ export async function verifyKeripy(
   }
   const python = root ? env.KERIPY_INTEROP_PYTHON?.trim() || join(root, "venv/bin/python") : pinned.python;
   const result = await new Deno.Command(python, {
-    args: [PROBE, "--expected-commit", expected, ...(root ? ["--root", root] : [])],
+    args: [
+      PROBE,
+      "--expected-commit",
+      expected,
+      ...(root ? ["--root", root] : []),
+      "--cli-command",
+      "init",
+      "--cli-command",
+      "incept",
+      "--cli-command",
+      "export",
+    ],
     env,
     stdout: "piped",
     stderr: "piped",
@@ -70,6 +107,15 @@ export async function verifyKeripy(
     throw new Error(`KERIpy provenance check failed:\n${new TextDecoder().decode(result.stderr)}`);
   }
   const provenance = JSON.parse(new TextDecoder().decode(result.stdout)) as KeripyProvenance;
+  if (profile) {
+    const version = provenance.pythonVersion.split(" ")[0];
+    if (!version.startsWith(`${profile.python}.`)) throw new Error(`KERIpy profile requires Python ${profile.python}.`);
+    for (const dependency of ["hio", "falcon", "lmdb"] as const) {
+      if (provenance.dependencies[dependency] !== profile[dependency]) {
+        throw new Error(`KERIpy profile requires ${dependency} ${profile[dependency]}.`);
+      }
+    }
+  }
   const json = `${JSON.stringify(provenance, null, 2)}\n`;
   await Deno.writeTextFile(join(workDir, "keripy-runtime.json"), json);
   const artifacts = env.KERIPY_INTEROP_PROVENANCE_DIR || env.KERI_TEST_TIMINGS_DIR;

@@ -39,6 +39,10 @@ pinned Git bytes; installed hashes alone do not prove Git equivalence. Qualify
 command-specific lazy imports separately. macOS PATH and shared helpers select
 one explicit fork checkout; DID Webs retains a separate dependency environment
 in the [reference inventory](../../docs/plans/qualification/REFERENCE_ENVIRONMENTS.md).
+Release profiles in `keripy-reference.json` select independent main/1.2/1.3
+checkouts through `KERIPY_INTEROP_PROFILE` and explicit root/interpreter paths.
+Their CLI/version and export-genus differences are test-launch data, not runtime
+compatibility shims. Keep actual-peer lifecycle qualification separate from bootstrap smoke.
 
 LMDB V1 needs its own native rebuild/preflight and cache boundary. PR merge-ref
 caches are invisible to later PRs: the master cache-warming workflow publishes

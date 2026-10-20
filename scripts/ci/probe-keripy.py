@@ -1,9 +1,11 @@
 """Verify the exact imported KERIpy runtime before interop creates any stores."""
 import argparse
+import contextlib
 import hashlib
 import importlib
 import importlib.metadata as metadata
 import importlib.util
+import io
 import json
 import pathlib
 import subprocess
@@ -17,6 +19,7 @@ def main():
     parser.add_argument("--root")
     parser.add_argument("--resolver-root")
     parser.add_argument("--resolver-commit")
+    parser.add_argument("--cli-command", action="append", choices=("init", "incept", "export"), default=[])
     args = parser.parse_args()
     import keri
 
@@ -52,9 +55,19 @@ def main():
     )
     if cli_module is None:
         raise SystemExit("Verified KERIpy runtime has no KLI module")
-    importlib.import_module(cli_module)
+    cli = importlib.import_module(cli_module)
+    for command in args.cli_command:
+        # Discover real command parsers/lazy imports without opening any protocol stores.
+        sys.argv = ["kli", command, "--help"]
+        with contextlib.redirect_stdout(io.StringIO()):
+            try:
+                status = cli.main()
+            except SystemExit as error:
+                status = error.code
+        if status not in (None, 0):
+            raise SystemExit(f"KERIpy {command} discovery failed: {status}")
     dependencies = {}
-    for name in ("keri", "hio", "lmdb", "pysodium", "blake3"):
+    for name in ("keri", "hio", "falcon", "lmdb", "pysodium", "blake3"):
         try:
             dependencies[name] = metadata.version(name)
         except metadata.PackageNotFoundError:
@@ -67,6 +80,8 @@ def main():
         "pythonVersion": sys.version,
         "cliModule": cli_module,
         "dependencies": dependencies,
+        "dependencyModules": dependency_modules(),
+        "cliCommands": args.cli_command,
         "importVerification": "git-bytes" if root else "installed-record",
         "loadedModules": loaded_modules(root, commit, expected_module.parent),
     }
@@ -93,6 +108,19 @@ def main():
             "root": str(resolver_root), "commit": resolver_commit, "module": str(resolver_module)
         }
     print(json.dumps(result, sort_keys=True))
+
+
+def dependency_modules():
+    """Record actual dependency imports independently of distribution labels."""
+    modules = {}
+    for name in ("hio", "falcon", "lmdb", "pysodium", "blake3"):
+        source = getattr(sys.modules.get(name), "__file__", None)
+        if source is None:
+            continue
+        path = pathlib.Path(source).resolve()
+        if path.is_file():
+            modules[name] = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    return modules
 
 
 def loaded_modules(root, commit, package_root):

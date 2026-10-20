@@ -21,11 +21,36 @@ references; one result must not be attributed to another.
 | Sally CLI harness       | Historical 98                | `vlei-tufa-sally-interop.sh` |
 | Embedded DID Webs       | Resolver 839 / KERIpy 1.2.14 | Separate Python environment  |
 
+## Explicit 2.0.0 release peer profiles
+
+`scripts/ci/keripy-reference.json` freezes independent upstream profiles selected
+on 2026-10-20. These supplement the mailbox-fork default; they do not relabel it.
+
+| Profile | Upstream source                                        | Python | HIO    | LMDB  | Falcon |
+| ------- | ------------------------------------------------------ | ------ | ------ | ----- | ------ |
+| `main`  | `424a50c03421165c5f289e07a341bd57b8d8ab78`             | 3.14   | 0.7.20 | 2.3.0 | 4.3.1  |
+| `1.2`   | tag 1.2.14, `bab95c16e949b61398129a3e41a8f68bad84c94f` | 3.13   | 0.6.14 | 1.7.5 | 4.3.1  |
+| `1.3`   | tag 1.3.6, `4ce4cc79e06653f77342be1bf604086b89b1f090`  | 3.13   | 0.6.19 | 1.7.5 | 4.3.1  |
+
+Prepare each clean checkout with its own venv, install it editable with the
+listed dependency pins, then set `KERIPY_INTEROP_PROFILE`,
+`KERIPY_INTEROP_ROOT` and `KERIPY_INTEROP_PYTHON` before running
+`deno run -A scripts/ci/run-keri-test-group.ts interop-reference-profiles`.
+Missing environments, mismatched commits/interpreters/dependencies and changed
+imported Git bytes fail before state creation. The probe records actual imports,
+dependency paths/hashes and init/incept/export command discovery.
+
+The focused owner proves CLI init/incept/export, signed KEL intake and real v1
+witness startup/OOBI. It does not qualify credential lifecycles. Old CLIs omit
+the unsupported protocol `--version` option. Their export genus is v1; current
+main/fork exports use v2 attachments even for v1 bodies. Supply that known
+context before the unchanged CLI stream, as the existing export-parity owner does.
+
 ## Immutable authorities
 
 - Frozen upstream table/CESR baseline: `7143832813cac6a394ab1faf9be83bb3372be87c`.
   This is the reproducible fixture target, not a claim that upstream main stopped there.
-- Current upstream observed 2026-10-16: `c102367ea0b8416ffb3c01403d18b3fd4a6a38bf`.
+- Mailbox-fork upstream base observed 2026-10-16: `c102367ea0b8416ffb3c01403d18b3fd4a6a38bf`.
   The mailbox branch is rebased on this main. Keep its results separate from
   unmodified-upstream probes and frozen-table comparisons.
 - Historical upstream: `927c0cb8794d7c84fc17143c67df64aab9deda6c`.
