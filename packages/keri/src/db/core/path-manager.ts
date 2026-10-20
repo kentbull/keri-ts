@@ -5,7 +5,7 @@
  * Uses composition pattern instead of inheritance.
  */
 
-import { isAbsolute, join } from "jsr:@std/path";
+import { isAbsolute, join, resolve } from "jsr:@std/path";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
@@ -273,6 +273,29 @@ export class PathManager {
     const [primary, alt] = this._getPersistentPaths(options);
     const tempPath = this._getTempPath();
     return [primary, alt, tempPath];
+  }
+
+  /**
+   * Find an existing persistent directory without preparing any paths.
+   * An explicit head selects only its primary path. Otherwise require exactly
+   * one conventional location; missing, ambiguous and inaccessible targets fail.
+   */
+  *existingDirectoryPath(headDirPath?: string): Operation<string> {
+    const [primary, alt] = this._getPersistentPaths({ headDirPath });
+    const candidates = headDirPath === undefined ? [primary, alt] : [primary];
+    const matches: string[] = [];
+    for (const path of new Set(candidates.map((candidate) => resolve(candidate)))) {
+      const directory = yield* this.statFileOp(path);
+      if (directory.isDirectory) matches.push(path);
+    }
+    if (matches.length !== 1) {
+      throw new PathError(
+        `Expected exactly one existing directory; found ${matches.length}: ${
+          candidates.join(", ")
+        }. Select --head-dir explicitly.`,
+      );
+    }
+    return matches[0];
   }
 
   /**

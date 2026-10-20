@@ -54,6 +54,11 @@ options, KERI_LMDB_MAP_SIZE/KERI_BASER_MAP_SIZE and stored metadata.
 
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
+Pending-OOBI maintenance uses scoped `openOobiStore`, not Baser/Habery startup.
+Explicit heads never fall back; default discovery requires one existing directory.
+LMDBer's existing opening neither stamps versions nor creates named tables; an
+absent non-creating native binding returns undefined and must fail explicitly.
+Preview is native read-only, and this owner exposes only exact `oobis.` get/rem.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
 accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters

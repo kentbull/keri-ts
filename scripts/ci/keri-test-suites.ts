@@ -215,6 +215,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/keeping.test.ts",
       "test/unit/db/koming.test.ts",
       "test/unit/db/mailboxing.test.ts",
+      "test/unit/db/oobi-store.test.ts",
       "test/unit/db/payload-archive.test.ts",
       "test/unit/db/payload-store.test.ts",
       "test/unit/db/reger.test.ts",
@@ -236,6 +237,7 @@ export const suites: Record<string, TestSuite> = {
   },
   "interop-oobi-bootstrap": {
     files: [
+      "test/integration/app/interop-oobi-store.test.ts",
       "test/integration/app/interop-oobi-bootstrap.test.ts",
     ],
   },
