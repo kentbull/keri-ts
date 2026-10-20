@@ -1,3 +1,4 @@
+import { Organizer } from "./organizing.ts";
 /**
  * Credential registry and lifecycle workflow orchestration.
  *
@@ -285,10 +286,11 @@ export function* revokeCredential(
     }
     const messages = revocationStreamMessages(hby, reger, creder);
     for (const recipient of options.sendRecipients ?? []) {
+      const dest = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
       for (const message of messages) {
         const evt = postman.send({
           src: options.senderHab.pre,
-          dest: postman.resolveRecipient(recipient),
+          dest,
           msg: message,
           topic: CREDENTIAL_MAILBOX_TOPIC,
           delivery: options.delivery,

@@ -108,11 +108,9 @@ Poster processes events FIFO with an ordinary sequential loop over targets.
 An observed refusal does not prevent remaining targets from being attempted.
 A failed event leaves runnable work and enters the plain `failures` collection
 with its original signed message, actual successful URLs and failure details.
-Later events can proceed; there is no automatic retry. `retry(evt)` removes the
-retained failure and admits a fresh event with the same source bytes. It resolves
-current endpoints and rebuilds outer forwarding material, so already successful
-destinations may receive duplicates. `discard(evt)` removes failed work without
-sending. Failures do not contribute to pending/idle state.
+Later events can proceed; there is no automatic retry or retry/discard API.
+Failures remain process-local terminal evidence until close, pending the separate
+unobserved-failure reporting change. They do not contribute to pending/idle state.
 
 Unexpected construction, storage, parser or cleanup exceptions are retained and
 reported before propagating. Native network failures are classified at transport

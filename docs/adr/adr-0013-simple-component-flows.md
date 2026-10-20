@@ -115,9 +115,10 @@ the producer, with standalone callers starting and joining an explicit worker.
 
 Respondant constructs every local replay message and every correlated reply before
 atomic publication. Poster owns ordinary FIFO events and sequential target loops.
-Recognized failures retain the whole event with partial successful deliveries;
-explicit retry reuses source bytes as a fresh attempt, and may duplicate earlier
-successes. Unexpected failures remain visible. Failures and optional completion
+Recognized failures retain the whole event with partial successful deliveries.
+Poster has no retry/discard API. Retention remains until the separate failure-reporting
+change supplies a concrete owner for unobserved terminal errors. Unexpected failures
+remain visible. Failures and optional completion
 cues do not determine pending work. There is no cursor, automatic retry, exact
 final-packet cache or cross-batch fairness mechanism. These omissions are explicit
 in the [deferred reliability roadmap](../plans/runtime/cue-reliability-roadmap.md).

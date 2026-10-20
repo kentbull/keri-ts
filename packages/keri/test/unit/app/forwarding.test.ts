@@ -45,7 +45,7 @@ import {
   openMailboxerForHabery,
   updateMailboxRemoteCursor,
 } from "../../../src/app/mailboxing.ts";
-import { persistResolvedContact } from "../../../src/app/organizing.ts";
+import { Organizer, persistResolvedContact } from "../../../src/app/organizing.ts";
 import type { Reactor } from "../../../src/app/reactor.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 
@@ -93,7 +93,10 @@ function* deliverExchange(
     delivery?: ExchangeDeliveryPreference;
   },
 ) {
-  const { serder, msg } = createExchangeMessage(hab, { ...args, dest: postman.resolveRecipient(args.recipient) });
+  const { serder, msg } = createExchangeMessage(hab, {
+    ...args,
+    dest: new Organizer(hab.db, null).resolveRecipient(args.recipient),
+  });
   const outcome = yield* deliverMessage(postman, hab, {
     recipient: args.recipient,
     message: msg,
@@ -143,7 +146,7 @@ Deno.test("mailboxTopicKey normalizes credential topic slash forms", () => {
 });
 
 /** Proves the EXN/mailbox recipient resolution order: prefix first, alias second. */
-Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
+Deno.test("Organizer resolves exact contact aliases and raw AIDs", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `poster-resolve-${crypto.randomUUID()}`,
@@ -173,9 +176,9 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
         oobi: "http://example.test/oobi/bob/controller",
       });
 
-      const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
-      assertEquals(postman.resolveRecipient(local.pre), local.pre);
-      assertEquals(postman.resolveRecipient("bob-contact"), remote.pre);
+      const organizer = new Organizer(hby.db, hby.signator);
+      assertEquals(organizer.resolveRecipient(local.pre), local.pre);
+      assertEquals(organizer.resolveRecipient("bob-contact"), remote.pre);
     } finally {
       yield* hby.close(true);
     }
@@ -183,7 +186,7 @@ Deno.test("Poster resolves exact contact aliases and raw AIDs", async () => {
 });
 
 /** Proves KERIpy-shaped alias failure messages for missing and ambiguous contacts. */
-Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
+Deno.test("Organizer rejects missing and ambiguous contact aliases", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `poster-errors-${crypto.randomUUID()}`,
@@ -211,14 +214,14 @@ Deno.test("Poster rejects missing and ambiguous contact aliases", async () => {
       persistResolvedContact(hby, remoteA.pre, { alias: "shared" });
       persistResolvedContact(hby, remoteB.pre, { alias: "shared" });
 
-      const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
+      const organizer = new Organizer(hby.db, hby.signator);
       assertThrows(
-        () => postman.resolveRecipient("missing"),
+        () => organizer.resolveRecipient("missing"),
         Error,
         "no contact found with alias 'missing'",
       );
       assertThrows(
-        () => postman.resolveRecipient("shared"),
+        () => organizer.resolveRecipient("shared"),
         Error,
         "multiple contacts match alias 'shared', use prefix instead",
       );

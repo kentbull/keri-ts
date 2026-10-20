@@ -65,8 +65,8 @@ Poster accepts one complete CESR message. Target preparation is an owned operati
 using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
 independently authenticated nested message; legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
-preparation for each attempt; explicit retry preserves the signed source message
-but rebuilds outer forwarding material. No generic output executor is needed.
+preparation for each admitted event. No generic output executor is needed.
+Organizer resolves aliases at the producer boundary; Poster receives destination AIDs.
 Poster constructor dependencies are explicit; its provider store is `mbx`, with
 null representing absence. `ensureOpen` guards admission/waiting and production
 preflights; already-built message admission needs no redundant producer guard.
@@ -85,8 +85,8 @@ before atomic publication and source removal. Hab.processCuesIter yields raw wir
 typed cues route queries, streams and observations directly. ReplayCue uses msgs.
 Poster evts carry src/dest/topic/msg and execute FIFO with sequential targets.
 Observed refusal attempts remaining targets; failed whole events retain partial
-successes in failures and do not block later events. retry(evt) creates a fresh
-attempt from source bytes and consumes the failure; discard(evt) removes it.
+successes in failures and do not block later events. Poster has no retry/discard
+API. The backlog remains until the separate unobserved-failure reporting change.
 No automatic retry, final-packet cache, manual reply cursor or cross-batch fairness
 remains. Failures are process-local and excluded from idle. Unexpected construction,
 storage, parser and cleanup failures are retained/reported then propagate.

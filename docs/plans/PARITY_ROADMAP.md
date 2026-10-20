@@ -18,15 +18,10 @@ Tevery with independent record validators and a shared composed Revery. Publishe
 1.0.0 packages do not contain this refactor. Its scoped evidence is separate from
 the release battery; see the release report's post-release section.
 
-The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) describes message
-production in Hab/Respondant and queued FIFO execution in Poster. Producers
-construct complete local replay batches; retained whole-event failures require
-explicit retry/discard. Caller completion uses concrete event identities. TCP
-local transmission and duplex receive remain distinct, and ordinary HTTP sends
-require complete successful response bodies. Its focused tests and scoped PR CI
-are separate from the published 1.0.0 release battery.
-The [reliability roadmap](runtime/cue-reliability-roadmap.md) keeps automatic retry,
-exact final-wire replay, fairness and durability outside this implementation.
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) owns current
+message production, delivery, completion and lifecycle behavior. The
+[reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
+capabilities and the evidence required before extending that behavior.
 
 ## Retained architecture
 

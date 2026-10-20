@@ -71,7 +71,7 @@ Deno.test("Respondant finishes local replay construction before publishing or re
   });
 });
 
-Deno.test("Poster retains the complete source message on exceptions and requires explicit retry", async () => {
+Deno.test("Poster retains the complete source message on exceptions without automatic retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
@@ -119,21 +119,6 @@ Deno.test("Poster retains the complete source message on exceptions and requires
       assertStrictEquals(runtime.postman.failures[0].error, failure);
       yield* runtime.postman.process();
       assertEquals(attempts, 1, "a failed event is retained without automatic retry");
-      hab.rotate();
-      url = "https://retry.test/";
-      fail = false;
-      const retried = runtime.postman.retry(evt, { notify: true });
-      assertEquals(retried === evt, false, "each attempt has a fresh completion identity");
-      assertEquals(retried.msg, wire, "retry keeps the originally signed source message");
-      assertEquals(runtime.postman.failures.length, 0);
-      yield* runtime.postman.process();
-      assertEquals((yield* runtime.postman.wait(retried)).kin, "sent");
-      assertEquals([attempts, closed], [2, 1], "retry neither reopens replay nor signs its source again");
-      assertEquals(
-        destinations,
-        ["https://peer.test/", "https://retry.test/"],
-        "explicit retry resolves current routing",
-      );
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -141,7 +126,7 @@ Deno.test("Poster retains the complete source message on exceptions and requires
   });
 });
 
-Deno.test("complete replay batches precede receipt delivery while refused events remain explicitly retryable", async () => {
+Deno.test("complete replay batches precede receipt delivery while refusals preserve partial outcomes", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), second = hby.makeHab("second"), third = hby.makeHab("third");
@@ -226,18 +211,6 @@ Deno.test("complete replay batches precede receipt delivery while refused events
       yield* runtime.querying.deliverOnce();
       assertEquals(runtime.querying.hasPendingDelivery, false);
       assertEquals(queries, 9);
-      refuse = false;
-      runtime.postman.retry(evts[0]);
-      yield* runtime.postman.process();
-      assertEquals(attempts.slice(-3), ["first", "second", "third"].map((target) => ({ target, said: saids[0] })));
-      assertEquals(
-        runtime.postman.failures.map(({ evt }) => evt),
-        [evts[1]],
-        "retry may repeat previously successful targets",
-      );
-      assertEquals(runtime.postman.discard(evts[1]), true);
-      assertEquals(runtime.postman.discard(evts[1]), false);
-      assertEquals(runtime.postman.failures.length, 0);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

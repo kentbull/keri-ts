@@ -52,9 +52,8 @@ records; a second TSN interpretation failure must leave the pair pending.
 
 The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) defines delivery completion. The host runs Poster independently of QueryCoordinator. Ingress
 publishes without draining Poster. Target loops attempt remaining destinations
-after refusal; failed whole events await explicit retry or discard while later
-events continue. Retry can duplicate successful destinations and rebuilds outer
-wire from the retained signed source message.
+after refusal; failed whole events retain terminal evidence while later events
+continue. The runtime contract owns the separately gated failure-reporting change.
 
 ## Missing state to outbound query
 

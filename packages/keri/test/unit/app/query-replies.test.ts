@@ -164,13 +164,8 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
       yield* runtime.postman.process();
       assertEquals(packets, evts.map(({ msg }) => msg), "the registry and credential replies are attempted in order");
       assertStrictEquals(runtime.postman.failures[0].evt, evts[0]);
-      sender.interact();
-      refuse = false;
-      const retried = runtime.postman.retry(evts[0]);
-      assertEquals(retried.msg, evts[0].msg, "explicit retry reuses the signed source reply");
-      yield* runtime.postman.process();
       assertEquals(constructions, constructed, "delivery does not reinterpret protocol cues");
-      assertEquals(runtime.postman.failures.length, 0);
+      refuse = false;
 
       const later = replies.reserve("tsn");
       cues.extend(pair);

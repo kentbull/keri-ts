@@ -379,7 +379,6 @@ export function* sendCredentialBytes(
   delivery: IpexDeliveryPreference | undefined,
 ): Operation<string[]> {
   const sent: string[] = [];
-  dest = postman.resolveRecipient(dest);
   for (const msg of msgs) {
     const evt = postman.send({
       src: hab.pre,
