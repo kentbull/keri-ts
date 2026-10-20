@@ -298,9 +298,21 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         continue;
       }
       if (said !== seal.d.qb64) continue;
-      if (!this.hby.db.getEvtSerder(issuee, said)) {
+      const anchor = this.hby.db.getEvtSerder(issuee, said);
+      if (!anchor) {
         unresolved = true;
         continue;
+      }
+      // Inception can arrive before the update named by this source. A retry
+      // between those messages must not turn missing TEL evidence into a bad binding.
+      for (const tuple of anchor.seals) {
+        if (
+          !tuple || typeof tuple !== "object" || Array.isArray(tuple)
+          || !("i" in tuple) || tuple.i !== regid || !("s" in tuple) || typeof tuple.s !== "string"
+          || !/^[0-9a-f]+$/.test(tuple.s) || !("d" in tuple) || typeof tuple.d !== "string"
+        ) continue;
+        const sn = BigInt(`0x${tuple.s}`);
+        if (sn <= BigInt(Number.MAX_SAFE_INTEGER) && !this.registry.seqSaider(regid, Number(sn))) unresolved = true;
       }
       for (const update of chain.updates) {
         const checked = validateUpdate(update, regid);

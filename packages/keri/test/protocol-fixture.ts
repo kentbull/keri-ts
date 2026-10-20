@@ -1,4 +1,5 @@
 /** Explicit protocol composition for tests that select real optional handlers or receiver policy. */
+import { RegistryObserver } from "../src/acdc/observing.ts";
 import type { Regery } from "../src/acdc/registraring.ts";
 import { Exchanger } from "../src/app/exchanging.ts";
 import type { Habery } from "../src/app/habbing.ts";
@@ -50,7 +51,7 @@ export function protocolFixture(
     exc,
     tevery ?? null,
     verifier ?? null,
-    registry ?? null,
+    registry ? new RegistryObserver(hby.db, registry.store) : null,
     output,
     cues,
     new QueryReplies(cues),

@@ -559,7 +559,11 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       now += 1000;
       yield* store.baser.reopen();
       yield* hby.db.reopen();
-      for (const event of [prip, pbup]) assertEquals(observer.processEvent(event).kind, "accept");
+      assertEquals(observer.processEvent(prip).kind, "accept");
+      yield* runtime.protocol.processEscrowsOnce();
+      assertExists(hby.db.epse.get([grant.said!]), "accepted inception does not satisfy the source's missing update");
+      assertEquals(hby.db.exns.get([grant.said!]), null);
+      assertEquals(observer.processEvent(pbup).kind, "accept");
       // A newer accepted update must not rewrite the already observed grant cutoff.
       const vacant = makeBlindState({ sn: 2 });
       const vacantTime = makeNowIso8601(new Date(now));

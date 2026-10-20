@@ -1,4 +1,4 @@
-/** Explicit public registry intake; this TypeScript integration is beyond frozen KERIpy 927. */
+/** Public registry intake; pinned KERIpy main exposes vetting but no corresponding parser route. */
 import { Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
@@ -16,7 +16,8 @@ export type RegistryObserverDecision =
  * Reconstruct the engine's issuer from stored inception after reopen. Intake uses the engine's
  * full tuple/witness anchor policy, distinct from digest-only observer vetting. Each accepted
  * event commits independently; a later failure preserves the already accepted prefix.
- * Parsed evidence stays borrowed. This installs no automatic parser or runtime route.
+ * Parsed evidence stays borrowed. Composition supplies this owner to native protocol dispatch;
+ * no local habitat, alias or application disclosure custody is created by public intake.
  */
 export class RegistryObserver {
   constructor(readonly db: Baser, readonly store: RegistryStore) {}
@@ -58,6 +59,18 @@ export class RegistryObserver {
     const engine = this.engine(regid);
     if (!(engine instanceof RegistryEventer)) return;
     engine.processEscrows();
+  }
+
+  /**
+   * Retry registries named by durable dependency escrows, including foreign registries after reopen.
+   * Finish both table cursors before acceptance writes; local aliases do not determine pending work.
+   */
+  processAllEscrows(): void {
+    const registries = new Set<string>();
+    for (const table of [this.store.baser.maes, this.store.baser.ooes]) {
+      for (const [keys] of table.getAllItemIter()) registries.add(keys[0]);
+    }
+    for (const regid of registries) this.processEscrows(regid);
   }
 
   /** Stored inception is durable issuer identity, including while its anchor is still absent. */

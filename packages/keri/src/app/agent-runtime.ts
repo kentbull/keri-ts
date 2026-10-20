@@ -1,4 +1,5 @@
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
+import { RegistryObserver } from "../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -288,7 +289,7 @@ export function* createAgentRuntime(
     exc,
     vdr?.tvy ?? null,
     vdr?.vry ?? null,
-    acdc,
+    acdc ? new RegistryObserver(hby.db, acdc.store) : null,
     protocolCues,
     cues,
     replies,

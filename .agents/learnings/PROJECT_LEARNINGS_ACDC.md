@@ -77,7 +77,10 @@ Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
-RegistryObserver intake owns per-event engine publication, without bulk import. Supplied anchored prefixes cannot hide an unanchored suffix.
+RegistryObserver intake owns per-event engine publication. Normal dispatch routes RIP/BUP
+to this owner; runtime retries snapshot both durable escrow tables before writes,
+including foreign registries with no local aliases after reopen. Supplied anchored
+prefixes cannot hide an unanchored suffix.
 Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
 checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
 RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
@@ -86,7 +89,9 @@ Ordinals must remain exactly representable by the numeric storage API; an existi
 head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs use completed receiver-observed KRAM time, retained through
-dependency escrow and reopen. Partial group signatures do not complete that time;
+dependency escrow and reopen. An accepted source naming a not-yet-accepted registry
+update stays retryable even when its RIP has arrived; intermediate ingress sweeps
+must not turn that missing dependency into a binding rejection. Partial group signatures do not complete that time;
 later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.

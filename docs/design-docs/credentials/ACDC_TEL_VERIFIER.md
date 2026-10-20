@@ -30,7 +30,10 @@ responsibilities into one vague "VC" layer.
 - `acdc/registering.ts` supplies storage-only RegistryStore access, aliases,
   accepted-body cloning, earliest-anchor retention and insertion-ordered escrows.
 - `acdc/observing.ts` supplies explicit public parsed registry intake through
-  the engine; IPEX reads accepted ordinals through RegistryStore.
+  the engine. Ordinary RIP/BUP dispatch uses this owner; runtime sweeps discover
+  pending foreign registries from durable escrows, not local aliases. AgentRuntime
+  retains Regery/store lifecycle ownership. IPEX reads accepted ordinals through
+  RegistryStore and retains a presentation with an unresolved referenced update.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
   artifacts.
 - `app/verifier-agent.ts` owns Sally-like webhook sending and durable ack/retry

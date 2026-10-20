@@ -128,6 +128,15 @@ projects those facts into the existing flat CLI JSON. Endpoint-role workflows
 return `GroupRoleResult`; CLI helper types use `GroupEventResult` and
 `EndRoleResult`. No old-name aliases are provided.
 
+## Native registry intake
+
+`ProtocolProcessor.registry` and its constructor dependency are now a borrowed
+`RegistryObserver`, replacing the local `Regery` manager. AgentRuntime composes
+it over the same accepted KEL and registry store, while retaining the manager's
+lifecycle. RIP/BUP messages now reach native validation through ordinary ingress;
+foreign pending registries recover from durable escrows without local aliases.
+This does not create a credential wallet or persist disclosure openings.
+
 ## Messenger ownership
 
 `HTTPMessenger` is send-only and takes `(url, http, { destination, headers })`;

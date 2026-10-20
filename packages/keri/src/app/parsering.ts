@@ -31,6 +31,7 @@ import {
   type Versionage,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import type { RegistryObserver, RegistryObserverDecision } from "../acdc/observing.ts";
 import {
   KeriDispatchEnvelope,
   PathedMaterialGroup,
@@ -124,6 +125,7 @@ export type DispatchDecision =
   | KeverDecision
   | TelProcessDecision
   | VerifierDecision
+  | RegistryObserverDecision
   | QueryProcessDecision
   | ReplyProcessDecision
   | ExchangeDecision
@@ -166,6 +168,7 @@ export interface DispatchResult {
  * @param verifier Optional credential processor.
  * @param mailboxAid Receiving hosted endpoint provenance, distinct from claimed sender.
  * @param messageKevery Authoritative shared message-policy/KRAM processor when distinct from input Kevery.
+ * @param registry Native registry intake over accepted public KEL state, without requiring a local alias.
  * @returns The processed envelope and protocol-specific decision data.
  * @throws Unsupported input and infrastructure/handler failures follow their owning processor contracts.
  */
@@ -179,9 +182,16 @@ export function* dispatchEnvelope(
   mailboxAid?: string | null,
   /** Long-lived v2 message policy/KRAM owner; input-specific Kevery handles KEL and legacy traffic. */
   messageKevery: Kevery = kevery,
+  registry?: RegistryObserver,
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
+    if (serder.ilk === Ilks.rip || serder.ilk === Ilks.bup) {
+      return {
+        envelope,
+        decision: registry?.processEvent(serder) ?? { kind: "drop", reason: "missingProcessor" },
+      };
+    }
     return {
       envelope,
       decision: serder.ilk === null ? verifier?.processACDC(acdcEnvelopeFromDispatch(envelope, serder)) : undefined,

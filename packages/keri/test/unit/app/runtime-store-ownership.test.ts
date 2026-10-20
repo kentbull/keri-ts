@@ -102,7 +102,8 @@ Deno.test("runtime stores - injected stores survive explicit close and scope exi
       });
 
       assertEquals(runtime.acdc, rgy);
-      assertEquals(runtime.protocol.registry, rgy);
+      assertStrictEquals(runtime.protocol.registry!.db, hby.db);
+      assertStrictEquals(runtime.protocol.registry!.store, rgy.store);
       assertEquals(runtime.vdr!.reger, reger);
       yield* runtime.close();
       assertEquals(registry.opened, true);

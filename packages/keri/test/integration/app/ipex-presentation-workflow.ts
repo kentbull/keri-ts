@@ -14,21 +14,18 @@ import {
   type MapperMap,
   parseBytes,
   Prefixer,
-  SerderACDC,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, spawn } from "effection";
-import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
-import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
 } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
@@ -189,16 +186,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           const urls: string[] = [];
           for (const [runtime, hab] of [[holderRuntime, holder], [receiverRuntime, receiver]] as const) {
             const handler = createProtocolHandler(runtime, { serviceHab: hab });
-            const observer = new RegistryObserver(runtime.hby.db, runtime.acdc!.store);
-            const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
-              if (new URL(request.url).pathname !== "/_registry") return await handler(request);
-              // Explicit application composition: RegistryObserver installs no automatic runtime route.
-              for (const frame of parseBytes(await readCesrRequestBytes(request))) {
-                assertInstanceOf(frame.body, SerderACDC);
-                assertEquals(observer.processEvent(frame.body).kind, "accept");
-              }
-              return new Response(null, { status: 204 });
-            });
+            const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
             listeners.push({ server, handler });
             urls.push(`http://127.0.0.1:${server.addr.port}/`);
           }
@@ -209,7 +197,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
             if (count === 2) yield* call(() => introduce(url, holderHbys[0], holder.pre));
             yield* call(() => introduce(url, receiverHby, receiver.pre));
             for (const body of [irip, issued]) {
-              yield* call(() => post(`${url}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+              yield* call(() => post(url, { body, attachments: [], gvrsn: Vrsn_2_0 }));
             }
           }
           const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], {
@@ -383,7 +371,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           accepted(presentation, later);
           yield* call(() => introduce(receiverUrl, holderHbys[0], holder.pre));
           for (const body of [prip, presented, later]) {
-            yield* call(() => post(`${receiverUrl}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+            yield* call(() => post(receiverUrl, { body, attachments: [], gvrsn: Vrsn_2_0 }));
           }
           assertEquals(receiverRuntime.acdc!.store.head(prip.said!)?.qb64, later.said);
           yield* receiverRuntime.protocol.exc.processEscrows();
