@@ -92,7 +92,7 @@ Deno.test("EXN escrow diagnostics follow terminal cleanup and exclude preserved 
       assertEquals((await run(() => exchanger.processEvent({ serder, tsgs: [sender, supplemental] }))).kind, "escrow");
       // Missing historical supplemental state refuses this attempt while preserving its durable evidence.
       hby.db.evts.rem([bob.pre, supplemental.said]);
-      await run(() => exchanger.processEscrows());
+      assertEquals(await run(() => exchanger.processEscrows()), false, "preserved refusal leaves work unchanged");
       assertExists(hby.db.epse.get([said]));
       assertEquals(warnings, []);
       hby.db.evts.pin([bob.pre, supplemental.said], foreignEvent);
@@ -108,7 +108,7 @@ Deno.test("EXN escrow diagnostics follow terminal cleanup and exclude preserved 
       } finally {
         hby.db.epse.rem = remove;
       }
-      await run(() => exchanger.processEscrows());
+      assertEquals(await run(() => exchanger.processEscrows()), true, "terminal rejection removes pending work");
       assertEquals(warnings, [["Exchanger ejected exchange escrow", {
         family: "epse",
         said,
@@ -117,6 +117,7 @@ Deno.test("EXN escrow diagnostics follow terminal cleanup and exclude preserved 
         reason: "Exchange route /proof failed handler verification.",
         cause: undefined,
       }]]);
+      assertEquals(await run(() => exchanger.processEscrows()), false);
     } finally {
       consoleLogger.warn = warn;
     }

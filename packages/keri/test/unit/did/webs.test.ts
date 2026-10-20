@@ -183,7 +183,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
     const advance = runtime.protocol.processEscrowsOnce.bind(runtime.protocol);
     runtime.protocol.processEscrowsOnce = function*() {
       escrowPasses++;
-      yield* advance();
+      return yield* advance();
     };
     const hab = issuer.makeHab("issuer", undefined, { toad: 0 });
     const did = `did:webs:example.com:dws:${hab.pre}`;

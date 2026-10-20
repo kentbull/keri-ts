@@ -37,7 +37,7 @@ commit even when no patch is needed; landed work also records PR and merge commi
 | B: COMP-03 through COMP-06, GAP-04 | Unassessed      | Unassessed      | Pending target selection.              |
 | C: COMP-07, COMP-08, GAP-02        | Unassessed      | Unassessed      | Pending target selection.              |
 | D: COMP-09 through COMP-11, GAP-05 | Unassessed      | Unassessed      | Pending target selection.              |
-| E: GAP-03, GAP-06                  | Unassessed      | Unassessed      | Pending target selection.              |
+| E: COMP-12, GAP-03, GAP-06         | Unassessed      | Unassessed      | Pending target selection.              |
 
 GAP-01 (general capability negotiation/downgrade) remains a design boundary;
 none of these packages authorizes an automatic conversion system.
@@ -146,8 +146,15 @@ independent child proofs, restart, optional KRAM behavior and replay/timing
 refusals. Define whether a case is Python-to-TS, TS-to-Python or TS-only; a Python
 witness participating in a TS-to-TS presentation is not Python presentation parity.
 
-### Port E — Storage and deployment transition (GAP-03, GAP-06)
+### Port E — Storage and deployment transition (COMP-12, GAP-03, GAP-06)
 
+- [ ] Verify Broker TSN proof identity on each selected target. Both G1 and W2
+      already use the same zero-padded numeric ordinal key (COMP-12); do not invent
+      a version-specific key migration. Preserve aggregation of partial signatures
+      for the same signer/establishment tuple across equivalent ordinal encodings.
+      Verify retry idempotence and acceptance independently of body/attachment
+      version selection. Different wrapper projections are not different protocol
+      versions, and a database index need not preserve original attachment bytes.
 - [ ] Inventory actual populated Baser/Reger/new-registry/keystore stores and
       pending escrows. Classify each as copy, rewrite, rebuild, newly empty or retired.
       The existing [DB plan](../db/DB_PARITY_PLAN.md) and

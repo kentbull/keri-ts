@@ -48,6 +48,9 @@ record schemas in structing.ts and counted transport in wrappers.
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
 Tevery also owns registry/credential TSN routes, independent reply admission and
 Broker dependency retries. Record-only validators do not import processors.
+Broker keys endorsement proofs by numeric establishment ordinal, matching both
+Python references; primitive wrappers are not version selectors. The compatibility
+inventory's COMP-12 owns this storage convention and its cross-version limits.
 Revocation evidence persists before its ordinary cue is published. Storage or
 publication failures retain their exact identity through router catches. TSN
 pairs are appended in registry/credential order; captured replay stays lazy.
@@ -58,6 +61,10 @@ membership; chain retries emit again. Storage failure preserves the retry family
 Escrow ejection warnings belong after actual owner removal/commit and include the
 message identity and refusal detail. Acceptance cleanup, dependency migration and
 EXN `preserveEscrow` are not rejection ejections; unexpected failures propagate.
+Escrow sweeps report committed semantic changes, including pending proof/anchor
+repairs and family migration. Repeated cues, identical writes and KRAM pruning
+are not credential-recovery progress. Tevery completes each captured TSN horizon
+in bounded pages; a page count alone cannot prove local settlement has stalled.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 

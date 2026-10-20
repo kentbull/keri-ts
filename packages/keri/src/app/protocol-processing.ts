@@ -202,15 +202,22 @@ export class ProtocolProcessor {
    * This includes KEL/reply, optional TEL/credential/v2 registry, and exchange escrows,
    * plus KRAM pruning. Capture direct replies and publish ordinary cues on exit.
    * Cancellation releases the turn only after active handler cleanup joins.
+   *
+   * @returns Whether committed acceptance, escrow membership or dependency evidence
+   * changed. False means another immediate sweep cannot recover more from current
+   * local evidence; future input can still unblock work. Repeated cues and unrelated
+   * KRAM cache pruning do not count as recovery progress.
+   * @throws Owner, storage and cleanup failures propagate; no progress result is
+   * returned for an interrupted sweep, even if earlier owners committed changes.
    */
-  *processEscrowsOnce(): Operation<void> {
+  *processEscrowsOnce(): Operation<boolean> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    yield* call(function*() {
+    return yield* call(function*() {
       yield* self.acquireProtocol();
-      yield* call(function*() {
+      return yield* call(function*() {
         try {
-          yield* self.advanceEscrows();
+          return yield* self.advanceEscrows();
         } finally {
           self.publishCues();
         }
@@ -218,15 +225,22 @@ export class ProtocolProcessor {
     });
   }
 
-  /** Advance component escrows while this protocol operation owns serialization. */
-  private *advanceEscrows(): Operation<void> {
+  /**
+   * Finish each configured owner's sweep while this operation owns serialization.
+   *
+   * @returns Committed recovery changes from any owner, excluding cache maintenance.
+   */
+  private *advanceEscrows(): Operation<boolean> {
     this.kvy.kramer?.prune();
-    this.kvy.processEscrows();
-    this.rvy.processEscrowReply();
-    this.tvy?.processEscrows();
-    this.vry?.processEscrows();
-    this.registry?.processEscrows();
-    yield* this.exc.processEscrows();
+    // Run every owner before combining results: early progress cannot skip a later
+    // dependency family, and its committed evidence may require another sweep.
+    const kel = this.kvy.processEscrows();
+    const reply = this.rvy.processEscrowReply();
+    const tel = this.tvy?.processEscrows() ?? false;
+    const credential = this.vry?.processEscrows() ?? false;
+    const registry = this.registry?.processEscrows() ?? false;
+    const exchange = yield* this.exc.processEscrows();
+    return kel || reply || tel || credential || registry || exchange;
   }
 
   /**
