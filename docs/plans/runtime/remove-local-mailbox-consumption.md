@@ -1,6 +1,7 @@
 # Remove automatic local mailbox consumption
 
-Status: implementation complete; focused qualification and PR delivery in progress.
+Status: implementation complete in [PR #556](https://github.com/kentbull/keri-ts/pull/556).
+The PR records final scoped CI and merge state; this is no longer an implementation queue.
 Baseline: local `master` `420d96cc2c168e8a2bc3abe3a3305c63608a08b3` after #554 and #555.
 The phase descriptions retain the approved boundaries and acceptance criteria.
 
@@ -194,5 +195,24 @@ direct ingress or authorized mailbox retrieval. No package publication is implie
 Follow human-oriented commits and run ENCTX maintenance after final file/Git
 mutations before handoff when implementation is authorized.
 
-Execution, cohesive commits, PR publication and merge were subsequently authorized.
-Qualification and merge evidence will be recorded here before handoff.
+## Delivery evidence
+
+[PR #556](https://github.com/kentbull/keri-ts/pull/556) delivers the removal and
+contract/documentation reconciliation. The implementation commit is `b41674ed`;
+subsequent closure edits update documentation only. Major changesets cover both
+keri-ts and Tufa. No local reader or operator setting was added.
+
+The provider-isolation regression fails on the baseline because stored replies
+are accepted automatically. After removal, 114 focused tests pass: 79 across
+isolated KERI suites (mailbox-poller-runtime, mailbox-sse, mailbox-director-lifecycle,
+mailbox-runtime, challenge-mailbox-runtime, challenge-direct-runtime,
+runtime-store-ownership, forwarding, poster-queue, ipexing and ipex-v2), plus
+35 Tufa CLI, progressive-ingress and Node HTTP-host tests. Commands use
+`deno test -A --unstable-ffi` on Deno 2.9.7. The regression observes completed remote
+cursor progress before checking stored local responses, then verifies explicit
+direct intake accepts those same payloads without consuming provider rows.
+
+Formatting, lint, quality/type, changeset, diff and changed-document local-link
+checks passed. The PR requests mailbox interoperability and installed-package
+checks, with local unit credit tied to its final head. Its check results are the
+authoritative completion record; no full interoperability battery is claimed.

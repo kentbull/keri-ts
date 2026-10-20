@@ -331,7 +331,7 @@ Evidence: mailbox-director-lifecycle, mailbox-poller-runtime, runtime-store-owne
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.constructor`                                 | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.registerTopic`                               | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollDo`                                      | Reviewed; expanded |
-| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.readLocalMailbox`                            | Retired            |
+| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.readLocalMailbox`                            | Retired by #556    |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.localCursor`                                 | Retired by #554    |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollRemoteEndpointOnce`                      | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.syncRemoteWorkers`                           | Reviewed; expanded |
@@ -438,7 +438,7 @@ Evidence: mailbox-director-lifecycle, mailbox-poller-runtime, runtime-store-owne
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxStreamOptions`                                | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector`                                     | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.constructor`                         | Reviewed; expanded |
-| `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.hasMailboxStore`                     | Retired            |
+| `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.hasMailboxStore`                     | Retired by #556    |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.registerTopic`                       | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.registeredTopics`                    | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.close`                               | Reviewed; retained |
