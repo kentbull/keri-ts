@@ -1,11 +1,15 @@
+import { SerderKERI } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { runtimeTurn } from "../../../src/app/runtime-turn.ts";
+import { TransportError } from "../../../src/app/transport-error.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { httpClient } from "../../support/http-client.ts";
 
-Deno.test("query owner retains actual failed HTTP output for retry and closes ordinary pending work", async () => {
+Deno.test("finite query delivery propagates failure after consuming its attempt and close clears pending work", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
@@ -19,14 +23,14 @@ Deno.test("query owner retains actual failed HTTP output for retry and closes or
     try {
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {}, wits: [hab.pre] };
       for (let index = 0; index < 9; index++) runtime.querying.enqueue(request);
-      yield* runtime.querying.processPending();
+
       assertEquals([
-        runtime.querying.pending.empty,
+        runtime.querying.pending.length,
         runtime.querying.hasPendingDelivery,
         runtime.querying.hasPendingWork(),
-      ], [true, true, true]);
+      ], [9, false, true]);
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.querying.deliverOnce()))), fault);
-      assertEquals(runtime.querying.hasPendingDelivery, true);
+      assertEquals([runtime.querying.pending.length, runtime.querying.hasPendingDelivery], [8, false]);
       yield* runtime.querying.close();
       assertEquals(runtime.querying.hasPendingWork(), false);
       assertThrows(() => runtime.querying.enqueue(request), Error, "closed");
@@ -62,7 +66,7 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
     try {
       hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
       runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
-      yield* runtime.querying.processPending();
+
       const delivery = yield* spawn(function*() {
         try {
           yield* runtime.querying.deliverOnce();
@@ -119,7 +123,7 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     for (let index = 0; index < 2; index++) {
       queue.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
     }
-    yield* queue.processPending();
+
     const delivery = yield* spawn(function*() {
       try {
         yield* queue.deliverOnce();
@@ -138,6 +142,72 @@ Deno.test("query shutdown after successful response consumption cannot send the 
     } finally {
       release.resolve();
       yield* delivery.halt();
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("background query sender reports a refusal once and continues unrelated requests", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
+    const requests: (string | null)[] = [], reported: unknown[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (_message, error) => {
+      reported.push(error);
+    };
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(async (_url, init) => {
+        requests.push(new SerderKERI({ raw: new Uint8Array(await new Response(init!.body).arrayBuffer()) }).route);
+        return new Response(null, { status: requests.at(-1) === "ksn" ? 503 : 204 });
+      }),
+      systemClock,
+    );
+    try {
+      runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "ksn", q: {}, wits: [hab.pre] });
+      runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
+      const worker = yield* spawn(() => runtime.querying.deliverDo());
+      try {
+        const deadline = Date.now() + 1_000;
+        while ((requests.length < 2 || runtime.querying.hasPendingWork()) && Date.now() < deadline) {
+          yield* runtimeTurn();
+        }
+        assertEquals(requests.filter(route => route !== null), ["ksn", "logs"]);
+        assertEquals(reported.length, 1);
+        assertEquals(runtime.querying.hasPendingWork(), false);
+      } finally {
+        yield* worker.halt();
+      }
+    } finally {
+      consoleLogger.warn = warn;
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("background query sending propagates preparation faults even when they resemble transport failures", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("sender");
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient(() => Promise.resolve(new Response(null, { status: 204 }))),
+      systemClock,
+    );
+    const sign = hab.query, failure = new TransportError("signer storage failed");
+    try {
+      hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
+      runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
+      hab.query = () => {
+        throw failure;
+      };
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => runtime.querying.deliverDo()))), failure);
+    } finally {
+      hab.query = sign;
       yield* runtime.close();
       yield* hby.close(true);
     }

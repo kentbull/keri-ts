@@ -111,7 +111,7 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 
 - KERIpy role: choose endpoint target and send query later
 - `keri-ts` role: `WitnessInquisitor` resolves signer/attester and prepares exact
-  packets in `enqueueCue()` / `processPending()`; `deliverOnce()` owns response I/O
+  one attempt in `deliverOnce()`; `deliverDo()` runs background transmission
 
 **`core/routing.py` missing-signer cue**
 
@@ -208,7 +208,7 @@ Composition routes the actual source queue directly to query, mailbox and reply
 owners. CueSink, its optional preparation/admission hooks and root adapters are
 deleted. Respondant and WitnessInquisitor do not receive the parent runtime or
 discover its siblings.
-WitnessInquisitor's preparation and delivery operations own ordinary pending
+WitnessInquisitor's delivery operation owns ordinary pending
 send work. Concrete workflows borrow accepted state and a sender; live
 key-state facts arrive through the composition's Effection channel. Each operation
 owns its observation and follow-on work without a runtime registry or callbacks.
@@ -216,24 +216,25 @@ owns its observation and follow-on work without a runtime registry or callbacks.
 Query preparation, signing and admission are synchronous operations over accepted
 state published by its processing owner after commit. They do not suspend between
 state lookup and signing. Network waits happen after preparation; failed delivery,
-refusal and cancellation retain the pending head and its real lifetime through
-joined cleanup. ProtocolProcessor owns protocol dispatch and captures reserved replies before
+refusal and cancellation consume the attempt and join cleanup. Unresolved
+instructions remain pending; there is no signed-packet retry backlog. ProtocolProcessor owns protocol dispatch and captures reserved replies before
 publishing ordinary cues to the application Deck. A reservation also claims
 already-published matching replies synchronously; exact dispatch authorization
 still controls whether that request may use them. Request owners consume slots
-and Respondant prepares output directly, without borrowing a protocol callback gate.
+for same-socket TCP replies. Ordinary HTTP queries return 204 and replies use
+Respondant/Poster and independent receiving owners. Authorized mailbox requests
+retain SSE; HTTP does not reserve ordinary query output.
 CLI and hosts run the same component workers; final composed qualification remains
 separate from these ownership contracts.
 
 Respondant owns eager reply construction and atomic publication; Poster owns
-queued FIFO execution and cleanup. HTTP reply and outbound consumers remain
-independent. Complete local replay sequences are materialized in the production
+queued FIFO execution and cleanup. Complete local replay sequences are materialized in the production
 pass; no reply cursor survives delivery passes. Failed outcomes preserve original
 causes and partial success for actual observers. Poster reports unobserved or
 abandoned failures without retaining a recovery backlog; no retry/discard API or
 automatic retry remains.
-WitnessInquisitor owns sending independently of workflow completion. Private
-HTTP response processing remains until the following behavior cut. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
+WitnessInquisitor owns sending independently of workflow completion. HTTP response
+bodies are transport output, not incoming protocol evidence. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
 WitnessInquisitor prepares its signed packets directly without public custom-emission
 or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary
@@ -379,11 +380,12 @@ and joins those workers before printing state and closing its stores.
 
 ## Runtime convergence
 
-`queriesPending` in `runtimePendingState()` describes deferred requests, signed
-packets and active transport. It does not represent an independent semantic wait.
+`queriesPending` in `runtimePendingState()` describes deferred requests and active transport. It does not represent an independent semantic wait.
 A finite command awaits its concrete workflow under its own deadline and joins
 that operation and the host workers before stores close. Tufa captures the final
-accepted-state display while the store is open and prints it after closure.
+accepted-state display while the store is open and prints it after closure. The
+command fails its single elapsed deadline when evidence is missing; explicit OOBI
+resolution is a separate command, without an implicit query fallback.
 
 ## Maintainer Checklist
 

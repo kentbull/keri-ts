@@ -85,7 +85,7 @@ return `GroupRoleResult`; CLI helper types use `GroupEventResult` and
 
 `HTTPMessenger` is send-only and takes `(url, http, { destination, headers })`;
 `send(bytes, options)` uses that endpoint. Query sending belongs to
-`WitnessInquisitor`; its current direct HTTP response processing is private. Send-only HTTP no
+`WitnessInquisitor`, using ordinary HTTP transmission and independent reception. Send-only HTTP no
 longer requires protocol state or a clock. `TCPMessenger` takes
 `(url, clock, protocol?)`; the optional protocol owner is needed only for duplex
 replies. Its `send(bytes, options)` and `sendSource(source, options)` share the
@@ -113,4 +113,15 @@ The query command now belongs to Tufa; `keri-ts/cli` no longer exports
 `AnchorQuerier` operations. Await `queryDo()` for accepted-state completion;
 transport completion is separate. AgentRuntime routes live key-state facts through
 `keyStateUpdates`. Its pending-state summary covers sending, while each invoking
-operation owns its semantic wait. The CLI syntax and display remain unchanged.
+operation owns its semantic wait.
+
+Ordinary HTTP queries acknowledge intake with 204; replies arrive through normal
+Respondant/Poster delivery, mailbox polling or TCP. `directQueryResponses`, the
+custom HTTP query-response wait, Respondant's `openReply`/`enqueueReply`,
+`Poster.canDeliver`, and
+WitnessInquisitor's `processPending`/`msgDo` are removed. Run `deliverDo` for the
+sender or await `deliverOnce` for a finite pass. Requests are signed for one
+attempt; a failed or cancelled attempt is consumed rather than retained for retry.
+The query CLI uses one ten-second deadline and fails if accepted evidence never
+satisfies its workflow. It no longer performs implicit OOBI catch-up or displays
+stale state as successful query completion.

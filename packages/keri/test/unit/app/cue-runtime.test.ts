@@ -202,7 +202,7 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
           wits: [sender.pre],
         });
       }
-      yield* runtime.querying.processPending();
+
       yield* runtime.querying.deliverOnce();
       assertEquals(runtime.querying.hasPendingDelivery, false);
       assertEquals(queries, 9);

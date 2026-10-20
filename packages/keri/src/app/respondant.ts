@@ -1,9 +1,7 @@
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import type { Poster, PosterMsg } from "./forwarding.ts";
+import type { Poster } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
-import type { QueryReply } from "./query-replies.ts";
-import type { ReplyStreams } from "./reply-streams.ts";
 
 /**
  * Shared host-side responder for indirect and witness runtimes.
@@ -28,28 +26,10 @@ export class Respondant {
   private readonly hby: Habery;
   /** Delivery owner; source cues are consumed only after its admission succeeds. */
   private readonly postman: Poster;
-  /** Request-owned HTTP response readers, independent of queued delivery. */
-  private readonly replyStreams: ReplyStreams;
-
-  /**
-   * Bind production dependencies without acquiring transport or store lifetimes.
-   *
-   * @param hby Borrowed local habitat collection and accepted-state database.
-   * @param dependencies Borrowed postman delivery owner and replyStreams response-reader owner.
-   */
-  constructor(
-    hby: Habery,
-    {
-      postman,
-      replyStreams,
-    }: {
-      postman: Poster;
-      replyStreams: ReplyStreams;
-    },
-  ) {
+  /** Bind borrowed identity and delivery owners without acquiring stores or network lifetimes. */
+  constructor(hby: Habery, postman: Poster) {
     this.hby = hby;
     this.postman = postman;
-    this.replyStreams = replyStreams;
   }
 
   /**
@@ -86,70 +66,6 @@ export class Respondant {
     const src = senderHabForCue(this.hby, cue, hab);
     if (!dest || !topic || !src) return;
     this.postman.sendAll(msgs.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true })));
-  }
-
-  /**
-   * Construct the complete correlated pair before publishing its independent HTTP and queued deliveries.
-   *
-   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param reply Borrowed request correlation; inspect all cues before taking any of them.
-   * @returns Request-owned response stream, or null if no captured batch exists.
-   * @throws Construction/admission errors propagate before correlation consumption.
-   */
-  openReply(hab: Hab, reply: QueryReply): ReadableStream<Uint8Array> | null {
-    this.postman.ensureOpen();
-    const captured = reply.peekAll();
-    if (!captured) return null;
-    const { msgs, evts } = this.prepareReplies(hab, captured.cues);
-    const stream = this.replyStreams.open(msgs);
-    this.postman.sendAll(evts);
-    reply.takeAll();
-    return stream;
-  }
-
-  /**
-   * Earlier queries transfer to ordinary queued replies without an HTTP response reader.
-   *
-   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param reply Borrowed request correlation; inspect all cues before taking any of them.
-   * @returns True when the captured batch was consumed; false when not ready.
-   * @throws Construction/admission errors propagate before correlation consumption.
-   */
-  enqueueReply(hab: Hab, reply: QueryReply): boolean {
-    this.postman.ensureOpen();
-    const captured = reply.peekAll();
-    if (!captured) return false;
-    const { evts } = this.prepareReplies(hab, captured.cues);
-    this.postman.sendAll(evts);
-    reply.takeAll();
-    return true;
-  }
-
-  /**
-   * Prepare the entire captured batch without publishing or consuming it.
-   * Direct HTTP response messages remain available when no outbound route exists.
-   * Local replay is fully materialized here; delivery never suspends a replay iterator.
-   *
-   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param cues Borrowed complete captured batch, already in registry-before-credential order.
-   * @returns All produced response msgs and only the events with an available outbound route.
-   */
-  private prepareReplies(hab: Hab, cues: readonly AgentCue[]): { msgs: Uint8Array[]; evts: PosterMsg[] } {
-    const msgs: Uint8Array[] = [], evts: PosterMsg[] = [];
-    for (const cue of cues) {
-      const produced = [...hab.processCuesIter([cue])];
-      for (const msg of produced) msgs.push(msg);
-      const src = ("src" in cue && cue.src ? this.hby.habs.get(cue.src) : undefined) ?? hab;
-      const dest = "dest" in cue ? cue.dest : undefined;
-      if (!dest) continue;
-      const topic = cue.kin === "replay" ? "/replay" : "/reply";
-      const pending = produced.map((msg) => ({ src: src.pre, dest, topic, msg, replies: true }));
-      // Direct HTTP readers remain available even when the requester has no outbound route.
-      if (pending.length && this.postman.canDeliver(pending[0])) {
-        for (const evt of pending) evts.push(evt);
-      }
-    }
-    return { msgs, evts };
   }
 }
 

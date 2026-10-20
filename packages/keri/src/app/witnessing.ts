@@ -235,7 +235,7 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param serviceHab Optional hosted witness signer; absent selection must be unambiguous.
  * @param cues Exact runtime application Deck; foreign Decks are rejected.
- * @param options deliver defaults true: publish outgoing work and run query delivery. False performs local signing side effects only.
+ * @param options deliver defaults true: publish outgoing work for the independent senders. False performs local signing side effects only.
  */
 export function* drainWitnessCues(
   runtime: AgentRuntime,
@@ -265,7 +265,6 @@ export function* drainWitnessCues(
     }
     cues.pull();
     if (cue.kin === "keyStateSaved") yield* runtime.keyStateUpdates.send(cue);
-    if (deliver) yield* runtime.querying.deliverOnce();
   }
 }
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */

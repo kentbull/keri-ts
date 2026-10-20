@@ -196,7 +196,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       listenHost: "127.0.0.1",
       serviceHab: cueHab,
       hostedPrefixes: hostedHabs.map((hab) => hab.pre),
-      directQueryResponses: true,
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);
       },

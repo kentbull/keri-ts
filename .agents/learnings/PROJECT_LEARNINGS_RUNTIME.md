@@ -127,12 +127,13 @@ Unexpected construction/storage/parser/cleanup errors publish/report then propag
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
-WitnessInquisitor owns plain requests and signed packets, never workflow observers.
+WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
 key-state facts through an Effection channel. Runtime pending state describes
 sending, while the invoking operation represents active semantic work. Tufa owns
-query command composition and final display after close. Private HTTPQuery retains its signed
-POST/CESR/SSE response scope; send-only HTTPMessenger binds an endpoint and HTTP
+query command composition and final display after close; an unsatisfied deadline
+fails without OOBI catch-up. HTTP queries acknowledge intake and send-only
+HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message
 POST iteration for HTTP or raw source output for TCP, not a stream HTTP PUT.
@@ -151,8 +152,8 @@ streams retain unqualified legacy framing for old peers. Transport stays opaque.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
 both TSN replies before taking records. Current authorization defeats old matching
-cues. Only the final HTTP query controls its response; earlier authorized output
-uses ordinary delivery. Missing routes can permit response-only output.
+cues. TCP retains request-owned replies; HTTP ordinary queries return 204 and
+publish through Respondant/Poster. Authorized mbx requests retain SSE.
 
 QueryRequest has one required q body and target. signer is a local AID resolved
 from Habery; src is the remote attester. An unavailable explicit signer never falls
@@ -161,8 +162,9 @@ Keep pending identifiers, not Hab objects. Query preparation captures that signe
 introduction, endpoint and exact bytes. Follow KERIpy random selection within the
 first controller/agent/witness role, or within an explicit witness list; no mailbox
 query fallback. Missing selected locations remain visible. endsFor retains empty
-location maps while preserving the existing allowed/enabled authorization filter. Failed/cancelled sends retain their head,
-unresolved requests rotate, and close joins output before clearing. Anchor queries
+location maps while preserving the existing allowed/enabled authorization filter.
+Failed/cancelled attempts are consumed; unresolved requests rotate and close joins
+output before clearing. Anchor queries
 ask each eligible attester once, or retain one deferred request. Completion uses
 accepted seal/key/TEL state. Schema/credential hints stay notify-only; prebuilt reply
 routes stay in their serder and typed TSN state serializes at Hab interpretation.
@@ -239,7 +241,7 @@ no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
 refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
 sends require full successful response EOF, refuse redirects without replay and
 wrap only native fetch/body failures in TransportError with their original cause.
-HTTPMessenger.query owns its one-frame-at-a-time response processing directly;
+HTTPMessenger consumes response bytes without interpreting protocol evidence;
 postCesr/attemptPostCesr have no response callback. requestFrame lends response
 metadata/body only within that request scope. Bounded SSE consumers remain immediately awaited in their source owner, preserving
 backpressure, cursor ordering and consumer-plus-cleanup failures. A pull-only borrowed

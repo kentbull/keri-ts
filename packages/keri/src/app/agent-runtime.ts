@@ -337,7 +337,7 @@ export function* createAgentRuntime(
       yield* postman.close();
     }
   });
-  const respondant = new Respondant(hby, { postman, replyStreams });
+  const respondant = new Respondant(hby, postman);
   if (mailboxer) {
     exc.addHandler(new ForwardHandler(mailboxDirector));
   }
@@ -837,7 +837,6 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(() => runtime.querying.msgDo()),
   ];
   try {
     return yield* suspend();

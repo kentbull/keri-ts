@@ -8,7 +8,6 @@ export interface IndirectHostOptions {
   listenHost?: string;
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
-  directQueryResponses?: boolean;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
 
@@ -27,13 +26,11 @@ export function* runIndirectHost(
     enableMailboxStore: true,
     serviceHab: options.serviceHab,
     hostedPrefixes: options.hostedPrefixes,
+    protocolPolicy: {},
     http: {
       port: options.port,
       hostname: options.listenHost,
       onListen: options.onListen,
-    },
-    protocolPolicy: {
-      directQueryResponses: options.directQueryResponses ?? false,
     },
   });
 }
