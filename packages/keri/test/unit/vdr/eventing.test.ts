@@ -21,6 +21,7 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import {
@@ -164,6 +165,52 @@ Deno.test("vdr/eventing - escrows out-of-order issue and unescrows after registr
       assertEquals(reger.oots.getOn(iss.pre!, 0), []);
       assertEquals(reger.tels.getOn(iss.pre!, 0)?.qb64, iss.said);
     } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("vdr/eventing - reports missing TEL artifacts only when their escrow rows are removed", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const warnings: Parameters<typeof consoleLogger.warn>[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (...args) => warnings.push(args);
+    try {
+      const issuer = hby.makeHab("issuer");
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const key = dgKey(vcp.pre!, vcp.said!);
+      reger.oots.addOn(vcp.pre!, 0, vcp.said!);
+      reger.taes.addOn(vcp.pre!, 0, vcp.said!);
+      // An existing body without its source seal stays anchorless, but cannot remain out of order.
+      reger.tvts.put(key, vcp.raw);
+      tvy.processEscrows();
+      assertEquals(reger.oots.getOn(vcp.pre!, 0), []);
+      assertEquals(reger.taes.getOn(vcp.pre!, 0), [vcp.said]);
+      assertEquals(warnings.map((entry) => entry[1]), [{
+        family: "outOfOrder",
+        pre: vcp.pre,
+        sn: 0,
+        said: vcp.said,
+        reason: "missingSourceSeal",
+      }]);
+      reger.tvts.rem(key);
+      tvy.processEscrows();
+      assertEquals(reger.taes.getOn(vcp.pre!, 0), []);
+      assertEquals(warnings[1][1], {
+        family: "anchorless",
+        pre: vcp.pre,
+        sn: 0,
+        said: vcp.said,
+        reason: "missingEvent",
+      });
+      tvy.processEscrows();
+      assertEquals(warnings.length, 2, "Removed evidence is not reported again");
+    } finally {
+      consoleLogger.warn = warn;
       yield* reger.close(true);
       yield* hby.close(true);
     }
@@ -827,6 +874,9 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       systemClock,
     );
     const reger = runtime.vdr!.reger! as Reger;
+    const warnings: Parameters<typeof consoleLogger.warn>[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (...args) => warnings.push(args);
     try {
       const tvy = new Tevery({ db: sender.db, reger: source });
       const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
@@ -883,7 +933,9 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       yield* reger.close();
       yield* reger.reopen();
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, fresh.said, "Accepted notice survives reopen");
+      assertEquals(warnings, [], "Dependency migration and successful recovery are not terminal ejections");
     } finally {
+      consoleLogger.warn = warn;
       yield* runtime.close();
       yield* hby.close(true);
       yield* source.close(true);

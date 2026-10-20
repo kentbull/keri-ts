@@ -12,6 +12,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
@@ -399,6 +400,10 @@ Deno.test("Exchanger verifies an ESSR string digest before accepting payload sta
 Deno.test("missing schemas preserve EXN evidence and one absolute deadline through reopen and retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const warn = consoleLogger.warn, warnings: unknown[][] = [];
+    consoleLogger.warn = (...args) => {
+      warnings.push(args);
+    };
     let now = Date.parse("2026-10-13T01:00:00.000000+00:00"), calls = 0, handled = 0;
     const first = new Diger({ raw: Diger.digest(b("schema one"), "E"), code: "E" }).qb64;
     const second = new Diger({ raw: Diger.digest(b("schema two"), "E"), code: "E" }).qb64;
@@ -475,6 +480,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       assertEquals(hby.db.emsd!.get([said]), null);
       assertEquals([...hby.db.emse!.getTopItemIter([said])], []);
       assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1, "accepted proofs survive cleanup");
+      assertEquals(warnings, [], "pending work, migration and accepted cleanup are not ejections");
       // Expiry is strict, terminal, and releases the stored nested evidence.
       missing = first;
       const expired = exchangeMessage("/ipex/grant", { expired: true }, { sender: sender.pre, version: Vrsn_2_0 })[0];
@@ -489,11 +495,24 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       yield* exchanger.processEscrows();
       assertExists(hby.db.epse.get([expired.said!]));
       now += 1_001;
+      consoleLogger.warn = (...args) => {
+        assertEquals(hby.db.epse.get([expired.said!]), null);
+        assertEquals(hby.db.enst.get([expired.said!]), [], "report expiry only after evidence cleanup");
+        warnings.push(args);
+      };
       yield* exchanger.processEscrows();
       assertEquals(hby.db.emsd!.get([expired.said!]), null);
       assertEquals(hby.db.enst.get([expired.said!]), []);
       assertEquals([...hby.db.esigs.getTopItemIter([expired.said!, ""])], []);
       assertEquals(handled, 1);
+      assertEquals(warnings, [["Exchanger ejected exchange escrow", {
+        family: "epse",
+        said: expired.said,
+        pre: sender.pre,
+        route: "/ipex/grant",
+        reason: "expired",
+        detail: "Exchange dependency exceeded its pending lifetime or absolute schema deadline.",
+      }]]);
       proof = false;
       const lifetime =
         exchangeMessage("/ipex/grant", { lifetime: true }, { sender: sender.pre, version: Vrsn_2_0, xid: first })[0];
@@ -524,7 +543,9 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
         assertRejects(() => run(() => exchanger.processEscrows()), Error, "Corrupt missing-schema deadline.")
       );
       assertExists(hby.db.emse!.get([lifetime.said!, first]));
+      assertEquals(warnings.length, 1, "storage and corruption failures do not report an ejection");
     } finally {
+      consoleLogger.warn = warn;
       yield* hby.close(true);
     }
   });

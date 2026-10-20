@@ -1,6 +1,15 @@
 import { run } from "effection";
-import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import {
+  assert,
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertObjectMatch,
+  assertStrictEquals,
+  assertThrows,
+} from "jsr:@std/assert";
+import {
+  Dater,
   Diger,
   Ilks,
   NumberPrimitive,
@@ -13,6 +22,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { Verifier, type VerifierCue, type VerifierDecision } from "../../../src/app/verifying.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -474,6 +484,10 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
   await run(function*() {
     const hby = yield* createHabery({ name: `verifier-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const reger = yield* createReger({ name: `verifier-retry-${crypto.randomUUID()}`, temp: true });
+    const warn = consoleLogger.warn, warnings: unknown[][] = [];
+    consoleLogger.warn = (...args) => {
+      warnings.push(args);
+    };
     try {
       const issuer = makePrefixer(), schema = new Schemer({ sed: schemaSed({ requiredIssuee: false }) });
       for (const migration of [false, true]) {
@@ -493,6 +507,25 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         cues.clear();
         const date = reger.mse.get([creder.said!])!.dts;
         hby.db.schema.pin(schema.said, schema);
+        const verify = Schemer.prototype.verify, verifyChain = verifier.verifyChain;
+        const unexpected = new TypeError(migration ? "Chain lookup failed" : "Schema validator failed");
+        if (migration) {
+          verifier.verifyChain = () => {
+            throw unexpected;
+          };
+        } else {
+          Schemer.prototype.verify = () => {
+            throw unexpected;
+          };
+        }
+        try {
+          assertStrictEquals(assertThrows(() => verifier.processEscrows()), unexpected);
+          assertEquals(reger.mse.get([creder.said!])!.dts, date);
+          assertEquals(warnings, [], "unexpected validation infrastructure failure retains escrow");
+        } finally {
+          Schemer.prototype.verify = verify;
+          verifier.verifyChain = verifyChain;
+        }
         if (!migration) {
           const save = verifier.saveCredential, failure = new Error("Credential storage failed");
           verifier.saveCredential = () => {
@@ -513,6 +546,7 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         cues.clear();
         if (migration) reger.mce.rem([creder.said!]);
       }
+      assertEquals(warnings, [], "successful recovery, dependency migration and storage faults are not ejections");
       const invalidSchema = new Schemer({ sed: schemaSed({ requiredRole: true }) });
       const registry = digestFor("retry-invalid-schema").qb64;
       const invalid = makeCredential({
@@ -527,11 +561,58 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
       assertDecision(verifier.processCredential(anchorArgs(invalid, issuer)), "escrow", "missingSchema");
       cues.clear();
       hby.db.schema.pin(invalidSchema.said, invalidSchema);
+      consoleLogger.warn = (...args) => {
+        assertEquals(reger.mse.get([invalid.said!]), null, "report rejection only after membership is removed");
+        warnings.push(args);
+      };
       verifier.processEscrows();
       assertEquals(reger.mse.get([invalid.said!]), null);
       assertEquals(reger.saved.get([invalid.said!]), null);
       assertEquals(cues.length, 0);
+      assertEquals(warnings.length, 1);
+      const detail = warnings[0][1];
+      assert(detail !== null && typeof detail === "object" && "cause" in detail);
+      assertObjectMatch(detail, {
+        family: "missingSchema",
+        said: invalid.said,
+        issuer: issuer.qb64,
+        registry,
+        reason: "invalidSchema",
+      });
+      assertInstanceOf(detail.cause, Error, "retain the schema validator's original failure");
+      verifier.processEscrows();
+      assertEquals(warnings.length, 1, "ejected evidence is not reported on later sweeps");
+      const expired = makeCredential({
+        issuer: issuer.qb64,
+        registry: digestFor("expired-registry").qb64,
+        schema: schema.said,
+      });
+      assertDecision(verifier.processCredential(anchorArgs(expired, issuer)), "escrow", "missingRegistry");
+      reger.mre.pin([expired.said!], new Dater({ dts: "2020-01-01T00:00:00.000000+00:00" }));
+      const remove = reger.mre.rem.bind(reger.mre), failure = new Error("Escrow removal failed");
+      reger.mre.rem = () => {
+        throw failure;
+      };
+      try {
+        assertStrictEquals(assertThrows(() => verifier.processEscrows()), failure);
+        assertExists(reger.mre.get([expired.said!]));
+        assertEquals(warnings.length, 1, "failed removal must not report expiry");
+      } finally {
+        reger.mre.rem = remove;
+      }
+      consoleLogger.warn = (...args) => {
+        assertEquals(reger.mre.get([expired.said!]), null, "expiry diagnostics follow successful removal");
+        warnings.push(args);
+      };
+      verifier.processEscrows();
+      assertEquals(warnings[1], ["Verifier ejected credential escrow", {
+        family: "missingRegistry",
+        said: expired.said,
+        reason: "expired",
+        detail: `Credential dependency remained unresolved beyond ${verifier.missingRegistryTimeoutMs} ms.`,
+      }]);
     } finally {
+      consoleLogger.warn = warn;
       yield* reger.close(true);
       yield* hby.close(true);
     }

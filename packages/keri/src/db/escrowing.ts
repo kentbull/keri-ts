@@ -2,6 +2,7 @@ import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { dropEscrow, type EscrowProcessDecision } from "../core/kever-decisions.ts";
+import { consoleLogger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { LMDBer } from "./core/lmdber.ts";
@@ -122,6 +123,8 @@ export class Broker {
    * propagate and leave that row eligible for retry. Kept rows and insertions behind
    * the checkpoint return next pass; new rows beyond the horizon cannot extend it.
    * Removing an index retains artifacts that another dependency family may own.
+   * Terminal drops are reported only after the index removal succeeds; dependency
+   * migration must return accept for the relinquished family, rather than drop.
    */
   retryStateNotices(
     typ: string,
@@ -176,8 +179,20 @@ export class Broker {
         tsgs,
         cigars: couples.map(([verfer, cigar]) => new Cigar(cigar, verfer)),
       });
-      if (decision.kind === "accept" || decision.kind === "drop") this.escrowdb.rem(parts.slice(0, 3), diger);
-      else if (decision.kind !== "keep") throw new Error("Invalid Broker retry decision.");
+      if (decision.kind === "accept" || decision.kind === "drop") {
+        const removed = this.escrowdb.rem(parts.slice(0, 3), diger);
+        if (removed && decision.kind === "drop") {
+          consoleLogger.warn("Broker ejected transaction-state notice from escrow", {
+            family: typ,
+            said: diger.qb64,
+            pre: parts[1],
+            aid: parts[2],
+            route: serder.route,
+            reason: decision.reason,
+            detail: decision.message,
+          });
+        }
+      } else if (decision.kind !== "keep") throw new Error("Invalid Broker retry decision.");
       scan.start = encode(`${decode(key)}\0`);
     }
     const done = rows.length < maxRows;

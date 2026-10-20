@@ -19,6 +19,7 @@ import { createRegery } from "../../../src/acdc/registraring.ts";
 import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
@@ -447,6 +448,9 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: `registry-retry-${crypto.randomUUID()}`, temp: true });
+    const warnings: Parameters<typeof consoleLogger.warn>[] = [];
+    const warn = consoleLogger.warn;
+    consoleLogger.warn = (...args) => warnings.push(args);
     try {
       const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
       const engine = new RegistryEventer(hby.db, issuer.pre, store);
@@ -489,6 +493,11 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
       issuer.interact({ data: tied.map((event) => ({ i: rip.said!, s: "2", d: event.said! })) });
       engine.processMissingAnchors();
       assertEquals(store.seqSaider(rip.said!, 2)!.qb64, tied[0].said);
+      assertEquals(warnings, [], "Acceptance and sibling cleanup are not ejection failures");
+
+      store.escrowMissingAnchor(rip.said!, 2, tied[0].said!);
+      engine.processMissingAnchors();
+      assertEquals(warnings, [], "Already accepted evidence is quiet duplicate cleanup");
 
       // Dangling/stale candidates are removable; an infrastructure fault is not a validation decision.
       const invalid = blindate(rip.said!, winner.said!, blid, { sn: 3 });
@@ -502,13 +511,28 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
         };
         assertThrows(() => engine.processMissingAnchors(), Error, "retry read failed");
         assertEquals(baser.maes!.get(rip.said!, 3).length, 2);
+        assertEquals(warnings, [], "Read failure leaves evidence intact without claiming ejection");
       } finally {
         store.event = get;
       }
       engine.processMissingAnchors();
       assertEquals(baser.maes!.get(rip.said!, 3), []);
       assertEquals(store.head(rip.said!)!.qb64, tied[0].said);
+      assertEquals(warnings.map((entry) => entry[1]), [{
+        family: "registry",
+        said: invalid.said,
+        regk: rip.said,
+        sn: 3,
+        reason: "prior",
+      }, {
+        family: "registry",
+        said: issuer.kever!.said,
+        regk: rip.said,
+        sn: 3,
+        reason: "missingEvent",
+      }]);
     } finally {
+      consoleLogger.warn = warn;
       yield* baser.close(true);
       yield* hby.close(true);
     }

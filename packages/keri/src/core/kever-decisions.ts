@@ -212,6 +212,8 @@ export interface EscrowDrop {
   kind: "drop";
   reason: EscrowDropReason;
   message?: string;
+  /** Original validation failure, when removal follows a caught exception. */
+  cause?: unknown;
 }
 
 /**
@@ -240,33 +242,44 @@ export function keepEscrow(
   return { kind: "keep", reason, message };
 }
 
-/** Builder for one terminal outcome that should remove the escrow row. */
+/**
+ * Describe a terminal outcome without removing its escrow row.
+ *
+ * @param reason Existing protocol or stored-artifact reason for removal.
+ * @param message Specific validation detail, when available.
+ * @param cause Original caught validation failure; omitted for ordinary decisions.
+ * @returns The decision for the owner to apply and report after removal.
+ */
 export function dropEscrow(
   reason: EscrowDropReason,
   message?: string,
+  cause?: unknown,
 ): EscrowDrop {
-  return { kind: "drop", reason, message };
+  return { kind: "drop", reason, message, ...(cause !== undefined ? { cause } : {}) };
 }
 
 /**
- * Emit one consistent log line for escrow keep/drop outcomes.
+ * Report a terminal escrow removal after its owning write has succeeded.
  *
- * This preserves the diagnostic role KERIpy gets from exception logging while
- * keeping the runtime on explicit decisions instead of exception control flow.
+ * Accepted work and recoverable misses are silent. An original validation error
+ * remains available to the logger with its stack and cause.
+ *
+ * @param scope Owner, escrow family and identifying coordinates of the removed row.
+ * @param decision Replay outcome whose removal has already completed.
+ * @param logger Existing diagnostic sink; defaults to the process console logger.
  */
 export function logEscrowDecision(
   scope: string,
   decision: EscrowProcessDecision,
   logger: Logger = consoleLogger,
 ): void {
-  if (decision.kind === "accept") {
+  if (decision.kind !== "drop") {
     return;
   }
 
-  const detail = decision.message
-    ? `${scope}: ${decision.message}`
-    : `${scope}: escrow ${decision.kind} (${decision.reason})`;
-  logger.info(detail);
+  const detail = `${scope}: escrow removed (${decision.reason})${decision.message ? `: ${decision.message}` : ""}`;
+  if (decision.cause !== undefined) logger.warn(detail, decision.cause);
+  else logger.warn(detail);
 }
 
 /** Recoverable live-receipt outcomes that require escrowing attached material. */

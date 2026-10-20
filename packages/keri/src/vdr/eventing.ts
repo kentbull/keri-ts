@@ -28,6 +28,7 @@ import { ValidationError } from "../core/errors.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { Kever } from "../core/kever.ts";
+import { consoleLogger } from "../core/logger.ts";
 import {
   projectRegistrySeal,
   state as registryState,
@@ -1343,21 +1344,26 @@ export class Tevery {
       this.reger.txnsb.retryStateNotices(typ, (args) => {
         const decision = this.processReplyRegistryTxnState(args);
         if (decision.kind === "accept") return acceptEscrow();
-        if (decision.reason === "dependencyPending" && decision.family === typ) return keepEscrow("recoverableError");
-        return dropEscrow("processingError");
+        if (decision.reason === "dependencyPending") {
+          // A different family now owns this notice; releasing the old index is not rejection.
+          return decision.family === typ ? keepEscrow("recoverableError") : acceptEscrow();
+        }
+        return dropEscrow("processingError", decision.message);
       });
     }
     for (const typ of ["credential-mre", "credential-mae", "credential-ooo"]) {
       this.reger.txnsb.retryStateNotices(typ, (args) => {
         const decision = this.processReplyCredentialTxnState(args);
         if (decision.kind === "accept") return acceptEscrow();
-        return decision.reason === "dependencyPending" && decision.family === typ
-          ? keepEscrow("recoverableError")
-          : dropEscrow("processingError");
+        if (decision.reason === "dependencyPending") {
+          return decision.family === typ ? keepEscrow("recoverableError") : acceptEscrow();
+        }
+        return dropEscrow("processingError", decision.message);
       });
     }
   }
 
+  /** Retry out-of-order TEL events; report terminal removal after its index write succeeds. */
   processEscrowOutOfOrders(): void {
     const entries = [...this.reger.oots.getAllItemIter()];
     for (const [keys, sn, dig] of entries) {
@@ -1366,7 +1372,15 @@ export class Tevery {
       const raw = this.reger.tvts.get(key);
       const couple = this.reger.ancs.get(key);
       if (raw === null || couple === null) {
-        this.reger.oots.remOn(pre, sn, dig);
+        if (this.reger.oots.remOn(pre, sn, dig)) {
+          consoleLogger.warn("Tevery ejected out-of-order TEL event from escrow", {
+            family: "outOfOrder",
+            pre,
+            sn,
+            said: dig,
+            reason: raw === null ? "missingEvent" : "missingSourceSeal",
+          });
+        }
         continue;
       }
       const [seqner, saider] = couple;
@@ -1379,10 +1393,20 @@ export class Tevery {
       if (decision.kind === "escrow" && decision.escrow === "outOfOrder") {
         continue;
       }
-      this.reger.oots.remOn(pre, sn, dig);
+      const removed = this.reger.oots.remOn(pre, sn, dig);
+      if (removed && decision.kind === "reject") {
+        consoleLogger.warn("Tevery ejected out-of-order TEL event from escrow", {
+          family: "outOfOrder",
+          pre,
+          sn,
+          said: dig,
+          reason: decision.reason,
+        });
+      }
     }
   }
 
+  /** Retry anchorless TEL events; missing source seals remain pending rather than being ejected. */
   processEscrowAnchorless(): void {
     const entries = [...this.reger.taes.getAllItemIter()];
     for (const [keys, sn, dig] of entries) {
@@ -1392,7 +1416,15 @@ export class Tevery {
       const couple = this.reger.ancs.get(key);
       if (raw === null || couple === null) {
         if (raw === null) {
-          this.reger.taes.remOn(pre, sn, dig);
+          if (this.reger.taes.remOn(pre, sn, dig)) {
+            consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
+              family: "anchorless",
+              pre,
+              sn,
+              said: dig,
+              reason: "missingEvent",
+            });
+          }
         }
         continue;
       }
@@ -1406,7 +1438,16 @@ export class Tevery {
       if (decision.kind === "escrow" && decision.escrow === "anchorless") {
         continue;
       }
-      this.reger.taes.remOn(pre, sn, dig);
+      const removed = this.reger.taes.remOn(pre, sn, dig);
+      if (removed && decision.kind === "reject") {
+        consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
+          family: "anchorless",
+          pre,
+          sn,
+          said: dig,
+          reason: decision.reason,
+        });
+      }
     }
   }
 

@@ -105,6 +105,15 @@ protocol processing. Waiting input cancellation removes the waiter; an active
 owner joins handler cleanup before releasing the processor. It has no callback
 executor or application-work entrypoint.
 
+Escrow owners report terminal rejection, expiry and missing-artifact ejections
+after their removal or transaction commits. Warning diagnostics identify the
+family, message and actual refusal; they use the existing stderr logger without
+adding a diagnostic queue or dependency. Accepted cleanup, dependency-family
+migration and retained attempts are not ejections. In particular, an exchange
+refusal with `preserveEscrow` retains earlier evidence. Unexpected reply-handler,
+storage and programming failures propagate instead of becoming rejected peers
+and deleting their escrow evidence.
+
 Protocol producers write to their own Deck, wired with the legacy TEL/verifier
 processors at composition. Before publishing to `AgentRuntime.cues`, ProtocolProcessor
 captures direct request replies. A new reservation also claims matching records

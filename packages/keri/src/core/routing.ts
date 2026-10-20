@@ -299,6 +299,9 @@ export class Router {
    *
    * It does not do BADA or signature acceptance itself; those belong to
    * `Revery` and the route handler.
+   *
+   * @throws ValidationError for a missing or unregistered incoming route.
+   * @throws TypeError for an invalid configured handler or its return contract.
    */
   dispatch(args: {
     serder: SerderKERI;
@@ -322,14 +325,14 @@ export class Router {
         : Router.defaultResourceFunc;
       const fn = Reflect.get(candidate.resource, funcName);
       if (typeof fn !== "function") {
-        throw new ValidationError(
+        throw new TypeError(
           `Resource for route ${route} does not implement ${funcName}.`,
         );
       }
       const params = match.groups ?? {};
       for (const field of candidate.fields) {
         if (!(field in params)) {
-          throw new ValidationError(
+          throw new TypeError(
             `parameter ${field} not found in route ${route}`,
           );
         }
@@ -340,7 +343,7 @@ export class Router {
         ...params,
       });
       if (!isReplyDecision(decision)) {
-        throw new ValidationError(
+        throw new TypeError(
           `Reply route ${route} did not return a valid reply decision.`,
         );
       }
@@ -768,15 +771,16 @@ export class Revery {
         continue;
       }
       const decision = this.reprocessEscrowedReply(diger);
-      logEscrowDecision("Revery RPE", decision);
       switch (decision.kind) {
         case "accept":
           this.db.rpes.rem([route], diger);
           break;
-        case "drop":
-          this.db.rpes.rem([route], diger);
+        case "drop": {
+          const removed = this.db.rpes.rem([route], diger);
           this.removeReply(diger);
+          if (removed) logEscrowDecision(`Revery RPE said=${diger.qb64} route=${route}`, decision);
           break;
+        }
         case "keep":
           break;
       }
@@ -801,6 +805,12 @@ export class Revery {
    * - reject stale or malformed rows
    * - replay through `processReply()` exactly as if the reply re-arrived
    * - map recoverable live reply `unverified` decisions into `keep`
+   * - retain unexpected failures and their escrow evidence for the caller
+   *
+   * @param diger SAID identifying the stored reply and detached proof material.
+   * @returns The ordinary keep/drop/accept result; this method does not remove
+   *   the current escrow membership.
+   * @throws The original unexpected handler or infrastructure failure.
    */
   public reprocessEscrowedReply(
     diger: Diger,
@@ -824,9 +834,13 @@ export class Revery {
       }
       return acceptEscrow();
     } catch (error) {
+      // Remote validation may eject this reply; storage and handler defects must
+      // escape unchanged so the owning loop does not discard recoverable evidence.
+      if (!(error instanceof ValidationError)) throw error;
       return dropEscrow(
         "processingError",
-        `${error instanceof Error ? error.message : String(error)} (said=${diger.qb64}, route=${serder.route})`,
+        `${error.message} (said=${diger.qb64}, route=${serder.route})`,
+        error,
       );
     }
   }
