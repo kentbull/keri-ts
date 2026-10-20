@@ -146,14 +146,10 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
-    const runtimeTask = yield* spawn(function*() {
-      yield* runAgentRuntime(runtime, {
-        hab: hab ?? undefined,
-      });
-    });
-    const serverTask = yield* spawn(function*() {
-      yield* startServer(port, undefined, runtime);
-    });
+    // The listener must exist before the runtime polls its own advertised provider.
+    const serverTask = yield* spawn(() => startServer(port, undefined, runtime));
+    yield* waitForServer(port);
+    const runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: hab ?? undefined }));
 
     try {
       if (!hab) {
@@ -226,8 +222,8 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       assertStringIncludes(replayBody, "event: /replay");
       assertStringIncludes(replayBody, hab.pre);
     } finally {
-      yield* waitForTaskHalt(serverTask);
       yield* waitForTaskHalt(runtimeTask);
+      yield* waitForTaskHalt(serverTask);
       yield* runtime.close();
       yield* hby.close();
     }

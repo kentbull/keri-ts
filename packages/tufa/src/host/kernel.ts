@@ -61,11 +61,8 @@ export function* runHostKernel(
     hostedPrefixes,
   };
 
-  const runtimeTask = yield* spawn(function*() {
-    yield* runAgentRuntime(runtime, {
-      hab: spec.serviceHab,
-    });
-  });
+  /** Runtime worker starts only after HTTP listener acquisition; absent if startup fails earlier. */
+  let runtimeTask: Task<void> | undefined;
   const companionTasks: Task<void>[] = [];
   let closed = false;
   /** Join companions, then runtime workers and owned stores; retain the first failure while attempting every close. */
@@ -84,7 +81,7 @@ export function* runHostKernel(
       }
     }
     try {
-      yield* runtimeTask.halt();
+      if (runtimeTask) yield* runtimeTask.halt();
     } catch (error) {
       failed = true;
       failure ??= error;
@@ -110,17 +107,22 @@ export function* runHostKernel(
       );
     }
 
-    yield* startServer(
-      spec.http.port,
-      consoleLogger,
-      runtime,
-      {
-        hostname: spec.http.hostname,
-        onListen: spec.http.onListen,
-        ...protocolPolicy,
-      },
-      closeKernel,
+    // Acquire the listener before consumers can poll a locally hosted provider.
+    const serverTask = yield* spawn(() =>
+      startServer(
+        spec.http.port,
+        consoleLogger,
+        runtime,
+        {
+          hostname: spec.http.hostname,
+          onListen: spec.http.onListen,
+          ...protocolPolicy,
+        },
+        closeKernel,
+      )
     );
+    runtimeTask = yield* spawn(() => runAgentRuntime(runtime, { hab: spec.serviceHab }));
+    yield* serverTask;
   } finally {
     yield* closeKernel();
   }

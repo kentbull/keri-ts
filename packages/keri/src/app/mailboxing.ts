@@ -135,52 +135,30 @@ export function updateMailboxRemoteCursor(
 }
 
 /**
- * Return the remote mailbox or witness endpoints a local habitat should poll.
+ * Enumerate authorized mailbox providers and the subject's current KEL witnesses.
  *
- * KERIpy parity rule:
- * - mailbox role endpoints take precedence when authorized
- * - otherwise poll every eligible witness mailbox endpoint
- * - SSE uses HTTP(S) only; a TCP-only mailbox keeps role precedence while awaiting HTTP
+ * Both sets are polled, as in KERIpy MailboxDirector. A provider in both roles
+ * shares one history and cursor, so it gets one worker. Locally controlled AIDs
+ * remain eligible for HTTP polling; provider storage is never scanned directly.
+ * Missing HTTP(S) locations produce no poll target until a location is available.
  *
- * The result is intentionally already flattened to one preferred URL per
- * endpoint identifier so runtime pollers can stay focused on mailbox protocol
- * work instead of URL selection policy.
- *
- * @param hby Borrowed local identities and accepted-state stores.
- * @param hab Mailbox subject habitat supplying accepted endpoint roles.
- * @returns Eligible HTTP(S) remote endpoints with stable worker keys; explicit mailbox roles take precedence.
+ * @param hab Mailbox subject habitat supplying accepted roles and current witnesses.
+ * @returns One HTTPS-preferred HTTP target per provider AID, with stable worker keys.
  */
-export function mailboxPollEndpoints(
-  hby: Habery,
-  hab: Hab,
-): Array<{ key: string; eid: string; url: string }> {
-  const ends = hab.endsFor(hab.pre);
-  /**
-   * Restrict SSE polling to HTTP transports after role precedence has been selected.
-   * @param endpoint Candidate concrete URL; malformed URLs remain validation failures.
-   * @returns True for HTTP or HTTPS.
-   */
-  const isHttp = (endpoint: { url: string }) => ["https:", "http:"].includes(new URL(endpoint.url).protocol);
-  const mailbox = flattenRoleUrls(ends[Roles.mailbox])
-    .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid));
-  // Keep mailbox precedence before filtering transport; TCP delivery is a different caller policy.
-  if (mailbox.length > 0) {
-    return mailbox.filter(isHttp).map((endpoint) => ({
-      key: `${Roles.mailbox}:${endpoint.eid}:${endpoint.url}`,
-      eid: endpoint.eid,
-      url: endpoint.url,
-    }));
+export function mailboxPollEndpoints(hab: Hab): Array<{ key: string; eid: string; url: string }> {
+  const eids = new Set<string>();
+  for (const [keys, end] of hab.db.ends.getTopItemIter([hab.pre, Roles.mailbox], { topive: true })) {
+    if (end.allowed && keys[2]) eids.add(keys[2]);
   }
+  for (const eid of hab.kever?.wits ?? []) eids.add(eid);
 
-  // Query replies are stored at the witness that answered; these mailboxes are not interchangeable.
-  return flattenRoleUrls(ends[Roles.witness])
-    .filter((endpoint) => !hby.db.prefixes.has(endpoint.eid) && isHttp(endpoint))
-    .sort((left, right) => left.eid.localeCompare(right.eid))
-    .map((endpoint) => ({
-      key: `${Roles.witness}:${endpoint.eid}:${endpoint.url}`,
-      eid: endpoint.eid,
-      url: endpoint.url,
-    }));
+  const endpoints: Array<{ key: string; eid: string; url: string }> = [];
+  for (const eid of eids) {
+    const urls = hab.fetchUrls(eid);
+    const url = urls.https ?? urls.http;
+    if (url) endpoints.push({ key: `${eid}:${url}`, eid, url });
+  }
+  return endpoints;
 }
 
 /**

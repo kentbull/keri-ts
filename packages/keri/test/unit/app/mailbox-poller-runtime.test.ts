@@ -118,16 +118,22 @@ Deno.test("mailbox endpoints and later habitats progress independently of blocke
   for (const role of [Roles.mailbox, Roles.witness]) {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const bob = makeTransferableHab(hby, "bob"), proxy = makeTransferableHab(hby, "proxy");
-      const endpoints = [seedMailboxEndpoint(hby, bob.pre, "one"), seedMailboxEndpoint(hby, bob.pre, "two")];
+      const wits = role === Roles.witness
+        ? ["one", "two"].map((name) => hby.makeHab(name, undefined, { transferable: false, ncount: 0 }))
+        : [];
+      const bob = hby.makeHab("bob", undefined, { wits: wits.map((wit) => wit.pre), toad: wits.length ? 1 : 0 });
+      const proxy = makeTransferableHab(hby, "proxy");
+      const endpoints = role === Roles.witness
+        ? wits.map((wit, idx) => {
+          const url = `http://witness-${idx}.mailbox.test/`;
+          hby.db.locs.pin([wit.pre, "http"], { url });
+          return { eid: wit.pre, url };
+        })
+        : [seedMailboxEndpoint(hby, bob.pre, "one"), seedMailboxEndpoint(hby, bob.pre, "two")];
       const proxyEndpoint = seedMailboxEndpoint(hby, proxy.pre, "proxy");
       const http = new FakeRuntimeHttpClient();
       let cleaned = 0, available = true;
       for (const endpoint of endpoints) {
-        if (role === Roles.witness) {
-          hby.db.ends.rem([bob.pre, Roles.mailbox, endpoint.eid]);
-          hby.db.ends.pin([bob.pre, Roles.witness, endpoint.eid], { allowed: true });
-        }
         http.registerOrigin(endpoint.url, (request) =>
           new Promise<Response>((_resolve, reject) => {
             request.signal.addEventListener("abort", () => {
@@ -432,3 +438,52 @@ for (const boundary of ["headers", "SSE"] as const) {
     });
   });
 }
+
+Deno.test("mailbox polling includes providers and current witnesses once per shared provider history", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const wit = hby.makeHab("wit", undefined, { transferable: false, ncount: 0 });
+    const shared = hby.makeHab("shared", undefined, { transferable: false, ncount: 0 });
+    const hab = hby.makeHab("subject", undefined, { wits: [wit.pre, shared.pre], toad: 1 });
+    const provider = seedMailboxEndpoint(hby, hab.pre, "provider");
+    hby.db.ends.pin([hab.pre, Roles.mailbox, shared.pre], { allowed: true });
+    const removed = seedMailboxEndpoint(hby, hab.pre, "cut");
+    hby.db.ends.pin([hab.pre, Roles.mailbox, removed.eid], { allowed: false });
+    const tcpOnly = seedMailboxEndpoint(hby, hab.pre, "tcp");
+    hby.db.locs.rem([tcpOnly.eid, "http"]);
+    hby.db.locs.pin([tcpOnly.eid, "tcp"], { url: "tcp://tcp.mailbox.test:5621" });
+    const endpoints = [
+      provider,
+      ...[wit, shared].map((peer) => {
+        const url = `https://${peer.name}.mailbox.test/`;
+        hby.db.locs.pin([peer.pre, "http"], { url: "http://unpreferred.mailbox.test/" });
+        hby.db.locs.pin([peer.pre, "https"], { url });
+        return { eid: peer.pre, url };
+      }),
+    ];
+    const http = new FakeRuntimeHttpClient();
+    const seen: string[] = [];
+    let cleaned = 0;
+    for (const { eid, url } of endpoints) {
+      http.registerOrigin(url, (request) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen.push(eid);
+          request.signal.addEventListener("abort", () => {
+            cleaned++;
+            reject(request.signal.reason);
+          }, { once: true });
+        }));
+    }
+    const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock);
+    poller.registerTopic("/reply");
+    const worker = yield* spawn(() => poller.pollDo(function*() {}));
+    try {
+      yield* waitForCondition(() => seen.length === 3, "Expected every distinct provider and witness to be polled.");
+      assertEquals(seen.toSorted(), endpoints.map(({ eid }) => eid).toSorted());
+    } finally {
+      yield* waitForTaskHalt(worker);
+      assertEquals(cleaned, 3);
+      yield* hby.close(true);
+    }
+  });
+});

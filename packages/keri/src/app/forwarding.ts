@@ -939,7 +939,7 @@ export class MailboxPoller {
     const active = new Set<string>();
     if (topics.length > 0) {
       for (const target of this.remotePollTargets()) {
-        for (const endpoint of mailboxPollEndpoints(this.hby, target.hab)) {
+        for (const endpoint of mailboxPollEndpoints(target.hab)) {
           const workerKey = `${target.targetPre}:${endpoint.key}`;
           active.add(workerKey);
           if (remoteWorkers.has(workerKey)) {

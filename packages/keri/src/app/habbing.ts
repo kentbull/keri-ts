@@ -1057,7 +1057,12 @@ export class Hab {
    *
    * Witnesses are derived from current key state as well as stored location
    * replies because witness membership is partly a KEL concern, not just an
-   * endpoint-authorization concern.
+   * endpoint-authorization concern. Empty location maps retain endpoint identity
+   * so routing can report missing locations rather than select a lower role.
+   * Unlike KERIpy 71438328, stored roles without allowed or enabled approval are excluded.
+   *
+   * @param pre Controller AID whose accepted roles and current witnesses are projected.
+   * @returns Role to endpoint AID to scheme/URL map, including empty location maps.
    */
   endsFor(pre: string): Record<string, Record<string, Record<string, string>>> {
     const ends: Record<string, Record<string, Record<string, string>>> = {};
@@ -1071,9 +1076,6 @@ export class Hab {
         continue;
       }
       const urls = this.fetchUrls(eid);
-      if (Object.keys(urls).length === 0) {
-        continue;
-      }
       ends[role] ??= {};
       ends[role][eid] = urls;
     }
@@ -1083,9 +1085,6 @@ export class Hab {
       const witnessUrls: Record<string, Record<string, string>> = {};
       for (const eid of kever.wits) {
         const urls = this.fetchUrls(eid);
-        if (Object.keys(urls).length === 0) {
-          continue;
-        }
         witnessUrls[eid] = urls;
       }
       if (Object.keys(witnessUrls).length > 0) {

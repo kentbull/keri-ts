@@ -9,7 +9,6 @@ import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
-import { flattenRoleUrls } from "./mailboxing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -37,13 +36,7 @@ import { TCPMessenger } from "./tcp-messenger.ts";
  * - this module does not turn watcher/query selection into generic cue logic
  */
 
-/**
- * Preferred remote-attester role order for runtime-generated queries.
- *
- * `keri-ts` intentionally chooses a deterministic first-available endpoint
- * instead of KERIpy's random witness/controller/agent selection. That keeps
- * tests and maintainer reasoning stable at the correspondence layer.
- */
+/** First eligible role used by KERIpy WitnessInquisitor before random endpoint selection. */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
 
 /**
@@ -176,7 +169,7 @@ export class KeyStateNoticer implements QueryContinuation {
    * Initialize an in-memory query continuation; no network work starts in construction.
    *
    * @param pre AID whose accepted KEL state must satisfy this continuation.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    */
   constructor(
     pre: string,
@@ -288,7 +281,7 @@ export class LogQuerier implements QueryContinuation {
    *
    * @param pre AID whose accepted KEL state must satisfy this continuation.
    * @param targetSn Required event sequence number as a number, inclusive.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    */
   constructor(
     pre: string,
@@ -386,7 +379,7 @@ export class SeqNoQuerier implements QueryContinuation {
    *
    * @param pre AID whose accepted KEL state must satisfy this continuation.
    * @param targetSn Required event sequence number as a number, inclusive.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation. fn is the first-seen ordinal start, default zero.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation. fn is the first-seen ordinal start, default zero.
    */
   constructor(
     pre: string,
@@ -491,7 +484,7 @@ export class AnchorQuerier implements QueryContinuation {
    *
    * @param pre AID whose accepted KEL state must satisfy this continuation.
    * @param anchor Event seal copied by i/s/d and sought in the queried AID's accepted KEL.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    */
   constructor(
     pre: string,
@@ -546,14 +539,9 @@ export class AnchorQuerier implements QueryContinuation {
 /**
  * Resolve the actual transport URL for one query destination AID.
  *
- * Transport policy:
- * - explicit witness-targeted queries resolve directly from the witness AID's
- *   `locs.` replies because KERIpy witness inquiries do not depend on the
- *   queried controller advertising witness end roles
- * - prefer direct controller/agent/witness URLs when the chosen destination
- *   matches an advertised end role
- * - in mailbox-only topologies, allow queries addressed to the controller AID
- *   to ride the first mailbox endpoint URL
+ * An explicit witness uses its own location records. Ordinary queries use only
+ * the selected controller, agent or witness endpoint; mailbox providers are not
+ * query attesters. Missing/unsupported locations do not promote another endpoint.
  *
  * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
  * @param queriedPre Subject AID whose state is requested.
@@ -578,14 +566,8 @@ function resolveQueryDestinationUrl(
 
   const ends = hab.endsFor(queriedPre);
   for (const role of [Roles.controller, Roles.agent, Roles.witness]) {
-    const endpoint = flattenRoleUrls(ends[role]).find((entry) => entry.eid === destination);
-    if (endpoint) {
-      return endpoint.url;
-    }
-  }
-
-  if (destination === queriedPre) {
-    return flattenRoleUrls(ends[Roles.mailbox])[0]?.url ?? null;
+    const urls = ends[role]?.[destination];
+    if (urls) return urls[Schemes.https] ?? urls[Schemes.http] ?? urls[Schemes.tcp] ?? null;
   }
 
   return null;
@@ -680,7 +662,7 @@ export class QueryCoordinator {
    * Register one persistent key-state continuation.
    *
    * @param pre Subject AID whose accepted state is observed.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    * @returns The registered in-memory continuation; registration alone does not send a query.
    */
   watchKeyState(
@@ -698,7 +680,7 @@ export class QueryCoordinator {
    *
    * @param pre Subject AID whose accepted state is observed.
    * @param sn Inclusive accepted KEL sequence threshold.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    * @returns The registered in-memory continuation; registration alone does not send a query.
    */
   watchSeqNo(
@@ -717,7 +699,7 @@ export class QueryCoordinator {
    *
    * @param pre Subject AID whose accepted state is observed.
    * @param anchor Seal that must appear in the accepted subject KEL.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
    * @returns The registered in-memory continuation; registration alone does not send a query.
    */
   watchAnchor(
@@ -911,8 +893,8 @@ export class QueryCoordinator {
   private prepareRequest(request: QueryRequest): boolean {
     const hab = this.configuredHab(request.signer);
     if (!hab) return false;
-    const destination = request.src
-      ?? this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits })[0];
+    const attesters = request.src ? [] : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
+    const destination = request.src ?? attesters[Math.floor(Math.random() * attesters.length)];
     if (!destination) return false;
     const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
       explicitWitness: request.wits?.includes(destination) ?? false,
@@ -925,11 +907,11 @@ export class QueryCoordinator {
   }
 
   /**
-   * Return eligible attester IDs in role priority; explicit witness overrides retain caller order.
+   * Return the first eligible role’s attester IDs; preparation chooses one randomly.
    *
    * @param pre Subject AID whose accepted endpoint roles are consulted.
-   * @param options Optional local signer AID and ordered remote witness/attester overrides; neither selects a transport implementation.
-   * @returns Ordered eligible attester AIDs, or an empty array when unresolved.
+   * @param options Optional local signer AID and remote witness/attester overrides; neither selects a transport implementation.
+   * @returns Eligible attester AIDs, or an empty array for an unknown subject or unresolved signer/role.
    */
   attestersFor(
     pre: string,
@@ -940,7 +922,7 @@ export class QueryCoordinator {
       return [...wits];
     }
     const hab = this.configuredHab(signer);
-    if (!hab) return [];
+    if (!hab || !this.hby.db.getKever(pre)) return [];
 
     const ends = hab.endsFor(pre);
     for (const role of QUERY_ROLE_PRIORITY) {
@@ -948,18 +930,8 @@ export class QueryCoordinator {
       if (!roleEnds) {
         continue;
       }
-      // Keep stable candidate order; ordinary requests still select the first ID.
-      const eids = Object.keys(roleEnds).sort();
+      const eids = Object.keys(roleEnds);
       if (eids.length > 0) return eids;
-    }
-
-    if (
-      (ends[Roles.mailbox] && Object.keys(ends[Roles.mailbox]).length > 0)
-      && this.hby.db.getKever(pre)
-    ) {
-      // Mailbox-only topologies still query the controller AID itself; the
-      // mailbox role affects delivery transport, not the attester identity.
-      return [pre];
     }
 
     return [];
