@@ -1,4 +1,14 @@
-/** CESR framing and media negotiation over prepared HTTP bodies and scoped response lifetimes. */
+/**
+ * CESR framing and bounded media negotiation over explicitly owned HTTP attempts.
+ * Ordinary send helpers finish response EOF/cleanup and return delivery facts.
+ * requestFrame instead lends a live response from an Effection resource: its
+ * caller consumes that body before leaving the enclosing scope. Neither path
+ * implicitly feeds successful response bytes into protocol processing.
+ *
+ * Match KERIpy's detached-attachment POST contract while retaining the exact
+ * signed body. Only the known pre-intake Falcon media refusal permits a second
+ * request; authentication/application failures and network errors are not retries.
+ */
 import {
   attachmentPayload,
   byteString,
@@ -88,6 +98,9 @@ export async function readResponseDetail(response: HttpStreamResponse, signal: A
  * The caller must keep its scope alive while reading; returning this handle from
  * a closing scope does not transfer response ownership. Media fallback closes the
  * rejected attempt before opening the legacy header-media attempt.
+ * The handle travels directly as this generator's return value: yield* requestFrame
+ * resumes with HttpStreamResponse while its resource remains provided to the
+ * enclosing scope. This is borrowing, not a detached response or a consume callback.
  *
  * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
  * @param frame Parsed signed body and attachments; framing preserves the signed body bytes.
@@ -251,6 +264,10 @@ function* sendFrame(
  * source pull. A refusal stops the sequence; prior frames may already be delivered.
  * Cancellation aborts active work, joins any pending source pull and returns the
  * parser iterator before leaving. There is no automatic retry beyond media fallback.
+ * A pending asynchronous source pull can finish after cancellation is requested;
+ * abort it first, then join that pull and return the iterator. Genuine late
+ * cleanup failures are retained alongside the primary failure rather than
+ * misreported as harmless cancellation.
  *
  * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
  * @param source Creates the CESR byte source for this invocation; it must observe the supplied abort signal.

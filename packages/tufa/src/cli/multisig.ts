@@ -1,4 +1,11 @@
-/** Tufa presentation for typed multisig command results; KERI owns signing and acceptance. */
+/**
+ * Tufa presentation for completed KERI multisig command operations.
+ * Library commands return snapshots after their owned resources close; these
+ * adapters display them without reopening stores or driving workers. messages
+ * identifies recipient-specific coordination EXNs and their shared aggregation
+ * keys, while deliveries contains transport destinations. Only accepted reports
+ * the command's local acceptance predicate. join --said selects the outer EXN.
+ */
 import type { Operation } from "effection";
 import {
   type GroupEventResult,

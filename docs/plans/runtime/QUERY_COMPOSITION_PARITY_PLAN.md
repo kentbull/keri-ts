@@ -1,6 +1,9 @@
 # Query composition parity with KERIpy
 
-Status: approved release-goal supplement; implementation and qualification pending.
+Status: approved release-goal supplement. Cuts 13e–13g are implemented; their
+scoped evidence does not replace final qualification. The approved
+[command-owned query cue redirect](QUERY_CUE_OWNERSHIP_PLAN.md) supersedes
+simultaneous-observer/broadcast requirements below and executes as 13h1–13h2.
 Date: 2026-10-20.
 
 ## Decision
@@ -143,10 +146,13 @@ concrete scoped operations/components corresponding to KERIpy's doers.
   capability. Workflow owners may construct scoped inquisitors; the host may
   own one for background recovery cues. Share implementation, not a universal
   workflow manager.
-- Route actual `keyStateSaved` records to the interested workflow through
-  composition. Define the consumer before removing a cue from a Deck; preserve
-  simultaneous consumers where demonstrated. A small concrete route is enough;
-  no observer interface, subscription framework, or callback scheduler.
+- Route actual `keyStateSaved` records to one command-owned Deck and one noticer
+  consumer through composition. Define that consumer before removing source
+  records from the application Deck. Transfer records once through
+  the existing cue owner, before sender/receiver work starts. Do not broadcast or
+  introduce Channels, Signals, subscription/fanout infrastructure or predicate scans.
+  Preserve unrelated/unprocessable cues with cooperative pull/match/append turns.
+  The current simultaneous-noticer test is not a production requirement.
 - Completion reads accepted KEL/seal evidence. Empty queues, HTTP 204, and local
   TCP drain never substitute for that predicate.
 - The invoking operation's lifetime represents active workflow work. Update
@@ -232,7 +238,9 @@ public transitional wrappers. Keep temporary retained packets with the sender
 until PR 13f removes that contract.
 
 Validate signer/attester selection, KSN-to-logs progression, sequence/anchor
-predicates, recovery cues, simultaneous query observations, and joined shutdown.
+predicates, recovery cues, single-owner cue handoff, and joined shutdown.
+The later 13h1–13h2 cuts remove the unsupported broadcast contract and distinguish
+saved remote KSN publication from ordinary KEL acceptance.
 Update actual callers/declarations in this PR, not a later cleanup PR.
 
 ### PR 13f: Remove custom HTTP query behavior end to end

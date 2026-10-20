@@ -230,6 +230,13 @@ interface ExchangeAttempt {
  * TypeScript design rule:
  * - use typed `accept` / `escrow` / `reject` outcomes instead of KERIpy's
  *   exception-only control flow for ordinary branch results
+ *
+ * Admission prepares actual nested evidence before entering a synchronous LMDB
+ * writer, then re-reads retry state and authenticates/persists against that current
+ * view. Accepted and pending EXNs share ordinary Baser evidence tables, including
+ * main's `essrs.` Texter set. There is no external payload authority to publish
+ * or reclaim. Join the LMDB flush before exposing cues or invoking asynchronous
+ * handlers; a handler failure does not roll back an already accepted EXN.
  */
 export class Exchanger {
   readonly hby: Habery;
@@ -282,6 +289,10 @@ export class Exchanger {
    * Accepted messages are durably logged before any route-specific side
    * effects run so later reopen and verification paths can reuse the same
    * stored evidence.
+   * Returning a reject/escrow decision describes this attempt, not necessarily
+   * the absence of an earlier accepted copy; complete(said) checks durable
+   * acceptance. Infrastructure and handler errors remain exceptions, so callers
+   * must not interpret every thrown error as a remote protocol rejection.
    */
   processEvent(args: ExchangeInput): Operation<ExchangeDecision> {
     return call(function*(this: Exchanger) {
@@ -290,7 +301,13 @@ export class Exchanger {
       return attempt.decision;
     }.bind(this));
   }
-  /** Decide and publish LMDB evidence in one writer, then finish actual handlers and durability. */
+  /**
+   * Prepare nested serialization outside the writer, then decide and persist in
+   * one uninterrupted transaction. A retry re-reads current escrow evidence in
+   * that writer: work may have accepted/expired while preparation suspended.
+   * Flush committed storage before publishing cues and awaiting the route handler.
+   * The caller must keep the Baser open through all these completion boundaries.
+   */
   private *admit(args: ExchangeInput, retry = false): Operation<ExchangeAttempt | undefined> {
     const said = args.serder.said ?? "<unknown>";
     const reject = (reason: string): ExchangeAdmission => ({ decision: { kind: "reject", said, reason }, cues: [] });
@@ -353,7 +370,15 @@ export class Exchanger {
     return { decision: result.decision, ejection: result.ejection };
   }
 
-  /** Verify this attempt's bytes before ordered-set persistence can deduplicate them. */
+  /**
+   * Check the signed commitment over this attempt's raw fragment concatenation
+   * before persistence. On retry these inputs come from retained set members.
+   * Match main's separation: valid incoming bytes need not remain reconstructable
+   * after equal Texters deduplicate or alternate fragmentations accumulate.
+   * Do not normalize parser input or weaken digest verification to conceal that
+   * known persistence limitation. Malformed remote CESR yields reject; storage,
+   * hashing and other infrastructure errors propagate.
+   */
   private verifyEssr(
     serder: SerderKERI,
     fragments: readonly Texter[] | undefined,
@@ -534,7 +559,20 @@ export class Exchanger {
       }
     }
   }
-  /** Replay accepted evidence through completion or cancellation. */
+  /**
+   * Reconstruct accepted signed wire from ordinary Baser evidence, preserving
+   * attachment genus independently of the signed body's protocol version.
+   * Revalidate stored sender proofs, then encode retained pathed/nested/ESSR
+   * material. ESSR set members follow stored order, which can differ from the
+   * originally committed sequence under the documented set limitation; receiving
+   * protocol/recipient processing remains responsible for its digest check.
+   *
+   * @param said Accepted outer EXN SAID; escrow-only evidence cannot be replayed here.
+   * @param signal Optional caller cancellation between reconstruction/output steps.
+   * @yields Ordinary owned wire chunks; no archive handle or plaintext is created.
+   * @throws Missing acceptance, invalid retained authentication and genuine
+   * storage/encoding failures remain visible to the consumer.
+   */
   async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);

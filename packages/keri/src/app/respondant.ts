@@ -14,12 +14,15 @@ import type { Hab, Habery } from "./habbing.ts";
  * - mailbox-query `stream` cues stay with mailbox storage/query coordination
  *
  * Boundary rule:
- * - this class owns non-`stream` cue production and reply capture
- * - `MailboxDirector` owns mailbox storage and `stream` cue correlation
- * - if a future change starts treating generic `reply` / `replay` /
- *   `receipt`-family cues as local mailbox writes, that change is regressing
- *   back toward the bug where mailbox code was incorrectly acting like
- *   KERIpy's `Respondant`
+ * - this class constructs signed non-`stream` output and admits it to Poster
+ * - `MailboxDirector` owns provider publication and `stream` cue correlation,
+ *   using its separately owned Mailboxer for actual storage
+ * - ordinary query replies follow this output path rather than returning from
+ *   the HTTP query POST; direct TCP correlation claims its own reply cues first
+ *
+ * Source cue removal proves complete output admission, not delivery. Poster runs
+ * independently and owns routing, transport attempts and failure outcomes. Keep
+ * mailbox provider writes in that routing path, not in responder cue interpretation.
  */
 export class Respondant {
   /** Borrowed local signer and accepted-state collection. */

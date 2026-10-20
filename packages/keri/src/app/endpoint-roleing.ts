@@ -23,10 +23,15 @@ import {
 
 export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 
-/** Result of proposing one group endpoint-role authorization reply. */
+/**
+ * One group endpoint-role proposal: coordination send facts plus the current
+ * accepted authorization predicate. The signed rpy bytes are library evidence;
+ * Tufa's output adapter deliberately omits them from its JSON summary.
+ */
 export interface GroupRoleResult extends GroupSendResult {
   route: typeof MULTISIG_RPY_ROUTE;
   group: string;
+  /** Current Baser.ends authorization, not proof that other participants approved. */
   accepted: boolean;
   rpy: Uint8Array;
 }

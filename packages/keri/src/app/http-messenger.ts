@@ -11,6 +11,12 @@ export type HTTPMessengerOptions = Pick<EgressOptions, "destination" | "headers"
  * Send ordinary signed messages as ordered HTTP POSTs and finish response cleanup.
  * Producers own preparation and Poster owns queued work. This component needs no
  * Habery, protocol processor, parser state, timer or response history.
+ *
+ * Corresponds to the ordinary POST role of KERIpy HTTPMessenger. Complete CESR
+ * frames become separate POSTs: original signed body in the request body, text
+ * attachments in CESR-ATTACHMENT. Only the recognized pre-intake media refusal
+ * permits a second attempt with legacy media metadata. Successful response bytes
+ * are drained and discarded; protocol receiving belongs to independent intake.
  */
 export class HTTPMessenger {
   /** Bind one endpoint and request metadata; construction performs no I/O. */
@@ -20,7 +26,11 @@ export class HTTPMessenger {
     private readonly options: HTTPMessengerOptions = {},
   ) {}
 
-  /** Send resident signed bytes; successful delivery includes response EOF and cleanup. */
+  /**
+   * Send resident signed bytes through the same parser/request path as sendSource.
+   * Keep the input unchanged until completion. A complete result proves transport
+   * completion, not remote verification, storage, approval or a processed reply.
+   */
   send(msg: Uint8Array, options: Pick<EgressOptions, "signal"> = {}): Operation<CesrPostResult> {
     return this.sendSource((signal) => chunkBytes(msg, { signal }), options);
   }

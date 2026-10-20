@@ -54,7 +54,11 @@ import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
-/** Accepted-state snapshot and message outcomes retained after owned stores close. */
+/**
+ * Captured group event state and coordination outcomes, usable after command
+ * resources close. Tufa owns display/JSON projection. accepted reflects this
+ * command's local event predicate; completed deliveries alone never imply it.
+ */
 export interface GroupEventResult extends GroupSendResult {
   route: MultisigKelRoute;
   group: string;

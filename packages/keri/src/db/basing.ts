@@ -247,7 +247,14 @@ export class Baser {
   /** Receiver receipt, mailbox provenance and attachment genus; no payload ownership. */
   public exchangeMeta!: Komer<ExchangeRecord>;
 
-  /** Read main's ordered-set evidence only for an accepted or escrowed exchange. */
+  /**
+   * Read pinned-main ESSR evidence only while an accepted or pending EXN owns it.
+   * Return hydrated Texters in first-insertion order, or null for absent/unowned
+   * evidence. These are set members, not the original fragment sequence: equal
+   * qualified values deduplicate and alternate fragmentations may add members.
+   * Callers needing authenticated payload bytes must verify the signed digest
+   * against this reconstruction; reading rows does not establish acceptance.
+   */
   getEssrs(said: string): Texter[] | null {
     if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
     const fragments = this.essrs.get([said]);
@@ -273,7 +280,12 @@ export class Baser {
   /** Qualified nested substreams in KERIpy insertion order with exact-value deduplication. */
   public enst!: IoSetSuber<string>;
   public epath!: IoSetSuber<string>; // Exchange-message pathed attachments.
-  public essrs!: CesrIoSetSuber<Texter>; // Main's qualified-Texter set, in first-insertion order.
+  /**
+   * Pinned KERIpy main's `essrs.` table: EXN SAID keys, qualified Texter values,
+   * native insertion-ordered set semantics. Duplicate add=false is normal, not
+   * a write failure. This binding does not claim legacy `.essrs` interchange.
+   */
+  public essrs!: CesrIoSetSuber<Texter>;
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
   public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
