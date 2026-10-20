@@ -32,6 +32,7 @@ import { introduce, type Poster, type PosterEvent, type PosterMsg } from "../../
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 
 import type { QueryRequest } from "../../../src/core/cues.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
@@ -1380,6 +1381,112 @@ Deno.test("Habery reconfigure preserves top-level OOBI preload queues", async ()
       );
     } finally {
       yield* hby.close();
+    }
+  });
+});
+
+Deno.test("Habery validates every URL list before changing either OOBI queue, even without dt", async () => {
+  await run(function*() {
+    const name = crypto.randomUUID();
+    const cf = yield* createConfiger({ name, temp: true });
+    cf.put({ dt: "2026-04-06T12:00:00.000Z", iurls: ["http://existing.test/oobi"] });
+    const hby = yield* createHabery({ name, temp: true, cf });
+    const snapshot = () => [[...hby.db.oobis.getTopItemIter()], [...hby.db.woobi.getTopItemIter()]];
+    try {
+      const before = snapshot();
+      const valid = "http://new.test/oobi";
+      for (const dt of ["2026-04-07T12:00:00.000Z", undefined]) {
+        for (
+          const [field, invalid] of [
+            ["iurls", null],
+            ["iurls", valid],
+            ["iurls", [""]],
+            ["iurls", [" \t "]],
+            ["iurls", [valid, false]],
+            ["durls", {}],
+            ["wurls", [valid, 7]],
+          ] as const
+        ) {
+          cf.put({ dt, iurls: ["http://existing.test/oobi", valid], durls: [valid], wurls: [valid], [field]: invalid });
+          const error = assertThrows(() => hby.reconfigure(), ValidationError, field);
+          if (Array.isArray(invalid)) assertStringIncludes(error.message, `[${invalid.length - 1}]`);
+          assertEquals(snapshot(), before, `${field} refusal must preserve new and existing records in both stores`);
+        }
+      }
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Habery accepts absent/empty URL lists and preserves HTTP/TCP keys exactly through reopen", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "config-urls-" }), name = crypto.randomUUID();
+  const iurl = "tcp://localhost:5620/?role=peer&name=alice";
+  const durl = "http://localhost:7723/oobi/%2F?name=a+b";
+  const wurl = " https://witness.test/oobi?name=%20 ";
+  const date = "2026-04-06T12:00:00.000Z";
+  try {
+    for (const reopening of [false, true]) {
+      await run(function*() {
+        const cf = yield* createConfiger({ name, headDirPath });
+        if (!reopening) cf.put({});
+        const hby = yield* createHabery({ name, headDirPath, cf });
+        try {
+          if (!reopening) {
+            assertEquals([hby.db.oobis.cnt(), hby.db.woobi.cnt()], [0, 0]);
+            cf.put({ dt: date, iurls: [], durls: [], wurls: [] });
+            hby.reconfigure();
+            assertEquals([hby.db.oobis.cnt(), hby.db.woobi.cnt()], [0, 0]);
+            cf.put({ dt: date, iurls: [iurl], durls: [durl], wurls: [wurl] });
+            hby.reconfigure();
+          }
+          assertEquals([hby.db.oobis.cnt(), hby.db.woobi.cnt()], [2, 1]);
+          for (const key of [iurl, durl]) {
+            const record = hby.db.oobis.get(key);
+            assertEquals([record?.date, record?.state], [date, "queued"]);
+          }
+          const witness = hby.db.woobi.get(wurl);
+          assertEquals([witness?.date, witness?.state], [date, "queued"]);
+        } finally {
+          yield* hby.close();
+        }
+      });
+    }
+  } finally {
+    await Deno.remove(headDirPath, { recursive: true });
+  }
+});
+
+Deno.test("Hab refuses malformed curls before admitting any signed endpoint reply", async () => {
+  await run(function*() {
+    const name = crypto.randomUUID(), cf = yield* createConfiger({ name, temp: true });
+    cf.put({});
+    const hby = yield* createHabery({ name, temp: true, cf });
+    const hab = hby.makeHab("alice");
+    const date = "2026-04-06T12:00:00.000Z", valid = "http://localhost:7002/controller";
+    const snapshot =
+      () => [[...hby.db.ends.getTopItemIter()], [...hby.db.locs.getTopItemIter()], [...hby.db.rpys.getTopItemIter()]];
+    try {
+      const before = snapshot();
+      for (const curls of [null, valid, [valid, 9], [""], [" \t "]]) {
+        cf.put({ alice: { dt: date, curls } });
+        assertThrows(() => hab.reconfigure(), ValidationError, "curls");
+        assertEquals(snapshot(), before);
+      }
+      cf.put({ alice: { dt: date, curls: [valid, "not a URL"] } });
+      assertThrows(() => hab.reconfigure(), TypeError);
+      assertEquals(snapshot(), before, "existing URL syntax validation still precedes all reply effects");
+      for (const section of [{ dt: date }, { dt: date, curls: [] }]) {
+        cf.put({ alice: section });
+        assertEquals(hab.reconfigure(), true);
+      }
+      assertEquals(hby.db.ends.get([hab.pre, "controller", hab.pre])?.allowed, true);
+      assertEquals(hby.db.locs.cnt(), 0);
+      cf.put({ alice: { dt: date, curls: ["tcp://localhost:5621/"] } });
+      hab.reconfigure();
+      assertEquals(hby.db.locs.get([hab.pre, "tcp"])?.url, "tcp://localhost:5621/");
+    } finally {
+      yield* hby.close(true);
     }
   });
 });

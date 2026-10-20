@@ -33,7 +33,10 @@ consumer while the host omits a second poller. Normal completion waits for deliv
 batches; deadlines join cancellation. The supervisor suspends rather than pumping.
 The HTTP kernel selects serviceHab/hostedPrefixes once and owns actual listeners;
 startup reconciles required signed endpoints before listening. Bootstrap uses alias
-dt/curls, then accepted endpoints, with localhost only if both are absent. Location
+dt/curls, then accepted endpoints, with localhost only if both are absent.
+Config iurls/durls/wurls/curls are absent or arrays of nonblank strings; preserve
+accepted strings exactly. Habery validates all three preload lists before either
+OOBI store changes, even without dt; alias curls validate before signed replies. Location
 and role changes use signed Revery intake, not direct locs/lans mutation.
 
 Source CLI/tests and the DID container run Deno; packaged CLI launchers run Node.

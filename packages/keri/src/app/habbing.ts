@@ -204,8 +204,18 @@ function ample(count: number, faults?: number, weak = true): number {
   return weak ? Math.min(n, m1, m2) : Math.min(n, Math.max(m1, m2));
 }
 
-function loadConfigUrls(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+/** Decode one bootstrap URL collection without normalizing its exact string keys. */
+function loadConfigUrls(value: unknown, field: "iurls" | "durls" | "wurls" | "curls"): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new ValidationError(`Config ${field} must be an array of URL strings.`);
+  const urls: string[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== "string" || entry.trim().length === 0) {
+      throw new ValidationError(`Config ${field}[${index}] must be a non-empty URL string.`);
+    }
+    urls.push(entry);
+  }
+  return urls;
 }
 
 function requireConfigDatetime(alias: string, value: unknown): string {
@@ -470,7 +480,7 @@ export class Hab {
 
     const dt = requireConfigDatetime(this.name, conf.dt);
     // Validate every configured URL before admitting any bootstrap reply.
-    const locations = loadConfigUrls(conf.curls).map((url) => {
+    const locations = loadConfigUrls(conf.curls, "curls").map((url) => {
       const parsed = new URL(url);
       const scheme = parsed.protocol.length > 0 ? parsed.protocol.slice(0, -1) : Schemes.http;
       return { eid: this.pre, scheme, url };
@@ -1482,17 +1492,16 @@ export class Habery {
    */
   reconfigure(): void {
     const conf = this.config;
+    // Validate every collection before the first pin, including when dt is absent.
+    const iurls = loadConfigUrls(conf.iurls, "iurls");
+    const durls = loadConfigUrls(conf.durls, "durls");
+    const wurls = loadConfigUrls(conf.wurls, "wurls");
     if (typeof conf.dt === "string") {
       const date = conf.dt;
-      for (
-        const url of [
-          ...loadConfigUrls(conf.iurls),
-          ...loadConfigUrls(conf.durls),
-        ]
-      ) {
+      for (const url of [...iurls, ...durls]) {
         this.db.oobis.pin(url, { date, state: "queued" });
       }
-      for (const url of loadConfigUrls(conf.wurls)) {
+      for (const url of wurls) {
         this.db.woobi.pin(url, { date, state: "queued" });
       }
     }
