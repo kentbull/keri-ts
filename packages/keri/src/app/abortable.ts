@@ -1,4 +1,4 @@
-import { call, ensure, type Operation, type Scope, useScope } from "npm:effection@^3.6.0";
+import { call, ensure, on, type Operation, type Scope, useScope } from "npm:effection@^3.6.0";
 
 /**
  * Remove only this operation's cancellation from joined I/O failures.
@@ -17,6 +17,30 @@ function remainingFailures(error: unknown, cancellation: unknown): unknown[] {
 }
 
 /**
+ * Identify foreign failures while joining cancelled work, without throwing as a filter.
+ *
+ * @param error Failure from joined I/O, possibly an AggregateError.
+ * @param signal Owner whose exact cancellation reason may be removed.
+ * @returns Foreign failures, preserving unchanged aggregates and error identities.
+ */
+export function cleanupFailures(error: unknown, signal: AbortSignal): unknown[] {
+  return remainingFailures(error, signal.reason);
+}
+
+/**
+ * Stop the containing race when an upstream signal aborts, including pre-abort.
+ *
+ * @param signal Actual caller cancellation; register before checking its current state.
+ * @throws The signal's exact reason. The operation never completes normally.
+ */
+export function* throwOnAbort(signal: AbortSignal): Operation<never> {
+  const abort = yield* on(signal, "abort");
+  signal.throwIfAborted();
+  yield* abort.next();
+  throw signal.reason;
+}
+
+/**
  * Preserve foreign cleanup failures, removing only this owner's exact abort reason.
  *
  * @param error Failure observed during joined cleanup.
@@ -24,7 +48,7 @@ function remainingFailures(error: unknown, cancellation: unknown): unknown[] {
  * @throws The original foreign failure, or an AggregateError containing multiple remaining failures.
  */
 export function rethrowCleanupFailure(error: unknown, signal: AbortSignal): void {
-  const failures = remainingFailures(error, signal.reason);
+  const failures = cleanupFailures(error, signal);
   if (failures.length === 1) throw failures[0];
   if (failures.length) throw new AggregateError(failures, "I/O cleanup failed during cancellation");
 }
