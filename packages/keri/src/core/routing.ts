@@ -1,4 +1,4 @@
-import { Cigar, Dater, Diger, Prefixer, SerderKERI, Siger } from "cesr-ts";
+import { Cigar, Dater, Diger, NumberPrimitive, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
@@ -159,8 +159,8 @@ function sameOrNewerReply(
  * Reconstruction steps:
  * - walk the stored signature rows under one message SAID
  * - regroup rows by `(pre, snh, dig)` back into transferable signature groups
- * - drop incomplete groups when the signer establishment event can no longer be
- *   resolved
+ * - reconstruct ordinals directly from stored keys, even while signer KEL
+ *   evidence is missing; ordinary reply verification owns that dependency check
  *
  * Ordering rule:
  * - groups are returned newest-first by establishment sequence number so reply
@@ -181,11 +181,7 @@ export function fetchStoredTsgs(
     if (!prefix || !snh || !dig) {
       continue;
     }
-    const estEvent = db.getEvtSerder(prefix, dig);
-    const seqner = estEvent?.sner;
-    if (!seqner) {
-      continue;
-    }
+    const seqner = NumberPrimitive.fromNum(BigInt(`0x${snh}`));
     const prefixer = new Prefixer({ qb64: prefix });
     const diger = new Diger({ qb64: dig });
     const key = `${prefix}.${snh}.${dig}`;
@@ -537,7 +533,9 @@ export class Revery {
     const oldTsgs = args.osaider
       ? fetchStoredTsgs(this.db, args.osaider.qb64)
       : [];
-    const oldLead = oldTsgs[0];
+    // Reconstruction retains missing-key groups for retry. Only a group whose
+    // claimed ordinal matches its establishment event can lead prior BADA proof.
+    const oldLead = oldTsgs.find(tsg => this.db.getEvtSerder(tsg.pre, tsg.said)?.sner?.num === tsg.sn);
     for (const tsg of args.tsgs ?? []) {
       if (tsg.pre !== args.aid) {
         continue;

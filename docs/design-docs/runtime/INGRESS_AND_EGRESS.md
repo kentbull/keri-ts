@@ -569,6 +569,15 @@ Partial failure clears in-flight state, preserving retry ownership and accepted
 events. Errors propagate without a local busy/limit requeue path. Resolved means
 retrieval completion, not independent acceptance of every incoming event.
 JSON/schema documents collect and validate without admission credit or a size cap.
+Init/incept compose finite OOBI/authentication work without AgentRuntime: minimal
+protocol intake, Oobiery, Authenticator, KEL/reply escrows and query delivery. Select
+queued/in-flight records, resume surviving coobi/mfa/moobi work and follow child
+introductions. Current terminal results and selected identities' KEL/reply evidence
+define completion; unrelated historical failures, reply/delegation work and old
+authorizations do not. Accepted prerequisites retire redundant recovery queries.
+The elapsed deadline cancels/joins all workers and HTTP before returning a typed
+outcome; command success follows Habery closure. Delegated inception retains its
+separate host composition.
 Authenticator performs status-only GETs; cleanup failure cannot publish successful
 authorization. It accepts actual clock/HTTP services without Baser policy identity.
 

@@ -74,6 +74,7 @@ export function oobiTerminalState(
   url: string,
 ): OobiTerminalState {
   if (isWellKnownOobiUrl(url)) {
+    if (db.woobi.get(url) || db.mfa.get(url)) return { status: "pending", via: "none", record: null };
     const record = db.rmfa.get(url);
     if (!record) {
       return { status: "pending", via: "none", record: null };
@@ -85,6 +86,9 @@ export function oobiTerminalState(
     };
   }
 
+  if (db.oobis.get(url) || db.coobi.get(url) || db.moobi.get(url)) {
+    return { status: "pending", via: "none", record: null };
+  }
   const failed = db.eoobi.get(url);
   if (failed) {
     return { status: "failed", via: "eoobi", record: failed };
@@ -180,7 +184,7 @@ export class Oobiery {
    * Process one queued durable OOBI record, if any.
    *
    * Behavior:
-   * - reads the next queued `oobis.` / `woobi.` record
+   * - reads the next queued `oobis.` record or resumes a surviving `coobi.` row
    * - fetches it under Effection cancellation control
    * - parses fetched KERI bytes through this owner's Kevery and shared semantic handlers
    * - transitions the durable record into `eoobi.` or `roobi.`
@@ -237,36 +241,26 @@ export class Oobiery {
     }
   }
 
-  /** Return the next queued durable OOBI record, if any. */
+  /** Select queued work, including a surviving in-flight row whose former process is gone. */
   private nextQueued(): [OobiQueueKind, string, OobiRecord] | null {
-    for (const [keys, record] of this.hby.db.oobis.getTopItemIter()) {
-      const url = keys[0];
-      if (!url) {
-        continue;
+    for (const store of [this.hby.db.oobis, this.hby.db.coobi]) {
+      for (const [keys, record] of store.getTopItemIter()) {
+        const url = keys[0];
+        if (url) return ["oobis", url, record];
       }
-      return ["oobis", url, record];
     }
-
     return null;
   }
 
-  /** Return one multi-OOBI parent whose child URLs have all settled. */
+  /** Select a parent only after its current child attempts, including authentication, settle. */
   private nextReadyMoobi(): [string, OobiRecord] | null {
     for (const [keys, record] of this.hby.db.moobi.getTopItemIter()) {
       const url = keys[0];
-      if (!url) {
-        continue;
-      }
-
-      const urls = record.urls ?? [];
-      if (
-        urls.length === 0
-        || urls.every((childUrl) => !!this.hby.db.roobi.get(childUrl) || !!this.hby.db.eoobi.get(childUrl))
-      ) {
+      if (!url) continue;
+      if ((record.urls ?? []).every(child => oobiTerminalState(this.hby.db, child).status !== "pending")) {
         return [url, record];
       }
     }
-
     return null;
   }
 
@@ -304,6 +298,13 @@ export class Oobiery {
       oobialias: meta.alias ?? meta.oobialias ?? null,
       said: meta.said ?? null,
     };
+    // A new or resumed attempt supersedes old terminal facts, but keeps its
+    // queued row until intake succeeds. Cancellation can therefore retry it.
+    this.hby.db.env!.transactionSync(() => {
+      this.pinQueueStore(kind, url, queuedRecord);
+      this.hby.db.eoobi.rem(url);
+      this.hby.db.roobi.rem(url);
+    });
     const consume = this.processResponse.bind(this);
     try {
       const refused = yield* scoped(function*() {
@@ -312,7 +313,8 @@ export class Oobiery {
         yield* consume(kind, url, queuedRecord, meta, response);
         return null;
       });
-      if (refused !== null) {
+      if (refused === null) this.remQueueStore(kind, url);
+      else {
         // The response has closed before its terminal HTTP outcome is persisted.
         const result = { ...queuedRecord, date: new Date().toISOString(), state: `http-${refused}` };
         this.remQueueStore(kind, url);
@@ -344,7 +346,6 @@ export class Oobiery {
     if (isCesrMediaType(type) || !type.includes("json")) {
       // Keep durable retry ownership throughout partial acceptance and joined cancellation.
       yield* this.resolveCesrOobiResponse(kind, url, queuedRecord, meta, response);
-      this.remQueueStore(kind, url);
       return;
     }
     const bytes = yield* readResponseBytes(response);
@@ -356,25 +357,20 @@ export class Oobiery {
 
     if (type === "application/schema+json") {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
-        this.remQueueStore(kind, url);
         return;
       }
       this.failFetchedOobi(url, queuedRecord, "invalid-schema-oobi");
-      this.remQueueStore(kind, url);
       return;
     }
 
     if (type.includes("json")) {
       if (this.processSchemaOobiResponse(url, queuedRecord, bytes)) {
-        this.remQueueStore(kind, url);
         return;
       }
       if (this.processJsonOobiResponse(url, queuedRecord, bytes)) {
-        this.remQueueStore(kind, url);
         return;
       }
       this.failFetchedOobi(url, queuedRecord, "invalid-json-oobi");
-      this.remQueueStore(kind, url);
       return;
     }
   }
@@ -513,7 +509,7 @@ export class Oobiery {
     const urls = record.urls ?? [];
     const date = new Date().toISOString();
     const failed = urls.length === 0
-      || urls.some((childUrl) => !!this.hby.db.eoobi.get(childUrl));
+      || urls.some(childUrl => oobiTerminalState(this.hby.db, childUrl).status === "failed");
 
     const state = failed ? (urls.length === 0 ? "invalid-multi-oobi" : "child-failed") : "resolved";
     const result = { ...record, date, state };

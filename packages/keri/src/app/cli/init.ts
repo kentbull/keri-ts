@@ -6,6 +6,7 @@ import { type Configer, createConfiger } from "../configing.ts";
 import { branToSeedAeid, createHabery, type Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
+import { assertBootstrapComplete } from "./common/bootstrap.ts";
 import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 import { readPasscode } from "./common/passcode.ts";
 
@@ -85,6 +86,8 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     }))
     : undefined;
   let hby: Habery | undefined;
+  let created: { keystore: string | null; database: string | null; aeid: string };
+  let failure: { error: unknown } | undefined;
   try {
     let seed: string | undefined;
     let aeid: string | undefined;
@@ -104,17 +107,30 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       seed,
       salt: initArgs.salt,
     });
-    yield* resolveBootstrap(hby, new FetchHttpClient(), systemClock);
+    assertBootstrapComplete(yield* resolveBootstrap(hby, new FetchHttpClient(), systemClock));
 
-    console.log("KERI Keystore created at:", hby.ks.path);
-    console.log("KERI Database created at:", hby.db.path);
-    if (hby.mgr.aeid) {
-      console.log("\taeid:", hby.mgr.aeid);
-    }
+    created = { keystore: hby.ks.path, database: hby.db.path, aeid: hby.mgr.aeid };
+  } catch (error) {
+    failure = { error };
+    throw error;
   } finally {
-    if (hby) yield* hby.close();
-    else if (cf) yield* cf.close();
+    try {
+      if (hby) yield* hby.close();
+      else if (cf) yield* cf.close();
+    } catch (error) {
+      if (failure) {
+        // deno-lint-ignore no-unsafe-finally -- Preserve initialization and shutdown failures.
+        throw new AggregateError([failure.error, error], "Initialization and database close failed", {
+          cause: failure.error,
+        });
+      }
+      // deno-lint-ignore no-unsafe-finally -- Final success requires resource closure.
+      throw error;
+    }
   }
+  console.log("KERI Keystore created at:", created.keystore);
+  console.log("KERI Database created at:", created.database);
+  if (created.aeid) console.log("\taeid:", created.aeid);
 }
 
 /** Mutually exclusive initialization choices, resolved before opening stores. */

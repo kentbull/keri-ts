@@ -8,6 +8,7 @@ import { resolveBootstrap } from "../bootstrapping.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
 import { systemClock } from "../runtime-clock.ts";
+import { assertBootstrapComplete } from "./common/bootstrap.ts";
 
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
@@ -106,7 +107,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   const opts = mergeWithFile(inceptArgs);
 
   // A command-local scope owns acquisition and teardown; there is no independent child consumer.
-  yield* call(function*() {
+  const result = yield* call(function*() {
     const cf: Configer | undefined = inceptArgs.configFile
       ? (yield* createConfiger({
         name: inceptArgs.configFile,
@@ -130,8 +131,9 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         skipSignator: true,
       },
     );
+    let failure: { error: unknown } | undefined;
     try {
-      yield* resolveBootstrap(hby, http, systemClock);
+      assertBootstrapComplete(yield* resolveBootstrap(hby, http, systemClock));
 
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
         transferable: opts.transferable ?? false,
@@ -196,16 +198,27 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
 
       const state = hby.db.getState(hab.pre);
 
-      console.log(`Prefix  ${hab.pre}`);
-      for (const [idx, key] of (state?.k ?? []).entries()) {
-        console.log(`\tPublic key ${idx + 1}:  ${key}`);
-      }
-      if (delegationPhase) {
-        console.log(`Delegation status  ${delegationPhase}`);
-      }
-      console.log("");
+      return { prefix: hab.pre, keys: state?.k ?? [], delegationPhase };
+    } catch (error) {
+      failure = { error };
+      throw error;
     } finally {
-      yield* hby.close();
+      try {
+        yield* hby.close();
+      } catch (error) {
+        if (failure) {
+          // deno-lint-ignore no-unsafe-finally -- Preserve inception and shutdown failures.
+          throw new AggregateError([failure.error, error], "Inception and database close failed", {
+            cause: failure.error,
+          });
+        }
+        // deno-lint-ignore no-unsafe-finally -- Final success requires resource closure.
+        throw error;
+      }
     }
   });
+  console.log(`Prefix  ${result.prefix}`);
+  for (const [idx, key] of result.keys.entries()) console.log(`\tPublic key ${idx + 1}:  ${key}`);
+  if (result.delegationPhase) console.log(`Delegation status  ${result.delegationPhase}`);
+  console.log("");
 }

@@ -1,7 +1,8 @@
 import { type Operation, run } from "effection";
-import { assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
+import { Habery } from "../../../src/app/habbing.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
 async function captureCommandOutput(
@@ -99,4 +100,63 @@ Deno.test("CLI - incept command requires alias", async () => {
     inceptCommand({ name: "test", temp: true }),
     "Alias is required and cannot be empty",
   );
+});
+
+Deno.test("CLI - initialization and inception report success only after database cleanup", async () => {
+  const name = `incept-close-${crypto.randomUUID()}`;
+  const headDirPath = await Deno.makeTempDir();
+  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
+  const close = Habery.prototype.close;
+  const makeHab = Habery.prototype.makeHab;
+  const failure = new Error("owned Habery close failed");
+  const harness = new CLITestHarness();
+  Habery.prototype.close = function*(...args) {
+    yield* close.apply(this, args);
+    throw failure;
+  };
+  harness.captureOutput();
+  try {
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          initCommand({
+            name: `${name}-new`,
+            headDirPath,
+            nopasscode: true,
+          })
+        )
+      ),
+      failure,
+    );
+    assertEquals(harness.getOutput(), []);
+    assertStrictEquals(
+      await assertRejects(() =>
+        run(() =>
+          inceptCommand({
+            name,
+            headDirPath,
+            alias: "alice",
+            transferable: true,
+          })
+        )
+      ),
+      failure,
+    );
+    assertEquals(harness.getOutput(), []);
+    const operationFailure = new Error("inception failed");
+    Habery.prototype.makeHab = () => {
+      throw operationFailure;
+    };
+    const combined = await assertRejects(
+      () => run(() => inceptCommand({ name, headDirPath, alias: "alice" })),
+      AggregateError,
+    );
+    assertEquals(combined.errors, [operationFailure, failure]);
+    assertStrictEquals(combined.cause, operationFailure);
+  } finally {
+    harness.restoreOutput();
+    Habery.prototype.close = close;
+    Habery.prototype.makeHab = makeHab;
+    await Deno.remove(headDirPath, { recursive: true });
+  }
 });
