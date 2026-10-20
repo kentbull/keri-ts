@@ -11,6 +11,7 @@ on:
         options:
           - interop-parity
           - interop-keystore-parity
+          - interop-essr-storage
           - interop-keystore-storage
           - interop-oobi-bootstrap
           - interop-acdc-verifier

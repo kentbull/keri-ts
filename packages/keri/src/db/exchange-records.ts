@@ -7,8 +7,8 @@ export interface ExchangeRecordShape {
   mailboxAid: string | null;
   /** First qualified receiver receipt, distinct from the signed message timestamp. */
   receiverTime?: string;
-  /** Owned qualified ESSR archive and its original replay genus. */
-  essr?: { gvrsn: Versionage };
+  /** Attachment genus needed to reconstruct the received exchange wire. */
+  gvrsn?: Versionage;
 }
 
 /** Private metadata; the ordinary KERIpy exchange tables retain their wire schema. */
@@ -17,18 +17,6 @@ export class ExchangeRecord extends RawRecord<ExchangeRecordShape> implements Ex
   declare mailboxAid: string | null;
   /** Retained through proof escrow/reopen and subsequent accepted duplicates. */
   declare receiverTime?: string;
-  /** Owned ciphertext archive provenance. */
-  declare essr?: ExchangeRecordShape["essr"];
-}
-
-/** Durable boundary between an authenticated SCS header and its inner stream. */
-export interface PlaintextRecordShape {
-  /** Byte length of the authenticated SCS header and padding. */
-  offset: number;
-}
-
-/** Offset of the inner CESR stream within an authenticated plaintext object. */
-export class PlaintextRecord extends RawRecord<PlaintextRecordShape> implements PlaintextRecordShape {
-  /** Reopening the body skips this many bytes without collecting plaintext. */
-  declare offset: number;
+  /** Original attachment genus, independent of a non-native body version. */
+  declare gvrsn?: Versionage;
 }

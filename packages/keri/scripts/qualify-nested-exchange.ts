@@ -3,7 +3,7 @@ import { b, parseBytes, SerderKERI } from "cesr-ts";
 import { call, run } from "npm:effection@^3.6.0";
 import vectors from "../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { createHabery } from "../src/app/habbing.ts";
-import { publishNests, stageNests } from "../src/db/exchange-nests.ts";
+import { prepareNests, publishNests } from "../src/db/exchange-nests.ts";
 
 /** Explicit executable keeps the frozen source environment independent of PATH. */
 const python = Deno.args[0];
@@ -14,14 +14,13 @@ await run(function*() {
   const hby = yield* createHabery({ name: `qualify-nests-${crypto.randomUUID()}`, temp: true, skipConfig: true });
   try {
     yield* call(async () => {
-      await hby.db.openPayloads();
       for (const vector of vectors.rows) {
         const [frame] = await parseBytes(b(vector.qb64));
         {
           // The actual production publisher preserves the same Python IoSet bytes without private pointers.
-          await stageNests(hby.db, frame.body.said!, [frame]);
+          const wires = await prepareNests([frame]);
           hby.db.env!.transactionSync(() => {
-            publishNests(hby.db, frame.body.said!, frame.body.said!);
+            publishNests(hby.db, frame.body.said!, wires);
             hby.db.exns.pin([frame.body.said!], frame.body as SerderKERI);
           });
           for (const wire of hby.db.enst.getIter([frame.body.said!])) {

@@ -86,6 +86,9 @@ export const suites: Record<string, TestSuite> = {
   "interop-reference-profiles": {
     files: ["test/integration/app/interop-reference-profile.test.ts"],
   },
+  "interop-essr-storage": {
+    files: ["test/integration/app/interop-essr-storage.test.ts"],
+  },
   "interop-acdc-deep": {
     // Cold files share a mutable pinned KERIpy venv; run them in separate sequential processes.
     files: [
@@ -220,7 +223,6 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/koming.test.ts",
       "test/unit/db/mailboxing.test.ts",
       "test/unit/db/oobi-store.test.ts",
-      "test/unit/db/payload-archive.test.ts",
       "test/unit/db/payload-store.test.ts",
       "test/unit/db/reger.test.ts",
       "test/unit/db/registry-evidence.test.ts",
@@ -292,6 +294,7 @@ export const required = [
 /** Maintained external matrices: full includes DID Webs but excludes endurance sweeps. */
 export const interop = [
   "interop-reference-profiles",
+  "interop-essr-storage",
   "interop-parity",
   "interop-keystore-parity",
   "interop-keystore-storage",

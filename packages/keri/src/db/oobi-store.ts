@@ -25,7 +25,7 @@ export interface OobiStore {
 /**
  * Lend one existing typed `oobis.` table until the calling Effection scope ends.
  * Refuse missing/ambiguous targets and tables. No directories, schema/version
- * markers, other tables, key stores or payload archives are initialized.
+ * markers, other tables, key stores are initialized.
  */
 export function* openOobiStore(options: OpenOobiStoreOptions): Operation<OobiStore> {
   if (options.name.trim().length === 0) throw new ValidationError("An existing database name is required");

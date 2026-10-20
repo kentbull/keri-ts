@@ -33,7 +33,7 @@ retains exact source identity, validation and limits at its recorded revision.
 - [KELs](learnings/PROJECT_LEARNINGS_KELS.md): accepted state, delegation and replay.
 - [Exchange](learnings/PROJECT_LEARNINGS_EXCHANGE.md): proofs, multisig and IPEX.
 - [ACDC](learnings/PROJECT_LEARNINGS_ACDC.md): disclosure, TEL and verifier state.
-- [Storage](learnings/PROJECT_LEARNINGS_STORAGE.md): DB parity and payload owners.
+- [Storage](learnings/PROJECT_LEARNINGS_STORAGE.md): DB parity and exchange evidence.
 - [Runtime](learnings/PROJECT_LEARNINGS_RUNTIME.md): scopes, transport and mailboxes.
 - [DID](learnings/PROJECT_LEARNINGS_DID.md): generation, resolution and aliases.
 - [Infrastructure](learnings/PROJECT_LEARNINGS_WITNESS_WATCHER_OBSERVER_INFRA.md):

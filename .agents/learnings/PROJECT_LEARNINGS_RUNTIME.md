@@ -68,7 +68,7 @@ envelope/decision and mailbox authorization captured before optional escrow I/O.
 KRAM may accumulate threshold proofs. Publication owns its committed cue batch
 before notifying request observers; reentrant dispatch cannot steal that batch.
 New correlations also capture already-published output. Each input/escrow operation
-joins its own file and handler cleanup. Reactor owns byte ingress
+joins its actual input and handler cleanup. Reactor owns byte ingress
 and its parser; Oobiery independently owns fetched parsing and its Kevery over the
 same store/reply verifier. Endpoint-role proposals receive concrete Habery/protocol/
 Poster dependencies; commands own delivery workers. Actual callers await input cleanup;

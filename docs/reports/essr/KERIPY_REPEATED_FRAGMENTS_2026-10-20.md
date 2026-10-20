@@ -101,6 +101,12 @@ fragments into one Texter needs a representability check and must not introduce 
 new protocol rejection or payload limit.
 
 A small regression should commit repeated fragments, persist/reopen, then verify
-the original digest and escrow/replay reconstruction. keri-ts will use the smallest
-position-preserving LMDB representation and document this justified departure
-from the reference's set semantics. No filesystem archive is needed to solve it.
+the original digest and escrow/replay reconstruction. keri-ts uses the same physical
+`essrs.` layout: EXN SAID plus a dot and 32-digit hexadecimal ordinal, with
+qualified Texter bytes as the value. Equal values at different positions are
+retained. Focused TS tests cover signed acceptance, restart, escrow retry and
+replay with repeated fragments. A separate test against all three pins confirms
+that KERIpy's typed reader reads the repeated TS rows, and that TS reopens
+ordinary rows written by KERIpy. This is storage interoperability evidence, not
+a claim that the upstream deduplicating writer is fixed. No filesystem archive
+is needed to solve it.
