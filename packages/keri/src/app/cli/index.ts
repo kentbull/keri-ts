@@ -22,6 +22,14 @@ export {
   withHabAndAgentRuntime,
 } from "./common/context.ts";
 export { type EnsuredHabery, ensureHby, setupHby } from "./common/existing.ts";
+export {
+  parseBooleanOption,
+  parseCountOption,
+  parseIntegerOption,
+  parseNumberOption,
+  parseStringListOption,
+  parseStringOption,
+} from "./common/parsing.ts";
 export { writeJsonLine, writeTextLines } from "./common/rendering.ts";
 export { resolveWitnessAuths, type WitnessAuthOptions } from "./common/witness-auth.ts";
 export { dumpEvts } from "./db-dump.ts";

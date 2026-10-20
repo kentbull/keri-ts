@@ -119,7 +119,8 @@ Deno.test("challenge respond and verify round-trip through direct controller del
           headDirPath: bobHeadDirPath,
           signer: alice.pre,
           words: JSON.stringify(words),
-          timeout: 1,
+          // Already accepted responses remain verifiable without starting a wait.
+          timeout: 0,
           pollDelayMs: 25,
         }),
       )

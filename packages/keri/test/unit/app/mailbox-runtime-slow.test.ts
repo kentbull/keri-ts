@@ -22,7 +22,7 @@ import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../src/app/mailbox-sse.ts";
-import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { mailboxQueryTopics, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Kevery } from "../../../src/core/eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
@@ -924,17 +924,27 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
       );
       assertStringIncludes(listed.output.join("\n"), providerPre);
 
-      const updated = yield* testCLICommand(
-        mailboxUpdateCommand({
-          name: clientName,
-          headDirPath: clientHeadDirPath,
-          alias: "alice",
-          witness: providerPre,
-          topic: "/challenge",
-          index: 5,
-        }),
-      );
-      assertEquals(updated.output.at(-1), `${providerPre} /challenge 5`);
+      for (const index of [-1, 0, 5]) {
+        const updated = yield* testCLICommand(
+          mailboxUpdateCommand({
+            name: clientName,
+            headDirPath: clientHeadDirPath,
+            alias: "alice",
+            witness: providerPre,
+            topic: "/challenge",
+            index: String(index),
+          }),
+        );
+        assertEquals(updated.output.at(-1), `${providerPre} /challenge ${index}`);
+        const reopened = yield* createHabery({ name: clientName, headDirPath: clientHeadDirPath, skipConfig: true });
+        try {
+          assertEquals(mailboxQueryTopics(reopened, clientPre, providerPre, ["/challenge"]), {
+            "/challenge": index + 1,
+          });
+        } finally {
+          yield* reopened.close();
+        }
+      }
 
       const debugged = yield* testCLICommand(
         mailboxDebugCommand({

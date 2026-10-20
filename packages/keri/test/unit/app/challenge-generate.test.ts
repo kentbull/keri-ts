@@ -1,7 +1,7 @@
 import { run } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import type { ChallengeResponsePayload } from "../../../src/app/challenging.ts";
-import { challengeGenerateCommand } from "../../../src/app/cli/challenge.ts";
+import { challengeGenerateCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { testCLICommand } from "../../utils.ts";
 
 // @ts-expect-error A challenge response must carry its word list.
@@ -20,4 +20,24 @@ Deno.test("challenge generate emits JSON, string, and newline-delimited outputs"
 
   const words = await run(() => testCLICommand(challengeGenerateCommand({ strength: 128, out: "words" })));
   assertStringIncludes(words.output.at(-1) ?? "", "\n");
+});
+
+Deno.test({
+  name: "challenge options reject invalid supplied values before storage",
+  permissions: { read: false, write: false },
+  fn: async () => {
+    for (const strength of [0, -1, 1.5, null, "", false, Infinity]) {
+      await assertRejects(() => run(() => challengeGenerateCommand({ strength })), Error, "strength");
+    }
+    for (const timeout of [-1, null, "", false, Infinity, 1e308]) {
+      await assertRejects(() => run(() => challengeVerifyCommand({ name: "unopened", timeout })), Error, "timeout");
+    }
+    for (const pollDelayMs of [0, -1, null, "", Infinity]) {
+      await assertRejects(
+        () => run(() => challengeVerifyCommand({ name: "unopened", pollDelayMs })),
+        Error,
+        "pollDelayMs",
+      );
+    }
+  },
 });

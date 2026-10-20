@@ -438,7 +438,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         passcode: options.passcode,
         schema: options.schema || [],
         schemaDir: options.schemaDir || [],
-        port: options.port ? Number(options.port) : 8000,
+        port: options.port,
       }),
     },
   );

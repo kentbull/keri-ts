@@ -1,3 +1,4 @@
+import { agentCommand } from "../src/cli/agent.ts";
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
@@ -8,7 +9,7 @@ import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
-import { mailboxAddCommand, mailboxStartCommand } from "../src/cli/mailbox.ts";
+import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
 interface CmdResult {
@@ -897,4 +898,54 @@ Deno.test("multisig rotation preserves omitted file overrides", () => {
   }
   const join = parseCommandSelection(["multisig", "join", "-n", "store"]);
   assertEquals(join.args.approvalTimeoutSeconds, undefined);
+});
+
+Deno.test({
+  name: "host and mailbox options reject malformed values before storage or listener effects",
+  permissions: { read: false, write: false, net: false },
+  fn: async () => {
+    for (const port of [0, -1, 65536, 80.5, null, "", false, Infinity]) {
+      await assertRejects(() => run(() => agentCommand({ name: "unopened", port })), ValidationError, "port");
+      await assertRejects(
+        () => run(() => mailboxStartCommand({ name: "unopened", alias: "mailbox", port })),
+        ValidationError,
+      );
+    }
+    for (const index of [-2, Number.MAX_SAFE_INTEGER, 1.5, null, "", false, Infinity]) {
+      await assertRejects(
+        () => run(() => mailboxUpdateCommand({ name: "unopened", witness: "witness", topic: "/receipt", index })),
+        ValidationError,
+        "index",
+      );
+    }
+    for (const field of ["schema", "schemaDir"]) {
+      await assertRejects(
+        () => run(() => agentCommand({ name: "unopened", [field]: ["schema.json", 7] })),
+        ValidationError,
+        field,
+      );
+    }
+  },
+});
+
+Deno.test("host, mailbox and challenge dispatch preserves supplied numeric syntax", () => {
+  const agent = parseCommandSelection(["agent", "-n", "store", "--port", "0"]);
+  assertEquals(agent.args.port, "0");
+  const mailbox = parseCommandSelection([
+    "mailbox",
+    "update",
+    "-n",
+    "store",
+    "-a",
+    "aid",
+    "-w",
+    "witness",
+    "-t",
+    "/receipt",
+    "-i",
+    "0",
+  ]);
+  assertEquals(mailbox.args.index, "0");
+  const challenge = parseCommandSelection(["challenge", "generate", "--strength", "1.5"]);
+  assertEquals(challenge.args.strength, "1.5");
 });
