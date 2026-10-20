@@ -37,6 +37,7 @@ Deno.test("app/runtime-responder - receipt, witness, reply, and replay cues forw
       assertEquals(
         runtime.postman.evts.toArray(),
         ["/receipt", "/receipt", "/reply", "/replay"].map((topic, index) => ({
+          kin: "msg" as const,
           src: sender.pre,
           dest: recipient.pre,
           topic,
