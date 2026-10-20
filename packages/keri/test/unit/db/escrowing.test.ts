@@ -123,7 +123,7 @@ Deno.test("db/escrowing - Broker escrows and successfully unescrows state notice
           cigars: [cigar],
           tsgs: [tsg],
         }),
-        { added: true, changed: true },
+        true,
       );
 
       let called = 0;
@@ -136,7 +136,7 @@ Deno.test("db/escrowing - Broker escrows and successfully unescrows state notice
           assertEquals(tsgs[0].pre, tsg.pre);
           assertEquals(cigars.length, 1);
           assertEquals(cigars[0].verfer?.qb64, cigar.verfer?.qb64);
-          return { decision: acceptEscrow(), changed: false };
+          return acceptEscrow();
         },
       );
 
@@ -171,24 +171,10 @@ Deno.test("db/escrowing - Broker keeps escrowed notices on typed retry decisions
         tsgs: [makeTsg(serder.raw)],
       });
 
-      const cigar = makeCigar(serder.raw);
-      const retry = () =>
-        broker.retryStateNotices("txn", (args) => {
-          const retained = broker.escrowStateNotice({
-            typ: "txn",
-            pre: "Eregistry",
-            aid: "Eaid",
-            serder,
-            diger,
-            dater,
-            tsgs: args.tsgs,
-            cigars: [cigar],
-          });
-          assertEquals(retained.added, false, "Additional proof does not create a second membership");
-          return { decision: keepEscrow("recoverableError", "retry later"), changed: retained.changed };
-        });
-      assertEquals(retry(), { processed: 1, done: true, changed: true }, "New retained proof is semantic progress");
-      assertEquals(retry(), { processed: 1, done: true, changed: false }, "Identical proof is stable");
+      broker.retryStateNotices(
+        "txn",
+        () => keepEscrow("recoverableError", "retry later"),
+      );
 
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 1);
     } finally {
@@ -212,8 +198,8 @@ Deno.test("Broker combines equivalent ordinal proofs independently of primitive 
         const compact = new TransIdxSigGroup(proof.prefixer, NumberPrimitive.fromNum(17n), proof.diger, [other]);
         const store = (tsgs: TransIdxSigGroup[]) =>
           broker.escrowStateNotice({ typ: "registry-mae", pre: "Eregistry", aid: "Eaid", serder, diger, dater, tsgs });
-        assertEquals(store([fixed]), { added: true, changed: true });
-        assertEquals(store([compact]), { added: false, changed: true });
+        assertEquals(store([fixed]), true);
+        assertEquals(store([compact]), false);
         // Parsing may hydrate the same explicit 0A bytes as Number in either attachment genus.
         const explicit = new TransIdxSigGroup(
           proof.prefixer,
@@ -221,7 +207,7 @@ Deno.test("Broker combines equivalent ordinal proofs independently of primitive 
           proof.diger,
           proof.sigers,
         );
-        assertEquals(store([explicit]), { added: false, changed: false });
+        assertEquals(store([explicit]), false);
         assertEquals(
           broker.tigerdb.get([diger.qb64, proof.pre, "00000000000000000000000000000011", proof.said]).length,
           2,
@@ -232,10 +218,10 @@ Deno.test("Broker combines equivalent ordinal proofs independently of primitive 
             assertEquals(tsgs[0].sn, 17n);
             assertEquals(tsgs[0].sigers.map((siger) => siger.index), [0, 1]);
             const retained = store(tsgs);
-            assertEquals(retained, { added: false, changed: false });
-            return { decision: keepEscrow("recoverableError"), changed: retained.changed };
+            assertEquals(retained, false);
+            return keepEscrow("recoverableError");
           }),
-          { processed: 1, done: true, changed: false },
+          { processed: 1, done: true },
         );
         broker.escrowdb.rem(["registry-mae", "Eregistry", "Eaid"], diger);
       }
@@ -271,22 +257,14 @@ Deno.test("db/escrowing - Broker propagates processing failures and drops only o
         broker.escrowdb.rem = () => {
           throw failure;
         };
-        assertEquals(
-          assertThrows(() =>
-            broker.retryStateNotices("txn", () => ({ decision: dropEscrow("processingError"), changed: false }))
-          ),
-          failure,
-        );
+        assertEquals(assertThrows(() => broker.retryStateNotices("txn", () => dropEscrow("processingError"))), failure);
         assertEquals(warnings, [], "A failed index removal must not claim an ejection");
       } finally {
         broker.escrowdb.rem = rem;
       }
       assertEquals(
-        broker.retryStateNotices(
-          "txn",
-          () => ({ decision: dropEscrow("processingError", "Untrusted state attester."), changed: false }),
-        ),
-        { processed: 1, done: true, changed: true },
+        broker.retryStateNotices("txn", () => dropEscrow("processingError", "Untrusted state attester.")),
+        { processed: 1, done: true },
       );
       assertEquals(broker.escrowdb.get(["txn", "Eregistry", "Eaid"]).length, 0);
       assertExists(broker.serderdb.get([diger.qb64]));
@@ -339,7 +317,7 @@ Deno.test("db/escrowing - Broker removes stale escrow entries without purging st
         "txn",
         () => {
           called += 1;
-          return { decision: acceptEscrow(), changed: false };
+          return acceptEscrow();
         },
       );
 
@@ -390,7 +368,7 @@ Deno.test("db/escrowing - Broker preserves malformed signer evidence instead of 
         () =>
           broker.retryStateNotices("txn", () => {
             called = true;
-            return { decision: acceptEscrow(), changed: false };
+            return acceptEscrow();
           }),
         Error,
         "Invalid hex ordinal",
@@ -457,16 +435,14 @@ Deno.test("Broker typed finite retry advances kept rows and preserves failures",
         broker.retryStateNotices("registry-mae", ({ serder, cigars }) => {
           assertEquals(cigars.length, 1);
           visited.push(noticePrefix(serder));
-          let changed = false;
           if (visited.length === 1) {
             add("E00");
             add("E99");
-            changed = true;
           }
-          return { decision: keepEscrow("recoverableError"), changed };
+          return keepEscrow("recoverableError");
         }, { maxRows: 2, now: stamp });
-      assertEquals(retry(), { processed: 2, done: false, changed: true });
-      assertEquals(retry(), { processed: 1, done: true, changed: false });
+      assertEquals(retry(), { processed: 2, done: false });
+      assertEquals(retry(), { processed: 1, done: true });
       assertEquals(visited, ["E01", "E02", "E03"], "Insertions cannot extend the captured horizon");
       const failure = new Error("storage unavailable");
       assertThrows(
@@ -482,9 +458,9 @@ Deno.test("Broker typed finite retry advances kept rows and preserves failures",
       assertEquals(
         broker.retryStateNotices("registry-mae", ({ serder }) => {
           next.push(noticePrefix(serder));
-          return { decision: next.length === 1 ? acceptEscrow() : dropEscrow("processingError"), changed: false };
+          return next.length === 1 ? acceptEscrow() : dropEscrow("processingError");
         }, { now: stamp }),
-        { processed: 5, done: true, changed: true },
+        { processed: 5, done: true },
       );
       assertEquals(next, ["E00", "E01", "E02", "E03", "E99"], "Next pass includes insertions behind checkpoint");
       assertEquals(broker.escrowdb.cnt(), 0);
@@ -494,7 +470,7 @@ Deno.test("Broker typed finite retry advances kept rows and preserves failures",
       const expiry = (now: string) =>
         broker.retryStateNotices("registry-mae", () => {
           calls++;
-          return { decision: keepEscrow("recoverableError"), changed: false };
+          return keepEscrow("recoverableError");
         }, { now });
       assertEquals(expiry("2026-10-13T00:00:01.000001+00:00").processed, 1);
       assertEquals(expiry("2026-10-13T00:00:01.000002+00:00").processed, 1);
@@ -530,11 +506,11 @@ Deno.test("Broker restarts its family horizon after an interrupted sweep", async
       let dependencyAccepted = false;
       assertEquals(
         broker.retryStateNotices("registry-mae", ({ serder }) => {
-          if (noticePrefix(serder) === "EA") return { decision: keepEscrow("recoverableError"), changed: false };
+          if (noticePrefix(serder) === "EA") return keepEscrow("recoverableError");
           dependencyAccepted = true;
-          return { decision: acceptEscrow(), changed: true };
+          return acceptEscrow();
         }, { maxRows: 2 }),
-        { processed: 2, done: false, changed: true },
+        { processed: 2, done: false },
       );
       const failure = new Error("Interrupted second page");
       assertEquals(
@@ -549,12 +525,9 @@ Deno.test("Broker restarts its family horizon after an interrupted sweep", async
       assertEquals(
         broker.retryStateNotices("registry-mae", ({ serder }) => {
           visited.push(noticePrefix(serder));
-          return {
-            decision: dependencyAccepted ? acceptEscrow() : keepEscrow("recoverableError"),
-            changed: false,
-          };
+          return dependencyAccepted ? acceptEscrow() : keepEscrow("recoverableError");
         }),
-        { processed: 2, done: true, changed: true },
+        { processed: 2, done: true },
       );
       assertEquals(visited, ["EA", "EC"], "Restart revisits earlier rows unblocked before the failure");
     } finally {

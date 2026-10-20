@@ -2,7 +2,7 @@
 "keri-ts": patch
 ---
 
-Return committed recovery progress from protocol escrow sweeps, including
-dependency migration and retained proofs. Complete finite TSN scans before
-reporting an unchanged sweep. Preserve pending TEL inceptions and retain evidence
-when unexpected processing or storage failures propagate.
+Preserve pending TEL inceptions and retain evidence when unexpected processing
+or storage failures propagate. Complete finite TSN family scans and use the
+numeric proof key shared by both recorded KERIpy references, combining equivalent
+ordinal encodings without duplicating partial signatures on retry.

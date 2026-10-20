@@ -172,10 +172,9 @@ Deno.test("vdr/eventing - escrows out-of-order issue and unescrows after registr
       } finally {
         reger.tvts.put = put;
       }
-      assertEquals(tvy.processEscrows(), true);
+      tvy.processEscrows();
       assertEquals(reger.oots.getOn(iss.pre!, 0), []);
       assertEquals(reger.tels.getOn(iss.pre!, 0)?.qb64, iss.said);
-      assertEquals(tvy.processEscrows(), false);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);
@@ -243,7 +242,7 @@ Deno.test("Tevery retains pending inception and completes a TSN horizon larger t
       assertEquals(producing.processEvent({ serder: vcp, ...anchor }).kind, "accept");
       const { tvy, reger } = runtime.vdr!;
       assertEquals(tvy.processEvent({ serder: vcp, ...anchor }).kind, "escrow");
-      assertEquals(tvy.processEscrows(), false, "Replaying the same unavailable KEL anchor retains inception");
+      tvy.processEscrows();
       assertEquals(reger.taes.getOn(vcp.pre!, 0), [vcp.said]);
 
       const state = producing.tevers.get(vcp.pre!)!.state().asDict();
@@ -257,14 +256,13 @@ Deno.test("Tevery retains pending inception and completes a TSN horizon larger t
         yield* runtime.reactor.processBytes(issuer.endorse(last));
       }
       assertEquals(reger.txnsb.escrowdb.cnt(), 65);
-      assertEquals(tvy.processEscrows(), false, "Stable pending notices do not report transient Baser proof writes");
+      tvy.processEscrows();
       for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
-      assertEquals(tvy.processEscrows(), true);
+      tvy.processEscrows();
       assertEquals(reger.taes.getOn(vcp.pre!, 0), []);
       assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
       assertEquals(reger.txnsb.escrowdb.cnt(), 0, "A complete sweep processes all 65 notices");
       assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, last!.said);
-      assertEquals(tvy.processEscrows(), false);
     } finally {
       yield* runtime.close();
       yield* target.close(true);

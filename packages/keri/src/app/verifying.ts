@@ -288,17 +288,11 @@ export class Verifier {
     return this.reger.mse.put([credentialSaid(args.creder)], nowDater());
   }
 
-  /**
-   * Replay verifier escrows in KERIpy order: missing chain, schema, registry.
-   *
-   * @returns Whether acceptance, rejection, expiry or migration removed pending membership.
-   * Repeated dependency cues and identical credential/proof writes do not count as progress.
-   */
-  processEscrows(): boolean {
-    const chain = this.processEscrow(this.reger.mce, "missingChain", this.missingIssuerTimeoutMs);
-    const schema = this.processEscrow(this.reger.mse, "missingSchema", this.missingIssuerTimeoutMs);
-    const registry = this.processEscrow(this.reger.mre, "missingRegistry", this.missingRegistryTimeoutMs);
-    return chain || schema || registry;
+  /** Replay verifier escrows in KERIpy order: missing chain, schema, registry. */
+  processEscrows(): void {
+    this.processEscrow(this.reger.mce, "missingChain", this.missingIssuerTimeoutMs);
+    this.processEscrow(this.reger.mse, "missingSchema", this.missingIssuerTimeoutMs);
+    this.processEscrow(this.reger.mre, "missingRegistry", this.missingRegistryTimeoutMs);
   }
 
   /** Save a fully processed credential and KERIpy-compatible indexes. */
@@ -370,14 +364,12 @@ export class Verifier {
    * @param db Pending credential identities and their original admission timestamps.
    * @param expectedReason Dependency family whose membership this pass owns.
    * @param timeoutMs Maximum pending age in milliseconds; equality remains eligible.
-   * @returns Whether this pass removed successfully consumed, migrated or ejected membership.
    */
   private processEscrow(
     db: { getTopItemIter(): Iterable<[string[], Dater]>; rem(keys: string[]): boolean },
     expectedReason: VerifierEscrowReason,
     timeoutMs: number,
-  ): boolean {
-    let changed = false;
+  ): void {
     for (const [keys, dater] of db.getTopItemIter()) {
       const said = keys[0];
       if (!said) {
@@ -385,7 +377,6 @@ export class Verifier {
       }
       if (Date.now() - new Date(dater.dts).getTime() > timeoutMs) {
         if (db.rem([said])) {
-          changed = true;
           consoleLogger.warn("Verifier ejected credential escrow", {
             family: expectedReason,
             said,
@@ -400,7 +391,6 @@ export class Verifier {
       const decision = this.processCredential({ creder, prefixer, seqner, saider });
       if (decision.kind === "accept" || decision.kind === "reject") {
         const removed = db.rem([said]);
-        changed = removed || changed;
         if (removed && decision.kind === "reject") {
           consoleLogger.warn("Verifier ejected credential escrow", {
             family: expectedReason,
@@ -415,10 +405,9 @@ export class Verifier {
         continue;
       }
       if (decision.reason !== expectedReason) {
-        changed = db.rem([said]) || changed;
+        db.rem([said]);
       }
     }
-    return changed;
   }
 
   private isCredentialStateStale(state: VcStateRecordShape): boolean {

@@ -760,7 +760,6 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
             });
             yield* suspend();
           }
-          return false;
         };
         const task = run(function*() {
           const result = yield* new TCPMessenger(runtime.protocol, options.clock).stream(url, source, {

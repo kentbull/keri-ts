@@ -14,6 +14,12 @@ export function registerCredentialCmds(
   registerHookCmds(program, dispatch);
 }
 
+/**
+ * Register credential commands and their operator inputs before lazy execution.
+ *
+ * @param program Borrowed Commander root receiving the `vc` subtree.
+ * @param dispatch Receives parsed command arguments; handlers validate domain values before I/O.
+ */
 function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   const vc = program.command("vc").description("Credential operations");
 
@@ -130,7 +136,13 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
     addStoreOptions(
       vc.command("import")
         .description("Import a CESR credential stream")
-        .option("--in <file>", "Input stream file; defaults to stdin"),
+        .option("--in <file>", "Input stream file; defaults to stdin")
+        .option(
+          "--settlement-timeout-ms <milliseconds>",
+          "Positive post-input settlement timeout; fractions floor with a 1 ms minimum",
+          Number,
+          5_000,
+        ),
     ),
     dispatch,
     "vc.import",

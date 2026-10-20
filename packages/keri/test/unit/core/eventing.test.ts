@@ -792,7 +792,7 @@ Deno.test("Kevery.processEscrowUnverWitness keeps missing-event witness receipts
       kvy.processReceipt(witnessReceiptEnvelope(witness, event, false));
       assertEquals(remote.db.uwes.cnt(), 1);
 
-      assertEquals(kvy.processEscrowUnverWitness(), false);
+      kvy.processEscrowUnverWitness();
       assertEquals(remote.db.uwes.cnt(), 1);
       assertEquals(
         remote.db.wigs.get(dgKey(controller.pre, event.said)).length,
@@ -808,8 +808,7 @@ Deno.test("Kevery.processEscrowUnverWitness keeps missing-event witness receipts
         ssts: [],
         local: false,
       });
-      assertEquals(kvy.processEscrowUnverWitness(), true);
-      assertEquals(kvy.processEscrowUnverWitness(), false);
+      kvy.processEscrowUnverWitness();
 
       assertEquals(remote.db.uwes.cnt(), 0);
       assertEquals(
@@ -2362,7 +2361,7 @@ Deno.test("Kevery reports a rejected escrow only after its removal commits", asy
         assertEquals(hby.db.inWriteTransaction, false);
         assertEquals(hby.db.ooes.getOn(hab.pre, 2), []);
       }, () => {
-        assertEquals(kvy.processEscrowOutOfOrders(), false);
+        kvy.processEscrowOutOfOrders();
         assertEquals(warnings, 0, "An unchanged missing predecessor remains silent.");
         acceptEvent(kvy, hab, event("1"), true);
         const failure = new Error("escrow removal failed");
@@ -2371,8 +2370,7 @@ Deno.test("Kevery reports a rejected escrow only after its removal commits", asy
         }, () => assertEquals(assertThrows(() => kvy.processEscrowOutOfOrders()), failure));
         assertEquals(warnings, 0, "A rolled-back removal cannot report an ejection.");
         assertEquals(hby.db.ooes.getOn(hab.pre, 2), [later.said]);
-        assertEquals(kvy.processEscrowOutOfOrders(), true);
-        assertEquals(kvy.processEscrowOutOfOrders(), false);
+        kvy.processEscrowOutOfOrders();
         assertEquals(warnings, 1);
       });
     } finally {
@@ -2654,10 +2652,9 @@ Deno.test("Kevery.processEscrows preserves the KERIpy-compatible sweep order", a
           originals.set(method, target[method]);
           target[method] = (() => {
             order.push(method);
-            return method === "processEscrowOutOfOrders";
           }) as never;
         }
-        assertEquals(kvy.processEscrows(), true);
+        kvy.processEscrows();
       } finally {
         for (const method of methods) {
           target[method] = originals.get(method);
@@ -2774,22 +2771,9 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
       withPatchedMethod(hby.db.dtss, "put", () => {
         throw new Error("same-bucket replay must not rewrite escrow material");
-      }, () => assertEquals(kvy.processEscrowPartialSigs(), false));
+      }, () => kvy.processEscrowPartialSigs());
       assertEquals(hby.db.pses.getOn(hab.pre, 1), [serder.said]);
       assertEquals(cues.length, 0);
-      const repair = { pre: hab.pre, said: serder.said!, sourceSeal: sourceSealFor(kever.serder) };
-      // A still-pending decision may repair evidence needed by a different row.
-      // Report the committed value change once, not each repeated pin.
-      withPatchedMethod(kvy, "decideEvent", () => ({ ...partial, sourceSealRepairs: [repair] }), () => {
-        assertEquals(kvy.processEscrowPartialSigs(), true);
-        assertEquals(kvy.processEscrowPartialSigs(), false);
-      });
-      hby.db.aess.rem(key);
-      // An intermediate write removed again in the same turn is no progress.
-      withPatchedMethod(kvy, "decideEvent", () => ({
-        ...partial,
-        sourceSealRepairs: [repair, { ...repair, sourceSeal: null }],
-      }), () => assertEquals(kvy.processEscrowPartialSigs(), false));
       hby.db.sigs.put(key, [sigers[1]]);
 
       const accepted = kvy.decideEvent({
@@ -2829,8 +2813,7 @@ Deno.test("Kevery applies weighted threshold satisfaction to local ixn signature
       assertEquals(hby.db.getFel(hab.pre, 1), null);
       assertEquals(hby.db.fons.get(key), null);
       assertEquals(cues.length, 0);
-      assertEquals(kvy.processEscrowPartialSigs(), true);
-      assertEquals(kvy.processEscrowPartialSigs(), false);
+      kvy.processEscrowPartialSigs();
       assertEquals(hby.db.getKever(hab.pre)?.sn, 1);
       assertEquals(hby.db.getFel(hab.pre, 1), serder.said);
       assertEquals(hby.db.pses.getOn(hab.pre, 1), []);

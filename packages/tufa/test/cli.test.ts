@@ -175,6 +175,54 @@ Deno.test("tufa/cli - parsed command names all have registered handlers", () => 
   assertEquals(handlerNames, dispatchedNames);
 });
 
+Deno.test("tufa/cli - credential import parses its default and explicit settlement deadline", () => {
+  const defaults = parseCommandSelection(["vc", "import", "-n", "store"]);
+  assertEquals(defaults.name, "vc.import");
+  assertEquals(defaults.args.settlementTimeoutMs, 5_000);
+  for (const value of ["0.5", "1", "25.9", "12000"]) {
+    const selected = parseCommandSelection([
+      "vc",
+      "import",
+      "-n",
+      "store",
+      "--in",
+      "bundle.cesr",
+      "--settlement-timeout-ms",
+      value,
+    ]);
+    assertEquals(selected.args.settlementTimeoutMs, Number(value));
+    assertEquals(selected.args.inPath, "bundle.cesr");
+  }
+});
+
+Deno.test({
+  name: "tufa/cli - invalid credential settlement deadlines fail before input or store I/O",
+  permissions: { read: false, write: false },
+  fn: async () => {
+    // Denied filesystem access makes opening either the store or input a distinct failure.
+    for (const value of ["0", "-1", "NaN", "Infinity", "-Infinity", "invalid"]) {
+      const selected = parseCommandSelection([
+        "vc",
+        "import",
+        "-n",
+        "unopened",
+        "--head-dir",
+        "/unopened-import-store",
+        "--in",
+        "/unread-import.cesr",
+        "--settlement-timeout-ms",
+        value,
+      ]);
+      const handler = createCmdHandlers().get(selected.name)!;
+      await assertRejects(
+        () => run(() => handler(selected.args)),
+        ValidationError,
+        "--settlement-timeout-ms must be finite and positive",
+      );
+    }
+  },
+});
+
 Deno.test("tufa/cli - version command prints display version", async () => {
   const captured = await captureConsoleLog(() => run(() => tufa(["version"])));
 

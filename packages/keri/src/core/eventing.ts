@@ -264,62 +264,44 @@ export class Kevery {
    * Exceptions are reserved for invariant/corruption cases during application.
    */
   processEvent(envelope: KeverEventEnvelope): KeverDecision {
-    return this.settleEventDecision(envelope).decision;
+    return this.settleEventDecision(envelope);
   }
 
-  /**
-   * Commit event effects and replay progress before publishing live state and cues.
-   *
-   * @param input A live envelope or the coordinates of one stored escrow entry.
-   * @returns The protocol decision and whether replay changed membership or a
-   *   delegation hint. The result is visible only after the owning commit.
-   */
-  private settleEventDecision(input: KeverEventEnvelope): { decision: KeverDecision; changed: boolean };
-  private settleEventDecision(input: EventEscrowEntry): { decision: KeverDecision | null; changed: boolean };
+  /** Commit event effects and any replay bucket change before publishing live state and cues. */
+  private settleEventDecision(envelope: KeverEventEnvelope): KeverDecision;
+  private settleEventDecision(read: () => KeverEventEnvelope | null, escrow: EventEscrowEntry): KeverDecision | null;
   private settleEventDecision(
-    input: KeverEventEnvelope | EventEscrowEntry,
-  ): { decision: KeverDecision | null; changed: boolean } {
+    input: KeverEventEnvelope | (() => KeverEventEnvelope | null),
+    escrow?: EventEscrowEntry,
+  ): KeverDecision | null {
     const env = this.db.env!;
     if (this.db.inWriteTransaction) {
       throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
     }
-    const escrow = "kind" in input ? input : undefined;
     let metadata: EventMetadata | undefined;
 
     const write = () => {
-      // Hydration and hint repair share the decision's writer. A repaired hint
-      // matters even when another dependency keeps the event in the same bucket.
-      const key = escrow ? `${escrow.pre}.${escrow.said}` : null;
-      const priorSeal = key ? this.sourceSealValue(key) : null;
-      const envelope = "serder" in input ? input : this.rehydrateEscrowEnvelope(input.kind, input.pre, input.said);
-      let changed = false;
+      // Replay hydration may repair an existing delegation source hint; it belongs to this writer too.
+      const envelope = typeof input === "function" ? input() : input;
       if (!envelope) {
-        if (escrow) changed = this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said) || changed;
-        return { decision: null, changed };
+        if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
+        return null;
       }
       const decision = this.decideEvent(envelope);
       // A still-pending replay keeps its existing row and emits no additional cues.
       if (escrow && decision.kind === "escrow" && decision.reason === escrow.kind) {
-        const seals = new Map([[key!, priorSeal]]);
-        for (const repair of decision.sourceSealRepairs ?? []) {
-          const repairKey = `${repair.pre}.${repair.said}`;
-          if (!seals.has(repairKey)) seals.set(repairKey, this.sourceSealValue(repairKey));
-        }
         this.writeSourceSealRepairs(decision);
-        // Hydration may discover a hint that validation removes again. Only
-        // retained differences justify another sweep after this commit.
-        changed = [...seals].some(([sealKey, previous]) => this.sourceSealValue(sealKey) !== previous);
-        return { decision, changed };
+        return decision;
       }
       metadata = this.eventMetadata(decision);
       this.writeEventDecision(decision, metadata);
-      if (escrow) changed = this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said) || changed;
-      return { decision, changed };
+      if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
+      return decision;
     };
-    const result = env.transactionSync(write);
+    const decision = env.transactionSync(write);
     this.publishEventState(metadata?.accepted);
     if (metadata?.cues.length) this.cues.extend(metadata.cues);
-    return result;
+    return decision;
   }
 
   /**
@@ -998,28 +980,13 @@ export class Kevery {
     }
   }
 
-  /**
-   * Apply delegation-hint discoveries under the processing owner's writer.
-   *
-   * @param decision Validity decision carrying concrete hint repairs.
-   */
+  /** Apply concrete delegation-hint discoveries only under the processing owner's write phase. */
   private writeSourceSealRepairs(decision: KeverDecision): void {
     for (const { pre, said, sourceSeal } of decision.sourceSealRepairs ?? []) {
       const key = dgKey(pre, said);
       if (sourceSeal) this.db.aess.pin(key, [sourceSeal.s, sourceSeal.d]);
       else this.db.aess.rem(key);
     }
-  }
-
-  /**
-   * Read the delegation hint values used by a later event validation.
-   *
-   * @param key Database digest key for the delegated event.
-   * @returns Anchoring sequence number and digest, or null when no hint exists.
-   */
-  private sourceSealValue(key: string): string | null {
-    const seal = this.db.aess.get(key);
-    return seal ? `${seal[0].num}:${seal[1].qb64}` : null;
   }
 
   /** Describe a clone-order anomaly; storage metadata does not publish protocol work. */
@@ -1031,12 +998,9 @@ export class Kevery {
     return [{ kin: "noticeBadCloneFN", serder: log.serder, fn: prepared.fn, firner: log.frc.f, dater: log.frc.dt }];
   }
 
-  /**
-   * Reprocess one pass of out-of-order escrowed events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowOutOfOrders(): boolean {
-    return this.processOrdinalEscrow("ooo");
+  /** Reprocess one pass of out-of-order escrowed events. */
+  processEscrowOutOfOrders(): void {
+    this.processOrdinalEscrow("ooo");
   }
 
   /**
@@ -1047,11 +1011,8 @@ export class Kevery {
    * - rebuild detached witness signatures from escrow material
    * - validate expiry and partial-witness state
    * - accept/drop/remove or keep for a later pass
-   *
-   * @returns Whether a receipt/query was accepted or removed this pass.
    */
-  processEscrowUnverWitness(): boolean {
-    let changed = false;
+  processEscrowUnverWitness(): void {
     const entries = [...this.db.uwes.getTopItemIter()] as Array<
       [string[], number, string[]]
     >;
@@ -1074,7 +1035,6 @@ export class Kevery {
         case "accept":
         case "drop":
           if (this.db.uwes.remOn([pre], sn, couple)) {
-            changed = true;
             logEscrowDecision(`Kevery UWE pre=${pre} sn=${sn} said=${said}`, decision);
           }
           break;
@@ -1082,7 +1042,6 @@ export class Kevery {
           break;
       }
     }
-    return changed;
   }
 
   /**
@@ -1095,11 +1054,8 @@ export class Kevery {
    * - first try partial-witness promotion, then fall back to accepted-event
    *   receipt handling
    * - accept/drop/remove or keep for a later pass
-   *
-   * @returns Whether a receipt/query was accepted or removed this pass.
    */
-  processEscrowUnverNonTrans(): boolean {
-    let changed = false;
+  processEscrowUnverNonTrans(): void {
     const entries = [...this.db.ures.getTopItemIter()];
     for (const [keys, triple] of entries) {
       const pre = keys[0];
@@ -1120,7 +1076,6 @@ export class Kevery {
         case "accept":
         case "drop":
           if (this.db.ures.rem([pre, snh], triple)) {
-            changed = true;
             logEscrowDecision(`Kevery URE pre=${pre} sn=${sn} said=${diger.qb64}`, decision);
           }
           break;
@@ -1128,7 +1083,6 @@ export class Kevery {
           break;
       }
     }
-    return changed;
   }
 
   /**
@@ -1143,11 +1097,8 @@ export class Kevery {
    * - validate expiry and the accepted receipted event
    * - validate the receiptor seal and establishment key state
    * - accept/drop/remove or keep for a later pass
-   *
-   * @returns Whether a receipt/query was accepted or removed this pass.
    */
-  processEscrowUnverTrans(): boolean {
-    let changed = false;
+  processEscrowUnverTrans(): void {
     const entries = [...this.db.vres.getTopItemIter()];
     for (const [keys, quintuple] of entries) {
       const pre = keys[0];
@@ -1165,7 +1116,6 @@ export class Kevery {
         case "accept":
         case "drop":
           if (this.db.vres.rem([pre, snh], quintuple)) {
-            changed = true;
             logEscrowDecision(`Kevery VRE pre=${pre} sn=${sn} said=${quintuple[0].qb64}`, decision);
           }
           break;
@@ -1173,47 +1123,31 @@ export class Kevery {
           break;
       }
     }
-    return changed;
   }
 
-  /**
-   * Reprocess one pass of partially delegated events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowPartialDels(): boolean {
-    return this.processOrdinalEscrow("partialDels");
+  /** Reprocess one pass of partially delegated events. */
+  processEscrowPartialDels(): void {
+    this.processOrdinalEscrow("partialDels");
   }
 
-  /**
-   * Reprocess one pass of partially witnessed events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowPartialWigs(): boolean {
-    return this.processOrdinalEscrow("partialWigs");
+  /** Reprocess one pass of partially witnessed events. */
+  processEscrowPartialWigs(): void {
+    this.processOrdinalEscrow("partialWigs");
   }
 
-  /**
-   * Reprocess one pass of partially signed events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowPartialSigs(): boolean {
-    return this.processOrdinalEscrow("partialSigs");
+  /** Reprocess one pass of partially signed events. */
+  processEscrowPartialSigs(): void {
+    this.processOrdinalEscrow("partialSigs");
   }
 
-  /**
-   * Reprocess one pass of likely duplicitous events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowDuplicitous(): boolean {
-    return this.processOrdinalEscrow("duplicitous");
+  /** Reprocess one pass of likely duplicitous events. */
+  processEscrowDuplicitous(): void {
+    this.processOrdinalEscrow("duplicitous");
   }
 
-  /**
-   * Reprocess one pass of locally delegable pending events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowDelegables(): boolean {
-    return this.processSetEscrow("delegables");
+  /** Reprocess one pass of locally delegable pending events. */
+  processEscrowDelegables(): void {
+    this.processSetEscrow("delegables");
   }
 
   /**
@@ -1224,11 +1158,8 @@ export class Kevery {
    * - reload the escrowed query body and endorsements
    * - replay the query through the same live decision logic
    * - clear escrow material on `accept` and `drop`, keep it on `keep`
-   *
-   * @returns Whether a receipt/query was accepted or removed this pass.
    */
-  processQueryNotFound(): boolean {
-    let changed = false;
+  processQueryNotFound(): void {
     const entries = [...this.db.qnfs.getTopItemIter()];
     for (const [keys, escrowedSaid] of entries) {
       const requester = keys[0];
@@ -1245,7 +1176,6 @@ export class Kevery {
         case "drop": {
           const removed = this.db.qnfs.rem([requester, qsaid], escrowedSaid);
           this.clearEscrowedQueryMaterial(requester, qsaid);
-          changed = removed || changed;
           if (removed) logEscrowDecision(`Kevery QNF requester=${requester} said=${qsaid}`, decision);
           break;
         }
@@ -1253,15 +1183,11 @@ export class Kevery {
           break;
       }
     }
-    return changed;
   }
 
-  /**
-   * Reprocess one pass of misfit events.
-   * @returns Whether committed membership or delegation hints changed.
-   */
-  processEscrowMisfits(): boolean {
-    return this.processSetEscrow("misfit");
+  /** Reprocess one pass of misfit events. */
+  processEscrowMisfits(): void {
+    this.processSetEscrow("misfit");
   }
 
   /**
@@ -1269,25 +1195,18 @@ export class Kevery {
    *
    * The call ordering mirrors KERIpy's general escrow sweep. Delegable events
    * are promoted only by explicit approval handling via processEscrowDelegables.
-   * Each family visits its captured rows; newly created dependencies can require
-   * another sweep. Every family runs even after an earlier one changes state.
-   *
-   * @returns Whether committed membership, accepted evidence, or delegation hints
-   *   changed. Unchanged pending work and emitted cues do not count.
    */
-  processEscrows(): boolean {
-    let changed = false;
-    changed = this.processEscrowOutOfOrders() || changed;
-    changed = this.processEscrowUnverWitness() || changed;
-    changed = this.processEscrowUnverNonTrans() || changed;
-    changed = this.processEscrowUnverTrans() || changed;
-    changed = this.processEscrowPartialDels() || changed;
-    changed = this.processEscrowPartialWigs() || changed;
-    changed = this.processEscrowPartialSigs() || changed;
-    changed = this.processEscrowDuplicitous() || changed;
-    changed = this.processEscrowMisfits() || changed;
-    changed = this.processQueryNotFound() || changed;
-    return changed;
+  processEscrows(): void {
+    this.processEscrowOutOfOrders();
+    this.processEscrowUnverWitness();
+    this.processEscrowUnverNonTrans();
+    this.processEscrowUnverTrans();
+    this.processEscrowPartialDels();
+    this.processEscrowPartialWigs();
+    this.processEscrowPartialSigs();
+    this.processEscrowDuplicitous();
+    this.processEscrowMisfits();
+    this.processQueryNotFound();
   }
 
   /**
@@ -2923,12 +2842,8 @@ export class Kevery {
    * These families are keyed by `(pre, sn)` because replay is driven by event
    * sequence position first, with duplicate rows distinguishing alternative
    * event digests at that position.
-   *
-   * @param kind Concrete escrow family to replay.
-   * @returns Whether any captured entry committed a membership or hint change.
    */
-  private processOrdinalEscrow(kind: EscrowKind): boolean {
-    let changed = false;
+  private processOrdinalEscrow(kind: EscrowKind): void {
     const entries = (() => {
       switch (kind) {
         case "ooo":
@@ -2961,9 +2876,8 @@ export class Kevery {
       if (!pre) {
         continue;
       }
-      changed = this.replayEscrowEntry(kind, pre, on, said) || changed;
+      this.replayEscrowEntry(kind, pre, on, said);
     }
-    return changed;
   }
 
   /**
@@ -2971,12 +2885,8 @@ export class Kevery {
    *
    * These families are keyed by identifier only because they represent
    * non-ordinal follow-up work such as delegation approval or misfit replay.
-   *
-   * @param kind Concrete escrow family to replay.
-   * @returns Whether any captured entry committed a membership or hint change.
    */
-  private processSetEscrow(kind: EscrowKind): boolean {
-    let changed = false;
+  private processSetEscrow(kind: EscrowKind): void {
     const entries = (() => {
       switch (kind) {
         case "delegables":
@@ -2995,9 +2905,8 @@ export class Kevery {
       if (!pre) {
         continue;
       }
-      changed = this.replayEscrowEntry(kind, pre, null, said) || changed;
+      this.replayEscrowEntry(kind, pre, null, said);
     }
-    return changed;
   }
 
   /**
@@ -3012,18 +2921,20 @@ export class Kevery {
    * @param pre Event AID in qualified Base64 form.
    * @param on Event sequence number, or null for a set-keyed family.
    * @param said Event digest identifying its stored body and detached proofs.
-   * @returns Whether the committed replay changed membership or delegation hints.
    */
   private replayEscrowEntry(
     currentEscrow: EscrowKind,
     pre: string,
     on: number | null,
     said: string,
-  ): boolean {
-    const { decision, changed } = this.settleEventDecision({ kind: currentEscrow, pre, on, said });
+  ): void {
+    const decision = this.settleEventDecision(
+      () => this.rehydrateEscrowEnvelope(currentEscrow, pre, said),
+      { kind: currentEscrow, pre, on, said },
+    );
     // The transaction above has committed the removal. Acceptance and movement
     // to another dependency family are ordinary recovery, not ejections.
-    if (changed && (decision === null || decision.kind === "reject")) {
+    if (decision === null || decision.kind === "reject") {
       consoleLogger.warn("KEL escrow removed", {
         family: currentEscrow,
         pre,
@@ -3033,41 +2944,40 @@ export class Kevery {
         detail: decision?.message ?? "Stored event body is missing.",
       });
     }
-    return changed;
   }
 
-  /**
-   * Remove one stored escrow pointer from its current bucket.
-   *
-   * @param escrow Family retaining the pointer.
-   * @param pre Event AID used by the family index.
-   * @param on Sequence number for ordinal families, otherwise null.
-   * @param said Digest identifying the retained event.
-   * @returns Whether the pointer existed and was removed inside the caller's writer.
-   */
+  /** Remove one stored escrow pointer from its current bucket. */
   private removeEscrow(
     escrow: EscrowKind,
     pre: string,
     on: number | null,
     said: string,
-  ): boolean {
+  ): void {
     switch (escrow) {
       case "ooo":
-        return this.db.ooes.remOn(pre, on ?? 0, said);
+        this.db.ooes.remOn(pre, on ?? 0, said);
+        break;
       case "partialSigs":
-        return this.db.pses.remOn(pre, on ?? 0, said);
+        this.db.pses.remOn(pre, on ?? 0, said);
+        break;
       case "partialWigs":
-        return this.db.pwes.remOn(pre, on ?? 0, said);
+        this.db.pwes.remOn(pre, on ?? 0, said);
+        break;
       case "partialDels":
-        return this.db.pdes.remOn(pre, on ?? 0, said);
+        this.db.pdes.remOn(pre, on ?? 0, said);
+        break;
       case "duplicitous":
-        return this.db.ldes.remOn(pre, on ?? 0, said);
+        this.db.ldes.remOn(pre, on ?? 0, said);
+        break;
       case "delegables":
-        return this.db.delegables.rem([pre], said);
+        this.db.delegables.rem([pre], said);
+        break;
       case "misfit":
-        return this.db.misfits.rem([pre], said);
+        this.db.misfits.rem([pre], said);
+        break;
       case "queryNotFound":
-        return this.db.qnfs.rem([pre], said);
+        this.db.qnfs.rem([pre], said);
+        break;
     }
   }
 

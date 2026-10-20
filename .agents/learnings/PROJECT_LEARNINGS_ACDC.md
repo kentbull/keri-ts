@@ -4,11 +4,16 @@ Credential workflows borrow one Regery for its coherent Habery, Reger, Tevery an
 Verifier; delivery borrows Poster and import borrows ProtocolProcessor/Reger. Finite import
 and grant artifact intake own their parser/input-specific Kevery; VerifierAgent
 borrows the shared protocol owner directly. Recurring artifact intake retains its
-single escrow pass; it does not start runtime workers. Finite import reports exact
-input-target acceptance separately from parsing: saved markers, accepted KEL/TEL
-digests and accepted EXNs. Its bounded local settlement replaces fixed pass counts;
-raw storage and imported grants never imply credential acceptance. Unrelated escrow
-recovery is excluded from saved results; incomplete CLI imports return failure. TEL row helpers
+single escrow pass; it does not start runtime workers. Finite import dispatches each
+frame once, lets protocol escrows recover dependencies, and observes saved markers,
+accepted KEL/TEL digests and accepted EXNs. It retains identities, not frames or
+dispatch decisions. Ordinary sweeps yield through the clock until input acceptance
+or a configurable post-EOF deadline; missing dependencies may use the full window.
+Accepted records win over refused duplicates; receipts/replies still use their
+handlers without an invented importer acceptance policy. Results contain saved,
+complete and unaccepted; raw storage and imported grants never imply credential
+acceptance. Unrelated escrow recovery is excluded from saved results; incomplete
+CLI imports return failure. TEL row helpers
 receive Reger directly. Multisig VDR approval checks availability after malformed/
 declined proposal handling but before signing/intake. Group IPEX requires Reger for
 grant lead sending, not non-grant or approval-only operations.
@@ -61,10 +66,9 @@ membership; chain retries emit again. Storage failure preserves the retry family
 Escrow ejection warnings belong after actual owner removal/commit and include the
 message identity and refusal detail. Acceptance cleanup, dependency migration and
 EXN `preserveEscrow` are not rejection ejections; unexpected failures propagate.
-Escrow sweeps report committed semantic changes, including pending proof/anchor
-repairs and family migration. Repeated cues, identical writes and KRAM pruning
-are not credential-recovery progress. Tevery completes each captured TSN horizon
-in bounded pages; a page count alone cannot prove local settlement has stalled.
+Escrow owners return no recovery-progress status and take no proof/hint snapshots
+for finite import. Tevery completes each captured TSN horizon in bounded pages;
+new work beyond that horizon waits for a later sweep.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 

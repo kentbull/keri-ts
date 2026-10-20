@@ -220,7 +220,7 @@ numeric key. `Seqner.snh` is padded, while `NumberPrimitive.numh` is unpadded;
 using those projections interchangeably would create different rows when a
 retry reconstructs the ordinal. Canonical indexing keeps the same proof under
 the same key and combines partial signatures received with equivalent ordinal
-encodings. An identical retry must not manufacture new evidence or recovery progress.
+encodings. An identical retry must not duplicate the stored proof.
 
 Do not choose this key from the reply's body version, the JavaScript primitive
 class, or the `0A` code. Body and attachment versions are independent (COMP-03);

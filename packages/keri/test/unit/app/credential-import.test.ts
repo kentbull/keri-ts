@@ -1,10 +1,11 @@
 import { call, ensure, type Operation, resource, run, spawn, suspend } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { concatBytes, type SerderACDC } from "../../../../cesr/mod.ts";
+import { concatBytes, parseBytes, type SerderACDC } from "../../../../cesr/mod.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
 import { importCredentialStream } from "../../../src/app/credential-importing.ts";
 import { credentialStreamBytes } from "../../../src/app/credential-workflows.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
+import type { ExchangeRouteVerification } from "../../../src/app/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import {
   credentialSupportMessages,
@@ -18,12 +19,15 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { consoleLogger } from "../../../src/core/logger.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, type Registry } from "../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
+import { ManualRuntimeClock } from "../../support/runtime-fakes.ts";
 
 /** Independent issuer and recipient stores; every assertion exercises real KEL/TEL/credential processing. */
 interface ImportFixture {
@@ -100,12 +104,11 @@ Deno.test("finite credential import reports ordered acceptance, duplicates, KEL/
     const first = yield* importCredentialStream(f.protocol, f.reger, bytes, systemClock);
     assertEquals(first.complete, true);
     assertEquals(first.saved, [f.creder.said]);
-    assertEquals(new Set(first.targets.map((target) => target.kind)), new Set(["kel", "tel", "credential"]));
-    assertEquals(first.targets.every((target) => target.status === "accepted"), true);
+    assertEquals(first.unaccepted, []);
     const again = yield* importCredentialStream(f.protocol, f.reger, bytes, systemClock);
     assertEquals(again.complete, true);
     assertEquals(again.saved, []);
-    assertEquals(again.targets.every((target) => target.status === "alreadyAccepted"), true);
+    assertEquals(again.unaccepted, []);
 
     const revoked = f.registry.revoke(f.creder.said!);
     const revocation = concatBytes(
@@ -115,7 +118,8 @@ Deno.test("finite credential import reports ordered acceptance, duplicates, KEL/
     const result = yield* importCredentialStream(f.protocol, f.reger, revocation, systemClock);
     assertEquals(result.complete, true);
     assertEquals(result.saved, []);
-    assertEquals(result.targets.find((target) => target.said === revoked.serder.said)?.status, "accepted");
+    assertEquals(result.unaccepted, []);
+    assertEquals(f.reger.tels.getOn(f.creder.said!, 1)?.qb64, revoked.serder.said);
   });
 });
 
@@ -156,10 +160,21 @@ Deno.test("finite credential import settles reverse chain dependencies that two 
     yield* f.protocol.processEscrowsOnce();
     yield* f.protocol.processEscrowsOnce();
     assertEquals(f.reger.saved.get([creds.at(-1)!.said!]), null);
+    const dispatch = f.protocol.dispatch.bind(f.protocol);
+    let dispatches = 0;
+    f.protocol.dispatch = function*(...args) {
+      dispatches++;
+      return yield* dispatch(...args);
+    };
     const result = yield* importCredentialStream(f.protocol, f.reger, bytes, systemClock);
     assertEquals(result.complete, true);
     assertEquals(creds.every((creder) => f.reger.saved.get([creder.said!]) !== null), true);
     assertEquals(result.saved.length > 0, true);
+    assertEquals(
+      dispatches,
+      parseBytes(bytes).length,
+      "escrows recover dependencies without redispatching input frames",
+    );
   });
 });
 
@@ -172,14 +187,13 @@ Deno.test("finite import returns incomplete for missing schema without counting 
       f.reger,
       credentialStreamBytes(f.source, f.sourceReger, f.creder, f.holder.pre),
       systemClock,
-      30,
+      5,
     );
     assertEquals(result.complete, false);
     assertEquals(result.saved, []);
     assertExists(f.reger.creds.get([f.creder.said!]));
     assertEquals(f.reger.saved.get([f.creder.said!]), null);
-    assertEquals(result.targets.find((target) => target.said === f.creder.said)?.status, "unresolved");
-    assertEquals(result.targets.find((target) => target.said === f.creder.said)?.reason, "missingSchema");
+    assertEquals(result.unaccepted, [f.creder.said]);
   });
 });
 
@@ -256,19 +270,30 @@ Deno.test("importing an IPEX grant does not admit its embedded credential", asyn
 Deno.test("finite import reports raw credential rejection and preserves acceptance before a malformed later frame", async () => {
   await run(function*() {
     const f = yield* fixture();
-    const rejected = yield* importCredentialStream(f.protocol, f.reger, f.creder.raw, systemClock);
-    assertEquals(rejected.complete, false);
-    assertEquals(rejected.targets[0]?.status, "rejected");
-    assertEquals(rejected.targets[0]?.reason, "missingAnchor");
-    const partial = yield* importCredentialStream(
-      f.protocol,
-      f.reger,
-      concatBytes(credentialStreamBytes(f.source, f.sourceReger, f.creder, f.holder.pre), f.creder.raw),
-      systemClock,
-    );
-    assertEquals(partial.complete, false);
-    assertEquals(partial.saved, [f.creder.said]);
-    assertEquals(partial.targets.find((target) => target.said === f.creder.said)?.status, "rejected");
+    const warn = consoleLogger.warn, warnings: unknown[][] = [];
+    consoleLogger.warn = (...args) => warnings.push(args);
+    try {
+      const rejected = yield* importCredentialStream(f.protocol, f.reger, f.creder.raw, systemClock, 5);
+      assertEquals(rejected.complete, false);
+      assertEquals(rejected.unaccepted, [f.creder.said]);
+      const partial = yield* importCredentialStream(
+        f.protocol,
+        f.reger,
+        concatBytes(credentialStreamBytes(f.source, f.sourceReger, f.creder, f.holder.pre), f.creder.raw),
+        systemClock,
+      );
+      assertEquals(partial.complete, true, "a refused duplicate cannot override persisted acceptance");
+      assertEquals(partial.saved, [f.creder.said]);
+      assertEquals(partial.unaccepted, []);
+      const refusals = warnings.filter(([message]) => message === "Credential import message refused");
+      assertEquals(refusals.length, 2);
+      for (const [, detail] of refusals) {
+        assertEquals((detail as { said: string }).said, f.creder.said);
+        assertEquals((detail as { reason: string }).reason, "missingAnchor");
+      }
+    } finally {
+      consoleLogger.warn = warn;
+    }
     const fresh = f.source.makeHab("before-malformed");
     const kel = acceptedEventReplayMessage(f.source, fresh.pre, 0).message;
     assertEquals(f.target.db.getKever(fresh.pre), null);
@@ -366,5 +391,133 @@ Deno.test("finite import preserves the original handler failure and earlier acce
     assertStrictEquals(observed, failure);
     assertExists(f.target.db.getKever(f.issuer.pre));
     yield* f.protocol.processEscrowsOnce();
+  });
+});
+
+Deno.test("finite import handles receipt/reply input without inventing unaccepted targets", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const receiptor = f.source.makeHab("receiptor", undefined, { transferable: false });
+    const support = concatBytes(...f.source.db.clonePreIter(f.issuer.pre), ...f.source.db.clonePreIter(receiptor.pre));
+    yield* importCredentialStream(f.protocol, f.reger, support, systemClock);
+    const event = f.issuer.kever!.serder;
+    const bytes = concatBytes(
+      receiptor.receipt(event),
+      f.issuer.reply("/loc/scheme", { eid: f.issuer.pre, scheme: "http", url: "http://issuer.test" }),
+    );
+    const result = yield* importCredentialStream(f.protocol, f.reger, bytes, systemClock);
+    assertEquals(result, { saved: [], complete: true, unaccepted: [] });
+    assertEquals(f.target.db.rcts.get(dgKey(f.issuer.pre, event.said!)).length, 1);
+    assertEquals(f.target.db.locs.get([f.issuer.pre, "http"])?.url, "http://issuer.test");
+  });
+});
+
+Deno.test("finite import normalizes its deadline and waits for it when evidence stays missing", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    f.target.db.schema.rem(f.schema.said);
+    const bytes = credentialStreamBytes(f.source, f.sourceReger, f.creder, f.holder.pre);
+    for (const [input, expected] of [[undefined, 5000], [0.25, 1], [1.9, 1], [25.9, 25]] as const) {
+      const clock = new ManualRuntimeClock();
+      const schedule = clock.setTimeout.bind(clock), cancel = clock.clearTimeout.bind(clock);
+      const active = new Set<unknown>(), delays: number[] = [];
+      let yielded!: () => void;
+      const waiting = new Promise<void>((resolve) => {
+        yielded = resolve;
+      });
+      clock.setTimeout = (callback, ms) => {
+        let timer: unknown;
+        timer = schedule(() => {
+          active.delete(timer);
+          callback();
+        }, ms);
+        active.add(timer);
+        delays.push(ms);
+        if (delays.length === 2) yielded();
+        return timer;
+      };
+      clock.clearTimeout = (timer) => {
+        active.delete(timer);
+        cancel(timer);
+      };
+      let finished = false;
+      const task = yield* spawn(function*() {
+        const result = yield* importCredentialStream(f.protocol, f.reger, bytes, clock, input);
+        finished = true;
+        return result;
+      });
+      // The second timer is the first yield after a full ordinary sweep, even if it changed nothing.
+      yield* call(() => waiting);
+      assertEquals(delays, [expected, 1]);
+      clock.advance(expected - 1);
+      yield* call(() => Promise.resolve());
+      assertEquals(finished, false);
+      clock.advance(1);
+      assertEquals(yield* task, { saved: [], complete: false, unaccepted: [f.creder.said!] });
+      assertEquals(active.size, 0, "Deadline and sweep timers are joined/cancelled before returning");
+    }
+    for (const invalid of [0, -1, NaN, Infinity, -Infinity]) {
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              importCredentialStream(f.protocol, f.reger, new TextEncoder().encode("malformed"), systemClock, invalid)
+            ),
+          RangeError,
+          "finite and positive",
+        )
+      );
+    }
+  });
+});
+
+Deno.test("finite import deadline cancels and joins an active escrow handler before returning", async () => {
+  await run(function*() {
+    const f = yield* fixture(), clock = new ManualRuntimeClock();
+    let entered!: () => void, cancelling!: () => void, release!: () => void;
+    const entry = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const cancelled = new Promise<void>((resolve) => {
+      cancelling = resolve;
+    });
+    const cleanup = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let attempts = 0, closed = false, returned = false, recovered = false;
+    f.protocol.exc.addHandler({
+      resource: "/import/settlement",
+      *verify(): Operation<ExchangeRouteVerification> {
+        if (recovered) return true;
+        if (++attempts === 1) return { kind: "escrow", reason: "dependency pending" };
+        yield* ensure(function*() {
+          cancelling();
+          yield* call(() => cleanup);
+          closed = true;
+        });
+        entered();
+        yield* suspend();
+        return true;
+      },
+      *handle() {},
+    });
+    const msg = createExchangeMessage(f.issuer, { dest: f.holder.pre, route: "/import/settlement", payload: {} });
+    const bytes = concatBytes(acceptedEventReplayMessage(f.source, f.issuer.pre, 0).message, msg.msg);
+    const task = yield* spawn(function*() {
+      const result = yield* importCredentialStream(f.protocol, f.reger, bytes, clock, 5);
+      returned = true;
+      return result;
+    });
+    yield* call(() => entry);
+    clock.advance(5);
+    yield* call(() => cancelled);
+    assertEquals([closed, returned], [false, false]);
+    release();
+    assertEquals(yield* task, { saved: [], complete: false, unaccepted: [msg.serder.said!] });
+    assertEquals([closed, returned], [true, true]);
+    // The original evidence and protocol turn remain available after the timed-out attempt joins.
+    recovered = true;
+    yield* f.protocol.processEscrowsOnce();
+    assertEquals(f.protocol.exc.complete(msg.serder.said!), true);
   });
 });

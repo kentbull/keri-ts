@@ -1,62 +1,64 @@
-/** Finite credential-bundle intake and input-scoped acceptance reporting. */
-import { type CesrFrame, Ilks, parse, SerderACDC, SerderKERI } from "cesr-ts";
+/** Finite credential-bundle intake; protocol owners retain and recover their own pending evidence. */
+import { Ilks, parse, SerderACDC, SerderKERI } from "cesr-ts";
 import { action, call, ensure, type Operation, race } from "npm:effection@^3.6.0";
 import type { Kevery } from "../core/eventing.ts";
+import { consoleLogger } from "../core/logger.ts";
 import type { Reger } from "../db/reger.ts";
 import { rethrowCleanupFailure } from "./abortable.ts";
 import { chunkBytes } from "./byte-source.ts";
-import { type DispatchDecision, envelopeFromFrame } from "./parsering.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 
-/** Acceptance evidence required by each directly imported message, excluding grant children. */
-export interface CredentialImportTargetResult {
-  /** Credential body, accepted KEL/TEL event, exchange, or an input without a supported acceptance predicate. */
-  kind: "credential" | "kel" | "tel" | "exchange" | "unsupported";
-  /** Content-addressed message identifier; duplicate sightings share one result. */
-  said: string;
-  /** alreadyAccepted was observed before this target's first dispatch; unresolved never means invalid. */
-  status: "accepted" | "alreadyAccepted" | "unresolved" | "rejected";
-  /** Last observed refusal/dependency reason, or the absence of a supported acceptance predicate. */
-  reason?: string;
-}
-
-/** Parsing reaches EOF before this result; protocol acceptance remains explicit for each target. */
+/** Acceptance observed after finite input cleanup and any needed local escrow recovery. */
 export interface CredentialImportResult {
-  /** Newly accepted raw credential SAIDs from this input only; unrelated escrow recoveries are excluded. */
+  /** Newly saved raw credential SAIDs from this input; imported grant children and unrelated recoveries are excluded. */
   saved: string[];
-  /** True only when every directly imported target has persisted acceptance evidence. */
+  /** Whether this input's observed credential, KEL/TEL and EXN records are accepted, not validation of every occurrence. */
   complete: boolean;
-  /** One result per message kind/SAID, in first-seen order; a grant does not add embedded credential targets. */
-  targets: CredentialImportTargetResult[];
+  /** Deduplicated input SAIDs without their normal accepted records, in first-seen order. */
+  unaccepted: string[];
 }
 
-/** Input-owned evidence retained only until this finite import returns or is cancelled. */
-interface ImportTarget {
-  /** Complete parsed frame used to reassess an unresolved target through ordinary serialized dispatch. */
-  frame: CesrFrame;
-  /** Parsed message identity; accepted rows are checked by exact event digest, not latest-head presence. */
-  serder: SerderACDC | SerderKERI;
-  /** Public acceptance category of this input message. */
-  kind: CredentialImportTargetResult["kind"];
-  /** Whether persisted acceptance preceded this target's first dispatch. */
-  alreadyAccepted: boolean;
-  /** Most recent direct protocol decision; exceptions are never converted into target results. */
-  decision: DispatchDecision;
-}
+/** Native message identities needed for existing accepted-record lookups; no wire evidence is retained here. */
+type ImportTarget =
+  | {
+    /** Raw ACDC uses no message ilk; section messages are handled by their normal processors. */
+    ilk: null;
+    /** Credential's own SAID, excluding any children carried by an exchange. */
+    said: string;
+    /** Saved marker observed before this credential's first dispatch, for this input's new-save result only. */
+    savedBefore: boolean;
+  }
+  | {
+    /** Native event ilk selects the existing KEL or TEL accepted record. */
+    ilk: "icp" | "dip" | "rot" | "drt" | "ixn" | "vcp" | "vrt" | "iss" | "rev" | "bis" | "brv";
+    /** Event digest; a different accepted event at the same coordinate cannot satisfy it. */
+    said: string;
+    /** Identifier of the event sequence; absent coordinates cannot establish acceptance. */
+    pre: string | null;
+    /** Exact sequence number, independent of the currently accepted head. */
+    sn: number | null;
+  }
+  | {
+    /** An accepted exchange does not admit any embedded credential. */
+    ilk: "exn";
+    /** Exchange's own SAID. */
+    said: string;
+  };
 
 /**
- * Consume finite bytes, then give their unresolved targets a bounded local settlement window.
+ * Dispatch each frame once, then recover local dependencies through their existing escrow owners.
  * This operation owns its parser/Kevery and starts no network, mailbox or host workers.
- * Each frame is dispatched before the next is parsed; later failures preserve earlier accepted state.
+ * Later input failures preserve earlier accepted state. Receipts, replies and other messages still
+ * use normal dispatch; absence of an importer acceptance lookup is not an additional refusal policy.
  *
- * @param protocol Borrowed serialized KEL/TEL/credential/exchange owner, sharing reger with its credential handlers.
- * @param reger Borrowed credential/TEL store whose accepted markers establish import results.
- * @param bytes Borrowed complete CESR bundle; parser chunks are copied during intake.
- * @param clock Borrowed epoch-millisecond clock and cancellable elapsed-millisecond timers.
- * @param timeoutMs Positive finite post-EOF settlement budget in milliseconds, default 5000; floored with a one-millisecond minimum. No network discovery occurs.
- * @returns Input-scoped acceptance results after EOF/cleanup and local settlement or its deadline. Missing dependencies remain unresolved.
- * @throws Validation, parser, storage, handler and cleanup failures propagate with partial accepted state intact. Cancellation joins active work.
+ * @param protocol Borrowed serialized protocol owner, sharing reger with its TEL/credential handlers.
+ * @param reger Borrowed credential/TEL store whose accepted records establish the result.
+ * @param bytes Borrowed finite CESR bundle; parser chunks are copied during intake.
+ * @param clock Borrowed timer implementation for the deadline and cooperative yields between sweeps.
+ * @param timeoutMs Positive finite post-EOF settlement limit in milliseconds, default 5000; floored with a one-millisecond minimum before intake.
+ * @returns Accepted-record observations after joined input/handler cleanup. Settlement stops when all observed records are accepted, or the deadline expires.
+ * @throws Parser, storage, handler and cleanup failures propagate with partial accepted state intact. Cancellation joins active work; a deadline cannot interrupt synchronous owner work mid-sweep.
  */
 export function* importCredentialStream(
   protocol: ProtocolProcessor,
@@ -66,62 +68,61 @@ export function* importCredentialStream(
   timeoutMs = 5_000,
 ): Operation<CredentialImportResult> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new RangeError("Import timeout must be finite and positive");
+  const settlementMs = Math.max(1, Math.floor(timeoutMs));
   if (protocol.vry?.reger !== reger || protocol.tvy?.reger !== reger) {
     throw new TypeError("Credential import requires TEL and credential processors sharing its Reger");
   }
-  const kvy = protocol.makeKevery();
-  const targets = yield* readImportTargets(protocol, reger, bytes, kvy);
-  /** Unsupported inputs have no local predicate to settle; report them unresolved without polling them. */
-  const pending = () =>
-    targets.filter((target) =>
-      target.kind !== "unsupported"
-      && importTargetResult(target, protocol, reger).status === "unresolved"
-    );
-
-  if (pending().length) {
-    yield* race([
+  const targets = yield* readImportTargets(protocol, reger, bytes, protocol.makeKevery());
+  /** Read current acceptance; an earlier refused duplicate cannot override a persisted accepted record. */
+  const unaccepted = () =>
+    targets.filter((target) => !importTargetAccepted(target, protocol, reger)).map(({ said }) => said);
+  let expired = false;
+  if (unaccepted().length) {
+    expired = yield* race([
+      // Register the deadline before entering the first potentially suspending escrow owner.
+      action<boolean>((resolve) => {
+        const timer = clock.setTimeout(() => resolve(true), settlementMs);
+        return () => clock.clearTimeout(timer);
+      }),
       call(function*() {
-        while (pending().length) {
-          // Normal dispatch exposes refusals that an escrow retry does not otherwise return to this input owner.
-          for (const target of pending()) target.decision = (yield* protocol.dispatch(target.frame, {}, kvy)).decision;
-          // Once this input is settled, unrelated escrow handlers must not delay its result.
-          if (!pending().length) return;
+        while (true) {
           yield* protocol.processEscrowsOnce();
-          if (!pending().length) return;
-          // Yield between local passes; an unchanged credential count is not a fixed-point proof.
+          if (!unaccepted().length) return false;
+          // Yield between ordinary sweeps; acceptance or the elapsed deadline ends settlement.
           yield* action<void>((resolve) => {
-            const timer = clock.setTimeout(() => resolve(), 25);
+            const timer = clock.setTimeout(() => resolve(), 1);
             return () => clock.clearTimeout(timer);
           });
         }
       }),
-      action<void>((resolve) => {
-        const timer = clock.setTimeout(() => resolve(), Math.max(1, Math.floor(timeoutMs)));
-        return () => clock.clearTimeout(timer);
-      }),
     ]);
   }
-  // Deadline cancellation joins the active handler before these final accepted-state reads.
-  const outcomes = targets.map((target) => importTargetResult(target, protocol, reger));
+  // The losing race child has joined cleanup before these final accepted-state reads.
+  const remaining = unaccepted();
+  if (expired) {
+    consoleLogger.warn("Credential import settlement deadline expired", {
+      timeoutMs: settlementMs,
+      unaccepted: remaining,
+    });
+  }
   return {
-    // Preserve actual new saves even if a later duplicate of that body carries a refused proof.
     saved: targets.filter((target) =>
-      target.kind === "credential" && !target.alreadyAccepted
-      && importTargetAccepted(target, protocol, reger)
-    ).map((target) => target.serder.said!),
-    complete: outcomes.every((target) => target.status === "accepted" || target.status === "alreadyAccepted"),
-    targets: outcomes,
+      target.ilk === null && !target.savedBefore && reger.saved.get([target.said]) !== null
+    )
+      .map(({ said }) => said),
+    complete: remaining.length === 0,
+    unaccepted: remaining,
   };
 }
 
 /**
- * Capture targets while dispatching one complete frame at a time; own pending pulls and iterator return through cancellation.
+ * Capture compact identities while dispatching each complete frame once, joining pending pulls and iterator return.
  *
- * @param protocol Borrowed serialized dispatch owner.
- * @param reger Borrowed store for acceptance observed before first dispatch.
- * @param bytes Resident finite input; no whole-bundle parse occurs before dispatch.
- * @param kvy This import's Kevery over the shared accepted-state domain.
- * @returns Unique directly imported targets after joined parser/source EOF cleanup.
+ * @param protocol Borrowed serialized dispatch owner; refusal diagnostics retain its actual decision detail.
+ * @param reger Borrowed store for saved markers observed before first raw credential dispatch.
+ * @param bytes Resident finite input, parsed incrementally before each dispatch.
+ * @param kvy This input's Kevery over the shared accepted-state domain.
+ * @returns Unique directly observed identities after parser EOF and joined source cleanup.
  */
 function readImportTargets(
   protocol: ProtocolProcessor,
@@ -134,7 +135,7 @@ function readImportTargets(
     const frames = parse(chunkBytes(bytes, { signal: controller.signal }));
     const targets = new Map<string, ImportTarget>();
     let pending: ReturnType<typeof frames.next> | undefined;
-    // Register source cleanup before dispatch resources so active handlers stop before iterator disposal.
+    // Handlers stop before this earlier resource joins reads and disposes the input iterator.
     yield* ensure(function*() {
       try {
         if (pending) {
@@ -160,21 +161,26 @@ function readImportTargets(
         }
         pending = undefined;
         if (next.done) return [...targets.values()];
-        // Read identity before dispatch so an existing saved marker is not mistaken for this import's work.
-        const envelope = envelopeFromFrame(next.value).serder;
-        if (!(envelope instanceof SerderACDC) && !(envelope instanceof SerderKERI)) {
+        const serder = next.value.body;
+        if (!(serder instanceof SerderACDC) && !(serder instanceof SerderKERI)) {
           throw new TypeError("Credential import requires a KERI or ACDC message");
         }
-        const kind = importKind(envelope);
-        const key = `${kind}:${envelope.said}`;
-        let target = targets.get(key);
-        if (!target) {
-          target = { frame: next.value, serder: envelope, kind, alreadyAccepted: false, decision: undefined };
-          target.alreadyAccepted = importTargetAccepted(target, protocol, reger);
-          targets.set(key, target);
+        // Capture savedBefore exactly once, before dispatch can publish this credential's marker.
+        if (!targets.has(serder.said!)) {
+          const target = importTarget(serder, reger);
+          if (target) targets.set(target.said, target);
         }
-        target.frame = next.value;
-        target.decision = (yield* protocol.dispatch(next.value, {}, kvy)).decision;
+        const { decision } = yield* protocol.dispatch(next.value, {}, kvy);
+        if (decision && (decision.kind === "reject" || decision.kind === "drop")) {
+          consoleLogger.warn("Credential import message refused", {
+            said: serder.said,
+            ilk: serder.ilk,
+            pre: serder instanceof SerderKERI ? serder.pre : serder.issuer,
+            reason: "reason" in decision ? decision.reason : decision.code,
+            detail: "message" in decision ? decision.message : "detail" in decision ? decision.detail : undefined,
+            cause: "cause" in decision ? decision.cause : undefined,
+          });
+        }
       }
     } finally {
       controller.abort();
@@ -183,89 +189,64 @@ function readImportTargets(
 }
 
 /**
- * Classify only directly dispatched messages; embedded exchange artifacts remain behind explicit IPEX workflows.
+ * Project only coordinates for accepted records that this credential workflow observes.
  *
- * @param serder Parsed message body whose own acceptance is being reported.
- * @returns The persistent acceptance family, or unsupported when this importer has no honest predicate.
+ * @param serder One directly imported message; embedded artifacts remain under their existing workflow owners.
+ * @param reger Credential store used only to record a raw credential's pre-dispatch saved marker.
+ * @returns Compact native identity, or null for messages handled without an importer completion predicate.
  */
-function importKind(serder: SerderACDC | SerderKERI): ImportTarget["kind"] {
-  if (serder instanceof SerderACDC) return serder.ilk === null ? "credential" : "unsupported";
-  switch (serder.ilk) {
+function importTarget(serder: SerderACDC | SerderKERI, reger: Reger): ImportTarget | null {
+  const said = serder.said!, ilk = serder.ilk;
+  if (serder instanceof SerderACDC) {
+    return ilk === null ? { ilk, said, savedBefore: reger.saved.get([said]) !== null } : null;
+  }
+  switch (ilk) {
     case Ilks.icp:
     case Ilks.dip:
     case Ilks.rot:
     case Ilks.drt:
     case Ilks.ixn:
-      return "kel";
     case Ilks.vcp:
     case Ilks.vrt:
     case Ilks.iss:
     case Ilks.rev:
     case Ilks.bis:
     case Ilks.brv:
-      return "tel";
+      return { ilk, said, pre: serder.pre, sn: serder.sn };
     case Ilks.exn:
-      return "exchange";
+      return { ilk, said };
     default:
-      return "unsupported";
+      return null;
   }
 }
 
 /**
- * Read exact accepted evidence; raw body storage and a registry's unrelated/latest head are insufficient.
+ * Observe the normal accepted record without consulting direct-attempt decisions.
  *
- * @param target Directly imported identity and acceptance family.
- * @param protocol Borrowed KEL/exchange store owner.
- * @param reger Borrowed credential/TEL accepted-evidence store.
- * @returns Whether the target itself has a persisted acceptance marker.
- */
-function importTargetAccepted(target: ImportTarget, protocol: ProtocolProcessor, reger: Reger): boolean {
-  const { serder } = target;
-  switch (target.kind) {
-    case "credential":
-      return reger.saved.get([serder.said!]) !== null;
-    case "kel":
-      return serder instanceof SerderKERI && serder.pre !== null && serder.sn !== null
-        && protocol.kvy.db.kels.getLast(serder.pre, serder.sn) === serder.said;
-    case "tel":
-      return serder instanceof SerderKERI && serder.pre !== null && serder.sn !== null
-        && reger.tels.getOn(serder.pre, serder.sn)?.qb64 === serder.said;
-    case "exchange":
-      return protocol.kvy.db.exns.get([serder.said!]) !== null;
-    case "unsupported":
-      return false;
-  }
-}
-
-/**
- * Combine the last direct decision with current persisted acceptance without converting missing evidence into rejection.
- *
- * @param target Input-owned message identity and most recent direct dispatch result.
+ * @param target Input identity; raw storage and unrelated latest heads do not establish its acceptance.
  * @param protocol Borrowed accepted KEL/exchange domain.
  * @param reger Borrowed accepted credential/TEL domain.
- * @returns Public input outcome; a direct refusal takes precedence over older persisted evidence for the same body.
+ * @returns Whether this exact message has its normal durable acceptance evidence.
  */
-function importTargetResult(
-  target: ImportTarget,
-  protocol: ProtocolProcessor,
-  reger: Reger,
-): CredentialImportTargetResult {
-  const { kind, serder, decision } = target;
-  const identity = { kind, said: serder.said! };
-  if (decision && (decision.kind === "reject" || decision.kind === "drop")) {
-    const reason = "message" in decision ? decision.message : decision.reason;
-    return { ...identity, status: "rejected", reason };
+function importTargetAccepted(target: ImportTarget, protocol: ProtocolProcessor, reger: Reger): boolean {
+  switch (target.ilk) {
+    case null:
+      return reger.saved.get([target.said]) !== null;
+    case Ilks.icp:
+    case Ilks.dip:
+    case Ilks.rot:
+    case Ilks.drt:
+    case Ilks.ixn:
+      return target.pre !== null && target.sn !== null
+        && protocol.kvy.db.kels.getLast(target.pre, target.sn) === target.said;
+    case Ilks.vcp:
+    case Ilks.vrt:
+    case Ilks.iss:
+    case Ilks.rev:
+    case Ilks.bis:
+    case Ilks.brv:
+      return target.pre !== null && target.sn !== null && reger.tels.getOn(target.pre, target.sn)?.qb64 === target.said;
+    case Ilks.exn:
+      return protocol.kvy.db.exns.get([target.said]) !== null;
   }
-  if (importTargetAccepted(target, protocol, reger)) {
-    return { ...identity, status: target.alreadyAccepted ? "alreadyAccepted" : "accepted" };
-  }
-  return {
-    ...identity,
-    status: "unresolved",
-    reason: kind === "unsupported"
-      ? "No finite-import acceptance predicate for this message kind"
-      : decision && "reason" in decision
-      ? decision.reason
-      : "No accepted evidence after local processing",
-  };
 }

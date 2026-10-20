@@ -123,11 +123,9 @@ export class Regery {
   registryByName(name: string): Registry | null {
     return this.names.get(name) ?? null;
   }
-  /** Retry each unique registry; report whether any retained evidence or escrow membership changed. */
-  processEscrows(): boolean {
-    let changed = false;
-    for (const registry of this.regs.values()) changed = registry.processEscrows() || changed;
-    return changed;
+  /** Run explicit retry passes over unique instances, not duplicate aliases. */
+  processEscrows(): void {
+    for (const registry of this.regs.values()) registry.processEscrows();
   }
   /** Join closure of a manager-owned store; caller-owned injected stores remain open. */
   *close(): Operation<void> {
@@ -251,8 +249,8 @@ export class Registry {
     return null;
   }
 
-  /** Retry missing anchors and ordering; return committed evidence or membership progress. */
-  processEscrows(): boolean {
-    return this.eventer.processEscrows();
+  /** Retry both missing-anchor and ordering prerequisites. */
+  processEscrows(): void {
+    this.eventer.processEscrows();
   }
 }
