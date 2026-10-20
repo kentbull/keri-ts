@@ -1,5 +1,5 @@
 /** Finite introduction/authentication composition shared by environment creation and inception. */
-import { call, type Operation, race, resource, sleep, spawn } from "effection";
+import { type Operation, resource, scoped, spawn } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { Authenticator, hasWellKnownAuth } from "./authenticating.ts";
 import type { Habery } from "./habbing.ts";
@@ -52,7 +52,7 @@ export function resolveBootstrap(
   clock: RuntimeClock,
   { timeoutMs = 30_000 }: { timeoutMs?: number } = {},
 ): Operation<BootstrapResult> {
-  return call(function*() {
+  return scoped(function* bootstrapScope() {
     if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
       throw new RangeError("Bootstrap timeout must be finite and positive");
     }
@@ -73,51 +73,45 @@ export function resolveBootstrap(
       }
     });
 
-    return yield* race([
-      call(function*(): Operation<BootstrapResult> {
-        yield* spawn(() => oobiery.oobiDo());
-        yield* spawn(() => authenticator.authDo());
-        yield* spawn(function*() {
-          while (true) {
-            protocol.processKelReplyEscrowsOnce();
-            yield* runtimeTurn();
-          }
-        });
-        yield* spawn(() => querying.deliverDo());
-        while (true) {
-          collectPendingUrls(hby.db, selected);
-          const subjects = selectedSubjects(hby.db, selected);
-          const kelPending = relevantKelEscrows(hby.db, subjects);
-          const replyPending = relevantReplyEscrows(hby.db, subjects);
-          // This composition exclusively consumes its own live cue Deck. Only
-          // evidence-recovery queries are output: static OOBI servers need no
-          // unsolicited receipt/replay publication to establish local acceptance.
-          while (!protocol.cues.empty) {
-            const cue = protocol.cues.pull()!;
-            if (cue.kin === "query" && cue.pre && subjects.has(cue.pre)) querying.enqueueCue(cue);
-          }
-          const result = inspectBootstrap(hby.db, selected);
-          if (result?.kind === "failed") return result;
-          // Accepted prerequisites retire redundant unsigned requests too. A new
-          // environment may have no signer; another OOBI can supply the same KEL.
-          if (result?.kind === "complete" && !kelPending && !replyPending) return result;
-          yield* runtimeTurn();
-        }
-      }),
-      call(function*(): Operation<BootstrapResult> {
-        yield* sleep(timeoutMs);
-        collectPendingUrls(hby.db, selected);
+    yield* spawn(() => oobiery.oobiDo());
+    yield* spawn(() => authenticator.authDo());
+    yield* spawn(function*() {
+      while (true) {
+        protocol.processKelReplyEscrowsOnce();
+        yield* runtimeTurn();
+      }
+    });
+    yield* spawn(() => querying.deliverDo());
+    const deadline = performance.now() + timeoutMs;
+    while (true) {
+      collectPendingUrls(hby.db, selected);
+      const subjects = selectedSubjects(hby.db, selected);
+      const kelPending = relevantKelEscrows(hby.db, subjects);
+      const replyPending = relevantReplyEscrows(hby.db, subjects);
+      // This composition exclusively consumes its own live cue Deck. Only
+      // evidence-recovery queries are output: static OOBI servers need no
+      // unsolicited receipt/replay publication to establish local acceptance.
+      while (!protocol.cues.empty) {
+        const cue = protocol.cues.pull()!;
+        if (cue.kin === "query" && cue.pre && subjects.has(cue.pre)) querying.enqueueCue(cue);
+      }
+      const result = inspectBootstrap(hby.db, selected);
+      if (result?.kind === "failed") return result;
+      // Accepted prerequisites retire redundant unsigned requests too. A new
+      // environment may have no signer; another OOBI can supply the same KEL.
+      if (result?.kind === "complete" && !kelPending && !replyPending) return result;
+      if (performance.now() >= deadline) {
         const pending: string[] = [];
         for (const kind of ["oobis", "woobi"] as const) {
           for (const url of selected[kind]) if (!bootstrapUrlComplete(hby.db, url, kind)) pending.push(url);
         }
-        // A terminal fetch may still depend on reply proofs/query recovery.
         return {
           kind: "timeout",
           pending: pending.length ? [...new Set(pending)] : [...new Set([...selected.oobis, ...selected.woobi])],
         };
-      }),
-    ]);
+      }
+      yield* runtimeTurn();
+    }
   });
 }
 
