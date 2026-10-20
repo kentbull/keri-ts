@@ -52,7 +52,7 @@ type ImportTarget =
  * Later input failures preserve earlier accepted state. Receipts, replies and other messages still
  * use normal dispatch; absence of an importer acceptance lookup is not an additional refusal policy.
  *
- * @param protocol Borrowed serialized protocol owner, sharing reger with its TEL/credential handlers.
+ * @param protocol Borrowed protocol dispatcher, sharing reger with its TEL/credential handlers.
  * @param reger Borrowed credential/TEL store whose accepted records establish the result.
  * @param bytes Borrowed finite CESR bundle; parser chunks are copied during intake.
  * @param clock Borrowed timer implementation for the deadline and cooperative yields between sweeps.
@@ -118,7 +118,7 @@ export function* importCredentialStream(
 /**
  * Capture compact identities while dispatching each complete frame once, joining pending pulls and iterator return.
  *
- * @param protocol Borrowed serialized dispatch owner; refusal diagnostics retain its actual decision detail.
+ * @param protocol Borrowed dispatch owner; refusal diagnostics retain its actual decision detail.
  * @param reger Borrowed store for saved markers observed before first raw credential dispatch.
  * @param bytes Resident finite input, parsed incrementally before each dispatch.
  * @param kvy This input's Kevery over the shared accepted-state domain.

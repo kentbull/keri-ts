@@ -55,10 +55,11 @@ persist in their own transactions and publish live state/cues after commit. A
 helper returning inside a caller's transaction does not prove commit completion.
 Independent Baser/Reger environments are not one atomic transaction.
 
-Keep state-sensitive evaluation/application in the required uninterrupted owner
-turn. Do not wait on network I/O while holding a transaction or protocol turn.
-ProtocolProcessor serializes actual dispatch/escrows, captures replies before application
-publication and returns decision data. It exposes no arbitrary callback gate.
+Keep state-sensitive evaluation/application in a synchronous owner transaction.
+Prepare asynchronous evidence first, then revalidate current state at commit.
+ProtocolProcessor dispatches to those owners without a global lock; independent
+inputs and escrow scans may progress during EXN file I/O or handler cleanup. It
+captures committed replies before application publication and returns decision data.
 Output owners sign, route and consume request slots directly.
 
 Tevery owns registry/credential TSN admission, route registration and dependency

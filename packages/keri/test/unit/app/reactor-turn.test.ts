@@ -1,6 +1,6 @@
 import { call, ensure, race, run, sleep, spawn, suspend } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { concatBytes, parseBytes } from "../../../../cesr/mod.ts";
+import { b, type CesrFrame, concatBytes, Diger, parseBytes, Prefixer, Texter, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { abortable } from "../../../src/app/abortable.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -14,6 +14,9 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { messageAttachmentGroups } from "../../../src/core/protocol-serialization.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
 import { httpClient } from "../../support/http-client.ts";
 
@@ -97,37 +100,115 @@ Deno.test("finite runtime workers progress independently and join blocked HTTP c
   }
 });
 
-Deno.test("protocol processing waits for cancelled handler cleanup before the next pass", async () => {
+Deno.test("KEL and query recovery progress while another input prepares EXN payload bytes", async () => {
   await run(function*() {
-    const hby = yield* createHabery({ name: `turn-cleanup-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = source.makeHab("sender"), requester = target.makeHab("requester");
+    const protocol = protocolFixture(target), input = new Reactor(protocol);
+    const ready = gate(), release = gate();
+    const archive = yield* call(() => target.db.openPayloads());
+    const stage = archive.files.stage.bind(archive.files);
+    archive.files.stage = async (signal) => {
+      ready.open();
+      await release.wait;
+      return await stage(signal);
+    };
+    const query = parseBytes(requester.query(sender.pre, requester.pre, { route: "logs", q: {} }))[0];
+    const reply = protocol.replies.reserve(query.body.said!);
+    const serder = exchange("/flow", {}, {
+      sender: sender.pre,
+      diger: new Diger({ raw: Diger.digest(b("payload"), "E"), code: "E" }),
+    })[0];
+    const proof = new TransIdxSigGroup(
+      new Prefixer({ qb64: sender.pre }),
+      sender.kever!.sner,
+      new Diger({ qb64: sender.kever!.said }),
+      sender.sign(serder.raw, true),
+    );
+    const frame: CesrFrame = {
+      body: serder,
+      gvrsn: Vrsn_2_0,
+      attachments: messageAttachmentGroups({ tsgs: [proof] }, Vrsn_2_0),
+      essrs: [new Texter({ raw: b("payload"), code: "4B" })],
+    };
     try {
-      const reactor = new Reactor(protocolFixture(hby));
-      const started = gate();
-      const cleanup = gate();
-      let second = false;
-      let passes = 0;
-      reactor.protocol.exc.processEscrows = function*() {
-        if (++passes > 1) {
-          second = true;
-          return;
-        }
-        yield* abortable(async (signal) => {
-          started.open();
-          await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
-          await cleanup.wait;
-        });
-      };
-      const first = yield* spawn(() => reactor.protocol.processEscrowsOnce());
-      yield* call(() => started.wait);
-      const next = yield* spawn(() => reactor.protocol.processEscrowsOnce());
-      const halted = yield* spawn(() => first.halt());
-      yield* call(() => Promise.resolve());
-      assertEquals(second, false);
-      cleanup.open();
-      yield* halted;
-      yield* next;
-      assertEquals(second, true);
+      assertEquals((yield* protocol.dispatch(query)).decision?.kind, "escrow");
+      let finished = false;
+      const pending = yield* spawn(function*() {
+        yield* protocol.dispatch(frame);
+        finished = true;
+      });
+      try {
+        yield* call(() => ready.wait);
+        yield* race([
+          call(function*() {
+            sender.rotate();
+            for (const sn of [0, 1]) {
+              yield* input.processBytes(acceptedEventReplayMessage(source, sender.pre, sn).message);
+            }
+            yield* protocol.processEscrowsOnce();
+            assertEquals(target.db.getKever(sender.pre)?.sn, 1);
+            assertEquals(reply.ready, true);
+            assertEquals(reply.peekAll()?.cues[0].kin, "replay");
+            assertEquals(finished, false);
+          }),
+          call(function*() {
+            yield* sleep(1000);
+            throw new Error("independent KEL/query work waited for EXN file preparation");
+          }),
+        ]);
+        release.open();
+        yield* pending;
+        assertEquals(protocol.exc.complete(serder.said!), true);
+      } finally {
+        release.open();
+        yield* pending.halt();
+      }
     } finally {
+      reply.close();
+      archive.files.stage = stage;
+      yield* target.close(true);
+      yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("mailbox authorization is captured before an unrelated escrow payload read", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const recipient = hby.makeHab("recipient"), protocol = protocolFixture(hby);
+    const serder = exchange("/flow", {}, {
+      sender: recipient.pre,
+      diger: new Diger({ raw: Diger.digest(b("pending"), "E"), code: "E" }),
+    })[0];
+    yield* protocol.exc.processEvent({ serder, essrs: [new Texter({ raw: b("pending"), code: "4B" })] });
+    const frame =
+      parseBytes(recipient.query(recipient.pre, recipient.pre, { route: "mbx", q: { topics: { "/reply": 0 } } }))[0];
+    const ready = gate(), release = gate(), get = hby.db.getEssrs.bind(hby.db);
+    hby.db.getEssrs = async (said, signal) => {
+      if (said === serder.said) {
+        ready.open();
+        await release.wait;
+      }
+      return await get(said, signal);
+    };
+    try {
+      const pending = yield* spawn(() => protocol.dispatch(frame, { escrows: true }));
+      try {
+        yield* call(() => ready.wait);
+        recipient.rotate();
+        release.open();
+        const result = yield* pending;
+        assertEquals(result.decision?.kind, "accept");
+        assertEquals(result.mailboxQueryAuthorized, true);
+        assertEquals(protocol.kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)), false);
+      } finally {
+        release.open();
+        yield* pending.halt();
+      }
+    } finally {
+      hby.db.getEssrs = get;
       yield* hby.close(true);
     }
   });
@@ -171,6 +252,35 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       first.close();
       second.close();
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("reply readiness observers may reenter protocol processing without losing another reply", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const protocol = protocolFixture(hby);
+    const first = protocol.replies.reserve("first"), second = protocol.replies.reserve("second");
+    const a: ReplayCue = { kin: "replay", querySaid: "first", msgs: [Uint8Array.of(1)] };
+    const b: ReplayCue = { kin: "replay", querySaid: "second", msgs: [Uint8Array.of(2)] };
+    const ordinary: ReplayCue = { kin: "replay", msgs: [Uint8Array.of(3)] };
+    let nested: ReturnType<typeof run> | undefined;
+    const stop = first.observeReady(() => {
+      nested = run(() => protocol.processEscrowsOnce());
+    });
+    try {
+      protocol.kvy.cues.extend([a, b, ordinary]);
+      yield* protocol.processEscrowsOnce();
+      if (nested) yield* call(() => nested!);
+      assertStrictEquals(first.takeAll()?.cues[0], a);
+      assertStrictEquals(second.takeAll()?.cues[0], b);
+      assertEquals(protocol.cues.toArray(), [ordinary]);
+    } finally {
+      stop();
+      first.close();
+      second.close();
+      if (nested) yield* call(() => nested!.halt());
       yield* hby.close(true);
     }
   });
@@ -350,72 +460,6 @@ Deno.test("input cancellation is owned before source construction", async () => 
       assertEquals(invoked, false);
       assertStrictEquals(yield* call(() => assertRejects(() => run(() => reactor.process(source)))), failure);
       assertEquals(sourceSignal?.aborted, true);
-    } finally {
-      yield* hby.close(true);
-    }
-  });
-});
-
-Deno.test("external cancellation removes an input waiting for the protocol turn", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    try {
-      const hab = hby.makeHab("sender"), reactor = new Reactor(protocolFixture(hby));
-      const bytes = acceptedEventReplayMessage(hby, hab.pre, 0).message;
-      const held = gate(), release = gate(), queued = gate();
-      const dispatch = reactor.protocol.dispatch;
-      reactor.protocol.dispatch = function(frame, options) {
-        queued.open();
-        return dispatch.call(this, frame, options);
-      };
-      reactor.protocol.exc.processEscrows = function*() {
-        held.open();
-        yield* call(() => release.wait);
-      };
-      yield* call(async () => {
-        const holder = run(() => reactor.protocol.processEscrowsOnce());
-        await held.wait;
-        const controller = new AbortController(), reason = new Error("input stopped while waiting");
-        let dispatched = false, closed = false;
-        const processEvent = reactor.kvy.processEvent;
-        reactor.kvy.processEvent = function(envelope) {
-          dispatched = true;
-          return processEvent.call(this, envelope);
-        };
-        const input = run(() =>
-          reactor.process(
-            async function*() {
-              try {
-                yield concatBytes(bytes, bytes);
-              } finally {
-                closed = true;
-              }
-            },
-            { signal: controller.signal },
-          )
-        );
-        let timer: ReturnType<typeof setTimeout> | undefined;
-        try {
-          await queued.wait;
-          controller.abort(reason);
-          const failure = await assertRejects(() =>
-            Promise.race([
-              input,
-              new Promise<never>((_, reject) =>
-                timer = setTimeout(() => reject(new Error("cancel waited for the turn")), 1000)
-              ),
-            ])
-          );
-          assertStrictEquals(failure, reason);
-          assertEquals([dispatched, closed], [false, true]);
-        } finally {
-          clearTimeout(timer);
-          await input.halt();
-          release.open();
-          await holder;
-        }
-        assertEquals(dispatched, false);
-      });
     } finally {
       yield* hby.close(true);
     }

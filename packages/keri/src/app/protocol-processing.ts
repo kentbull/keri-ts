@@ -1,6 +1,6 @@
 /** Shared protocol mutations and publication, independent of byte-input and network lifetimes. */
 import type { CesrFrame } from "cesr-ts";
-import { action, call, type Operation, resource } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
@@ -20,31 +20,26 @@ export interface DispatchOptions {
   local?: boolean;
   /** Hosted mailbox endpoint provenance, independent of the signed sender. */
   mailboxAid?: string | null;
-  /** Advance durable escrows before capturing and publishing resulting cues. */
+  /** Advance durable escrows after capturing this frame's decision and direct replies. */
   escrows?: boolean;
 }
 
-/** Exact processed evidence and mailbox authorization observed within the protocol turn. */
+/** Exact processed evidence and mailbox authorization captured at the query decision. */
 export interface ProtocolDispatchResult extends DispatchResult {
   /** Current request authorization, never inferred solely from a matching reply SAID. */
   mailboxQueryAuthorized: boolean;
 }
 
 /**
- * Serialize shared protocol state changes and publish their committed cues.
+ * Dispatch to synchronous semantic owners and publish their committed output.
  *
- * KERIpy supplies parsers with concrete Kevery/Revery/Exchanger owners. This owner
- * preserves that split while accounting for TypeScript handlers that suspend:
- * one protocol turn spans dispatch, optional escrow recovery and cue publication.
- * It owns no input queue, parser, socket, transport worker or arbitrary callbacks.
- * Stores and configured semantic handlers are borrowed from composition.
+ * KERIpy supplies parsers with concrete Kevery/Revery/Exchanger owners. Domain
+ * writers decide and commit without suspension; EXN file preparation and handlers
+ * run in their input's operation. Independent inputs and escrow scans may progress
+ * during that I/O. This owner captures query replies before application delivery
+ * and registers shared semantic routes once; it owns no lock, input queue or transport.
  */
 export class ProtocolProcessor {
-  /** A protocol turn remains held until its active handler and cleanup have joined. */
-  private busy = false;
-  /** FIFO waiters; cancellation removes a waiter before it can enter the turn. */
-  private readonly waiting = new Set<() => void>();
-
   /**
    * Bind long-lived semantic owners and register their reply routes exactly once.
    *
@@ -112,7 +107,7 @@ export class ProtocolProcessor {
    * @param frame Complete hydrated frame whose evidence remains valid for this operation.
    * @param options Local intake policy, hosted mailbox provenance and whether to advance escrows.
    * @param kvy Input-specific Kevery in this domain; defaults to the shared owner.
-   * @returns Exact dispatch result and current mailbox authorization after the serialized turn.
+   * @returns Exact dispatch result and current mailbox authorization at its synchronous query decision.
    * @throws Domain mismatch, infrastructure/handler or cleanup errors propagate; publication still runs in the dispatch finalizer.
    */
   dispatch(
@@ -127,98 +122,49 @@ export class ProtocolProcessor {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
     return call(function*() {
-      yield* self.acquireProtocol();
-      return yield* call(function*() {
-        try {
-          const result = yield* dispatchEnvelope(
-            envelopeFromFrame(frame, local),
-            self.rvy,
-            kvy,
-            self.exc,
-            self.tvy ?? undefined,
-            self.vry ?? undefined,
-            mailboxAid,
-            self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
-          );
-          if (escrows) yield* self.advanceEscrows();
-          return {
-            ...result,
-            mailboxQueryAuthorized: result.envelope.serder.route === "mbx"
-              && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope)),
-          };
-        } finally {
-          self.publishCues();
-        }
-      });
+      try {
+        const result = yield* dispatchEnvelope(
+          envelopeFromFrame(frame, local),
+          self.rvy,
+          kvy,
+          self.exc,
+          self.tvy ?? undefined,
+          self.vry ?? undefined,
+          mailboxAid,
+          self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
+        );
+        const mailboxQueryAuthorized = result.envelope.serder.route === "mbx"
+          && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));
+        // Capture this request's facts before optional escrows can suspend or change key state.
+        self.publishCues();
+        if (escrows) yield* self.advanceEscrows();
+        return { ...result, mailboxQueryAuthorized };
+      } finally {
+        self.publishCues();
+      }
     });
   }
 
   /** Capture direct replies before handing ordinary protocol records to the application consumer. */
   private publishCues(): void {
-    this.replies.capture(this.protocolCues);
-    while (!this.protocolCues.empty) this.cues.push(this.protocolCues.pull()!);
+    // Readiness observers may synchronously reenter dispatch. Own this committed
+    // batch before notifying them so nested publication cannot take its records.
+    const committed = new Deck<AgentCue>();
+    while (!this.protocolCues.empty) committed.push(this.protocolCues.pull()!);
+    this.replies.capture(committed);
+    while (!committed.empty) this.cues.push(committed.pull()!);
   }
 
-  /** Serialize only protocol processing; cancellation removes waiters and joins active handlers before release. */
-  private *acquireProtocol(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    yield* resource<void>(function*(provide) {
-      let acquired = false;
-      try {
-        if (self.busy) {
-          yield* action<void>((resolve) => {
-            /** Transfer the serialized protocol turn to this waiter before resolving its suspension. */
-            const grant = () => {
-              acquired = true;
-              resolve();
-            };
-            self.waiting.add(grant);
-            return () => {
-              self.waiting.delete(grant);
-            };
-          });
-        } else {
-          self.busy = true;
-          acquired = true;
-        }
-        yield* provide();
-      } finally {
-        if (acquired) {
-          const next = self.waiting.values().next().value;
-          if (next) {
-            self.waiting.delete(next);
-            next();
-          } else {
-            self.busy = false;
-          }
-        }
-      }
-    });
-  }
-
-  /**
-   * Advance all configured escrow owners within one serialized protocol turn.
-   * This includes KEL/reply, optional TEL/credential/v2 registry, and exchange escrows,
-   * plus KRAM pruning. Capture direct replies and publish ordinary cues on exit.
-   * Cancellation releases the turn only after active handler cleanup joins.
-   */
+  /** Advance configured escrow owners; each scan joins its own I/O and handler cleanup. */
   *processEscrowsOnce(): Operation<void> {
-    // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
-    const self = this;
-    yield* call(function*() {
-      yield* self.acquireProtocol();
-      yield* call(function*() {
-        try {
-          yield* self.advanceEscrows();
-        } finally {
-          self.publishCues();
-        }
-      });
-    });
+    try {
+      yield* this.advanceEscrows();
+    } finally {
+      this.publishCues();
+    }
   }
 
-  /** Advance component escrows while this protocol operation owns serialization. */
+  /** Publish synchronous escrow facts before progressing asynchronous EXN recovery. */
   private *advanceEscrows(): Operation<void> {
     this.kvy.kramer?.prune();
     this.kvy.processEscrows();
@@ -226,6 +172,7 @@ export class ProtocolProcessor {
     this.tvy?.processEscrows();
     this.vry?.processEscrows();
     this.registry?.processEscrows();
+    this.publishCues();
     yield* this.exc.processEscrows();
   }
 
