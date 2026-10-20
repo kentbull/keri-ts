@@ -404,13 +404,17 @@ Deno.test("ordinary inquiries randomly choose within the first eligible role and
       coordinator.enqueue({ pre: "unknown-subject", wits: [peers[2].pre], route: "logs", q: {} });
       yield* coordinator.processPending();
       yield* coordinator.deliverOnce();
-      assertEquals(urls, [0, 1, 2, 2].map((idx) => `http://peer-${idx}.query.test/`));
-      assertEquals(messages.map((msg) => (new SerderKERI({ raw: msg }).ked?.q as Record<string, unknown>).src), [
-        peers[0].pre,
-        peers[1].pre,
-        peers[2].pre,
-        peers[2].pre,
-      ]);
+      const sent = messages.map((msg, index) => ({
+        url: urls[index],
+        src: (new SerderKERI({ raw: msg }).ked?.q as Record<string, unknown>).src,
+      }));
+      // Generated AIDs determine database order; both random extremes must select controllers.
+      assertEquals(
+        sent.slice(0, 2).sort((left, right) => left.url.localeCompare(right.url)),
+        peers.slice(0, 2).map((peer, index) => ({ url: `http://peer-${index}.query.test/`, src: peer.pre })),
+      );
+      const addressed = { url: "http://peer-2.query.test/", src: peers[2].pre };
+      assertEquals(sent.slice(2), [addressed, addressed]);
     } finally {
       Math.random = random;
       yield* coordinator.close();
