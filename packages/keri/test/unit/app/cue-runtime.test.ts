@@ -9,6 +9,7 @@ import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { Roles } from "../../../src/core/roles.ts";
 import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("Respondant finishes local replay construction before publishing or removing its source", async () => {
@@ -38,9 +39,6 @@ Deno.test("Respondant finishes local replay construction before publishing or re
     };
     const cue: AgentCue = { kin: "replay", msgs, src: hab.pre, dest: hab.pre };
     const cues = new Deck([cue]);
-    runtime.postman.findBytesRoute = () => {
-      throw new Error("delivery routing does not belong to message production");
-    };
     try {
       assertStrictEquals(assertThrows(() => runtime.respondant.enqueueCue(hab, cues)), failure);
       assertStrictEquals(cues.peekHead(), cue);
@@ -99,14 +97,8 @@ Deno.test("Poster retains the complete source message on exceptions without auto
         }
       },
     };
-    runtime.postman.findBytesRoute = () => ({
-      sender: hab.pre,
-      recipient: hab.pre,
-      topic: "/reply",
-      kind: "direct",
-      bodyMode: "header",
-      targets: [{ eid: hab.pre, url }],
-    });
+    hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
+    hby.db.locs.pin([hab.pre, "http"], { url });
     try {
       runtime.cues.push({ kin: "replay", msgs, src: hab.pre, dest: hab.pre });
       yield* processCuesOnce(runtime, { hab });
@@ -152,17 +144,14 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
     ];
     const saids = msgs.map((msg) => new SerderKERI({ raw: msg }).said!);
     secondSaid = saids[1];
-    runtime.postman.findBytesRoute = () => ({
-      sender: sender.pre,
-      recipient: second.pre,
-      topic: "/replay",
-      kind: "direct",
-      bodyMode: "header",
-      targets: [sender, second, third].map((hab, index) => ({
-        eid: hab.pre,
-        url: `https://${["first", "second", "third"][index]}.test/`,
-      })),
-    });
+    const targets = [sender, second, third].map((hab, index) => ({
+      eid: hab.pre,
+      target: ["first", "second", "third"][index],
+    })).sort((a, b) => a.eid < b.eid ? -1 : 1);
+    for (const { eid, target } of targets) {
+      hby.db.ends.pin([second.pre, Roles.controller, eid], { allowed: true });
+      hby.db.locs.pin([eid, "http"], { url: `https://${target}.test/` });
+    }
     try {
       runtime.cues.push({ kin: "replay", msgs, src: sender.pre, dest: second.pre });
       runtime.cues.push({ kin: "receipt", serder: second.kever!.serder });
@@ -173,11 +162,11 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
       yield* runtime.postman.process();
       assertEquals(
         attempts,
-        produced.flatMap((msg) => ["first", "second", "third"].map((target) => ({ target, said: msg.said! }))),
+        produced.flatMap((msg) => targets.map(({ target }) => ({ target, said: msg.said! }))),
         "each complete replay message reaches all targets before the following receipt",
       );
       assertEquals(
-        runtime.postman.failures.map(({ evt, deliveries }) => ({ evt, deliveries })),
+        runtime.postman.failures.map(({ evt, deliveries }) => ({ evt, deliveries: [...deliveries].sort() })),
         evts.slice(0, 2).map((evt, index) => ({
           evt,
           deliveries: index === 0 ? ["https://second.test/", "https://third.test/"] : ["https://second.test/"],
@@ -250,14 +239,8 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
       src: hab.pre,
       dest: hab.pre,
     });
-    runtime.postman.findBytesRoute = () => ({
-      sender: hab.pre,
-      recipient: hab.pre,
-      topic: "/reply",
-      kind: "direct",
-      bodyMode: "header",
-      targets: [{ eid: hab.pre, url: "https://peer.test/" }],
-    });
+    hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
+    hby.db.locs.pin([hab.pre, "http"], { url: "https://peer.test/" });
     runtime.respondant.enqueueCue(hab, runtime.cues);
     const delivery = yield* spawn(function*() {
       try {

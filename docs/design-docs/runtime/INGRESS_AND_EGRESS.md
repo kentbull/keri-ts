@@ -175,6 +175,8 @@ publishes independent response and delivery consumers only after complete
 construction. A failed second TSN leaves the pair pending and unpublished.
 Poster owns endpoint selection, forwarding construction, sequential target loops,
 active I/O and joined cleanup. Every evts record is one signed source message.
+Route snapshots and target preparation are private implementation details; callers
+admit signed messages and observe concrete completion outcomes.
 Observed refusals attempt remaining targets, retain the whole event in failures,
 and allow later FIFO events to proceed. Poster exposes no retry/discard operation.
 The process-local failure backlog remains until its separate unobserved-failure

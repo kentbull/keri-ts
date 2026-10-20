@@ -112,7 +112,7 @@ export type PosterOutcome =
   };
 
 /** Recipient policy captured synchronously from current accepted routing state for one attempt. */
-export interface RawCesrRoute {
+interface RawCesrRoute {
   /**
    * Local sender AID whose habitat prepared this route.
    */
@@ -140,7 +140,7 @@ export interface RawCesrRoute {
 }
 
 /** Prepared wire borrows its bytes until the transport operation and cleanup finish. */
-export type PreparedCesrTarget =
+type PreparedCesrTarget =
   | {
     /** Stored means the local mailbox transaction completed; tcp/http still require network execution. */
     readonly kind: "stored";
@@ -514,24 +514,6 @@ export class Poster {
   }
 
   /**
-   * Snapshot mailbox/direct/witness policy without opening transport or reading message bytes.
-   *
-   * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param args Resolved recipient AID, optional mailbox topic and delivery preference.
-   * @returns Current route snapshot.
-   * @throws Invalid recipient/topic policy or storage lookup failures propagate. Missing routing throws ValidationError.
-   */
-  resolveBytesRoute(
-    hab: Hab,
-    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
-  ): RawCesrRoute {
-    const recipient = args.recipient;
-    const route = this.findBytesRoute(hab, { ...args, recipient });
-    if (!route) throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
-    return route;
-  }
-
-  /**
    * Resolve the prepared destination AID; absence is explicit and other failures propagate.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
@@ -539,7 +521,7 @@ export class Poster {
    * @returns Current route snapshot, or null when no target is known.
    * @throws Invalid recipient/topic policy or storage lookup failures propagate.
    */
-  findBytesRoute(
+  private findBytesRoute(
     hab: Hab,
     args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
   ): RawCesrRoute | null {
@@ -579,7 +561,7 @@ export class Poster {
    * @param message Original signed CESR bytes; outer forwarding/introduction material may be rebuilt.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
    */
-  *prepareBytesTarget(
+  private *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
     endpoint: { eid: string; url: string },
