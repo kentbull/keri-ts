@@ -91,7 +91,8 @@ Supplied chain authentication does not prove global freshness. IPEX
 presentation cutoffs use completed receiver-observed KRAM time, retained through
 dependency escrow and reopen. An accepted source naming a not-yet-accepted registry
 update stays retryable even when its RIP has arrived; intermediate ingress sweeps
-must not turn that missing dependency into a binding rejection. Partial group signatures do not complete that time;
+must not turn that missing dependency into a binding rejection. An issuer RIP
+without its first BUP likewise leaves registry-backed authentication pending. Partial group signatures do not complete that time;
 later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.

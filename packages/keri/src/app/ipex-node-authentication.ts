@@ -73,6 +73,9 @@ export function authenticateIpexNode(
     if (!proofs.length || !registry) return { kind: "reject" };
     const chain = acceptedRegistryEvidence(registry, serder.regid);
     if (!chain) return { kind: "missing", reason: `Missing local TEL evidence for ${serder.regid}.` };
+    // RIP establishes the registry but cannot bind a credential. Ordinary ingress
+    // may retry this grant before the first BUP arrives; that is still a dependency.
+    if (!chain.updates.length) return { kind: "missing", reason: `Missing issuer TEL update for ${serder.regid}.` };
     const result = vetBinds({
       ...chain,
       db,

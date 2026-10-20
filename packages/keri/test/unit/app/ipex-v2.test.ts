@@ -515,7 +515,7 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
     const iblind = makeBlindState({ acdc: credential.said!, state: "issued" });
     const ibup = blindate(irip.said!, irip.said!, iblind.d.nonce, { stamp: receipt });
     anchor(issuer, ibup);
-    for (const event of [irip, ibup]) assertEquals(observer.processEvent(event).kind, "accept");
+    assertEquals(observer.processEvent(irip).kind, "accept");
     const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
       kind: Kinds.json,
       message: "presentation",
@@ -556,6 +556,9 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       assertExists(hby.db.epse.get([grant.said!]));
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       assertEquals(hby.db.exns.get([grant.said!]), null);
+      assertEquals(observer.processEvent(ibup).kind, "accept");
+      yield* runtime.protocol.processEscrowsOnce();
+      assertExists(hby.db.epse.get([grant.said!]), "issuer update resolves before the presentation registry arrives");
       now += 1000;
       yield* store.baser.reopen();
       yield* hby.db.reopen();
