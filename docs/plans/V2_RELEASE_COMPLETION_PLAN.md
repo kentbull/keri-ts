@@ -28,6 +28,7 @@ The scope includes:
 - Legacy group backer registries with actual backer receipts and rotation.
 - Legacy TEL replay and real old-peer HTTP/mailbox reachability.
 - Two bounded reconciliation findings concerning initialization and AEID changes.
+- A final ProtocolProcessor assessment and cohesive source organization within all three packages.
 - Fresh qualification and actual publication of all three 2.0.0 packages.
 
 **Scope confirmed by Kent:** include native-v2 CLI authoring and group backer
@@ -350,7 +351,11 @@ tests until the end.
 | 29      | Connect native-v2 CLI IPEX delivery and wallet acceptance                                              | 16, 28      |
 | 30      | Complete native-v2 presentation and vacuous-update workflows                                           | 28, 29      |
 | 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30       |
-| 32      | Prepare all three 2.0.0 versions and qualify the final candidate                                       | 31          |
+| 31a     | Assess remaining ProtocolProcessor responsibility; remove it if explicit dependencies suffice          | 31          |
+| 31b     | Organize CESR sources and cohesive large-file units for human navigation                               | 31a         |
+| 31c     | Organize KERI protocol/application sources and cohesive large-file units                               | 31b         |
+| 31d     | Organize Tufa command/hosting sources and validate the resulting package graph                         | 31c         |
+| 32      | Prepare all three 2.0.0 versions and qualify the reorganized final candidate                           | 31d         |
 | Release | Publish and verify CESR -> KERI -> Tufa 2.0.0                                                          | 32          |
 
 This is an estimated decomposition, not a quota of PRs or a promise to finish
@@ -947,6 +952,40 @@ After every final file/Git-state mutation under the workspace, run the prescribe
 ENCTX maintenance and require healthy/no-stale-source results. Do not silently
 change source selection or indexing policy.
 
+## Final ownership assessment and package organization — PRs 31a–31d
+
+After feature implementation and its actual-peer interop evidence, reassess
+ProtocolProcessor before reorganizing the source. If it has become a dependency
+bundle or forwarding facade, remove it and pass actual semantic dependencies into
+its callers. Retain it only for a demonstrated cohesive responsibility. If it was
+already removed during PR 03d, credit that result and skip an empty PR 31a.
+
+Then reorganize code within **cesr-ts, keri-ts and @keri-ts/tufa** for readability
+and maintenance, with separate human-review PRs by package. Inspect the resulting
+dependency graph before choosing the final layout. Group change-together owners
+under meaningful internal subdirectories and split large files only at real
+responsibility boundaries. Give particular attention to crowded app/CLI modules;
+use KERIpy organization where it improves navigation, with the accepted ownership
+and flow constraints deciding divergences. Do not impose file-count quotas,
+arbitrary file-size limits or one directory per class.
+
+The intended categories follow actual concerns: CESR framing/codecs/primitives;
+KERI semantic domains, identity/group/credential workflows and concrete transport
+owners; Tufa command families, HTTP protocol endpoints and hosting. These are
+starting hypotheses, not a fixed taxonomy that overrides the completed design.
+Internal subpackages do not require new published packages or a new framework.
+Keep narrow deliberate public entrypoints; avoid wildcard barrels and old-path
+compatibility shims. Keep behavior changes separate from moves/splits.
+
+Update imports, focused tests, suite ownership, DNT/package export discovery and
+build scripts together. Give each PR a short old-to-new category map and reading
+order so reviewers can distinguish moves from substantive splits. Verify source
+checks and affected integration/package paths after each cut, including strict
+NodeNext declarations and packed entrypoints for the resulting graph. Re-run the
+affected actual-peer paths when moving their composed owners. PR 32's complete
+final qualification must run after every ownership and organization change;
+pre-reorganization feature evidence alone cannot authorize publication.
+
 ## Final qualification and 2.0.0 publication — PR 32 and release
 
 1. **Prepare exactly 2.0.0 for all three packages.** Reconcile accumulated
@@ -955,7 +994,8 @@ change source selection or indexing policy.
    3.0.0. Use `release:version`, `manifest:sync/check` and `version:check`; inspect
    Deno mirrors, npm lock entries, generated modules and internal dependencies.
    The Changesets version PR is version preparation, not publication.
-2. **Qualify the final candidate.** After implementation and version inputs are
+2. **Qualify the final candidate.** After implementation, final ownership assessment,
+   source reorganization and version inputs are
    settled, run the complete maintained KERI/CESR/Tufa and actual-peer matrix,
    including required manual delegation and witness endurance owners. The prior
    baseline excluded manual endurance; do not carry that exclusion silently.
