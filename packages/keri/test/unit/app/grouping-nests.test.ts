@@ -408,6 +408,57 @@ for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
     });
   }
 }
+Deno.test("multisig peer evidence arriving during approval replay needs no second approval", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const own = parseBytes(messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_2_0, genusify: true }))[0];
+    const other = parseBytes(messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0, genusify: true }))[0];
+    const attrs = { gid: local.hab.pre, smids: mids, rmids: mids };
+    const first = proposal(bob, "/multisig/icp", { ...other, attachments: [] }, { ...attrs, m: "missing child proof" });
+    const later = proposal(bob, "/multisig/icp", other, { ...attrs, m: "child proof supplied" });
+    const approval = proposal(alice, "/multisig/icp", own, attrs);
+    const primary = new Exchanger(left), incoming = new Exchanger(left);
+    const mux = loadMultisigHandlers(left, primary, { notifier });
+    loadMultisigHandlers(left, incoming, { notifier, mux });
+    assertEquals((await run(() => primary.processEvent(first))).kind, "accept");
+    let resume!: () => void, entered!: () => void;
+    const replaying = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    const replay = Exchanger.prototype.replay;
+    Exchanger.prototype.replay = async function*(said, signal) {
+      if (said === first.serder.said) {
+        entered();
+        await gate;
+      }
+      yield* replay.call(this, said, signal);
+    };
+    try {
+      const approving = run(() => primary.processEvent(approval));
+      try {
+        await replaying;
+        assertEquals((await run(() => incoming.processEvent(later))).kind, "accept");
+      } finally {
+        resume();
+        await approving;
+      }
+    } finally {
+      Exchanger.prototype.replay = replay;
+    }
+    left.kevery.processEscrows();
+    assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
+    assertEquals(
+      left.db.getSigs(local.hab.pre, local.serder.said!).map((sig) => new Siger({ qb64: sig }).index).sort(),
+      [0, 1],
+    );
+  });
+});
+
 for (const remoteFirst of [false, true]) {
   Deno.test(`nested multisig merges real child signatures after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
     await participants(async (left, right, alice, bob, notifier) => {

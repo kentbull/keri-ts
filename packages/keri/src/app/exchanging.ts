@@ -35,6 +35,7 @@ import { consoleLogger } from "../core/logger.ts";
 import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../core/protocol-serialization.ts";
 import { hasNests, loadNests, publishNests, stageNests } from "../db/exchange-nests.ts";
+import type { PayloadArchive, PreparedPayload } from "../db/payload-archive.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
 import type { Hab, Habery } from "./habbing.ts";
@@ -101,7 +102,7 @@ export interface ExchangeRouteHandler {
       /** Present only when acceptsMissingEvidence is enabled, including an empty list. */
       missing?: readonly MissingExchangeState[];
     },
-  ): ExchangeFactors | null | Operation<ExchangeFactors | null>;
+  ): ExchangeFactors | null;
   /** Validate route policy before publishing accepted evidence. */
   verify?(args: {
     serder: SerderKERI;
@@ -118,7 +119,7 @@ export interface ExchangeRouteHandler {
     mailboxAid?: string | null;
     /** Qualified first receiver receipt, retained through dependency retry. */
     receiverTime?: string;
-  }): ExchangeRouteVerification | Operation<ExchangeRouteVerification>;
+  }): ExchangeRouteVerification;
   /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
     serder: SerderKERI;
@@ -185,6 +186,22 @@ export type ExchangeDecision =
     /** Original malformed-wire failure when a rejected attempt was classified from a caught error. */
     cause?: unknown;
   };
+/** Concrete evidence passed to the synchronous admission turn after file preparation. */
+interface PreparedExchangeEvidence {
+  retained: readonly Texter[] | null;
+  essrs?: readonly Texter[];
+  attachments: ExchangeAttachment[];
+  nestStage?: string;
+  payload?: PreparedPayload;
+}
+
+/** Decision and committed follow-up data; asynchronous handlers execute outside the writer. */
+interface ExchangeAdmission {
+  decision: ExchangeDecision;
+  cues: AgentCue[];
+  handling?: Parameters<ExchangeRouteHandler["handle"]>[0];
+}
+
 /**
  * Peer-to-peer `exn` processor for one `Habery`.
  *
@@ -267,119 +284,175 @@ export class Exchanger {
       }
     }.bind(this));
   }
-  /** Isolate admission cleanup so cancelling it cannot resume the caller after delegation. */
+  /** Prepare immutable evidence, decide against current state, then finish committed effects. */
   private *admit(args: ExchangeInput): Operation<ExchangeDecision> {
     const said = args.serder.said ?? "<unknown>";
-    /** Keep normal remote admission failures in the decision channel. */
     const reject = (reason: string, cause?: unknown): ExchangeDecision => ({
       kind: "reject",
-      reason,
       said,
+      reason,
       ...(cause !== undefined ? { cause } : {}),
     });
     let nestStage: string | undefined;
-    let nests: readonly CesrFrame[] = args.nests ?? [];
-    // Resources unwind in reverse order: I/O, payload cleanup, then admission release.
+    let prepared: PreparedPayload | undefined;
     yield* this.admission();
     yield* resource(function*(this: Exchanger, provide: Provide<void>) {
       try {
         yield* provide(undefined);
       } finally {
-        if (nestStage) this.hby.db.enstStaging.rem([nestStage]);
+        try {
+          if (prepared) yield* call(() => prepared!.discard());
+        } finally {
+          if (nestStage) this.hby.db.enstStaging.rem([nestStage]);
+        }
       }
     }.bind(this));
+    if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own the admission transaction");
     if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
-    const sender = args.serder.pre;
-    if (!sender || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
+    if (!args.serder.pre || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
+    if (args.receiverTime !== undefined && timestampMicros(args.receiverTime) === null) {
+      throw new Error("Invalid exchange receiver time");
+    }
     const route = args.serder.route ?? "";
     const handler = this.versionedRoutes.get(route)?.get(args.serder.pvrsn.major) ?? this.routes.get(route);
+    // Freeze implied last-establishment coordinates at this input, then authenticate them in the final turn.
     const resolved = this.resolveProofs(args);
-    const authentication = yield* this.authenticate(args.serder, resolved, handler);
-    if (authentication.kind === "reject") return authentication;
+    const attachments = normalizeAttachments(args.ptds ?? []);
+    let archive: PayloadArchive | undefined;
+    if (args.essrs || args.nests?.length || hasNests(this.hby.db, said) || this.hby.db.exchangeMeta.get([said])?.essr) {
+      archive = yield* abortable((signal) => this.hby.db.openPayloads(signal));
+    }
+    if (args.nests?.length) {
+      nestStage = crypto.randomUUID();
+      yield* abortable((signal) => stageNests(this.hby.db, nestStage!, args.nests!, signal));
+    }
+    for (;;) {
+      if (prepared) {
+        yield* call(() => prepared!.discard());
+        prepared = undefined;
+      }
+      const previous = this.hby.db.exchangeMeta.get([said]);
+      const reference = archive?.referenceId(`essr/${said}`) ?? null;
+      if (reference && !previous?.essr) throw new Error("Exchange payload reference has no provenance");
+      const imported = previous?.essr ? undefined : this.hby.db.essrs.get([said]).map((texter) => texter.qb64);
+      let retained: Texter[] | null;
+      try {
+        retained = yield* abortable((signal) => this.hby.db.getEssrs(said, signal));
+      } catch (error) {
+        if (error instanceof Deno.errors.NotFound && (archive?.referenceId(`essr/${said}`) ?? null) !== reference) {
+          continue;
+        }
+        throw error;
+      }
+      const essrs = retained ?? args.essrs;
+      if (typeof args.serder.a === "string") {
+        try {
+          const diger = new Diger({ qb64: args.serder.a });
+          if (!essrs || !(yield* abortable((signal) => diger.verifyStream(essrRaw(essrs).open(signal))))) {
+            return reject("Exchange ESSR payload digest does not match its signed commitment.");
+          }
+          if (
+            retained && args.essrs
+            && !(yield* abortable((signal) => diger.verifyStream(essrRaw(args.essrs!).open(signal))))
+          ) {
+            return reject("Duplicate ESSR payload digest does not match its signed commitment.");
+          }
+        } catch (error) {
+          if (!malformedEssr(error)) throw error;
+          return reject(
+            `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
+            error,
+          );
+        }
+      }
+      if (essrs && !reference) {
+        if (!archive) archive = yield* abortable((signal) => this.hby.db.openPayloads(signal));
+        yield* abortable(async (signal) => {
+          prepared = await archive!.prepare(essrWire(essrs), signal);
+          signal.throwIfAborted();
+        });
+      }
+      const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | null => {
+        // A changed file/imported row snapshot requires fresh byte verification, never a stale decision.
+        if ((archive?.referenceId(`essr/${said}`) ?? null) !== reference) return null;
+        const current = this.hby.db.exchangeMeta.get([said]);
+        if (Boolean(current?.essr) !== Boolean(previous?.essr)) return null;
+        if (imported) {
+          const rows = this.hby.db.essrs.get([said]);
+          if (rows.length !== imported.length || rows.some((row, index) => row.qb64 !== imported[index])) return null;
+        }
+        return this.admitCurrent(args, resolved, handler, {
+          retained,
+          essrs,
+          attachments,
+          nestStage,
+          payload: prepared,
+        }, archive);
+      });
+      if (!result) continue;
+      // Commit visibility and durable completion are different boundaries. Cancellation joins this flush.
+      yield* abortable(async () => {
+        await this.hby.db.env!.flushed;
+      });
+      for (const cue of result.cues) this.cues.push(cue);
+      if (result.handling && handler) yield* call(() => handler.handle(result.handling!));
+      return result.decision;
+    }
+  }
+
+  /** Authenticate, validate route policy and write evidence in one uninterrupted owner turn. */
+  private admitCurrent(
+    args: ExchangeInput,
+    resolved: ResolvedExchangeFactors,
+    handler: ExchangeRouteHandler | undefined,
+    prepared: PreparedExchangeEvidence,
+    archive: PayloadArchive | undefined,
+  ): ExchangeAdmission {
+    const said = args.serder.said!;
+    const authentication = this.authenticate(args.serder, resolved, handler);
+    const cues: AgentCue[] = [];
+    if (authentication.kind === "reject") return { decision: authentication, cues };
     let pending = authentication.kind === "escrow"
       ? { kind: authentication.kind, said, reason: authentication.reason }
       : undefined;
     const senderQuery = authentication.kind === "escrow" ? authentication.query : undefined;
-    let needsProof = false;
-    let missingSchema: string | undefined;
-    let newEscrow = false;
     const approved = authentication.kind === "verified" ? authentication : undefined;
-    const retainedFactors = approved?.retained ?? resolved;
-
     const previous = this.hby.db.exchangeMeta.get([said]);
-    const priorReceipt = storedReceiverTime(previous);
-    const incomingReceipt = args.receiverTime;
-    if (incomingReceipt !== undefined && timestampMicros(incomingReceipt) === null) {
-      throw new Error("Invalid exchange receiver time");
-    }
-    const receiverTime = priorReceipt ?? incomingReceipt;
-    const retained = yield* abortable((signal) => this.hby.db.getEssrs(said, signal));
-    const existing = previous?.essr ? retained : null;
-    // First durable evidence retains its original token boundaries and multiplicity.
-    const essrs = retained ?? args.essrs;
-    if (typeof args.serder.a === "string") {
-      let diger: Diger;
-      // Commitment construction is synchronous syntax work; payload verification owns asynchronous reads.
-      try {
-        diger = new Diger({ qb64: args.serder.a });
-      } catch (error) {
-        if (!malformedEssr(error)) throw error;
-        return reject(
-          `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
-          error,
-        );
-      }
-      try {
-        if (!essrs || !(yield* abortable((signal) => diger.verifyStream(essrRaw(essrs).open(signal))))) {
-          return reject("Exchange ESSR payload digest does not match its signed commitment.");
-        }
-        if (
-          retained && args.essrs
-          && !(yield* abortable((signal) => diger.verifyStream(essrRaw(args.essrs!).open(signal))))
-        ) {
-          return reject("Duplicate ESSR payload digest does not match its signed commitment.");
-        }
-      } catch (error) {
-        if (!malformedEssr(error)) throw error;
-        return reject(
-          `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
-          error,
-        );
-      }
-    }
-    const attachments = normalizeAttachments(args.ptds ?? []);
-    let retainedNests = hasNests(this.hby.db, said);
-    if (args.nests?.length || retainedNests) {
-      // Recover only nested work; ordinary flat exchanges need no file archive.
-      yield* abortable((signal) => this.hby.db.openPayloads(signal));
-      retainedNests = hasNests(this.hby.db, said);
-    }
+    const receiverTime = storedReceiverTime(previous) ?? args.receiverTime;
+    const mailboxAid = args.mailboxAid ?? previous?.mailboxAid ?? null;
+    const nests = args.nests?.length ? args.nests : loadNests(this.hby.db, said);
     if (
-      (args.nests?.length || retainedNests)
+      nests.length
       && (!handler?.acceptsNests || !supportsNestedExchange(args.serder.route ?? "", args.serder.pvrsn.major))
     ) {
-      return reject("Nested exchange route is not implemented.");
+      return { decision: { kind: "reject", said, reason: "Nested exchange route is not implemented." }, cues };
     }
-    if (retainedNests && !args.nests?.length) {
-      // Signature-only retries reopen the durable evidence; fresh parsed children stay hydrated.
-      nests = loadNests(this.hby.db, said);
-    }
-    const mailboxAid = args.mailboxAid ?? previous?.mailboxAid ?? null;
+    let missingSchema: string | undefined;
+    let needsProof = false;
+    const handling = {
+      serder: args.serder,
+      attachments: prepared.attachments,
+      essrs: prepared.essrs,
+      nests,
+      mailboxAid,
+      receiverTime,
+      ...(handler?.acceptsSscs && approved?.sscs.length ? { sscs: approved.sscs } : {}),
+    };
     if (approved && handler?.verify) {
-      const verification = handler.verify!({
-        serder: args.serder,
-        attachments,
-        essrs,
-        nests,
-        mailboxAid,
-        receiverTime,
-        ...(handler.acceptsSscs && approved.sscs.length ? { sscs: approved.sscs } : {}),
+      const verified = handler.verify({
+        ...handling,
         ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
       });
-      const verified = typeof verification === "object" && Symbol.iterator in verification
-        ? yield* verification
-        : verification;
-      if (verified === false) return reject(`Exchange route ${args.serder.route ?? ""} failed handler verification.`);
+      if (verified === false) {
+        return {
+          decision: {
+            kind: "reject",
+            said,
+            reason: `Exchange route ${args.serder.route ?? ""} failed handler verification.`,
+          },
+          cues,
+        };
+      }
       if (typeof verified === "object") {
         pending = { ...verified, said };
         missingSchema = verified.schema;
@@ -389,87 +462,44 @@ export class Exchanger {
         needsProof = missingSchema === undefined;
       }
     }
-    // An already accepted exchange cannot be downgraded by an incomplete duplicate.
-    if (pending && this.complete(said)) {
-      return pending;
-    }
-    if (args.nests?.length) {
-      nestStage = crypto.randomUUID();
-      yield* abortable((signal) => stageNests(this.hby.db, nestStage!, nests, signal));
-    }
-    /** Publish ordinary evidence and private provenance in the archive transaction. */
-    const commit = () => {
-      if (storedReceiverTime(this.hby.db.exchangeMeta.get([said])) !== priorReceipt) {
-        throw new Error("Exchange receiver receipt changed during admission");
-      }
-      if (nestStage) publishNests(this.hby.db, said, nestStage);
-      if (!pending && approved) {
-        this.clearEscrow(said, true);
-        this.logAcceptedEvent({
-          serder: args.serder,
-          ...approved.retained,
-          supplemental: approved.supplemental,
-          ptds: args.ptds ?? [],
-        });
-      } else {
-        newEscrow = missingSchema === undefined
-          ? this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? [])
-          : this.escrowMissingSchema(args.serder, missingSchema, retainedFactors, args.ptds ?? []);
-      }
-      if (essrs && !retained) {
-        this.hby.db.essrs.rem([said]);
-        for (const texter of essrs) {
-          this.hby.db.essrs.add([said], texter);
-        }
-      }
-      this.hby.db.exchangeMeta.pin([said], {
-        mailboxAid,
-        ...(receiverTime !== undefined ? { receiverTime } : {}),
-        ...((existing ?? essrs)
-          ? {
-            essr: {
-              gvrsn: previous?.essr?.gvrsn ?? args.gvrsn ?? args.serder.gvrsn ?? args.serder.pvrsn,
-            },
-          }
-          : {}),
-      });
-    };
-    let stored = existing ?? essrs;
-    if (essrs && !existing) {
-      const wire = essrs;
-      stored = yield* abortable(async (signal) => {
-        await (await this.hby.db.openPayloads(signal)).publish(`essr/${said}`, essrWire(wire), commit, signal);
-        return (await this.hby.db.getEssrs(said, signal))!;
+    if (pending && this.complete(said)) return { decision: pending, cues };
+    if (prepared.nestStage) publishNests(this.hby.db, said, prepared.nestStage);
+    let newEscrow = false;
+    if (!pending && approved) {
+      this.clearEscrow(said, true);
+      this.logAcceptedEvent({
+        serder: args.serder,
+        ...approved.retained,
+        supplemental: approved.supplemental,
+        ptds: args.ptds ?? [],
       });
     } else {
-      yield* abortable(async (signal) => {
-        signal.throwIfAborted();
-        this.hby.db.env!.transactionSync(commit);
-        await this.hby.db.env!.flushed;
-      });
+      const factors = approved?.retained ?? resolved;
+      newEscrow = missingSchema === undefined
+        ? this.escrowPartialSigned(args.serder, factors, args.ptds ?? [])
+        : this.escrowMissingSchema(args.serder, missingSchema, factors, args.ptds ?? []);
     }
+    if (prepared.essrs && !prepared.retained) {
+      this.hby.db.essrs.rem([said]);
+      for (const texter of prepared.essrs) this.hby.db.essrs.add([said], texter);
+    }
+    if (prepared.payload) archive!.pin(`essr/${said}`, prepared.payload);
+    this.hby.db.exchangeMeta.pin([said], {
+      mailboxAid,
+      ...(receiverTime !== undefined ? { receiverTime } : {}),
+      ...(prepared.essrs
+        ? { essr: { gvrsn: previous?.essr?.gvrsn ?? args.gvrsn ?? args.serder.gvrsn ?? args.serder.pvrsn } }
+        : {}),
+    });
     if (pending) {
       if (newEscrow) {
-        if (senderQuery) this.cueMissingStates([senderQuery]);
-        if (needsProof) this.cues.push({ kin: "proof", said });
-        if (missingSchema) this.cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
+        if (senderQuery) cues.push(...this.missingStateCues([senderQuery]));
+        if (needsProof) cues.push({ kin: "proof", said });
+        if (missingSchema) cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
       }
-      return pending;
+      return { decision: pending, cues };
     }
-    if (handler) {
-      yield* call(() =>
-        handler.handle({
-          serder: args.serder,
-          attachments,
-          essrs: stored ?? undefined,
-          nests,
-          mailboxAid,
-          receiverTime,
-          ...(handler.acceptsSscs && approved?.sscs.length ? { sscs: approved.sscs } : {}),
-        })
-      );
-    }
-    return { kind: "accept", said };
+    return { decision: { kind: "accept", said }, cues, handling };
   }
 
   /** Retry escrows using their persisted payload references and mailbox provenance. */
@@ -689,17 +719,17 @@ export class Exchanger {
     return result;
   }
   /** Match sender-factor precedence and let the registered route select supplemental evidence. */
-  private *authenticate(
+  private authenticate(
     serder: SerderKERI,
     resolved: ResolvedExchangeFactors,
-    handler?: ExchangeRouteHandler,
-  ): Operation<
+    handler: ExchangeRouteHandler | undefined,
+  ):
     | AuthenticatedExchange
     | (
       & Exclude<ExchangeDecision, { kind: "accept" }>
       & { query?: MissingExchangeState }
     )
-  > {
+  {
     const said = serder.said!;
     const sender = serder.pre!;
     const senderTsgs = aggregateTransIdxSigGroups(resolved.tsgs.filter((group) => group.pre === sender));
@@ -784,7 +814,7 @@ export class Exchanger {
         invalid,
         ...(handler.acceptsMissingEvidence ? { missing: [...resolved.missing, ...missing] } : {}),
       });
-      const selected = selection && Symbol.iterator in selection ? yield* selection : selection;
+      const selected = selection;
       if (!selected) return { kind: "reject", said, reason: "Route rejected supplemental exchange proofs." };
       supplemental = {
         tsgs: selected.tsgs ?? [],
@@ -803,8 +833,14 @@ export class Exchanger {
       },
     };
   }
-  /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
+  /** Missing-key queries describe observed facts even when later validation or storage fails. */
   private cueMissingStates(missing: readonly MissingExchangeState[]): void {
+    for (const cue of this.missingStateCues(missing)) this.cues.push(cue);
+  }
+
+  /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
+  private missingStateCues(missing: readonly MissingExchangeState[]): AgentCue[] {
+    const cues: AgentCue[] = [];
     const seen = new Set<string>();
     for (const { pre, sn } of missing) {
       const key = `${pre}:${sn ?? ""}`;
@@ -812,13 +848,14 @@ export class Exchanger {
         continue;
       }
       seen.add(key);
-      this.cues.push({
+      cues.push({
         kin: "query",
         pre,
         route: "logs",
         q: sn === null ? {} : { s: sn.toString(16) },
       });
     }
+    return cues;
   }
 
   /** Reattach the persisted verifier to each nontransferable signature before replay or retry. */
@@ -1134,9 +1171,12 @@ export class Exchanger {
     this.hby.db.epsd.rem([said]);
     this.hby.db.emse?.trim([said]);
     this.hby.db.emsd?.rem([said]);
-    this.hby.db.esigs.trim([said, ""], { topive: false });
-    this.hby.db.ecigs.rem([said]);
-    this.hby.db.ests.trim([said, ""], { topive: false });
+    // First acceptance replaces provisional factors; accepted duplicates accumulate verified proofs.
+    if (!keepEvidence || !this.complete(said)) {
+      this.hby.db.esigs.trim([said, ""], { topive: false });
+      this.hby.db.ecigs.rem([said]);
+      this.hby.db.ests.trim([said, ""], { topive: false });
+    }
     this.hby.db.epath.rem([said]);
     if (!keepEvidence) {
       this.hby.db.essrs.rem([said]);

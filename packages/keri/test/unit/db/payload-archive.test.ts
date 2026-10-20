@@ -72,6 +72,30 @@ Deno.test("payload archive publishes immutable references and revokes stale disp
   });
 });
 
+Deno.test("prepared payload references follow the domain writer's commit or rollback", async () => {
+  await withArchive(async (archive, db, root) => {
+    const rolledBack = await archive.prepare(await stage(archive.files, [1]));
+    assertEquals(archive.referenceId("essr/prepared"), null);
+    assertThrows(() => archive.pin("essr/prepared", rolledBack), Error, "owning writer");
+    assertThrows(
+      () =>
+        db.env!.transactionSync(() => {
+          archive.pin("essr/prepared", rolledBack);
+          throw new Error("domain write failed");
+        }),
+      Error,
+      "domain write failed",
+    );
+    await rolledBack.discard();
+    assertEquals(await names(join(root, "objects")), []);
+    const accepted = await archive.prepare(await stage(archive.files, [2]));
+    db.env!.transactionSync(() => archive.pin("essr/prepared", accepted));
+    await db.env!.flushed;
+    await accepted.discard();
+    assertEquals(await collectPayload((await archive.get("essr/prepared"))!), new Uint8Array([2]));
+  });
+});
+
 Deno.test("payload archive recovers orphan stages and rolled-back publication", async () => {
   await withArchive(async (archive, db, root) => {
     const retained = await stage(archive.files, [7]);

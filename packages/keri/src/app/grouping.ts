@@ -454,9 +454,15 @@ export class Multiplexor {
       };
     }
     const { said, embeddedSaid, route, sender } = inspection;
-    const existing = this.hby.db.meids.get([embeddedSaid]);
+    const { existing, submitters } = this.hby.db.env!.transactionSync(() => {
+      const existing = this.hby.db.meids.get([embeddedSaid]);
+      const submitters = this.hby.db.maids.get([embeddedSaid]);
+      // Approval is the authenticated wrapper, not completion of its asynchronous child replay.
+      this.hby.db.meids.add([embeddedSaid], new Saider({ qb64: said }));
+      this.hby.db.maids.add([embeddedSaid], new Prefixer({ qb64: sender }));
+      return { existing, submitters };
+    });
     const firstSubmission = existing.length === 0;
-    const submitters = this.hby.db.maids.get([embeddedSaid]);
     if (!this.isLocalHab(sender)) {
       if (submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
         // The parent is durable, but approval never lends its signatures to the child.
@@ -470,9 +476,6 @@ export class Multiplexor {
       // Remote evidence can precede approval. Replay one durable wrapper at a time after reopen.
       for (const prior of existing) yield* call(() => this.replayApproved(prior.qb64));
     }
-
-    this.hby.db.meids.add([embeddedSaid], new Saider({ qb64: said }));
-    this.hby.db.maids.add([embeddedSaid], new Prefixer({ qb64: sender }));
 
     const duplicate = existing.some((saider) => saider.qb64 === said);
     return {

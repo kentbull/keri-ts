@@ -8,6 +8,13 @@ it cannot authenticate a nested child. Routes explicitly select verified
 supplemental factors and may return an escrow decision for unavailable
 credential/KEL/TEL dependencies. Invalidity and missing evidence stay distinct.
 
+Exchanger prepares immutable file evidence before its final synchronous admission
+turn. Recheck the evidence snapshot, authenticate current accepted state, verify
+route policy and commit evidence in that writer. `verifyEvidence` and `verify`
+cannot suspend. Handlers run after durable commit in the caller's operation.
+First acceptance replaces provisional proof rows; verified accepted duplicates
+accumulate proofs without borrowing old proofs to authenticate the current input.
+
 `verifyEvidence` selects valid supplemental factors. `acceptsEvidence` independently
 permits delivery of that selection to route verification, including an empty
 selection when no hook exists. `acceptsSscs` permits nonempty validated sender

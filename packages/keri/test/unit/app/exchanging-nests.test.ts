@@ -100,6 +100,20 @@ function forward(
   })[0];
   return { serder, tsgs: signatures(sender, serder), nests: [nest], mailboxAid: provider.pre };
 }
+Deno.test("nested forwarding rechecks provider authority before publishing collected child bytes", async () => {
+  await scenario(async (_hby, sender, recipient, provider, director) => {
+    const nest = await child(sender, "authority changed");
+    const input = forward(sender, recipient, provider, nest);
+    const handler = new ForwardHandler(director);
+    const pending = handler.handle({ ...input, attachments: [] });
+    if (!pending) throw new Error("The nested handler must return its collection operation");
+    // The returned operation has yet to collect its child; revoke the real witness authority.
+    recipient.rotate({ cuts: [provider.pre], toad: 0 });
+    await run(() => pending);
+    assertEquals(director.mailboxer!.getTopicMsgs(`${recipient.pre}/nested`), []);
+  });
+});
+
 Deno.test("nested forwarding stores and replays a reference-qualified deep tree under default limits", async () => {
   await scenario(async (hby, sender, recipient, provider, _director, exchanger) => {
     const [nest] = await parseBytes(b(depthVector.qb64));

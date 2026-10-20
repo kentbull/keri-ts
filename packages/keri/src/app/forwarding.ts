@@ -726,35 +726,25 @@ export class ForwardHandler implements ExchangeRouteHandler {
       return;
     }
 
-    const hby = this.mailboxDirector.hby;
-    const recipientKever = hby.db.getKever(recipient);
-    if (!recipientKever) {
-      return;
-    }
-
-    if (mailboxAid) {
-      if (
-        !hostCanStoreForwardRecipient(
-          hby,
-          recipient,
-          recipientKever,
-          mailboxAid,
-        )
-      ) {
-        return;
-      }
-    } else if (!hasLocalStoreForwardHost(hby, recipient, recipientKever)) {
-      return;
-    }
+    if (!this.canStoreRecipient(recipient, mailboxAid)) return;
     if (child) {
       // Mailbox LMDB accepts a finite row; collect one child, never the whole exchange stream.
       return abortable(async (signal) => {
         const wire = await collectPayload(nestedPayload(child, Vrsn_2_0), signal);
         signal.throwIfAborted();
-        this.mailboxDirector.publish(recipient, topic, wire);
+        if (this.canStoreRecipient(recipient, mailboxAid)) this.mailboxDirector.publish(recipient, topic, wire);
       });
     }
     this.mailboxDirector.publish(recipient, topic, forwarded!);
+  }
+
+  /** Re-read accepted authority in the same synchronous turn as provider publication. */
+  private canStoreRecipient(recipient: string, mailboxAid: string | null | undefined): boolean {
+    const hby = this.mailboxDirector.hby;
+    const kever = hby.db.getKever(recipient);
+    if (!kever) return false;
+    if (mailboxAid) return hostCanStoreForwardRecipient(hby, recipient, kever, mailboxAid);
+    return hasLocalStoreForwardHost(hby, recipient, kever);
   }
 }
 

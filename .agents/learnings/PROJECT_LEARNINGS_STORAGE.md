@@ -85,7 +85,10 @@ owned content, and fails closed on missing referenced objects. The host exclusiv
 owns its archive directory across processes. File preparations may overlap; the
 synchronous writer selects a reference after comparing bytes and rechecking current
 ownership. Failed/duplicate candidates clean only their own files. Close joins
-all admitted I/O; caller-owned writers are refused. Wire tables remain interoperable.
+all admitted I/O; publish/remove convenience operations refuse caller-owned writers.
+Domain owners may prepare a physical candidate, recheck referenceId and pin it in
+their own writer. Dispose each candidate before DB close; committed references
+protect its file. Wire tables remain interoperable.
 
 Baser owns archive lifetime. Qualified essrs rows preserve original ciphertext;
 plaintext has separate storage and views. Private canonical wire retains repeated
