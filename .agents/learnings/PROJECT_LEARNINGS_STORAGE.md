@@ -74,15 +74,18 @@ PayloadStore.stage(signal) uses awaited Deno operations and private stages; fini
 transfers an owner. No stage quota or before-write byte ceiling exists. Actual file
 lengths, payload declarations and digest consistency remain validated by their
 consuming owners. Fsync/close, concurrent-write rejection and joined abort cleanup
-remain independent of accounting. Adopt transfers mutation ownership while preserving borrowed readers, so
-stale cleanup cannot delete published content. Use scoped identities such as
-essr.SAID/plain.SAID; UUIDs belong only to temporary admission/staging. These owner
-names are not independent byte hashes.
+remain independent of accounting. Claiming an unpromoted local stage transfers mutation ownership while preserving
+borrowed readers; other sources are copied. Stale cleanup cannot delete published
+content. Each prepared file keeps its own UUID; scoped application keys such as
+essr/SAID and plain/SAID live in the archive references, not filenames.
 
 PayloadArchive publishes private references only after file/directory flushes,
 with the owning DB commit. Startup scans incrementally, removes only unreferenced
 owned content, and fails closed on missing referenced objects. The host exclusively
-owns its archive directory across processes. Wire tables remain interoperable.
+owns its archive directory across processes. File preparations may overlap; the
+synchronous writer selects a reference after comparing bytes and rechecking current
+ownership. Failed/duplicate candidates clean only their own files. Close joins
+all admitted I/O; caller-owned writers are refused. Wire tables remain interoperable.
 
 Baser owns archive lifetime. Qualified essrs rows preserve original ciphertext;
 plaintext has separate storage and views. Private canonical wire retains repeated

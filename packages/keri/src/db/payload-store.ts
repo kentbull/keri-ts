@@ -3,7 +3,7 @@ import { join, resolve } from "jsr:@std/path";
 
 /** A caller-owned file; promotion is separate from publishing a database reference. */
 export interface FilePayload extends OwnedPayload {
-  /** Temporary stage name, replaced by the caller-supplied identity on promotion. */
+  /** Immutable file basename; an archive keeps the stage UUID through promotion. */
   readonly id: string;
   /** Publish under a SAID or scoped digest name without replacing an existing object. */
   promote(id: string): Promise<void>;
@@ -86,17 +86,10 @@ export class PayloadStore {
     }
   }
 
-  /** Identify an owned local file without exposing filesystem paths. */
-  owns(payload: Payload): payload is FilePayload {
-    return payload instanceof FileValue && payload.belongsTo(this.root);
-  }
-
-  /** Transfer a local handle to a new owner while keeping existing read views usable. */
-  adopt(payload: Payload): FilePayload {
+  /** Claim an unpromoted local stage; all borrowed/promoted files must be copied. */
+  claimStage(payload: Payload): FilePayload | null {
     if (this.closed) throw new Error("Payload store is closed");
-    if (!(payload instanceof FileValue) || !payload.belongsTo(this.root)) {
-      throw new TypeError("Payload belongs to another store");
-    }
+    if (!(payload instanceof FileValue) || !payload.belongsTo(this.root) || !payload.isUnclaimedStage()) return null;
     return payload.transfer();
   }
 
@@ -136,6 +129,11 @@ class FileValue implements FilePayload {
     return this.root === root;
   }
 
+  /** Only a finished, unclaimed stage can transfer into an independent archive preparation. */
+  isUnclaimedStage(): boolean {
+    return this.state.staged && !this.transferred && !this.state.removed && !this.state.busy;
+  }
+
   /** Move mutation rights to a new handle sharing the same file lifetime. */
   transfer(): FilePayload {
     this.checkOwner();
@@ -150,9 +148,17 @@ class FileValue implements FilePayload {
 
   /** Reopen from byte zero and release the descriptor on return, failure, or cancellation. */
   async *open(signal?: AbortSignal): AsyncIterable<Uint8Array> {
-    this.check();
+    if (this.state.removed) throw new Error("Payload file is removed");
     signal?.throwIfAborted();
-    const file = await Deno.open(this.path, { read: true });
+    const path = this.path;
+    let file: Deno.FsFile;
+    try {
+      file = await Deno.open(path, { read: true });
+    } catch (error) {
+      // Promotion may unlink the stage while this borrowed read is opening it.
+      if (!(error instanceof Deno.errors.NotFound) || path === this.path || this.state.removed) throw error;
+      file = await Deno.open(this.path, { read: true });
+    }
     try {
       let offset = 0;
       while (offset < this.size) {

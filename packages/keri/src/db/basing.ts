@@ -357,11 +357,11 @@ export class Baser {
       subkey: "plaintext.meta.",
       recordClass: PlaintextRecord,
     });
-    const previous = metadata.get([said]);
-    if (previous && previous.offset !== offset) {
-      throw new Error("Plaintext header offset conflicts with its stored value");
-    }
     const stored = await (await this.openPayloads(signal)).publish(`plain/${said}`, plaintext, () => {
+      const previous = metadata.get([said]);
+      if (previous && previous.offset !== offset) {
+        throw new Error("Plaintext header offset conflicts with its stored value");
+      }
       metadata.pin([said], { offset });
     }, signal);
     return { plaintext: stored, body: payloadRange(stored, offset) };

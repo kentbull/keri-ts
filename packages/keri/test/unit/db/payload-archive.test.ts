@@ -56,7 +56,7 @@ Deno.test("payload archive publishes immutable references and revokes stale disp
     assertEquals(await names(join(root, "staging")), []);
     const conflict = await stage(archive.files, [1, 9, 3]);
     await assertRejects(() => archive.publish("essr/said", conflict), Error, "different bytes");
-    await conflict.discard(); // Conflicting admission never consumes its input.
+    await conflict.discard(); // Cleanup is harmless after archive admission consumed the candidate.
     await archive.close();
     await assertRejects(() => archive.get("essr/said"), Error, "closed");
     assertThrows(() => archive.publish("essr/other", payload), Error, "closed");
@@ -85,7 +85,10 @@ Deno.test("payload archive recovers orphan stages and rolled-back publication", 
       Error,
       "commit failed",
     );
-    await stage(archive.files, [9]); // Finished but unclaimed stage models process interruption.
+    assertEquals((await names(join(root, "objects"))).length, 1);
+    const orphan = await stage(archive.files, [9]);
+    await orphan.promote(orphan.id); // Model interruption after file flush, before reference publication.
+    await stage(archive.files, [10]); // Also recover an interrupted unclaimed stage.
     assertEquals(await archive.get("wire/failed"), null);
     assertEquals((await names(join(root, "objects"))).length, 2);
     await archive.close();
@@ -112,12 +115,12 @@ Deno.test("payload archive recovers orphan stages and rolled-back publication", 
 Deno.test("payload archive borrows referenced local files across new and duplicate keys", async () => {
   await withArchive(async (archive, _db, root) => {
     await archive.publish("essr/first", await stage(archive.files));
-    const borrowed = await archive.files.open("essr.first");
+    const borrowed = await archive.files.open((await names(join(root, "objects")))[0]);
     // A new key gets independent bytes; promotion failure must not remove the first owner.
     await archive.publish("essr/second", borrowed);
     // Equal-byte duplicate admission must not discard the other referenced object.
     await archive.publish("essr/second", borrowed);
-    assertEquals((await names(join(root, "objects"))).sort(), ["essr.first", "essr.second"]);
+    assertEquals((await names(join(root, "objects"))).length, 2);
     assertEquals(await collectPayload((await archive.get("essr/first"))!), new Uint8Array([1, 2, 3]));
     await archive.remove("essr/first");
     assertEquals(await collectPayload((await archive.get("essr/second"))!), new Uint8Array([1, 2, 3]));
@@ -145,42 +148,176 @@ Deno.test("payload archive copies foreign sources and fails closed on missing re
   });
 });
 
-Deno.test("payload archive rejects concurrent mutations and close waits for admitted publication", async () => {
+Deno.test("payload archive admits independent files concurrently and joins all work on close", async () => {
   await withArchive(async (archive, _db, root) => {
-    let resume!: () => void;
+    let resume!: () => void, entered!: () => void;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
     const gate = new Promise<void>((resolve) => {
       resume = resolve;
     });
     const blocked: Payload = {
       size: 1,
-      /** Hold the admitted mutation until the test checks rejection and shutdown ordering. */
+      /** Keep one real source pending while another publication completes. */
       async *open() {
+        entered();
         await gate;
         yield new Uint8Array([1]);
       },
     };
     const publishing = archive.publish("wire/first", blocked);
-    await assertRejects(() => archive.publish("wire/second", blocked), Error, "active mutation");
-    const closing = archive.close();
-    resume();
-    await publishing;
-    await closing;
+    await reading;
+    try {
+      await archive.publish("wire/second", await stage(archive.files, [2]));
+      assertEquals(await collectPayload((await archive.get("wire/second"))!), new Uint8Array([2]));
+    } finally {
+      const closing = archive.close();
+      resume();
+      await publishing;
+      await closing;
+    }
+    assertEquals((await names(join(root, "objects"))).length, 2);
+  });
+});
+
+Deno.test("payload archive selects the committed same-key winner after overlapping preparation", async () => {
+  await withArchive(async (archive, _db, root) => {
+    for (const equal of [true, false]) {
+      let resume!: () => void, entered!: () => void;
+      const reading = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      const candidate: Payload = {
+        size: 1,
+        /** The competing publication wins while these bytes are still being prepared. */
+        async *open() {
+          entered();
+          await gate;
+          yield new Uint8Array([equal ? 7 : 8]);
+        },
+      };
+      const key = `essr/${equal ? "equal" : "conflict"}`;
+      let commits = 0;
+      const pending = archive.publish(key, candidate, () => {
+        commits++;
+      });
+      await reading;
+      try {
+        await archive.publish(key, await stage(archive.files, [7]), () => {
+          commits++;
+        });
+      } finally {
+        resume();
+      }
+      if (equal) await pending;
+      else await assertRejects(() => pending, Error, "different bytes");
+      assertEquals(commits, equal ? 2 : 1);
+      assertEquals(await collectPayload((await archive.get(key))!), new Uint8Array([7]));
+    }
+    assertEquals((await names(join(root, "objects"))).length, 2);
+    assertEquals(await names(join(root, "staging")), []);
+  });
+});
+
+Deno.test("payload archive old deletion cannot remove a newly published same-key file", async () => {
+  await withArchive(async (archive, _db, root) => {
+    await archive.publish("essr/replace", await stage(archive.files, [1]));
+    const old = (await names(join(root, "objects")))[0];
+    const open = archive.files.open.bind(archive.files);
+    let resume!: () => void, entered!: () => void;
+    const deleting = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    archive.files.open = async (id) => {
+      if (id === old) {
+        entered();
+        await gate;
+      }
+      return await open(id);
+    };
+    const removed = archive.remove("essr/replace");
+    await deleting;
+    try {
+      await archive.publish("essr/replace", await stage(archive.files, [2]));
+    } finally {
+      resume();
+      await removed;
+      archive.files.open = open;
+    }
+    assertEquals(await collectPayload((await archive.get("essr/replace"))!), new Uint8Array([2]));
     assertEquals((await names(join(root, "objects"))).length, 1);
   });
 });
 
-Deno.test("payload archive reserves admission before a synchronous commit callback", async () => {
-  await withArchive(async (archive) => {
-    await archive.publish("essr/first", await stage(archive.files));
-    await archive.publish("essr/second", await stage(archive.files));
-    let nested!: Promise<unknown>;
-    await archive.remove("essr/first", () => {
-      // remove reaches its callback without prior filesystem I/O; admission must already be held.
-      nested = assertRejects(() => archive.remove("essr/second"), Error, "active mutation");
+Deno.test("payload archive rechecks a reference replaced while its file is reopening", async () => {
+  await withArchive(async (archive, _db, root) => {
+    await archive.publish("essr/current", await stage(archive.files, [1]));
+    const old = (await names(join(root, "objects")))[0];
+    const open = archive.files.open.bind(archive.files);
+    let resume!: () => void, entered!: () => void;
+    const reopening = new Promise<void>((resolve) => {
+      entered = resolve;
     });
-    await nested;
-    assertEquals(await archive.get("essr/first"), null);
-    assertEquals(await collectPayload((await archive.get("essr/second"))!), new Uint8Array([1, 2, 3]));
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    let blocked = false;
+    archive.files.open = async (id) => {
+      if (id === old && !blocked) {
+        blocked = true;
+        entered();
+        await gate;
+      }
+      return await open(id);
+    };
+    let commits = 0;
+    const pending = archive.publish("essr/current", await stage(archive.files, [1]), () => {
+      commits++;
+    });
+    await reopening;
+    try {
+      await archive.remove("essr/current");
+      await archive.publish("essr/current", await stage(archive.files, [2]));
+    } finally {
+      resume();
+      await assertRejects(() => pending, Error, "different bytes");
+      archive.files.open = open;
+    }
+    assertEquals(commits, 0);
+    assertEquals(await collectPayload((await archive.get("essr/current"))!), new Uint8Array([2]));
+  });
+});
+
+Deno.test("payload archive active readers survive reference removal", async () => {
+  await withArchive(async (archive) => {
+    const bytes = Array<number>(65537).fill(3);
+    const saved = await archive.publish("essr/reader", await stage(archive.files, bytes));
+    const reader = saved.open()[Symbol.asyncIterator]();
+    try {
+      assertEquals((await reader.next()).value!.length, 65536);
+      await archive.remove("essr/reader");
+      assertEquals((await reader.next()).value, new Uint8Array([3]));
+      assertEquals((await reader.next()).done, true);
+    } finally {
+      await reader.return?.();
+    }
+  });
+});
+
+Deno.test("payload archive refuses caller-owned writers before file or reference effects", async () => {
+  await withArchive(async (archive, db) => {
+    await archive.publish("essr/first", await stage(archive.files));
+    db.env!.transactionSync(() => {
+      assertThrows(() => archive.remove("essr/first"), Error, "own the transaction");
+    });
+    assertEquals(await collectPayload((await archive.get("essr/first"))!), new Uint8Array([1, 2, 3]));
   });
 });
 
@@ -249,7 +386,7 @@ Deno.test("payload archive keeps ciphertext and plaintext owners distinct under 
   await withArchive(async (archive, _db, root) => {
     await archive.publish("essr/same", await stage(archive.files));
     await archive.publish("plain/same", await stage(archive.files));
-    assertEquals((await names(join(root, "objects"))).sort(), ["essr.same", "plain.same"]);
+    assertEquals((await names(join(root, "objects"))).length, 2);
     await archive.remove("essr/same");
     // Equal bytes do not merge independent lifetimes or require hidden reference counts.
     assertEquals(await collectPayload((await archive.get("plain/same"))!), new Uint8Array([1, 2, 3]));
@@ -259,7 +396,7 @@ Deno.test("payload archive keeps ciphertext and plaintext owners distinct under 
   });
 });
 
-Deno.test("payload archive retries a rolled-back finalized identity without reopening", async () => {
+Deno.test("payload archive cleans failed candidates and retries without reopening", async () => {
   await withArchive(async (archive, _db, root) => {
     const stagePayload = await stage(archive.files, [8]);
     await assertRejects(
@@ -270,8 +407,8 @@ Deno.test("payload archive retries a rolled-back finalized identity without reop
       Error,
       "rollback",
     );
-    assertEquals(await names(join(root, "objects")), ["essr.retry"]);
-    // Only the unreferenced failed object can be reclaimed for this immutable key.
+    assertEquals(await names(join(root, "objects")), []);
+    // A later candidate has its own file and cannot delete another admission.
     await archive.publish("essr/retry", await stage(archive.files, [9]));
     assertEquals(await collectPayload((await archive.get("essr/retry"))!), new Uint8Array([9]));
   });
