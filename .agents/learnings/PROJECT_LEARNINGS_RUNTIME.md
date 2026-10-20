@@ -141,7 +141,10 @@ identity preferences. HTTPStreamMessenger sends one prepared opaque PUT and retu
 owned response bytes; TCPStreamMessenger uses the existing raw writer. Neither
 adds a queue, worker, receive callback or payload-persistence framework. Poster
 selects those operations from admission intent; no Habery/global framing preference
-or CLI override remains. Queries and mailbox polling use ordinary signed POSTs.
+or CLI override remains. Queries and mailbox polling use ordinary signed POSTs. Mailbox polling shares
+CESR egress's exact Falcon media-refusal predicate and joins refused-response
+cleanup before one alternate media submission of the same signed query. Cursor
+publication still follows successful consumption.
 Forwarded mixed-genus streams declare each prepared frame's actual genus, including
 legacy introductions, so a v2 parser cannot misread their counters. Entirely v1
 streams retain unqualified legacy framing for old peers. Transport stays opaque.

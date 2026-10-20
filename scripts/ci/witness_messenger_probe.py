@@ -11,8 +11,9 @@ from keri.db import dbing
 
 class MessengerProbe:
     """Inspect accepted state and drive real Python factories, without seeding rows."""
-    def __init__(self, hby, legacy):
+    def __init__(self, hby, legacy, mbx):
         self.hby, self.legacy = hby, legacy
+        self.mbx = mbx
         self.traffic = []
         self.serial = 0
 
@@ -47,10 +48,22 @@ class MessengerProbe:
                              exn=said if said and self.hby.db.exns.get(keys=(said,)) else None,
                              payload=[base64.b64encode(part.raw).decode()
                                       for part in self.hby.db.essrs.get(keys=(said,))] if said else [])
+        elif command["action"] == "publish":
+            rep.media = self.publish(command["alias"], command["recipient"])
         elif command["action"] == "send":
             rep.media = self.send(command["url"], command["destination"], command["stream"])
         else:
             raise ValueError("Unknown messenger fixture command")
+
+    def publish(self, alias, recipient):
+        """Publish an actual signed reply through the witness's ordinary mailbox owner."""
+        if recipient not in self.hby.kevers:
+            raise ValueError("Recipient must first reach accepted state through protocol intake")
+        hab = self.hby.habByName(alias)
+        version = {} if self.legacy else dict(version=kering.Vrsn_1_0, gvrsn=kering.Vrsn_1_0)
+        message = hab.makeEndRole(eid=hab.pre, role=kering.Roles.agent, **version)
+        self.mbx.storeMsg(topic=f"{recipient}/reply", msg=message)
+        return dict(sender=hab.pre, message=base64.b64encode(message).decode())
 
     def send(self, url, destination, stream):
         """Send a fresh signed two-event KEL using the actual ordinary/stream factory."""

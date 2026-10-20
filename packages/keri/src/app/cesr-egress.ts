@@ -73,7 +73,7 @@ export interface EgressOptions {
  * @returns Decoded refusal text, or an empty string after draining a successful body.
  * @throws Body-read or cancellation errors propagate; an HTTP status alone does not throw.
  */
-async function readResponseBody(response: HttpStreamResponse, signal: AbortSignal): Promise<string> {
+export async function readResponseDetail(response: HttpStreamResponse, signal: AbortSignal): Promise<string> {
   const decoder = response.ok ? undefined : new TextDecoder();
   const text: string[] = [];
   for await (const chunk of response.body(signal)) {
@@ -133,8 +133,8 @@ function openFrameResponse(
           yield* provide({ kind: "response", response });
           return false;
         }
-        const detail = yield* abortable((signal) => readResponseBody(response, signal), options.signal);
-        if (mediaRejection(request, response.status, detail)) return true;
+        const detail = yield* abortable((signal) => readResponseDetail(response, signal), options.signal);
+        if (isLegacyCesrMediaRejection(request, response.status, detail)) return true;
         yield* provide({
           kind: "refuse",
           error: new CesrHttpRefusal(
@@ -184,19 +184,30 @@ function* frameRequests(frame: CesrFrame, options: EgressOptions): Operation<Htt
 }
 
 /**
- * Recognize the existing legacy media compatibility trigger.
- * Only the current CESR Content-Type can fall back to KERIpy JSON header mode.
- * This changes media metadata, not the signed content, and is not a general retry.
+ * Recognize KERIpy v1's exact preprocessing media refusal, before protocol intake.
+ * Attachment framing and the current media type are required. Authentication,
+ * KRAM and application refusals cannot trigger a second submission merely by
+ * mentioning content type in their diagnostic text.
  *
- * @param request The exact prepared request whose response is being classified.
+ * @param request Exact prepared request whose response is being classified.
  * @param status Observed peer HTTP status.
  * @param detail Fully consumed refusal body decoded as text.
- * @returns True only for attachment-header CESR media rejected with 406 and content-type detail.
+ * @returns True only for the pinned Falcon content-type error representation.
  */
-function mediaRejection(request: HttpRequestInit, status: number, detail: string): boolean {
+export function isLegacyCesrMediaRejection(request: HttpRequestInit, status: number, detail: string): boolean {
   const headers = new Headers(request.headers);
-  return headers.has(CESR_ATTACHMENT_HEADER) && status === 406
-    && headers.get("Content-Type") === CESR_CONTENT_TYPE && detail.toLowerCase().includes("content type");
+  if (!headers.has(CESR_ATTACHMENT_HEADER) || status !== 406 || headers.get("Content-Type") !== CESR_CONTENT_TYPE) {
+    return false;
+  }
+  let refusal: unknown;
+  try {
+    refusal = JSON.parse(detail);
+  } catch {
+    return false;
+  }
+  return typeof refusal === "object" && refusal !== null
+    && "title" in refusal && refusal.title === "Content type error"
+    && "description" in refusal && refusal.description === "Unacceptable content type.";
 }
 
 /**
@@ -222,7 +233,7 @@ function* sendFrame(
     const response = yield* http.request(url, request);
     if (response.ok) return { kind: "complete" };
     const detail = new TextDecoder().decode(response.body);
-    if (mediaRejection(request, response.status, detail)) continue;
+    if (isLegacyCesrMediaRejection(request, response.status, detail)) continue;
     return {
       kind: "refuse",
       error: new CesrHttpRefusal(

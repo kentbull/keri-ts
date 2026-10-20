@@ -67,9 +67,12 @@ provided" is an intentional boundary or an unresolved need, not a silent fallbac
 
 **Bridge.** [CESR HTTP helpers](../../../packages/keri/src/app/cesr-http.ts)
 recognize both media types, including parameters. In
-[CESR egress](../../../packages/keri/src/app/cesr-egress.ts), `mediaRejection`
+[CESR egress](../../../packages/keri/src/app/cesr-egress.ts), `isLegacyCesrMediaRejection`
 allows one alternative only when `CESR-ATTACHMENT` is present, status is 406,
-the attempted type is `application/cesr`, and refusal text contains `content type`.
+the attempted type is `application/cesr`, and the JSON refusal has the pinned Falcon
+`Content type error` title and `Unacceptable content type.` description. Mailbox
+polling shares that predicate and reuses the signed query after joined response
+cleanup; unrelated refusals cannot cause an alternate submission.
 [Witness receipt POST](../../../packages/keri/src/app/witnessing.ts) has the same
 type fallback at its owner.
 

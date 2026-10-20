@@ -41,20 +41,26 @@ def main():
                   temp=False, reopen=True, clear=False)
     version = {} if args.legacy else {"version": kering.Vrsn_1_0}
     hby = Habery(name=args.name, base=args.base, bran=args.passcode, cf=cf, **version)
+    mbx = None
     try:
+        if args.messenger_probe:
+            from keri.app.storing import Mailboxer
+            mbx = Mailboxer(name=args.alias, base=hby.base, temp=hby.temp)
         doers = [HaberyDoer(habery=hby)]
         witnesses = setupWitness(hby=hby, alias=args.alias, httpPort=args.http,
-                                 tcpPort=args.tcp, **version)
+                                 tcpPort=args.tcp, mbx=mbx, **version)
         if args.messenger_probe:
             from hio.core import http
             from witness_messenger_probe import MessengerProbe
-            probe = MessengerProbe(hby, args.legacy)
+            probe = MessengerProbe(hby, args.legacy, mbx)
             server = next(doer.server for doer in witnesses if isinstance(doer, http.ServerDoer))
             server.app.add_middleware(probe)
             server.app.add_route("/_messenger", probe)
         doers.extend(witnesses)
         runController(doers=doers)
     finally:
+        if mbx is not None:
+            mbx.close()
         hby.close()
         cf.close()
 

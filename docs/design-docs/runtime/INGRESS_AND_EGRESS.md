@@ -399,7 +399,10 @@ intake. The finite/scoped distinction is response ownership, not a CESR-only typ
 
 The header-media alternative is the narrow [COMP-01 compatibility rule](../../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-01--dual-http-media-types-and-narrow-sender-fallback),
 not a retry after arbitrary transport failure. Its source owner documents the exact
-status/text predicate, retained headers and unchanged signed content.
+status/JSON predicate, retained headers and unchanged signed content. Mailbox
+polling uses the same preprocessing-refusal decision, closes that response before
+one alternate media attempt and reuses the signed query and attachment bytes.
+Successful SSE consumption and cursor publication keep their existing ordering.
 
 `postCesr` sends successive framed POSTs and drains each ordinary response before
 advancing. It accepts no injected response consumer. HTTPQuery.query instead
