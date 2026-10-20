@@ -1,3 +1,4 @@
+import type { ThresholdSith } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import {
@@ -14,7 +15,16 @@ import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
-import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
+import {
+  InceptFileOptions,
+  loadInceptFileOptions,
+  parseBooleanOption,
+  parseCountOption,
+  parseDataItems,
+  parseStringListOption,
+  parseStringOption,
+  parseThresholdOption,
+} from "./common/parsing.ts";
 
 interface InceptArgs {
   name?: string;
@@ -32,9 +42,9 @@ interface InceptArgs {
   wits?: string[];
   toad?: number;
   icount?: number;
-  isith?: string;
+  isith?: ThresholdSith;
   ncount?: number;
-  nsith?: string;
+  nsith?: ThresholdSith;
   estOnly?: boolean;
   data?: string[];
   delpre?: string;
@@ -50,12 +60,12 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
   }
 
   if (args.transferable !== undefined) opts.transferable = args.transferable;
-  if (args.wits && args.wits.length > 0) opts.wits = args.wits;
-  if (args.icount !== undefined) opts.icount = Number(args.icount);
-  if (args.isith !== undefined) opts.isith = parseThresholdOption(args.isith);
-  if (args.ncount !== undefined) opts.ncount = Number(args.ncount);
-  if (args.nsith !== undefined) opts.nsith = parseThresholdOption(args.nsith);
-  if (args.toad !== undefined) opts.toad = Number(args.toad);
+  if (args.wits !== undefined) opts.wits = args.wits;
+  if (args.icount !== undefined) opts.icount = args.icount;
+  if (args.isith !== undefined) opts.isith = args.isith;
+  if (args.ncount !== undefined) opts.ncount = args.ncount;
+  if (args.nsith !== undefined) opts.nsith = args.nsith;
+  if (args.toad !== undefined) opts.toad = args.toad;
   if (args.estOnly !== undefined) opts.estOnly = args.estOnly;
   if (args.delpre !== undefined) opts.delpre = args.delpre;
   if (args.data !== undefined) opts.data = parseDataItems(args.data);
@@ -74,27 +84,27 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
   const http = new FetchHttpClient();
   const inceptArgs: InceptArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    temp: args.temp as boolean | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    configDir: args.configDir as string | undefined,
-    configFile: args.configFile as string | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    proxy: args.proxy as string | undefined,
-    file: args.file as string | undefined,
-    transferable: args.transferable as boolean | undefined,
-    wits: args.wits as string[] | undefined,
-    toad: args.toad as number | undefined,
-    icount: args.icount as number | undefined,
-    isith: args.isith as string | undefined,
-    ncount: args.ncount as number | undefined,
-    nsith: args.nsith as string | undefined,
-    estOnly: args.estOnly as boolean | undefined,
-    data: args.data as string[] | undefined,
-    delpre: args.delpre as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    temp: parseBooleanOption(args.temp, "temp"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    configDir: parseStringOption(args.configDir, "configDir"),
+    configFile: parseStringOption(args.configFile, "configFile"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    proxy: parseStringOption(args.proxy, "proxy"),
+    file: parseStringOption(args.file, "file"),
+    transferable: parseBooleanOption(args.transferable, "transferable"),
+    wits: parseStringListOption(args.wits, "wits"),
+    toad: parseCountOption(args.toad, "toad"),
+    icount: parseCountOption(args.icount, "icount"),
+    isith: parseThresholdOption(args.isith),
+    ncount: parseCountOption(args.ncount, "ncount"),
+    nsith: parseThresholdOption(args.nsith),
+    estOnly: parseBooleanOption(args.estOnly, "estOnly"),
+    data: parseStringListOption(args.data, "data"),
+    delpre: parseStringOption(args.delpre, "delpre"),
   };
 
   if (!inceptArgs.name) {
@@ -105,6 +115,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   }
 
   const opts = mergeWithFile(inceptArgs);
+  if (opts.icount === 0) throw new ValidationError("icount must be positive");
 
   // A command-local scope owns acquisition and teardown; there is no independent child consumer.
   const result = yield* call(function*() {

@@ -64,7 +64,11 @@ queued work or a fresh refusal. Protocol owners retain escrows and later workflo
 check the accepted evidence they need. One scope checks a monotonic deadline and
 joins child/I/O cleanup before return. Command success
 prints only after Habery closes. Database-only projections take Baser. Shared CLI parsing owns primitive shapes; initialization alone
-owns credential choices, key pairing and passcode confirmation. Inception's
+owns credential choices, key pairing and passcode confirmation. Inception/rotation
+validate supplied options before storage, preserve omission through file merging,
+and apply defaults afterward. Explicit false/zero/empty arrays override file
+values; malformed list members are rejected rather than filtered. Tholder owns
+threshold syntax and configurable caps. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.
 
 ## Protocol and output owners

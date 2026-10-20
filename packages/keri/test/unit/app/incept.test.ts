@@ -1,8 +1,16 @@
 import { type Operation, run } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertRejects,
+  assertStrictEquals,
+  assertStringIncludes,
+} from "jsr:@std/assert";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
-import { Habery } from "../../../src/app/habbing.ts";
+import { rotateCommand } from "../../../src/app/cli/rotate.ts";
+import { createHabery, Habery } from "../../../src/app/habbing.ts";
 import { assertOperationThrows, CLITestHarness } from "../../../test/utils.ts";
 
 async function captureCommandOutput(
@@ -158,5 +166,89 @@ Deno.test("CLI - initialization and inception report success only after database
     Habery.prototype.close = close;
     Habery.prototype.makeHab = makeHab;
     await Deno.remove(headDirPath, { recursive: true });
+  }
+});
+
+Deno.test("lifecycle commands apply explicit overrides before defaults and persist file choices", async () => {
+  const headDirPath = Deno.makeTempDirSync();
+  const name = `lifecycle-${crypto.randomUUID()}`;
+  const file = `${headDirPath}/options.json`;
+  const store = { name, headDirPath };
+  try {
+    await captureCommandOutput(initCommand({ ...store, nopasscode: true }));
+    Deno.writeTextFileSync(
+      file,
+      JSON.stringify({
+        transferable: true,
+        icount: 2,
+        isith: "1",
+        ncount: 2,
+        nsith: "2",
+        estOnly: true,
+        wits: [],
+        data: [{ purpose: "file" }],
+      }),
+    );
+    await captureCommandOutput(inceptCommand({ ...store, alias: "alice", file, estOnly: false }));
+    await run(function*() {
+      const hby = yield* createHabery({ ...store, skipConfig: true });
+      try {
+        const hab = hby.habByName("alice");
+        assertExists(hab?.kever);
+        assertEquals(hab.kever.verfers.length, 2);
+        assertEquals(hab.kever.ndigers.length, 2);
+        assertEquals(hab.kever.estOnly, false);
+        assertEquals(hby.db.getEvtSerder(hab.pre, hab.kever.said)?.ked?.a, [{ purpose: "file" }]);
+      } finally {
+        yield* hby.close();
+      }
+    });
+    Deno.writeTextFileSync(file, JSON.stringify({ ncount: 3, nsith: "2", data: [{ purpose: "rotation" }] }));
+    await captureCommandOutput(rotateCommand({ ...store, alias: "alice", file, data: [] }));
+    await run(function*() {
+      const hby = yield* createHabery({ ...store, skipConfig: true });
+      try {
+        const hab = hby.habByName("alice");
+        assertExists(hab?.kever);
+        assertEquals(hab.kever.ndigers.length, 3);
+        assertEquals(hab.kever.ntholder?.sith, "2");
+        assertEquals(hby.db.getEvtSerder(hab.pre, hab.kever.said)?.ked?.a, []);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    Deno.removeSync(headDirPath, { recursive: true });
+  }
+});
+
+Deno.test("lifecycle commands reject malformed options before opening a missing store", async () => {
+  const headDirPath = Deno.makeTempDirSync();
+  try {
+    for (
+      const [command, values] of [
+        [inceptCommand, [{ transferable: "false" }, { icount: 0 }, { wits: ["aid", 1] }, { isith: "" }]],
+        [rotateCommand, [{ nextCount: "1e2" }, { witnesses: [1] }, { authenticate: "false" }]],
+      ] as const
+    ) {
+      for (const invalid of values) {
+        const error = await assertRejects(() =>
+          run(() =>
+            command({
+              name: "missing",
+              alias: "alice",
+              headDirPath,
+              ...invalid,
+            })
+          )
+        );
+        assertInstanceOf(error, Error);
+        const key = Object.keys(invalid)[0];
+        assertStringIncludes(error.message.toLowerCase(), key === "isith" ? "threshold" : key.toLowerCase());
+        assertEquals([...Deno.readDirSync(headDirPath)], []);
+      }
+    }
+  } finally {
+    Deno.removeSync(headDirPath, { recursive: true });
   }
 });

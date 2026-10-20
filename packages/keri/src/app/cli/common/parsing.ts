@@ -1,4 +1,4 @@
-import type { ThresholdSith } from "cesr-ts";
+import { Tholder, type ThresholdSith } from "cesr-ts";
 import { ValidationError } from "../../../core/index.ts";
 
 /** Keep omission and explicit empty strings distinct; command policy handles emptiness. */
@@ -13,6 +13,35 @@ export function parseBooleanOption(value: unknown, flag: string): boolean | unde
   if (value === undefined) return undefined;
   if (typeof value !== "boolean") throw new ValidationError(`${flag} must be a boolean`);
   return value;
+}
+
+/** Validate a whole decimal count without collapsing omission or zero. */
+export function parseIntegerOption(value: unknown, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    if (!/^-?\d+$/.test(value)) throw new ValidationError(`${flag} must be a decimal integer`);
+    value = Number(value);
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new ValidationError(`${flag} must be a safe integer`);
+  }
+  return value;
+}
+
+/** Validate every list member; an explicit empty list remains an override. */
+export function parseStringListOption(value: unknown, flag: string): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || !value.every((item): item is string => typeof item === "string")) {
+    throw new ValidationError(`${flag} must be an array of strings`);
+  }
+  return [...value];
+}
+
+/** Require nonnegative whole counts for key and witness options. */
+export function parseCountOption(value: unknown, flag: string): number | undefined {
+  const count = parseIntegerOption(value, flag);
+  if (count !== undefined && count < 0) throw new ValidationError(`${flag} must not be negative`);
+  return count;
 }
 
 /**
@@ -38,9 +67,8 @@ export interface InceptFileOptions {
 /**
  * JSON file schema for `tufa rotate --file` option loading.
  *
- * The merge semantics intentionally stay close to KLI so tests and operator
- * expectations do not depend on whether an option came from the file or the
- * command line.
+ * Explicit CLI values override file values; omitted flags leave these values
+ * intact until the command applies its defaults.
  */
 export interface RotateFileOptions {
   isith?: ThresholdSith;
@@ -60,44 +88,20 @@ export interface RotateFileOptions {
  * Accepted forms intentionally match the operator-facing KLI shapes:
  * numeric, hex-string, weighted JSON-array string, or structured array data.
  */
-function normalizeThresholdOption(
-  value: unknown,
-): ThresholdSith | undefined {
-  if (value === undefined || value === null) {
-    return undefined;
-  }
+export function parseThresholdOption(value: unknown): ThresholdSith | undefined {
+  if (value === undefined) return undefined;
   if (typeof value === "number") {
-    if (!Number.isInteger(value) || value < 0) {
-      throw new Error(`Invalid numeric threshold ${value}`);
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new ValidationError("Threshold must be a nonnegative safe integer");
     }
-    return value.toString(16);
+    return new Tholder({ sith: value }).sith;
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) {
-      return undefined;
-    }
-    if (trimmed.startsWith("[")) {
-      return JSON.parse(trimmed) as ThresholdSith;
-    }
-    return trimmed;
+  if (typeof value !== "string" && !Array.isArray(value)) {
+    throw new ValidationError("Threshold must be a hex string, number or weighted array");
   }
-  if (Array.isArray(value)) {
-    return structuredClone(value) as ThresholdSith;
-  }
-  throw new Error(`Unsupported threshold option type ${typeof value}`);
-}
-
-/**
- * Parse one CLI/file threshold input into semantic numeric or weighted form.
- *
- * This is a thin public seam over `normalizeThresholdOption(...)` so command
- * modules do not duplicate threshold coercion rules.
- */
-export function parseThresholdOption(
-  value: unknown,
-): ThresholdSith | undefined {
-  return normalizeThresholdOption(value);
+  // Tholder owns weighted syntax, semantic validation and its configurable caps.
+  // JSON is the existing input boundary for arrays, avoiding an unchecked cast.
+  return new Tholder({ sith: typeof value === "string" ? value : JSON.stringify(value) }).sith;
 }
 
 /**
@@ -229,40 +233,50 @@ export function parseExnDataItems(
  * direct CLI flag.
  */
 export function loadInceptFileOptions(path: string): InceptFileOptions {
-  const text = Deno.readTextFileSync(path);
-  const loaded = JSON.parse(text) as InceptFileOptions;
+  const loaded = loadOptionObject(path);
   return {
-    ...loaded,
-    isith: normalizeThresholdOption(loaded.isith),
-    nsith: normalizeThresholdOption(loaded.nsith),
+    transferable: parseBooleanOption(loaded.transferable, "transferable"),
+    wits: parseStringListOption(loaded.wits, "wits"),
+    icount: parseCountOption(loaded.icount, "icount"),
+    isith: parseThresholdOption(loaded.isith),
+    ncount: parseCountOption(loaded.ncount, "ncount"),
+    nsith: parseThresholdOption(loaded.nsith),
+    toad: parseCountOption(loaded.toad, "toad"),
+    estOnly: parseBooleanOption(loaded.estOnly, "estOnly"),
+    data: parseFileData(loaded.data),
+    delpre: parseStringOption(loaded.delpre, "delpre"),
   };
 }
 
-/**
- * Load one JSON file of rotation options using the CLI file-input contract.
- *
- * KLI compatibility notes:
- * - threshold fields are normalized immediately
- * - witness collections are filtered down to strings so malformed JSON does
- *   not propagate surprising non-string values into witness math
- */
+/** Load known rotation fields, rejecting malformed values rather than filtering them. */
 export function loadRotateFileOptions(path: string): RotateFileOptions {
-  const text = Deno.readTextFileSync(path);
-  const loaded = JSON.parse(text) as RotateFileOptions;
+  const loaded = loadOptionObject(path);
   return {
-    ...loaded,
-    isith: normalizeThresholdOption(loaded.isith),
-    nsith: normalizeThresholdOption(loaded.nsith),
-    wits: Array.isArray(loaded.wits)
-      ? loaded.wits.filter((value): value is string => typeof value === "string")
-      : loaded.wits,
-    witsCut: Array.isArray(loaded.witsCut)
-      ? loaded.witsCut.filter((value): value is string => typeof value === "string")
-      : loaded.witsCut,
-    witsAdd: Array.isArray(loaded.witsAdd)
-      ? loaded.witsAdd.filter((value): value is string => typeof value === "string")
-      : loaded.witsAdd,
+    isith: parseThresholdOption(loaded.isith),
+    nsith: parseThresholdOption(loaded.nsith),
+    ncount: parseCountOption(loaded.ncount, "ncount"),
+    toad: parseCountOption(loaded.toad, "toad"),
+    wits: parseStringListOption(loaded.wits, "wits"),
+    witsCut: parseStringListOption(loaded.witsCut, "witsCut"),
+    witsAdd: parseStringListOption(loaded.witsAdd, "witsAdd"),
+    data: parseFileData(loaded.data),
   };
+}
+
+/** JSON option files are objects; individual command fields are validated by their loaders. */
+function loadOptionObject(path: string): Record<string, unknown> {
+  const value = loadJson(path);
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new ValidationError("Option file must contain a JSON object");
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Anchored JSON data is application-defined, but its outer collection must be an array. */
+function parseFileData(value: unknown): unknown[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) throw new ValidationError("data must be an array");
+  return value;
 }
 
 /**

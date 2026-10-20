@@ -66,6 +66,16 @@ escrows remain available for their owners to retry; later operations must check
 their required accepted evidence. Authentication retains its controller-state and
 authorization requirements, with unfinished attempts reaching the finite deadline. Both commands print final success only after owned stores close.
 
+## Lifecycle option validation
+
+Inception and rotation preserve file values when flags are omitted. Explicit
+false, zero and empty arrays remain overrides for programmatic command callers;
+rotation applies next-key defaults only after file/CLI precedence. This deliberately
+differs from KERIpy main's rotation CLI default override. Malformed supplied
+booleans, lists, counts and thresholds now fail before opening stores. Counts use
+decimal integer syntax; thresholds retain CESR hexadecimal/weighted syntax and
+Tholder's configurable limits. Null or empty thresholds are invalid supplied values.
+
 ## Multisig publication
 
 Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`
