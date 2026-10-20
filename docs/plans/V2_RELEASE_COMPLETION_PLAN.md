@@ -342,8 +342,9 @@ change, not formatting.
 
 ## Phases and cohesive PR sequence
 
-One implementation PR at a time. Numbers describe review order; dependencies
-are explicit below. Every feature PR contains its focused regression evidence.
+One implementation PR at a time. Labels retain their original phase grouping;
+row order and explicit dependencies describe review order after accepted redirects.
+Every feature PR contains its focused regression evidence.
 The final integration PR fills cross-boundary gaps rather than postponing all
 tests until the end.
 
@@ -369,10 +370,10 @@ tests until the end.
 | 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a             |
 | 12c     | Establish consistent database close failures and command completion                                    | 12b             |
 | 12d     | Move OOBI cleanup to ordinary Baser ownership and canonical pending table                              | 12c             |
-| 12e     | Correct ESSR storage/callers against actual pinned-main Baser; expose set limitations                  | 12a, 12b, 13b   |
 | 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12d        |
 | 13a     | Separate concrete ordinary/stream messenger construction and query response ownership                  | 05, 06, 12b, 13 |
 | 13b     | Wire explicit delivery intent and remove the entire persisted CESR body preference                     | 13a             |
+| 12e     | Correct ESSR storage/callers against actual pinned-main Baser; expose set limitations                  | 12a, 12b, 13b   |
 | 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b, 12e        |
 | 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13c         |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
