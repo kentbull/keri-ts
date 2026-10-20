@@ -1,6 +1,6 @@
 # Complete the coordinated 2.0.0 release
 
-Status: active; checked against merged master `fb9eb08d` (#627), 2026-10-20.
+Status: active; checked against merged master `3217da6f` (#628), 2026-10-20.
 Approved goal: publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 
 ## Current state
@@ -112,7 +112,7 @@ implementation PR before the next; split only for independent human review.
 | 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                               |
 | 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged |
 | 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                           |
-| 21           | Accepted historical backer cohorts and durable accumulated partial proofs; advance before the R2 backer service.     | R1                               |
+| 21           | Complete in #628: accepted historical backer cohorts, accumulated partial proofs and retry/reopen.                   | R1                               |
 | 22           | Complete real TEL backer signing/collection through public hosting.                                                  | 21, R2 backer slice              |
 | 23           | Explicit backer roster/threshold and group registry inception/rotation.                                              | 14, 22                           |
 | 24           | BIS/BRV, rotated cohorts and fresh-observer replay.                                                                  | 18, 20, 23                       |

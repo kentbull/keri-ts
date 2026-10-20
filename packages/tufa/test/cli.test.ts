@@ -918,6 +918,11 @@ Deno.test({
         "index",
       );
     }
+    await assertRejects(
+      () => run(() => agentCommand({ name: "unopened", backerAlias: ["backer"] })),
+      ValidationError,
+      "backerAlias",
+    );
     for (const field of ["schema", "schemaDir"]) {
       await assertRejects(
         () => run(() => agentCommand({ name: "unopened", [field]: ["schema.json", 7] })),
@@ -931,6 +936,7 @@ Deno.test({
 Deno.test("host, mailbox and challenge dispatch preserves supplied numeric syntax", () => {
   const agent = parseCommandSelection(["agent", "-n", "store", "--port", "0"]);
   assertEquals(agent.args.port, "0");
+  assertEquals(parseCommandSelection(["agent", "-n", "store", "--backer-alias", "backer"]).args.backerAlias, "backer");
   const mailbox = parseCommandSelection([
     "mailbox",
     "update",

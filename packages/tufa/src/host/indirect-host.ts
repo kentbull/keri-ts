@@ -7,6 +7,8 @@ export interface IndirectHostOptions {
   port: number;
   listenHost?: string;
   serviceHab: Hab;
+  /** Explicit optional TEL backer identity; independent of ordinary hosted prefixes. */
+  backerHab?: Hab;
   hostedPrefixes?: readonly string[];
   onListen?: (address: { port: number; hostname: string }) => void;
 }
@@ -25,6 +27,7 @@ export function* runIndirectHost(
   yield* runHostKernel(hby, {
     enableMailboxStore: true,
     serviceHab: options.serviceHab,
+    backerHab: options.backerHab,
     hostedPrefixes: options.hostedPrefixes,
     protocolPolicy: {},
     http: {

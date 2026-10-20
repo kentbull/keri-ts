@@ -22,6 +22,7 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
@@ -37,6 +38,7 @@ import { Revery, Router } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
+import { Backer, type BackerRequest } from "../../../src/vdr/backing.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";
 import { expectKind } from "../../private-access.ts";
@@ -1612,6 +1614,91 @@ Deno.test("backer contributions accumulate by verified index across reopen and e
       yield* reger.reopen();
       assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
       assertEquals(reger.tibs.get(dgKey(vcp.pre!, vcp.said!)).map((sig) => sig.index), [0, 1, 2]);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("backer endorses anchored evidence before quorum and reuses the durable receipt after reopen", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const first = hby.makeHab("first", undefined, { transferable: false });
+      const second = hby.makeHab("second", undefined, { transferable: false });
+      const outsider = hby.makeHab("outsider", undefined, { transferable: false });
+      const requests = new Deck<BackerRequest>();
+      let tvy = new Tevery({ db: hby.db, reger, backerRequests: requests });
+      let backer = new Backer(second, reger);
+      assertThrows(() => new Backer(issuer, reger), ValidationError);
+      const vcp = inceptRegistry(issuer.pre, { baks: [first.pre, second.pre], toad: 2 });
+      tvy.processEvent({ serder: vcp });
+      assertEquals(requests.length, 0);
+      const source = anchorTel(issuer, vcp);
+      const pending = tvy.processEvent({ serder: vcp, ...source });
+      assertEquals(pending.kind === "escrow" && pending.escrow, "partialWitness");
+      const request = requests.pull()!;
+      assertEquals(new Backer(outsider, reger).endorse(request).kind, "skip");
+      const result = backer.endorse(request);
+      assertEquals(result.kind, "contribution");
+      if (result.kind !== "contribution") throw new Error("Expected backer contribution");
+      assertEquals(result.issuer, issuer.pre);
+      assertEquals(result.signature.index, 1);
+      assertEquals(reger.bens.getOn([second.pre, vcp.pre!], 0)?.qb64, vcp.said);
+      assertEquals(reger.tels.getOn(vcp.pre!, 0), null);
+      const parsed = envelopeFromFrame(parseBytes(result.message)[0], false);
+      assertEquals(parsed.wigers.map((sig) => sig.qb64), [result.signature.qb64]);
+      tvy.processEscrows();
+      while (!requests.empty) assertEquals(backer.endorse(requests.pull()!).kind, "skip");
+      yield* reger.reopen();
+      tvy = new Tevery({ db: hby.db, reger, backerRequests: requests });
+      backer = new Backer(second, reger);
+      tvy.processEvent({ serder: vcp, ...source });
+      const replay = backer.endorse(requests.pull()!);
+      assertEquals(replay.kind === "contribution" && replay.signature.qb64, result.signature.qb64);
+      const firstSig = first.sign(vcp.raw, true)[0];
+      assertEquals(tvy.processEvent({ serder: vcp, ...source, wigers: [firstSig, result.signature] }).kind, "accept");
+      assertEquals(backer.endorse(requests.pull()!).kind, "skip");
+      assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("backer refuses a second anchored digest at its endorsed coordinate after reopen", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const habs = [0, 1, 2].map((i) => hby.makeHab(`backer-${i}`, undefined, { transferable: false }));
+      const baks = habs.map((hab) => hab.pre);
+      const vcp = inceptRegistry(issuer.pre, { baks, toad: 2 });
+      const proofs = habs.slice(0, 2).map((hab, index) => {
+        const sig = hab.sign(vcp.raw, true)[0];
+        return new Siger({ code: sig.code, raw: sig.raw, index });
+      });
+      const requests = new Deck<BackerRequest>();
+      let tvy = new Tevery({ db: hby.db, reger, backerRequests: requests });
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp), wigers: proofs }).kind, "accept");
+      requests.clear();
+      const original = rotateRegistry(vcp.pre!, vcp.said!, { baks, toad: 2 });
+      tvy.processEvent({ serder: original, ...anchorTel(issuer, original) });
+      assertEquals(new Backer(habs[0], reger).endorse(requests.pull()!).kind, "contribution");
+      yield* reger.reopen();
+      tvy = new Tevery({ db: hby.db, reger, backerRequests: requests });
+      const conflicting = rotateRegistry(vcp.pre!, vcp.said!, { baks, toad: 3 });
+      const pending = tvy.processEvent({ serder: conflicting, ...anchorTel(issuer, conflicting) });
+      assertEquals(pending.kind === "escrow" && pending.escrow, "partialWitness");
+      const result = new Backer(habs[0], reger).endorse(requests.pull()!);
+      assertEquals(result.kind, "reject");
+      assertEquals(reger.bens.getOn([habs[0].pre, vcp.pre!], 1)?.qb64, original.said);
+      assertEquals(reger.tibs.get(dgKey(conflicting.pre!, conflicting.said!)), []);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);

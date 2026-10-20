@@ -25,6 +25,7 @@ interface AgentArgs {
   compat?: boolean;
   schemas?: string[];
   schemaDirs?: string[];
+  backerAlias?: string;
 }
 
 function controllerRoleEnabled(hby: Habery, pre: string): boolean {
@@ -139,6 +140,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     passcode: parseStringOption(args.passcode, "passcode"),
     compat: parseBooleanOption(args.compat, "compat"),
     ...schemaInputsFromArgs(args),
+    backerAlias: parseStringOption(args.backerAlias, "backerAlias"),
   };
   const port = agentArgs.port ?? 8000;
 
@@ -179,6 +181,10 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
 
   try {
     const hostedHabs = [...hby.habs.values()].filter((hab) => !hby.db.getHab(hab.pre)?.mid);
+    const backerHab = agentArgs.backerAlias ? hostedHabs.find((hab) => hab.name === agentArgs.backerAlias) : undefined;
+    if (agentArgs.backerAlias && (!backerHab || backerHab.kever?.transferable)) {
+      throw new ValidationError("Backer alias must select a local nontransferable identifier.");
+    }
     importHostedSchemas(
       hby,
       agentArgs.schemas ?? [],
@@ -195,6 +201,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       port,
       listenHost: "127.0.0.1",
       serviceHab: cueHab,
+      backerHab,
       hostedPrefixes: hostedHabs.map((hab) => hab.pre),
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);
