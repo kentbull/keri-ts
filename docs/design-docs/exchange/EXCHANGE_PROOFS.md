@@ -39,6 +39,10 @@ signatures, source seals, nested/ESSR wire and mailbox/receiver provenance acros
 reopen. The deadline is first admission plus 20 seconds, or existing TMSC `xdt + pxl`; receiver receipt time is not the transaction opener. Sequential schema
 dependencies keep that deadline. Equality remains eligible; strict expiry or
 terminal rejection releases pending evidence, acceptance retains its wire.
+Retries re-read stored proofs and deadlines in the final writer. Terminal removal
+and reference retirement commit together; file reclamation follows the flush and
+joins cancellation. Overlapping scans skip accepted/obsolete candidates, preserving
+each scan's captured horizon without an asynchronous Exchanger admission lock.
 TS retains and enforces this deadline through partial-proof migrations; inspected
 714 removes it after moving the final missing-schema branch to partial escrow.
 ESSR commitment and qualified-payload syntax failures reject. Unexpected payload

@@ -86,6 +86,9 @@ then `pin(key, candidate)` in their own synchronous writer after validation.
 A candidate belongs to one publication attempt, including a rolled-back attempt;
 dispose it before closing its database. Disposal consults committed ownership
 and cannot delete a referenced file. Join the owning writer's flush before effects.
+`unpin(key)` retires both reference directions in that writer and returns its
+physical ID. Join `reclaim(id)` afterward, including during cancellation; it waits
+for the commit flush and never deletes a referenced object.
 
 The private `payload.refs.` and `payload.owners.` tables belong together. They
 must not be edited independently. Recovery scans files and records incrementally,
@@ -134,8 +137,8 @@ the previous public evidence. Loading requires exactly one finite child per row.
 values with no parser files or disposal obligations.
 
 Exchanger has no resource policy, recursive tree budget or storage-copy reservation.
-Handlers consume hydrated descendants through route processing. Admission guards
-protect unfinished publication and archive recovery. Fresh parsed children remain
+Handlers consume hydrated descendants through route processing. Archive startup completes before admission. Exchanger uses synchronous current-state
+writers and independent preparation, with no asynchronous admission guard. Fresh parsed children remain
 hydrated; retry and replay decode stored rows through the same finite decoder.
 Successful verified duplicates replace the child row set and invoke forwarding
 again, matching frozen Python `927c0cb8`. Failed replacement rolls back to the

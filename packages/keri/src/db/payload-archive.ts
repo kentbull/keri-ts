@@ -301,22 +301,59 @@ export class PayloadArchive {
     return result;
   }
 
+  /** Remove reference ownership in the domain writer; its returned file ID still requires reclamation. */
+  unpin(key: string): string | null {
+    this.check();
+    this.checkKey(key);
+    return this.unpinReference(key);
+  }
+
+  /** Flush committed reference removal, then reclaim only that independently owned file. */
+  reclaim(id: string): Promise<void> {
+    if (id.length > 240 || !objectId.test(id)) throw new TypeError("Invalid payload object ID");
+    return this.track(async () => {
+      await this.environment().flushed;
+      await this.reclaimFile(id);
+    });
+  }
+
   /** Unpublish durably before reclaiming the file; interrupted deletion is recoverable. */
   remove(key: string, commit: () => void = () => {}, signal?: AbortSignal): Promise<void> {
     this.checkKey(key);
     return this.track(async () => {
       signal?.throwIfAborted();
       const env = this.environment();
-      const record = env.transactionSync(() => {
-        const value = this.refs.get([key]);
-        this.refs.rem([key]);
-        if (value) this.owners.rem([value.id]);
+      const id = env.transactionSync(() => {
+        const id = this.unpinReference(key);
         commit();
-        return value;
+        return id;
       });
       await env.flushed;
-      if (record) await (await this.files.open(record.id)).discard();
+      if (id) await this.reclaimFile(id);
     });
+  }
+
+  /** Retire both ownership directions atomically, including an already admitted removal during close. */
+  private unpinReference(key: string): string | null {
+    if (!this.db.inWriteTransaction) throw new Error("Payload reference removal requires the owning writer");
+    const record = this.refs.get([key]);
+    if (!record) return null;
+    if (this.owners.get([record.id])?.key !== key) throw new Error("Payload archive reference is inconsistent");
+    this.refs.rem([key]);
+    this.owners.rem([record.id]);
+    return record.id;
+  }
+
+  /** Reclamation never follows application keys and never removes a currently referenced object. */
+  private async reclaimFile(id: string): Promise<void> {
+    if (this.owners.get([id])) throw new Error("Cannot reclaim a referenced payload");
+    try {
+      const file = await this.files.open(id);
+      if (this.owners.get([id])) throw new Error("Cannot reclaim a referenced payload");
+      await file.discard();
+    } catch (error) {
+      if (!(error instanceof Deno.errors.NotFound)) throw error;
+    }
   }
 
   /** Finish admitted publication before releasing the runtime owner. */

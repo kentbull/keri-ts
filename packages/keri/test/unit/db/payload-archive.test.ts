@@ -96,6 +96,30 @@ Deno.test("prepared payload references follow the domain writer's commit or roll
   });
 });
 
+Deno.test("domain retirement rolls back references and reclaims only its retired file", async () => {
+  await withArchive(async (archive, db) => {
+    await archive.publish("essr/retire", await stage(archive.files, [1]));
+    const original = archive.referenceId("essr/retire")!;
+    assertThrows(() => archive.unpin("essr/retire"), Error, "owning writer");
+    assertThrows(
+      () =>
+        db.env!.transactionSync(() => {
+          archive.unpin("essr/retire");
+          throw new Error("domain removal failed");
+        }),
+      Error,
+      "domain removal failed",
+    );
+    assertEquals(archive.referenceId("essr/retire"), original);
+    await assertRejects(() => archive.reclaim(original), Error, "referenced payload");
+    const retired = db.env!.transactionSync(() => archive.unpin("essr/retire"));
+    assertEquals(retired, original);
+    await archive.publish("essr/retire", await stage(archive.files, [2]));
+    await archive.reclaim(retired!);
+    assertEquals(await collectPayload((await archive.get("essr/retire"))!), new Uint8Array([2]));
+  });
+});
+
 Deno.test("payload archive recovers orphan stages and rolled-back publication", async () => {
   await withArchive(async (archive, db, root) => {
     const retained = await stage(archive.files, [7]);
