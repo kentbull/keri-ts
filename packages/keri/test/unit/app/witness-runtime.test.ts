@@ -11,7 +11,6 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { buildCesrRequest } from "../../../src/app/cesr-http.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopesFromFrames } from "../../../src/app/parsering.ts";
@@ -53,7 +52,7 @@ function* seedWitnessHostState(
   witness: Hab,
   hostUrl: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: true,
   });
   try {
@@ -74,7 +73,7 @@ function* seedRemoteWitnessLocation(
   url: string,
   scheme: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: true,
   });
   try {
@@ -135,7 +134,6 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const serverTask = yield* spawn(function*() {
@@ -271,7 +269,6 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const serverTask = yield* spawn(function*() {
@@ -348,7 +345,6 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const serverTask = yield* spawn(function*() {
@@ -438,7 +434,6 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const serverTask = yield* spawn(function*() {
@@ -536,7 +531,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
           if (ms === 200) drains.push(ms);
           return setTimeout(callback, ms);
         },
-      }, httpMailboxPollTransport);
+      });
       const refusals: string[] = [];
       const sockets: Socket[] = [];
       const failed = Promise.withResolvers<unknown>();
@@ -558,7 +553,6 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         sourceHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       let replayed = 0, foreignReplay = false;

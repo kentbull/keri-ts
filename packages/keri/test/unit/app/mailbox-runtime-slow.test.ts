@@ -18,7 +18,6 @@ import { buildCesrRequest, inspectCesrRequest } from "../../../src/app/cesr-http
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
@@ -205,7 +204,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -389,7 +388,6 @@ Deno.test("mailbox admin accepts raw CESR and multipart requests and applies add
       providerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     yield* settleRuntimeIngress(runtime, [
@@ -623,7 +621,6 @@ Deno.test("mailbox admin rejects unsupported content types and invalid raw or mu
       providerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     yield* settleRuntimeIngress(runtime, [
@@ -876,7 +873,6 @@ Deno.test("mailbox CLI add/remove/list/update/debug round-trips against remote m
       providerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     const mailboxer = runtime.mailboxer;
@@ -1059,7 +1055,6 @@ Deno.test("challenge verify polls a remote mailbox provider through root mailbox
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const mailboxer = runtime.mailboxer;
@@ -1236,7 +1231,6 @@ Deno.test("mailbox host only stores forwarded payloads after mailbox authorizati
       providerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     const mailboxer = runtime.mailboxer;

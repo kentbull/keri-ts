@@ -6,7 +6,6 @@ import {
   createAgentRuntime,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -80,7 +79,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -301,7 +300,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           [remoteController.pre, remoteController.kever!.said],
           remoteWitness.sign(remoteController.kever!.serder.raw, true),
         );
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -484,7 +483,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -565,7 +564,6 @@ Deno.test("query delivery processes a streamed reply after synchronous preparati
         );
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     try {
       hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });

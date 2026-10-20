@@ -3,7 +3,6 @@ import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -54,7 +53,7 @@ Deno.test("did/webs - pins DA schema from JSON resource and rebinds active alias
       name: `did-webs-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -109,7 +108,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const hab = hby.makeHab(alias, undefined, {
           transferable: true,
@@ -138,7 +137,7 @@ Deno.test("did/webs - bind reuses existing DA registry across runtime reopen", a
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const second = bindDesignatedAliases(runtime.vdr!, {
           alias,
@@ -161,7 +160,7 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
   await run(function*() {
     const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock);
     let fetches: string[] = [], mode = "stream", body: ReadableStream<Uint8Array>;
     const injected = new TypeError("injected client invariant failure");
     const runtime = yield* createAgentRuntime(
@@ -179,7 +178,6 @@ Deno.test("did/webs - streamed resolution waits for EOF and joins cancellation w
         return new Response(url.endsWith("did.json") ? Uint8Array.from(artifacts.didJson) : body);
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     let escrowPasses = 0;
     const advance = runtime.protocol.processEscrowsOnce.bind(runtime.protocol);
@@ -383,7 +381,7 @@ Deno.test("did/webs - keri.cesr replays controller KEL once and appends DA mater
       name: `did-webs-cesr-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("issuer", undefined, {
         transferable: true,
@@ -498,7 +496,7 @@ Deno.test("did/webs - numeric thresholds project as conditionThreshold methods",
       name: `did-webs-numeric-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("numeric", undefined, {
         transferable: true,
@@ -530,7 +528,7 @@ Deno.test("did/webs - flat weighted thresholds project with scaled integer weigh
       name: `did-webs-flat-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("flat", undefined, {
         transferable: true,
@@ -565,7 +563,7 @@ Deno.test("did/webs - nested weighted thresholds project recursively without pat
       name: `did-webs-nested-weighted-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("nested", undefined, {
         transferable: true,
@@ -608,7 +606,7 @@ Deno.test("did/webs - multi-clause weighted thresholds project as conditionAnd c
       name: `did-webs-multi-clause-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("multi", undefined, {
         transferable: true,
@@ -669,7 +667,7 @@ Deno.test("did/webs - CLI generate writes artifacts under the DID path", async (
         headDirPath,
         skipConfig: true,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       let did = "";
       try {
         const hab = hby.makeHab("issuer", undefined, {

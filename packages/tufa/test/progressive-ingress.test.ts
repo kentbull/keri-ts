@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../keri/src/app/forwarding.ts";
 import { FetchHttpClient } from "../../keri/src/app/http-client.ts";
 import { systemClock } from "../../keri/src/app/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
@@ -100,7 +99,7 @@ Deno.test("HTTP ingress waits for the complete enclosing group before accepting 
   await run(function*() {
     const source = yield* createHabery({ name: `http-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const target = yield* createHabery({ name: `http-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock);
     // The real listener and client are owned until the gated upload completes or fails.
     const client = Deno.createHttpClient({});
     const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, createProtocolHandler(runtime));
@@ -174,7 +173,7 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       for (
         const fault of [
@@ -278,7 +277,7 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
 Deno.test("concurrent HTTP queries keep their own replay while background cues drain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const alice = hby.makeHab("alice");
       const bob = hby.makeHab("bob");
@@ -361,7 +360,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
 Deno.test("only the final query controls a multi-frame HTTP response", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-final-query-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     try {
@@ -447,7 +446,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
 Deno.test("HTTP truncated enclosure accepts neither ESSR sibling", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-essr-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const sender = hby.makeHab("sender");
       const first = essrChild(sender, "first-payload");
@@ -478,7 +477,7 @@ Deno.test("HTTP truncated enclosure accepts neither ESSR sibling", async () => {
 Deno.test("HTTP cancellation closes an incomplete ESSR request before returning", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-essr-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const frame = essrChild(hby.makeHab("sender"), "unfinished-payload");
       const wire = concatBytes(Counter.makeGVC({ major: 1, minor: 0 }), frame.wire);
@@ -520,7 +519,7 @@ Deno.test("v2 sender refusal cannot reopen a previously authorized HTTP mailbox 
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
       messagePolicy: { allowList: new Set([sender.pre]) },
     });
@@ -569,7 +568,6 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         return new Response(null, { status: 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
       {
         enableMailboxStore: true,
         messagePolicy: { denyList: new Set([sender.pre]) },
@@ -677,10 +675,10 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"),
-      runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = receiver.makeHab("requester"),
-      target = yield* createAgentRuntime(receiver, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      target = yield* createAgentRuntime(receiver, new FetchHttpClient(), systemClock);
     try {
       const tvy = runtime.vdr!.tvy as Tevery,
         reger = runtime.vdr!.reger! as Reger,

@@ -11,7 +11,6 @@ import {
   Vrsn_1_0,
 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { encodeHugeNumber } from "../../../src/app/keeping.ts";
@@ -35,7 +34,7 @@ Deno.test("dispatchEnvelope routes TEL events with the last source seal couple",
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
@@ -90,7 +89,7 @@ Deno.test("dispatchEnvelope routes ACDC messages with the last source seal tripl
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const revery = new Revery(hby.db);
       const kevery = new Kevery(hby.db, { rvy: revery });
@@ -161,7 +160,7 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       let telEscrows = 0;
       let verifierEscrows = 0;

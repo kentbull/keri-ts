@@ -177,13 +177,10 @@ export {
 } from "../app/exchanging.ts";
 export {
   type ExchangeDeliveryPreference,
-  httpMailboxPollTransport,
   type MailboxFetchTimeoutPolicy,
   type MailboxPollBatch,
   MailboxPoller,
   type MailboxPollingTimeoutPolicy,
-  type MailboxPollTransport,
-  type MailboxPollTransportRequest,
   Poster,
   type PosterEvent,
   type PosterOutcome,

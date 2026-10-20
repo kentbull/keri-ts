@@ -7,7 +7,6 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../src/app/cli/challenge.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -67,7 +66,7 @@ Deno.test("challenge respond and verify round-trip through direct controller del
         throw new Error("Expected bob habitat.");
       }
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       const runtimeTask = yield* spawn(function*() {

@@ -12,7 +12,6 @@ import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent
 import { buildCesrStreamRequest } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage } from "../../../src/app/habbing.ts";
 import type { Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -686,7 +685,7 @@ async function postTufaGroupDelegationRequest(args: {
       skipSignator: false,
     });
     try {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const member1 = hby.habByName(args.member1Alias);
         const member2 = hby.habByName(args.member2Alias);

@@ -1,6 +1,5 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
 import { collectBytes } from "../../../../src/app/byte-source.ts";
-import { httpMailboxPollTransport } from "../../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../../src/app/http-client.ts";
 import { systemClock } from "../../../../src/app/runtime-clock.ts";
 
@@ -413,7 +412,7 @@ async function withTypeScriptPeer(
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-http-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
       });
       try {

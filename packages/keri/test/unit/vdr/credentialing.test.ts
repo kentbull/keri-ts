@@ -21,7 +21,6 @@ import {
   revocationRecipients,
   revokeCredential,
 } from "../../../src/app/credential-workflows.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -299,7 +298,7 @@ Deno.test("vdr/credentialing - imports frozen Python issuance and replays both g
         yield* call(function*() {
           const gvrsn = vector.version === 1 ? Vrsn_1_0 : Vrsn_2_0;
           const bytes = new TextEncoder();
-          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
             reger,
           });
           const { tvy, vry } = runtime.vdr!;
@@ -374,7 +373,7 @@ Deno.test("credentialing: revoke delivery includes disclosed aggregate issuees o
 Deno.test("credential workflows share the supplied registry store and processors", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const rgy = runtime.vdr!;
       const hab = hby.makeHab("issuer");

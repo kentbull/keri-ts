@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../forwarding.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
 import { systemClock } from "../runtime-clock.ts";
@@ -235,7 +234,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
           hby,
           rotateArgs.proxy,
         );
-        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock);
         try {
           runtime.delegating.beginLatest(hab.pre, hab.kever.sn, {
             communicationHab,

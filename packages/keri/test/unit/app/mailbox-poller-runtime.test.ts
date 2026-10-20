@@ -7,13 +7,11 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
-import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../../../src/app/forwarding.ts";
+import { type MailboxPollBatch, MailboxPoller } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { MailboxDirector } from "../../../src/app/mailbox-director.ts";
-import type { MailboxSseMessage } from "../../../src/app/mailbox-sse.ts";
-import { mailboxDeliveryEndpoints, mailboxPollEndpoints, mailboxTopicKey } from "../../../src/app/mailboxing.ts";
+import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { FakeRuntimeHttpClient } from "../../support/runtime-fakes.ts";
 
@@ -22,420 +20,191 @@ import { exchange as exchangeMessage } from "../../../src/core/protocol-exchangi
 import { Roles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
 import { httpClient } from "../../support/http-client.ts";
-import { FakeMailboxPollTransport, ManualRuntimeClock } from "../../support/runtime-fakes.ts";
+import { ManualRuntimeClock } from "../../support/runtime-fakes.ts";
 
-function makeExchangeSerder(
-  route: string,
-  payload: Record<string, unknown>,
-  args: Parameters<typeof exchangeMessage>[2],
-) {
-  return exchangeMessage(route, payload, args)[0];
-}
-
+/**
+ * Create an accepted local signing habitat for mailbox intake tests.
+ * @param hby Owner of this test's identities and accepted state.
+ * @param alias Local name for the signer.
+ * @returns A single-key transferable habitat.
+ */
 function makeTransferableHab(hby: Habery, alias: string): Hab {
-  return hby.makeHab(alias, undefined, {
-    transferable: true,
-    icount: 1,
-    isith: "1",
-    ncount: 1,
-    nsith: "1",
-    toad: 0,
-  });
+  return hby.makeHab(alias, undefined, { transferable: true, icount: 1, isith: "1", ncount: 1, nsith: "1", toad: 0 });
 }
 
-function seedMailboxEndpoint(
-  hby: Habery,
-  recipientPre: string,
-  label: string,
-): { eid: string; url: string } {
-  const eid = `mailbox-${label}-${crypto.randomUUID()}`;
-  const url = `http://${label}.mailbox.test/`;
+/**
+ * Record one authorized HTTP provider for the recipient.
+ * @param hby Owner of the endpoint records.
+ * @param recipientPre Recipient AID granting the mailbox role.
+ * @param label Unique fixture label used in the provider URL.
+ * @returns Provider identity and URL for configuring the HTTP peer.
+ */
+function seedMailboxEndpoint(hby: Habery, recipientPre: string, label: string): { eid: string; url: string } {
+  const eid = `mailbox-${label}-${crypto.randomUUID()}`, url = `http://${label}.mailbox.test/`;
   hby.db.locs.pin([eid, "http"], { url });
   hby.db.ends.pin([recipientPre, Roles.mailbox, eid], { allowed: true });
   return { eid, url };
 }
 
-function mailboxMessage(
-  message: string,
-  {
-    topic = "/challenge",
-    idx = 0,
-  }: {
-    topic?: string;
-    idx?: number;
-  } = {},
-): MailboxSseMessage {
-  return { topic, idx, msg: new TextEncoder().encode(message) };
-}
-
-function mailboxBytes(
-  msg: Uint8Array,
-  {
-    topic = "/challenge",
-    idx = 0,
-  }: {
-    topic?: string;
-    idx?: number;
-  } = {},
-): MailboxSseMessage {
-  return { topic, idx, msg };
-}
-
-function makePollerFixture(
-  hby: Habery,
-  {
-    endpointCount = 1,
-    transport,
-    clock = new ManualRuntimeClock(),
-    timeouts,
-  }: {
-    endpointCount?: number;
-    transport: FakeMailboxPollTransport;
-    clock?: ManualRuntimeClock;
-    timeouts?: Partial<MailboxPollingTimeoutPolicy>;
-  },
-) {
-  const hab = makeTransferableHab(hby, "bob");
-  const endpoints = Array.from(
-    { length: endpointCount },
-    (_, index) => seedMailboxEndpoint(hby, hab.pre, `remote-${index + 1}`),
-  );
-  const poller = new MailboxPoller(hby, new MailboxDirector(hby), new FetchHttpClient(), clock, transport, {
-    timeouts,
+/**
+ * Encode a provider event for actual SSE intake.
+ * @param msg Complete UTF-8 CESR message carried by one event.
+ * @param topic Mailbox topic; defaults to challenge responses.
+ * @param idx Provider ordinal; defaults to the first event.
+ * @returns A finite SSE response owning its encoded bytes.
+ */
+function mailboxResponse(msg: Uint8Array, topic = "/challenge", idx = 0): Response {
+  return new Response(`id: ${idx}\nevent: ${topic}\ndata: ${new TextDecoder().decode(msg)}\n\n`, {
+    headers: { "Content-Type": "text/event-stream" },
   });
-  poller.registerTopic("/challenge");
-  return { hab, poller, endpoints };
 }
 
-function* waitForCondition(
-  condition: () => boolean,
-  message: string,
-): Operation<void> {
+/**
+ * Wait up to one elapsed second for an observable transition.
+ * @param condition Synchronous predicate checked each runtime turn.
+ * @param message Failure detail when the transition never occurs.
+ */
+function* waitForCondition(condition: () => boolean, message: string): Operation<void> {
   const deadline = performance.now() + 1_000;
   while (performance.now() < deadline) {
-    if (condition()) {
-      return;
-    }
+    if (condition()) return;
     yield* runtimeTurn();
   }
   throw new Error(message);
 }
 
-/**
- * Proves the request-open timeout is separate from the SSE read duration.
- *
- * If response headers never arrive before the request timeout, mailbox polling
- * should treat that as "no messages yet" instead of hanging or throwing.
- */
-Deno.test("MailboxPoller.pollDo keeps HTTP endpoint selection and request-open timeouts separate", async () => {
-  await run(function*(): Operation<void> {
-    const hby = yield* createHabery({
-      name: `mailbox-open-timeout-client-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    const clock = new ManualRuntimeClock();
-    const transport = new FakeMailboxPollTransport([{ advanceMs: 20 }], clock);
-
-    try {
-      const { hab, poller, endpoints } = makePollerFixture(hby, {
-        clock,
-        transport,
-        timeouts: {
-          requestOpenTimeoutMs: 20,
-          maxPollDurationMs: 120,
-        },
-      });
-
-      const mailbox = endpoints[0]!, tcp = "tcp://remote.mailbox.test:5620";
-      const witness = "available-witness", witnessUrl = "https://available.witness.test/";
-      hby.db.ends.pin([hab.pre, Roles.witness, witness], { allowed: true });
-      hby.db.locs.pin([witness, "https"], { url: witnessUrl });
-      hby.db.locs.rem([mailbox.eid, "http"]);
-      hby.db.locs.pin([mailbox.eid, "tcp"], { url: tcp });
-      assertEquals(mailboxDeliveryEndpoints(hab, hab.pre), [{ eid: mailbox.eid, url: tcp }]);
-      assertEquals(mailboxPollEndpoints(hby, hab), [], "TCP-only mailbox must retain precedence over HTTP witness");
-      const batches: MailboxPollBatch[] = [];
-      const worker = yield* spawn(() =>
-        poller.pollDo((batch) => {
-          batches.push(batch);
-        })
-      );
-      try {
-        yield* runtimeTurn();
-        assertEquals(transport.polls.length, 0, "SSE must not attempt a TCP endpoint");
-        const defaultPoller = new MailboxPoller(
-          hby,
-          new MailboxDirector(hby),
-          new FetchHttpClient(),
-          systemClock,
-          httpMailboxPollTransport,
-          {},
-        );
-        defaultPoller.registerTopic("/challenge");
-        const defaultWorker = yield* spawn(() => defaultPoller.pollDo((_batch) => {}));
-        yield* runtimeTurn();
-        yield* waitForTaskHalt(defaultWorker);
-        hby.db.locs.pin([mailbox.eid, "http"], { url: mailbox.url });
-        yield* waitForCondition(
-          () => transport.polls.length > 0,
-          "Expected the newly available HTTP endpoint to be polled.",
-        );
-        assertEquals(batches, []);
-        assertEquals(transport.polls[0]!.timeouts.requestOpenTimeoutMs, 20);
-        assertEquals(clock.now(), 20);
-        assertEquals(transport.polls[0]!.endpoint.url, mailbox.url);
-        const https = "https://remote.mailbox.test/";
-        hby.db.locs.pin([mailbox.eid, "https"], { url: https });
-        assertEquals(mailboxPollEndpoints(hby, hab)[0].url, https);
-        assertEquals(mailboxDeliveryEndpoints(hab, hab.pre)[0].url, https);
-        hby.db.ends.rem([hab.pre, Roles.mailbox, mailbox.eid]);
-        assertEquals(mailboxPollEndpoints(hby, hab)[0].url, witnessUrl);
-        hby.db.locs.rem([witness, "https"]);
-        hby.db.locs.pin([witness, "tcp"], { url: "tcp://available.witness.test:5620" });
-        assertEquals(mailboxPollEndpoints(hby, hab), [], "TCP-only witness has no SSE transport");
-      } finally {
-        yield* waitForTaskHalt(worker);
-      }
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-/**
- * Proves SSE reads can legitimately outlive the request-open timeout.
- *
- * Once headers arrive, the client should keep reading for the longer
- * mailbox poll duration and persist the consumed mailbox cursor.
- */
-Deno.test("MailboxPoller.pollDo allows SSE reads to outlive the request-open timeout", async () => {
-  await run(function*(): Operation<void> {
-    const hby = yield* createHabery({
-      name: `mailbox-read-duration-client-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    const clock = new ManualRuntimeClock();
-    const transport = new FakeMailboxPollTransport([{
-      advanceMs: 40,
-      messages: [mailboxMessage("mailbox-message")],
-    }], clock);
-
-    try {
-      const { hab, poller, endpoints } = makePollerFixture(hby, {
-        clock,
-        transport,
-        timeouts: {
-          requestOpenTimeoutMs: 20,
-          maxPollDurationMs: 100,
-        },
-      });
-
-      const batches: MailboxPollBatch[] = [];
-      const worker = yield* spawn(() =>
-        poller.pollDo((batch) => {
-          batches.push(batch);
-        })
-      );
-      try {
-        yield* waitForCondition(
-          () => hby.db.tops.get([hab.pre, endpoints[0]!.eid])?.topics["/challenge"] === 0,
-          "Expected the consumed SSE cursor to persist.",
-        );
-        const received = batches.flatMap((batch) => batch.messages);
-        assertEquals(received.length, 1);
-        assertEquals(new TextDecoder().decode(received[0]), "mailbox-message");
-        assertEquals(transport.polls[0]!.timeouts.requestOpenTimeoutMs, 20);
-        assertEquals(transport.polls[0]!.timeouts.maxReadDurationMs, 100);
-        assertEquals(clock.now(), 40);
-        assertEquals(
-          hby.db.tops.get([hab.pre, endpoints[0]!.eid])?.topics["/challenge"],
-          0,
-        );
-      } finally {
-        yield* waitForTaskHalt(worker);
-      }
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
 Deno.test("continuous mailbox consumer settles complete body-only mailbox records", async () => {
-  await run(function*(): Operation<void> {
-    const hby = yield* createHabery({
-      name: `mailbox-complete-record-client-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-      skipSignator: true,
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "bob"), endpoint = seedMailboxEndpoint(hby, hab.pre, "remote");
+    const http = new FakeRuntimeHttpClient();
+    let available = true;
+    http.registerOrigin(endpoint.url, () => {
+      if (!available) return new Response(null, { status: 204 });
+      available = false;
+      return mailboxResponse(hab.makeEndRole(hab.pre, Roles.mailbox, true), "/reply");
     });
-    const clock = new ManualRuntimeClock();
-    const transport = new FakeMailboxPollTransport([], clock);
-
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
     try {
-      const hab = makeTransferableHab(hby, "bob");
-      const endpoint = seedMailboxEndpoint(hby, hab.pre, "remote");
-      transport.enqueue({
-        advanceMs: 40,
-        messages: [
-          mailboxBytes(hab.makeEndRole(hab.pre, Roles.mailbox, true), {
-            topic: "/reply",
-            idx: 0,
-          }),
-        ],
-      });
-      const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), clock, transport);
+      const batches: MailboxPollBatch[] = [];
+      const worker = yield* spawn(() =>
+        runtime.mailboxPoller.pollDo(function*(batch) {
+          yield* settleMailboxPollBatch(runtime, batch);
+          batches.push(batch);
+        })
+      );
       try {
-        const batches: MailboxPollBatch[] = [];
-        const worker = yield* spawn(() =>
-          runtime.mailboxPoller.pollDo(function*(batch) {
-            yield* settleMailboxPollBatch(runtime, batch);
-            batches.push(batch);
-          })
+        yield* waitForCondition(
+          () => hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"] === 0,
+          "Expected accepted mailbox input and cursor publication.",
         );
-        try {
-          yield* waitForCondition(
-            () => batches.length === 1 && hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"] === 0,
-            "Expected body-only mailbox record settlement and cursor progress.",
-          );
-          assertEquals(batches.length, 1);
-          assertEquals(
-            hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"],
-            0,
-          );
-          assertEquals(
-            hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed,
-            true,
-          );
-        } finally {
-          yield* waitForTaskHalt(worker);
-        }
+        assertEquals(batches.map(({ pre, eid, messages }) => [pre, eid, messages.length]), [[
+          hab.pre,
+          endpoint.eid,
+          1,
+        ]]);
+        assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
       } finally {
-        yield* runtime.close();
+        yield* waitForTaskHalt(worker);
       }
     } finally {
-      yield* hby.close();
+      yield* runtime.close();
+      yield* hby.close(true);
     }
   });
 });
 
-/**
- * Proves long-lived mailbox polling now keeps one remote worker per endpoint.
- *
- * This is the TS-native equivalent of KERIpy's concurrent `Poller` doers: two
- * remote endpoints should both receive their initial `mbx` request promptly,
- * rather than being serialized behind one long poll.
- */
-Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remote endpoint", async () => {
-  const check = (role: typeof Roles.mailbox | typeof Roles.witness) =>
-    run(function*(): Operation<void> {
-      const hby = yield* createHabery({
-        name: `mailbox-concurrency-client-${crypto.randomUUID()}`,
-        temp: true,
-        skipConfig: true,
-        skipSignator: true,
-      });
-      const clock = new ManualRuntimeClock();
-      const transport = new FakeMailboxPollTransport([{}, {}, { messages: [mailboxMessage("proxy replay")] }], clock);
-
-      try {
-        const { hab, poller, endpoints } = makePollerFixture(hby, {
-          endpointCount: 2,
-          clock,
-          transport,
-          timeouts: {
-            requestOpenTimeoutMs: 20,
-            maxPollDurationMs: 80,
-          },
-        });
-
+Deno.test("mailbox endpoints and later habitats progress independently of blocked HTTP peers", async () => {
+  for (const role of [Roles.mailbox, Roles.witness]) {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const bob = makeTransferableHab(hby, "bob"), proxy = makeTransferableHab(hby, "proxy");
+      const endpoints = [seedMailboxEndpoint(hby, bob.pre, "one"), seedMailboxEndpoint(hby, bob.pre, "two")];
+      const proxyEndpoint = seedMailboxEndpoint(hby, proxy.pre, "proxy");
+      const http = new FakeRuntimeHttpClient();
+      let cleaned = 0, available = true;
+      for (const endpoint of endpoints) {
         if (role === Roles.witness) {
-          for (const endpoint of endpoints) {
-            hby.db.ends.rem([hab.pre, Roles.mailbox, endpoint.eid]);
-            hby.db.ends.pin([hab.pre, Roles.witness, endpoint.eid], { allowed: true });
-          }
+          hby.db.ends.rem([bob.pre, Roles.mailbox, endpoint.eid]);
+          hby.db.ends.pin([bob.pre, Roles.witness, endpoint.eid], { allowed: true });
         }
-        const proxy = makeTransferableHab(hby, "proxy");
-        const proxyEndpoint = seedMailboxEndpoint(hby, proxy.pre, "proxy");
-        const batches: MailboxPollBatch[] = [];
-        const task = yield* spawn(() =>
-          poller.pollDo((batch) => {
-            batches.push(batch);
-          })
+        http.registerOrigin(endpoint.url, (request) =>
+          new Promise<Response>((_resolve, reject) => {
+            request.signal.addEventListener("abort", () => {
+              cleaned++;
+              reject(request.signal.reason);
+            }, { once: true });
+          }));
+      }
+      http.registerOrigin(proxyEndpoint.url, () => {
+        if (!available) return new Response(null, { status: 204 });
+        available = false;
+        return mailboxResponse(new TextEncoder().encode("proxy replay"));
+      });
+      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, systemClock);
+      poller.registerTopic("/challenge");
+      const batches: MailboxPollBatch[] = [];
+      const worker = yield* spawn(() =>
+        poller.pollDo((batch) => {
+          batches.push(batch);
+        })
+      );
+      try {
+        yield* waitForCondition(
+          () =>
+            endpoints.every(({ url }) => http.requests.some((request) => request.url === url))
+            && hby.db.tops.get([proxy.pre, proxyEndpoint.eid])?.topics["/challenge"] === 0,
+          "Expected independent blocked peers and accepted proxy progress.",
         );
-
-        try {
-          yield* waitForCondition(
-            () => {
-              const polledEids = new Set(
-                transport.polls.map((poll) => poll.endpoint.eid),
-              );
-              return [...endpoints, proxyEndpoint].every((endpoint) => polledEids.has(endpoint.eid))
-                && hby.db.tops.get([proxy.pre, proxyEndpoint.eid])?.topics["/challenge"] === 0;
-            },
-            `Expected both ${role} endpoints and the later habitat to progress while earlier peers are silent.`,
-          );
-          assertEquals(batches.map((batch) => [batch.pre, new TextDecoder().decode(batch.messages[0])]), [[
-            proxy.pre,
-            "proxy replay",
-          ]]);
-        } finally {
-          yield* waitForTaskHalt(task);
-        }
+        assertEquals(batches.map(({ pre, messages }) => [pre, new TextDecoder().decode(messages[0])]), [[
+          proxy.pre,
+          "proxy replay",
+        ]]);
       } finally {
-        yield* hby.close();
+        yield* waitForTaskHalt(worker);
+        assertEquals(cleaned, 2);
+        yield* hby.close(true);
       }
     });
-  await check(Roles.mailbox);
-  await check(Roles.witness);
+  }
 });
 
-/** Provider storage must not become an implicit recipient inbox while remote intake runs. */
 Deno.test("provider runtime leaves stored local messages untouched while remote polling and direct intake process replies", async () => {
-  await run(function*(): Operation<void> {
-    const hby = yield* createHabery({
-      name: `mailbox-provider-recipient-${crypto.randomUUID()}`,
-      temp: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    const transport = new FakeMailboxPollTransport();
-    const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), systemClock, transport, {
-      enableMailboxStore: true,
-    });
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const http = new FakeRuntimeHttpClient();
+    const runtime = yield* createAgentRuntime(hby, http, systemClock, { enableMailboxStore: true });
     const mbx = runtime.mailboxer;
     assertExists(mbx);
     try {
-      const alice = makeTransferableHab(hby, "alice");
-      const bob = makeTransferableHab(hby, "bob");
-      const senderA = makeTransferableHab(hby, "sender-a");
-      const senderB = makeTransferableHab(hby, "sender-b");
+      const alice = makeTransferableHab(hby, "alice"), bob = makeTransferableHab(hby, "bob");
+      const senderA = makeTransferableHab(hby, "sender-a"), senderB = makeTransferableHab(hby, "sender-b");
       const deliveries = [
         { recipient: alice, sender: senderA, words: ["able", "baker"] },
         { recipient: bob, sender: senderB, words: ["charlie", "delta"] },
       ].map(({ recipient, sender, words }) => {
-        const endpoint = seedMailboxEndpoint(hby, recipient.pre, recipient.name);
-        const storedWords = [...words, "stored"];
+        const endpoint = seedMailboxEndpoint(hby, recipient.pre, recipient.name), storedWords = [...words, "stored"];
         const msg = (responseWords: string[]) =>
           sender.endorse(
-            makeExchangeSerder("/challenge/response", { i: sender.pre, words: responseWords }, {
+            exchangeMessage("/challenge/response", { i: sender.pre, words: responseWords }, {
               sender: sender.pre,
               recipient: recipient.pre,
-            }),
+            })[0],
           );
         const stored = msg(storedWords);
         mbx.storeMsg(mailboxTopicKey(recipient.pre, "/challenge"), stored);
-        transport.enqueue({ messages: [mailboxBytes(msg(words))] });
+        let available = true;
+        http.registerOrigin(endpoint.url, () => {
+          if (!available) return new Response(null, { status: 204 });
+          available = false;
+          return mailboxResponse(msg(words));
+        });
         return { recipient, sender, words, storedWords, stored, endpoint };
       });
       runtime.mailboxDirector.topics.clear();
       runtime.mailboxDirector.registerTopic("/challenge");
       const worker = yield* spawn(() => runAgentRuntime(runtime));
       try {
-        // Persisted remote positions prove real consumer completion, without a timed absence check.
         yield* waitForCondition(
           () =>
             deliveries.every(({ recipient, endpoint }) =>
@@ -448,8 +217,6 @@ Deno.test("provider runtime leaves stored local messages untouched while remote 
           assertEquals(findVerifiedChallengeResponse(hby.db, sender.pre, storedWords), null);
           assertEquals([...runtime.mailboxDirector.topicIter(recipient.pre, "/challenge")], [{ idx: 0, msg: stored }]);
         }
-
-        // Explicit direct intake can process the same signed payloads without consuming provider rows.
         yield* settleRuntimeIngress(runtime, deliveries.map(({ stored }) => stored));
         for (const { recipient, sender, storedWords, stored } of deliveries) {
           assertExists(findVerifiedChallengeResponse(hby.db, sender.pre, storedWords));
@@ -460,7 +227,7 @@ Deno.test("provider runtime leaves stored local messages untouched while remote 
       }
     } finally {
       yield* runtime.close();
-      yield* hby.close();
+      yield* hby.close(true);
     }
   });
 });
@@ -489,7 +256,6 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       new MailboxDirector(hby),
       httpClient(() => Promise.resolve(new Response(responseBody))),
       systemClock,
-      httpMailboxPollTransport,
       {},
     );
     poller.registerTopic("/reply");
@@ -540,7 +306,6 @@ Deno.test("remote mailbox consumer failures preserve the cursor and join respons
           new MailboxDirector(hby),
           httpClient(() => Promise.resolve(new Response(body))),
           systemClock,
-          httpMailboxPollTransport,
         );
         poller.registerTopic("/reply");
         try {
@@ -595,7 +360,6 @@ Deno.test("mailbox polling normalizes positive fractional timeouts without produ
           new MailboxDirector(hby),
           new FetchHttpClient(),
           new ManualRuntimeClock(),
-          new FakeMailboxPollTransport(),
           { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
         );
         assertEquals(poller.timeoutPolicy, {
@@ -639,7 +403,7 @@ for (const boundary of ["headers", "SSE"] as const) {
           { headers: { "Content-Type": "text/event-stream" } },
         );
       });
-      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, httpMailboxPollTransport, {
+      const poller = new MailboxPoller(hby, new MailboxDirector(hby), http, clock, {
         timeouts: { requestOpenTimeoutMs: 0.25, maxPollDurationMs: 0.25 },
       });
       poller.registerTopic("/reply");

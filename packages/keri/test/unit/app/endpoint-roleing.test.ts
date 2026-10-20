@@ -8,7 +8,6 @@ import {
   loadAcceptedEndpointRole,
   proposeGroupEndpointRole,
 } from "../../../src/app/endpoint-roleing.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { MULTISIG_RPY_ROUTE } from "../../../src/app/grouping.ts";
 import type { Hab, Habery } from "../../../src/app/habbing.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -34,7 +33,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const member = makeTransferableHab(hby, "member");
       const remote = makeTransferableHab(hby, "remote");
@@ -118,7 +117,7 @@ Deno.test("endpoint-roleing loads accepted group endpoint role replies", async (
       temp: true,
       skipConfig: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       const member = makeTransferableHab(hby, "member");
       const mailbox = makeTransferableHab(hby, "mailbox");

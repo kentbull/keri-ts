@@ -4,7 +4,6 @@ import { SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -16,7 +15,7 @@ Deno.test("Respondant finishes local replay construction before publishing or re
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hab = hby.makeHab("sender");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     const first = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const second = hab.query(hab.pre, hab.pre, { route: "logs", q: { s: "1" } });
     const failure = new Error("second replay message could not be constructed");
@@ -88,7 +87,6 @@ Deno.test("Poster retains the complete source message on exceptions and requires
         return Promise.resolve(new Response(null, { status: 204 }));
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const wire = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const source = wire.slice();
@@ -162,7 +160,6 @@ Deno.test("complete replay batches precede receipt delivery while refused events
         return new Response(null, { status: rejected ? 503 : 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const msgs = [
       sender.query(sender.pre, sender.pre, { route: "logs", q: {} }),
@@ -273,7 +270,6 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
         );
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     runtime.cues.push({
       kin: "replay",

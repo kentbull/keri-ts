@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
@@ -115,7 +114,7 @@ for (const tsDiscloser of [true, false]) {
                       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
                       hbys.push(hby);
                       runtimes.push(
-                        yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+                        yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
                           kram: {
                             enabled: true,
                             caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] },

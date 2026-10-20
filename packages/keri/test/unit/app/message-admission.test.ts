@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
@@ -23,7 +22,7 @@ import ipex from "../../fixtures/keripy-ipex-vectors.json" with { type: "json" }
 Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prerequisite refusals", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     try {
       assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
       for (const row of fixture.cases) {
@@ -97,7 +96,7 @@ Deno.test("runtime sender policy blocks v2 effects while KEL and legacy traffic 
     const sender = source.makeHab("sender");
     const wrong = source.makeHab("wrong");
     const denyList = new Set([sender.pre]);
-    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock, {
       messagePolicy: { allowList: new Set([sender.pre]), denyList },
     });
     try {
@@ -189,7 +188,6 @@ Deno.test("optional KRAM returns combined evidence after retiring acceptance", a
       hby,
       new FetchHttpClient(),
       { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) },
-      httpMailboxPollTransport,
       { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
     );
     const body = query("ksn", { i: sender.pre, src: sender.pre }, { pre: sender.pre, pvrsn: Vrsn_2_0 });
@@ -235,7 +233,6 @@ Deno.test("KRAM exchange receipt survives dependency escrow and cannot be refres
       hby,
       new FetchHttpClient(),
       { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) },
-      httpMailboxPollTransport,
       { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
     );
     const seen: (string | undefined)[] = [], handled: (string | undefined)[] = [];
@@ -383,7 +380,7 @@ Deno.test("disabled, exempt, default and v1 exchange intake cannot confer KRAM r
         { kram: { enabled: true }, pvrsn: Vrsn_1_0 },
       ];
       for (const { kram, pvrsn } of cases) {
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
           kram,
         });
         runtime.exc.addHandler({
@@ -425,7 +422,7 @@ Deno.test("optional KRAM preserves actual OOBI verification and frozen processor
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), wrong = hby.makeHab("wrong");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       kram: { enabled: true },
     });
     try {
