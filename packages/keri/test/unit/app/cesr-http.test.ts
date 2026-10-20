@@ -2,8 +2,7 @@
  * CESR-over-HTTP transport contract tests.
  *
  * These scenarios pin the mailbox and exchange framing behavior that must stay
- * aligned with KERIpy by default while still allowing Tufa's optional body
- * mode.
+ * aligned with ordinary signed POSTs and specialized finite raw-body requests.
  */
 import { attachmentPayload, collectPayload, parseBytes } from "cesr-ts";
 import { run } from "effection";
@@ -85,7 +84,6 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
       );
       destination = hab.pre;
       request = buildCesrRequest(message, {
-        bodyMode: "header",
         destination,
       });
     } finally {
@@ -121,7 +119,7 @@ Deno.test("CESR HTTP - header mode splits ACDC messages without assuming KERI pr
   const attachment = new TextEncoder().encode("-AABfake");
   const message = concatBytes(creder.raw, attachment);
 
-  const request = buildCesrRequest(message, { bodyMode: "header" });
+  const request = buildCesrRequest(message);
 
   assertEquals(new Uint8Array(request.body), creder.raw);
   assertEquals(request.headers[CESR_ATTACHMENT_HEADER], "-AABfake");
@@ -137,8 +135,8 @@ Deno.test("CESR HTTP - header mode splits ACDC messages without assuming KERI pr
   );
 });
 
-/** Proves the optional `keri-ts` body mode keeps the full CESR payload in the body. */
-Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", async () => {
+/** Specialized raw-body endpoints preserve a complete prepared CESR payload. */
+Deno.test("CESR HTTP - raw-body builder preserves the full CESR message", async () => {
   let message!: Uint8Array;
   let request!: ReturnType<typeof buildCesrRequest>;
   let destination!: string;
@@ -165,10 +163,7 @@ Deno.test("CESR HTTP - body mode preserves the full CESR message in the body", a
         { route: "mbx", q: { topics: { "/challenge": 0 } } },
       );
       destination = hab.pre;
-      request = buildCesrRequest(message, {
-        bodyMode: "body",
-        destination,
-      });
+      request = buildCesrStreamRequest(message, { destination });
     } finally {
       yield* hby.close(true);
     }

@@ -124,7 +124,12 @@ POST iteration for HTTP or raw source output for TCP, not a stream HTTP PUT.
 Concrete messenger factories select resolved HTTPS/HTTP/TCP URLs without looking up
 identity preferences. HTTPStreamMessenger sends one prepared opaque PUT and returns
 owned response bytes; TCPStreamMessenger uses the existing raw writer. Neither
-adds a queue, worker, receive callback or payload-persistence framework.
+adds a queue, worker, receive callback or payload-persistence framework. Poster
+selects those operations from admission intent; no Habery/global framing preference
+or CLI override remains. Queries and mailbox polling use ordinary signed POSTs.
+Forwarded mixed-genus streams declare each prepared frame's actual genus, including
+legacy introductions, so a v2 parser cannot misread their counters. Entirely v1
+streams retain unqualified legacy framing for old peers. Transport stays opaque.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
 both TSN replies before taking records. Current authorization defeats old matching

@@ -1128,10 +1128,12 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
 Deno.test("Poster direct sends report partial failure and complete only after every target succeeds", async () => {
   let mode: "partial" | "failed" | "success" = "partial";
   const requests: string[] = [];
+  const methods: string[] = [];
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
     await request.arrayBuffer();
     const path = new URL(request.url).pathname;
     requests.push(path);
+    methods.push(request.method);
     return new Response(null, { status: mode === "success" || (mode === "partial" && path === "/good") ? 204 : 503 });
   });
   try {
@@ -1150,35 +1152,59 @@ Deno.test("Poster direct sends report partial failure and complete only after ev
           yield* runtime.reactor.processBytes(recipient.makeEndRole(mailbox.pre, EndpointRoles.controller, true));
         }
         const message = concatBytes(...hby.db.clonePreIter(sender.pre));
-        for (const kind of ["raw", "exchange"]) {
-          const send = () =>
-            kind === "raw"
-              ? deliverMessage(runtime.postman, sender, { recipient: recipient.pre, message, topic: "/receipt" })
-              : deliverExchange(runtime.postman, sender, {
+        for (const kind of ["raw", "exchange", "stream"]) {
+          const sendSelected = function*(): Operation<{ deliveries: string[] }> {
+            if (kind === "raw") {
+              return yield* deliverMessage(runtime.postman, sender, {
+                recipient: recipient.pre,
+                message,
+                topic: "/receipt",
+              });
+            }
+            if (kind === "exchange") {
+              return yield* deliverExchange(runtime.postman, sender, {
                 recipient: recipient.pre,
                 route: "/challenge/response",
                 payload: {},
               });
+            }
+            const evt = runtime.postman.sendStream({
+              src: sender.pre,
+              dest: recipient.pre,
+              topic: "/receipt",
+              msgs: [message],
+            }, { notify: true });
+            yield* runtime.postman.process();
+            const outcome = yield* runtime.postman.wait(evt);
+            if (outcome.kin === "failed") throw outcome.error;
+            return outcome;
+          };
           for (const outcome of ["partial", "failed"] as const) {
             mode = outcome;
             requests.length = 0;
-            const msg = kind === "raw" ? message : createExchangeMessage(sender, {
-              dest: recipient.pre,
-              route: "/challenge/response",
-              payload: {},
-            }).msg;
-            const evt = runtime.postman.send({ src: sender.pre, dest: recipient.pre, topic: "/receipt", msg }, {
-              notify: true,
-            });
+            methods.length = 0;
+            const msg = kind === "exchange"
+              ? createExchangeMessage(sender, {
+                dest: recipient.pre,
+                route: "/challenge/response",
+                payload: {},
+              }).msg
+              : message;
+            const source = { src: sender.pre, dest: recipient.pre, topic: "/receipt" };
+            const evt = kind === "stream"
+              ? runtime.postman.sendStream({ ...source, msgs: [msg] }, { notify: true })
+              : runtime.postman.send({ ...source, msg }, { notify: true });
             yield* runtime.postman.process();
             const result = yield* runtime.postman.wait(evt);
             assertEquals(result.kin, "failed");
+            if (kind === "stream") assertEquals(methods, ["PUT", "PUT"]);
+            else assertEquals(methods.every(method => method === "POST"), true);
             assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
             assertEquals(result.deliveries.map((url) => new URL(url).pathname), outcome === "partial" ? ["/good"] : []);
           }
           mode = "success";
           requests.length = 0;
-          const result = yield* send();
+          const result = yield* sendSelected();
           assertEquals(result.deliveries.length, 2);
           assertEquals([...new Set(requests)].sort(), ["/bad", "/good"]);
         }
@@ -1263,13 +1289,19 @@ Deno.test("ordinary Poster traverses direct roles before one random mailbox and 
     }
     hby.db.locs.pin([wit.pre, "http"], { url: "http://witness.test/" });
     const attempts: { url: string; route: string | null }[] = [];
+    const methods: string[] = [];
     const postman = new Poster(
       hby,
       null,
       null,
       httpClient(async (url, init) => {
-        const serder = new SerderKERI({ raw: await readCesrRequestBytes(new Request(url, init)) });
-        if (serder.ilk === "qry" || serder.route === "/fwd") attempts.push({ url, route: serder.route });
+        methods.push(init!.method!);
+        for (const frame of parseBytes(await readCesrRequestBytes(new Request(url, init)))) {
+          const serder = frame.body;
+          if (serder instanceof SerderKERI && (serder.ilk === "qry" || serder.route === "/fwd")) {
+            attempts.push({ url, route: serder.route });
+          }
+        }
         return new Response(null, { status: 204 });
       }),
       systemClock,
@@ -1294,11 +1326,13 @@ Deno.test("ordinary Poster traverses direct roles before one random mailbox and 
         assertEquals(result.deliveries, attempts.map(({ url }) => url));
       }
       attempts.length = 0;
+      methods.length = 0;
       const stream = postman.sendStream({ src: sender.pre, dest: recipient.pre, topic: "/replay", msgs: [msg, msg] }, {
         notify: true,
       });
       yield* postman.process();
       assertEquals((yield* postman.wait(stream)).kin, "sent");
+      assertEquals(methods, ["PUT", "PUT"], "one PUT for each selected direct controller endpoint");
       assertEquals(
         attempts,
         Object.values(ends[EndpointRoles.controller]).flatMap((urls) => [
@@ -1357,16 +1391,19 @@ Deno.test("queued streams keep all source messages ordered at one randomly selec
       hby.db.locs.pin([peer.pre, "http"], { url: `http://${peer.name}.relay.test/` });
     }
     const received: { url: string; subject: unknown }[] = [];
+    const requests: { method: string; destination: string | null }[] = [];
     const postman = new Poster(
       hby,
       null,
       null,
       httpClient(async (url, init) => {
-        const frame = parseBytes(await readCesrRequestBytes(new Request(url, init)))[0];
-        const outer = frame.body;
-        if (outer instanceof SerderKERI && outer.route === "/fwd") {
-          const embeds = outer.ked?.e as Record<string, Record<string, unknown>>;
-          received.push({ url, subject: (embeds.evt.q as Record<string, unknown>).s });
+        requests.push({ method: init!.method!, destination: new Headers(init!.headers).get("CESR-DESTINATION") });
+        for (const frame of parseBytes(await readCesrRequestBytes(new Request(url, init)))) {
+          const outer = frame.body;
+          if (outer instanceof SerderKERI && outer.route === "/fwd") {
+            const embeds = outer.ked?.e as Record<string, Record<string, unknown>>;
+            received.push({ url, subject: (embeds.evt.q as Record<string, unknown>).s });
+          }
         }
         return new Response(null, { status: 204 });
       }),
@@ -1391,7 +1428,9 @@ Deno.test("queued streams keep all source messages ordered at one randomly selec
       assertEquals(result.kin, "sent");
       assertEquals(evt.msg, original, "admission captures complete signed source bytes");
       assertEquals(choices, 1, "one relay is chosen for the entire batch");
-      const selected = Object.values(sender.endsFor(recipient.pre)[EndpointRoles.mailbox])[1].http;
+      const [selectedProvider, selectedUrls] = Object.entries(sender.endsFor(recipient.pre)[EndpointRoles.mailbox])[1];
+      assertEquals(requests, [{ method: "PUT", destination: selectedProvider }]);
+      const selected = selectedUrls.http;
       assertEquals(received, ["0", "1"].map((subject) => ({ url: selected, subject })));
       assertEquals(result.deliveries, [selected]);
     } finally {

@@ -8,7 +8,6 @@
  *
  * Current `keri-ts` difference:
  * - delivery and polling use scoped Effection workers instead of HIO doers
- * - HTTP posting honors both KERIpy header mode and the Tufa-only body mode
  */
 import type { HttpStreamResponse } from "./http-client.ts";
 
@@ -38,11 +37,11 @@ import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
-import { buildCesrRequest, type CesrBodyMode } from "./cesr-http.ts";
+import { CesrHttpRefusal } from "./cesr-egress.ts";
+import { buildCesrRequest } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
-import { HTTPMessenger } from "./http-messenger.ts";
 import { requestWithHeaderTimeout } from "./httping.ts";
 import type { MailboxDirector } from "./mailbox-director.ts";
 import { consumeMailboxSse, type MailboxSseMessage } from "./mailbox-sse.ts";
@@ -51,6 +50,7 @@ import {
   mailboxTopicKey,
   preferredUrl,
 } from "./mailboxing.ts";
+import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "./messengering.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -123,11 +123,7 @@ interface RawCesrRoute {
   /**
    * Ordered endpoint AIDs and URLs; null preserves a missing/unsupported location for execution failure.
    */
-  readonly targets: readonly { eid: string; url: string | null }[];
-  /**
-   * HTTP framing policy captured for this attempt.
-   */
-  readonly bodyMode: CesrBodyMode;
+  readonly targets: readonly { eid: string; url: string | null; urls: MessengerUrls }[];
 }
 
 /** Prepared wire borrows its bytes until the transport operation and cleanup finish. */
@@ -141,6 +137,8 @@ type PreparedCesrTarget =
     readonly kind: "tcp";
     /** Selected transport endpoint URL for this attempt. */
     readonly url: string;
+    /** Resolved transport map retains advertised schemes for concrete construction. */
+    readonly urls: MessengerUrls;
     /** Endpoint AID, which may be a mailbox intermediary rather than the final recipient. */
     readonly destination: string;
     /** Prepared introduction/forwarding wire borrowed until this transport operation joins cleanup. */
@@ -151,29 +149,27 @@ type PreparedCesrTarget =
     readonly kind: "http";
     /** Selected transport endpoint URL for this attempt. */
     readonly url: string;
+    /** Resolved transport map retains advertised schemes for concrete construction. */
+    readonly urls: MessengerUrls;
     /** Endpoint AID, which may be a mailbox intermediary rather than the final recipient. */
     readonly destination: string;
     /** Prepared introduction/forwarding wire borrowed until this transport operation joins cleanup. */
     readonly message: Uint8Array;
-    /** HTTP attachment placement for this attempt; TCP has no corresponding mode. */
-    readonly bodyMode: CesrBodyMode;
   };
 
 /**
- * Preserve selected endpoint and signed bytes; TCP has no HTTP body framing mode.
+ * Preserve resolved endpoint schemes and signed bytes for concrete transport construction.
  *
  * @param endpoint Selected endpoint AID and concrete URL.
  * @param message Prepared bytes borrowed until transport cleanup completes.
- * @param bodyMode HTTP attachment placement; irrelevant for TCP.
  * @returns A TCP or HTTP target according to the endpoint URL scheme.
  */
 function remoteCesrTarget(
-  endpoint: { eid: string; url: string },
+  endpoint: { eid: string; url: string; urls: MessengerUrls },
   message: Uint8Array,
-  bodyMode: CesrBodyMode,
 ): PreparedCesrTarget {
-  const base = { url: endpoint.url, destination: endpoint.eid, message };
-  return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http", bodyMode };
+  const base = { url: endpoint.url, urls: endpoint.urls, destination: endpoint.eid, message };
+  return new URL(endpoint.url).protocol === "tcp:" ? { ...base, kind: "tcp" } : { ...base, kind: "http" };
 }
 
 /**
@@ -471,26 +467,18 @@ export class Poster {
             failed.push(new ValidationError(`No supported endpoint URL for ${endpoint.eid}.`));
             continue;
           }
-          const target = yield* this.prepareBytesTarget(hab, route, { eid: endpoint.eid, url: endpoint.url }, evt);
+          const target = yield* this.prepareBytesTarget(hab, route, {
+            eid: endpoint.eid,
+            url: endpoint.url,
+            urls: endpoint.urls,
+          }, evt);
           try {
-            if (target.kind === "http") {
-              const outcome = yield* new HTTPMessenger(target.url, this.http, { destination: target.destination }).send(
-                target.message,
-                {
-                  bodyMode: target.bodyMode,
-                  signal,
-                },
-              );
-              if (outcome.kind === "refuse") {
-                failed.push(outcome.error);
+            if (target.kind !== "stored") {
+              const refusal = yield* this.sendPreparedTarget(target, evt, signal);
+              if (refusal) {
+                failed.push(refusal);
                 continue;
               }
-            } else if (target.kind === "tcp") {
-              // The messenger owns the attempt; Poster keeps source and event-level progress.
-              yield* new TCPMessenger(target.url, this.clock, this.protocol).send(target.message, {
-                signal,
-                replies: evt.replies,
-              });
             }
           } catch (error) {
             if (!(error instanceof TransportError)) throw error;
@@ -513,6 +501,47 @@ export class Poster {
       return { kin: "failed", evt, deliveries, error };
     }
     return { kin: "sent", evt, deliveries };
+  }
+
+  /** Execute one prepared target, adapting completed HTTP refusal to this owner's fanout outcome. */
+  private *sendPreparedTarget(
+    target: Exclude<PreparedCesrTarget, { kind: "stored" }>,
+    evt: PosterEvent,
+    signal: AbortSignal,
+  ): Operation<CesrHttpRefusal | undefined> {
+    if (target.kind === "tcp" && evt.replies) {
+      // Explicit duplex work retains its receive owner; send-only factories need none.
+      yield* new TCPMessenger(target.url, this.clock, this.protocol).send(target.message, {
+        signal,
+        replies: true,
+      });
+      return;
+    }
+    if (evt.kin === "stream") {
+      const response = yield* streamMessengerFrom(
+        target.destination,
+        target.urls,
+        target.message,
+        this.http,
+        this.clock,
+      ).send({ signal });
+      if (response && !response.ok) {
+        return new CesrHttpRefusal(
+          `CESR delivery to ${target.url} failed with HTTP ${response.status}: ${
+            new TextDecoder().decode(response.body)
+          }`,
+          response.status,
+        );
+      }
+      return;
+    }
+    const outcome = yield* messengerFrom(
+      target.destination,
+      target.urls,
+      this.http,
+      this.clock,
+    ).send(target.message, { signal });
+    if (outcome && outcome.kind === "refuse") return outcome.error;
   }
 
   /**
@@ -549,25 +578,22 @@ export class Poster {
     );
     if (!roles.length && Object.keys(ends[Roles.witness] ?? {}).length) roles.push(Roles.witness);
     if (kin === "stream") roles.splice(1);
-    const base = { bodyMode: this.hby.cesrBodyMode };
     return roles.map((role) => {
       const candidates = Object.entries(ends[role]);
       if (role === Roles.controller || role === Roles.agent) {
         return {
-          ...base,
           kind: "direct",
-          targets: candidates.map(([eid, urls]) => ({ eid, url: preferredUrl(urls) })),
+          targets: candidates.map(([eid, urls]) => ({ eid, url: preferredUrl(urls), urls })),
         };
       }
       if (!topic) throw new ValidationError(`Forwarded delivery requires an explicit topic for ${recipient}.`);
       // A provider store may belong to another local AID, not just the sender.
       const local = this.mbx && candidates.find(([eid]) => this.hby.db.prefixes.has(eid));
-      if (local) return { ...base, kind: "forward", targets: [{ eid: local[0], url: `local-mailbox:${local[0]}` }] };
+      if (local) return { kind: "forward", targets: [{ eid: local[0], url: `local-mailbox:${local[0]}`, urls: {} }] };
       const [eid, urls] = candidates[Math.floor(Math.random() * candidates.length)];
       return {
-        ...base,
         kind: "forward",
-        targets: [{ eid, url: preferredUrl(urls) }],
+        targets: [{ eid, url: preferredUrl(urls), urls }],
       };
     });
   }
@@ -576,7 +602,7 @@ export class Poster {
    * Prepare a target using the supplied wire and selected endpoint.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param route Selected endpoint group and HTTP framing for this attempt.
+   * @param route Selected direct or forwarded endpoint group.
    * @param endpoint One selected endpoint AID and URL from the route.
    * @param evt Original signed source and concrete ordinary/stream operation.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
@@ -584,14 +610,13 @@ export class Poster {
   private *prepareBytesTarget(
     hab: Hab,
     route: RawCesrRoute,
-    endpoint: { eid: string; url: string },
+    endpoint: { eid: string; url: string; urls: MessengerUrls },
     evt: PosterEvent,
   ): Operation<PreparedCesrTarget> {
     if (route.kind !== "direct") {
-      const forwarded = yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
-      return forwarded.kind === "http" ? { ...forwarded, bodyMode: route.bodyMode } : forwarded;
+      return yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
     }
-    return remoteCesrTarget(endpoint, evt.msg, route.bodyMode);
+    return remoteCesrTarget(endpoint, evt.msg);
   }
 
   /**
@@ -609,7 +634,7 @@ export class Poster {
     recipient: string,
     topic: string,
     evt: PosterEvent,
-    endpoint: { eid: string; url: string },
+    endpoint: { eid: string; url: string; urls: MessengerUrls },
   ): Operation<PreparedCesrTarget> {
     if (this.mbx && this.hby.db.prefixes.has(endpoint.eid)) {
       const stored = this.mbx.storeMsg(
@@ -631,7 +656,21 @@ export class Poster {
     const forwarded: Uint8Array[] = [];
     for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(hab, { recipient, topic, message }));
     const intro = introduce(hab, endpoint.eid);
-    return remoteCesrTarget(endpoint, concatBytes(intro, ...forwarded), this.hby.cesrBodyMode);
+    let message = concatBytes(intro, ...forwarded);
+    if (evt.kin === "stream") {
+      const frames = parseBytes(message);
+      if (frames.some(frame => (frame.gvrsn?.major ?? 1) >= 2)) {
+        // A v2 peer's default cannot interpret unqualified v1 introduction counters.
+        // Declare each prepared frame's actual genus without changing signed bodies.
+        // Entirely legacy streams retain their v1-peer-compatible unqualified wire.
+        const qualified: Uint8Array[] = [];
+        for (const frame of frames) {
+          qualified.push(yield* abortable(signal => collectPayload(framePayload(frame), signal)));
+        }
+        message = concatBytes(...qualified);
+      }
+    }
+    return remoteCesrTarget(endpoint, message);
   }
 }
 
@@ -916,7 +955,6 @@ export class MailboxPoller {
         endpoint.eid,
         endpoint.url,
         cursor,
-        this.hby.cesrBodyMode,
         mailboxFetchTimeoutPolicy(this.timeoutPolicy),
         this.http,
         this.clock,
@@ -1371,7 +1409,6 @@ export interface MailboxFetchTimeoutPolicy {
  * @param src Remote mailbox attester AID.
  * @param url Selected HTTP(S) polling endpoint.
  * @param topics Next-wanted ordinals by topic.
- * @param bodyMode CESR attachment placement for the signed query.
  * @param timeouts Header, absolute read and idle windows in milliseconds.
  * @param http Borrowed HTTP implementation selected by composition.
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
@@ -1383,7 +1420,6 @@ function* fetchMailboxMessages(
   src: string,
   url: string,
   topics: Record<string, number>,
-  bodyMode: "header" | "body",
   timeouts: MailboxFetchTimeoutPolicy,
   http: HttpClient,
   clock: RuntimeClock,
@@ -1395,7 +1431,6 @@ function* fetchMailboxMessages(
     const handle = yield* fetchMailboxQueryResponse(
       url,
       query,
-      bodyMode,
       src,
       timeouts.requestOpenTimeoutMs,
       http,
@@ -1429,7 +1464,6 @@ function* fetchMailboxMessages(
  *
  * @param url HTTP(S) mailbox endpoint.
  * @param query Complete signed mbx query bytes.
- * @param bodyMode CESR attachment placement.
  * @param destination Remote mailbox endpoint AID carried in framing.
  * @param timeoutMs Response-header acquisition window in milliseconds.
  * @param http Borrowed HTTP implementation selected by composition.
@@ -1439,7 +1473,6 @@ function* fetchMailboxMessages(
 function* fetchMailboxQueryResponse(
   url: string,
   query: Uint8Array,
-  bodyMode: "header" | "body",
   destination: string,
   timeoutMs: number,
   http: HttpClient,
@@ -1451,7 +1484,6 @@ function* fetchMailboxQueryResponse(
   } | null
 > {
   const request = buildCesrRequest(query, {
-    bodyMode,
     destination,
   });
   const controller = new AbortController();

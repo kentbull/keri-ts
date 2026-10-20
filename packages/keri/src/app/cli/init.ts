@@ -9,7 +9,6 @@ import {
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
-import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { branToSeedAeid, createHabery, type Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
@@ -42,8 +41,6 @@ interface InitArgs {
   aeid?: string;
   /** Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived */
   seed?: string;
-  /** Transport form for outbound CESR HTTP requests. */
-  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
@@ -67,9 +64,6 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     nopasscode: booleanOption(args.nopasscode, "--nopasscode"),
     aeid: stringOption(args.aeid, "--aeid"),
     seed: stringOption(args.seed, "--seed"),
-    cesrBodyMode: normalizeCesrBodyMode(
-      stringOption(args.cesrBodyMode, "--cesr-body-mode"),
-    ),
   };
 
   const name = initArgs.name;
@@ -115,9 +109,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       aeid,
       seed,
       salt: initArgs.salt,
-      cesrBodyMode: initArgs.cesrBodyMode,
     });
-    hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
     if (runtimeBootstrapNeeded(hby)) {
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {

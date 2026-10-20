@@ -1,12 +1,10 @@
 import type { Operation } from "effection";
 import {
-  type CesrBodyMode,
   type Configer,
   createConfiger,
   EndpointRoles,
   type Hab,
   type Habery,
-  normalizeCesrBodyMode,
   Schemer,
   Schemes,
   ValidationError,
@@ -24,7 +22,6 @@ interface AgentArgs {
   configFile?: string;
   passcode?: string;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
   schemas?: string[];
   schemaDirs?: string[];
 }
@@ -141,9 +138,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     configFile: args.configFile as string | undefined,
     passcode: args.passcode as string | undefined,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
     ...schemaInputsFromArgs(args),
   };
   const port = agentArgs.port ?? 8000;
@@ -180,7 +174,6 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       cf,
       skipConfig: false,
       skipSignator: false,
-      cesrBodyMode: agentArgs.cesrBodyMode,
     },
   );
 

@@ -1,6 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
@@ -19,7 +18,6 @@ interface ExnSendArgs {
   topic?: string;
   data?: string[];
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
@@ -47,9 +45,6 @@ export function* exchangeSendCommand(
     topic: args.topic as string | undefined,
     data: normalizeDataArgs(args.data),
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
   };
 
   if (!commandArgs.name) {
@@ -76,7 +71,6 @@ export function* exchangeSendCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
       const { serder } = yield* sendExchangeMessage(

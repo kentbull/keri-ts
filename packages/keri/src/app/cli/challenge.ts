@@ -1,7 +1,6 @@
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { runAgentRuntime } from "../agent-runtime.ts";
-import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
   type ChallengeOutput,
@@ -34,7 +33,6 @@ interface ChallengeRespondArgs {
   recipient?: string;
   words?: string;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 interface ChallengeVerifyArgs {
@@ -49,7 +47,6 @@ interface ChallengeVerifyArgs {
   out?: string;
   timeout?: number;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
   pollDelayMs?: number;
 }
 
@@ -84,9 +81,6 @@ export function* challengeRespondCommand(
     recipient: args.recipient as string | undefined,
     words: args.words as string | undefined,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
   };
 
   if (!commandArgs.name) {
@@ -116,7 +110,6 @@ export function* challengeRespondCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
       const payload: ChallengeResponsePayload = { words };
@@ -154,9 +147,6 @@ export function* challengeVerifyCommand(
     out: args.out as string | undefined,
     timeout: args.timeout ? Number(args.timeout) : 10,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
     pollDelayMs: args.pollDelayMs ? Number(args.pollDelayMs) : undefined,
   };
 
@@ -187,7 +177,6 @@ export function* challengeVerifyCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: true,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, runtime }) {
       const signer = resolveSigner(hby, signerInput);

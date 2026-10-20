@@ -655,7 +655,7 @@ export function* sendWitnessMessage(
   const outcome = yield* new HTTPMessenger(url, http, {
     destination: witness,
     headers: auth ? { Authorization: auth } : undefined,
-  }).send(bytes, { bodyMode: "header" });
+  }).send(bytes);
   if (outcome.kind === "refuse") throw outcome.error;
 }
 

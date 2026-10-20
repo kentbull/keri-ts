@@ -269,20 +269,29 @@ for (const count of [1, 2]) {
                     null,
                     "recipient has not received this IPEX message yet",
                   );
+                  const before = (yield* call(() => inspectMailbox(mailboxUrl, destination.pre))).traffic.length;
                   const delivered = yield* call(function*() {
                     const postman = originRuntime.postman;
                     yield* spawn(() => postman.deliverDo());
-                    const evt = postman.send({
-                      src: sender.pre,
-                      dest: destination.pre,
-                      topic: "/credential",
-                      msg: message,
-                    }, { notify: true });
+                    const source = { src: sender.pre, dest: destination.pre, topic: "/credential" };
+                    // Initial grant/admit producers use stream delivery; other verbs remain ordinary.
+                    const evt = body === grant || body === admit
+                      ? postman.sendStream({ ...source, msgs: [message] }, { notify: true })
+                      : postman.send({ ...source, msg: message }, { notify: true });
                     const outcome = yield* postman.wait(evt);
                     if (outcome.kin === "failed") throw outcome.error;
                     return outcome;
                   });
                   assertEquals(delivered.deliveries, [mailboxUrl]);
+                  const traffic = (yield* call(() => inspectMailbox(mailboxUrl, destination.pre))).traffic.slice(
+                    before,
+                  );
+                  if (body === grant || body === admit) {
+                    assertEquals(traffic, [{ method: "PUT", destination: providerPre, detached: false }]);
+                  } else {
+                    assertEquals(traffic.length > 0, true);
+                    assertEquals(traffic.every(request => request.method === "POST" && request.detached), true);
+                  }
                   const qry = query("mbx", {
                     i: destination.pre,
                     src: providerPre,
@@ -316,7 +325,11 @@ for (const count of [1, 2]) {
                     systemClock,
                     { idleTimeoutMs: 2000, maxDurationMs: 5000 },
                   );
-                  assertEquals(received, true, "the mailbox yielded the signed IPEX payload");
+                  assertEquals(
+                    received,
+                    true,
+                    `the mailbox yielded ${body.route} contribution ${index}; traffic=${JSON.stringify(traffic)}`,
+                  );
                   const state = yield* call(() => inspectMailbox(mailboxUrl, destination.pre, [qry.said!]));
                   assertEquals(state.rows[0].cached, true, "KRAM authenticated the mailbox query");
                   assertEquals(state.rows[0].pending, false);

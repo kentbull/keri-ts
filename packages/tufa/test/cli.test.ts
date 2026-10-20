@@ -159,6 +159,20 @@ function extractPrefix(output: string): string {
   return line.trim().split(/\s+/).at(-1) ?? "";
 }
 
+Deno.test("tufa/cli - transport framing is absent from every command and rejects the removed flag", async () => {
+  const program = new Command();
+  registerCmds(program, () => {});
+  function check(command: Command): void {
+    assertEquals(command.options.some(option => option.long === "--cesr-body-mode"), false, command.name());
+    assertEquals(command.helpInformation().includes("--cesr-body-mode"), false, command.name());
+    command.commands.forEach(check);
+  }
+  check(program);
+  const result = await runTufa(["init", "--name", "unused", "--nopasscode", "--cesr-body-mode", "body"]);
+  assertEquals(result.code, 1);
+  assertStringIncludes(result.stderr, "unknown option '--cesr-body-mode'");
+});
+
 Deno.test("tufa/cli - parsed command names all have registered handlers", () => {
   const program = new Command();
   program.exitOverride();

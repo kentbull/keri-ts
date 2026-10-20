@@ -417,18 +417,10 @@ Deno.test("CLI - init command honors custom head directory", async () => {
   assertExists(Deno.statSync(`${headDirPath}/keri/db/${name}`));
 });
 
-Deno.test("CLI - init stores the configured CESR body mode", async () => {
-  const name = `cesr-mode-init-${crypto.randomUUID()}`;
+Deno.test("CLI - init does not persist a transport framing preference", async () => {
+  const name = `cesr-init-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  await run(() =>
-    initCommand({
-      name,
-      headDirPath,
-      nopasscode: true,
-      cesrBodyMode: "body",
-    })
-  );
-
+  await run(() => initCommand({ name, headDirPath, nopasscode: true }));
   await run(function*() {
     const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
       readonly: true,
@@ -436,32 +428,7 @@ Deno.test("CLI - init stores the configured CESR body mode", async () => {
       skipSignator: true,
     });
     try {
-      assertEquals(hby.cesrBodyMode, "body");
-    } finally {
-      yield* hby.close();
-    }
-  });
-});
-
-Deno.test("CLI - setupHby defaults CESR body mode to header when no mode is configured", async () => {
-  const name = `cesr-mode-default-${crypto.randomUUID()}`;
-  const headDirPath = `/tmp/tufa-head-${crypto.randomUUID()}`;
-  await run(() =>
-    initCommand({
-      name,
-      headDirPath,
-      nopasscode: true,
-    })
-  );
-
-  await run(function*() {
-    const hby = yield* setupHby(name, "", undefined, false, headDirPath, {
-      readonly: true,
-      skipConfig: true,
-      skipSignator: true,
-    });
-    try {
-      assertEquals(hby.cesrBodyMode, "header");
+      assertEquals(hby.ks.getGbls("cesrBodyMode"), null);
     } finally {
       yield* hby.close();
     }

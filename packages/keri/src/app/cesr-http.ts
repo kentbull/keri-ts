@@ -6,21 +6,11 @@
  * KERIpy correspondence:
  * - default behavior is one CESR message per HTTP request with the message body
  *   in the request body and attachments in `CESR-ATTACHMENT`
- *
- * Current `keri-ts` difference:
- * - `keri-ts` supports an optional `"body"` mode for mailbox operations where the
- *   full CESR payload is sent in the body instead of splitting attachments into
- *   the header
  */
 import { parseBytes, parseSerder, requireFlatFrame, SerderKERI, smell } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import { collectBytes, streamBytes } from "./byte-source.ts";
 
-/** Mailbox HTTP framing modes supported by `keri-ts`. */
-export type CesrBodyMode = "header" | "body";
-
-/** Default interop mode matching KERIpy mailbox behavior. */
-export const DEFAULT_CESR_BODY_MODE: CesrBodyMode = "header";
 /** CESR HTTP content type used by mailbox and exchange endpoints. */
 export const CESR_CONTENT_TYPE = "application/cesr";
 /** KERIpy's legacy-but-authoritative CESR HTTP media type. */
@@ -61,70 +51,20 @@ export interface CesrStreamInspection {
   readonly terminal: SerderKERI | null;
 }
 
-/** Normalize CLI or config input into one supported CESR body mode. */
-export function normalizeCesrBodyMode(
-  value: unknown,
-  fallback: CesrBodyMode = DEFAULT_CESR_BODY_MODE,
-): CesrBodyMode {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  if (value === "header" || value === "body") {
-    return value;
-  }
-  throw new ValidationError(
-    `Invalid cesr body mode "${String(value)}". Expected "header" or "body".`,
-  );
-}
-
-/** Normalize a global config string into one supported CESR body mode. */
-export function cesrBodyModeFromGlobal(
-  value: string | null | undefined,
-): CesrBodyMode {
-  return normalizeCesrBodyMode(value ?? undefined);
-}
-/**
- * Build one HTTP request payload for a CESR message.
- *
- * Header mode:
- * - HTTP body carries the message body only
- * - `CESR-ATTACHMENT` carries the detached attachments
- *
- * Body mode:
- * - the full payload is sent in the HTTP body
- */
+/** Build ordinary signed-message POST framing, preserving the signed body bytes. */
 export function buildCesrRequest(
   message: Uint8Array,
-  { bodyMode = DEFAULT_CESR_BODY_MODE, contentType = CESR_CONTENT_TYPE, destination }: {
-    bodyMode?: CesrBodyMode;
+  { contentType = CESR_CONTENT_TYPE, destination }: {
     contentType?: string;
     destination?: string;
   } = {},
 ): { headers: Record<string, string>; body: ArrayBuffer } {
-  const mode = normalizeCesrBodyMode(bodyMode);
-  const headers: Record<string, string> = {
-    "Content-Type": contentType,
-  };
-  if (destination) {
-    headers[CESR_DESTINATION_HEADER] = destination;
-  }
-
-  if (mode === "body") {
-    return {
-      headers,
-      body: arrayBufferFromBytes(message),
-    };
-  }
-
+  const headers: Record<string, string> = { "Content-Type": contentType };
+  if (destination) headers[CESR_DESTINATION_HEADER] = destination;
   const { smellage } = smell(message);
   const serder = parseSerder(message.slice(0, smellage.size), smellage);
-  headers[CESR_ATTACHMENT_HEADER] = textDecoder.decode(
-    message.slice(serder.size),
-  );
-  return {
-    headers,
-    body: arrayBufferFromBytes(message.slice(0, serder.size)),
-  };
+  headers[CESR_ATTACHMENT_HEADER] = textDecoder.decode(message.slice(serder.size));
+  return { headers, body: arrayBufferFromBytes(message.slice(0, serder.size)) };
 }
 /**
  * Build one raw CESR-body HTTP request.
