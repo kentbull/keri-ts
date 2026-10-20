@@ -1320,6 +1320,25 @@ Deno.test("finite bootstrap resumes in-flight/multi/auth work without waiting on
       assertEquals(target.db.dune.cnt(), 1);
       assertEquals(target.db.eoobi.get(historical)?.state, "http-404");
 
+      // KERIpy also permits a well-known URL in the introduction queue.
+      // An old auth refusal must not replace this ordinary fetch's own result.
+      target.db.oobis.pin(auth, { cid: controller.pre, state: "queued" });
+      target.db.rmfa.pin(auth, { cid: controller.pre, state: "http-403" });
+      assertEquals(
+        yield* resolveBootstrap(
+          target,
+          httpClient(() =>
+            new Response(
+              new Uint8Array(acceptedEventReplayMessage(source, controller.pre, 0).message),
+              { headers: { "Content-Type": "application/cesr" } },
+            )
+          ),
+          systemClock,
+        ),
+        { kind: "complete" },
+      );
+      assertEquals(target.db.roobi.get(auth)?.state, "resolved");
+
       target.db.woobi.pin(auth, { cid: controller.pre, state: "queued" });
       assertEquals(
         yield* resolveBootstrap(target, httpClient(() => new Response(null, { status: 403 })), systemClock),

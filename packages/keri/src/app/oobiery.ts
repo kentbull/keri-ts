@@ -67,13 +67,16 @@ export interface OobiTerminalState {
  *
  * @param db Borrowed OOBI/authentication records; this read starts no workers or I/O.
  * @param url Exact requested OOBI/well-known URL whose durable state is inspected.
- * @returns Current durable terminal projection.
+ * @param kind Actual queued family; ordinary CLI resolution infers it from the URL.
+ * Configuration may put the same well-known URL in introduction and auth queues.
+ * @returns Current durable terminal projection for that family.
  */
 export function oobiTerminalState(
   db: Baser,
   url: string,
+  kind: OobiQueueKind = queueKindFor(url),
 ): OobiTerminalState {
-  if (isWellKnownOobiUrl(url)) {
+  if (kind === "woobi") {
     if (db.woobi.get(url) || db.mfa.get(url)) return { status: "pending", via: "none", record: null };
     const record = db.rmfa.get(url);
     if (!record) {
