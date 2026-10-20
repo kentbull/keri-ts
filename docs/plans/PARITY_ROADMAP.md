@@ -39,7 +39,7 @@ name does not justify a forwarding wrapper.
 
 - ProtocolProcessor orders protocol processing/escrows and captures correlated replies and publishes
   after commit. It is not an application callback scheduler or universal executor.
-- QueryCoordinator, Respondant, Poster, mailbox, registry and concrete input owners
+- WitnessInquisitor, concrete query workflows, Respondant, Poster, mailbox and registry owners
   do their actual work through narrow dependencies. Respondant interprets and
   publishes reply work; Poster owns queued execution and cleanup. Lower transport knows sockets,
   not AgentRuntime; independent siblings communicate through concrete records.
@@ -107,28 +107,13 @@ activated implementation queue. A proposal to hide DB access, replace reflective
 dispatch, rename records or simplify generics needs a demonstrated current problem
 under ADR-0013; the old scratchpad does not authorize new facades or cleanup.
 
-## Deferred escrow logging review
+## Logging qualification
 
-The credential-import work leaves a separate logging follow-up. This is roadmap
-work, outside its implementation and qualification goal; no logging upgrade has
-been implemented. Keep the existing logger rather than adding a wrapper, logger
-service dependency, diagnostic queue or retained history.
-
-- Compare KEL, reply, TEL/TSN, credential, EXN and v2 registry diagnostics with the
-  [recorded KERIpy references](../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#version-vocabulary-and-reference-limits).
-  Distinguish repeated pending attempts, accepted cleanup and actual terminal
-  ejections before selecting severity. Preserve original causes and identifying
-  fields; logging must never determine protocol decisions or removal.
-- Review the existing debug/info/warn/error threshold and Tufa's loglevel flag.
-  Decide whether TRACE and CRITICAL have concrete production uses; retain useful
-  level selection without building a logging framework or speculative hooks.
-- Keep CLI diagnostics on stderr at every enabled level so structured stdout
-  remains usable. The current logger's debug/info console methods can write to
-  stdout and need correction at the existing logger owner.
-- Qualify threshold filtering, stderr/stdout separation and repeated pending work.
-  Pending retries, successful cleanup, family migration and EXN preserveEscrow
-  must not create warning floods or false ejection claims. Actual ejections
-  remain diagnosable after committed removal. Use focused owner/CLI tests.
+The stderr routing, threshold filtering and original-cause ejection diagnostics
+were implemented in release PRs #589–590. Preserve their owner/CLI regressions and
+include them in final qualification. Distinguish repeated pending attempts,
+accepted cleanup and terminal ejection; diagnostics never determine acceptance or
+removal. No logger wrapper, diagnostic queue or per-PR logging report is required.
 
 ## Future change and release discipline
 

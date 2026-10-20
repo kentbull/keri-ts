@@ -115,15 +115,17 @@ affected checks after the final [Mapper repair](../cesr/MAPPER_PLAN.md).
 
 Reference gaps are classified using the [upstream registry review](../../reference/credentials/UPSTREAM_REGISTRY_GAPS.md).
 Qualify our implemented behavior without waiting for absent upstream processing.
-The active baseline is `7143832813cac6a394ab1faf9be83bb3372be87c`, including
-schema hardening (#1713). Earlier `927c0cb8` results remain historical evidence;
-run final qualification against 714 and label retained fork/legacy targets separately.
+Execution pins are owned by [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json).
+Use its main, GLEIF legacy and upstream legacy profiles for final qualification;
+the separate mailbox fork keeps its own provenance. `71438328`, `927c0cb8` and
+`424a50c` results are historical evidence, not current qualification. The release
+completion plan owns pin-transition checks and claim boundaries. Advancing a pin
+requires rerunning affected evidence, never relabeling old results.
 
 ## Removal-specific release gates
 
-Verify no shared accounting APIs, aliases, formula tests or retired store creators
-remain in source or built declarations. Test current supported state and actual
-cleanup; no old-version keri-ts data or new-to-old compatibility tests. The [graduated disclosure matrix](GRADUATED_DISCLOSURE_INTEROP.md) requires
+Review the final public contract and test supported state and actual cleanup;
+do not add tests or lint rules solely proving retired designs are absent; no old-version keri-ts data or new-to-old compatibility tests. The [graduated disclosure matrix](GRADUATED_DISCLOSURE_INTEROP.md) requires
 pairwise directions, complete apply/offer-through-admit conversations, dedicated
 spurn cases, chained credentials/edge operators and multiple blinded/revealed
 attributes. A standalone apply/grant probe does not close that gate. Current

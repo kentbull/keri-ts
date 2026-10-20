@@ -180,3 +180,18 @@ attempt; a failed or cancelled attempt is consumed rather than retained for retr
 The query CLI uses one ten-second deadline and fails if accepted evidence never
 satisfies its workflow. It no longer performs implicit OOBI catch-up or displays
 stale state as successful query completion.
+
+## Native-v2 interoperability boundary
+
+The release requires a complete Tufa native credential workflow, with Python
+construction and independent verification against the execution manifest's main
+pin. Python exchange/proof acceptance does not imply a persistent Python native
+wallet or credential-aware multisig approval. Mixed-language ixn/rot signatures
+prove KEL approval only unless business validation is independently demonstrated.
+The relocated `tufa verifier run` application remains legacy-Reger based; native
+protocol observers are separate from that webhook application.
+
+Ordinary native examples and Python interop use the shared I2I/NI2I/E1E and AND/OR
+operator subset. DI2I and the bounded NOT interpretation remain TypeScript-only
+capabilities, not Python compatibility claims. The release plan's early live
+proofs and final qualification must establish these claims before publication.

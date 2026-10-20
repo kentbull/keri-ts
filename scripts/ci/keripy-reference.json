@@ -2,7 +2,7 @@
   "commit": "331f32e4de13cc5cb699587c5b1f1e5bc4468035",
   "profiles": {
     "main": {
-      "commit": "424a50c03421165c5f289e07a341bd57b8d8ab78",
+      "commit": "c7e74adc3129ba36302db32e58056560b0927424",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",
