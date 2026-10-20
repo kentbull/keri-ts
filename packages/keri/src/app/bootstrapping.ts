@@ -1,14 +1,12 @@
 /** Finite introduction/authentication composition shared by environment creation and inception. */
-import { type Operation, resource, scoped, spawn } from "effection";
+import { type Operation, scoped, spawn } from "effection";
 import type { Baser } from "../db/basing.ts";
 import { Authenticator, hasWellKnownAuth } from "./authenticating.ts";
 import type { Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
-import { isWellKnownOobiUrl, Oobiery, oobiTerminalState, parseOobiUrl } from "./oobiery.ts";
+import { Oobiery, oobiTerminalState } from "./oobiery.ts";
 import { createProtocolProcessor } from "./protocol-processing.ts";
-import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
-import { WitnessInquisitor } from "./witness-inquisitor.ts";
 
 /** Expected remote outcomes; infrastructure and cleanup failures still propagate. */
 export type BootstrapResult =
@@ -33,15 +31,15 @@ interface BootstrapWork {
  * The actual table family selects its terminal evidence: a well-known URL may
  * be an ordinary introduction, a separate authentication, or both.
  *
- * Like KERIpy init, compose Oobiery and Authenticator directly. Minimal KEL/reply
- * intake, escrow recovery and query delivery share Baser; there are no credential,
- * mailbox, delegation or Poster workers. Authentication waits for its accepted
- * controller KEL. Query recovery can use existing local signers/endpoints; absent
- * prerequisite evidence remains pending until the deadline, never successful.
+ * Like KERIpy init, compose Oobiery and Authenticator directly. Resolution means
+ * that Oobiery processed the response, not that all its protocol evidence was
+ * accepted. KEL/reply escrow processing lets evidence arriving in separate
+ * responses unlock introductions and authentication's required controller state.
+ * Escrow contents never determine bootstrap completion. Later operations must
+ * check the accepted evidence they actually require.
  *
  * @param hby Borrowed identities/configuration/Baser; kept open through cleanup.
- * @param http Borrowed request implementation used by OOBIs, authentication and queries.
- * @param clock Borrowed clock for actual query transport deadlines.
+ * @param http Borrowed request implementation used by OOBIs and authentication.
  * @param options Finite positive elapsed deadline, default 30 seconds.
  * @returns Selected terminal success, refusal or deadline after all children/I/O join.
  * @throws Invariant, parser, storage, transport and cleanup failures propagate unchanged.
@@ -49,7 +47,6 @@ interface BootstrapWork {
 export function resolveBootstrap(
   hby: Habery,
   http: HttpClient,
-  clock: RuntimeClock,
   { timeoutMs = 30_000 }: { timeoutMs?: number } = {},
 ): Operation<BootstrapResult> {
   return scoped(function* bootstrapScope() {
@@ -64,15 +61,6 @@ export function resolveBootstrap(
     const oobiery = new Oobiery(hby, protocol, protocol.rvy, http, protocol.cues);
     oobiery.registerReplyRoutes();
     const authenticator = new Authenticator(hby, http);
-    const querying = yield* resource<WitnessInquisitor>(function*(provide) {
-      const querying = new WitnessInquisitor(hby, protocol, http, clock);
-      try {
-        yield* provide(querying);
-      } finally {
-        yield* querying.close();
-      }
-    });
-
     yield* spawn(() => oobiery.oobiDo());
     yield* spawn(() => authenticator.authDo());
     yield* spawn(function*() {
@@ -81,25 +69,11 @@ export function resolveBootstrap(
         yield* runtimeTurn();
       }
     });
-    yield* spawn(() => querying.deliverDo());
     const deadline = performance.now() + timeoutMs;
     while (true) {
       collectPendingUrls(hby.db, selected);
-      const subjects = selectedSubjects(hby.db, selected);
-      const kelPending = relevantKelEscrows(hby.db, subjects);
-      const replyPending = relevantReplyEscrows(hby.db, subjects);
-      // This composition exclusively consumes its own live cue Deck. Only
-      // evidence-recovery queries are output: static OOBI servers need no
-      // unsolicited receipt/replay publication to establish local acceptance.
-      while (!protocol.cues.empty) {
-        const cue = protocol.cues.pull()!;
-        if (cue.kin === "query" && cue.pre && subjects.has(cue.pre)) querying.enqueueCue(cue);
-      }
       const result = inspectBootstrap(hby.db, selected);
-      if (result?.kind === "failed") return result;
-      // Accepted prerequisites retire redundant unsigned requests too. A new
-      // environment may have no signer; another OOBI can supply the same KEL.
-      if (result?.kind === "complete" && !kelPending && !replyPending) return result;
+      if (result) return result;
       if (performance.now() >= deadline) {
         const pending: string[] = [];
         for (const kind of ["oobis", "woobi"] as const) {
@@ -107,7 +81,7 @@ export function resolveBootstrap(
         }
         return {
           kind: "timeout",
-          pending: pending.length ? [...new Set(pending)] : [...new Set([...selected.oobis, ...selected.woobi])],
+          pending: [...new Set(pending)],
         };
       }
       yield* runtimeTurn();
@@ -115,7 +89,7 @@ export function resolveBootstrap(
   });
 }
 
-/** Include durable queued/in-flight work and every child of a selected multi-OOBI. */
+/** Select actual queued/in-flight records; Oobiery owns multi-OOBI child completion. */
 function collectPendingUrls(db: Baser, selected: BootstrapWork): void {
   for (const store of [db.oobis, db.coobi, db.moobi]) {
     for (const [keys] of store.getTopItemIter()) if (keys[0]) selected.oobis.add(keys[0]);
@@ -123,76 +97,12 @@ function collectPendingUrls(db: Baser, selected: BootstrapWork): void {
   for (const store of [db.woobi, db.mfa]) {
     for (const [keys] of store.getTopItemIter()) if (keys[0]) selected.woobi.add(keys[0]);
   }
-  for (const url of selected.oobis) {
-    const record = db.moobi.get(url) ?? db.roobi.get(url) ?? db.eoobi.get(url);
-    for (const child of record?.urls ?? []) {
-      // Multi-OOBI fanout uses this same ordinary Oobiery queue choice.
-      if (isWellKnownOobiUrl(child)) selected.woobi.add(child);
-      else selected.oobis.add(child);
-    }
-  }
-}
-
-/** Follow the selected controller/endpoint identities rather than all reply escrows. */
-function selectedSubjects(db: Baser, selected: BootstrapWork): Set<string> {
-  const subjects = new Set<string>();
-  for (const url of [...selected.oobis, ...selected.woobi]) {
-    const parsed = parseOobiUrl(url);
-    const record = db.oobis.get(url) ?? db.coobi.get(url) ?? db.moobi.get(url) ?? db.roobi.get(url);
-    for (const pre of [record?.cid, record?.eid, parsed.cid, parsed.eid]) if (pre) subjects.add(pre);
-  }
-  return subjects;
-}
-
-/** Retain selected KEL evidence until its actual signature/witness/delegation/order dependencies settle. */
-function relevantKelEscrows(db: Baser, subjects: Set<string>): boolean {
-  let pending = false;
-  for (const store of [db.pses, db.pwes, db.pdes, db.ooes]) {
-    for (const [keys, , said] of store.getTopItemIter()) {
-      if (!subjects.has(keys[0])) continue;
-      pending = true;
-      const data = db.getEvtSerder(keys[0], said)?.ked;
-      if (typeof data?.di === "string") subjects.add(data.di);
-      if (Array.isArray(data?.b)) for (const wit of data.b) if (typeof wit === "string") subjects.add(wit);
-    }
-  }
-  return pending;
-}
-
-/**
- * Keep relevant reply proofs pending and admit their missing signer recovery.
- * Routes name the subject in ordinary signed attributes; ssgs supplies signer
- * dependencies even before their establishment event is available. Unrelated
- * historical reply escrows cannot determine this invocation's completion.
- */
-function relevantReplyEscrows(db: Baser, subjects: Set<string>): boolean {
-  let pending = false;
-  for (const [, diger] of db.rpes.getTopItemIter()) {
-    const reply = db.rpys.get(diger.qb64);
-    const data = reply?.ked?.a;
-    if (!data || typeof data !== "object" || Array.isArray(data)) continue;
-    let subject: unknown;
-    if ("cid" in data) subject = data.cid;
-    else if ("eid" in data) subject = data.eid;
-    else if ("i" in data) subject = data.i;
-    if (typeof subject !== "string" || !subjects.has(subject)) continue;
-    pending = true;
-    for (const [keys] of db.ssgs.getTopItemIter([diger.qb64], { topive: true })) {
-      if (keys[1]) subjects.add(keys[1]);
-    }
-  }
-  return pending;
 }
 
 /** Require current terminal evidence; a saved authorization cannot mask a queued retry. */
 function bootstrapUrlComplete(db: Baser, url: string, kind: "oobis" | "woobi"): boolean {
   if (oobiTerminalState(db, url, kind).status !== "resolved") return false;
-  if (kind === "woobi") {
-    const cid = parseOobiUrl(url).cid;
-    return !!cid && !!db.getKever(cid) && hasWellKnownAuth(db, url);
-  }
-  const record = db.roobi.get(url);
-  return !record?.cid || !!db.getKever(record.cid);
+  return kind === "oobis" || hasWellKnownAuth(db, url);
 }
 
 /** Decide only from selected URLs; absence of queue rows alone never establishes success. */

@@ -944,10 +944,15 @@ before group CLI lifecycle expansion, execute the approved
 [three-PR bootstrap composition plan](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md).
 First extract the shared finite operation and give state inspection Baser directly,
 preserving behavior. Then replace whole-AgentRuntime bootstrap with explicit
-Oobiery/Authenticator and the actual required protocol, escrow and query owners.
+Oobiery/Authenticator and minimal KEL/reply intake/retry.
 Scope success/failure/deadline to the selected bootstrap records and fresh
 authentication attempts; unrelated historical failure or pending work must not
-determine completion. Keep multi-OOBI/dependency recovery and joined cleanup.
+determine completion, including old escrows for the same AID. Per the #620 design
+correction, ordinary resolution means response processing; later operations check
+accepted evidence. Delete inferred protocol-dependency scans and recovery queries.
+Keep Authenticator's controller-state/authorization checks, actual work-family
+selection, owner-managed multi-OOBI recovery and joined cleanup under one named
+scope with a monotonic deadline. Preserve the independent reply reconstruction fix.
 Finally consolidate equivalent primitive CLI validation with correct omission,
 false/zero/empty semantics, file/CLI precedence and command-local policy. Retain
 all #595 credential guarantees. Keep delegated inception's legitimate runtime,

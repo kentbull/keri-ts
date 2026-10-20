@@ -7,7 +7,9 @@ import {
   Prefixer,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
+import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
+import { Reactor } from "../../../src/app/reactor.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -778,6 +780,30 @@ Deno.test("Revery BADA retains microsecond ordering for signed replies", async (
       assertEquals(attempt("2026-10-13T01:00:00.000003+01:00"), "accept");
     } finally {
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("reply escrow retains stored signatures until the signer establishment event arrives", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: `reply-source-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const target = yield* createHabery({ name: `reply-target-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const signer = source.makeHab("signer", undefined, { transferable: true });
+      const protocol = createProtocolProcessor(target);
+      const input = new Reactor(protocol);
+      yield* input.processBytes(signer.makeLocScheme("http://signer.test", signer.pre, "http"));
+      assertEquals(target.db.rpes.cnt(), 1);
+      protocol.rvy.processEscrowReply();
+      assertEquals(target.db.rpes.cnt(), 1, "missing signer state must retain the stored signature group");
+      assertEquals(target.db.locs.get([signer.pre, "http"]), null);
+      yield* input.processBytes(acceptedEventReplayMessage(source, signer.pre, 0).message);
+      protocol.rvy.processEscrowReply();
+      assertEquals(target.db.rpes.cnt(), 0);
+      assertEquals(target.db.locs.get([signer.pre, "http"])?.url, "http://signer.test");
+    } finally {
+      yield* target.close();
+      yield* source.close();
     }
   });
 });

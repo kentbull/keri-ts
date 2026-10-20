@@ -55,12 +55,14 @@ the earlier WebOfTrust 1.2.14 Directant drops queued input at EOF.
 ## Bootstrap and CLI boundaries
 
 Init/incept share the finite app/bootstrapping operation and borrow its Habery,
-HTTP client and clock. It composes minimal protocol intake, Oobiery, Authenticator
-and query delivery directly. Existing queued/in-flight introduction/auth rows and
-discovered children define the work; current terminal evidence and relevant
-KEL/reply proof dependencies define completion, not whole-agent quiescence or
-historical failure/authorization rows. Redundant recovery requests retire once
-prerequisites are accepted; child/I/O cleanup joins before return. Command success
+HTTP client. It composes Oobiery, Authenticator and minimal KEL/reply intake/retry
+directly. Existing queued/in-flight introduction/auth rows define the work;
+Oobiery owns multi-OOBI completion. Ordinary resolution means response processing,
+not acceptance of every KEL/reply proof. Authentication requires the current
+attempt's success and authorization evidence; historical results cannot mask
+queued work or a fresh refusal. Protocol owners retain escrows and later workflows
+check the accepted evidence they need. One scope checks a monotonic deadline and
+joins child/I/O cleanup before return. Command success
 prints only after Habery closes. Database-only projections take Baser. Shared CLI parsing owns primitive shapes; initialization alone
 owns credential choices, key pairing and passcode confirmation. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.

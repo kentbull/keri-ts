@@ -133,7 +133,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     let failure: { error: unknown } | undefined;
     try {
-      assertBootstrapComplete(yield* resolveBootstrap(hby, http, systemClock));
+      assertBootstrapComplete(yield* resolveBootstrap(hby, http));
 
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
         transferable: opts.transferable ?? false,

@@ -52,20 +52,38 @@ Choose the final name/signature from actual dependencies. Do not introduce Boots
 
 Determine the bootstrap work from existing Baser records and validated configuration semantics. State explicitly which queued/in-flight records are included, how existing recovery records are handled, and how multi-OOBI children or other required dependencies affect completion. Reuse existing storage and recovery mechanisms; do not add job IDs or durable tracking merely to scope this operation.
 
-Compose Oobiery, Authenticator, and only the actual KEL/reply processing, escrow and query dependencies required by supported bootstrap behavior. Prefer KERIpy’s explicit composition. Do not merely hide createAgentRuntime behind the new function.
+Compose Oobiery, Authenticator and minimal KEL/reply intake/retry directly. Keep
+them concurrent so separately arriving evidence can unlock introductions and
+authentication. Remove WitnessInquisitor when its only purpose is inferred
+dependency recovery. Do not restore whole-AgentRuntime bootstrap.
 
-Resolve the required OOBIs before completing well-known authentication. Independent work may remain concurrent where justified. Preserve real dependency recovery; simply deleting workers is not sufficient.
+The approved #620 correction narrows completion to the components' actual results:
 
-Completion must mean the selected bootstrap work has succeeded, failed, or reached its deadline—not that the whole agent database is quiescent.
+- Ordinary resolution follows Oobiery's terminal result after response processing;
+  it does not promise accepted Kever state or empty related escrows.
+- Authentication follows its current attempt and successful authorization evidence,
+  preserving Authenticator's controller-state checks.
+- Pending work takes precedence over historical terminal/authorization records.
+- Track actual oobis/coobi/moobi and woobi/mfa families, including overlapping URLs.
+  Oobiery owns multi-OOBI child completion; add no tracking persistence.
+- Delete selectedSubjects, relevantKelEscrows, relevantReplyEscrows and inferred
+  recovery queries without replacing them with another protocol-storage scan.
+  Historical escrows for the same AID also cannot block resolution.
+- Later operations must check the accepted evidence they need. Keep the independent
+  fetchStoredTsgs reconstruction fix and BADA checks, with protocol-owner regression.
 
-- Unrelated historical eoobi failures must not fail this invocation.
-- Unrelated delegation, reply escrow or delivery work must not keep it running.
-- Empty queues are not proof of success.
-- Check required OOBI terminal results and successful well-known authorization.
-- A previous authorization must not conceal failure of a fresh authentication attempt.
-- Do not weaken protocol acceptance or silently discard relevant escrow/query work to obtain convergence.
+Refactor lifetime first in a reviewable commit: one named Effection scope acquires
+owned resources before spawning users, then inspects results and a monotonic elapsed
+deadline while yielding cooperatively. Network work stays in child tasks. Completion,
+refusal, deadline and external cancellation join cleanup; infrastructure/cleanup
+failures propagate. Borrow Habery throughout cleanup and print command success only
+after owned stores close. No generic supervisor, timeout framework or callbacks.
 
-Keep a bounded deadline, propagate infrastructure failures, and cancel/join child operations and HTTP cleanup before returning or closing stores. Expected remote outcomes should follow existing decision conventions; Tufa translates unsuccessful command outcomes into nonzero exits.
+Then narrow completion in a second reviewable commit within #620. Preserve focused
+ordinary/authentication, resumed/multi-OOBI, overlapping-family, refusal and cleanup
+coverage. Show that a resolved response can leave an unauthorized partial reply in
+escrow, and that the protocol owner accepts it after real missing evidence arrives.
+Use existing interop and installed CLI checks; correct the few overstated contracts.
 
 Remove the duplicated bootstrap predicates/assertions after their responsibilities are absorbed. Remove runtime helpers only when their other callers no longer need them.
 

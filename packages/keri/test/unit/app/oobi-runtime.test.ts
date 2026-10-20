@@ -1310,10 +1310,11 @@ Deno.test("finite bootstrap resumes in-flight/multi/auth work without waiting on
         }
         return new Response(body, { headers: { "Content-Type": "application/cesr" } });
       });
-      assertEquals(yield* resolveBootstrap(target, http, systemClock, { timeoutMs: 2_000 }), { kind: "complete" });
+      assertEquals(yield* resolveBootstrap(target, http, { timeoutMs: 2_000 }), { kind: "complete" });
       assertEquals(new Set(requested), new Set([child, kel, auth]));
       assertExists(target.db.getKever(controller.pre));
       assertEquals(target.db.roobi.get(parent)?.state, "resolved");
+      protocol.processKelReplyEscrowsOnce();
       assertEquals(target.db.locs.get([controller.pre, "http"])?.url, location);
       assertEquals(hasWellKnownAuth(target.db, auth), true);
       assertEquals(target.db.rpes.cnt(), 1, "the unrelated partial reply still needs its own second signature");
@@ -1333,15 +1334,29 @@ Deno.test("finite bootstrap resumes in-flight/multi/auth work without waiting on
               { headers: { "Content-Type": "application/cesr" } },
             )
           ),
-          systemClock,
         ),
         { kind: "complete" },
       );
       assertEquals(target.db.roobi.get(auth)?.state, "resolved");
 
+      target.db.oobis.pin(auth, { cid: controller.pre, state: "queued" });
       target.db.woobi.pin(auth, { cid: controller.pre, state: "queued" });
       assertEquals(
-        yield* resolveBootstrap(target, httpClient(() => new Response(null, { status: 403 })), systemClock),
+        yield* resolveBootstrap(
+          target,
+          httpClient(() =>
+            new Response(new Uint8Array(acceptedEventReplayMessage(source, controller.pre, 0).message), {
+              headers: { "Content-Type": "application/cesr" },
+            })
+          ),
+        ),
+        { kind: "complete" },
+      );
+      assertEquals(target.db.roobi.get(auth)?.state, "resolved");
+      assertEquals(target.db.rmfa.get(auth)?.state, "resolved");
+      target.db.woobi.pin(auth, { cid: controller.pre, state: "queued" });
+      assertEquals(
+        yield* resolveBootstrap(target, httpClient(() => new Response(null, { status: 403 }))),
         {
           kind: "failed",
           failures: [{ url: auth, state: "http-403" }],
@@ -1355,7 +1370,7 @@ Deno.test("finite bootstrap resumes in-flight/multi/auth work without waiting on
 
       target.db.oobis.pin(child, { cid: controller.pre, state: "queued" });
       target.db.eoobi.pin(child, { state: "http-404" });
-      assertEquals(yield* resolveBootstrap(target, http, systemClock), { kind: "complete" });
+      assertEquals(yield* resolveBootstrap(target, http), { kind: "complete" });
       assertEquals(target.db.roobi.get(child)?.state, "resolved");
     } finally {
       yield* target.close();
@@ -1364,7 +1379,7 @@ Deno.test("finite bootstrap resumes in-flight/multi/auth work without waiting on
   });
 });
 
-Deno.test("finite bootstrap requires relevant reply proof after HTTP and KEL acceptance", async () => {
+Deno.test("finite bootstrap resolves a response while its reply proof awaits protocol acceptance", async () => {
   await run(function*() {
     const source = yield* createHabery({
       name: `bootstrap-proof-source-${crypto.randomUUID()}`,
@@ -1398,30 +1413,36 @@ Deno.test("finite bootstrap requires relevant reply proof after HTTP and KEL acc
             headers: { "Content-Type": "application/cesr" },
           })
         ),
-        systemClock,
         { timeoutMs: 100 },
       );
-      assertEquals(result, { kind: "timeout", pending: [url] });
+      assertEquals(result, { kind: "complete" });
       assertExists(target.db.getKever(controller.pre));
       assertEquals(target.db.roobi.get(url)?.state, "resolved");
       assertEquals(target.db.rpes.cnt(), 1);
       assertEquals(target.db.locs.get([controller.pre, "http"]), null);
 
-      // Supply the missing real contribution on a second explicit attempt.
-      const complete = messagize(reply, { tsgs: [replySigGroupFor(controller, reply)] });
+      // An older partial proof for this SAME identifier is independent of a
+      // fresh resolution. Fetching its KEL again must not require that proof.
       target.db.oobis.pin(url, { state: "queued" });
       assertEquals(
         yield* resolveBootstrap(
           target,
           httpClient(() =>
-            new Response(new Uint8Array(complete), {
+            new Response(new Uint8Array(acceptedEventReplayMessage(source, controller.pre, 0).message), {
               headers: { "Content-Type": "application/cesr" },
             })
           ),
-          systemClock,
         ),
         { kind: "complete" },
       );
+      assertEquals(target.db.rpes.cnt(), 1);
+      assertEquals(target.db.locs.get([controller.pre, "http"]), null);
+
+      // The ordinary protocol owner accepts the actual missing contribution.
+      const protocol = createProtocolProcessor(target);
+      const input = new Reactor(protocol);
+      yield* input.processBytes(messagize(reply, { tsgs: [replySigGroupFor(controller, reply)] }));
+      protocol.processKelReplyEscrowsOnce();
       assertEquals(target.db.rpes.cnt(), 0);
       assertEquals(target.db.locs.get([controller.pre, "http"])?.url, "http://controller.test");
     } finally {
@@ -1431,54 +1452,62 @@ Deno.test("finite bootstrap requires relevant reply proof after HTTP and KEL acc
   });
 });
 
-Deno.test("finite bootstrap deadline joins blocked HTTP cleanup and retains retry ownership", async () => {
-  const hby = await run(() =>
-    createHabery({ name: `bootstrap-deadline-${crypto.randomUUID()}`, temp: true, skipConfig: true })
-  );
-  let release!: () => void, cleaning!: () => void;
-  const cleanup = new Promise<void>(resolve => release = resolve);
-  const started = new Promise<void>(resolve => cleaning = resolve);
-  const url = "http://bootstrap.test/oobi";
-  const signals: AbortSignal[] = [];
-  hby.db.oobis.pin(url, { state: "queued" });
-  const task = run(() =>
-    resolveBootstrap(
-      hby,
-      httpClient((_url, init) => {
-        signals.push(init!.signal!);
-        return new Response(
-          new ReadableStream({
-            cancel() {
-              cleaning();
-              return cleanup;
+for (const stop of ["deadline", "cancellation"] as const) {
+  Deno.test(`finite bootstrap ${stop} joins blocked HTTP cleanup and retains retry ownership`, async () => {
+    const hby = await run(() =>
+      createHabery({ name: `bootstrap-deadline-${crypto.randomUUID()}`, temp: true, skipConfig: true })
+    );
+    let release!: () => void, cleaning!: () => void, reading!: () => void;
+    const cleanup = new Promise<void>(resolve => release = resolve);
+    const receiving = new Promise<void>(resolve => reading = resolve);
+    const started = new Promise<void>(resolve => cleaning = resolve);
+    const url = "http://bootstrap.test/oobi";
+    const signals: AbortSignal[] = [];
+    hby.db.oobis.pin(url, { state: "queued" });
+    const task = run(() =>
+      resolveBootstrap(
+        hby,
+        httpClient((_url, init) => {
+          signals.push(init!.signal!);
+          return new Response(
+            new ReadableStream({
+              pull() {
+                reading();
+              },
+              cancel() {
+                cleaning();
+                return cleanup;
+              },
+            }),
+            {
+              headers: { "Content-Type": "application/cesr" },
             },
-          }),
-          {
-            headers: { "Content-Type": "application/cesr" },
-          },
-        );
-      }),
-      systemClock,
-      { timeoutMs: 25 },
-    )
-  );
-  try {
-    await started;
-    let joined = false;
-    void task.then(() => joined = true, () => joined = true);
-    await new Promise(resolve => setTimeout(resolve, 0));
-    assertEquals(joined, false, "deadline must join pending response cleanup before returning");
-    release();
-    assertEquals(await task, { kind: "timeout", pending: [url] });
-    assertEquals(signals[0].aborted, true);
-    assertEquals(hby.db.oobis.get(url)?.state, "queued");
-    assertEquals(hby.db.coobi.get(url), null);
-  } finally {
-    release();
-    await task.halt();
-    await run(() => hby.close());
-  }
-});
+          );
+        }),
+        { timeoutMs: stop === "deadline" ? 25 : 30_000 },
+      )
+    );
+    try {
+      await receiving;
+      const completion = stop === "cancellation" ? Promise.resolve(task.halt()) : task;
+      await started;
+      let joined = false;
+      void completion.then(() => joined = true, () => joined = true);
+      await new Promise(resolve => setTimeout(resolve, 0));
+      assertEquals(joined, false, "deadline must join pending response cleanup before returning");
+      release();
+      const result = await completion;
+      if (stop === "deadline") assertEquals(result, { kind: "timeout", pending: [url] });
+      assertEquals(signals[0].aborted, true);
+      assertEquals(hby.db.oobis.get(url)?.state, "queued");
+      assertEquals(hby.db.coobi.get(url), null);
+    } finally {
+      release();
+      await task.halt();
+      await run(() => hby.close());
+    }
+  });
+}
 
 Deno.test("finite bootstrap preserves HTTP cleanup failure at its deadline", async () => {
   await run(function*() {
@@ -1508,7 +1537,6 @@ Deno.test("finite bootstrap preserves HTTP cleanup failure at its deadline", asy
                   },
                 );
               }),
-              systemClock,
               { timeoutMs: 25 },
             )
           )

@@ -5,7 +5,6 @@ import { resolveBootstrap } from "../bootstrapping.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { branToSeedAeid, createHabery, type Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
-import { systemClock } from "../runtime-clock.ts";
 import { assertBootstrapComplete } from "./common/bootstrap.ts";
 import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 import { readPasscode } from "./common/passcode.ts";
@@ -107,7 +106,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       seed,
       salt: initArgs.salt,
     });
-    assertBootstrapComplete(yield* resolveBootstrap(hby, new FetchHttpClient(), systemClock));
+    assertBootstrapComplete(yield* resolveBootstrap(hby, new FetchHttpClient()));
 
     created = { keystore: hby.ks.path, database: hby.db.path, aeid: hby.mgr.aeid };
   } catch (error) {
