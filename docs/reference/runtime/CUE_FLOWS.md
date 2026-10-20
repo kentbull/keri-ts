@@ -50,8 +50,7 @@ Response correlation and outbound delivery have independent reader lifetimes.
 Request owners publish complete reply batches before taking their correlation
 records; a second TSN interpretation failure must leave the pair pending.
 
-The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) tracks
-qualification. The host runs Poster independently of QueryCoordinator. Ingress
+The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) defines delivery completion. The host runs Poster independently of QueryCoordinator. Ingress
 publishes without draining Poster. Target loops attempt remaining destinations
 after refusal; failed whole events await explicit retry or discard while later
 events continue. Retry can duplicate successful destinations and rebuilds outer

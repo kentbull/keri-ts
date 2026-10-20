@@ -6,27 +6,13 @@ The [v1/v2 compatibility inventory](reference/compatibility/KERI_V1_V2_COMPATIBI
 maps implemented bridges, supported version boundaries and remaining gaps; its
 [KERIpy porting backlog](plans/compatibility/KERIPY_COMPATIBILITY_PORTS.md) tracks
 future 1.x/2.x branch assessments and acceptance work.
-The [cue delivery refactor](plans/runtime/cue-delivery-refactor.md) records the
-implemented boundaries and qualification;
-its [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records
-deferred capabilities, not additional implementation authorization.
-The [messenger and protocol refactor](plans/runtime/messenger-protocol-refactor.md)
-tracks the phased separation of input/transport lifetimes from shared protocol processing.
-The [HTTP request ownership refactor](plans/runtime/http-request-ownership-refactor.md)
-consolidates Request validation, execution and body transport failures into the composed HTTP implementation.
-The [HTTP client simplification](plans/runtime/http-client-simplification.md)
-narrows that owner to prepared bodies, finite results and a small scoped streaming path.
-The [explicit dependency plan](plans/runtime/explicit-runtime-dependencies.md)
-tracks explicit HTTP/clock composition and removal of RuntimeServices, followed by a separate verifier clock correction.
-
-The [local mailbox consumption removal](plans/runtime/remove-local-mailbox-consumption.md)
-keeps provider storage independent from direct protocol intake and remote mailbox polling.
-The [runtime simplification and routing plan](plans/runtime/runtime-simplification-and-routing-parity.md)
-consolidates the next removals, KERIpy routing parity and the separate failure-reporting gate.
-
-The [maintainer documentation pass](plans/runtime/runtime-maintainer-documentation.md)
-records source coverage and the five cross-component reading paths. Current contracts
-remain in the [runtime design](design-docs/runtime/INGRESS_AND_EGRESS.md).
+The [runtime contract](design-docs/runtime/INGRESS_AND_EGRESS.md) owns current cue,
+protocol, messenger and lifetime behavior. The
+[active simplification plan](plans/runtime/runtime-simplification-and-routing-parity.md)
+owns the remaining removals and routing parity decisions; the
+[reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records deferred
+capabilities and their evidence requirements. Completed execution plans are removed;
+Git history and pull requests retain implementation history.
 
 | Area                                           | Purpose                                           |
 | ---------------------------------------------- | ------------------------------------------------- |

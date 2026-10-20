@@ -25,7 +25,7 @@ query routing, and KERIpy-to-`keri-ts` host correspondence, read
 
 KERIpy supplies the correspondence model; TypeScript ownership and endpoint-selection
 differences are explicit below. The pinned references are KERIpy `71438328` and
-GLEIF-IT `b8626e1d`, recorded in the [cue delivery plan](../../plans/runtime/cue-delivery-refactor.md).
+GLEIF-IT `b8626e1d`, recorded in the [runtime contract](INGRESS_AND_EGRESS.md).
 
 - `Revery` owns:
   - reply-envelope verification
@@ -227,8 +227,7 @@ independent. Complete local replay sequences are materialized in the production
 pass; no reply cursor survives delivery passes. Failed events retain source bytes
 and partial success for explicit retry/discard, without automatic retry.
 QueryCoordinator remains separate and keeps its existing continuation/response
-ownership. The [cue delivery plan](../../plans/runtime/cue-delivery-refactor.md)
-tracks transport qualification.
+ownership. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
 QueryCoordinator prepares its signed packets directly without public custom-emission
 or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary

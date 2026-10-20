@@ -9,51 +9,23 @@ owns its evidence and limits; future changes still require relevant qualificatio
 Post-release Tevery ownership (#523) has separate scoped evidence and is not in
 published 1.0.0. Historical inventories must never become fresh implementation
 queues; the roadmap explicitly records unresolved contract/source contradictions.
-The [cue delivery refactor](../docs/plans/runtime/cue-delivery-refactor.md) records
-the implemented ownership and reliability limits. Poster owns every queued send and runs independently of query delivery;
-producers publish source messages and optionally await their concrete admission's
-outcome. HTTP ingress does not drive Poster. Respondant constructs complete local
-replays before publication; FIFO events and retained whole-event failures replace
-reply cursors and automatic retry. Ordinary HTTP sends require complete response
-bodies; transmit-only TCP completes local drain and joins cleanup, while duplex
-preserves receive processing. Concrete network errors retain original causes.
+The [runtime contract](../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) owns current
+cue, protocol, transport and resource-lifetime behavior. Poster owns queued output;
+producers prepare messages, and concrete messengers own attempts and input-specific
+parsers over shared protocol processing. Composition supplies explicit dependencies.
+Provider mailbox storage is independent from direct intake and remote polling.
+Reactor accepts awaited sources/bytes; its unused input queue and worker are removed.
 
-The [messenger/protocol refactor](../docs/plans/runtime/messenger-protocol-refactor.md)
-extracts actual shared processing into ProtocolProcessor. Reactor owns input;
-TCPMessenger/HTTPMessenger own attempts and input-specific Kevery/parser lifetimes.
-Semantic reply/exchange/TEL handlers and v2 sender policy remain shared.
-The [HTTP request ownership refactor](../docs/plans/runtime/http-request-ownership-refactor.md)
-puts Request construction and native fetch/body failures in FetchHttpClient. Consumers
-receive completed finite bytes from request or borrow a scoped byte source from open;
-no client identity check selects failure handling. The [HTTP simplification](../docs/plans/runtime/http-client-simplification.md)
-removes upload producers and general cleanup bookkeeping, retaining native Fetch
-cancellation and actual I/O joining. Outbound
-components receive the actual protocol and I/O dependencies, not Reactor proxies.
-
-The [explicit dependency plan](../docs/plans/runtime/explicit-runtime-dependencies.md)
-tracks removal of the remaining HTTP/clock service bundle and dependency options.
-All runtime owners and composition callers now take their actual HTTP/clock
-collaborators explicitly. The aggregate and dependency options are removed; the
-verifier workflow Daters, webhook headers and expiry now use one injected epoch
-clock. The [qualification report](../docs/reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
-records the full post-merge battery and exact source identity.
+The [active simplification plan](../docs/plans/runtime/runtime-simplification-and-routing-parity.md)
+tracks remaining removals and routing decisions; the
+[reliability roadmap](../docs/plans/runtime/cue-reliability-roadmap.md) retains deferred
+capabilities. Completed execution plans and declaration ledgers are removed; Git/PR
+history owns delivery chronology. Do not update plan files for routine progress.
 
 The [compatibility inventory](../docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md)
-owns the v1/v2 matrix, implemented bridges and explicit gaps; its linked KERIpy
-porting backlog separates frozen donor evidence from unassessed 1.x/2.x target work.
-HTTP media fallback never translates a signed body or establishes peer genus support.
-
-The [maintainer documentation ledger](../docs/plans/runtime/runtime-maintainer-documentation-coverage.md)
-records reviewed source contracts and cross-component evidence. The local cursor
-fix (#554) is historical: [automatic local consumption](../docs/plans/runtime/remove-local-mailbox-consumption.md)
-is removed rather than extracted into another component. Provider storage and
-remote polling remain; the minimum-timeout fix (#555) still applies.
-
-The [runtime simplification plan](../docs/plans/runtime/runtime-simplification-and-routing-parity.md)
-tracks removal of unsupported seams and adoption of the recorded donor's routing.
-MailboxPoller now owns its concrete HTTP/SSE operation over explicit HTTP/clock
-dependencies; the extra polling transport interface and fake are retired. Reactor
-accepts awaited scoped/direct input; its unused queue and idle worker are removed.
+owns the v1/v2 matrix and implemented bridges. The
+[dependency qualification report](../docs/reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
+retains exact source identity, validation and limits at its recorded revision.
 
 ## Read by subject
 

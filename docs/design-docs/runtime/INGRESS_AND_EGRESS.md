@@ -185,8 +185,7 @@ excluded from pending/idle state, and cleared on shutdown after I/O joins.
 Concrete native network failures are TransportError values retaining their causes.
 Poster contains those errors only around network execution, attempts remaining
 targets and completes failed waiters. Unexpected construction, source, parser and
-cleanup failures remain visible. The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md)
-records the source references and qualification boundaries.
+cleanup failures remain visible.
 
 Poster.send accepts src, dest, topic and signed msg bytes, with optional delivery
 preference and same-socket replies. It copies msg on admission and returns a fresh

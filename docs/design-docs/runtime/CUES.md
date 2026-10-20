@@ -5,8 +5,7 @@ transport payloads nor synthetic resource handles. A Deck has a consumer; it is
 not broadcast. [ADR-0013](../../adr/adr-0013-simple-component-flows.md) governs
 component ownership and explicit contracts.
 
-The [cue delivery refactor](../../plans/runtime/cue-delivery-refactor.md) records
-the implementation and qualification. Poster owns every queued send and runs independently of query
+The [runtime contract](INGRESS_AND_EGRESS.md) defines the current delivery boundary. Poster owns every queued send and runs independently of query
 delivery. Respondant eagerly constructs complete local replay sequences, and
 Poster delivers ordinary signed messages FIFO with explicit retained failures.
 

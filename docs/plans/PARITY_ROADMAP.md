@@ -18,7 +18,7 @@ Tevery with independent record validators and a shared composed Revery. Publishe
 1.0.0 packages do not contain this refactor. Its scoped evidence is separate from
 the release battery; see the release report's post-release section.
 
-The [cue delivery refactor](runtime/cue-delivery-refactor.md) implements message
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md) describes message
 production in Hab/Respondant and queued FIFO execution in Poster. Producers
 construct complete local replay batches; retained whole-event failures require
 explicit retry/discard. Caller completion uses concrete event identities. TCP
@@ -30,8 +30,8 @@ exact final-wire replay, fairness and durability outside this implementation.
 
 ## Retained architecture
 
-The [explicit runtime dependency plan](runtime/explicit-runtime-dependencies.md)
-tracks explicit HTTP/clock/transport composition and removal of RuntimeServices
+The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md)
+defines explicit HTTP/clock/transport composition and removal of RuntimeServices
 and hidden dependency defaults, plus the separate verifier clock correction.
 The [post-merge qualification](../reports/runtime/EXPLICIT_RUNTIME_DEPENDENCIES_2026-10-19.md)
 passed every maintained unit/interoperability owner and installed-package checks.

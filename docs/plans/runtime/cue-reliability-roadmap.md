@@ -1,13 +1,12 @@
 # Cue delivery reliability roadmap
 
-Status: deferred capabilities, not an active implementation queue. The approved
-[cue delivery refactor](cue-delivery-refactor.md) defines phases 0–4 and their
-acceptance gates. This document prevents those phases from quietly becoming a
-general delivery/recovery framework.
+Status: deferred capabilities, not an active implementation queue. The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) defines current
+delivery behavior. This document records the evidence required before adding
+a delivery or recovery mechanism.
 
 ## Baseline after the approved refactor
 
-Phase 3 implements one ephemeral Poster `evts` queue, sequential FIFO delivery and
+Poster owns one ephemeral `evts` queue, sequential FIFO delivery and
 explicit whole-event failures. Ordinary records carry signed source messages.
 Known refusals allow the remaining destinations of that event to be attempted;
 partial results remain with the failed event. Explicit retry refreshes routing,

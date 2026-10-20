@@ -211,5 +211,4 @@ processing, shared semantic handlers, reply capture and escrow publication.
 TCPMessenger and HTTPMessenger own actual delivery attempts and input-specific
 Kevery/parser lifetimes. Poster retains one FIFO queue and explicit retained
 failures. QueryCoordinator retains separate continuations and signed request work.
-See the [runtime contract](design-docs/runtime/INGRESS_AND_EGRESS.md) and
-[implementation sequence](plans/runtime/messenger-protocol-refactor.md).
+See the [runtime contract](design-docs/runtime/INGRESS_AND_EGRESS.md).

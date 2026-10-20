@@ -72,6 +72,6 @@ Public API removals carry major changesets; the clock correction carries a patch
 changeset. No release or version-PR merge was performed. Manual endurance sweeps
 are outside the maintained full battery and this refactor's scope.
 
-The [plan](../../plans/runtime/explicit-runtime-dependencies.md) retains phase
+The [plan](https://github.com/kentbull/keri-ts/blob/fb981fab/docs/plans/runtime/explicit-runtime-dependencies.md) retains phase
 boundaries and acceptance criteria. This report records completed qualification;
 subsequent documentation-only handoff edits do not change the tested runtime.
