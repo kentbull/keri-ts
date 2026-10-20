@@ -1,6 +1,6 @@
 # CLI initialization, OOBI bootstrap and option validation
 
-Status: approved release scope, queued after maintainer documentation (13h).
+Status: approved release scope, queued after maintainer documentation (13h) and command-owned query cue/KSN cuts (13h1–13h2).
 Owner: [release plan cuts 13i–13k](../V2_RELEASE_COMPLETION_PLAN.md).
 
 Refactor CLI initialization, OOBI bootstrap composition and shared option validation in keri-ts.
@@ -23,7 +23,7 @@ Recheck current source and pinned KERIpy before each implementation cut, because
 - createAgentRuntime constructs substantially more than bootstrap needs, including credential processors, EXN handlers, Poster and mailbox components.
 - The bootstrap failure check examines all eoobi records. Authentication helpers accept AgentRuntime even though they only inspect Baser.
 - incept.ts also has a separate runtime for delegated inception. Do not confuse that legitimate workflow with bootstrap.
-- The runtime now uses WitnessInquisitor. Coordinate with QUERY_COMPOSITION_PARITY_PLAN.md and do not resurrect QueryCoordinator or HTTPQuery.
+- The runtime now uses WitnessInquisitor. Coordinate with [query composition](QUERY_COMPOSITION_PARITY_PLAN.md) and [command-owned query cues](QUERY_CUE_OWNERSHIP_PLAN.md). Bootstrap must build on the completed Deck/KSN cuts; do not resurrect QueryCoordinator, HTTPQuery or a Channel notification service.
 - KERIpy init explicitly composes Oobiery and Authenticator. Its Oobiery constructs the KEL/reply processing it needs. Inspect current reference source before deciding our exact dependency graph.
 
 Deliver this in three cohesive, human-reviewable PRs, with relevant tests accompanying each change.

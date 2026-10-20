@@ -109,8 +109,8 @@ export interface AgentRuntime {
    */
   querying: WitnessInquisitor;
   /**
-   * Live broadcast of routed keyStateSaved facts. Each active workflow gets its
-   * own subscription; this is neither a competing Deck nor durable replay.
+   * Live routed keyStateSaved facts, currently observed through a subscription;
+   * this flow is not durable replay.
    * Subscribe before enqueueing a query to avoid losing an immediate notice.
    */
   keyStateUpdates: Channel<KeyStateSavedCue, void>;

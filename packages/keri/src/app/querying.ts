@@ -56,6 +56,11 @@ function* awaitSequence(db: Baser, pre: string, sn: number): Operation<void> {
  * A later, higher notice replaces the lower catch-up wait within this operation.
  * The subject needs a local Kever before a notice can drive this comparison;
  * initial evidence discovery belongs to OOBI/bootstrap composition.
+ *
+ * Current limitation: Kevery also emits keyStateSaved on ordinary KEL acceptance.
+ * The cue kind alone therefore does not prove receipt of a remote notice. The
+ * query cue ownership plan separates that publication correction from routing;
+ * do not infer request/response correlation or freshness from this live flow.
  */
 export class KeyStateNoticer {
   private readonly options: QueryOptions;
@@ -66,7 +71,7 @@ export class KeyStateNoticer {
    * @param db Baser receiving accepted KEL updates from the independently running intake.
    * @param inquisitor Query sender over that same state; its delivery worker must run concurrently.
    * @param pre Subject AID, distinct from the local signer and selected attester.
-   * @param updates Live broadcast of saved key-state cues from the composition; not a durable inbox.
+   * @param updates Live saved key-state cues from the composition; not a durable inbox.
    * @param options Local signer and optional remote attesters, never transport preferences.
    */
   constructor(
@@ -81,7 +86,7 @@ export class KeyStateNoticer {
 
   /**
    * Subscribe before enqueueing `ksn`, so even an immediate reply is observable.
-   * Unrelated notices are ignored without consuming another subscriber's copy.
+   * Ignore unrelated notices within this operation's current live subscription.
    * Returning means local KEL state reached the observed target; ending the live
    * notice stream before completion is an error. Scope exit joins the subscription
    * and any catch-up child. Sender/receiver failures belong to their sibling tasks
