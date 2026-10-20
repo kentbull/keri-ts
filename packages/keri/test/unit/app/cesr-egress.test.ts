@@ -336,18 +336,26 @@ Deno.test("CESR failed-response diagnostics join asynchronous cancellation", asy
 });
 Deno.test("ordinary CESR delivery negotiates only the supported legacy header media", async () => {
   const frame = await read(fixture());
-  const types: string[] = [];
+  const requests: { headers: Headers; body: Uint8Array }[] = [];
   const transport = httpClient(async (_url, init) => {
-    await new Response(init!.body).arrayBuffer();
-    types.push(new Headers(init!.headers).get("Content-Type")!);
-    return types.length === 1
-      ? new Response("Unsupported content type", { status: 406 })
+    requests.push({
+      headers: new Headers(init!.headers),
+      body: new Uint8Array(await new Response(init!.body).arrayBuffer()),
+    });
+    return requests.length === 1
+      ? Response.json({ title: "Content type error", description: "Unacceptable content type." }, { status: 406 })
       : new Response(null, { status: 204 });
   });
   await run(function*() {
-    yield* requestFrame("https://peer.test/", frame, transport);
+    yield* requestFrame("https://peer.test/", frame, transport, { headers: { Authorization: "peer-auth" } });
   });
-  assertEquals(types, ["application/cesr", "application/cesr+json"]);
+  assertEquals(requests.map(request => request.headers.get("Content-Type")), [
+    "application/cesr",
+    "application/cesr+json",
+  ]);
+  assertEquals(requests[1].body, requests[0].body);
+  assertEquals(requests[1].headers.get("CESR-ATTACHMENT"), requests[0].headers.get("CESR-ATTACHMENT"));
+  assertEquals(requests.map(request => request.headers.get("Authorization")), ["peer-auth", "peer-auth"]);
 });
 
 Deno.test("halting CESR delivery closes input and never resumes the caller after payload cleanup", async () => {

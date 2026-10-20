@@ -9,8 +9,6 @@
  * Current `keri-ts` difference:
  * - delivery and polling use scoped Effection workers instead of HIO doers
  */
-import type { HttpStreamResponse } from "./http-client.ts";
-
 import {
   attachmentPayload,
   type CesrFrame,
@@ -37,8 +35,8 @@ import { Roles } from "../core/roles.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Mailboxer } from "../db/mailboxing.ts";
 import { abortable } from "./abortable.ts";
-import { CesrHttpRefusal } from "./cesr-egress.ts";
-import { buildCesrRequest } from "./cesr-http.ts";
+import { CesrHttpRefusal, isLegacyCesrMediaRejection, readResponseDetail } from "./cesr-egress.ts";
+import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE } from "./cesr-http.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
@@ -1425,75 +1423,33 @@ function* fetchMailboxMessages(
   clock: RuntimeClock,
   consume: (message: MailboxSseMessage) => Operation<boolean | void>,
 ): Operation<void> {
-  // One poll window owns its headers, optional body consumption and final cleanup.
-  yield* scoped(function*() {
-    const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
-    const handle = yield* fetchMailboxQueryResponse(
-      url,
-      query,
-      src,
-      timeouts.requestOpenTimeoutMs,
-      http,
-      clock,
-    );
-    if (!handle) {
-      return;
-    }
-    const { response, controller } = handle;
-
-    if (!response.ok) {
-      return;
-    }
-
-    yield* consumeMailboxSse(response, controller, consume, clock, {
-      idleTimeoutMs: timeouts.readIdleTimeoutMs,
-      maxDurationMs: timeouts.maxReadDurationMs,
+  const query = hab.query(targetPre, src, { route: "mbx", q: { topics } });
+  const prepared = buildCesrRequest(query, { destination: src });
+  for (const contentType of [CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE]) {
+    const alternate = yield* scoped(function*() {
+      const controller = new AbortController();
+      const request = {
+        method: "POST",
+        headers: { ...prepared.headers, "Content-Type": contentType },
+        body: prepared.body,
+        signal: controller.signal,
+      };
+      const response = yield* requestWithHeaderTimeout(http, clock, url, request, timeouts.requestOpenTimeoutMs);
+      if (!response) return false;
+      if (!response.ok) {
+        const detail = yield* abortable(signal => readResponseDetail(response, signal));
+        return isLegacyCesrMediaRejection(request, response.status, detail);
+      }
+      yield* consumeMailboxSse(response, controller, consume, clock, {
+        idleTimeoutMs: timeouts.readIdleTimeoutMs,
+        maxDurationMs: timeouts.maxReadDurationMs,
+      });
+      return false;
     });
-  });
-}
-
-/**
- * Issue one mailbox `mbx` poll request and return the live response handle.
- *
- * The helper owns only the request lifecycle:
- * - build one CESR-over-HTTP mailbox query request
- * - apply the pre-response timeout policy
- * - return `null` when that timeout expires before any response arrives
- *
- * Message parsing and SSE body policy remain with `fetchMailboxMessages(...)`.
- *
- * @param url HTTP(S) mailbox endpoint.
- * @param query Complete signed mbx query bytes.
- * @param destination Remote mailbox endpoint AID carried in framing.
- * @param timeoutMs Response-header acquisition window in milliseconds.
- * @param http Borrowed HTTP implementation selected by composition.
- * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
- * @returns Borrowed scoped response and its cancellation controller, or null on owned header timeout.
- */
-function* fetchMailboxQueryResponse(
-  url: string,
-  query: Uint8Array,
-  destination: string,
-  timeoutMs: number,
-  http: HttpClient,
-  clock: RuntimeClock,
-): Operation<
-  {
-    response: HttpStreamResponse;
-    controller: AbortController;
-  } | null
-> {
-  const request = buildCesrRequest(query, {
-    destination,
-  });
-  const controller = new AbortController();
-  const response = yield* requestWithHeaderTimeout(http, clock, url, {
-    method: "POST",
-    headers: request.headers,
-    body: request.body,
-    signal: controller.signal,
-  }, timeoutMs);
-  return response ? { response, controller } : null;
+    // Closing the refused request is part of the scoped operation above. A close
+    // failure escapes before another request can submit these same signed bytes.
+    if (!alternate) return;
+  }
 }
 
 /**

@@ -1,5 +1,5 @@
 import { call, type Operation, run, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import {
   createAgentRuntime,
   runAgentRuntime,
@@ -486,4 +486,147 @@ Deno.test("mailbox polling includes providers and current witnesses once per sha
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("mailbox media fallback closes the refusal, reuses signed bytes and advances only after consumption", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "recipient"), endpoint = seedMailboxEndpoint(hby, hab.pre, "legacy");
+    const closing = Promise.withResolvers<void>(), closeRelease = Promise.withResolvers<void>();
+    const consuming = Promise.withResolvers<void>(), consumeRelease = Promise.withResolvers<void>();
+    const attempts: { type: string | null; attachment: string | null; destination: string | null; body: Uint8Array }[] =
+      [];
+    let closed = false;
+    const http = httpClient(async (url, init) => {
+      const request = new Request(url, init);
+      attempts.push({
+        type: request.headers.get("Content-Type"),
+        attachment: request.headers.get("CESR-ATTACHMENT"),
+        destination: request.headers.get("CESR-DESTINATION"),
+        body: new Uint8Array(await request.arrayBuffer()),
+      });
+      if (attempts.length === 1) {
+        const refusal = Response.json({ title: "Content type error", description: "Unacceptable content type." }, {
+          status: 406,
+        });
+        const cancel = refusal.body!.cancel.bind(refusal.body);
+        refusal.body!.cancel = async reason => {
+          closing.resolve();
+          await closeRelease.promise;
+          await cancel(reason);
+          closed = true;
+        };
+        return refusal;
+      }
+      assertEquals(closed, true, "the original response must finish closing before the alternate opens");
+      return mailboxResponse(hab.makeEndRole(hab.pre, Roles.mailbox, true), "/reply");
+    });
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    runtime.mailboxDirector.registerTopic("/reply");
+    try {
+      const worker = yield* spawn(() =>
+        runtime.mailboxPoller.pollDo(function*(batch) {
+          yield* settleMailboxPollBatch(runtime, batch);
+          consuming.resolve();
+          yield* call(() => consumeRelease.promise);
+        })
+      );
+      try {
+        yield* call(() => closing.promise);
+        assertEquals(attempts.length, 1);
+        closeRelease.resolve();
+        yield* call(() => consuming.promise);
+        assertEquals(attempts.map(attempt => attempt.type), ["application/cesr", "application/cesr+json"]);
+        assertEquals(attempts[1].body, attempts[0].body);
+        assertEquals(attempts[1].attachment, attempts[0].attachment);
+        assertEquals(attempts.map(attempt => attempt.destination), [endpoint.eid, endpoint.eid]);
+        assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
+        assertEquals(hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"], undefined);
+        consumeRelease.resolve();
+        yield* waitForCondition(
+          () => hby.db.tops.get([hab.pre, endpoint.eid])?.topics["/reply"] === 0,
+          "Expected the consumed legacy mailbox event to advance its durable cursor.",
+        );
+      } finally {
+        closeRelease.resolve();
+        consumeRelease.resolve();
+        yield* waitForTaskHalt(worker);
+      }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("mailbox authentication refusal mentioning content type does not negotiate alternate media", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "recipient");
+    seedMailboxEndpoint(hby, hab.pre, "auth-refusal");
+    const types: (string | null)[] = [];
+    const runtime = yield* createAgentRuntime(
+      hby,
+      httpClient((_url, init) => {
+        types.push(new Headers(init?.headers).get("Content-Type"));
+        return Response.json(
+          { title: "Authentication error", description: "Signature refused for this content type." },
+          {
+            status: 406,
+          },
+        );
+      }),
+      systemClock,
+    );
+    try {
+      const worker = yield* spawn(() =>
+        runtime.mailboxPoller.pollDo(function*() {
+          throw new Error("A refused poll cannot deliver mailbox events");
+        })
+      );
+      try {
+        yield* waitForCondition(() => types.length >= 2, "Expected two ordinary polling windows.");
+        assertEquals(types.slice(0, 2), ["application/cesr", "application/cesr"]);
+      } finally {
+        yield* waitForTaskHalt(worker);
+      }
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("mailbox refusal close failure propagates before any alternate submission", async () => {
+  const fault = new Error("refused mailbox response close failed");
+  let attempts = 0;
+  const error = await assertRejects(() =>
+    run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const hab = makeTransferableHab(hby, "recipient");
+      seedMailboxEndpoint(hby, hab.pre, "close-failure");
+      const runtime = yield* createAgentRuntime(
+        hby,
+        httpClient(() => {
+          attempts++;
+          const response = Response.json({ title: "Content type error", description: "Unacceptable content type." }, {
+            status: 406,
+          });
+          response.body!.cancel = () => Promise.reject(fault);
+          return response;
+        }),
+        systemClock,
+      );
+      try {
+        yield* runtime.mailboxPoller.pollDo(function*() {
+          throw new Error("The refused response cannot deliver events");
+        });
+      } finally {
+        yield* runtime.close();
+        yield* hby.close(true);
+      }
+    })
+  );
+  assertStrictEquals(error, fault);
+  assertEquals(attempts, 1);
 });

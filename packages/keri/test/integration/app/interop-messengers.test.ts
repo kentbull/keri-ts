@@ -1,9 +1,9 @@
 import { concatBytes, Diger, essrChunks, parseBytes, Texter, Vrsn_1_0 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/agent-runtime.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
@@ -11,6 +11,8 @@ import { HTTPStreamMessenger } from "../../../src/app/http-stream-messenger.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../src/app/messengering.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { Roles } from "../../../src/core/roles.ts";
+import { waitForTaskHalt } from "../../effection-http.ts";
 import { createInteropContext, startKeriPyWitnessHarness } from "./interop-test-helpers.ts";
 
 /** Observations from the real Python witness; control never accepts protocol bytes. */
@@ -185,6 +187,96 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
         } finally {
           yield* call(() => server.shutdown());
           yield* call(() => handler.close!());
+          yield* runtime.close();
+          yield* hby.close(true);
+        }
+      });
+    } finally {
+      await witnesses.close();
+    }
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
+Deno.test("signed mailbox queries retrieve and accept Python replies across reference media profiles", async () => {
+  const ctx = await createInteropContext();
+  try {
+    const witnesses = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
+    try {
+      const witness = witnesses.node("wan");
+      /** Test controls publish signed output or inspect accepted state; protocol intake stays real. */
+      const control = async <T>(command: Record<string, unknown>): Promise<T> => {
+        const response = await fetch(`${witness.httpOrigin}/_messenger`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(command),
+          signal: AbortSignal.timeout(20_000),
+        });
+        assertEquals(response.status, 200, await response.clone().text());
+        return await response.json();
+      };
+      await run(function*() {
+        const hby = yield* createHabery({ name: `mailbox-media-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+        const http = new FetchHttpClient();
+        const runtime = yield* createAgentRuntime(hby, http, systemClock);
+        const recipient = hby.makeHab("recipient");
+        try {
+          const inception = acceptedEventReplayMessage(hby, recipient.pre, 0, Vrsn_1_0).message;
+          yield* messengerFrom(witness.pre, { http: witness.httpOrigin }, http, systemClock).send(inception);
+          yield* call(async () => {
+            const deadline = Date.now() + 20_000;
+            let accepted: string[] | undefined;
+            do {
+              accepted =
+                (await control<Snapshot>({ action: "snapshot", prefixes: [recipient.pre] })).states[recipient.pre];
+              if (accepted) break;
+              await new Promise((resolve) => setTimeout(resolve, 10));
+            } while (Date.now() < deadline);
+            assertEquals(accepted, [parseBytes(inception)[0].body.said]);
+          });
+          const published = yield* call(() =>
+            control<{ sender: string; message: string }>({
+              action: "publish",
+              alias: "wan",
+              recipient: recipient.pre,
+            })
+          );
+          assertEquals(published.sender, witness.pre);
+          const before = yield* call(() => control<Snapshot>({ action: "snapshot", prefixes: [] }));
+          // These are recipient-owned endpoint choices, never seeded foreign accepted evidence.
+          hby.db.locs.pin([witness.pre, "http"], { url: witness.httpOrigin });
+          hby.db.ends.pin([recipient.pre, Roles.mailbox, witness.pre], { allowed: true });
+          runtime.mailboxDirector.topics.clear();
+          runtime.mailboxDirector.registerTopic("/reply");
+          const received: Uint8Array[] = [];
+          const worker = yield* spawn(() =>
+            runtime.mailboxPoller.pollDo(function*(batch) {
+              yield* settleMailboxPollBatch(runtime, batch);
+              received.push(...batch.messages);
+            })
+          );
+          try {
+            const deadline = Date.now() + 20_000;
+            while (hby.db.tops.get([recipient.pre, witness.pre])?.topics["/reply"] !== 0 && Date.now() < deadline) {
+              yield* sleep(10);
+            }
+            assertEquals(hby.db.tops.get([recipient.pre, witness.pre])?.topics["/reply"], 0);
+            assertEquals(hby.db.ends.get([witness.pre, Roles.agent, witness.pre])?.allowed, true);
+            assertEquals(received.map(encodeBase64), [published.message]);
+          } finally {
+            yield* waitForTaskHalt(worker);
+          }
+          const after = yield* call(() => control<Snapshot>({ action: "snapshot", prefixes: [] }));
+          const posts = after.traffic.slice(before.traffic.length).filter((t) => t.method === "POST");
+          const legacy = ctx.env.KERIPY_INTEROP_PROFILE === "1.2" || ctx.env.KERIPY_INTEROP_PROFILE === "1.3";
+          const expected = legacy ? ["application/cesr", "application/cesr+json"] : ["application/cesr"];
+          assertEquals(posts.slice(0, expected.length).map((t) => t.type), expected);
+          for (const post of posts) {
+            assertEquals(post.destination, witness.pre);
+            assertExists(post.attachment);
+          }
+        } finally {
           yield* runtime.close();
           yield* hby.close(true);
         }
