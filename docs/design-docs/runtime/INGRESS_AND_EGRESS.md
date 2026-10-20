@@ -76,12 +76,12 @@ its interpreted source before consuming the cue; Poster owns target preparation
 and per-attempt forwarding construction. Other producers publish
 signed messages with Poster.send. Network waits happen only in Poster execution.
 
-Queued ingress is an ordinary private `Deck<Uint8Array>`. `ingest` copies producer
-bytes before publication; copy failure publishes nothing. `processOnce` pulls
-records and processes them without shared/local byte credit, generation tokens or
-capacity retry. Failed processing does not reinsert its record. `clearIngress`
-discards queued records, while an active input operation owns its real cleanup.
-Runtime explicit close and scope exit clear queued ingress and cues.
+Reactor processes scoped sources or complete resident messages directly. The
+caller awaits dispatch and joined input cleanup. OOBI, mailbox consumers and
+application workflows use this path; there is no second complete-record queue or
+idle Reactor worker. Runtime shutdown clears its cue flow after dependent work
+joins. Active input lifetime belongs to its actual caller, rather than a queued
+input flag in runtime convergence.
 
 ## Host workers and finite commands
 

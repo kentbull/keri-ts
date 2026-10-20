@@ -1,8 +1,8 @@
 # Runtime simplification and KERIpy routing parity
 
-Status: execution authorized; goal active. Phase 1 removes the mailbox polling
-strategy and exercises its concrete HTTP/SSE boundary. Later phase gates remain
-outstanding; routing source choices must close before Phase 4.
+Status: execution authorized; goal active. Phase 1 is merged in [#557](https://github.com/kentbull/keri-ts/pull/557).
+Phase 2 removes the dormant Reactor queue. Later phase gates remain outstanding;
+routing source choices must close before Phase 4.
 
 Inspected baseline: clean local `master` at
 `20da8bad16f3ef09fd82846bb8d050fbd2184afa`, after local mailbox consumption removal
