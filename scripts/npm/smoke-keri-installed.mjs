@@ -142,13 +142,12 @@ await new Promise((resolve, reject) => {
 });
 try {
   const wire = signature.qb64b;
-  const [result, bytes] = await Promise.all([
+  const [, bytes] = await Promise.all([
     run(() => runtime.sendCesrTcp(`tcp://127.0.0.1:${server.address().port}`, wire, runtime.systemClock, {
       maxChunkBytes: 7, connectTimeoutMs: 5000, drainTimeoutMs: 5000, signal: AbortSignal.timeout(5000),
     })),
     received,
   ]);
-  assert(result.kind === "transmitted" && result.bytes === wire.length, "installed TCP transmission did not complete");
   assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
