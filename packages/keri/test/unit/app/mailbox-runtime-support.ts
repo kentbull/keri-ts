@@ -1,7 +1,7 @@
 import { type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { endsAddCommand } from "../../../../tufa/src/cli/endpoints.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
-import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
