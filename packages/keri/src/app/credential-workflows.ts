@@ -15,15 +15,12 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { chunkBytes } from "./byte-source.ts";
 import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
-import { processMessages } from "./message-source.ts";
-import type { ProtocolProcessor } from "./protocol-processing.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -67,10 +64,6 @@ export interface CredentialExportResult {
   creder: SerderACDC;
   recipient: string;
   bytes: Uint8Array;
-}
-
-export interface CredentialImportResult {
-  saved: string[];
 }
 
 export interface CredentialRevokeOptions {
@@ -240,27 +233,6 @@ export function exportCredentialStream(
     recipient: resolvedRecipient,
     bytes: credentialStreamBytes(hby, reger, creder, resolvedRecipient),
   };
-}
-
-/**
- * Import one CESR credential stream and return newly saved credential SAIDs.
- *
- * @param protocol Borrowed serialized KEL/TEL/credential processor; this import owns its parser and Kevery.
- * @param reger Borrowed credential store used to compare saved SAIDs before/after intake.
- * @param bytes Finite CESR credential stream to process.
- * @returns Import result listing newly saved credential SAIDs; receiving bytes alone does not imply acceptance.
- */
-export function* importCredentialStream(
-  protocol: ProtocolProcessor,
-  reger: Reger,
-  bytes: Uint8Array,
-): Operation<CredentialImportResult> {
-  const before = savedCredentials(reger);
-  // Dispatch each parsed frame before pulling the next; later malformed input preserves earlier acceptance.
-  yield* processMessages((signal) => chunkBytes(bytes, { signal }), protocol, protocol.makeKevery());
-  yield* protocol.processEscrowsOnce();
-  yield* protocol.processEscrowsOnce();
-  return { saved: [...savedCredentials(reger)].filter((said) => !before.has(said)) };
 }
 
 /**
@@ -675,8 +647,4 @@ function markTelComplete(
   eventSaid: string,
 ): void {
   reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
-}
-
-function savedCredentials(reger: Reger): Set<string> {
-  return new Set([...reger.saved.getTopItemIter()].map(([keys]) => keys[0]).filter((key): key is string => !!key));
 }

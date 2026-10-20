@@ -4,7 +4,11 @@ Credential workflows borrow one Regery for its coherent Habery, Reger, Tevery an
 Verifier; delivery borrows Poster and import borrows ProtocolProcessor/Reger. Finite import
 and grant artifact intake own their parser/input-specific Kevery; VerifierAgent
 borrows the shared protocol owner directly. Recurring artifact intake retains its
-single escrow pass; it does not start runtime workers. TEL row helpers
+single escrow pass; it does not start runtime workers. Finite import reports exact
+input-target acceptance separately from parsing: saved markers, accepted KEL/TEL
+digests and accepted EXNs. Its bounded local settlement replaces fixed pass counts;
+raw storage and imported grants never imply credential acceptance. Unrelated escrow
+recovery is excluded from saved results; incomplete CLI imports return failure. TEL row helpers
 receive Reger directly. Multisig VDR approval checks availability after malformed/
 declined proposal handling but before signing/intake. Group IPEX requires Reger for
 grant lead sending, not non-grant or approval-only operations.

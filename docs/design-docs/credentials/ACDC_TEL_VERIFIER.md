@@ -244,16 +244,54 @@ presentation because the TEL source seal and KEL anchor are separate evidence.
 - Sending raw ACDC support over `/fwd` as if every forwarded SAD were KERI
   breaks mixed KLI/Tufa credential transport.
 
-## Credential input ownership
+## Credential input ownership and finite completion
 
-`importCredentialStream(protocol, reger, bytes)` borrows the configured
-`ProtocolProcessor` and credential store. The finite input operation owns its
-parser and input-specific Kevery, dispatching each complete frame before pulling
-the next. A malformed later frame does not roll back already accepted evidence.
-Source and suspending-handler cleanup join before the operation exits.
+`importCredentialStream(protocol, reger, bytes, clock, timeoutMs = 5000)` borrows
+one configured `ProtocolProcessor` and its credential/TEL store. The finite input
+operation owns its parser and input-specific Kevery. It dispatches each complete
+frame before pulling the next; a malformed later frame does not roll back earlier
+acceptance. Source and suspending-handler cleanup join before the operation exits.
+The CLI still buffers its file/stdin input before invoking this operation.
+
+Parsing EOF is separate from acceptance. Results identify directly imported targets
+by message kind and SAID, deduplicated in first-seen order:
+
+| Input                                            | Persisted acceptance predicate               | Meaning                                                                                        |
+| ------------------------------------------------ | -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| Raw credential                                   | `Reger.saved` marker                         | Verified credential acceptance; `Reger.creds` raw material alone is insufficient.              |
+| KEL support                                      | Exact prefix/sequence/digest in accepted KEL | This event is accepted, regardless of a later current head.                                    |
+| Registry or credential TEL, including revocation | Exact prefix/sequence/digest in accepted TEL | Registry/credential state evidence, not a newly saved credential.                              |
+| Exchange, including IPEX grant                   | Accepted EXN in `Baser.exns`                 | The exchange is accepted; embedded credential artifacts remain behind their explicit workflow. |
+| Other message kinds                              | No finite-import acceptance predicate        | Reported unresolved; parsing alone does not justify acceptance.                                |
+
+`targets` distinguishes `accepted`, `alreadyAccepted` (observed before that
+identity's first dispatch), `unresolved`, and `rejected`. A direct protocol refusal
+retains its reason and takes precedence over older accepted evidence for the same
+body. `saved` contains only newly accepted raw credential SAIDs from this input;
+unrelated credentials recovered by a shared escrow pass do not appear there. A
+later refused duplicate does not hide an earlier successful save in that input.
+`complete` requires accepted evidence for every directly imported target. A grant
+import does not automatically admit its credential or process its embedded children.
+
+After EOF, unresolved supported targets are reassessed through ordinary serialized
+dispatch and shared escrow processing. Each pass checks exact KEL/TEL/credential/
+exchange acceptance, then yields 25 ms before another pass if needed. An elapsed
+settlement deadline bounds this local work; the default is 5000 ms, with positive
+fractions floored to a minimum of one millisecond. Terminal refusals and unsupported
+inputs do not get polled. Completion never waits for every global escrow to empty,
+and an unchanged saved count is not treated as proof of a fixed point. A deadline
+returns an honest unresolved result, not a claim that no later input could resolve
+it. Handler/source/storage/cleanup failures still propagate with their original
+causes; cancellation joins active work before releasing its protocol turn.
+
+The local settlement window starts after intake and does not start discovery,
+Poster delivery, mailbox polling, or full-runtime workers. The caller still owns
+cancellation of intake itself. `tufa vc import` prints the structured result and
+exits unsuccessfully when acceptance is incomplete. Accepted partial state remains
+available to a later explicit import.
 
 `processCredentialPresentationArtifacts(protocol, artifacts)` separately consumes
 `anc`, `iss`, then `acdc`, honoring each artifact's genus selector. It advances
-escrows once after intake; its recurring IPEX/VerifierAgent callers own subsequent
-scheduling. VerifierAgent borrows the same shared processor directly. Neither
-operation uses Reactor or starts delivery, discovery, or mailbox workers.
+escrows once after intake; recurring IPEX/VerifierAgent callers own subsequent
+scheduling and never enter the finite-import settlement loop. VerifierAgent borrows
+the shared processor directly. Neither operation uses Reactor.
