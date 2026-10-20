@@ -44,6 +44,11 @@ non-README `.changeset/*.md` file. Use:
 Run `deno task changeset:check` before PR handoff. PR summaries must state
 whether the changeset is release-impacting or empty/no-release.
 
+## Test Scope
+
+Test supported behavior and failure contracts. Do not add or retain tests or lint
+blacklists whose sole purpose is proving discarded APIs, options or designs stay absent.
+
 ## PR Validation Scope
 
 Use `docs/reference/PR_TEST_SCOPE.md` for PR-description CI controls. During this

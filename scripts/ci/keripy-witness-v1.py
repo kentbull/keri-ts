@@ -33,6 +33,7 @@ def main():
     parser.add_argument("--http", type=int, required=True)
     parser.add_argument("--tcp", type=int, required=True)
     parser.add_argument("--legacy", action="store_true", help="Use the v1-only reference API.")
+    parser.add_argument("--messenger-probe", action="store_true", help="Enable test-only transport commands.")
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, stop)
 
@@ -42,8 +43,16 @@ def main():
     hby = Habery(name=args.name, base=args.base, bran=args.passcode, cf=cf, **version)
     try:
         doers = [HaberyDoer(habery=hby)]
-        doers.extend(setupWitness(hby=hby, alias=args.alias, httpPort=args.http,
-                                 tcpPort=args.tcp, **version))
+        witnesses = setupWitness(hby=hby, alias=args.alias, httpPort=args.http,
+                                 tcpPort=args.tcp, **version)
+        if args.messenger_probe:
+            from hio.core import http
+            from witness_messenger_probe import MessengerProbe
+            probe = MessengerProbe(hby, args.legacy)
+            server = next(doer.server for doer in witnesses if isinstance(doer, http.ServerDoer))
+            server.app.add_middleware(probe)
+            server.app.add_route("/_messenger", probe)
+        doers.extend(witnesses)
         runController(doers=doers)
     finally:
         hby.close()

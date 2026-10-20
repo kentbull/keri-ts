@@ -48,6 +48,9 @@ Source CLI/tests and the DID container run Deno; packaged CLI launchers run Node
 selection, the digest-pinned caged Node profile and RSS/heap measurement limits.
 A different Node base cannot compress Deno, and runtime tuning is not an application
 memory budget. Native-heavy macOS qualification uses Linux volumes without host binds.
+Release-peer transport probes use the canonical reference profiles independently of
+the mailbox fork. The 1.2.x target is GLEIF 1.2.17 with its required GLEIF HIO;
+the earlier WebOfTrust 1.2.14 Directant drops queued input at EOF.
 
 ## Protocol and output owners
 

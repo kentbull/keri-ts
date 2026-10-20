@@ -84,7 +84,10 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "interop-reference-profiles": {
-    files: ["test/integration/app/interop-reference-profile.test.ts"],
+    files: [
+      "test/integration/app/interop-reference-profile.test.ts",
+      "test/integration/app/interop-messengers.test.ts",
+    ],
   },
   "interop-essr-exchange": {
     files: ["test/integration/app/interop-essr-exchange.test.ts"],

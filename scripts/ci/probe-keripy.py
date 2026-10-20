@@ -16,6 +16,8 @@ def main():
     """Report source/interpreter provenance, failing closed on a requested mismatch."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--expected-commit")
+    parser.add_argument("--distribution", default="keri")
+    parser.add_argument("--hio-distribution", default="hio")
     parser.add_argument("--root")
     parser.add_argument("--resolver-root")
     parser.add_argument("--resolver-commit")
@@ -24,7 +26,7 @@ def main():
     import keri
 
     module = pathlib.Path(keri.__file__).resolve()
-    distribution = metadata.distribution("keri")
+    distribution = metadata.distribution(args.distribution)
     if args.root:
         root = pathlib.Path(args.root).resolve()
         commit = subprocess.check_output(
@@ -69,7 +71,7 @@ def main():
     dependencies = {}
     for name in ("keri", "hio", "falcon", "lmdb", "pysodium", "blake3"):
         try:
-            dependencies[name] = metadata.version(name)
+            dependencies[name] = metadata.version({"keri": args.distribution, "hio": args.hio_distribution}.get(name, name))
         except metadata.PackageNotFoundError:
             dependencies[name] = None
     result = {

@@ -31,14 +31,19 @@ peer. Local direct storage runs require the explicit `main` profile/root/Python;
 suite runs may instead supply `KERIPY_ESSR_STORAGE_ROOT` and
 `KERIPY_ESSR_STORAGE_PYTHON`. No legacy Baser qualification is implied.
 
-`scripts/ci/keripy-reference.json` freezes independent upstream profiles selected
+`scripts/ci/keripy-reference.json` freezes independent release profiles selected
 on 2026-10-20. These supplement the mailbox-fork default; they do not relabel it.
 
-| Profile | Upstream source                                        | Python | HIO    | LMDB  | Falcon |
-| ------- | ------------------------------------------------------ | ------ | ------ | ----- | ------ |
-| `main`  | `424a50c03421165c5f289e07a341bd57b8d8ab78`             | 3.14   | 0.7.20 | 2.3.0 | 4.3.1  |
-| `1.2`   | tag 1.2.14, `bab95c16e949b61398129a3e41a8f68bad84c94f` | 3.13   | 0.6.14 | 1.7.5 | 4.3.1  |
-| `1.3`   | tag 1.3.6, `4ce4cc79e06653f77342be1bf604086b89b1f090`  | 3.13   | 0.6.19 | 1.7.5 | 4.3.1  |
+| Profile | Source                                                   | Python | HIO    | LMDB  | Falcon |
+| ------- | -------------------------------------------------------- | ------ | ------ | ----- | ------ |
+| `main`  | `424a50c03421165c5f289e07a341bd57b8d8ab78`               | 3.14   | 0.7.20 | 2.3.0 | 4.3.1  |
+| `1.2`   | GLEIF 1.2.17, `b8626e1d58770a4a480ea72a01acc5580278a9f2` | 3.13   | 0.6.21 | 1.7.5 | 4.3.1  |
+| `1.3`   | tag 1.3.6, `4ce4cc79e06653f77342be1bf604086b89b1f090`    | 3.13   | 0.6.19 | 1.7.5 | 4.3.1  |
+
+The `1.2` target is GLEIF-IT/keripy with `gleif-keri`/`gleif-hio` distributions;
+main and 1.3 retain WebOfTrust/keripy. It replaces the original 1.2.14 pin after
+its Directant dropped queued input on EOF. `qualify-reference-profiles.py` prepares
+all three isolated environments for CI.
 
 Prepare each clean checkout with its own venv, install it editable with the
 listed dependency pins, then set `KERIPY_INTEROP_PROFILE`,
@@ -49,7 +54,8 @@ imported Git bytes fail before state creation. The probe records actual imports,
 dependency paths/hashes and init/incept/export command discovery.
 
 The focused owner proves CLI init/incept/export, signed KEL intake and real v1
-witness startup/OOBI. It does not qualify credential lifecycles. Old CLIs omit
+witness startup/OOBI, ordinary POST and whole-stream PUT in both directions,
+and real TCP intake on the GLEIF 1.2.17 target. It does not qualify credential lifecycles. Old CLIs omit
 the unsupported protocol `--version` option. Their export genus is v1; current
 main/fork exports use v2 attachments even for v1 bodies. Supply that known
 context before the unchanged CLI stream, as the existing export-parity owner does.

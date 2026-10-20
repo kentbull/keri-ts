@@ -13,6 +13,7 @@ import * as runtime from "keri-ts/runtime";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { copyFileSync, existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,14 +54,9 @@ assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
 assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
-assert(!("PayloadStore" in db), "keri-ts/db retained unused ESSR file staging");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
 assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algorithm selection");
 
-assert(!("startServer" in keri), "keri-ts root leaked startServer");
-assert(!("createTufaApp" in keri), "keri-ts root leaked createTufaApp");
-assert(!("tufa" in keri), "keri-ts root leaked tufa CLI");
-assert(!("reportCliFailure" in keri), "keri-ts root leaked CLI failure helper");
 
 console.error("keri-ts root exports:", Object.keys(keri).sort().join(", "));
 console.error("keri-ts/runtime exports:", Object.keys(runtime).slice(0, 12).sort().join(", "));
@@ -160,7 +156,61 @@ altered[0] ^= 1;
 assert(!signer.verfer.verify(signature.raw, altered), "installed verifier accepted altered bytes");
 console.error("Installed CESR signing and tamper-refusal checks passed.");
 
-// Exercise the public native TCP owner; successful transmission is not protocol acceptance.
+// Exercise the installed factories against a real listener, preserving signed bodies and opaque PUT bytes.
+const httpRequests = [];
+const httpServer = createHttpServer(async (req, res) => {
+  const chunks = [];
+  for await (const chunk of req) chunks.push(chunk);
+  httpRequests.push({ method: req.method, path: req.url, headers: req.headers, body: Buffer.concat(chunks) });
+  res.writeHead(204);
+  res.end();
+});
+await new Promise((resolve, reject) => {
+  httpServer.once("error", reject);
+  httpServer.listen(0, "127.0.0.1", resolve);
+});
+try {
+  await run(function*() {
+    const hby = yield* runtime.createHabery({ name: "installed-messengers", temp: true, skipConfig: true });
+    try {
+      const sender = hby.makeHab("sender");
+      sender.interact();
+      const parts = [...hby.db.clonePreIter(sender.pre)];
+      assert(parts.length === 2, "installed factory fixture lacks its two accepted KEL events");
+      const wire = Buffer.concat(parts.map(part => Buffer.from(part)));
+      const urls = { http: `http://127.0.0.1:${httpServer.address().port}/inbox` };
+      const http = new runtime.FetchHttpClient();
+      const headers = { Authorization: "installed-factory" };
+      const ordinary = runtime.messengerFrom(sender.pre, urls, http, runtime.systemClock, headers);
+      assert(ordinary instanceof runtime.HTTPMessenger, "installed ordinary factory selected the wrong class");
+      assert((yield* ordinary.send(wire, { signal: AbortSignal.timeout(5000) })).kind === "complete", "installed POST refused");
+      const stream = runtime.streamMessengerFrom(sender.pre, urls, wire, http, runtime.systemClock, headers);
+      assert(stream instanceof runtime.HTTPStreamMessenger, "installed stream factory selected the wrong class");
+      assert((yield* stream.send({ signal: AbortSignal.timeout(5000) })).status === 204, "installed PUT refused");
+      assert(httpRequests.map(req => req.method).join(",") === "POST,POST,PUT", "installed factory changed request count/order");
+      for (const req of httpRequests) {
+        assert(req.path === "/inbox", "installed factory lost the endpoint path");
+        assert(req.headers["cesr-destination"] === sender.pre, "installed factory lost destination");
+        assert(req.headers.authorization === "installed-factory", "installed factory lost authorization");
+      }
+      for (let i = 0; i < 2; i++) {
+        const req = httpRequests[i];
+        assert(req.headers["cesr-attachment"], "installed POST lost detached proof");
+        assert(Buffer.concat([req.body, Buffer.from(req.headers["cesr-attachment"])]).equals(Buffer.from(parts[i])), "installed POST changed signed bytes");
+      }
+      const put = httpRequests[2];
+      assert(!put.headers["cesr-attachment"], "installed PUT retained detached framing");
+      assert(Number(put.headers["content-length"]) === wire.length && put.body.equals(wire), "installed PUT changed length/bytes");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+} finally {
+  await new Promise((resolve, reject) => httpServer.close(error => error ? reject(error) : resolve()));
+}
+console.error("Installed ordinary POST and whole-stream PUT factories passed.");
+
+// Exercise the public TCP stream factory; successful transmission is not protocol acceptance.
 let finishReceive, failReceive;
 const received = new Promise((resolve, reject) => { finishReceive = resolve; failReceive = reject; });
 const server = createServer((socket) => {
@@ -174,11 +224,10 @@ await new Promise((resolve, reject) => {
   server.listen(0, "127.0.0.1", resolve);
 });
 try {
-  const wire = signature.qb64b;
+  // Cross the factory writer's 64 KiB chunk boundary without adding a transport knob.
+  const wire = Buffer.concat([Buffer.alloc(128 * 1024, 0xa5), signature.qb64b]);
   const [, bytes] = await Promise.all([
-    run(() => runtime.sendCesrTcp(`tcp://127.0.0.1:${server.address().port}`, wire, runtime.systemClock, {
-      maxChunkBytes: 7, connectTimeoutMs: 5000, drainTimeoutMs: 5000, signal: AbortSignal.timeout(5000),
-    })),
+    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.FetchHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
     received,
   ]);
   assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");

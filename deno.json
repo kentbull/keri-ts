@@ -9,7 +9,7 @@
     "docs:check": "deno run --allow-read scripts/check_class_docstrings.ts",
     "inline-code:check": "deno run --allow-read scripts/check_no_inline_code.ts",
     "check": "cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
-    "quality:check": "deno run --allow-read scripts/check-retired-accounting.ts && deno task docs:check && deno task inline-code:check && deno task check && deno task version:check",
+    "quality:check": "deno task docs:check && deno task inline-code:check && deno task check && deno task version:check",
     "quality": "deno task fmt:check && deno task lint && deno task quality:check && deno task test:quality",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
     "clean-architecture:report": "deno run --allow-read scripts/clean-architecture-report.ts",

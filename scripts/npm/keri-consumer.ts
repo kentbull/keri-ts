@@ -5,12 +5,16 @@ import {
   Algos,
   credential,
   EssrRecipient,
+  FetchHttpClient,
   type Hab,
   inceptRegistry,
   Manager,
   messagize,
+  messengerFrom,
   runAgentRuntime,
   settleRuntimeIngress,
+  streamMessengerFrom,
+  systemClock,
 } from "keri-ts/runtime";
 
 // Compile actual supported construction and composition, including the enum
@@ -33,4 +37,13 @@ export const storage = { createBaser };
 /** Decrypt accepted evidence through the synchronous public recipient API. */
 export function decryptEssr(hab: Hab, said: string) {
   return new EssrRecipient(hab).decrypt(said);
+}
+
+/** Select concrete supported transports through their installed public declarations. */
+export function messengers(destination: string, url: string, wire: Uint8Array) {
+  const http = new FetchHttpClient();
+  return {
+    ordinary: messengerFrom(destination, { http: url }, http, systemClock),
+    stream: streamMessengerFrom(destination, { http: url }, wire, http, systemClock),
+  };
 }

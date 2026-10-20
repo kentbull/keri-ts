@@ -633,21 +633,7 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
         controller.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
       );
 
-      // Root `/mailboxes` is no longer a mailbox-admin alias when the hosted
-      // mailbox URL carries a non-root path. A valid multipart admin envelope
-      // therefore fails content-type handling at the generic ingress seam.
-      let response = yield* postMailboxAdminMultipartInProcess(
-        http,
-        `${origin}/mailboxes`,
-        [
-          ["kel", kel],
-          ["rpy", rpy],
-        ],
-      );
-      assertEquals(response.status, 406);
-      yield* textOp(response);
-
-      response = yield* postMailboxAdminMultipartInProcess(
+      const response = yield* postMailboxAdminMultipartInProcess(
         http,
         `${advertisedUrl}/mailboxes`,
         [

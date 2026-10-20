@@ -92,6 +92,7 @@ export async function verifyKeripy(
       "--expected-commit",
       expected,
       ...(root ? ["--root", root] : []),
+      ...(profile ? ["--distribution", profile.distribution, "--hio-distribution", profile.hioDistribution] : []),
       "--cli-command",
       "init",
       "--cli-command",
