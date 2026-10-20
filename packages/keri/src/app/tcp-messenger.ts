@@ -26,7 +26,7 @@ export interface TCPMessengerOptions extends TcpSendOptions {
 /**
  * Own one TCP delivery attempt and its parser/Kevery, following KERIpy TCPMessenger.
  *
- * Poster or QueryCoordinator owns queued source work and retry. This messenger runs
+ * Poster or WitnessInquisitor owns queued source work and retry. This messenger runs
  * directly in that owner's scope, keeps no message queue or sent history, and joins
  * TX, optional RX, parser/source cleanup and connection close before returning.
  * Finite bytes and pull sources share the same socket implementation.

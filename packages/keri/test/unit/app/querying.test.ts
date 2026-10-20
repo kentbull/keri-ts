@@ -1,6 +1,7 @@
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { parseBytes, ParserError, SerderKERI } from "../../../../cesr/mod.ts";
+import { queryCommand } from "../../../../tufa/src/cli/query.ts";
 import {
   createAgentRuntime,
   runAgentRuntimeUntil,
@@ -9,13 +10,13 @@ import {
   runtimePendingState,
 } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
-import { queryCommand } from "../../../src/app/cli/query.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { type HttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
-import { type AnchorQuerier, QueryCoordinator } from "../../../src/app/querying.ts";
+import { AnchorQuerier, KeyStateNoticer, SeqNoQuerier } from "../../../src/app/querying.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { WitnessInquisitor } from "../../../src/app/witness-inquisitor.ts";
 
 import type { QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../src/core/cues.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
@@ -39,22 +40,16 @@ void ({ route: "ksn", q: { a: { i: "aid", s: "0", d: "digest" } } } satisfies Qu
 void ({ kin: "query", src: "aid", q: { r: "schema", said: "schema" } } satisfies QueryCue);
 // @ts-expect-error Mailbox signing requires its topic cursors.
 void ({ route: "mbx", q: {} } satisfies Parameters<Hab["query"]>[2]);
-// @ts-expect-error Recovery sequences use the canonical wire filter s.
-void ({ route: "logs", q: { sn: "1" } } satisfies QueryInstruction);
-// @ts-expect-error The route is authoritative; there is no redundant body route.
-void ({ route: "logs", q: { r: "logs" } } satisfies QueryInstruction);
-// @ts-expect-error Queued work identifies its signer instead of retaining a component.
-void ({ pre: "aid", route: "logs", q: {}, hab: {} } satisfies QueryRequest);
 // @ts-expect-error A schema notice is not a signed outbound request.
 void ({ kin: "query", signer: "aid", q: { r: "schema", said: "schema" } } satisfies QueryCue);
 // @ts-expect-error TEL recovery must identify its registry and credential.
 void ({ kin: "telquery", q: { i: "credential" } } satisfies TelQueryCue);
 // @ts-expect-error Anchor queries require the event digest, not an optional payload bag.
-void ({ i: "prefix", s: "0" } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
+void ({ i: "prefix", s: "0" } satisfies ConstructorParameters<typeof AnchorQuerier>[3]);
 // @ts-expect-error Event-seal ordinals are hex text; credential KEL anchors use another shape.
-void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
+void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof AnchorQuerier>[3]);
 // @ts-expect-error Event seals have no diagnostic extension slot.
-void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[1]);
+void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[3]);
 
 /** Capture actual HTTP query wire after production framing; introductions are not queries. */
 function queryHttp(messages: Uint8Array[], urls: string[] = []): HttpClient {
@@ -86,7 +81,7 @@ async function assertQuerySigner(bytes: Uint8Array, hab: Hab): Promise<void> {
   assert(hab.kever!.verfers[signature.index].verify(signature.raw, envelope.serder.raw));
 }
 
-Deno.test("default runtime sends queued and cue queries through its concrete owner without host sink wiring", async () => {
+Deno.test("runtime sends queued and recovery-cue queries through its concrete sender", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
@@ -127,23 +122,23 @@ Deno.test("queued and cue queries never substitute an ambient identity for an ex
     const ambient = hby.makeHab("ambient"), selected = hby.makeHab("selected"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, ambient);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, ambient);
     try {
       const request = { pre: subject.pre, signer: selected.pre, src: subject.pre, route: "logs" as const, q: {} };
-      coordinator.enqueue(request);
-      const pending = coordinator.pending.peekHead();
+      inquisitor.enqueue(request);
+      const pending = inquisitor.pending.peekHead();
       hby.habs.delete(selected.pre);
-      yield* coordinator.processPending();
-      assertStrictEquals(coordinator.pending.peekHead(), pending);
-      assertEquals(coordinator.hasPendingDelivery, false);
+      yield* inquisitor.processPending();
+      assertStrictEquals(inquisitor.pending.peekHead(), pending);
+      assertEquals(inquisitor.hasPendingDelivery, false);
       hby.habs.set(selected.pre, selected);
-      yield* coordinator.processPending();
-      coordinator.enqueueCue({ kin: "query", ...request }, ambient);
-      yield* coordinator.deliverOnce();
-      assertEquals([messages.length, coordinator.pending.length], [2, 0]);
+      yield* inquisitor.processPending();
+      inquisitor.enqueueCue({ kin: "query", ...request }, ambient);
+      yield* inquisitor.deliverOnce();
+      assertEquals([messages.length, inquisitor.pending.length], [2, 0]);
       for (const message of messages) yield* call(() => assertQuerySigner(message, selected));
     } finally {
-      yield* coordinator.close();
+      yield* inquisitor.close();
       yield* hby.close(true);
     }
   });
@@ -191,15 +186,11 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();
       seedControllerEndpoint(hby, subject.pre);
-      const resolvedUrl = "http://controller.test/oobi";
-      hby.db.roobi.pin(resolvedUrl, {
-        date: new Date().toISOString(),
-        state: "resolved",
-        cid: subject.pre,
-        role: Roles.controller,
-      });
       runtime.querying.configure({ hab: sender });
-      const current = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
+      const current = yield* spawn(() =>
+        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, { signer: sender.pre })
+          .queryDo()
+      );
       yield* processCuesOnce(runtime, { hab: sender });
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
@@ -208,8 +199,15 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
       yield* processCuesOnce(runtime, { hab: sender });
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
-      assertEquals([current.done, messages.length], [true, 1]);
-      const ahead = runtime.querying.watchKeyState(subject.pre, { signer: sender.pre });
+      yield* current;
+      assertEquals(messages.length, 1);
+      let caughtUp = false;
+      const ahead = yield* spawn(function*() {
+        yield* new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
+          signer: sender.pre,
+        }).queryDo();
+        caughtUp = true;
+      });
       yield* processCuesOnce(runtime, { hab: sender });
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
@@ -219,22 +217,15 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
       assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "ksn", "logs"]);
-      assertEquals([
-        ahead.done,
-        runtimePendingState(runtime).queriesPending,
-        runtimeHasPendingWork(runtime),
-        runtimeOobiConverged(runtime, resolvedUrl),
-      ], [false, true, true, false]);
+      assertEquals(caughtUp, false, "HTTP completion does not satisfy accepted-state catch-up");
+      assertEquals(hby.db.getKever(subject.pre)?.sn, 0);
       yield* runtime.reactor.processBytes(interaction);
       yield* processCuesOnce(runtime, { hab: sender });
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
       assertEquals(runtimePendingState(runtime).deliveriesPending, true);
-      assertEquals([ahead.done, runtime.querying.hasPendingWork(), runtimeOobiConverged(runtime, resolvedUrl)], [
-        true,
-        false,
-        true,
-      ]);
+      yield* ahead;
+      assertEquals([caughtUp, hby.db.getKever(subject.pre)?.sn], [true, 1]);
     } finally {
       yield* runtime.close();
       yield* remote.close(true);
@@ -243,7 +234,7 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
   });
 });
 
-Deno.test("sequence and anchor continuations preserve the seal snapshot and complete on accepted evidence", async () => {
+Deno.test("sequence and anchor workflows preserve the seal snapshot and complete on accepted evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -256,8 +247,15 @@ Deno.test("sequence and anchor continuations preserve the seal snapshot and comp
       seedControllerEndpoint(hby, subject.pre);
       const original = { d: subject.kever!.said, s: "0", i: subject.pre };
       const expected = { i: subject.pre, s: "0", d: subject.kever!.said };
-      const sequence = runtime.querying.watchSeqNo(subject.pre, 1, { signer: sender.pre });
-      const anchor = runtime.querying.watchAnchor(subject.pre, original, { signer: sender.pre });
+      let sequenceDone = false, anchorDone = false;
+      const sequence = yield* spawn(function*() {
+        yield* new SeqNoQuerier(hby.db, runtime.querying, subject.pre, 1, { signer: sender.pre }).queryDo();
+        sequenceDone = true;
+      });
+      const anchor = yield* spawn(function*() {
+        yield* new AnchorQuerier(hby.db, runtime.querying, subject.pre, original, { signer: sender.pre }).queryDo();
+        anchorDone = true;
+      });
       original.d = sender.pre;
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
@@ -265,11 +263,13 @@ Deno.test("sequence and anchor continuations preserve the seal snapshot and comp
       const query = new SerderKERI({ raw: messages[1] }).ked?.q as { a: object };
       assertEquals(query.a, expected);
       assertEquals(Object.keys(query.a), ["i", "s", "d"]);
-      assertEquals([sequence.done, anchor.done], [false, false]);
+      assertEquals([sequenceDone, anchorDone], [false, false]);
       yield* runtime.reactor.processBytes(subject.interact({ data: [expected] }));
       yield* runtime.querying.processPending();
       yield* runtime.querying.deliverOnce();
-      assertEquals([sequence.done, anchor.done, runtime.querying.hasPendingWork()], [true, true, false]);
+      yield* sequence;
+      yield* anchor;
+      assertEquals([sequenceDone, anchorDone, runtime.querying.hasPendingWork()], [true, true, false]);
     } finally {
       yield* runtime.close();
       yield* remote.close(true);
@@ -284,32 +284,32 @@ Deno.test("query preparation retains failed heads and limits one pass to its ini
     const hab = hby.makeHab("sender");
     seedControllerEndpoint(hby, hab.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
     const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {} };
     const sign = hab.query, fault = new Error("signing failed");
     try {
-      coordinator.enqueue(request);
-      const head = coordinator.pending.peekHead();
+      inquisitor.enqueue(request);
+      const head = inquisitor.pending.peekHead();
       hab.query = () => {
         throw fault;
       };
-      assertStrictEquals(yield* call(() => assertRejects(() => run(() => coordinator.processPending()))), fault);
-      assertStrictEquals(coordinator.pending.peekHead(), head);
+      assertStrictEquals(yield* call(() => assertRejects(() => run(() => inquisitor.processPending()))), fault);
+      assertStrictEquals(inquisitor.pending.peekHead(), head);
       hab.query = function(...args) {
-        coordinator.enqueue(request);
+        inquisitor.enqueue(request);
         return sign.apply(this, args);
       };
-      yield* coordinator.processPending();
-      assertEquals([coordinator.pending.length, coordinator.hasPendingDelivery], [1, true]);
+      yield* inquisitor.processPending();
+      assertEquals([inquisitor.pending.length, inquisitor.hasPendingDelivery], [1, true]);
       hab.query = sign;
-      yield* coordinator.deliverOnce();
+      yield* inquisitor.deliverOnce();
       assertEquals(messages.length, 1);
-      yield* coordinator.processPending();
-      yield* coordinator.deliverOnce();
-      assertEquals([messages.length, coordinator.pending.length], [2, 0]);
+      yield* inquisitor.processPending();
+      yield* inquisitor.deliverOnce();
+      assertEquals([messages.length, inquisitor.pending.length], [2, 0]);
     } finally {
       hab.query = sign;
-      yield* coordinator.close();
+      yield* inquisitor.close();
       yield* hby.close(true);
     }
   });
@@ -323,23 +323,26 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
       second = hby.makeHab("second", undefined, { transferable: false, ncount: 0 });
     for (const attester of [first, second]) seedControllerEndpoint(hby, attester.pre);
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, hab);
     const seal = { i: hab.pre, s: "0", d: hab.pre };
-    const anchor = coordinator.watchAnchor(hab.pre, seal, { wits: [first.pre, second.pre] });
+    const anchor = yield* spawn(() =>
+      new AnchorQuerier(hby.db, inquisitor, hab.pre, seal, { wits: [first.pre, second.pre] }).queryDo()
+    );
     try {
-      yield* coordinator.processPending();
-      yield* coordinator.deliverOnce();
-      yield* coordinator.processPending();
-      yield* coordinator.deliverOnce();
+      yield* inquisitor.processPending();
+      yield* inquisitor.deliverOnce();
+      yield* inquisitor.processPending();
+      yield* inquisitor.deliverOnce();
       assertEquals(
         messages.map((wire) => new SerderKERI({ raw: wire }).ked?.q),
         [first, second].map((attester) => ({ fn: "0", s: "0", a: seal, i: hab.pre, src: attester.pre })),
       );
       hab.interact({ data: [seal] });
-      yield* coordinator.processPending();
-      assertEquals([anchor.done, messages.length], [true, 2]);
+      yield* inquisitor.processPending();
+      yield* anchor;
+      assertEquals(messages.length, 2);
     } finally {
-      yield* coordinator.close();
+      yield* inquisitor.close();
       yield* hby.close(true);
     }
   });
@@ -390,20 +393,20 @@ Deno.test("ordinary inquiries randomly choose within the first eligible role and
       hby.db.locs.pin([peer.pre, "http"], { url: `http://peer-${idx}.query.test/` });
     });
     const messages: Uint8Array[] = [], urls: string[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages, urls), systemClock, signer);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages, urls), systemClock, signer);
     const random = Math.random;
     try {
       for (const fraction of [0, 0.999]) {
         // Exercise both selection boundaries without changing production randomness.
         Math.random = () => fraction;
-        coordinator.enqueue({ pre: subject.pre, route: "logs", q: {} });
-        yield* coordinator.processPending();
+        inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
+        yield* inquisitor.processPending();
       }
       Math.random = random;
-      coordinator.enqueue({ pre: subject.pre, src: peers[2].pre, route: "ksn", q: {} });
-      coordinator.enqueue({ pre: "unknown-subject", wits: [peers[2].pre], route: "logs", q: {} });
-      yield* coordinator.processPending();
-      yield* coordinator.deliverOnce();
+      inquisitor.enqueue({ pre: subject.pre, src: peers[2].pre, route: "ksn", q: {} });
+      inquisitor.enqueue({ pre: "unknown-subject", wits: [peers[2].pre], route: "logs", q: {} });
+      yield* inquisitor.processPending();
+      yield* inquisitor.deliverOnce();
       const sent = messages.map((msg, index) => ({
         url: urls[index],
         src: (new SerderKERI({ raw: msg }).ked?.q as Record<string, unknown>).src,
@@ -417,7 +420,7 @@ Deno.test("ordinary inquiries randomly choose within the first eligible role and
       assertEquals(sent.slice(2), [addressed, addressed]);
     } finally {
       Math.random = random;
-      yield* coordinator.close();
+      yield* inquisitor.close();
       yield* hby.close(true);
     }
   });
@@ -431,21 +434,58 @@ Deno.test("selected roles keep missing locations visible instead of promoting an
     hby.db.ends.pin([subject.pre, Roles.agent, agent.pre], { allowed: true });
     hby.db.locs.pin([agent.pre, "http"], { url: "http://agent.query.test/" });
     const messages: Uint8Array[] = [];
-    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, signer);
+    const inquisitor = new WitnessInquisitor(hby, protocolFixture(hby), queryHttp(messages), systemClock, signer);
     try {
-      coordinator.enqueue({ pre: subject.pre, route: "logs", q: {} });
+      inquisitor.enqueue({ pre: subject.pre, route: "logs", q: {} });
       assertEquals(subject.endsFor(subject.pre)[Roles.controller], { [subject.pre]: {} });
       yield* call(() =>
-        assertRejects(() => run(() => coordinator.processPending()), ValidationError, "No endpoint URL")
+        assertRejects(() => run(() => inquisitor.processPending()), ValidationError, "No endpoint URL")
       );
-      assertEquals([coordinator.pending.length, messages.length], [1, 0]);
+      assertEquals([inquisitor.pending.length, messages.length], [1, 0]);
       // A cut is retained in storage but excluded from routing; the agent can now answer.
       hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: false });
-      yield* coordinator.processPending();
-      yield* coordinator.deliverOnce();
+      yield* inquisitor.processPending();
+      yield* inquisitor.deliverOnce();
       assertEquals((new SerderKERI({ raw: messages[0] }).ked?.q as Record<string, unknown>).src, agent.pre);
     } finally {
-      yield* coordinator.close();
+      yield* inquisitor.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("independent key-state workflows both consume the same saved-state publication", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
+    const messages: Uint8Array[] = [];
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
+    try {
+      yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
+      runtime.cues.clear();
+      seedControllerEndpoint(hby, subject.pre);
+      const first = yield* spawn(() =>
+        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
+          signer: sender.pre,
+        }).queryDo()
+      );
+      const second = yield* spawn(() =>
+        new KeyStateNoticer(hby.db, runtime.querying, subject.pre, runtime.keyStateUpdates, {
+          signer: sender.pre,
+        }).queryDo()
+      );
+      yield* runtime.querying.processPending();
+      yield* runtime.querying.deliverOnce();
+      assertEquals(messages.map(wire => new SerderKERI({ raw: wire }).route), ["ksn", "ksn"]);
+      runtime.cues.push({ kin: "keyStateSaved", ksn: subject.kever!.state() });
+      yield* processCuesOnce(runtime, { hab: sender });
+      yield* first;
+      yield* second;
+      assertEquals(hby.db.getKever(subject.pre)?.said, subject.kever!.said);
+    } finally {
+      yield* runtime.close();
+      yield* remote.close(true);
       yield* hby.close(true);
     }
   });

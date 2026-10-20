@@ -15,7 +15,7 @@ required component arguments. MailboxPoller owns its concrete HTTP/SSE request
 operation; there is no separately injected polling strategy. Requests carry data
 rather than collaborator bundles.
 Choose concrete dependencies at construction; no parent-runtime discovery in
-Respondant, QueryCoordinator, Anchorer, receipt owners or lower TCP transport.
+Respondant, WitnessInquisitor, Anchorer, receipt owners or lower TCP transport.
 
 runAgentRuntime and runAgentRuntimeUntil use the same workers. Finite completion
 observes accepted state and elapsed deadlines, then joins work before store close.
@@ -57,7 +57,7 @@ the earlier WebOfTrust 1.2.14 Directant drops queued input at EOF.
 Kever returns decision/follow-up data; Kevery applies KEL policy, Revery owns BADA
 and reply escrows, Oobiery owns introduction jobs. Three cue scopes remain distinct:
 Habery-local, runtime protocol output before reply capture, and application routing.
-Composition routes query to QueryCoordinator, stream to MailboxDirector, and reply/
+Composition routes query to WitnessInquisitor, stream to MailboxDirector, and reply/
 receipt/replay work to Respondant/Hab interpretation. A Deck is not broadcast.
 See the [cue graph](../../docs/design-docs/runtime/CUES.md).
 
@@ -127,7 +127,11 @@ Unexpected construction/storage/parser/cleanup errors publish/report then propag
 No final-packet cache, manual reply cursor or cross-batch fairness remains.
 The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) defines
 current behavior; Git and PR checks retain implementation evidence.
-QueryCoordinator owns plain requests and signed packets. HTTPQuery owns its signed
+WitnessInquisitor owns plain requests and signed packets, never workflow observers.
+Concrete query operations own accepted-state waits; the composition routes live
+key-state facts through an Effection channel. Runtime pending state describes
+sending, while the invoking operation represents active semantic work. Tufa owns
+query command composition and final display after close. Private HTTPQuery retains its signed
 POST/CESR/SSE response scope; send-only HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message

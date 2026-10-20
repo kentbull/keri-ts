@@ -13,7 +13,7 @@ on:
 - `KeyStateNoticer` / `LogQuerier` / `SeqNoQuerier` / `AnchorQuerier`
 - `/ksn/{aid}` reply handling
 - `/watcher/{aid}/{action}` reply handling
-- ownership boundaries across `QueryCoordinator`, `Kevery`, `Revery`,
+- ownership boundaries across `WitnessInquisitor`, `Kevery`, `Revery`,
   `Hab.processCuesIter()`, and `AgentRuntime`
 
 It does not try to re-explain the whole cue system. For the broader cue
@@ -36,11 +36,13 @@ GLEIF-IT `b8626e1d`, recorded in the [runtime contract](INGRESS_AND_EGRESS.md).
   - KEL query routes such as `logs`, `ksn`, and `mbx`
   - KEL-owned reply families such as `/ksn/{aid}` and `/watcher/{aid}/{action}`
   - `keyStateSaved` cues and query-not-found escrow
-- `QueryCoordinator` owns:
+- `WitnessInquisitor` owns:
   - the runtime correspondence step between incomplete `query` cues and honest
     outbound `qry` messages
-  - KERIpy-style continuations that wait on remote key state or local catch-up
   - local habitat and remote-attester resolution for runtime-generated queries
+- Concrete query workflows own:
+  - their initial request, accepted-state/cue observation and scoped completion
+  - KSN-to-logs follow-on work; the sender has no workflow registry
 - `Hab.processCuesIter()` owns:
   - cue-to-wire interpretation for already-complete cues
   - message materialization once a cue already has the source and destination
@@ -63,7 +65,7 @@ The most important boundary is this:
 - incomplete `query` cues are correspondence requests
 - complete `query` cues are wire-ready cue interpretations
 
-## Why `QueryCoordinator` Exists
+## Why `WitnessInquisitor` Exists
 
 KERIpy spreads this behavior across `querying.py`, `agenting.py`, and cue
 producers such as `routing.py` and `eventing.py`.
@@ -81,40 +83,40 @@ teach the wrong mental model. Habitat cue interpretation should not guess:
 - which role endpoint should be queried
 - whether a watcher override should be used
 
-`QueryCoordinator` exists to keep that policy above the cue-to-wire seam.
+`WitnessInquisitor` exists to keep that policy above the cue-to-wire seam.
 
 ## KERIpy To `keri-ts` Correspondence
 
 **`app/querying.py::KeyStateNoticer`**
 
 - KERIpy role: start with `ksn`, then wait for `keyStateSaved`, then escalate to log query if remote is ahead
-- `keri-ts` role: `KeyStateNoticer` continuation hosted by `QueryCoordinator`
+- `keri-ts` role: `KeyStateNoticer` scoped operation
 
 **`app/querying.py::LogQuerier`**
 
 - KERIpy role: query logs until local accepted state reaches target `sn`
-- `keri-ts` role: `LogQuerier` continuation
+- `keri-ts` role: `LogQuerier` scoped operation
 
 **`app/querying.py::SeqNoQuerier`**
 
 - KERIpy role: query logs until local state reaches a requested sequence number
-- `keri-ts` role: `SeqNoQuerier` continuation
+- `keri-ts` role: `SeqNoQuerier` scoped operation
 
 **`app/querying.py::AnchorQuerier`**
 
 - KERIpy role: query logs until an event seal anchor appears locally
-- `keri-ts` role: `AnchorQuerier` continuation
+- `keri-ts` role: `AnchorQuerier` scoped operation
 
 **`app/agenting.py::WitnessInquisitor.query(...)`**
 
 - KERIpy role: choose endpoint target and send query later
-- `keri-ts` role: `QueryCoordinator` resolves signer/attester and prepares exact
+- `keri-ts` role: `WitnessInquisitor` resolves signer/attester and prepares exact
   packets in `enqueueCue()` / `processPending()`; `deliverOnce()` owns response I/O
 
 **`core/routing.py` missing-signer cue**
 
 - KERIpy role: ask for signer establishment state when reply verification is blocked
-- `keri-ts` role: `Revery` emits incomplete `query` cue, then `QueryCoordinator` resolves and sends it
+- `keri-ts` role: `Revery` emits incomplete `query` cue, then `WitnessInquisitor` resolves and sends it
 
 **`core/eventing.py::processReplyKeyStateNotice`**
 
@@ -154,10 +156,10 @@ filters, ksn accepts sequence/FEL filters, and tels/tsn require registry and cre
 identifiers. The target appears once in the envelope. QueryRequest shares this
 routed record with QueryCue; signer is the local AID, while src is the remote
 attester. Continuations and pending work carry identifiers, not Hab references.
-The existing coordinator resolves an explicit selection through Habery at signing;
+The sender resolves an explicit selection through Habery at signing;
 an unavailable selection remains unresolved and never falls back to another Hab.
 A Hab interpreting a cue selected for another signer leaves it to correspondence.
-The runtime router sends all query cues to QueryCoordinator; its resolved requests
+The runtime router sends all query cues to WitnessInquisitor; its resolved requests
 use Hab.query. Direct component callers can still interpret already-resolved cues
 through Hab.processCuesIter.
 Anchorer's query dependency is only a QueryRequest enqueue port; composition owns the consuming
@@ -197,17 +199,19 @@ Complete cue:
 
 Maintainer rule:
 
-- if a `query` cue still needs policy, it belongs to `QueryCoordinator`
+- if a `query` cue still needs policy, it belongs to `WitnessInquisitor`
 - if it only needs message construction, it belongs to `Hab.processCuesIter()`
 
 ## Query and cue source ownership
 
 Composition routes the actual source queue directly to query, mailbox and reply
 owners. CueSink, its optional preparation/admission hooks and root adapters are
-deleted. Respondant and QueryCoordinator do not receive the parent runtime or
+deleted. Respondant and WitnessInquisitor do not receive the parent runtime or
 discover its siblings.
-QueryCoordinator's processPending/queryDo operations own their local pending
-state without an AgentRuntime argument or a generic callback scheduler.
+WitnessInquisitor's preparation and delivery operations own ordinary pending
+send work. Concrete workflows borrow accepted state and a sender; live
+key-state facts arrive through the composition's Effection channel. Each operation
+owns its observation and follow-on work without a runtime registry or callbacks.
 
 Query preparation, signing and admission are synchronous operations over accepted
 state published by its processing owner after commit. They do not suspend between
@@ -228,9 +232,9 @@ pass; no reply cursor survives delivery passes. Failed outcomes preserve origina
 causes and partial success for actual observers. Poster reports unobserved or
 abandoned failures without retaining a recovery backlog; no retry/discard API or
 automatic retry remains.
-QueryCoordinator remains separate and keeps its existing continuation/response
-ownership. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
-QueryCoordinator prepares its signed packets directly without public custom-emission
+WitnessInquisitor owns sending independently of workflow completion. Private
+HTTP response processing remains until the following behavior cut. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
+WitnessInquisitor prepares its signed packets directly without public custom-emission
 or raw-packet injection. Internal address selection stays private.
 After the signer-identifier refactor, pending queries use one private ordinary
 Deck of plain QueryRequest records with read-only inspection. Metadata reservation
@@ -266,7 +270,7 @@ approval) remain excluded. Current KEL witnesses are independent of end-role row
 
 ## Habitat Resolution Contract
 
-`QueryCoordinator` resolves the signing habitat in this order:
+`WitnessInquisitor` resolves the signing habitat in this order:
 
 1. explicit local `signer` AID on the request, resolved from Habery
 2. coordinator-configured `hab`
@@ -324,10 +328,13 @@ Why this is not generic `Revery` ownership:
 - persistence touches KEL-adjacent watcher stores with their own meaning
 - route semantics live with the subsystem that owns those records
 
-## Continuation Semantics
+## Scoped workflow semantics
 
-The continuations mirror KERIpy's query doers, but they are hosted inside a
-runtime-owned coordinator instead of as independent HIO doers.
+Concrete operations mirror KERIpy's query doers. Their invoking scopes own
+progress and cleanup; the sender does not register, tick or count workflows.
+Key-state consumers subscribe before sending. Composition publishes saved-state
+records to their Effection channel, so one observer cannot steal another
+observer's notice. Sequence and anchor operations read accepted database state.
 
 `KeyStateNoticer`
 
@@ -370,31 +377,25 @@ runtime runner so an empty long poll at one mailbox cannot postpone query
 transmission or polling another endpoint until the command deadline. It halts
 and joins those workers before printing state and closing its stores.
 
-## Runtime Convergence Rule
+## Runtime convergence
 
-`queriesPending` is part of `runtimePendingState()`.
-
-Why:
-
-- query continuations may owe a follow-on `logs` query after a `keyStateSaved`
-  cue
-- local runtime work can still be incomplete even when ingress, cues, and OOBI
-  queues are empty
-
-Without `queriesPending`, finite commands or focused runtime tests can terminate
-while the correspondence layer still has unfinished work.
+`queriesPending` in `runtimePendingState()` describes deferred requests, signed
+packets and active transport. It does not represent an independent semantic wait.
+A finite command awaits its concrete workflow under its own deadline and joins
+that operation and the host workers before stores close. Tufa captures the final
+accepted-state display while the store is open and prints it after closure.
 
 ## Maintainer Checklist
 
 When changing this area, confirm:
 
-- does the branch belong to `Revery`, `Kevery`, or `QueryCoordinator`?
+- does the branch belong to `Revery`, `Kevery`, or `WitnessInquisitor`?
 - is the cue incomplete or complete?
 - does the runtime have enough information to choose a habitat honestly?
 - is endpoint selection deterministic and documented?
 - if a watcher or `/ksn` route changes, are the durable stores and trust rules
   still explicit?
-- if a new continuation is added, does `queriesPending` still reflect it?
+- does the invoking scope await accepted evidence and join its workflow before closing stores?
 
 ## Related Docs
 

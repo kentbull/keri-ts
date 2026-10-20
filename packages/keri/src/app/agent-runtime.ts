@@ -1,6 +1,6 @@
-import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
+import { call, type Channel, createChannel, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../acdc/registraring.ts";
-import type { AgentCue } from "../core/cues.ts";
+import type { AgentCue, KeyStateSavedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../core/errors.ts";
@@ -42,13 +42,13 @@ import { noterOptionsForHabery, Notifier } from "./notifying.ts";
 import { isWellKnownOobiUrl, loadOobiHandlers, Oobiery, type OobiJob, parseOobiUrl } from "./oobiery.ts";
 import { ProtocolProcessor } from "./protocol-processing.ts";
 import { QueryReplies } from "./query-replies.ts";
-import { QueryCoordinator } from "./querying.ts";
 import { Reactor } from "./reactor.ts";
 import { ReplyStreams } from "./reply-streams.ts";
 import { Respondant } from "./respondant.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
+import { WitnessInquisitor } from "./witness-inquisitor.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 
@@ -102,8 +102,10 @@ export interface AgentRuntime {
   postman: Poster;
   /** Delegation workflow state and delivery/accepted-state gates. */
   delegating: Anchorer;
-  /** Query continuation and request-delivery owner; independent of Poster. */
-  querying: QueryCoordinator;
+  /** Background query sender; semantic workflows belong to their invoking operations. */
+  querying: WitnessInquisitor;
+  /** Live saved key-state facts for independently scoped query workflows. */
+  keyStateUpdates: Channel<KeyStateSavedCue, void>;
   /** Live lazy HTTP replies, closed before their database owners. */
   replyStreams: ReplyStreams;
   /** Concrete legacy TEL/credential owner; absent for a readonly Habery without an injected store. */
@@ -366,12 +368,20 @@ export function* createAgentRuntime(
   ) {
     mailboxDirector.registerTopic(topic);
   }
-  const querying = yield* resource<QueryCoordinator>(function*(provide) {
-    const coordinator = new QueryCoordinator(hby, protocol, http, clock);
+  const querying = yield* resource<WitnessInquisitor>(function*(provide) {
+    const inquisitor = new WitnessInquisitor(hby, protocol, http, clock);
     try {
-      yield* provide(coordinator);
+      yield* provide(inquisitor);
     } finally {
-      yield* coordinator.close();
+      yield* inquisitor.close();
+    }
+  });
+  const keyStateUpdates = yield* resource<Channel<KeyStateSavedCue, void>>(function*(provide) {
+    const updates = createChannel<KeyStateSavedCue>();
+    try {
+      yield* provide(updates);
+    } finally {
+      yield* updates.close();
     }
   });
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
@@ -397,6 +407,7 @@ export function* createAgentRuntime(
     postman,
     delegating,
     querying,
+    keyStateUpdates,
     replyStreams,
     vdr,
     acdc,
@@ -427,6 +438,7 @@ export function* createAgentRuntime(
           yield* call(() => mailboxDirector.close());
         },
         function*() {
+          yield* keyStateUpdates.close();
           cues.clear();
         },
         function*() {
@@ -613,9 +625,8 @@ export function* settleMailboxPollBatch(
 /**
  * Return the current pending-work summary for bounded command-local hosts.
  *
- * `queriesPending` is part of convergence because query continuations may still
- * owe a follow-on `logs` query or local catch-up wait after normal cue decks
- * and ingress have drained.
+ * `queriesPending` describes the background sender only. A concrete workflow
+ * remains active in its invoking operation until its accepted-state predicate holds.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @returns Current selected work summary; retained Poster failures/completion cues do not imply pending delivery.
@@ -777,7 +788,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * Start the independently progressing runtime workers and suspend until halted.
  * Compose query delivery, Poster delivery, cue routing,
  * ProtocolProcessor escrows, OOBI/authentication, optional notice/mailbox workers,
- * delegation and query continuations. The finalizer halts children in reverse
+ * delegation and ordinary query sending. The finalizer halts children in reverse
  * order; store ownership remains with the composition scope.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
@@ -792,12 +803,7 @@ export function* runAgentRuntime(
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab });
   const tasks = [
-    yield* spawn(function*() {
-      while (true) {
-        yield* runtime.querying.deliverOnce();
-        yield* runtimeTurn();
-      }
-    }),
+    yield* spawn(() => runtime.querying.deliverDo()),
     yield* spawn(() => runtime.postman.deliverDo()),
     yield* spawn(function*() {
       yield* cueDo(runtime, options);
@@ -831,9 +837,7 @@ export function* runAgentRuntime(
         yield* runtimeTurn();
       }
     }),
-    yield* spawn(function*() {
-      yield* runtime.querying.queryDo();
-    }),
+    yield* spawn(() => runtime.querying.msgDo()),
   ];
   try {
     return yield* suspend();

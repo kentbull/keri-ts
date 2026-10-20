@@ -224,12 +224,6 @@ Deno.test("two request reservations survive an interleaved background cue drain"
     const replayA: ReplayCue = { kin: "replay", querySaid: "query-a", msgs: [Uint8Array.of(1)] };
     const replayB: ReplayCue = { kin: "replay", querySaid: "query-b", msgs: [Uint8Array.of(2)] };
     const ordinary: ReplayCue = { kin: "replay", msgs: [Uint8Array.of(3)] };
-    const seen: AgentCue[] = [];
-    const observe = runtime.querying.observeCue.bind(runtime.querying);
-    runtime.querying.observeCue = (cue) => {
-      seen.push(cue);
-      observe(cue);
-    };
     try {
       reactor.protocol.exc.processEscrows = function*() {
         reactor.kvy.cues.push(replayB);
@@ -241,11 +235,12 @@ Deno.test("two request reservations survive an interleaved background cue drain"
       const producing = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       yield* call(() => ready.wait);
       yield* processCuesOnce(runtime);
-      assertEquals(seen, [], "unfinished protocol output is not exposed to application consumers");
+      assertEquals(runtime.cues.toArray(), [], "unfinished protocol output is not exposed to application consumers");
       release.open();
       yield* producing;
+      assertEquals(runtime.cues.toArray(), [ordinary]);
       yield* processCuesOnce(runtime);
-      assertEquals(seen, [ordinary]);
+      assertEquals(runtime.cues.empty, true);
       assertStrictEquals(first.takeAll()?.cues[0], replayA);
       assertStrictEquals(second.takeAll()?.cues[0], replayB);
     } finally {
@@ -311,28 +306,28 @@ Deno.test("dispatch returns mailbox authorization from its exact protocol state"
   });
 });
 
-Deno.test("cue routing keeps its initial extent when owner observation appends more work", async () => {
+Deno.test("cue routing keeps its initial extent when query admission appends more work", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-    const observe = runtime.querying.observeCue.bind(runtime.querying);
+    const enqueue = runtime.querying.enqueueCue.bind(runtime.querying);
     try {
       for (const withHab of [false, true]) {
         const hab = withHab ? hby.makeHab("recipient") : undefined;
-        runtime.cues.push({ kin: "oobiQueued", url: "https://example.test/first" });
+        runtime.cues.push({ kin: "query", pre: "first", route: "logs", q: {} });
         let observed = 0;
-        runtime.querying.observeCue = (cue) => {
+        runtime.querying.enqueueCue = (cue, signer) => {
           observed++;
-          observe(cue);
-          runtime.cues.push({ kin: "oobiQueued", url: "https://example.test/next" });
+          enqueue(cue, signer);
+          runtime.cues.push({ kin: "query", pre: "next", route: "logs", q: {} });
         };
         yield* processCuesOnce(runtime, { hab });
         assertEquals([observed, runtime.cues.length], [1, 1]);
         runtime.cues.clear();
-        runtime.querying.observeCue = observe;
+        runtime.querying.enqueueCue = enqueue;
       }
     } finally {
-      runtime.querying.observeCue = observe;
+      runtime.querying.enqueueCue = enqueue;
       yield* runtime.close();
       yield* hby.close(true);
     }

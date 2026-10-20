@@ -1,4 +1,4 @@
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
@@ -19,6 +19,7 @@ import {
   createHabery,
 } from "../../../src/app/habbing.ts";
 
+import { SeqNoQuerier } from "../../../src/app/querying.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 
 /** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
@@ -358,16 +359,20 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
               signer: sender.pre,
               wits: [remoteWitness.pre],
             });
-          const waiting = runtime.querying.watchSeqNo(remoteController.pre, 1, {
-            signer: sender.pre,
-            wits: [remoteWitness.pre],
+          let accepted = false;
+          const waiting = yield* spawn(function*() {
+            yield* new SeqNoQuerier(hby.db, runtime.querying, remoteController.pre, 1, {
+              signer: sender.pre,
+              wits: [remoteWitness.pre],
+            }).queryDo();
+            accepted = true;
           });
           yield* runtime.querying.processPending();
           assertEquals(tcpConnections, 0, "guarded query preparation performs no network I/O");
           yield* runtime.querying.deliverOnce();
           assertEquals(runtime.querying.hasPendingDelivery, false);
           assertEquals(hby.db.getKever(remoteController.pre)?.sn, 0, "TCP drain does not satisfy the query");
-          assertEquals(waiting.done, false);
+          assertEquals(accepted, false);
           remoteHby.db.wigs.put(
             [remoteController.pre, remoteController.kever!.said],
             remoteWitness.sign(remoteController.kever!.serder.raw, true),
@@ -383,7 +388,8 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             "signed TCP replay passes Kevery before state advances",
           );
           yield* runtime.querying.processPending();
-          assertEquals(waiting.done, true, "the sequence continuation observes verified accepted state");
+          yield* waiting;
+          assertEquals(accepted, true, "the sequence workflow observes verified accepted state");
           assertEquals(
             runtime.cues.toArray().map((cue) =>
               cue.kin === "receipt"
