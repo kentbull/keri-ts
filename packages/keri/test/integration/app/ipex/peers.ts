@@ -85,6 +85,7 @@ export interface IpexPeer {
   readonly info: PeerInfo;
   connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void>;
   send(verb: Verb, prior?: string, invalid?: boolean | DisclosureDefect): Promise<string>;
+  historicalGrant(): Promise<string>;
   invalidReply(verb: "grant" | "spurn", prior: string, defect: ReplyDefect): Promise<{ said: string; sender: string }>;
   replay(said: string): Promise<void>;
   snapshot(inspect?: string): Promise<PeerSnapshot>;
@@ -240,6 +241,44 @@ class TypeScriptPeer implements IpexPeer {
     return await this.deliver(frame, !invalid);
   }
 
+  /** Deliver a fresh grant only after both peers know its anchorer's subsequent rotation. */
+  async historicalGrant(): Promise<string> {
+    assertExists(this.remote);
+    const node = this.disclosed(false)[0];
+    const anchor = (said: string) => {
+      this.hab.interact({ data: [{ d: said }] });
+      return {
+        i: new Prefixer({ qb64: this.hab.pre }),
+        s: this.hab.kever!.sner,
+        d: new Diger({ qb64: this.hab.kever!.said }),
+      };
+    };
+    const childSeal = anchor(node.said!);
+    const body = ipexExnBody(this.hab.pre, "/ipex/grant", [node], {
+      message: "anchored before rotation",
+      recipient: this.remote.pre,
+      xid: node.said!,
+      plan: this.plan,
+      anchor: true,
+    });
+    const grantSeal = anchor(body.said!);
+    this.hab.rotate();
+    for (let sn = Number(childSeal.s.num); sn <= this.hab.kever!.sn; sn++) {
+      const wire = acceptedEventReplayMessage(this.hby, this.hab.pre, sn, Vrsn_2_0).message;
+      for (const frame of parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire))) await this.post(frame);
+    }
+    return await this.deliver({
+      body,
+      gvrsn: Vrsn_2_0,
+      attachments: messageAttachmentGroups({ sourceSeals: [grantSeal] }, Vrsn_2_0),
+      nests: [{
+        body: node,
+        gvrsn: Vrsn_2_0,
+        attachments: messageAttachmentGroups({ sourceSeals: [childSeal] }, Vrsn_2_0),
+      }],
+    }, true);
+  }
+
   /** Local protocol processing and public delivery share the same signed frame. */
   private async deliver(frame: CesrFrame, accepted: boolean): Promise<string> {
     const wire = await collectPayload(framePayload(frame));
@@ -344,6 +383,9 @@ class PythonPeer implements IpexPeer {
   }
   send(verb: Verb, prior?: string, invalid: boolean | DisclosureDefect = false): Promise<string> {
     return this.command("send", { verb, prior, invalid });
+  }
+  historicalGrant(): Promise<string> {
+    return this.command("historical_grant", {});
   }
   invalidReply(verb: "grant" | "spurn", prior: string, defect: ReplyDefect): Promise<{ said: string; sender: string }> {
     return this.command("invalid_reply", { verb, prior, defect });

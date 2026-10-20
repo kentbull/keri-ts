@@ -23,6 +23,10 @@ previously verified proofs without using them to authenticate a fresh input. `ve
 anchor in historical interaction events; signature groups require establishment
 keys. Resolve known last references before escrow so rotation cannot reinterpret
 saved signatures. Parent evidence never authenticates a child.
+IPEX retains verified historical grant seals across rotation, matching main
+`c7e74ad`. Shared proof verification binds the exact accepted KEL coordinate and
+grant SAID; route selection must not impose current-establishment freshness on
+that commitment. Supplemental signatures still require current establishment keys.
 
 Strict missing extras query/reject without creating escrow. Missing sender source
 state escrows only for opted-in routes; MissingSignatureError counterparts preserve

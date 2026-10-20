@@ -75,6 +75,22 @@ async function assertConversation({ issuer, holder, plan }: IpexPeers, verbs: Ve
 }
 
 for (const issuer of ["TypeScript", "KERIpy"] as const) {
+  Deno.test(`IPEX ${issuer} issuer: historical anchor survives rotation before first grant delivery`, () =>
+    withIpexPeers({ issuer }, async ({ issuer, holder }) => {
+      const said = await issuer.historicalGrant();
+      await observed(
+        `${holder.implementation} accepted historically anchored grant`,
+        async () => (await holder.snapshot()).messages.find((message) => message.d === said),
+      );
+      for (const peer of [issuer, holder]) {
+        const snapshot = await peer.snapshot(said);
+        assertEquals(snapshot.inspected?.accepted, true);
+        assertEquals(snapshot.inspected?.escrowed, false);
+        if (snapshot.notifications !== undefined) assertEquals(snapshot.notifications, 1);
+        assertEquals(snapshot.nodes[0].said, issuer.info.commitment);
+      }
+    }));
+
   Deno.test(`IPEX ${issuer} issuer: apply → offer → agree → grant → admit`, () =>
     withIpexPeers({ issuer }, async (peers) => {
       const { issuer, holder } = peers;

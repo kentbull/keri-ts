@@ -28,6 +28,12 @@ proofs in its existing escrow, retries from persisted children, and notifies onl
 after acceptance. Replay preserves child proof enclosures. An accepted grant
 is conversation evidence; nested nodes are not independent credential or wallet
 acceptances. Schema resolution uses already cached schemas, without fetching.
+Historical grant source seals remain valid after later rotations: the referenced
+accepted KEL event must commit to that exact grant SAID. Exchanger verifies these
+coordinates before route selection; the IPEX handler retains those seals and
+prefers them to signatures from the same AID. Supplemental transferable signatures
+still require the endorser's current establishment keys. This matches main
+`c7e74ad`; rotation does not erase a permanent KEL commitment.
 The separately pinned 71438328 profile validates every carried metadata-offer
 node without demanding withheld issuer proofs. Grants verify disclosure, then
 every issuer, own-node schemas, edge semantics/schema pins, and presentation

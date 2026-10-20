@@ -16,7 +16,7 @@ from keri import Kinds, Vrsn_2_0
 from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.core import Diger, Kevery, Number, Parser, SerderACDC, exchange, messagize
+from keri.core import Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage
 
@@ -159,6 +159,21 @@ class IpexPeer:
         self.post(wire)
         return body.said
 
+    def historical_grant(self):
+        """Anchor child/grant, rotate, then deliver untouched evidence for the first time."""
+        node = self.disclosed()[0]
+        self.hab.interact(data=[dict(d=node.said)], gvrsn=Vrsn_2_0)
+        first_sn = self.hab.kever.sn
+        child = messagize(node, bonds=SealSource(s=self.hab.kever.sner.snh,
+                                               d=self.hab.kever.serder.said),
+                          nested=True, gvrsn=Vrsn_2_0)
+        body, attachments = grant(self.hab, self.remote["pre"], "anchored before rotation",
+                                  origin=child, ax=[True], modifiers=dict(dp=[self.plan]))
+        self.hab.rotate(version=Vrsn_2_0, gvrsn=Vrsn_2_0)
+        for sn in range(first_sn, self.hab.kever.sn + 1):
+            self.post(self.hab.msgOwnEvent(sn=sn, framed=True, gvrsn=Vrsn_2_0))
+        return self.deliver(body, bytes(body.raw + attachments), True)
+
     def invalid_reply(self, verb, prior, defect):
         """Use normal factories/signers for protocol-invalid replies the high-level builders refuse."""
         previous = self.hby.db.exns.get(keys=(prior,))
@@ -218,6 +233,8 @@ class PeerControl:
                 rep.media = self.peer.invalid_reply(**command)
             elif action == "send":
                 rep.media = self.peer.send(**command)
+            elif action == "historical_grant":
+                rep.media = self.peer.historical_grant()
             elif action == "replay":
                 self.peer.replay(**command)
                 rep.media = dict(replayed=True)
