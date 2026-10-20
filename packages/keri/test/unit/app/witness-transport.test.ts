@@ -663,7 +663,7 @@ Deno.test("TCP source rejects overlapping pulls, errors and early close; abort a
   }
 });
 
-Deno.test("TCP conversation owns concurrent signed replies, directional failure and joined cancellation", async () => {
+Deno.test("TCP messenger owns concurrent signed replies, directional failure and joined cancellation", async () => {
   await run(function*() {
     const receiving = yield* createHabery({
       name: `tcp-replies-${crypto.randomUUID()}`,
@@ -762,12 +762,11 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           }
         };
         const task = run(function*() {
-          const result = yield* new TCPMessenger(runtime.protocol, options.clock).stream(url, source, {
+          yield* new TCPMessenger(runtime.protocol, options.clock).stream(url, source, {
             ...options,
             replies: true,
           });
           continued = true;
-          return result;
         });
         // Bound every deliberately blocked peer/source fixture without keeping a timer after it resolves.
         let timer: ReturnType<typeof setTimeout> | undefined;
@@ -806,12 +805,9 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
                 "reply activity cannot refresh the half-close deadline",
               );
             } else {
-              const result = yield* call(() => Promise.resolve(task));
-              assertEquals(result, {
-                kind: "conversationDrained",
-                transmission: { kind: "transmitted", bytes: 2 },
-                receive: { kind: "eof", processedFrames: 1 },
-              });
+              yield* call(() => Promise.resolve(task));
+              assertEquals(continued, true);
+              assertEquals(receiving.db.getKever(sender.pre)?.sn, expectedSn);
               yield* call(() => promptly(peerEOF.promise));
               assertEquals(received, 2, "peer RX EOF does not end local TX");
             }
@@ -903,6 +899,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
 Deno.test("TCP output freezes its drain deadline and preserves source and cleanup failures", async () => {
   const sockets = new Set<Socket>();
   let received = 0, finish = false;
+  const receivedBytes: number[] = [];
   let receivedEnough: (() => void) | undefined;
   const peerEOF = Promise.withResolvers<void>();
   const waitForReceived = (total: number) =>
@@ -918,6 +915,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
     socket.once("close", () => sockets.delete(socket));
     socket.on("data", (bytes) => {
       received += bytes.length;
+      receivedBytes.push(...bytes);
       receivedEnough?.();
     });
     socket.once("end", () => {
@@ -929,22 +927,19 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
   const http = new FetchHttpClient(), clock = systemClock;
   try {
-    assertEquals(
-      await run(() =>
-        streamCesrTcp(
-          url,
-          async function*() {
-            await new Promise((resolve) => setTimeout(resolve, 30));
-            yield Uint8Array.of(1, 2);
-          },
-          clock,
-          { drainTimeoutMs: 10 },
-        )
-      ),
-      { kind: "transmitted", bytes: 2 },
+    await run(() =>
+      streamCesrTcp(
+        url,
+        async function*() {
+          await new Promise((resolve) => setTimeout(resolve, 30));
+          yield Uint8Array.of(1, 2);
+        },
+        clock,
+        { drainTimeoutMs: 10 },
+      )
     );
     await peerEOF.promise;
-    assertEquals(received, 2, "active production outlives the later drain deadline");
+    assertEquals(receivedBytes, [1, 2], "active production outlives the later drain deadline");
     assertEquals(
       [...sockets].some((socket) => !socket.writableEnded),
       true,
@@ -1082,34 +1077,27 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
       }
     }
     finish = true;
-    assertEquals(await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), clock)), {
-      kind: "transmitted",
-      bytes: 2,
-    });
+    await run(() => sendCesrTcp(url, Uint8Array.of(3, 4), clock));
     await waitForReceived(4);
-    assertEquals(received, 4);
-    assertEquals(
-      await run(() =>
-        streamCesrTcp(url, async function*() {
-          for (let index = 0; index < 3; index++) yield Uint8Array.of(5, 6);
-        }, clock)
-      ),
-      { kind: "transmitted", bytes: 6 },
+    assertEquals(receivedBytes, [1, 2, 3, 4]);
+    await run(() =>
+      streamCesrTcp(url, async function*() {
+        for (let index = 0; index < 3; index++) yield Uint8Array.of(5, 6);
+      }, clock)
     );
     await waitForReceived(10);
-    assertEquals(received, 10);
+    assertEquals(receivedBytes, [1, 2, 3, 4, 5, 6, 5, 6, 5, 6]);
     const borrowed = createConnection({ host: "127.0.0.1", port: (server.address() as { port: number }).port });
     try {
       await new Promise<void>((resolve) => borrowed.once("connect", resolve));
       for (let index = 0; index < 2; index++) {
-        assertEquals(
-          await run(() =>
-            writeCesrTcpSocket(borrowed, async function*() {
-              yield Uint8Array.of(7, 8);
-            }, clock)
-          ),
-          { kind: "transmitted", bytes: 2 },
+        await run(() =>
+          writeCesrTcpSocket(borrowed, async function*() {
+            yield Uint8Array.of(7, 8);
+          }, clock)
         );
+        await waitForReceived(12 + index * 2);
+        assertEquals(receivedBytes.slice(-2), [7, 8]);
         assertEquals(borrowed.writableEnded, false, "a reply cannot end the next frame's output direction");
       }
       let succeeded = false;
@@ -1141,7 +1129,7 @@ Deno.test("TCP application composes raw duplex siblings over a real borrowed con
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
-    const result = await run(function*() {
+    await run(function*() {
       const connection = yield* openTcpConnection(
         `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
         systemClock,
@@ -1157,13 +1145,11 @@ Deno.test("TCP application composes raw duplex siblings over a real borrowed con
           }
         }, connection.signal)
       );
-      const sent = yield* sendCesrTcpSocket(connection, async function*() {
+      yield* sendCesrTcpSocket(connection, async function*() {
         yield Uint8Array.of(1, 2);
       }, clock);
       yield* read;
-      return sent;
     });
-    assertEquals(result, { kind: "transmitted", bytes: 2 });
     assertEquals(incoming, [...reply]);
     assertEquals(outgoing, [1, 2]);
     assertEquals(closed, true);

@@ -529,8 +529,7 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
   try {
-    const result = await run(() => sendCesrTcpFrame(url, frame, systemClock, { maxChunkBytes: 7 }));
-    assertEquals(result.kind, "transmitted");
+    await run(() => sendCesrTcpFrame(url, frame, systemClock, { maxChunkBytes: 7 }));
     const roundtrip = await received.promise;
     {
       for (const [actual, expected] of [[roundtrip, frame], [roundtrip.nests![0], child]]) {

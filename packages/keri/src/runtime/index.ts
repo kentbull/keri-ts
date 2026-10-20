@@ -92,10 +92,8 @@ export {
   type SocketSourceOptions,
 } from "../app/socket-source.ts";
 export {
-  type TCPConversation,
   TCPMessenger,
   type TCPMessengerOptions,
-  type TCPMessengerResult,
 } from "../app/tcp-messenger.ts";
 
 export {
@@ -108,7 +106,6 @@ export {
   type TcpSendOptions,
   type TcpSocketWriteOptions,
   type TcpSourceFactory,
-  type TcpTransmission,
   writeCesrTcpSocket,
 } from "../app/tcp-egress.ts";
 export { TransportError } from "../app/transport-error.ts";

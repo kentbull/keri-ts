@@ -25,23 +25,6 @@ export interface TcpSendOptions {
 /** Producer observes abort and joins cleanup on return. */
 export type TcpSourceFactory = (signal: AbortSignal) => AsyncIterable<Uint8Array> | Promise<AsyncIterable<Uint8Array>>;
 
-/**
- * Count bytes whose local write completion was observed.
- * This result does not prove remote parsing or acceptance. Owning send operations
- * join socket close; writeCesrTcpSocket only joins its source and leaves the
- * caller-owned writable half open.
- */
-export interface TcpTransmission {
-  /**
-   * Identifies local transmission completion, not a protocol receipt.
-   */
-  kind: "transmitted";
-  /**
-   * Sum of nonempty source chunks whose write callbacks and required drains completed.
-   */
-  bytes: number;
-}
-
 /** A borrowed real connection. Its owner joins close after application children stop. */
 export interface TcpConnection {
   /**
@@ -158,7 +141,7 @@ export function openTcpConnection(
  * @param bytes Resident signed wire bytes; chunking copies each outgoing segment.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
- * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @returns Local output completion after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
  * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
  */
 export function sendCesrTcp(
@@ -166,7 +149,7 @@ export function sendCesrTcp(
   bytes: Uint8Array,
   clock: RuntimeClock,
   options: TcpSendOptions = {},
-): Operation<TcpTransmission> {
+): Operation<void> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
   return streamCesrTcp(url, (signal) => chunkBytes(bytes, { signal, maxChunkBytes: cap }), clock, options);
 }
@@ -178,7 +161,7 @@ export function sendCesrTcp(
  * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
- * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @returns Local output completion after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
  * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
  */
 export function streamCesrTcp(
@@ -186,7 +169,7 @@ export function streamCesrTcp(
   source: TcpSourceFactory,
   clock: RuntimeClock,
   options: TcpSendOptions = {},
-): Operation<TcpTransmission> {
+): Operation<void> {
   return call(function*() {
     const connection = yield* openTcpConnection(url, clock, options);
     connection.socket.resume();
@@ -201,7 +184,7 @@ export function streamCesrTcp(
  * @param frame Borrowed parsed frame; serialization preserves its body and attachments without reparsing.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines.
- * @returns Locally flushed byte count after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
+ * @returns Local output completion after owned socket cleanup joins; no receive-EOF or protocol-acceptance guarantee.
  * @throws Source/serialization, transport, cancellation and cleanup errors propagate.
  */
 export function sendCesrTcpFrame(
@@ -209,7 +192,7 @@ export function sendCesrTcpFrame(
   frame: CesrFrame,
   clock: RuntimeClock,
   options: TcpSendOptions = {},
-): Operation<TcpTransmission> {
+): Operation<void> {
   const cap = positive(options.maxChunkBytes ?? 65536, "maxChunkBytes");
   return streamCesrTcp(
     url,
@@ -238,7 +221,7 @@ export interface TcpSocketWriteOptions {
  * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Optional cancellation for this write/source lifetime.
- * @returns Locally flushed byte count after source cleanup; caller still owns final socket close.
+ * @returns Local output completion after source cleanup; caller still owns final socket close.
  * @throws Source and write errors propagate; abort destroys the socket to interrupt pending output.
  */
 export function writeCesrTcpSocket(
@@ -246,16 +229,13 @@ export function writeCesrTcpSocket(
   factory: TcpSourceFactory,
   clock: RuntimeClock,
   { signal }: TcpSocketWriteOptions = {},
-): Operation<TcpTransmission> {
+): Operation<void> {
   return abortable(async (signal) => {
     /** Cancellation destroys the handle; the enclosing resource joins native close. */
     const destroy = () => socket.destroy();
     signal.addEventListener("abort", destroy, { once: true });
     try {
-      return {
-        kind: "transmitted",
-        bytes: await writeBorrowedSource(socket, factory, signal, clock, { fail: destroy }),
-      };
+      await writeBorrowedSource(socket, factory, signal, clock, { fail: destroy });
     } finally {
       signal.removeEventListener("abort", destroy);
     }
@@ -271,14 +251,14 @@ export function writeCesrTcpSocket(
  * @param factory Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Absolute drain timeout starting at source EOF; default 30000 milliseconds.
- * @returns Flushed bytes after local end and peer close, within the same drain deadline.
+ * @returns Completion after local end and peer close, within the same drain deadline.
  */
 export function sendCesrTcpSocket(
   connection: TcpConnection,
   factory: TcpSourceFactory,
   clock: RuntimeClock,
   options: Pick<TcpSendOptions, "drainTimeoutMs"> = {},
-): Operation<TcpTransmission> {
+): Operation<void> {
   return finishTcpOutput(connection, factory, clock, options, true);
 }
 
@@ -293,7 +273,7 @@ export function sendCesrTcpSocket(
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param options Absolute post-source-EOF drain timeout in milliseconds.
  * @param waitForPeer True for duplex: also await native close. False completes after local end.
- * @returns Local transmission count at the selected completion boundary.
+ * @returns Completion at the selected output boundary.
  */
 function finishTcpOutput(
   connection: TcpConnection,
@@ -301,7 +281,7 @@ function finishTcpOutput(
   clock: RuntimeClock,
   options: Pick<TcpSendOptions, "drainTimeoutMs">,
   waitForPeer: boolean,
-): Operation<TcpTransmission> {
+): Operation<void> {
   const timeout = positive(options.drainTimeoutMs ?? 30000, "drainTimeoutMs");
   return abortable(async (signal) => {
     let timer: RuntimeTimer | undefined;
@@ -311,7 +291,7 @@ function finishTcpOutput(
     const stop = () => connection.close(signal.reason);
     signal.addEventListener("abort", stop, { once: true });
     try {
-      const bytes = await writeBorrowedSource(connection.socket, factory, signal, clock, {
+      await writeBorrowedSource(connection.socket, factory, signal, clock, {
         fail: connection.close,
         /**
          * Start the absolute output-drain deadline only after the source reports EOF.
@@ -334,7 +314,6 @@ function finishTcpOutput(
       await interrupted(ending, signal);
       ending = undefined;
       if (waitForPeer) await interrupted(connection.closed, signal);
-      return { kind: "transmitted", bytes };
     } finally {
       if (signal.aborted) connection.close(signal.reason);
       await ending?.catch(() => undefined);
@@ -381,7 +360,7 @@ async function interrupted<T>(pending: Promise<T>, signal: AbortSignal): Promise
  * @param signal Owner cancellation, checked between pulls and native writes.
  * @param clock Borrowed clock for connection/drain deadlines and scheduler yields; durations are milliseconds.
  * @param hooks Optional owner notifications: eof runs on source exhaustion; fail interrupts the connection before cleanup joins.
- * @returns Bytes whose write callbacks and any backpressure drain completed.
+ * @returns Completion after write callbacks, backpressure drains and source cleanup.
  */
 async function writeBorrowedSource(
   socket: Socket,
@@ -389,13 +368,13 @@ async function writeBorrowedSource(
   signal: AbortSignal,
   clock: RuntimeClock,
   hooks: { eof?: () => void; fail?: (error: unknown) => void } = {},
-): Promise<number> {
+): Promise<void> {
   let iterator: AsyncIterator<Uint8Array> | undefined;
   let pendingRead: Promise<IteratorResult<Uint8Array>> | undefined;
   let pendingWrite: Promise<void> | undefined;
   let timer: RuntimeTimer | undefined;
   let failure: { error: unknown } | undefined;
-  let bytes = 0, work = 0;
+  let work = 0;
   /**
    * Join late failures without reporting the same read/write rejection twice.
    * @param error Rejection from outstanding source, iterator-return or native write cleanup.
@@ -461,7 +440,6 @@ async function writeBorrowedSource(
       } finally {
         socket.removeListener("drain", drain);
       }
-      bytes += part.value.length;
     }
   } catch (error) {
     failure = { error };
@@ -478,5 +456,4 @@ async function writeBorrowedSource(
     }
   }
   if (failure) throw failure.error;
-  return bytes;
 }

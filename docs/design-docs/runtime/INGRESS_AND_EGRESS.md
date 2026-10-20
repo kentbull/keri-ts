@@ -463,10 +463,12 @@ recognized peer failures close/report that connection. Infrastructure, invariant
 and cleanup failures reach the host owner. Shutdown stops acceptance, joins
 reads/dispatch/output and socket/listener close, then releases stores.
 
-`conversationDrained` means local TX plus processed RX EOF. `processedFrames`
-counts dispatch attempts, including ignored/rejected/escrowed input. Lower output
-reports only `transmitted`. Verified persisted receipts and protocol decisions
-establish acceptance; local drain or HTTP status cannot substitute for them.
+TCP sends return normal operation completion without byte/frame counters or result
+variants. Send-only completion joins local output and owned connection cleanup;
+reply mode also joins processed receive EOF. TCPMessenger.receiptDo composes the
+concurrent send/receive work corresponding to KERIpy receiptDo/msgDo. Verified
+persisted receipts and protocol decisions establish acceptance; local drain or
+HTTP status cannot substitute for them.
 
 ## Replay and database lifetime
 

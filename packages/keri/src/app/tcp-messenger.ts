@@ -13,29 +13,15 @@ import {
   streamCesrTcp,
   type TcpSendOptions,
   type TcpSourceFactory,
-  type TcpTransmission,
 } from "./tcp-egress.ts";
 
 /** Per-attempt choices; collaborators are required constructor dependencies. */
-export interface TCPMessengerOptions extends Omit<TcpSendOptions, "clock"> {
+export interface TCPMessengerOptions extends TcpSendOptions {
   /** Process same-socket replies through receive EOF; omitted completes local TX only. */
   replies?: boolean;
   /** Locally received witness/controller semantics for parsed protocol frames. */
   local?: boolean;
 }
-
-/** Local output plus processed receive EOF; neither proves remote protocol acceptance. */
-export interface TCPConversation {
-  /** Both directions reached their explicitly requested completion boundary. */
-  kind: "conversationDrained";
-  /** Actual locally flushed transmission, independently of receipt verification. */
-  transmission: TcpTransmission;
-  /** Actual receive exhaustion and count of frames handed to protocol processing. */
-  receive: { kind: "eof"; processedFrames: number };
-}
-
-/** Completion depends on whether the caller requested receive processing. */
-export type TCPMessengerResult = TcpTransmission | TCPConversation;
 
 /**
  * Own one TCP delivery attempt and its parser/Kevery, following KERIpy TCPMessenger.
@@ -70,10 +56,10 @@ export class TCPMessenger {
    * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param msg Resident signed CESR bytes; copied into chunks as transmitted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
-   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
+   * @returns Completion after local output; reply mode also joins receive EOF and protocol processing.
    * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
    */
-  send(url: string, msg: Uint8Array, options: TCPMessengerOptions = {}): Operation<TCPMessengerResult> {
+  send(url: string, msg: Uint8Array, options: TCPMessengerOptions = {}): Operation<void> {
     return this.stream(url, (signal) => chunkBytes(msg, { signal, maxChunkBytes: options.maxChunkBytes }), options);
   }
 
@@ -83,31 +69,31 @@ export class TCPMessenger {
    * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
-   * @returns Local transmission for send-only use, or transmission plus processed receive EOF for duplex.
+   * @returns Completion after local output; reply mode also joins receive EOF and protocol processing.
    * @throws Reply mode requires a protocol processor. Source/parser, dispatch, transport and cleanup failures propagate.
    */
-  stream(url: string, source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<TCPMessengerResult> {
-    if (options.replies) return this.converse(url, source, options);
+  stream(url: string, source: TcpSourceFactory, options: TCPMessengerOptions = {}): Operation<void> {
+    if (options.replies) return this.receiptDo(url, source, options);
     return streamCesrTcp(url, source, this.clock, { ...options });
   }
 
   /**
-   * Run concurrent native RX/TX children; cancel and join them before releasing the borrowed socket.
+   * Send while processing replies, corresponding to KERIpy TCPMessenger.receiptDo/msgDo.
+   * Cancel and join concurrent RX/TX children before releasing the borrowed socket.
    *
    * @param url TCP endpoint with an explicit port in the range 1–65535.
    * @param source Creates a finite binary source with the owner's cancellation signal; must interrupt reads and finish cleanup when aborted.
    * @param options Chunk size, connection/drain deadlines and optional cancellation; defaults are 64 KiB and 30-second deadlines. Set replies to process same-socket input through EOF; local controls KEL intake policy.
-   * @returns Local transmission plus processed receive EOF, after both children and connection cleanup join.
+   * @returns Completion after output, processed receive EOF and joined connection cleanup.
    * @throws Missing receive capability, source/parser, dispatch, transport and cleanup failures propagate.
    */
-  private converse(url: string, source: TcpSourceFactory, options: TCPMessengerOptions): Operation<TCPConversation> {
+  private receiptDo(url: string, source: TcpSourceFactory, options: TCPMessengerOptions): Operation<void> {
     const protocol = this.protocol, kvy = this.kvy, clock = this.clock;
     if (!protocol || !kvy) throw new Error("TCP reply delivery requires a protocol processor");
     return call(function*() {
       const { replies: _replies, local = true, ...send } = options;
       const connection = yield* openTcpConnection(url, clock, send);
       // Register RX before TX so a peer can reply while the outbound source is still open.
-      let processedFrames = 0;
       const receive = yield* spawn(function*() {
         yield* race([
           call(function*() {
@@ -148,7 +134,6 @@ export class TCPMessenger {
                   { local, escrows: true },
                   kvy,
                 );
-                processedFrames++;
               }
             } catch (error) {
               // Stop TX before parser/source cleanup can suspend on the failed direction.
@@ -165,11 +150,10 @@ export class TCPMessenger {
           }),
         ]);
       });
-      const transmission = yield* sendCesrTcpSocket(connection, source, clock, send);
+      yield* sendCesrTcpSocket(connection, source, clock, send);
       // Duplex completion requires processed receive EOF; transmit-only never enters this path.
       yield* receive;
       connection.signal.throwIfAborted();
-      return { kind: "conversationDrained", transmission, receive: { kind: "eof", processedFrames } };
     });
   }
 }
