@@ -598,8 +598,9 @@ export class LMDBer {
     } as const;
     const table = env.openDB<BinVal, BinKey>(name, options);
     // The native API returns undefined for an absent non-creating binding,
-    // despite declaring a non-null Database result.
-    if (!table) throw new DatabaseOperationError(`Database not found: ${name}`);
+    // despite declaring a non-null result. Maintenance must reject it; ordinary
+    // readonly Baser bindings already tolerate tables absent from Python layouts.
+    if (this.existingOnly && !table) throw new DatabaseOperationError(`Database not found: ${name}`);
     return table;
   }
 
