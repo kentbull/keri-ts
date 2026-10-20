@@ -331,7 +331,7 @@ Evidence: mailbox-director-lifecycle, mailbox-poller-runtime, runtime-store-owne
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.constructor`                                 | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.registerTopic`                               | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollDo`                                      | Reviewed; expanded |
-| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.readLocalMailbox`                            | Reviewed; expanded |
+| `packages/keri/src/app/forwarding.ts` — `MailboxPoller.readLocalMailbox`                            | Retired            |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.localCursor`                                 | Retired by #554    |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.pollRemoteEndpointOnce`                      | Reviewed; expanded |
 | `packages/keri/src/app/forwarding.ts` — `MailboxPoller.syncRemoteWorkers`                           | Reviewed; expanded |
@@ -438,7 +438,7 @@ Evidence: mailbox-director-lifecycle, mailbox-poller-runtime, runtime-store-owne
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxStreamOptions`                                | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector`                                     | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.constructor`                         | Reviewed; expanded |
-| `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.hasMailboxStore`                     | Reviewed; retained |
+| `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.hasMailboxStore`                     | Retired            |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.registerTopic`                       | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.registeredTopics`                    | Reviewed; expanded |
 | `packages/keri/src/app/mailbox-director.ts` — `MailboxDirector.close`                               | Reviewed; retained |
@@ -518,5 +518,8 @@ Tests below were read as evidence, not rerun for this documentation-only pass.
 
 No unresolved source/documentation contradiction remains in these reviewed paths.
 The [plan](runtime-maintainer-documentation.md) tracks the separate cursor fix in
-#554 and minimum-timeout fix in #555. The original documentation pass
-changed neither behavior.
+#554 and minimum-timeout fix in #555. The [local-consumption removal](remove-local-mailbox-consumption.md)
+subsequently retires MailboxPoller.readLocalMailbox, its local cursor state and
+MailboxDirector.hasMailboxStore. Provider reading APIs remain; the mailbox flow
+above passes through HTTP/SSE before recipient processing. The original documentation
+pass changed neither behavior.

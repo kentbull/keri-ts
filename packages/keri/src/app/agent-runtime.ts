@@ -623,13 +623,14 @@ export function* settleRuntimeIngress(
 }
 
 /**
- * Settle one mailbox retrieval batch while preserving per-source boundaries.
+ * Process one remote mailbox batch and its follow-on escrow work.
  *
- * Local and remote poll results are intentionally processed batch-by-batch so
- * follow-on escrow progress can occur before the next source is consumed.
+ * The poller awaits this operation before recording the provider cursor or
+ * reading the next event. Protocol completion can accept, escrow or reject input;
+ * it does not acknowledge the message to the provider or delete its stored row.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param batch One local/remote batch; each message is processed before the final escrow pass.
+ * @param batch Ordered wire messages for one mailbox subject and provider AID; each is processed before the final escrow pass.
  */
 export function* settleMailboxPollBatch(
   runtime: AgentRuntime,
@@ -813,7 +814,7 @@ export { runtimeTurn } from "./runtime-turn.ts";
  * order; store ownership remains with the composition scope.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
- * @param options Optional default query/cue signer and pollMailbox switch (default true).
+ * @param options Optional default query/cue signer and remote pollMailbox switch (default true). Provider storage never enables local consumption.
  */
 export function* runAgentRuntime(
   runtime: AgentRuntime,

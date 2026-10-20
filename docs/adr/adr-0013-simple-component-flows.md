@@ -66,6 +66,12 @@ retries. Independent record validators decode notice fields; composition supplie
 the shared Revery. ProtocolProcessor calls Tevery operations without knowing its handlers.
 This ownership refinement landed in #523 after the 1.0.0 publications.
 
+Mailbox provider storage and recipient processing are separate responsibilities.
+MailboxPoller retrieves endpoint streams; it never scans the provider's rows back
+into its own recipient handlers. Direct HTTP/TCP or explicit in-process intake
+serves immediate processing. Provider publication, authorized SSE retrieval and
+remote persisted cursors remain; no optional local-consumer component is added.
+
 Use named fields and discriminated alternatives; require variant-specific data.
 Do not replace a bag with an interface of unrelated optional fields or duplicate
 knowledge already represented by an instruction. Domain behavior must never read

@@ -212,11 +212,13 @@ Without explicit mailbox routing, poll all eligible witnesses concurrently.
 Polling timeout overrides floor finite positive values with a 1 ms minimum;
 missing/nonfinite/nonpositive values retain the header/poll defaults.
 Remote SSE consumer completion precedes durable cursor advancement and the next
-read. Stored positions are last-consumed; requests send next-wanted. Local polling
-collects proposed next-wanted positions without mutation and publishes the whole
-prefix/topic batch only after its consumer succeeds. Failure/cancellation preserves
-that batch for a restarted worker on the same poller; partial processing may repeat.
-Earlier successful batches stay advanced; a new poller starts at zero.
+read. Stored positions are last-consumed; requests send next-wanted. MailboxPoller
+retrieves only endpoint streams: batches carry pre/eid/messages, and eid is required.
+There is no automatic local-store consumption or process-local recipient cursor.
+Provider storage and its query/SSE readers remain independent: authorized fwd and
+Poster local storage do not dispatch the stored message. Use direct HTTP/TCP or
+explicit protocol intake for immediate recipient processing. Do not add an optional
+local reader or infer its need from co-resident Mailboxer/controller objects.
 EOF/timeout/cancel discards unfinished SSE events. Provider reads on demand, closes each LMDB
 iterator before suspension and frames a row in 64 KiB chunks without a message cap.
 Director close wakes polls/rejects new streams before stores close.

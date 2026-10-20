@@ -119,11 +119,6 @@ export class MailboxDirector {
     this.topics = new Set(topics);
   }
 
-  /** Return true when provider-side mailbox storage is available. */
-  hasMailboxStore(): boolean {
-    return this.mailboxer !== null;
-  }
-
   /**
    * Register one mailbox topic this runtime should poll/stream.
    *

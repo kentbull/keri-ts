@@ -49,12 +49,12 @@ requires every ledger entry reviewed and source/design docs consistent.
 
 ## Review findings retained outside this documentation change
 
-- **Local cursor finding resolved by [#554](https://github.com/kentbull/keri-ts/pull/554).**
-  Local collection now proposes cursor positions; pollDo publishes them only after
-  the entire batch consumer succeeds. Read failure, consumer failure and cancellation
-  retain the previous positions for a restarted worker on the same poller, with
-  possible duplicate processing. Regressions cover both consumer forms, joined
-  cancellation, multi-topic/prefix progress and partial collection failure.
+- **Local cursor finding resolved by [#554](https://github.com/kentbull/keri-ts/pull/554), subsequently retired with its feature.**
+  That fix committed local positions only after successful batch consumption.
+  The later [local-consumption removal](remove-local-mailbox-consumption.md)
+  deletes automatic local reads and their cursor state entirely. Its mechanics
+  tests are retired; protocol processing is covered through direct intake and
+  remote mailbox delivery. The original finding remains historically resolved.
 - **Fractional timeout finding resolved by [#555](https://github.com/kentbull/keri-ts/pull/555).**
   Both mailbox polling windows now floor finite positive overrides with a 1 ms
   minimum. Missing, nonfinite and nonpositive inputs retain their existing defaults.
@@ -95,5 +95,5 @@ Required CI static checks and the ENCTX maintenance workflow apply to every hand
 
 The final review removed stale claims that Poster lacks retained failures or
 stops after a recognized refusal. It also made Hab's low-level Deck consumption,
-remote versus local mailbox cursor advancement, and finite-host Date.now deadlines
+mailbox cursor boundaries at the reviewed baseline, and finite-host Date.now deadlines
 explicit. The findings above track their separate behavioral follow-ups; the original documentation pass changed neither behavior.
