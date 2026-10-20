@@ -41,6 +41,8 @@ The scope includes:
 - Explicit acceptance of configurable threshold limits.
 - LMDB-owned ESSR evidence; remove the filesystem archive, unused durable
   plaintext persistence and unnecessary ESSR staging/streaming infrastructure.
+- Explicit ordinary/stream messenger construction and wire parity; remove the
+  persisted CESR body preference and all of its public/configuration plumbing.
 - The justified architecture/readability changes described below.
 - Complete multisig credential CLI coordination: registry creation, issuance,
   all six IPEX verbs, revocation, peer approval/fanout and observable completion.
@@ -341,55 +343,58 @@ are explicit below. Every feature PR contains its focused regression evidence.
 The final integration PR fills cross-boundary gaps rather than postponing all
 tests until the end.
 
-| PR      | Reviewable result                                                                                      | Dependency  |
-| ------- | ------------------------------------------------------------------------------------------------------ | ----------- |
-| 01      | Adopt this release scope and configurable-threshold exception; correct minimal contradictory contracts | Approval    |
-| 02      | Pin and verify independent Python main, 1.2.x and 1.3.x test profiles                                  | 01          |
-| 03      | Narrow endpoint/OOBI/receipt input dependencies; preserve behavior during the ownership refactor       | 01          |
-| 03a     | Separate TEL input policy from accepted state and publish Tever cache changes after commit             | 02, 03      |
-| 03b     | Separate immutable payload preparation from synchronous reference publication                          | 03          |
-| 03c     | Make EXN admission synchronous against current state; give asynchronous consequences explicit owners   | 03b         |
-| 03d     | Remove whole-protocol exclusion after proving input, escrow, reply and cancellation invariants         | 03a, 03c    |
-| 04      | Simplify TCP completion API and remove unused bookkeeping                                              | 03d         |
-| 05      | Make HTTP query response ownership and cancellation flow explicit                                      | 03d         |
-| 06      | Separate SSE event delivery from parsing/timing/cursor policy                                          | 05          |
-| 07      | Correct log streams, filtering and actual escrow-ejection diagnostics                                  | 01          |
-| 08      | Validate URL configuration before all affected writes                                                  | 03          |
-| 09      | Add narrow existing-store access for typed OOBI maintenance                                            | 01          |
-| 10      | Add `tufa oobi clean` preview/apply                                                                    | 09          |
-| 11      | Make init honor encryption and persistence choices                                                     | 07, 08      |
-| 12      | Prove AEID failure atomicity; repair only if the regression confirms the gap                           | 02          |
-| 12a     | Replace the ESSR file archive with ordered LMDB evidence and synchronous publication                   | 12          |
-| 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a         |
-| 12c     | Establish consistent database close failures and command completion                                    | 12b         |
-| 12d     | Move OOBI cleanup to ordinary Baser ownership and canonical pending table                              | 12c         |
-| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12d    |
-| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13          |
-| 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14  |
-| 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15          |
-| 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d         |
-| 18      | Emit legacy-compatible TEL replay without changing signed bodies                                       | 02, 17      |
-| 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06  |
-| 20      | Complete group revocation approval, fanout and recipient observation                                   | 15, 18, 19  |
-| 21      | Correct accepted backer-cohort selection and durable partial-receipt processing                        | 02, 20      |
-| 22      | Produce and collect real TEL backer proofs through concrete runtime owners                             | 03d, 05, 21 |
-| 23      | Add explicit backer policy and group registry inception/rotation commands                              | 13, 14, 22  |
-| 24      | Complete group BIS/BRV, backer-policy changes and legacy replay                                        | 18, 20, 23  |
-| 25      | Compose native-v2 public registry intake, dependency recovery and replay                               | 03d         |
-| 26      | Establish native credential/disclosure custody and explicit CLI composition                            | 14, 25      |
-| 27      | Add single-identifier native registry/credential authoring and state changes                           | 26          |
-| 28      | Coordinate exact native-v2 anchors through group approval and fanout                                   | 13, 15, 27  |
-| 29      | Connect native-v2 CLI IPEX delivery and wallet acceptance                                              | 16, 28      |
-| 30      | Complete native-v2 presentation and vacuous-update workflows                                           | 28, 29      |
-| 30a     | Expose the narrow public protocol operations required by the Tufa verifier application                 | 30          |
-| 30b     | Move the verifier application, command, workflow store and maintained tests into Tufa                  | 30a, 12c    |
-| 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30b      |
-| 31a     | Assess remaining ProtocolProcessor responsibility; remove it if explicit dependencies suffice          | 31          |
-| 31b     | Organize CESR sources and cohesive large-file units for human navigation                               | 31a         |
-| 31c     | Organize KERI protocol/application sources and cohesive large-file units                               | 31b         |
-| 31d     | Organize Tufa command/hosting sources and validate the resulting package graph                         | 31c         |
-| 32      | Prepare 2.0.0 versions and breaking-change guide; qualify the reorganized candidate                    | 31d         |
-| Release | Withdraw 1.0.0 distributions, then publish and verify CESR -> KERI -> Tufa 2.0.0                       | 32          |
+| PR      | Reviewable result                                                                                      | Dependency      |
+| ------- | ------------------------------------------------------------------------------------------------------ | --------------- |
+| 01      | Adopt this release scope and configurable-threshold exception; correct minimal contradictory contracts | Approval        |
+| 02      | Pin and verify independent Python main, 1.2.x and 1.3.x test profiles                                  | 01              |
+| 03      | Narrow endpoint/OOBI/receipt input dependencies; preserve behavior during the ownership refactor       | 01              |
+| 03a     | Separate TEL input policy from accepted state and publish Tever cache changes after commit             | 02, 03          |
+| 03b     | Separate immutable payload preparation from synchronous reference publication                          | 03              |
+| 03c     | Make EXN admission synchronous against current state; give asynchronous consequences explicit owners   | 03b             |
+| 03d     | Remove whole-protocol exclusion after proving input, escrow, reply and cancellation invariants         | 03a, 03c        |
+| 04      | Simplify TCP completion API and remove unused bookkeeping                                              | 03d             |
+| 05      | Make HTTP query response ownership and cancellation flow explicit                                      | 03d             |
+| 06      | Separate SSE event delivery from parsing/timing/cursor policy                                          | 05              |
+| 07      | Correct log streams, filtering and actual escrow-ejection diagnostics                                  | 01              |
+| 08      | Validate URL configuration before all affected writes                                                  | 03              |
+| 09      | Add narrow existing-store access for typed OOBI maintenance                                            | 01              |
+| 10      | Add `tufa oobi clean` preview/apply                                                                    | 09              |
+| 11      | Make init honor encryption and persistence choices                                                     | 07, 08          |
+| 12      | Prove AEID failure atomicity; repair only if the regression confirms the gap                           | 02              |
+| 12a     | Replace the ESSR file archive with ordered LMDB evidence and synchronous publication                   | 12              |
+| 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a             |
+| 12c     | Establish consistent database close failures and command completion                                    | 12b             |
+| 12d     | Move OOBI cleanup to ordinary Baser ownership and canonical pending table                              | 12c             |
+| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12d        |
+| 13a     | Separate concrete ordinary/stream messenger construction and query response ownership                  | 05, 06, 12b, 13 |
+| 13b     | Wire explicit delivery intent and remove the entire persisted CESR body preference                     | 13a             |
+| 13c     | Qualify messenger wire contracts with actual peers and installed packages                              | 13b             |
+| 14      | Route or guard every group-capable CLI entry point before effects                                      | 13, 13c         |
+| 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14      |
+| 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15              |
+| 17      | Carry query wire context to the TEL replay owner, preserving current output                            | 03d             |
+| 18      | Emit legacy-compatible TEL replay without changing signed bodies                                       | 02, 17          |
+| 19      | Add old-peer media fallback to mailbox polling                                                         | 02, 05, 06      |
+| 20      | Complete group revocation approval, fanout and recipient observation                                   | 15, 18, 19      |
+| 21      | Correct accepted backer-cohort selection and durable partial-receipt processing                        | 02, 20          |
+| 22      | Produce and collect real TEL backer proofs through concrete runtime owners                             | 03d, 05, 21     |
+| 23      | Add explicit backer policy and group registry inception/rotation commands                              | 13, 14, 22      |
+| 24      | Complete group BIS/BRV, backer-policy changes and legacy replay                                        | 18, 20, 23      |
+| 25      | Compose native-v2 public registry intake, dependency recovery and replay                               | 03d             |
+| 26      | Establish native credential/disclosure custody and explicit CLI composition                            | 14, 25          |
+| 27      | Add single-identifier native registry/credential authoring and state changes                           | 26              |
+| 28      | Coordinate exact native-v2 anchors through group approval and fanout                                   | 13, 15, 27      |
+| 29      | Connect native-v2 CLI IPEX delivery and wallet acceptance                                              | 16, 28          |
+| 30      | Complete native-v2 presentation and vacuous-update workflows                                           | 28, 29          |
+| 30a     | Expose the narrow public protocol operations required by the Tufa verifier application                 | 30              |
+| 30b     | Move the verifier application, command, workflow store and maintained tests into Tufa                  | 30a, 12c        |
+| 31      | Run the bounded actual-peer lifecycle matrix and close remaining evidence gaps                         | 04–30b          |
+| 31a     | Assess remaining ProtocolProcessor responsibility; remove it if explicit dependencies suffice          | 31              |
+| 31b     | Organize CESR sources and cohesive large-file units for human navigation                               | 31a             |
+| 31c     | Organize KERI protocol/application sources and cohesive large-file units                               | 31b             |
+| 31d     | Organize Tufa command/hosting sources and validate the resulting package graph                         | 31c             |
+| 32      | Prepare 2.0.0 versions and breaking-change guide; qualify the reorganized candidate                    | 31d             |
+| Release | Withdraw 1.0.0 distributions, then publish and verify CESR -> KERI -> Tufa 2.0.0                       | 32              |
 
 This is an estimated decomposition, not a quota of PRs or a promise to finish
 in one night. A confirmed issue may justify a small sibling PR. Skip an empty
@@ -722,6 +727,62 @@ pinned-KERIpy coverage proving the proper pending table is selected and the
 resulting store reopens. Preserve PR 12c's close contract. Keep documentation
 minimal; report removed machinery, accepted startup effects, actual checks and
 remaining binding uncertainty. Both PRs precede final qualification and 2.0.0.
+
+### Transport supplement: explicit messenger selection — PRs 13a–13c
+
+Adopt [MESSENGER_SELECTION_PARITY_PLAN.md](runtime/MESSENGER_SELECTION_PARITY_PLAN.md)
+as an approved, required supplement to this goal. Execute it next, after the
+initial typed publication cut of PR 13 and before expanding group CLI/IPEX
+behavior. The existing ordinary/stream Poster admissions currently converge on
+HTTP POST; correcting that boundary first prevents misleading lifecycle coverage.
+The remaining durable proposal selection/resume work in PR 13 is still required.
+
+Follow the supplement's caller inventory and review boundaries:
+
+- **13a: construction and response ownership.** Extract HTTP query receive work
+  into its cohesive owner. Add small concrete `messengerFrom` and
+  `streamMessengerFrom` construction: ordinary signed-message HTTP POSTs, one
+  finite opaque HTTP PUT for stream delivery, and shared raw TCP socket mechanics.
+  Preserve full endpoint paths, destination/authentication, endpoint precedence,
+  ordinary media-refusal fallback, response lifetime and real cleanup. Construction
+  has no I/O. Refactor responsibilities before introducing the stream operation;
+  keep production stream routing for 13b rather than mixing that behavior change
+  into the ownership extraction.
+- **13b: explicit callers and preference removal.** Route the existing one-worker
+  Poster admissions through their concrete messengers. Preserve ordinary multi-role
+  and stream first-present-role routing, introductions, forwarding, local-provider
+  bypass and per-admission outcomes. Initial grant/admit/spurn retain explicit
+  stream delivery; join completion and existing ordinary publishers retain ordinary
+  delivery. Queries/mailbox polling are signed POSTs, and specialized mailbox-admin
+  and receipt APIs retain their own contracts. Delete `cesrBodyMode`, its persisted
+  reads/writes, Habery/options/CLI/export surface, framing switches and obsolete
+  preference tests together. No replacement global setting, migration reader,
+  aliases or user-store row cleanup. Record removed APIs/options and the stream
+  PUT endpoint requirement in the 2.0.0 breaking guide and release notes.
+- **13c: bounded actual-peer and package evidence.** Extend the maintained fixture
+  owners, not a new harness. Exercise signed ordinary POST and multi-message PUT
+  in both directions with unmodified pinned main/1.2/1.3, accepted semantic state,
+  and exact method/framing assertions. Cover actual TCP payload admission with
+  1.2.14, the separately labeled composed mailbox environment, and installed Node
+  factories/CLI removal. Preserve the upstream main/1.3 TCP factory limitation
+  rather than patching it. Omit an empty third PR if the evidence fits 13a/13b.
+
+Use the supplement's small contract/lifetime matrix and existing topology. Before
+13b merges, run a real composed Python/Tufa stream exchange; do not postpone PUT
+endpoint discovery to final qualification. Add wire assertions to existing IPEX
+coverage, including ordered support messages and initial PUT versus join POST.
+Native-v2 CLI-specific assertions depend on the later authoring/IPEX work in PRs
+27–30 and must be completed there and in PR 31; early transport probes do not
+claim those unfinished CLI features. Reuse the same peer fixtures and assertions
+instead of multiplying every verb/role/framing/profile combination.
+
+Do not add queues, transport registries, scheduling frameworks, asynchronous
+upload infrastructure, payload archives, memory budgets, retries or durable acks.
+Transport completion remains distinct from protocol acceptance. Preserve the later
+ProtocolProcessor assessment without requiring its retention for messengers.
+Carry these contracts through reorganization, then rerun affected checks and the
+final whole-release source/artifact qualification. All other release objectives
+and deferred scope remain unchanged.
 
 ### Phase D: group credential lifecycle — PRs 13–16 and 20
 
