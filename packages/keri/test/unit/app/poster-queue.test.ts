@@ -1,4 +1,3 @@
-import { type CesrFrame, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer } from "node:http";
@@ -8,11 +7,9 @@ import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { TransportError } from "../../../src/app/transport-error.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { httpClient } from "../../support/http-client.ts";
 
@@ -65,13 +62,19 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
       assertEquals(postman.cues.empty, true, "cancelled and fire-and-forget sends leave no completion history");
       assertEquals(postman.hasPending, false);
 
+      // A real indirect target invokes signing before any network attempt.
+      const provider = "E" + "A".repeat(43);
+      hby.db.ends.rem([first.pre, Roles.controller, first.pre]);
+      hby.db.ends.pin([first.pre, Roles.mailbox, provider], { allowed: true });
+      hby.db.locs.pin([provider, "http"], { url: "https://first.test/" });
       for (
         const construction of [
           new ValidationError("invalid constructed protocol message"),
           new TransportError("a typed preparation failure is not a network outcome"),
         ]
       ) {
-        postman.prepareBytesTarget = function*() {
+        const endorse = sender.endorse;
+        sender.endorse = () => {
           throw construction;
         };
         const broken = postman.send(args, { notify: true });
@@ -80,6 +83,7 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
         const observed = yield* postman.wait(broken);
         assertEquals(observed.kin, "failed");
         if (observed.kin === "failed") assertStrictEquals(observed.error, construction);
+        sender.endorse = endorse;
       }
     } finally {
       yield* runtime.close();
@@ -120,15 +124,13 @@ Deno.test("Poster contains native connection and response-body failures while la
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), later = hby.makeHab("later");
         const postman = runtime.postman;
-        postman.findBytesRoute = (_hab, args) => ({
-          sender: sender.pre,
-          recipient: args.recipient,
-          topic: "/reply",
-          kind: "direct",
-          bodyMode: "header",
-          targets: (args.recipient === later.pre ? [`${url}/later`] : [refusedUrl, `${url}/truncated`, `${url}/good`])
-            .map((url) => ({ eid: args.recipient, url })),
-        });
+        for (const [index, target] of [refusedUrl, `${url}/truncated`, `${url}/good`].entries()) {
+          const eid = `endpoint-${index}`;
+          hby.db.ends.pin([recipient.pre, Roles.controller, eid], { allowed: true });
+          hby.db.locs.pin([eid, "http"], { url: target });
+        }
+        hby.db.ends.pin([later.pre, Roles.controller, later.pre], { allowed: true });
+        hby.db.locs.pin([later.pre, "http"], { url: `${url}/later` });
         const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
         const failed = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/reply", msg }, { notify: true });
         const next = postman.send({ src: sender.pre, dest: later.pre, topic: "/reply", msg }, { notify: true });
@@ -188,20 +190,11 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         const postman = runtime.postman;
-        postman.findBytesRoute = () => ({
-          sender: sender.pre,
-          recipient: recipient.pre,
-          topic: "/reply",
-          kind: "direct",
-          bodyMode: "header",
-          targets: ["/refused", "/good", "/broken"].map((path) => ({ eid: recipient.pre, url: url + path })),
-        });
-        const preparation = new Error("later forwarding construction failed");
-        const prepare = postman.prepareBytesTarget;
-        postman.prepareBytesTarget = function*(hab, route, endpoint, msg) {
-          if (endpoint.url.endsWith("/broken")) throw preparation;
-          return yield* prepare.call(this, hab, route, endpoint, msg);
-        };
+        for (const [index, target] of [`${url}/refused`, `${url}/good`, "invalid endpoint URL"].entries()) {
+          const eid = `endpoint-${index}`;
+          hby.db.ends.pin([recipient.pre, Roles.controller, eid], { allowed: true });
+          hby.db.locs.pin([eid, "http"], { url: target });
+        }
         const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
         const evt = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/reply", msg }, { notify: true });
         const failure = yield* call(() => assertRejects(() => run(() => postman.process()), AggregateError));
@@ -209,8 +202,8 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
         assertInstanceOf(failure.errors[0], CesrHttpRefusal);
         assertEquals(failure.errors[0].status, 503);
         assertEquals(failure.errors[0].message.includes(`${url}/refused`), true);
-        assertStrictEquals(failure.errors[1], preparation);
-        assertStrictEquals(failure.cause, preparation);
+        assertInstanceOf(failure.errors[1], TypeError);
+        assertStrictEquals(failure.cause, failure.errors[1]);
         const outcome = yield* postman.wait(evt);
         assertEquals(outcome.kin, "failed");
         if (outcome.kin !== "failed") throw new Error("Expected failed delivery");

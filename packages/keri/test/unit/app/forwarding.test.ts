@@ -1,3 +1,4 @@
+import { httpClient } from "../../support/http-client.ts";
 /**
  * Focused mailbox forwarding and cursor utility tests.
  *
@@ -23,8 +24,6 @@ import {
   createAgentRuntime,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
-import { chunkBytes } from "../../../src/app/byte-source.ts";
-import { postCesr } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
@@ -701,12 +700,18 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
         );
         const mailboxer = runtime.mailboxer!;
         const publish = mailboxer.storeMsg;
-        const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: DELEGATE_MAILBOX_TOPIC });
         mailboxer.storeMsg = () => false;
         try {
           yield* call(() =>
             assertRejects(
-              () => run(() => postman.prepareBytesTarget(sender, route, route.targets[0], stored[0]!)),
+              () =>
+                run(() =>
+                  deliverMessage(postman, sender, {
+                    recipient: recipient.pre,
+                    topic: DELEGATE_MAILBOX_TOPIC,
+                    message: stored[0]!,
+                  })
+                ),
               Error,
               "publication did not complete",
             )
@@ -797,19 +802,6 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           const frameCount = introduction.length;
 
           const postman = new Poster(hby, null, runtime.protocol, runtime.http, runtime.clock);
-          const route = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-          const prepared = yield* postman.prepareBytesTarget(sender, route, route.targets[0], message);
-          assertEquals(prepared.kind, "http");
-          if (prepared.kind !== "http") throw new Error("Expected HTTP target");
-          assertEquals(bodies.length, 0);
-          // Prepared transport needs no habitat/DB access; it preserves the original introduction wire.
-          yield* postCesr(prepared.url, (signal) => chunkBytes(prepared.message, { signal }), runtime.http, {
-            bodyMode: prepared.bodyMode,
-            destination: prepared.destination,
-          });
-          assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
-          assertEquals(bodies.length, frameCount + 1);
-          bodies.length = 0;
           const result = yield* deliverMessage(postman, sender, {
             recipient: recipient.pre,
             message,
@@ -865,25 +857,17 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             if (!addr || typeof addr === "string") throw new Error("Expected TCP endpoint");
             const url = `tcp://127.0.0.1:${addr.port}`;
             hby.db.locs.pin([remoteWitness.pre, "tcp"], { url });
+            const preferred = yield* deliverMessage(postman, sender, {
+              recipient: recipient.pre,
+              message,
+              topic: "/receipt",
+            });
             assertEquals(
-              postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" }).targets[0].url,
-              route.targets[0].url,
+              preferred.deliveries,
+              [`http://127.0.0.1:${port}`],
+              "HTTP remains preferred when TCP is also advertised",
             );
             hby.db.locs.rem([remoteWitness.pre, "http"]);
-            const tcpRoute = postman.resolveBytesRoute(sender, { recipient: recipient.pre, topic: "/receipt" });
-            const tcpTarget = yield* postman.prepareBytesTarget(sender, tcpRoute, tcpRoute.targets[0], message);
-            assertEquals(tcpTarget.kind, "tcp");
-            if (tcpTarget.kind !== "tcp") throw new Error("Expected TCP target");
-            assertEquals(
-              tcpTarget.message.subarray(0, expectedIntro.length),
-              expectedIntro,
-              "TCP preserves signed introduction",
-            );
-            assertEquals(
-              (yield* postman.prepareBytesTarget(sender, { ...tcpRoute, kind: "direct" }, tcpRoute.targets[0], message))
-                .kind,
-              "tcp",
-            );
             const sent = yield* deliverMessage(postman, sender, {
               recipient: recipient.pre,
               message,
@@ -910,11 +894,11 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 
             hby.db.rcts.rem(receiptKey);
-            yield* new TCPMessenger(null, runtime.clock).send(tcpTarget.url, tcpTarget.message);
+            yield* new TCPMessenger(null, runtime.clock).send(url, message);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             // Local transmission may complete before the remote application accepts the socket.
             yield* call(() => transmitReceived.promise);
-            assertEquals(concatBytes(...tcpBodies[2]), tcpTarget.message);
+            assertEquals(concatBytes(...tcpBodies[2]), message);
           } finally {
             yield* call(() =>
               new Promise<void>((resolve, reject) => tcp.close((error) => error ? reject(error) : resolve()))
@@ -1282,7 +1266,15 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
-        const postman = new Poster(hby, null, null, new FetchHttpClient(), systemClock);
+        const forwardedFrames: ReturnType<typeof parseBytes> = [];
+        const http = httpClient(async (url, init) => {
+          const [frame] = parseBytes(await readCesrRequestBytes(new Request(url, init)));
+          if (frame.body instanceof SerderKERI && frame.body.route === "/fwd") forwardedFrames.push(frame);
+          return new Response(null, { status: 204 });
+        });
+        const postman = new Poster(hby, null, null, http, systemClock);
+        hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, provider.pre], { allowed: true });
+        hby.db.locs.pin([provider.pre, "https"], { url: "https://mailbox.test/" });
         for (const version of [Vrsn_1_0, Vrsn_2_0]) {
           const [body] = exchangeMessage("/application/message", { value: "retained" }, {
             sender: sender.pre,
@@ -1290,23 +1282,16 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
           });
           const [child] = parseBytes(sender.endorse(body, { pipelined: false, gvrsn: version }));
           const message = yield* call(() => collectPayload(framePayload(child)));
-          // Resolve policy separately; this contract check isolates complete-wire construction.
-          const target = yield* postman.prepareBytesTarget(
-            sender,
-            {
-              kind: "mailbox",
-              sender: sender.pre,
-              recipient: recipient.pre,
-              topic: "/credential",
-              bodyMode: "header",
-              targets: [{ eid: provider.pre, url: "https://mailbox.test/" }],
-            },
-            { eid: provider.pre, url: "https://mailbox.test/" },
-            message,
-          );
-          assertEquals(target.kind, "http");
-          if (target.kind !== "http") throw new Error("Expected a remote prepared target");
-          const forwarded = parseBytes(target.message).at(-1)!;
+          forwardedFrames.length = 0;
+          const evt = postman.send({ src: sender.pre, dest: recipient.pre, topic: "/credential", msg: message }, {
+            notify: true,
+          });
+          // Source signatures precede rotation; only the outer delivery is constructed later.
+          sender.rotate();
+          yield* postman.process();
+          assertEquals((yield* postman.wait(evt)).kin, "sent");
+          const forwarded = forwardedFrames.at(-1);
+          if (!forwarded) throw new Error("Expected the queued forwarding POST");
           assertEquals((forwarded.body as SerderKERI).route, "/fwd");
           assertEquals(forwarded.body.ked!.q, { pre: recipient.pre, topic: "credential" });
           if (version.major === 2) {
