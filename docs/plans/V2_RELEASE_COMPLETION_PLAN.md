@@ -1,6 +1,6 @@
 # Complete the coordinated 2.0.0 release
 
-Status: active; checked against merged master `dc012254` (#624), 2026-10-20.
+Status: active; checked against merged master `f202bc13` (#626), 2026-10-20.
 Approved goal: publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 
 ## Current state
@@ -22,8 +22,9 @@ qualification remain. This estimate is not a release-readiness claim.
 | Credential lifecycle, backers, native-v2, verifier separation              | Not complete; acceptance criteria and order below.                                                                                                                                |
 | ProtocolProcessor assessment, package organization, qualification, release | Pending all implementation and feature interop.                                                                                                                                   |
 
-The latest cut (#624) passed 36 exact-source Docker tests and selected static/
-package gates. These checks do not qualify the whole release or the new main pin.
+R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
+IPEX/disclosure and mailbox gates passed. Main-native owners used `c7e74ad`; the
+mailbox owner retained its separate fork. These checks do not qualify the whole release.
 The last broad checkpoint was #611; run another at roughly 20 implementation PRs,
 and fresh full qualification after the final changes.
 Git/PRs own detailed history; this file owns current scope, order and gates.
@@ -102,7 +103,7 @@ implementation PR before the next; split only for independent human review.
 
 | Cut          | Remaining result                                                                                                     | Depends on                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| R1           | Historical IPEX seal correction and advanced-main qualification; next correctness PR before remaining CLI cleanup.   | This reconciliation              |
+| R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation              |
 | R2           | Small live backer/native proofs and frozen signing/custody contracts before broad features.                          | R1                               |
 | 13k          | Finish endpoint/DID/query and signed-event utility validation; preserve explicit values and field-specific defaults. | #621–624; after R1               |
 | 13 remainder | Durable exact-event group selection/resume after notification consumption.                                           | Reporting already merged         |

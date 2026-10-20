@@ -13,22 +13,19 @@ import {
   type MapperMap,
   parseBytes,
   Prefixer,
-  SerderACDC,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, spawn } from "effection";
-import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
+import { assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
-import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
 } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
@@ -175,15 +172,7 @@ for (const count of [1, 2]) {
               const urls: string[] = [];
               for (const [i, runtime] of [receiverRuntime, ...holderRuntimes].entries()) {
                 const handler = createProtocolHandler(runtime, { serviceHab: i === 0 ? receiver : holders[i - 1] });
-                const observer = new RegistryObserver(runtime.hby.db, runtime.acdc!.store);
-                const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
-                  if (new URL(request.url).pathname !== "/_registry") return await handler(request);
-                  for (const frame of parseBytes(await readCesrRequestBytes(request))) {
-                    assertInstanceOf(frame.body, SerderACDC);
-                    assertEquals(observer.processEvent(frame.body).kind, "accept");
-                  }
-                  return new Response(null, { status: 204 });
-                });
+                const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
                 listeners.push({ server, handler });
                 urls.push(`http://127.0.0.1:${server.addr.port}/`);
               }
@@ -200,7 +189,7 @@ for (const count of [1, 2]) {
               }
               for (const url of urls) {
                 for (const body of [rip, issued]) {
-                  yield* call(() => post(`${url}_registry`, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+                  yield* call(() => post(url, { body, attachments: [], gvrsn: Vrsn_2_0 }));
                 }
               }
               for (const signers of [holders, [receiver]]) {

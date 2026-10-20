@@ -1,7 +1,7 @@
 /** Shared protocol mutations and publication, independent of byte-input and network lifetimes. */
 import type { CesrFrame } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
-import type { Regery as AcdcRegery } from "../acdc/registraring.ts";
+import type { RegistryObserver } from "../acdc/observing.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { Kevery } from "../core/eventing.ts";
@@ -48,7 +48,7 @@ export class ProtocolProcessor {
    * @param exc Shared exchange owner with application handlers already configured.
    * @param tvy Borrowed legacy TEL owner, or null without VDR support.
    * @param vry Borrowed credential verifier, or null without that capability.
-   * @param registry Borrowed v2 registry escrow owner, or null.
+   * @param registry Borrowed public v2 registry intake and escrow owner, or null.
    * @param protocolCues Private semantic-output Deck; distinct from application cues.
    * @param cues Application output Deck consumed by the composed cue router.
    * @param replies Shared live request correlations captured before application publication.
@@ -65,8 +65,8 @@ export class ProtocolProcessor {
     readonly tvy: Tevery | null,
     /** Credential verifier (vry), sharing the composed registry store. */
     readonly vry: Verifier | null,
-    /** V2 registry owner whose durable escrows advance with the protocol turn. */
-    readonly registry: AcdcRegery | null,
+    /** Public v2 registry intake; local alias management remains with Regery. */
+    readonly registry: RegistryObserver | null,
     /** Private output from semantic handlers, captured before application publication. */
     private readonly protocolCues: Deck<AgentCue>,
     /** Ordinary application cues; the composed cue router is the consumer. */
@@ -132,6 +132,7 @@ export class ProtocolProcessor {
           self.vry ?? undefined,
           mailboxAid,
           self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
+          self.registry ?? undefined,
         );
         const mailboxQueryAuthorized = result.envelope.serder.route === "mbx"
           && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));
@@ -191,7 +192,7 @@ export class ProtocolProcessor {
     this.advanceKelReplyEscrows();
     this.tvy?.processEscrows();
     this.vry?.processEscrows();
-    this.registry?.processEscrows();
+    this.registry?.processAllEscrows();
     this.publishCues();
     yield* this.exc.processEscrows();
   }

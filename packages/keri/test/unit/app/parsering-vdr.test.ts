@@ -9,9 +9,11 @@ import {
   SerderACDC,
   type SerderKERI,
   Vrsn_1_0,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import { blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { encodeHugeNumber } from "../../../src/app/keeping.ts";
 import { type AcdcDispatchArgs, dispatchEnvelope, type TelDispatchArgs } from "../../../src/app/parsering.ts";
@@ -189,4 +191,59 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("native registry dispatch recovers foreign dependencies across reopen without a local alias", async () => {
+  const headDirPath = Deno.makeTempDirSync({ prefix: "native-registry-intake-" });
+  const options = { name: "observer", headDirPath, temp: false, skipConfig: true };
+  try {
+    await run(function*() {
+      const sender = yield* createHabery({ name: "issuer", temp: true, skipConfig: true });
+      let hby = yield* createHabery(options);
+      let runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        const issuer = sender.makeHab("issuer");
+        const rip = regcept(issuer.pre);
+        const update = blindate(rip.said!, rip.said!, rip.said!);
+        issuer.interact({ data: [{ i: rip.said, s: "0", d: rip.said }] });
+        issuer.interact({ data: [{ i: rip.said, s: "1", d: update.said }] });
+        const frame = (body: SerderACDC) => ({ body, attachments: [], gvrsn: Vrsn_2_0 });
+        const pending = yield* runtime.protocol.dispatch(frame(update));
+        assertEquals(pending.decision?.kind, "escrow");
+        assertEquals(runtime.acdc!.store.head(rip.said!), null);
+        assertEquals(runtime.acdc!.baser.maes.get(rip.said!, 1), [[update.said]]);
+        yield* runtime.close();
+        yield* hby.close();
+        hby = yield* createHabery(options);
+        runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        // An update alone cannot discover the issuer. The normal sweep must keep it pending.
+        yield* runtime.protocol.processEscrowsOnce();
+        assertEquals(runtime.acdc!.store.head(rip.said!), null);
+        const inception = yield* runtime.protocol.dispatch(frame(rip));
+        assertEquals(inception.decision?.kind, "escrow");
+        for (let sn = 0; sn <= 2; sn++) {
+          yield* runtime.reactor.processBytes(acceptedEventReplayMessage(sender, issuer.pre, sn).message);
+        }
+        yield* runtime.protocol.processEscrowsOnce();
+        assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, update.said);
+        assertEquals(runtime.acdc!.store.seqSaider(rip.said!, 0)?.qb64, rip.said);
+        assertEquals(runtime.acdc!.store.seqSaider(rip.said!, 1)?.qb64, update.said);
+        assertEquals(runtime.acdc!.baser.maes.get(rip.said!, 1), []);
+        yield* runtime.close();
+        yield* hby.close();
+        hby = yield* createHabery(options);
+        runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, update.said);
+        assertEquals((yield* runtime.protocol.dispatch(frame(update))).decision?.kind, "duplicate");
+        const minimal = protocolFixture(hby);
+        assertEquals((yield* minimal.dispatch(frame(rip))).decision, { kind: "drop", reason: "missingProcessor" });
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+        yield* sender.close(true);
+      }
+    });
+  } finally {
+    Deno.removeSync(headDirPath, { recursive: true });
+  }
 });
