@@ -1,13 +1,27 @@
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { run } from "effection";
+import {
+  assertEquals,
+  assertExists,
+  assertInstanceOf,
+  assertRejects,
+  assertStringIncludes,
+  assertThrows,
+} from "jsr:@std/assert";
 import {
   loadInceptFileOptions,
   loadRotateFileOptions,
   parseBooleanOption,
   parseCountOption,
   parseExnDataItems,
+  parseNumberOption,
   parseStringListOption,
   parseThresholdOption,
 } from "../../../src/app/cli/common/parsing.ts";
+import { inceptCommand } from "../../../src/app/cli/incept.ts";
+import { initCommand } from "../../../src/app/cli/init.ts";
+import { multisigInceptCommand, multisigJoinCommand, multisigRotateCommand } from "../../../src/app/cli/multisig.ts";
+import { rotateCommand } from "../../../src/app/cli/rotate.ts";
+import { createHabery } from "../../../src/app/habbing.ts";
 
 Deno.test("parseExnDataItems matches KERIpy-style coercion and merge order", () => {
   const parsed = parseExnDataItems([
@@ -97,5 +111,138 @@ Deno.test("lifecycle option files validate supplied fields without filtering mal
     }
   } finally {
     Deno.removeSync(file);
+  }
+});
+
+Deno.test("decimal quantities preserve fractional seconds and reject implicit coercion", () => {
+  assertEquals(parseNumberOption(undefined, "seconds"), undefined);
+  assertEquals(parseNumberOption("0", "seconds"), 0);
+  assertEquals(parseNumberOption("0.25", "seconds"), 0.25);
+  for (const value of [null, "", " ", false, [], "0x10", Infinity, "1e999"]) {
+    assertThrows(() => parseNumberOption(value, "seconds"));
+  }
+});
+
+Deno.test("multisig input validation rejects malformed members and timeouts before storage", async () => {
+  const root = Deno.makeTempDirSync();
+  const file = `${root}/group.json`;
+  const headDirPath = `${root}/store`;
+  try {
+    for (const field of ["aids", "rmids", "wits"]) {
+      Deno.writeTextFileSync(file, JSON.stringify({ aids: ["member"], [field]: ["member", 7] }));
+      const error = await assertRejects(() =>
+        run(() =>
+          multisigInceptCommand({
+            name: "missing",
+            alias: "member",
+            group: "group",
+            file,
+            headDirPath,
+          })
+        )
+      );
+      assertInstanceOf(error, Error);
+      assertStringIncludes(error.message, field);
+    }
+    for (const approvalTimeoutSeconds of [null, "", false, -1, Infinity, 1e308]) {
+      const error = await assertRejects(() =>
+        run(() =>
+          multisigJoinCommand({
+            name: "missing",
+            headDirPath,
+            approvalTimeoutSeconds,
+          })
+        )
+      );
+      assertInstanceOf(error, Error);
+      assertStringIncludes(error.message, "approval timeout seconds");
+    }
+    assertThrows(() => Deno.statSync(headDirPath), Deno.errors.NotFound);
+  } finally {
+    Deno.removeSync(root, { recursive: true });
+  }
+});
+
+Deno.test("multisig commands retain file data and accept explicit empty data overrides", async () => {
+  const headDirPath = Deno.makeTempDirSync();
+  const name = `multisig-options-${crypto.randomUUID()}`;
+  const file = `${headDirPath}/group.json`;
+  const store = { name, headDirPath };
+  try {
+    await run(() => initCommand({ ...store, nopasscode: true }));
+    await run(() => inceptCommand({ ...store, alias: "member", transferable: true }));
+    const pre = await run(function*() {
+      const hby = yield* createHabery({ ...store, skipConfig: true });
+      try {
+        return hby.habByName("member")!.pre;
+      } finally {
+        yield* hby.close();
+      }
+    });
+    Deno.writeTextFileSync(
+      file,
+      JSON.stringify({
+        aids: [pre],
+        rmids: [pre],
+        isith: "1",
+        nsith: "1",
+        data: [{ origin: "file" }],
+      }),
+    );
+    const created = await run(() =>
+      multisigInceptCommand({
+        ...store,
+        alias: "member",
+        group: "group",
+        file,
+        approvalTimeoutSeconds: "0.25",
+      })
+    );
+    assertEquals(created.accepted, true);
+    Deno.writeTextFileSync(file, JSON.stringify({ isith: "1", nsith: "1", data: [{ rotation: "file" }] }));
+    await run(() => rotateCommand({ ...store, alias: "member" }));
+    const rotated = await run(() =>
+      multisigRotateCommand({
+        ...store,
+        group: "group",
+        file,
+        approvalTimeoutSeconds: 0,
+      })
+    );
+    assertEquals(rotated.accepted, true);
+    const rotatedSaid = rotated.state?.d;
+    assertExists(rotatedSaid);
+    await run(function*() {
+      const hby = yield* createHabery({ ...store, skipConfig: true });
+      try {
+        assertEquals(hby.db.getEvtSerder(rotated.group, rotatedSaid)?.ked?.a, [{ rotation: "file" }]);
+      } finally {
+        yield* hby.close();
+      }
+    });
+    // Rotate the member's precommitted keys before the group's next rotation.
+    await run(() => rotateCommand({ ...store, alias: "member" }));
+    const cleared = await run(() =>
+      multisigRotateCommand({
+        ...store,
+        group: "group",
+        file,
+        data: [],
+        approvalTimeoutSeconds: 0,
+      })
+    );
+    assertEquals(cleared.accepted, true);
+    const clearedSaid = cleared.state?.d;
+    assertExists(clearedSaid);
+    await run(function*() {
+      const hby = yield* createHabery({ ...store, skipConfig: true });
+      try {
+        assertEquals(hby.db.getEvtSerder(cleared.group, clearedSaid)?.ked?.a, []);
+      } finally {
+        yield* hby.close();
+      }
+    });
+  } finally {
+    Deno.removeSync(headDirPath, { recursive: true });
   }
 });

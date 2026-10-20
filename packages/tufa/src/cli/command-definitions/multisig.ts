@@ -40,8 +40,6 @@ function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch)
         .option(
           "--approval-timeout <seconds>",
           "Maximum wait for delegated multisig completion",
-          (value: string) => Number(value),
-          10,
         ),
     ),
     dispatch,
@@ -125,8 +123,6 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
           .option(
             "--approval-timeout <seconds>",
             "Elapsed time to wait for a matching proposal or group acceptance",
-            (value: string) => Number(value),
-            60,
           ),
       )
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
@@ -175,34 +171,29 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
           .option(
             "-t, --toad <toad>",
             "Witness threshold (threshold of accountable duplicity)",
-            (value: string) => Number(value),
           )
           .option(
             "-w, --witnesses <prefix>",
             "New set of witnesses, replaces all existing witnesses",
             collectOption,
-            [],
           )
           .option(
             "-c, --witness-cut <prefix>",
             "Witness prefix to remove",
             collectOption,
-            [],
           )
           .option(
             "-A, --witness-add <prefix>",
             "Witness prefix to add",
             collectOption,
-            [],
           )
           .option(
             "-d, --data <data>",
             "Anchor data, '@' allowed",
             collectOption,
-            [],
           )
-          .option("--smids <prefix>", "Signing member prefix", collectOption, [])
-          .option("--rmids <prefix>", "Rotation member prefix", collectOption, []),
+          .option("--smids <prefix>", "Signing member prefix", collectOption)
+          .option("--rmids <prefix>", "Rotation member prefix", collectOption),
       )
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
     ),
@@ -223,12 +214,12 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
         isith: options.isith,
         nsith: options.nsith,
         toad: options.toad,
-        witnesses: options.witnesses || [],
-        cuts: options.witnessCut || [],
-        witnessAdd: options.witnessAdd || [],
-        data: options.data || [],
-        smids: options.smids || [],
-        rmids: options.rmids || [],
+        witnesses: options.witnesses,
+        cuts: options.witnessCut,
+        witnessAdd: options.witnessAdd,
+        data: options.data,
+        smids: options.smids,
+        rmids: options.rmids,
         ...witnessAuthArgs(options),
         proxy: options.proxy,
       }),
@@ -252,8 +243,6 @@ function registerMultisigRpyCmd(multisig: Command, dispatch: CommandDispatch): v
         .option(
           "--approval-timeout <seconds>",
           "Maximum wait for multisig reply completion",
-          (value: string) => Number(value),
-          0,
         ),
     ),
     dispatch,

@@ -15,6 +15,21 @@ export function parseBooleanOption(value: unknown, flag: string): boolean | unde
   return value;
 }
 
+/** Preserve optional decimal quantities while rejecting coercion of booleans, blanks or nonfinite values. */
+export function parseNumberOption(value: unknown, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string") {
+    if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(value)) {
+      throw new ValidationError(`${flag} must be a decimal number`);
+    }
+    value = Number(value);
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ValidationError(`${flag} must be finite`);
+  }
+  return value;
+}
+
 /** Validate a whole decimal count without collapsing omission or zero. */
 export function parseIntegerOption(value: unknown, flag: string): number | undefined {
   if (value === undefined) return undefined;
@@ -264,7 +279,7 @@ export function loadRotateFileOptions(path: string): RotateFileOptions {
 }
 
 /** JSON option files are objects; individual command fields are validated by their loaders. */
-function loadOptionObject(path: string): Record<string, unknown> {
+export function loadOptionObject(path: string): Record<string, unknown> {
   const value = loadJson(path);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new ValidationError("Option file must contain a JSON object");
@@ -273,7 +288,7 @@ function loadOptionObject(path: string): Record<string, unknown> {
 }
 
 /** Anchored JSON data is application-defined, but its outer collection must be an array. */
-function parseFileData(value: unknown): unknown[] | undefined {
+export function parseFileData(value: unknown): unknown[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value)) throw new ValidationError("data must be an array");
   return value;

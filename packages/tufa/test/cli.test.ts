@@ -425,7 +425,7 @@ Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers"
   assertEquals(dkr.args.oobi, ["http://127.0.0.1:5642/oobi/EAid"]);
 });
 
-Deno.test("tufa/cli - multisig approval deadlines dispatch seconds", () => {
+Deno.test("tufa/cli - multisig approval deadlines preserve supplied seconds for validation", () => {
   const incept = parseCommandSelection([
     "multisig",
     "incept",
@@ -441,7 +441,7 @@ Deno.test("tufa/cli - multisig approval deadlines dispatch seconds", () => {
     "7",
   ]);
   assertEquals(incept.name, "multisig.incept");
-  assertEquals(incept.args.approvalTimeoutSeconds, 7);
+  assertEquals(incept.args.approvalTimeoutSeconds, "7");
 
   const join = parseCommandSelection([
     "multisig",
@@ -452,7 +452,7 @@ Deno.test("tufa/cli - multisig approval deadlines dispatch seconds", () => {
     "6",
   ]);
   assertEquals(join.name, "multisig.join");
-  assertEquals(join.args.approvalTimeoutSeconds, 6);
+  assertEquals(join.args.approvalTimeoutSeconds, "6");
 
   const rpy = parseCommandSelection([
     "multisig",
@@ -465,7 +465,7 @@ Deno.test("tufa/cli - multisig approval deadlines dispatch seconds", () => {
     "0",
   ]);
   assertEquals(rpy.name, "multisig.rpy");
-  assertEquals(rpy.args.approvalTimeoutSeconds, 0);
+  assertEquals(rpy.args.approvalTimeoutSeconds, "0");
 
   const mailboxPropose = parseCommandSelection([
     "mailbox",
@@ -879,4 +879,22 @@ Deno.test("lifecycle CLI preserves omitted file overrides and raw numeric syntax
   assertEquals(explicit.args.ncount, "0");
   const malformed = parseCommandSelection(["rotate", "-n", "store", "-a", "alice", "--next-count", "1e2"]);
   assertEquals(malformed.args.nextCount, "1e2", "the command boundary must validate the original syntax");
+});
+
+Deno.test("multisig rotation preserves omitted file overrides", () => {
+  const selection = parseCommandSelection([
+    "multisig",
+    "rotate",
+    "-n",
+    "store",
+    "-g",
+    "group",
+    "--file",
+    "rotate.json",
+  ]);
+  for (const key of ["witnesses", "cuts", "witnessAdd", "data", "smids", "rmids", "toad"]) {
+    assertEquals(selection.args[key], undefined, key);
+  }
+  const join = parseCommandSelection(["multisig", "join", "-n", "store"]);
+  assertEquals(join.args.approvalTimeoutSeconds, undefined);
 });
