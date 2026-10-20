@@ -165,8 +165,8 @@ coordinator and its lifetime. KERIpy 714 normally resolves its queued src throug
 Habery, but also permits a Hab override. This queue uses an identifier in both
 cases; the explicit signer name distinguishes it from our existing remote-attester
 src field. Delivery uses that same selected signer for its introduction and
-endpoint lookup. Without explicit mailbox routes, poll all eligible witness
-mailboxes: a reply lives at the witness that answered. The existing per-endpoint
+endpoint lookup. Poll authorized mailbox providers and every current witness
+mailbox: a reply lives at the witness that answered. The existing per-endpoint
 workers provide concurrency; no new scheduler is needed. Hab.query accepts the same
 instruction, or the existing mbx topic-cursor form. The raw query constructor remains
 an open codec boundary for extension routes and malformed-input vectors.
@@ -242,32 +242,25 @@ is no shared memory-bound claim.
 
 ## Attester Resolution Contract
 
-`keri-ts` intentionally diverges from KERIpy's random target selection.
+Queries follow KERIpy `71438328` WitnessInquisitor selection:
 
-Resolution order is:
+1. A nonempty explicit `wits` list selects one random supplied witness and resolves
+   its location directly, even if the subject's KEL is not yet known.
+2. Otherwise, a known subject uses the first present role: controller, agent, witness.
+   Select one endpoint randomly within that role. Missing or unsupported locations
+   fail visibly; do not promote a lower role or silently try another endpoint.
+3. An explicit `src` retains its addressed attester; `signer` remains the local AID.
 
-1. explicit `wits` override from the cue
-2. `controller`
-3. `agent`
-4. `witness`
+Mailbox providers are not query attesters. Mailbox-only routing cannot invent a
+controller attester or use a provider URL for a controller query. Such unresolved
+requests remain pending. Anchor recovery separately asks each eligible candidate;
+this is not general load balancing or automatic transport retry.
 
-Within any role family, `keri-ts` chooses the deterministic first sorted
-endpoint identifier instead of a random entry.
-
-Why:
-
-- tests become stable
-- maintainer reasoning becomes easier
-- the branch surface is inspectable
-
-Cost:
-
-- it differs from KERIpy's transport-spread behavior
-- it does not attempt witness load balancing in this layer
-
-Ordinary requests keep this stable first-choice policy. Anchor recovery explicitly
-asks the eligible alternatives as described below; it does not introduce general
-load balancing or a retry scheduler.
+Hab.endsFor preserves endpoint entries with empty locations, as the reference does.
+It continues to filter stored roles by the existing `allowed || enabled` contract;
+this deliberately avoids the reference's enumeration of unauthorized retained
+rows. In particular, ordinary `/end/role/cut` rows (`allowed=false`, no enabled
+approval) remain excluded. Current KEL witnesses are independent of end-role rows.
 
 ## Habitat Resolution Contract
 

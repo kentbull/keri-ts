@@ -398,6 +398,13 @@ validates actual proof framing without a group-count/work cap.
 
 ## Mailbox, OOBI and DID
 
+Mailbox consumer targets include authorized providers and current KEL witnesses.
+A provider shared by both roles has one HTTP worker and cursor history. Local AIDs
+use the same HTTP boundary; provider storage is never directly scanned. Hosted
+composition opens its HTTP listener before starting runtime workers, so loopback
+polling cannot race listener acquisition. Shutdown joins consumers before stores
+close and response-producing owners before the HTTP host finishes draining.
+
 MailboxPoller floors finite positive timeout overrides with a 1 ms minimum;
 missing, nonfinite and nonpositive values use the existing 5-second header and
 30-second poll defaults. The SSE idle window remains 500 ms. This normalization

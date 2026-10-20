@@ -25,11 +25,14 @@ mailboxes and otherwise falls back to direct controller/agent delivery. Failed
 sends are reported to the caller without durable retry state. This selection is
 distinct from the inner message's validity.
 
-Delivery may fall back to TCP, while mailbox SSE polling selects HTTP(S) only,
-matching KERIpy 714 Poller/httpClient. A TCP-only authorized remote mailbox keeps
-mailbox-role precedence and produces no SSE target until it advertises HTTP(S);
-it does not silently poll an available witness instead. Witness-only polling
-also waits for an HTTP(S) endpoint. HTTPS priority is unchanged.
+Mailbox SSE polling selects HTTPS, then HTTP, and polls every allowed mailbox
+provider plus every current KEL witness, following KERIpy `71438328` MailboxDirector.
+A TCP-only provider has no SSE target until it advertises HTTP(S); it does not
+suppress HTTP-capable witnesses. Locally controlled providers remain eligible for
+ordinary HTTP polling; no provider rows are scanned locally. If an AID appears in
+both sets, one worker consumes its shared `(subject, provider, topic)` history.
+This intentionally avoids the reference's duplicate workers for the same cursor.
+Provider cursor histories remain independent of each other.
 
 Remote delivery uses `/fwd`, with q.pre identifying the recipient and q.topic the
 bucket. Legacy v1 carries e.evt plus pathed attachments. V2 binds one parent-owned

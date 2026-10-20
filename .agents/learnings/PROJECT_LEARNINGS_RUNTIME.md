@@ -104,7 +104,10 @@ QueryRequest has one required q body and target. signer is a local AID resolved
 from Habery; src is the remote attester. An unavailable explicit signer never falls
 back. Otherwise choose the configured Hab or sole Hab; never guess among several.
 Keep pending identifiers, not Hab objects. Query preparation captures that signer's
-introduction, endpoint and exact bytes. Failed/cancelled sends retain their head,
+introduction, endpoint and exact bytes. Follow KERIpy random selection within the
+first controller/agent/witness role, or within an explicit witness list; no mailbox
+query fallback. Missing selected locations remain visible. endsFor retains empty
+location maps while preserving the existing allowed/enabled authorization filter. Failed/cancelled sends retain their head,
 unresolved requests rotate, and close joins output before clearing. Anchor queries
 ask each eligible attester once, or retain one deferred request. Completion uses
 accepted seal/key/TEL state. Schema/credential hints stay notify-only; prebuilt reply
@@ -209,8 +212,9 @@ did.json opens no replay; broader lazy generation/export is deferred.
 Mailboxer lives above Habery. fwd stores the inner message under recipient
 authorization; reading requires current requester proof/threshold, not correlation
 alone. Keep protocol messages/cursors, not unsupported consumer inbox/acks. Poll
-HTTP(S); TCP-only explicit mailbox roles retain precedence while awaiting HTTP.
-Without explicit mailbox routing, poll all eligible witnesses concurrently.
+HTTP(S), alongside all current KEL witnesses. TCP-only providers do not suppress
+witness polling. A shared provider AID has one worker and cursor even if authorized
+as both mailbox and witness; locally controlled providers use ordinary HTTP intake.
 Polling timeout overrides floor finite positive values with a 1 ms minimum;
 missing/nonfinite/nonpositive values retain the header/poll defaults.
 Remote SSE consumer completion precedes durable cursor advancement and the next

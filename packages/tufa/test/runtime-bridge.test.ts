@@ -2,9 +2,10 @@ import { systemClock } from "../../keri/src/app/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 
-import { call, run } from "effection";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createAgentRuntime, createHabery, readCesrRequestBytes, Roles } from "keri-ts/runtime";
+import { runHostKernel } from "../src/host/kernel.ts";
 import { drainRuntimeCues } from "../src/http/protocol/runtime-bridge.ts";
 
 Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and joined cancellation", async () => {
@@ -95,6 +96,42 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       finish();
       yield* runtime.close();
 
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("host listener precedes loopback mailbox consumption and shutdown joins the consumer", async () => {
+  const reservation = Deno.listen({ hostname: "127.0.0.1", port: 0 });
+  const port = (reservation.addr as Deno.NetAddr).port;
+  reservation.close();
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = hby.makeHab("host");
+    hby.db.locs.pin([hab.pre, "http"], { url: `http://127.0.0.1:${port}` });
+    hby.db.ends.pin([hab.pre, Roles.mailbox, hab.pre], { allowed: true });
+    const worker = yield* spawn(() =>
+      runHostKernel(hby, {
+        enableMailboxStore: true,
+        serviceHab: hab,
+        http: { port, hostname: "127.0.0.1" },
+        protocolPolicy: {},
+        companionHosts: [function*(runtime) {
+          runtime.mailboxer!.storeMsg(`${hab.pre}/reply`, hab.makeEndRole(hab.pre, Roles.controller, true));
+        }],
+      })
+    );
+    try {
+      const deadline = performance.now() + 2_000;
+      while (hby.db.tops.get([hab.pre, hab.pre])?.topics["/reply"] !== 0 && performance.now() < deadline) {
+        yield* sleep(10);
+      }
+      assertEquals(hby.db.tops.get([hab.pre, hab.pre])?.topics["/reply"], 0);
+      assertEquals(hby.db.ends.get([hab.pre, Roles.controller, hab.pre])?.allowed, true);
+    } finally {
+      yield* worker.halt();
+      // The kernel borrowed the Habery; HTTP response and poll work have joined.
+      assertEquals(hby.db.opened, true);
       yield* hby.close(true);
     }
   });

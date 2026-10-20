@@ -180,29 +180,6 @@ Deno.test("unrouted notices create no requests; ambiguous identities and missing
   });
 });
 
-Deno.test("mailbox-only query transport retains the controller as attester", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const sender = hby.makeHab("sender"),
-      subject = hby.makeHab("subject"),
-      mailbox = hby.makeHab("mailbox", undefined, { transferable: false, ncount: 0 });
-    hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
-    hby.db.ends.pin([subject.pre, Roles.mailbox, mailbox.pre], { allowed: true });
-    const messages: Uint8Array[] = [], urls: string[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages, urls), systemClock);
-    try {
-      runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
-      yield* processCuesOnce(runtime, { hab: sender });
-      yield* runtime.querying.deliverOnce();
-      assertEquals(urls, ["http://mailbox.test/"]);
-      assertEquals(new SerderKERI({ raw: messages[0] }).ked?.q, { i: subject.pre, src: subject.pre });
-    } finally {
-      yield* runtime.close();
-      yield* hby.close(true);
-    }
-  });
-});
-
 Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only after accepted catchup", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -401,4 +378,71 @@ Deno.test("query command rejects malformed anchor files before opening a control
   } finally {
     await Deno.remove(root, { recursive: true });
   }
+});
+
+Deno.test("ordinary inquiries randomly choose within the first eligible role and preserve explicit addressing", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer"), subject = hby.makeHab("subject");
+    const peers = ["controller-a", "controller-b", "agent"].map((name) => hby.makeHab(name));
+    peers.forEach((peer, idx) => {
+      hby.db.ends.pin([subject.pre, idx < 2 ? Roles.controller : Roles.agent, peer.pre], { allowed: true });
+      hby.db.locs.pin([peer.pre, "http"], { url: `http://peer-${idx}.query.test/` });
+    });
+    const messages: Uint8Array[] = [], urls: string[] = [];
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages, urls), systemClock, signer);
+    const random = Math.random;
+    try {
+      for (const fraction of [0, 0.999]) {
+        // Exercise both selection boundaries without changing production randomness.
+        Math.random = () => fraction;
+        coordinator.enqueue({ pre: subject.pre, route: "logs", q: {} });
+        yield* coordinator.processPending();
+      }
+      Math.random = random;
+      coordinator.enqueue({ pre: subject.pre, src: peers[2].pre, route: "ksn", q: {} });
+      coordinator.enqueue({ pre: "unknown-subject", wits: [peers[2].pre], route: "logs", q: {} });
+      yield* coordinator.processPending();
+      yield* coordinator.deliverOnce();
+      assertEquals(urls, [0, 1, 2, 2].map((idx) => `http://peer-${idx}.query.test/`));
+      assertEquals(messages.map((msg) => (new SerderKERI({ raw: msg }).ked?.q as Record<string, unknown>).src), [
+        peers[0].pre,
+        peers[1].pre,
+        peers[2].pre,
+        peers[2].pre,
+      ]);
+    } finally {
+      Math.random = random;
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("selected roles keep missing locations visible instead of promoting another attester", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const signer = hby.makeHab("signer"), subject = hby.makeHab("subject"), agent = hby.makeHab("agent");
+    hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: true });
+    hby.db.ends.pin([subject.pre, Roles.agent, agent.pre], { allowed: true });
+    hby.db.locs.pin([agent.pre, "http"], { url: "http://agent.query.test/" });
+    const messages: Uint8Array[] = [];
+    const coordinator = new QueryCoordinator(hby, protocolFixture(hby), queryHttp(messages), systemClock, signer);
+    try {
+      coordinator.enqueue({ pre: subject.pre, route: "logs", q: {} });
+      assertEquals(subject.endsFor(subject.pre)[Roles.controller], { [subject.pre]: {} });
+      yield* call(() =>
+        assertRejects(() => run(() => coordinator.processPending()), ValidationError, "No endpoint URL")
+      );
+      assertEquals([coordinator.pending.length, messages.length], [1, 0]);
+      // A cut is retained in storage but excluded from routing; the agent can now answer.
+      hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: false });
+      yield* coordinator.processPending();
+      yield* coordinator.deliverOnce();
+      assertEquals((new SerderKERI({ raw: messages[0] }).ked?.q as Record<string, unknown>).src, agent.pre);
+    } finally {
+      yield* coordinator.close();
+      yield* hby.close(true);
+    }
+  });
 });
