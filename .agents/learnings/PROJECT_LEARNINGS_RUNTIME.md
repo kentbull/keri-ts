@@ -55,12 +55,13 @@ Composition shares one Revery between Tevery and ProtocolProcessor. Tevery regis
 own TSN routes and advances their retries; ProtocolProcessor knows only its protocol
 operations, not separate registry/credential receivers.
 
-ProtocolProcessor serializes dispatch/escrows. It returns the processed envelope, exact
-decision and mailbox authorization; KRAM may accumulate threshold proofs. It
-captures request replies before application publication, including synchronous
-capture when a new correlation claims already-published output. No application
-callback gate remains. Waiting cancellation removes the waiter; active ownership
-joins handler cleanup before passing the protocol turn. Reactor owns byte ingress
+ProtocolProcessor dispatches without a global lock. Synchronous domain writers
+revalidate prepared evidence against current state at commit. It returns the exact
+envelope/decision and mailbox authorization captured before optional escrow I/O.
+KRAM may accumulate threshold proofs. Publication owns its committed cue batch
+before notifying request observers; reentrant dispatch cannot steal that batch.
+New correlations also capture already-published output. Each input/escrow operation
+joins its own file and handler cleanup. Reactor owns byte ingress
 and its parser; Oobiery independently owns fetched parsing and its Kevery over the
 same store/reply verifier. Endpoint-role proposals receive concrete Habery/protocol/
 Poster dependencies; commands own delivery workers. Actual callers await input cleanup;

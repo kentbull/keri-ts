@@ -6,7 +6,7 @@ requires concrete component flows without application accounting. ResourcePolicy
 its errors, reservations and constructor plumbing are removed. No compatibility
 policy, renamed ledger or queue/client/listener quota belongs here. A necessary
 private socket constraint requires production evidence; use native backpressure.
-Concrete cue ownership, protocol-only ProtocolProcessor serialization and shared CLI/host
+Concrete cue ownership, synchronous protocol commits and shared CLI/host
 workers are implemented. The [transport plan](../../plans/runtime/TRANSPORT_PLAN.md)
 and [qualification plan](../../plans/qualification/QUALIFICATION_PLAN.md) retain
 composed, failure/restart and installed-package evidence gates.
@@ -98,12 +98,12 @@ previously committed messages. FrameIntake, TcpRead, custom frame channels,
 progressive cursors and parser-owned staging/disposal are removed.
 
 `ProtocolProcessor.dispatch(frame, options, kvy)` returns the processed envelope and its exact
-decision, plus mailbox authorization observed before releasing protocol state.
-KRAM can return accumulated threshold proofs as ordinary buffered data.
-ProtocolProcessor serializes dispatch and escrow passes so async handlers cannot interleave
-protocol processing. Waiting input cancellation removes the waiter; an active
-owner joins handler cleanup before releasing the processor. It has no callback
-executor or application-work entrypoint.
+decision, plus mailbox authorization captured at the synchronous query decision
+before optional escrow I/O. KRAM can return accumulated threshold proofs as
+ordinary buffered data. Domain owners validate and commit synchronously; EXN
+evidence preparation rechecks current state at that boundary. ProtocolProcessor
+has no global lock: other inputs and escrow scans can progress during file I/O
+or handlers. Each operation joins its own cleanup.
 
 Escrow owners report terminal rejection, expiry and missing-artifact ejections
 after their removal or transaction commits. Warning diagnostics identify the
@@ -123,11 +123,13 @@ Each Tevery sweep finishes the TSN Broker's captured finite horizons using bound
 pages. This can make one turn longer than the former one-page scheduling, but
 keeps row order, page-sized materialization and closed cursors between pages.
 New work beyond the horizon waits for another sweep. Exceptions propagate and
-cancellation joins active cleanup before releasing the serialized protocol turn.
+cancellation joins that scan's active cleanup.
 
 Protocol producers write to their own Deck, wired with the legacy TEL/verifier
 processors at composition. Before publishing to `AgentRuntime.cues`, ProtocolProcessor
-captures direct request replies. A new reservation also claims matching records
+captures direct request replies from an owned committed batch before notifying
+observers, so reentrant dispatch cannot consume the outer publication. Synchronous
+escrow output is published before asynchronous EXN recovery. A new reservation also claims matching records
 already published to the application Deck synchronously. Background cue workers cannot consume unfinished
 protocol output or reserved replies. Interpretation, signing, routing and request
 slot consumption belong to Hab, Respondant, QueryCoordinator and request owners.
@@ -207,7 +209,7 @@ underlying owner. Ordinary frames, cues and route records need no synthetic leas
 before starting work so a late independent failure remains observable during halt.
 A bare yielding finally can join a Promise while losing its error during teardown.
 
-External input abort must stop waiting protocol turns and active consumers as well
+External input abort must stop active consumers as well
 as the byte source. Register the watcher before checking its state. Check before
 pulls and after results, before treating done as EOF or dispatching another frame.
 DispatchOptions contains protocol choices; IngressOptions adds input lifetime.
@@ -561,9 +563,9 @@ deferred. Post-header body failure terminates the body and reports its original 
 
 ### Shared protocol processing and input owners
 
-ProtocolProcessor holds the serialized protocol turn, captures QueryReplies before
-application cue publication, and advances the shared durable escrows. Reactor owns
-queued/source parsing and an independent Kevery. Each receiving TCP messenger instance also
+ProtocolProcessor dispatches to synchronous semantic owners, captures QueryReplies
+before application cue publication, and advances shared durable escrows without
+locking independent operations. Reactor owns source parsing and an independent Kevery. Each receiving TCP messenger instance also
 creates its own Kevery over the same Baser cache and configured policy. Shared
 Revery/Exchanger/TEL owners remain long-lived; input construction never replaces
 semantic reply registrations. Protocol processing calls the existing dispatchEnvelope

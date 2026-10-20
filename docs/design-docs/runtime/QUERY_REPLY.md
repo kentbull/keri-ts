@@ -49,7 +49,7 @@ GLEIF-IT `b8626e1d`, recorded in the [runtime contract](INGRESS_AND_EGRESS.md).
   - request-SAID correlation slots and ordered captured evidence
   - independent slots for duplicate requests; correlation does not authorize access
 - `ProtocolProcessor` owns:
-  - serialized semantic dispatch and escrow advancement
+  - semantic dispatch and escrow advancement over synchronous domain commits
   - reply capture before application cue publication
 - `Reactor` and receiving messengers own:
   - input-specific parsers and Kevery instances over shared accepted state
