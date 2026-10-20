@@ -1,3 +1,4 @@
+import type { ThresholdSith } from "cesr-ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
 import { systemClock } from "../runtime-clock.ts";
@@ -6,7 +7,7 @@ import { systemClock } from "../runtime-clock.ts";
  * `tufa rotate` command implementation.
  *
  * KERIpy correspondence:
- * - mirrors the single-sig `kli rotate` command surface and merge semantics
+ * - mirrors the single-sig `kli rotate` command surface
  * - keeps the CLI/output mental model aligned while preserving explicit
  *   TypeScript-native orchestration instead of KERIpy's doer stack
  *
@@ -27,7 +28,11 @@ import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import {
   loadRotateFileOptions,
+  parseBooleanOption,
+  parseCountOption,
   parseDataItems,
+  parseStringListOption,
+  parseStringOption,
   parseThresholdOption,
   type RotateFileOptions,
 } from "./common/parsing.ts";
@@ -48,8 +53,8 @@ interface RotateArgs {
   code?: string[];
   codeTime?: string;
   proxy?: string;
-  isith?: string;
-  nsith?: string;
+  isith?: ThresholdSith;
+  nsith?: ThresholdSith;
   toad?: number;
   witnesses?: string[];
   cuts?: string[];
@@ -62,40 +67,30 @@ function emptyRotateOptions(): RotateFileOptions {
   return {};
 }
 
-/**
- * Merge CLI arguments over file-backed rotation options with KLI-compatible precedence.
- *
- * KLI quirk preserved intentionally:
- * - absent CLI `--nsith` still forces `'1'`
- * - absent CLI `--next-count` still forces `1`
- */
+/** Overlay supplied CLI values; defaults apply only after file precedence is resolved. */
 function mergeWithFile(args: RotateArgs): RotateFileOptions {
   const options = args.file && args.file !== "" ? loadRotateFileOptions(args.file) : emptyRotateOptions();
 
   if (args.isith !== undefined) {
-    options.isith = parseThresholdOption(args.isith);
+    options.isith = args.isith;
   }
   if (args.nsith !== undefined) {
-    options.nsith = parseThresholdOption(args.nsith);
-  } else {
-    options.nsith = "1";
+    options.nsith = args.nsith;
   }
   if (args.nextCount !== undefined) {
-    options.ncount = Number(args.nextCount);
-  } else {
-    options.ncount = 1;
+    options.ncount = args.nextCount;
   }
   if (args.toad !== undefined) {
-    options.toad = Number(args.toad);
+    options.toad = args.toad;
   }
-  if ((args.witnesses?.length ?? 0) > 0) {
-    options.wits = [...args.witnesses!];
+  if (args.witnesses !== undefined) {
+    options.wits = [...args.witnesses];
   }
-  if ((args.cuts?.length ?? 0) > 0) {
-    options.witsCut = [...args.cuts!];
+  if (args.cuts !== undefined) {
+    options.witsCut = [...args.cuts];
   }
-  if ((args.witnessAdd?.length ?? 0) > 0) {
-    options.witsAdd = [...args.witnessAdd!];
+  if (args.witnessAdd !== undefined) {
+    options.witsAdd = [...args.witnessAdd];
   }
   if (args.data !== undefined) {
     options.data = parseDataItems(args.data);
@@ -126,26 +121,26 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
   const http = new FetchHttpClient();
   const rotateArgs: RotateArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
-    file: args.file as string | undefined,
-    nextCount: args.nextCount as number | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    proxy: args.proxy as string | undefined,
-    isith: args.isith as string | undefined,
-    nsith: args.nsith as string | undefined,
-    toad: args.toad as number | undefined,
-    witnesses: args.witnesses as string[] | undefined,
-    cuts: args.cuts as string[] | undefined,
-    witnessAdd: args.witnessAdd as string[] | undefined,
-    data: args.data as string[] | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    file: parseStringOption(args.file, "file"),
+    nextCount: parseCountOption(args.nextCount, "nextCount"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    proxy: parseStringOption(args.proxy, "proxy"),
+    isith: parseThresholdOption(args.isith),
+    nsith: parseThresholdOption(args.nsith),
+    toad: parseCountOption(args.toad, "toad"),
+    witnesses: parseStringListOption(args.witnesses, "witnesses"),
+    cuts: parseStringListOption(args.cuts, "cuts"),
+    witnessAdd: parseStringListOption(args.witnessAdd, "witnessAdd"),
+    data: parseStringListOption(args.data, "data"),
   };
 
   if (!rotateArgs.name) {
@@ -174,7 +169,7 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
       let cuts = [...(options.witsCut ?? [])];
       let adds = [...(options.witsAdd ?? [])];
-      if ((options.wits?.length ?? 0) > 0) {
+      if (options.wits !== undefined) {
         if (cuts.length > 0 || adds.length > 0) {
           throw new ValidationError(
             "you can only specify witnesses or cuts and add",
@@ -186,8 +181,8 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
 
       hab.rotate({
         isith: options.isith,
-        nsith: options.nsith,
-        ncount: options.ncount,
+        nsith: options.nsith ?? "1",
+        ncount: options.ncount ?? 1,
         toad: options.toad,
         cuts,
         adds,

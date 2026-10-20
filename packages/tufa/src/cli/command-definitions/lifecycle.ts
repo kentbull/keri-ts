@@ -132,23 +132,19 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
         "-w, --wits <prefix>",
         "New set of witnesses, replaces all existing witnesses",
         collectOption,
-        [],
       )
       .option(
         "-t, --toad <toad>",
         "Witness threshold (threshold of accountable duplicity)",
-        (value: string) => Number(value),
       )
       .option(
         "-ic, --icount <count>",
         "Incepting key count for number of keys used for inception",
-        (value: string) => Number(value),
       )
       .option("-s, --isith <isith>", "Signing threshold for the inception event")
       .option(
         "-nc, --ncount <count>",
         "Next key count for number of next keys used on first rotation",
-        (value: string) => Number(value),
       )
       .option("-x, --nsith <nsith>", "Signing threshold for the next rotation")
       .option("-e, --est-only", "Only allow establishment events in KEL")
@@ -156,7 +152,6 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
         "-d, --data <data>",
         "Anchor data, '@' allowed",
         collectOption,
-        [],
       )
       .option("-di, --delpre <prefix>", "Delegator AID for delegated identifiers")
       .option("--proxy <alias>", "Alias for delegation communication proxy")
@@ -177,15 +172,15 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
       passcode: options.passcode,
       alias: options.alias,
       file: options.file,
-      transferable: options.transferable || false,
-      wits: options.wits || [],
+      transferable: options.transferable,
+      wits: options.wits,
       toad: options.toad,
       icount: options.icount,
       isith: options.isith,
       ncount: options.ncount,
       nsith: options.nsith,
-      estOnly: options.estOnly || false,
-      data: options.data || [],
+      estOnly: options.estOnly,
+      data: options.data,
       delpre: options.delpre,
       proxy: options.proxy,
       endpoint: options.receiptEndpoint || false,
@@ -227,7 +222,6 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
         .option(
           "-C, --next-count <count>",
           "Count of pre-rotated keys (signing keys after next rotation).",
-          (value: string) => Number(value),
         )
         .option("--proxy <alias>", "Alias for delegation communication proxy")
         .option("-i, --isith <isith>", "Current signing threshold")
@@ -235,31 +229,26 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
         .option(
           "-t, --toad <toad>",
           "Witness threshold (threshold of accountable duplicity)",
-          (value: string) => Number(value),
         )
         .option(
           "-w, --witnesses <prefix>",
           "New set of witnesses, replaces all existing witnesses",
           collectOption,
-          [],
         )
         .option(
           "-c, --witness-cut <prefix>",
           "Witness prefix to remove",
           collectOption,
-          [],
         )
         .option(
           "-A, --witness-add <prefix>",
           "Witness prefix to add",
           collectOption,
-          [],
         )
         .option(
           "-d, --data <data>",
           "Anchor data, '@' allowed",
           collectOption,
-          [],
         ),
     ),
     dispatch,
@@ -279,10 +268,10 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
       isith: options.isith,
       nsith: options.nsith,
       toad: options.toad,
-      witnesses: options.witnesses || [],
-      cuts: options.witnessCut || [],
-      witnessAdd: options.witnessAdd || [],
-      data: options.data || [],
+      witnesses: options.witnesses,
+      cuts: options.witnessCut,
+      witnessAdd: options.witnessAdd,
+      data: options.data,
     }),
   );
 }

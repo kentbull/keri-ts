@@ -864,3 +864,19 @@ Deno.test("tufa/cli - local group credential authoring reports coordination sepa
     await Deno.remove(head, { recursive: true });
   }
 });
+
+Deno.test("lifecycle CLI preserves omitted file overrides and raw numeric syntax", () => {
+  const incept = parseCommandSelection(["incept", "-n", "store", "-a", "alice", "--file", "options.json"]);
+  for (const key of ["transferable", "estOnly", "wits", "data", "icount", "ncount", "toad"]) {
+    assertEquals(incept.args[key], undefined, key);
+  }
+  const rotate = parseCommandSelection(["rotate", "-n", "store", "-a", "alice", "--file", "options.json"]);
+  for (const key of ["witnesses", "cuts", "witnessAdd", "data", "nextCount", "nsith"]) {
+    assertEquals(rotate.args[key], undefined, key);
+  }
+  const explicit = parseCommandSelection(["incept", "-n", "store", "-a", "alice", "--transferable", "--ncount", "0"]);
+  assertEquals(explicit.args.transferable, true);
+  assertEquals(explicit.args.ncount, "0");
+  const malformed = parseCommandSelection(["rotate", "-n", "store", "-a", "alice", "--next-count", "1e2"]);
+  assertEquals(malformed.args.nextCount, "1e2", "the command boundary must validate the original syntax");
+});
