@@ -69,14 +69,17 @@ operation/cleanup failures and Habery attempts all owned closes.
 
 LMDB V1 live inspection needs the existing owner or separate processes. Opening
 the same environment twice in one process can break reader slots, even readonly.
-Pending-OOBI maintenance uses scoped `openOobiStore`, not Baser/Habery startup.
-Explicit heads never fall back; default discovery requires one existing directory.
-LMDBer's existing opening neither stamps versions nor creates named tables; an
-absent non-creating native binding returns undefined and must fail explicitly.
-Preview is native read-only, and this owner exposes only exact `oobis.` get/rem.
-`tufa oobi clean` validates/deduplicates explicit keys before opening, preflights
-all rows before apply, and reports actual deleted/remaining work on failure.
-Sequential removals are not a rollback guarantee; adjacent OOBI tables stay intact.
+Pending-OOBI cleanup uses ordinary writable Baser loading and its canonical
+`oobis` table with `>` separator. Preview deletes no selected rows but accepts
+normal schema initialization and habitat reload/cleanup. Normal path preparation
+may create empty directories; a data.mdb check refuses missing databases before
+Baser can create one. Shared baserDefaults keeps that path check consistent with
+normal loading. No OOBI store/opener or alternate startup mode remains.
+Generic LMDBer.openExisting remains non-creating and separate from this command.
+`tufa oobi clean` validates exact keys before opening, preflights every row and
+reports completed/remaining operations on failure. Its complete/failed status
+follows explicit Baser closure; close failure never implies deletion rollback.
+Adjacent OOBI tables are not cleanup targets.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
 accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters

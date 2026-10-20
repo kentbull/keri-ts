@@ -118,7 +118,7 @@ function registerOobiCmds(program: Command, dispatch: CommandDispatch): void {
       .option("--apply", "Delete the selected keys after all are found", false)
       .addHelpText(
         "after",
-        "\nStop and back up the service first. Default: read-only preview; only oobis. is changed.",
+        "\nStop and back up the service first. Default: preview without deleting selected rows. Ordinary Baser startup may initialize tables and reload/clean habitats.",
       ),
     dispatch,
     {

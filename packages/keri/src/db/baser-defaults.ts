@@ -1,4 +1,4 @@
-/** Shared Baser layout for full protocol storage and narrow maintenance owners. */
+/** Canonical Baser layout shared by normal loading and command target checks. */
 import type { LMDBerDefaults } from "./core/lmdber.ts";
 
 /** Select Baser's persistent, alternate-home and temporary path conventions. */

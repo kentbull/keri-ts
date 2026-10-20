@@ -244,3 +244,38 @@ Deno.test("db/core lmdber lifecycle - cancellation preserves a late native close
   assertStrictEquals(await assertRejects(() => run(() => db.reopen())), failure);
   await Deno.remove(db.path!, { recursive: true });
 });
+
+Deno.test("db/core lmdber lifecycle - existing-only opening refuses missing storage, table creation and clearing", async () => {
+  const headDirPath = await Deno.makeTempDir();
+  try {
+    const missing = new LMDBer();
+    await assertRejects(
+      () => run(() => missing.openExisting(`${headDirPath}/absent`)),
+      Error,
+      "Existing database not found",
+    );
+    assertEquals([...Deno.readDirSync(headDirPath)], []);
+    const seed = new LMDBer({ headDirPath, name: "existing" });
+    await run(() => seed.reopen());
+    const path = seed.path!;
+    seed.env!.removeSync(b("__version__"));
+    seed.setVal(seed.openDB("original."), b("key"), b("value"));
+    await run(() => seed.close());
+    const before = await Deno.readFile(`${path}/data.mdb`);
+    for (const readonly of [false, true]) {
+      const db = new LMDBer({ readonly });
+      await run(() => db.openExisting(path));
+      try {
+        assertEquals(db.getVer(), null);
+        assertEquals(t(db.getVal(db.openDB("original."), b("key"))!), "value");
+        assertThrows(() => db.openDB("new."), Error, "Database not found");
+        await assertRejects(() => run(() => db.close(true)), Error, "cannot clear");
+      } finally {
+        await run(() => db.close());
+      }
+      assertEquals(await Deno.readFile(`${path}/data.mdb`), before);
+    }
+  } finally {
+    await Deno.remove(headDirPath, { recursive: true });
+  }
+});

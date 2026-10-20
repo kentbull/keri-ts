@@ -1,4 +1,4 @@
-"""Create/reopen a real KERIpy Baser and capture its exact persistent rows."""
+"""Create/reopen a real KERIpy Baser and inspect the four OOBI tables."""
 import argparse
 import json
 
@@ -39,18 +39,12 @@ def main():
     # twice in one process can invalidate LMDB reader slots.
     env = lmdb.open(path, readonly=True, create=False, max_dbs=256)
     try:
-        with env.begin() as txn:
-            root = list(txn.cursor())
         tables = {}
-        metadata = {}
-        for key, value in root:
-            if key.endswith(b"."):
-                table = env.open_db(key, create=False)
-                with env.begin(db=table) as txn:
-                    tables[key.decode()] = [(k.hex(), v.hex()) for k, v in txn.cursor()]
-            else:
-                metadata[key.hex()] = value.hex()
-        print(json.dumps({"path": path, "metadata": metadata, "tables": tables}))
+        for name in ("oobis.", "woobi.", "coobi.", "roobi."):
+            table = env.open_db(name.encode(), create=False)
+            with env.begin(db=table) as txn:
+                tables[name] = [(k.hex(), v.hex()) for k, v in txn.cursor()]
+        print(json.dumps({"path": path, "tables": tables}))
     finally:
         env.close()
 
