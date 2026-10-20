@@ -129,7 +129,8 @@ The [runtime contract](../../docs/design-docs/runtime/INGRESS_AND_EGRESS.md) def
 current behavior; Git and PR checks retain implementation evidence.
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
-key-state facts through an Effection channel. Runtime pending state describes
+key-state facts once into an explicitly supplied command-owned Deck with one
+noticer consumer. Runtime pending state describes
 sending, while the invoking operation represents active semantic work. Tufa owns
 query command composition and final display after close; an unsatisfied deadline
 fails without OOBI catch-up. HTTP queries acknowledge intake and send-only

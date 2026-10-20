@@ -209,9 +209,12 @@ owners. CueSink, its optional preparation/admission hooks and root adapters are
 deleted. Respondant and WitnessInquisitor do not receive the parent runtime or
 discover its siblings.
 WitnessInquisitor's delivery operation owns ordinary pending
-send work. Concrete workflows borrow accepted state and a sender; live
-key-state facts arrive through the composition's Effection channel. Each operation
-owns its observation and follow-on work without a runtime registry or callbacks.
+send work. Concrete workflows borrow accepted state and a sender. The command
+wires one queryCues Deck to its noticer and runAgentRuntime before I/O. The
+application cue worker transfers saved notices there once, leaving the noticer
+as its sole consumer. Each operation owns its wait and follow-on work without a
+runtime registry or callbacks. Future Channels require an independently justified
+production use, not a simultaneous-observer test.
 
 Query preparation, signing and admission are synchronous operations over accepted
 state published by its processing owner after commit. They do not suspend between
@@ -333,16 +336,20 @@ Why this is not generic `Revery` ownership:
 
 Concrete operations mirror KERIpy's query doers. Their invoking scopes own
 progress and cleanup; the sender does not register, tick or count workflows.
-Key-state consumers subscribe before sending. Composition publishes saved-state
-records to their Effection channel, so one observer cannot steal another
-observer's notice. Sequence and anchor operations read accepted database state.
+The query command owns one cue Deck before sending. Its noticer pulls one head,
+matches kind/subject and appends unrelated or currently unusable notices at the
+tail, yielding cooperatively between turns. Witness drains preserve saved facts
+for this application handoff. There is no broadcast or request freshness promise.
+Sequence and anchor operations read accepted database state.
 
 `KeyStateNoticer`
 
 - starts by requesting `ksn`
-- completes immediately if local accepted state already matches or exceeds the
-  remote report
-- upgrades into `LogQuerier` if the remote KSN reports newer accepted state
+- selects the first usable matching queued notice, retaining it while local
+  prerequisite state is unavailable
+- completes if local accepted state matches or exceeds that notice's sequence
+- directly awaits `LogQuerier` if the notice reports a higher sequence; later
+  notices stay queued rather than replacing a running catch-up task
 
 `LogQuerier`
 

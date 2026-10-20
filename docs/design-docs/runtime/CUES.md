@@ -45,19 +45,26 @@ flowchart TD
   R --> Q[Request correlation records]
   R --> A[Application cue Deck]
   O[Committed OOBI facts] --> A
-  A -->|query| C[QueryCoordinator]
+  A -->|query| C[WitnessInquisitor]
   C --> H[Hab.query signing]
-  H --> D[Query delivery and response intake]
+  H --> D[Concrete query delivery]
   A -->|stream| M[MailboxDirector correlation and SSE]
   A -->|reply / replay / receipt / witness| S[Respondant and Hab interpretation]
   S --> T[Poster queued execution]
-  S --> HTP[Independent direct response reader]
+  A -->|keyStateSaved| K[Command-owned query Deck]
+  K --> N[Single KeyStateNoticer]
   B[Mailboxer payload storage] --> M
 ```
 
 `processCuesOnce` / `cueDo` live at composition and implement that routing.
-QueryCoordinator resolves the local signer and remote attester, snapshots signed
-query/introduction bytes, and joins response I/O. An unavailable explicit signer
+A query command passes its queryCues Deck explicitly to the worker before I/O;
+one noticer consumes it, and witness drains leave saved notices for that route.
+The noticer retains unrelated/unusable cues with cooperative pull/match/append
+turns. There is no request freshness or broadcast promise. Future use of Channels
+requires a separately justified production need.
+WitnessInquisitor resolves the local signer and remote attester, signs one
+query/introduction packet and joins its transport attempt. HTTP receives replies
+through independent intake; TCP may process same-socket replies. An unavailable explicit signer
 stays unresolved; no multi-Hab guessing occurs. Schema/credential recovery notices
 remain notify-only rather than becoming invented logs queries.
 
@@ -78,7 +85,7 @@ A successful `/fwd` write does not prove the query-to-SSE bridge works.
 
 ## Record and resource boundaries
 
-Respondant and QueryCoordinator prepare and publish successfully before removing
+Respondant and WitnessInquisitor prepare and publish successfully before removing
 their source record. Preparation failure leaves that source pending. Hab's low-level
 processCuesIter consumes a supplied Deck head before construction; Respondant passes
 a borrowed single-cue iterable so its source Deck remains intact on failure. Finite passes use their initial extent;
@@ -102,8 +109,8 @@ waits for its concrete admission, and joins cleanup. Runtime callers use the
 existing host worker. There is no alternate immediate-send Poster API.
 
 The host runs `Poster.deliverDo` independently of query response intake. HTTP and
-witness ingress publish without calling `Poster.process`; direct response readers
-keep their request-owned lifetime. Focused tests may explicitly process Poster.
+witness ingress publish without calling `Poster.process`; direct TCP replies and
+mailbox SSE retain their actual request-owned lifetimes. Focused tests may explicitly process Poster.
 
 Poster processes events FIFO with an ordinary sequential loop over targets.
 An observed refusal does not prevent remaining targets from being attempted.

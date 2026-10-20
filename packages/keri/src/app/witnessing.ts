@@ -228,9 +228,10 @@ function cueHab(runtime: AgentRuntime, serviceHab?: Hab): Hab | null {
   return first.done || !habitats.next().done ? null : first.value;
 }
 /**
- * Route one initial witness cue batch and publish saved key-state facts.
+ * Route one initial witness cue batch, leaving saved key-state facts for the
+ * application cue worker and its optional command-owned noticer destination.
  * Respondant publishes Poster work; this ingress helper never drains Poster
- * network delivery. WitnessInquisitor delivery retains its existing explicit pass.
+ * network delivery. Query network I/O stays with the independent sender.
  *
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param serviceHab Optional hosted witness signer; absent selection must be unambiguous.
@@ -250,6 +251,11 @@ export function* drainWitnessCues(
   for (let index = 0; index < count; index++) {
     const cue = cues.peekHead();
     if (!cue) break;
+    if (cue.kin === "keyStateSaved") {
+      cues.pull();
+      cues.append(cue);
+      continue;
+    }
     if (deliver) {
       if (cue.kin === "query") {
         runtime.querying.enqueueCue(cue, hab);
@@ -264,7 +270,6 @@ export function* drainWitnessCues(
       for (const _msg of hab.processCuesIter([cue])) { /* local proof persisted */ }
     }
     cues.pull();
-    if (cue.kin === "keyStateSaved") yield* runtime.keyStateUpdates.send(cue);
   }
 }
 /** Witness-local dispatch and existing responder delivery policy for one ingress source. */

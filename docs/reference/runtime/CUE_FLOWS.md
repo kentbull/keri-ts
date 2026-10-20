@@ -40,8 +40,9 @@ host doers arrange its delivery. In keri-ts:
 2. Hab interpretation prepares raw protocol messages. Successful transfer precedes
    source removal; a preparation failure retains the cue.
 3. Respondant fully constructs local replay sequences before atomically publishing
-   Poster events and any independent direct response reader. Poster owns endpoint
-   selection, FIFO delivery, retained whole-event failures and joined cleanup.
+   Poster events. Poster owns endpoint selection, FIFO delivery, concrete terminal
+   outcomes and joined cleanup. Ordinary HTTP query replies are sent independently
+   of their 204 intake acknowledgement.
 4. An authorized local forward can write Mailboxer; remote mailbox delivery stores
    at the recipient's provider and is later retrieved by polling.
 
@@ -50,7 +51,7 @@ Response correlation and outbound delivery have independent reader lifetimes.
 Request owners publish complete reply batches before taking their correlation
 records; a second TSN interpretation failure must leave the pair pending.
 
-The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) defines delivery completion. The host runs Poster independently of QueryCoordinator. Ingress
+The [runtime contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md) defines delivery completion. The host runs Poster independently of WitnessInquisitor. Ingress
 publishes without draining Poster. Target loops attempt remaining destinations
 after refusal; failed whole events retain terminal evidence while later events
 continue. The runtime contract owns the separately gated failure-reporting change.
@@ -63,32 +64,41 @@ In keri-ts:
 
 1. Revery, Kevery or Exchanger publishes a query cue describing missing state.
    Kever can return follow-up data that Kevery applies and publishes.
-2. Composition sends query records to QueryCoordinator. Routed requests carry
+2. Composition sends query records to WitnessInquisitor. Routed requests carry
    one target/body, an optional local signer AID, and a remote attester `src`.
    Schema/credential notices remain notify-only.
-3. The coordinator resolves the explicit signer through Habery, otherwise its
+3. The sender resolves the explicit signer through Habery, otherwise its
    configured Hab, otherwise the sole local Hab. Missing explicit signers do not
    fall back. Unresolved requests stay pending.
 4. It selects an attester/endpoint and synchronously snapshots Hab.query output
    plus that signer's introduction before removing the source request.
-5. deliverOnce performs actual transport and response intake. Failure/cancellation
-   retains the captured packet; retries do not sign again.
+5. deliverOnce joins one transport pass; deliverDo runs the background sender.
+   Failed sends are reported without retained packets or automatic resubmission.
+   HTTP drains response bytes; TCP may process same-socket replies. Independent
+   mailbox/direct intake supplies protocol evidence for HTTP query workflows.
 
 Direct component callers can still interpret already-resolved query cues through
 Hab.processCuesIter. The runtime does not route unresolved cues through a generic
-Hab-to-sink pipeline. Attester priority and deterministic selection are specified
+Hab-to-sink pipeline. Attester role priority and random selection within that role are specified
 in the [query contract](../../design-docs/runtime/QUERY_REPLY.md).
 
-## OOBI and query continuation
+## OOBI and command-owned query observation
 
 1. Oobiery.resolve writes durable oobis work and publishes oobiQueued.
 2. Its worker fetches/parses input, settles real cleanup and records a terminal
    result before publishing oobiResolved/oobiFailed. Retrieval completion is not
    universal acceptance of every incoming event.
-3. Kevery publishes keyStateSaved after accepted state advances. QueryCoordinator
-   observes it and ticks its continuations against committed state.
-4. KeyStateNoticer may progress from KSN to logs; sequence and anchor continuations
-   finish only when their accepted local condition holds. Anchor recovery asks
+3. The query command creates one Deck and passes it to both KeyStateNoticer and
+   runAgentRuntime as queryCues before I/O starts. The application cue owner
+   transfers keyStateSaved records there once; witness drains leave them for it.
+4. The noticer pulls/matches/appends one cue per cooperative turn, retaining
+   unrelated cues and matching notices lacking local state. Its first usable
+   notice either confirms accepted state is current or selects a LogQuerier target.
+   Later notices stay queued; neither queue emptiness nor HTTP success completes
+   catch-up. Ordinary KEL acceptance still emits this cue pending the separate
+   13h2 publication correction; cue kind alone is not proof of a remote response.
+5. Sequence and anchor operations finish only when their accepted local condition
+   holds. Anchor recovery asks
    each eligible attester once, or retains one unresolved ordinary request.
 
 The host runs component workers concurrently. Finite CLI flows observe accepted
