@@ -38,6 +38,10 @@ Config iurls/durls/wurls/curls are absent or arrays of nonblank strings; preserv
 accepted strings exactly. Habery validates all three preload lists before either
 OOBI store changes, even without dt; alias curls validate before signed replies. Location
 and role changes use signed Revery intake, not direct locs/lans mutation.
+Init validates one explicit encryption method before opening config/stores;
+AEID/seed bypasses prompting. Interactive passcodes use the scoped hidden-input
+owner, including EOF/cancellation cleanup. Noninteractive reopen preserves its
+actual failure; no visible prompt retry or implicit temporary init fallback remains.
 
 Source CLI/tests and the DID container run Deno; packaged CLI launchers run Node.
 [runtime memory](../../docs/design-docs/runtime/RUNTIME_MEMORY.md) owns executable
