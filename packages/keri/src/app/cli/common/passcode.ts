@@ -17,13 +17,15 @@ export function* readPasscode(message: string): Operation<string> {
   }
   try {
     return yield* abortable(async (signal) => {
-      const eof = new AbortController();
+      const inputAbort = new AbortController();
       const input = process.stdin;
       const wasRaw = input.isRaw ?? false;
-      const promptSignal = AbortSignal.any([signal, eof.signal]);
-      const onEnd = () => eof.abort(new ValidationError("Passcode input ended before submission"));
+      const promptSignal = AbortSignal.any([signal, inputAbort.signal]);
+      const onEnd = () => inputAbort.abort(new ValidationError("Passcode input ended before submission"));
       const onKey = (_text: string, key: Key) => {
-        if (key.ctrl && key.name === "d") onEnd();
+        if (!key.ctrl) return;
+        if (key.name === "d") onEnd();
+        if (key.name === "c") inputAbort.abort(new ValidationError("Passcode input cancelled"));
       };
       input.once("end", onEnd);
       input.once("close", onEnd);
