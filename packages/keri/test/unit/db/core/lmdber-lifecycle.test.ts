@@ -222,3 +222,25 @@ Deno.test("db/core lmdber lifecycle - cancelling close joins native completion b
   assertEquals(db.opened, false);
   await run(() => db.close(true));
 });
+
+Deno.test("db/core lmdber lifecycle - cancellation preserves a late native close rejection", async () => {
+  const db = new LMDBer({ temp: true });
+  await run(() => db.reopen());
+  const native = db.env!;
+  const originalClose = native.close.bind(native);
+  const failure = new Error("late native close failure");
+  let reject!: (error: Error) => void;
+  native.close = () =>
+    new Promise<void>((_, failed) => {
+      reject = failed;
+    });
+  const closing = run(() => db.close());
+  const halted = Promise.resolve(closing.halt());
+  // The injected rejection follows real native cleanup, so the test leaks no handle.
+  await originalClose();
+  reject(failure);
+  assertStrictEquals(await assertRejects(() => halted), failure);
+  assertStrictEquals(await assertRejects(() => Promise.resolve(closing)), failure);
+  assertStrictEquals(await assertRejects(() => run(() => db.reopen())), failure);
+  await Deno.remove(db.path!, { recursive: true });
+});

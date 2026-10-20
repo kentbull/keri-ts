@@ -3,7 +3,7 @@
  */
 
 import { b, bytesEqual, bytesHex, t, toBytes } from "cesr-ts";
-import { action, call, type Operation } from "npm:effection@^3.6.0";
+import { action, call, ensure, type Operation } from "npm:effection@^3.6.0";
 import { open } from "npm:lmdb@3.5.3";
 import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
@@ -391,12 +391,10 @@ export class LMDBer {
     const pending = this.closing;
     if (pending) {
       yield* call(function*() {
-        try {
-          yield* call(() => pending);
-        } finally {
-          // Promise leaves are not cancellable. Scope teardown must join them.
-          yield* call(() => pending);
-        }
+        // Register joining before the async leaf. Effection reports a failing
+        // ensure as destruction failure, including when its task is halted.
+        yield* ensure(() => call(() => pending));
+        yield* call(() => pending);
       });
       this.closing = null;
     }

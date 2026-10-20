@@ -16,7 +16,8 @@ Root `close()` sets status to closing, disables reads and writes, drains pending
 writes, waits for outstanding reads in `doClose`, and invokes its callback after
 setting status to closed. Its returned Promise can resolve before `doClose` on
 the deferred-read branch. LMDBer therefore bridges that completion callback and
-also observes Promise rejection. Cancellation joins the same pending close;
+also observes Promise rejection. An immediate `ensure` registers joining before the asynchronous leaf, preserving
+late rejection during cancellation. Cancellation joins the same pending close;
 path removal follows completion, never elapsed time.
 
 The old `quiesceEnvTimers()` one-millisecond delay is removed. Read renewal
@@ -49,11 +50,11 @@ close fails. A cleanup failure does not imply row rollback.
 
 ## Focused checks
 
-Docker Linux arm64, Deno 2.8.2, pinned V1-format native LMDB: 78 tests passed in
-`lmdber-lifecycle`, `cli-context`, `basing`, `habbing` and `essr`. Fault injection
+Docker Linux arm64, Deno 2.8.2, pinned V1-format native LMDB: focused tests in
+`lmdber-lifecycle`, `cli-context`, `basing`, `habbing` and `essr` pass. Fault injection
 uses the actual root handle's close boundary; real close/reopen/deletion checks
 remain. Coverage includes ordinary/existing-only synchronous and asynchronous
 close failures, known-closed repetition, no reopen/delete after failure, callback
-completion, cancellation joining, acquisition/cleanup error identity, all owned
+completion, cancellation joining and late rejection, acquisition/cleanup error identity, all owned
 Habery closures, and existing authenticated ESSR/restart behavior. These are
 scoped checks, not final release qualification.
