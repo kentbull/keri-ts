@@ -34,16 +34,16 @@ export function getLogLevel(): LogLevel {
   return currentLogLevel;
 }
 
-/** Default logger that forwards to `console.*` with level gating. */
+/** Level-gated diagnostics on stderr; stdout belongs to command data. */
 export const consoleLogger: Logger = {
   debug: (message: string, ...meta: unknown[]) => {
     if (shouldLog("debug")) {
-      console.debug(message, ...meta);
+      console.error(message, ...meta);
     }
   },
   info: (message: string, ...meta: unknown[]) => {
     if (shouldLog("info")) {
-      console.log(message, ...meta);
+      console.error(message, ...meta);
     }
   },
   warn: (message: string, ...meta: unknown[]) => {

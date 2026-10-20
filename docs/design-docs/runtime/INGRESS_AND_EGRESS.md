@@ -105,6 +105,9 @@ evidence preparation rechecks current state at that boundary. ProtocolProcessor
 has no global lock: other inputs and escrow scans can progress during file I/O
 or handlers. Each operation joins its own cleanup.
 
+All enabled built-in diagnostic levels (debug/info/warn/error) write to stderr.
+Loglevel selects verbosity; CLI command data, including JSON, remains on stdout.
+
 Escrow owners report terminal rejection, expiry and missing-artifact ejections
 after their removal or transaction commits. Warning diagnostics identify the
 family, message and actual refusal; they use the existing stderr logger without

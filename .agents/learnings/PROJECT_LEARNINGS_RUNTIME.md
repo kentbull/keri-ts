@@ -195,6 +195,8 @@ finite HttpResponse bytes remain usable after request cleanup. Native Response n
 Source/parser/consumer errors remain distinct; test clients explicitly produce
 TransportError for simulated network failure. No client singleton identity check
 controls failure handling. Header-timeout and SSE window policy remains with callers.
+Enabled consoleLogger diagnostics write to stderr at every level; CLI data stays
+on stdout. Preserve loglevel gating and the original message/metadata arguments.
 HTTP scopes own fetch/body and preserve signal reasons. Pre-abort acquires
 no fetch; only the owned header timeout becomes mailbox null. Positive peer HTTP
 refusal is distinct from parser/source/storage/cleanup failure. Ordinary postCesr
