@@ -43,9 +43,9 @@ import type { KeverDecision, QueryProcessDecision } from "../core/kever-decision
 import { type KramRefusal } from "../core/kraming.ts";
 import { supportsNestedExchange } from "../core/protocol-exchanging.ts";
 import { type ReplyProcessDecision, Revery } from "../core/routing.ts";
-import type { Tevery } from "../vdr/eventing.ts";
+import type { TelProcessDecision, Tevery } from "../vdr/eventing.ts";
 import type { ExchangeDecision } from "./exchanging.ts";
-import type { Verifier } from "./verifying.ts";
+import type { Verifier, VerifierDecision } from "./verifying.ts";
 
 /** Exchange admission may await durable payload storage before dispatch advances. */
 export interface ExchangerLike {
@@ -122,6 +122,8 @@ export interface MessageDropDecision {
 /** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
 export type DispatchDecision =
   | KeverDecision
+  | TelProcessDecision
+  | VerifierDecision
   | QueryProcessDecision
   | ReplyProcessDecision
   | ExchangeDecision
@@ -180,10 +182,10 @@ export function* dispatchEnvelope(
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
-    if (serder.ilk === null) {
-      verifier?.processACDC(acdcEnvelopeFromDispatch(envelope, serder));
-    }
-    return { envelope, decision: undefined };
+    return {
+      envelope,
+      decision: serder.ilk === null ? verifier?.processACDC(acdcEnvelopeFromDispatch(envelope, serder)) : undefined,
+    };
   }
 
   if (
@@ -224,8 +226,7 @@ export function* dispatchEnvelope(
     case Ilks.rev:
     case Ilks.bis:
     case Ilks.brv:
-      tevery?.processEvent(telEnvelopeFromDispatch(envelope, serder));
-      break;
+      return { envelope, decision: tevery?.processEvent(telEnvelopeFromDispatch(envelope, serder)) };
     case Ilks.icp:
     case Ilks.dip:
     case Ilks.rot:

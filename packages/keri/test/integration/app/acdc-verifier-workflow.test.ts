@@ -203,6 +203,15 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
     const credentialSaid = issuedJson.said as string;
     assertEquals(issuedJson.status, "accept");
 
+    // A parsed bundle with a missing schema is retained, but the finite command must report incomplete acceptance.
+    const incomplete = await runTufa(
+      ["vc", "import", ...storeArgs(holderName, headDirPath, passcode), "--in", holderStreamPath],
+      env,
+    );
+    assertEquals(incomplete.code !== 0, true);
+    assertEquals(parseJsonLine(incomplete.stdout).complete, false);
+    assertEquals(parseJsonLine(incomplete.stdout).saved, []);
+
     await requireSuccess(
       "holder schema import",
       runTufa(["vc", "schema", "import", ...storeArgs(holderName, headDirPath, passcode), "--schema", schemaPath], env),
@@ -212,6 +221,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
       runTufa(["vc", "import", ...storeArgs(holderName, headDirPath, passcode), "--in", holderStreamPath], env),
     );
     assertEquals(parseJsonLine(holderImport.stdout).saved, [credentialSaid]);
+    assertEquals(parseJsonLine(holderImport.stdout).complete, true);
 
     const holderGrant = await requireSuccess(
       "holder ipex grant",

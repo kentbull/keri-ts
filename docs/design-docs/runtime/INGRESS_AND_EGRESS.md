@@ -552,7 +552,11 @@ Host composition exposes actual `protocol`, `replies` and `exc` owners. HTTP/TCP
 request slots borrow `replies`; IPEX workflows observe `exc`. Poster borrows the
 shared ProtocolProcessor rather than Reactor. Credential import, grant artifact
 intake and VerifierAgent also borrow ProtocolProcessor directly; their finite input
-operations own parsing and input-specific Kevery instances. Minimal standalone input composition
+operations own parsing and input-specific Kevery instances. Finite credential import
+reports persisted target acceptance and bounds post-EOF local settlement; recurring
+artifact intake retains its single-pass scheduling. The
+[credential contract](../credentials/ACDC_TEL_VERIFIER.md#credential-input-ownership-and-finite-completion)
+owns the result/deadline semantics. Minimal standalone input composition
 uses createProtocolProcessor over the caller's existing Habery, opening no stores
 or background workers. Reactor has no dispatch, escrow or semantic-handler proxies.
 

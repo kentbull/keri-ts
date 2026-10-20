@@ -4,13 +4,13 @@ import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { type AgentRuntime } from "../agent-runtime.ts";
+import { importCredentialStream } from "../credential-importing.ts";
 import {
   createCredential,
   credentialRegistryRecords,
   credentialRegistryStatus,
   credentialStreamBytes,
   exportCredentialStream,
-  importCredentialStream,
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
@@ -212,14 +212,22 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
-/** Implement `tufa vc import` by ingesting one CESR credential stream. */
+/**
+ * Report finite CESR intake separately from persisted acceptance of this import's targets.
+ *
+ * @param args Parsed store and file/stdin choices; input is buffered before parser ownership begins.
+ */
 export function* vcImportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcImportArgs = {
     ...baseArgs(args),
     inPath: args.inPath as string | undefined,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    console.log(JSON.stringify(yield* importCredentialStream(runtime.protocol, reger, readBytes(vcArgs.inPath))));
+    const result = yield* importCredentialStream(runtime.protocol, reger, readBytes(vcArgs.inPath), runtime.clock);
+    console.log(JSON.stringify(result));
+    if (!result.complete) {
+      throw new ValidationError("Credential import incomplete; inspect the reported target outcomes.");
+    }
   });
 }
 

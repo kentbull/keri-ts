@@ -126,11 +126,15 @@ export {
   createConfiger,
 } from "../app/configing.ts";
 export {
+  type CredentialImportResult,
+  type CredentialImportTargetResult,
+  importCredentialStream,
+} from "../app/credential-importing.ts";
+export {
   createCredential,
   type CredentialCreateOptions,
   type CredentialCreateResult,
   type CredentialExportResult,
-  type CredentialImportResult,
   type CredentialListItem,
   type CredentialListOptions,
   type CredentialRegistryInceptOptions,
@@ -139,7 +143,6 @@ export {
   type CredentialRevokeOptions,
   type CredentialRevokeResult,
   exportCredentialStream,
-  importCredentialStream,
   inceptCredentialRegistry,
   listCredentials,
   pinSchemaBytes,
