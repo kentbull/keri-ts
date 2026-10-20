@@ -198,8 +198,10 @@ mutations before handoff when implementation is authorized.
 ## Delivery evidence
 
 [PR #556](https://github.com/kentbull/keri-ts/pull/556) delivers the removal and
-contract/documentation reconciliation. The implementation commit is `b41674ed`;
-subsequent closure edits update documentation only. Major changesets cover both
+contract/documentation reconciliation. The mailbox implementation commit is `b41674ed`. Package qualification also
+exposed an existing build selector tied to the old host-kernel doc comment;
+it now identifies the exported runHostKernel symbol in generated JavaScript and
+declarations. A real Tufa npm build passes after that focused build-script repair. Major changesets cover both
 keri-ts and Tufa. No local reader or operator setting was added.
 
 The provider-isolation regression fails on the baseline because stored replies

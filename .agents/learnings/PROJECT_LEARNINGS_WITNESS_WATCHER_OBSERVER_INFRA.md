@@ -77,6 +77,9 @@ patterns to expose implementation internals. Installed probes use named surfaces
 Derive every manifest export/bin
 from DNT output, including host/kernel and protocol-handler imports/declarations;
 fixed layout guesses can break advertised subpaths while the CLI still works.
+For ordinary function modules, use a stable exported symbol as the selector, not
+maintainer doc-comment prose: rewriting kernel documentation previously broke
+Tufa package discovery despite unchanged executable code.
 Assert packed targets. Strict installed NodeNext checking must pass without
 skipLibCheck. LMDB 3.5.3's ESM declaration uses export assignment; normalize emitted
 type-only imports to its valid CommonJS declaration branch, preserving ESM values.

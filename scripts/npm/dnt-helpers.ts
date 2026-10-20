@@ -88,7 +88,7 @@ export function toPackagePath(path: string, outDir: string): string {
 }
 
 /**
- * Find exactly one generated entrypoint by filename and marker comment.
+ * Find exactly one generated entrypoint by filename and stable source text.
  *
  * DNT-generated path segments can drift when source paths move. The marker keeps
  * package manifests tied to generated output facts instead of hard-coded paths.
