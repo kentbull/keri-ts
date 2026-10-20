@@ -85,14 +85,14 @@ function jobs(suite: TestSuite): number {
 async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
   const suite = suites[name];
   const env = { ...suite.env };
-  // Only this owner targets actual main Baser; other suites keep their selected wire/fork peer.
-  const storageRoot = Deno.env.get("KERIPY_ESSR_STORAGE_ROOT");
-  if (name === "interop-essr-storage" && storageRoot) {
-    const python = Deno.env.get("KERIPY_ESSR_STORAGE_PYTHON");
-    if (!python) throw new Error("ESSR storage peer requires KERIPY_ESSR_STORAGE_PYTHON.");
+  // Native protocol and storage owners use main; legacy/mailbox owners retain their selected peer.
+  const mainRoot = Deno.env.get("KERIPY_MAIN_ROOT");
+  if (["interop-essr-storage", "interop-ipex-disclosure"].includes(name) && mainRoot) {
+    const python = Deno.env.get("KERIPY_MAIN_PYTHON");
+    if (!python) throw new Error("Main peer requires KERIPY_MAIN_PYTHON.");
     Object.assign(env, {
       KERIPY_INTEROP_PROFILE: "main",
-      KERIPY_INTEROP_ROOT: storageRoot,
+      KERIPY_INTEROP_ROOT: mainRoot,
       KERIPY_INTEROP_PYTHON: python,
       KERIPY_INTEROP_EXPECTED_COMMIT: reference.profiles.main.commit,
     });

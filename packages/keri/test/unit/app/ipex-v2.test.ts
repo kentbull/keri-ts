@@ -293,6 +293,109 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     }
   }
 });
+
+for (const foreign of [false, true]) {
+  Deno.test(`IPEX ${foreign ? "foreign" : "sender"} grant anchor survives rotation before first delivery`, async () => {
+    await run(function*() {
+      const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const issuer = source.makeHab("issuer"), sender = foreign ? source.makeHab("proxy") : issuer;
+        const recipient = receiver.makeHab("recipient");
+        const credential = acdcmap(issuer.pre, { attribute: { d: "", name: "Ada" } });
+        const anchor = (said: string): SealEvent => {
+          issuer.interact({ data: [{ d: said }] });
+          return {
+            i: new Prefixer({ qb64: issuer.pre }),
+            s: issuer.kever!.sner,
+            d: new Diger({ qb64: issuer.kever!.said }),
+          };
+        };
+        const childSeal = anchor(credential.said!);
+        const options = { message: "historical grant", recipient: recipient.pre, xid: credential.said!, anchor: true };
+        const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], options);
+        const oldEndorsement = new TransIdxSigGroup(
+          new Prefixer({ qb64: issuer.pre }),
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+          new Diger({ qb64: issuer.kever!.lastEst.d }),
+          issuer.sign(grant.raw, true),
+        );
+        const grantSeal = anchor(grant.said!);
+        issuer.rotate();
+        for (const hab of new Set([issuer, sender])) {
+          for (const wire of source.db.clonePreIter(hab.pre, 0)) yield* call(() => learn(receiver, wire));
+        }
+        assert(grantSeal.s.num < BigInt(receiver.db.getKever(issuer.pre)!.lastEst.s));
+        const exchanger = new Exchanger(receiver);
+        loadIpexHandlers(receiver, exchanger);
+        const frame = (body: SerderKERI, seal = grantSeal): CesrFrame => ({
+          body,
+          gvrsn: Vrsn_2_0,
+          attachments: messageAttachmentGroups({
+            sourceSeals: [seal],
+            tsgs: [
+              new TransIdxSigGroup(
+                new Prefixer({ qb64: sender.pre }),
+                NumberPrimitive.fromNum(BigInt(sender.kever!.lastEst.s)),
+                new Diger({ qb64: sender.kever!.lastEst.d }),
+                sender.sign(body.raw, true),
+              ),
+              ...(foreign ? [oldEndorsement] : []),
+            ],
+          }, Vrsn_2_0),
+          nests: [{
+            body: credential,
+            gvrsn: Vrsn_2_0,
+            attachments: messageAttachmentGroups({ sourceSeals: [childSeal] }, Vrsn_2_0),
+          }],
+        });
+        const refused = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
+          ...options,
+          message: "unanchored replacement",
+        });
+        const bad = yield* dispatchEnvelope(
+          envelopeFromFrame(frame(refused)),
+          receiver.rvy,
+          receiver.kevery,
+          exchanger,
+        );
+        assertEquals(bad.decision?.kind, "reject", "a fresh sender signature cannot replace the required exact anchor");
+        const wrongDigest = yield* dispatchEnvelope(
+          envelopeFromFrame(frame(grant, { ...grantSeal, d: childSeal.d })),
+          receiver.rvy,
+          receiver.kevery,
+          exchanger,
+        );
+        assertEquals(wrongDigest.decision?.kind, "reject", "the historical event's sequence and digest must agree");
+        const accepted = yield* dispatchEnvelope(
+          envelopeFromFrame(frame(grant)),
+          receiver.rvy,
+          receiver.kevery,
+          exchanger,
+        );
+        assertEquals(accepted.decision?.kind, "accept");
+        yield* receiver.db.reopen();
+        assertExists(receiver.db.exns.get(grant.said!));
+        const replay: Uint8Array[] = [];
+        yield* call(async () => {
+          for await (const chunk of exchanger.replay(grant.said!)) replay.push(chunk);
+        });
+        const restored = envelopeFromFrame(parseBytes(concatBytes(...replay))[0]);
+        assert(restored.ssts.some((seal) => seal.i.qb64 === issuer.pre && seal.d.qb64 === grantSeal.d.qb64));
+        if (foreign) {
+          assertEquals(
+            restored.tsgs.some((group) => group.pre === issuer.pre),
+            false,
+            "the historical seal survives; stale endorsement does not",
+          );
+        }
+      } finally {
+        yield* receiver.close(true);
+        yield* source.close(true);
+      }
+    });
+  });
+}
 Deno.test("nested IPEX between two Haberies retains missing issuer evidence for joined reopen and retry", async () => {
   await run(function*() {
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

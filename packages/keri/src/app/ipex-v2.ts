@@ -13,7 +13,7 @@ import { type RegistryState, validateUpdate, verifyRegistryAnchor, vetBinds } fr
 import type { RegistryStore } from "../acdc/registering.ts";
 import { validateSchema } from "../acdc/scheming.ts";
 import { DatabaseOperationError } from "../core/errors.ts";
-import type { ExchangeFactors } from "../core/exchange-proofing.ts";
+import { type ExchangeFactors, verifyExchangeProofs } from "../core/exchange-proofing.ts";
 import type { ExchangeRouteHandler, ExchangeRouteVerification } from "./exchanging.ts";
 import type { Habery } from "./habbing.ts";
 import {
@@ -70,20 +70,18 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     this.acceptsNests = nestedIpexRoute(resource);
   }
 
-  /** Select only fresh foreign grant evidence, preferring a seal to the same AID's signatures. */
+  /**
+   * Keep verified historical grant seals and current-key signatures, preferring a seal
+   * for the same AID. Exchanger has already checked every supplied factor against
+   * this exact body and accepted KEL; rotation cannot undo a recorded commitment.
+   */
   verifyEvidence({ serder, factors, invalid, missing: unresolved = [] }: EvidenceArgs): ExchangeFactors | null {
     if (serder.route !== "/ipex/grant") {
       return invalid || unresolved.length || factors.tsgs.length || factors.cigars.length || factors.sourceSeals.length
         ? null
         : { tsgs: [], cigars: [], sourceSeals: [] };
     }
-    const sourceSeals = factors.sourceSeals.filter((seal) => {
-      const kever = this.hby.db.getKever(seal.i.qb64);
-      if (!kever || seal.s.num < BigInt(kever.lastEst.s)) return false;
-      return seal.s.num === BigInt(kever.lastEst.s)
-        ? seal.d.qb64 === kever.lastEst.d
-        : this.hby.db.getEvtSerder(seal.i.qb64, seal.d.qb64)?.ilk === "ixn";
-    });
+    const sourceSeals = [...factors.sourceSeals];
     const sealers = new Set(sourceSeals.map((seal) => seal.i.qb64));
     const tsgs = factors.tsgs.filter((group) => {
       const kever = this.hby.db.getKever(group.pre);
@@ -267,20 +265,13 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return null;
   }
 
-  /** A negotiated outer anchor must be at or after the anchorer's current establishment. */
+  /** Match the exact historical KEL commitment; missing evidence remains retryable. */
   private sourceAnchor(serder: SerderKERI, aid: string, seal: SealSource): ExchangeRouteVerification {
-    const kever = this.hby.db.getKever(aid);
-    if (!kever) return missing(`Missing current anchorer key state for ${aid}.`);
-    if (
-      seal.s.num < BigInt(kever.lastEst.s)
-      || (seal.s.num === BigInt(kever.lastEst.s) && seal.d.qb64 !== kever.lastEst.d)
-    ) return false;
-    if (seal.s.num > BigInt(Number.MAX_SAFE_INTEGER)) return false;
-    const said = this.hby.db.kels.getLast(aid, Number(seal.s.num));
-    const event = said ? this.hby.db.getEvtSerder(aid, said) : null;
-    if (!event) return missing(`Missing anchorer KEL evidence for ${aid}.`);
-    if (said !== seal.d.qb64 || (seal.s.num > BigInt(kever.lastEst.s) && event.ilk !== "ixn")) return false;
-    return event.seals.some((seal) => record(seal) && seal.d === serder.said);
+    const verified = verifyExchangeProofs(this.hby.db, serder, {
+      sourceSeals: [{ i: new Prefixer({ qb64: aid }), s: seal.s, d: seal.d }],
+    });
+    if (verified.missing.length) return missing(`Missing anchorer KEL evidence for ${aid}.`);
+    return !verified.invalid && verified.sourceSeals.length > 0;
   }
 
   /** Authenticate a grant target against this node's Issuee TEL and explicit fully witnessed KEL sources. */
