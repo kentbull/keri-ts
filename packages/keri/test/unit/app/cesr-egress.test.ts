@@ -139,9 +139,10 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
   let requests = 0;
   let closed = false;
   const transport = httpClient(async (_url, init) => {
-    // Reading the prepared platform body checks the complete frame before its request.
+    // Ordinary POSTs carry the original signed body and detached text attachments.
     const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
-    const frame = await read(bytes);
+    const header = new Headers(init!.headers).get(CESR_ATTACHMENT_HEADER)!;
+    const frame = await read(concatBytes(Counter.makeGVC({ major: 2, minor: 0 }), bytes, b(header)));
 
     assertEquals(concatBytes(...frame.essrs!.map((part) => part.raw)), b("abcxyz"));
     if (++requests === 1) {
@@ -165,10 +166,10 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
         }
       },
       transport,
-      { bodyMode: "body" },
+      {},
     );
   });
-  await opened.promise;
+  await Promise.race([opened.promise, task]);
   assertEquals(pulls, 1);
   release.resolve();
   await task;
@@ -333,32 +334,21 @@ Deno.test("CESR failed-response diagnostics join asynchronous cancellation", asy
   }
   assertEquals([calls, joined], [1, true]);
 });
-// Only detached-header requests have a second supported media type to negotiate.
-for (const bodyMode of ["header", "body"] as const) {
-  Deno.test(`CESR ${bodyMode} delivery handles a media-type rejection explicitly`, async () => {
-    const frame = await read(fixture());
-    const types: string[] = [];
-    const transport = httpClient(async (_url, init) => {
-      // Consume the actual upload so its reader completes before the simulated peer replies.
-      await new Response(init!.body).arrayBuffer();
-      types.push(new Headers(init!.headers).get("Content-Type")!);
-      return types.length === 1
-        ? new Response("Unsupported content type", { status: 406 })
-        : new Response(null, { status: 204 });
-    });
-    const sending = run(function*() {
-      yield* requestFrame("https://peer.test/", frame, transport, { bodyMode });
-    });
-    if (bodyMode === "header") {
-      await sending;
-      assertEquals(types, ["application/cesr", "application/cesr+json"]);
-    } else {
-      // Body mode has no retry; exhausting the sole attempt must not report success.
-      await assertRejects(() => sending, Error, "HTTP 406: Unsupported content type");
-      assertEquals(types, ["application/cesr"]);
-    }
+Deno.test("ordinary CESR delivery negotiates only the supported legacy header media", async () => {
+  const frame = await read(fixture());
+  const types: string[] = [];
+  const transport = httpClient(async (_url, init) => {
+    await new Response(init!.body).arrayBuffer();
+    types.push(new Headers(init!.headers).get("Content-Type")!);
+    return types.length === 1
+      ? new Response("Unsupported content type", { status: 406 })
+      : new Response(null, { status: 204 });
   });
-}
+  await run(function*() {
+    yield* requestFrame("https://peer.test/", frame, transport);
+  });
+  assertEquals(types, ["application/cesr", "application/cesr+json"]);
+});
 
 Deno.test("halting CESR delivery closes input and never resumes the caller after payload cleanup", async () => {
   // A pending HTTP leaf supplies the cancellation boundary after the parser transfers one frame.
@@ -647,7 +637,7 @@ Deno.test("transport attempt excludes identical typed errors from source, inject
               }
             },
             transport,
-            { bodyMode: "body" },
+            {},
           )
         );
       if (origin === "peer") {
@@ -671,7 +661,6 @@ Deno.test("HTTP attempt reports peer refusal and preserves foreign transport fai
   const send = (signal?: AbortSignal) =>
     run(() =>
       attemptPostCesr("https://peer.test/", (signal) => chunkBytes(fixture(), { signal }), transport, {
-        bodyMode: "body",
         destination: "aid",
         signal,
       })

@@ -2,7 +2,6 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
 import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged, runtimeOobiTerminalState } from "../agent-runtime.ts";
-import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
@@ -41,7 +40,6 @@ interface OobiRequestArgs {
   recipient?: string;
   url?: string;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 /**
@@ -244,9 +242,6 @@ export function* oobiRequestCommand(
     recipient: args.recipient as string | undefined,
     url: args.url as string | undefined,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
   };
 
   if (!commandArgs.name) {
@@ -277,7 +272,6 @@ export function* oobiRequestCommand(
       readonly: false,
       skipConfig: false,
       skipSignator: false,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
     function*({ hby, hab }) {
       const exn = oobiRequestExn(hab, recipient, url);

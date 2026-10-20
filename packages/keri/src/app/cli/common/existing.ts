@@ -1,6 +1,5 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { createKeeper, Keeper } from "../../../db/keeping.ts";
-import { type CesrBodyMode, cesrBodyModeFromGlobal, normalizeCesrBodyMode } from "../../cesr-http.ts";
 import type { Configer } from "../../configing.ts";
 import { createHabery, Habery } from "../../habbing.ts";
 import { readPasscode } from "./passcode.ts";
@@ -12,7 +11,6 @@ interface OpenHaberyOptions {
   skipConfig?: boolean;
   skipSignator?: boolean;
   cf?: Configer;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 /** Result of "open if present, create if absent" CLI startup behavior. */
@@ -83,16 +81,10 @@ export function* setupHby(
     readonly: true,
   });
   const aeid = ks.getGbls("aeid");
-  const storedCesrBodyMode = cesrBodyModeFromGlobal(ks.getGbls("cesrBodyMode"));
   yield* ks.close();
   if (aeid === null) {
     throw new Error("Keystore must already exist, exiting");
   }
-
-  const cesrBodyMode = normalizeCesrBodyMode(
-    options.cesrBodyMode,
-    storedCesrBodyMode,
-  );
 
   let retries = 0;
   let passcode = bran;
@@ -110,7 +102,6 @@ export function* setupHby(
         skipConfig: options.skipConfig,
         skipSignator: options.skipSignator,
         bran: passcode?.replaceAll("-", ""),
-        cesrBodyMode,
       });
     } catch (error) {
       if (!Deno.stdin.isTerminal()) throw error;
@@ -167,9 +158,7 @@ export function* ensureHby(
     skipConfig: options.skipConfig,
     skipSignator: options.skipSignator,
     bran: bran?.replaceAll("-", ""),
-    cesrBodyMode: normalizeCesrBodyMode(options.cesrBodyMode),
   });
 
-  hby.ks.pinGbls("cesrBodyMode", normalizeCesrBodyMode(options.cesrBodyMode));
   return { hby, created: true };
 }

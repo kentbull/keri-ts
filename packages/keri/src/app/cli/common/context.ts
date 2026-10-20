@@ -1,7 +1,6 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../../core/errors.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../agent-runtime.ts";
-import type { CesrBodyMode } from "../../cesr-http.ts";
 import type { Hab, Habery } from "../../habbing.ts";
 import { FetchHttpClient } from "../../http-client.ts";
 import { systemClock } from "../../runtime-clock.ts";
@@ -22,7 +21,6 @@ export interface CommandHaberyOptions {
   readonly?: boolean;
   skipConfig?: boolean;
   skipSignator?: boolean;
-  cesrBodyMode?: CesrBodyMode;
   /**
    * Internal lifecycle seam for focused helper tests and specialized adapters.
    *

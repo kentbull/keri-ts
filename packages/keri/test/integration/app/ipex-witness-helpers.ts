@@ -107,6 +107,7 @@ export function accepted(registry: Registry, event: SerderACDC): void {
 /** Observe the actual provider's accepted state; no command writes payload or protocol rows. */
 export async function inspectMailbox(url: string, pre: string, saids: string[] = []): Promise<{
   provider: string;
+  traffic: { method: string; destination: string | null; detached: boolean }[];
   sender: { event: string; witnesses: string[]; threshold: number; receipts: number[] } | null;
   rows: { said: string; cached: boolean; pending: boolean }[];
   queries: { said: string; stamp: string }[];

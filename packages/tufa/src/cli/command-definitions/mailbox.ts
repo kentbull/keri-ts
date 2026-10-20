@@ -26,10 +26,6 @@ export function registerMailboxCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -49,7 +45,6 @@ export function registerMailboxCmds(
         listenHost: options.listenHost,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -89,7 +84,6 @@ export function registerMailboxCmds(
         base: options.base,
         compat: options.compat || false,
         multisigMode: options.multisigMode,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -109,10 +103,6 @@ export function registerMailboxCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -128,7 +118,6 @@ export function registerMailboxCmds(
         mailbox: options.mailbox,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -144,10 +133,6 @@ export function registerMailboxCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -162,7 +147,6 @@ export function registerMailboxCmds(
         alias: options.alias,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -181,10 +165,6 @@ export function registerMailboxCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -202,7 +182,6 @@ export function registerMailboxCmds(
         index: options.index ? Number(options.index) : undefined,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -220,10 +199,6 @@ export function registerMailboxCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -240,7 +215,6 @@ export function registerMailboxCmds(
         verbose: options.verbose || false,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),

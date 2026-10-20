@@ -75,11 +75,6 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
       .option(
         "-e, --seed <seed>",
         "Qualified base64 private-signing key (seed) for the aeid from which the private decryption key may be derived",
-      )
-      .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-        "header",
       ),
     dispatch,
     "init",
@@ -96,7 +91,6 @@ function registerInitCmd(program: Command, dispatch: CommandDispatch): void {
       nopasscode: options.nopasscode || false,
       aeid: options.aeid,
       seed: options.seed,
-      cesrBodyMode: options.cesrBodyMode,
     }),
   );
 }
@@ -424,10 +418,6 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
       )
       .option("-P, --passcode <passcode>", "Encryption passcode for keystore")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--schema <file>",
         "Schema JSON file to host as a data OOBI",
         collectOption,
@@ -457,7 +447,6 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         compat: options.compat || false,
         headDirPath: options.headDir,
         passcode: options.passcode,
-        cesrBodyMode: options.cesrBodyMode,
         schema: options.schema || [],
         schemaDir: options.schemaDir || [],
         port: options.port ? Number(options.port) : 8000,

@@ -3,10 +3,8 @@ import type { Operation } from "effection";
 import { systemClock } from "keri-ts/runtime";
 import { FetchHttpClient } from "keri-ts/runtime";
 import {
-  type CesrBodyMode,
   consoleLogger,
   createAgentRuntime,
-  normalizeCesrBodyMode,
   ValidationError,
 } from "keri-ts/runtime";
 import { startServer } from "../host/http-server.ts";
@@ -20,7 +18,6 @@ interface DwsResolverArgs {
   headDirPath?: string;
   passcode?: string;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
   staticFilesDir?: string;
   didPath?: string;
   dynamic?: boolean;
@@ -42,7 +39,6 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
     headDirPath: args.headDirPath as string | undefined,
     passcode: args.passcode as string | undefined,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(args.cesrBodyMode as string | undefined),
     staticFilesDir: args.staticFilesDir as string | undefined,
     didPath: args.didPath as string | undefined,
     dynamic: args.dynamic as boolean | undefined,
@@ -70,7 +66,6 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
       readonly: false,
       skipConfig: true,
       skipSignator: false,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);

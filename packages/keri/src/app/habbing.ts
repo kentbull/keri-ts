@@ -55,7 +55,6 @@ import { Baser, createBaser } from "../db/basing.ts";
 import { dgKey } from "../db/core/keys.ts";
 import { createKeeper, Keeper, PreSit } from "../db/keeping.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
-import { type CesrBodyMode, DEFAULT_CESR_BODY_MODE } from "./cesr-http.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
@@ -89,7 +88,6 @@ export interface HaberyArgs {
   salt?: string;
   algo?: Algos;
   tier?: Tier;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 /** Habitat inception options consumed by the local bootstrap `Hab.make()` flow. */
@@ -1363,7 +1361,6 @@ export class Habery {
   readonly readonly: boolean;
   readonly db: Baser;
   readonly ks: Keeper;
-  readonly cesrBodyMode: CesrBodyMode;
   readonly mgr: Manager;
   readonly cf?: Configer;
   readonly habs = new Map<string, Hab>();
@@ -1383,7 +1380,6 @@ export class Habery {
     readonly: boolean,
     db: Baser,
     ks: Keeper,
-    cesrBodyMode: CesrBodyMode,
     mgr: Manager,
     cf?: Configer,
     skipSignator = false,
@@ -1396,7 +1392,6 @@ export class Habery {
     this.readonly = readonly;
     this.db = db;
     this.ks = ks;
-    this.cesrBodyMode = cesrBodyMode;
     this.mgr = mgr;
     this.cf = cf;
     this.rtr = new Router();
@@ -2118,7 +2113,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     aeid,
     salt,
     algo,
-    cesrBodyMode = DEFAULT_CESR_BODY_MODE,
   } = args;
 
   let db: Baser | undefined;
@@ -2184,7 +2178,6 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       readonly,
       db,
       ks,
-      cesrBodyMode,
       mgr,
       cf,
       skipSignator,

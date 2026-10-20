@@ -21,7 +21,7 @@ export class HTTPMessenger {
   ) {}
 
   /** Send resident signed bytes; successful delivery includes response EOF and cleanup. */
-  send(msg: Uint8Array, options: Pick<EgressOptions, "bodyMode" | "signal"> = {}): Operation<CesrPostResult> {
+  send(msg: Uint8Array, options: Pick<EgressOptions, "signal"> = {}): Operation<CesrPostResult> {
     return this.sendSource((signal) => chunkBytes(msg, { signal }), options);
   }
 
@@ -32,7 +32,7 @@ export class HTTPMessenger {
    */
   sendSource(
     source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,
-    options: Pick<EgressOptions, "bodyMode" | "signal"> = {},
+    options: Pick<EgressOptions, "signal"> = {},
   ): Operation<CesrPostResult> {
     return attemptPostCesr(this.url, source, this.http, { ...this.options, ...options });
   }

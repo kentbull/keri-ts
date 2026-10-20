@@ -13,7 +13,6 @@ import {
   abortable,
   type AgentRuntime,
   buildCesrStreamRequest,
-  type CesrBodyMode,
   collectBytes,
   endpointRoleAccepted,
   fetchEndpointUrls,
@@ -22,7 +21,6 @@ import {
   isLocalGroupHab,
   loadAcceptedEndpointRole,
   makeNowIso8601,
-  normalizeCesrBodyMode,
   Organizer,
   preferredUrl,
   proposeGroupEndpointRole,
@@ -53,7 +51,6 @@ interface MailboxBaseArgs {
   passcode?: string;
   alias?: string;
   compat?: boolean;
-  cesrBodyMode?: CesrBodyMode;
 }
 
 interface MailboxStartArgs extends MailboxBaseArgs {
@@ -119,7 +116,6 @@ export function* mailboxStartCommand(
       readonly: false,
       skipConfig: true,
       skipSignator: false,
-      cesrBodyMode: commandArgs.cesrBodyMode,
     },
   );
   const hby = ensured.hby;
@@ -423,9 +419,6 @@ function parseMailboxBaseArgs(args: Record<string, unknown>): MailboxBaseArgs {
     passcode: args.passcode as string | undefined,
     alias: args.alias as string | undefined,
     compat: args.compat as boolean | undefined,
-    cesrBodyMode: normalizeCesrBodyMode(
-      args.cesrBodyMode as string | undefined,
-    ),
   };
 }
 
@@ -530,7 +523,6 @@ function mailboxOpenOptions(args: MailboxBaseArgs): CommandHaberyOptions {
     readonly: false,
     skipConfig: false,
     skipSignator: false,
-    cesrBodyMode: args.cesrBodyMode,
   };
 }
 

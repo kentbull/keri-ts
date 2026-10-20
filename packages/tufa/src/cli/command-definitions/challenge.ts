@@ -55,10 +55,6 @@ export function registerChallengeCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -76,7 +72,6 @@ export function registerChallengeCmds(
         transport: options.transport,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),
@@ -120,10 +115,6 @@ export function registerChallengeCmds(
       .option("-b, --base <base>", "Optional base path prefix")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
-        "--cesr-body-mode <mode>",
-        "CESR HTTP transport mode: header (default) or body",
-      )
-      .option(
         "--head-dir <dir>",
         "Directory override for database and keystore root (default fallback: ~/.tufa)",
       )
@@ -143,7 +134,6 @@ export function registerChallengeCmds(
         timeout: options.timeout,
         base: options.base,
         compat: options.compat || false,
-        cesrBodyMode: options.cesrBodyMode,
         headDirPath: options.headDir,
         passcode: options.passcode,
       }),

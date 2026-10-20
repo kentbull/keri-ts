@@ -118,11 +118,24 @@ def query_packets(signers, outsider):
     return packets
 
 
+class IngressLog:
+    """Observe real root requests without reading bytes or replacing protocol intake."""
+    def __init__(self):
+        self.requests = []
+
+    def process_request(self, req, rep):
+        if req.path == "/":
+            self.requests.append(dict(method=req.method,
+                destination=req.get_header("CESR-DESTINATION"),
+                detached=req.get_header("CESR-ATTACHMENT") is not None))
+
+
 class Control:
     """Test-only storage observations and genuine Python HTTP client actions."""
-    def __init__(self, hby, host, mbx, stack, count):
+    def __init__(self, hby, host, mbx, stack, count, ingress):
         self.hby, self.host, self.mbx = hby, host, mbx
         self.stack, self.count, self.bundle = stack, count, None
+        self.ingress = ingress
 
     def on_post(self, req, rep):
         try:
@@ -151,7 +164,7 @@ class Control:
                     witnesses=list(sender.wits), threshold=sender.toader.num,
                     receipts=sorted(sig.index for sig in self.hby.db.wigs.get(keys=(pre, sender.serder.said))))
                 rep.media = dict(pid=os.getpid(), provider=self.host.hab.pre,
-                    sender=state, rows=rows,
+                    sender=state, rows=rows, traffic=self.ingress.requests,
                     queries=[dict(said=keys[-1], stamp=cache.mdt)
                              for keys, cache in self.hby.db.kramMSGC.getTopItemIter(keys=(pre,))],
                     streams=[cue["serder"].said for cue in cues if cue["kin"] == "stream"])
@@ -198,7 +211,9 @@ def main():
         server = next(doer.server for doer in doers if isinstance(doer, http.ServerDoer))
         host = next(doer for doer in doers if isinstance(doer, MailboxStart))
         assert server.servant.ha[1] == port, "HIO must bind the selected unprivileged port"
-        server.app.add_route("/_fixture", Control(hby, host, mbx, stack, count))
+        ingress = IngressLog()
+        server.app.add_middleware(ingress)
+        server.app.add_route("/_fixture", Control(hby, host, mbx, stack, count, ingress))
         doist = doing.Doist(tock=.005, real=True, doers=doers)
         running = True
         def stop(*_):

@@ -10,7 +10,6 @@ import { systemClock } from "keri-ts/runtime";
 import type { Operation } from "effection";
 import {
   buildCesrRequest,
-  type CesrBodyMode,
   fetchEndpointUrls,
   type Hab,
   type Habery,
@@ -66,7 +65,6 @@ export function* collectMailboxDebugReport(
     const response = yield* fetchMailboxDebug(
       endpointUrl,
       hab.query(hab.pre, witness, { route: "mbx", q: { topics: cursor } }),
-      hby.cesrBodyMode,
       witness,
     );
     messages = parseMailboxSse(response);
@@ -115,18 +113,15 @@ export function normalizeMailboxTopic(topic: string): string {
  *
  * @param url Mailbox HTTP endpoint.
  * @param query Complete signed mbx query.
- * @param bodyMode CESR attachment placement.
  * @param destination Remote mailbox endpoint AID.
  * @returns Raw SSE text collected for at most five seconds, with a 500 ms idle window after the first event.
  */
 function* fetchMailboxDebug(
   url: string,
   query: Uint8Array,
-  bodyMode: CesrBodyMode,
   destination: string,
 ): Operation<string> {
   const request = buildCesrRequest(query, {
-    bodyMode,
     destination,
   });
   const controller = new AbortController();

@@ -584,10 +584,6 @@ interface QueryDelivery {
    */
   body: Uint8Array;
   /**
-   * HTTP framing selected at preparation.
-   */
-  bodyMode: "header" | "body";
-  /**
    * Remote attester AID carried to the messenger.
    */
   destination: string;
@@ -788,7 +784,7 @@ export class QueryCoordinator {
   /**
    * One delivery scope owns upload frames and all response readers through completion or cancellation.
    *
-   * @param delivery Retained signed packet including introduction, destination and HTTP body mode.
+   * @param delivery Retained signed packet including introduction and destination.
    * @param controller Coordinator attempt cancellation; its signal covers response parsing and cleanup.
    */
   private *postQueryMessage(
@@ -806,7 +802,6 @@ export class QueryCoordinator {
       return;
     }
     yield* new HTTPQuery(this.protocol, http, clock).query(delivery.url, delivery.body, {
-      bodyMode: delivery.bodyMode,
       destination: delivery.destination,
       signal: controller.signal,
     });
@@ -902,7 +897,7 @@ export class QueryCoordinator {
     if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
     const message = hab.query(request.pre, destination, copyQuery(request));
     const intro = introduce(hab, destination);
-    this.deliveries.push({ url, body: concatBytes(intro, message), bodyMode: this.hby.cesrBodyMode, destination });
+    this.deliveries.push({ url, body: concatBytes(intro, message), destination });
     return true;
   }
 

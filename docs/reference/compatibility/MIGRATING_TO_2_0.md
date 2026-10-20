@@ -72,3 +72,10 @@ or `streamMessengerFrom(destination, urls, bytes, http, clock, headers?)` for a
 prepared stream. `HTTPStreamMessenger.send()` sends one opaque PUT and returns an
 owned `HttpResponse`; `TCPStreamMessenger.send()` uses the shared raw writer.
 Construction opens no connection or storage and accepts no framing preference.
+
+The `--cesr-body-mode` CLI option, `Habery.cesrBodyMode` and its construction/open
+options, `CesrBodyMode`, its default/normalizers, and `EgressOptions.bodyMode` are
+removed. Init/setup no longer persist or read that preference. Choose ordinary or
+stream construction explicitly: ordered signed POSTs versus one opaque PUT. Peers
+receiving stream HTTP must support PUT. Queries and mailbox polling always use
+ordinary signed POSTs; specialized admin/receipt endpoints keep their contracts.

@@ -32,7 +32,7 @@ export class HTTPQuery {
    *
    * @param url HTTP(S) endpoint to receive the framed POST; redirect handling is manual.
    * @param msg Complete signed CESR bytes, including any prepared introduction/query messages.
-   * @param options Framing, destination, extra headers and optional cancellation; header mode is the default.
+   * @param options Destination, extra headers and optional cancellation for ordinary signed POSTs.
    * @throws Source/parser, transport and cleanup failures propagate. Peer refusal also throws so the query owner can retain its work.
    */
   query(url: string, msg: Uint8Array, options: EgressOptions = {}): Operation<void> {
@@ -47,7 +47,7 @@ export class HTTPQuery {
    *
    * @param url Peer endpoint.
    * @param msg Borrowed resident CESR bytes; the parser receives copied chunks.
-   * @param options Framing and caller cancellation for each request/response scope.
+   * @param options Destination, headers and caller cancellation for each request/response scope.
    */
   private queryFrames(url: string, msg: Uint8Array, options: EgressOptions): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.

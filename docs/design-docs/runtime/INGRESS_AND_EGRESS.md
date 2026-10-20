@@ -356,7 +356,7 @@ Authorization uses the exact frame signatures and current dispatch decision; an
 older matching cue cannot override sender refusal. Final TSN pairs transfer
 atomically before correlation removal. Missing routes permit response-only output.
 
-Poster snapshots sender, recipient, URLs and body mode, then prepares a signed
+Poster snapshots sender, recipient, resolved endpoints and ordinary/stream intent, then prepares a signed
 introduction/forwarded request or performs the local mailbox transaction. Prepared
 sending consumes ordinary wire without habitat/DB access. Local stored delivery
 requires completed body/topic publication in one transaction; raw deduplication
@@ -414,11 +414,11 @@ their own identity. Request cleanup aborts native Fetch, joins pending fetch/rea
 work and releases its reader. There is no upload iterator or general error history.
 At the native body-read boundary only, Node 20's replacement AbortError after local
 cancellation is normalized to the owning signal's reason; other native failures keep
-their causes. Application errors are never classified by their names. Header mode carries CESR-ATTACHMENT;
-body mode prepares one complete qualified frame before requesting. Preserve URL/path, destination, authentication
-and supported media-type negotiation within one attempt.
-KERIpy 714 HTTPStreamMessenger instead uses one bulk PUT to `/`; matching class
-names does not justify changing the supported POST contract.
+their causes. Application errors are never classified by their names. Ordinary
+delivery carries CESR-ATTACHMENT in ordered signed-message POSTs; stream delivery
+sends one opaque finite PUT. Preserve URL/path, destination, authentication and
+the narrow ordinary media-refusal fallback. Queries and mailbox polling use signed
+POSTs; dedicated admin and receipt endpoints keep their own contracts.
 
 Finite documents and receipt proofs keep whole-document semantics, full validation
 and joined cancellation. Generic ingress appends its separately encoded attachment
@@ -618,7 +618,9 @@ joined source cleanup for Reactor, HTTP query responses and receipt request owne
 It is not another dispatch class or worker. Normal sends do not interpret arbitrary
 successful response bytes as protocol messages. Refusal does not absorb source,
 parser, storage or cleanup failures. Stream factories add no worker or delivery queue;
-production stream-routing migration is a separate release-plan change.
+Poster selects the concrete operation from its existing admission intent. Mixed-genus
+forwarding declares each prepared frame's actual genus, including legacy introductions;
+entirely legacy streams keep their unqualified v1 framing. Signed bodies are unchanged.
 
 QueryCoordinator, Receiptor and WitnessReceiptor receive their ProtocolProcessor
 and I/O services as structural constructor dependencies. Optional force/signatory
