@@ -30,8 +30,10 @@ existing escrow. Signature/dependency cues follow actual new escrow insertion.
 Ordinary Decks carry records without reservation, inspection or retained-byte credit.
 Authentication queries deduplicate coordinates in input order; already published
 queries remain available after later verification or rejection. Nested staging remains publication work; hydrated frames are ordinary values. Exchanger and stored
-ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. The local
-admission guard protects publication/recovery ordering; preserve it independently. Determine whether to
+ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. Exchanger has no asynchronous admission guard. Archive startup finishes before
+admission; retries refresh current proofs/deadlines in the writer and skip
+obsolete candidates. Commit terminal removal with reference retirement, then
+flush and join file reclamation. Determine whether to
 publish a pending cue from the escrow write result, not a pre-I/O membership plan.
 An incomplete duplicate remains pending without replacing accepted rows or rerunning
 handling; `complete(said)` reports durable acceptance, not the current attempt.

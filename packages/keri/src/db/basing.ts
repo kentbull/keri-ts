@@ -312,22 +312,41 @@ export class Baser {
 
   /** Read ordered qualified fragments from owned archive bytes or current KERIpy evidence rows. */
   async getEssrs(said: string, signal?: AbortSignal): Promise<Texter[] | null> {
-    signal?.throwIfAborted();
-    if (!this.exchangeMeta.get([said])?.essr) {
-      if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
-      const rows = [...this.essrRows(said)];
-      return rows.length ? rows : null;
+    for (;;) {
+      signal?.throwIfAborted();
+      if (!this.exchangeMeta.get([said])?.essr) {
+        if (!this.exns.get([said]) && !this.epse.get([said]) && !this.hasSchemaEscrow(said)) return null;
+        const rows = [...this.essrRows(said)];
+        return rows.length ? rows : null;
+      }
+      const archive = await this.openPayloads(signal), key = `essr/${said}`;
+      const id = archive.referenceId(key);
+      if (!id) {
+        if (!this.exchangeMeta.get([said])?.essr) continue;
+        throw new Error("Exchange ESSR reference is missing");
+      }
+      let bytes: Uint8Array;
+      try {
+        const wire = await archive.get(key, signal);
+        if (!wire) {
+          if (archive.referenceId(key) !== id) continue;
+          throw new Error("Exchange ESSR reference is missing");
+        }
+        bytes = await collectPayload(wire, signal);
+      } catch (error) {
+        if (error instanceof Deno.errors.NotFound && archive.referenceId(key) !== id) continue;
+        throw error;
+      }
+      // Pending ownership may be retired/replaced during file I/O; genuine current-file failures still propagate.
+      if (archive.referenceId(key) !== id) continue;
+      const texters: Texter[] = [];
+      for (let offset = 0; offset < bytes.length;) {
+        const texter = parseTexter(bytes.subarray(offset), "txt");
+        texters.push(texter);
+        offset += texter.qb64b.length;
+      }
+      return texters;
     }
-    const wire = await (await this.openPayloads(signal)).get(`essr/${said}`, signal);
-    if (!wire) throw new Error("Exchange ESSR reference is missing");
-    const bytes = await collectPayload(wire, signal);
-    const texters: Texter[] = [];
-    for (let offset = 0; offset < bytes.length;) {
-      const texter = parseTexter(bytes.subarray(offset), "txt");
-      texters.push(texter);
-      offset += texter.qb64b.length;
-    }
-    return texters;
   }
 
   /** Decode stored tokens in insertion order without assembling a complete ESSR message. */

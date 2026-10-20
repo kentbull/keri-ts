@@ -88,7 +88,9 @@ ownership. Failed/duplicate candidates clean only their own files. Close joins
 all admitted I/O; publish/remove convenience operations refuse caller-owned writers.
 Domain owners may prepare a physical candidate, recheck referenceId and pin it in
 their own writer. Dispose each candidate before DB close; committed references
-protect its file. Wire tables remain interoperable.
+protect its file. Domain removal unpins both reference directions in its writer;
+reclaim waits for the flush and deletes only that retired ID, never a replacement
+under the same application key. Wire tables remain interoperable.
 
 Baser owns archive lifetime. Qualified essrs rows preserve original ciphertext;
 plaintext has separate storage and views. Private canonical wire retains repeated

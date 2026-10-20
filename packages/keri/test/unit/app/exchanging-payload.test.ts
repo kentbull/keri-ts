@@ -567,6 +567,221 @@ Deno.test("exchange retries preserve first escrow time and expiration releases p
   });
 });
 
+Deno.test("escrow retry admits proof arriving during its payload read without another sweep", async () => {
+  await scenario(async (hby) => {
+    const sender = hby.makeHab("threshold", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+    const serder = message(sender), full = signatures(sender, serder)[0], said = serder.said!;
+    const half = (index: number) => new TransIdxSigGroup(full.prefixer, full.seqner, full.diger, [full.sigers[index]]);
+    const retrying = new Exchanger(hby);
+    assertEquals(
+      (await run(() => retrying.processEvent({ serder, tsgs: [half(0)], essrs: payload() }))).kind,
+      "escrow",
+    );
+    const get = hby.db.getEssrs.bind(hby.db);
+    let resume!: () => void, entered!: () => void, first = true;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    hby.db.getEssrs = async (key, signal) => {
+      if (first && key === said) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return await get(key, signal);
+    };
+    const sweep = run(() => retrying.processEscrows());
+    try {
+      await reading;
+      assertEquals((await run(() => retrying.processEvent({ serder, tsgs: [half(1)] }))).kind, "escrow");
+    } finally {
+      resume();
+      await sweep;
+      hby.db.getEssrs = get;
+    }
+    assertExists(hby.db.exns.get([said]));
+    assertEquals(hby.db.epse.get([said]), null);
+    assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].map(([, sig]) => sig.index).sort(), [0, 1]);
+  });
+});
+
+Deno.test("overlapping escrow sweeps execute the accepted handler once", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender), said = serder.said!;
+    let ready = false, handled = 0;
+    const exchanger = new Exchanger(hby, {
+      handlers: [{
+        resource: "/essr/test",
+        verify() {
+          return ready ? true : { kind: "escrow", reason: "proof dependency" };
+        },
+        handle() {
+          handled++;
+        },
+      }],
+    });
+    await run(() => exchanger.processEvent({ serder, tsgs: signatures(sender, serder), essrs: payload() }));
+    ready = true;
+    const get = hby.db.getEssrs.bind(hby.db);
+    let resume!: () => void, entered!: () => void, first = true;
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    hby.db.getEssrs = async (key, signal) => {
+      if (first && key === said) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return await get(key, signal);
+    };
+    const pending = run(() => exchanger.processEscrows());
+    try {
+      await reading;
+      await run(() => exchanger.processEscrows());
+    } finally {
+      resume();
+      await pending;
+      hby.db.getEssrs = get;
+    }
+    assertExists(hby.db.exns.get([said]));
+    assertEquals(hby.db.epse.get([said]), null);
+    assertEquals(handled, 1);
+  });
+});
+
+Deno.test("escrow expiry cannot delete evidence accepted while its archive opens", async () => {
+  await scenario(async (hby, sender) => {
+    let now = Date.now();
+    const serder = message(sender), said = serder.said!;
+    const expiring = new Exchanger(hby, { now: () => now });
+    assertEquals((await run(() => expiring.processEvent({ serder, essrs: payload() }))).kind, "escrow");
+    now += 10_001;
+    const open = hby.db.openPayloads.bind(hby.db);
+    let resume!: () => void, entered!: () => void, first = true;
+    const opening = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    hby.db.openPayloads = async (signal) => {
+      if (first) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return await open(signal);
+    };
+    const sweeping = run(() => expiring.processEscrows());
+    try {
+      await opening;
+      assertEquals(
+        (await run(() => new Exchanger(hby).processEvent({ serder, tsgs: signatures(sender, serder) }))).kind,
+        "accept",
+      );
+    } finally {
+      resume();
+      await sweeping;
+      hby.db.openPayloads = open;
+    }
+    assertExists(hby.db.exns.get([said]));
+    assertExists(hby.db.exchangeMeta.get([said])?.essr);
+    assertEquals(await collectPayload(essrRaw((await hby.db.getEssrs(said))!)), b("abcxyz"));
+    assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1);
+  });
+});
+
+Deno.test("ESSR reads racing committed expiry return current absence rather than corruption", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender), said = serder.said!;
+    const exchanger = new Exchanger(hby);
+    await run(() => exchanger.processEvent({ serder, essrs: payload() }));
+    const archive = await hby.db.openPayloads(), get = archive.get.bind(archive);
+    let resume!: () => void, entered!: () => void;
+    const opening = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    archive.get = async (key, signal) => {
+      entered();
+      await gate;
+      return await get(key, signal);
+    };
+    const reading = hby.db.getEssrs(said);
+    let result;
+    try {
+      await opening;
+      hby.db.epsd.pin([said], new Dater({ qb64: encodeDateTimeToDater("2020-01-01T00:00:00.000000+00:00") }));
+      await run(() => exchanger.processEscrows());
+    } finally {
+      resume();
+      try {
+        result = await reading;
+      } finally {
+        archive.get = get;
+      }
+    }
+    assertEquals(result, null);
+  });
+});
+
+Deno.test("cancelling an escrow sweep joins committed file reclamation", async () => {
+  await scenario(async (hby, sender) => {
+    const serder = message(sender), said = serder.said!;
+    const exchanger = new Exchanger(hby);
+    await run(() => exchanger.processEvent({ serder, essrs: payload() }));
+    hby.db.epsd.pin([said], new Dater({ qb64: encodeDateTimeToDater("2020-01-01T00:00:00.000000+00:00") }));
+    const archive = await hby.db.openPayloads(), id = archive.referenceId(`essr/${said}`)!;
+    const open = archive.files.open.bind(archive.files);
+    let resume!: () => void, entered!: () => void;
+    const reclaiming = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    archive.files.open = async (key) => {
+      if (key === id) {
+        entered();
+        await gate;
+      }
+      return await open(key);
+    };
+    await run(function*() {
+      const sweep = yield* spawn(() => exchanger.processEscrows());
+      try {
+        yield* call(() => reclaiming);
+        assertEquals(archive.referenceId(`essr/${said}`), null);
+        assertEquals(hby.db.epse.get([said]), null);
+        let joined = false;
+        const stopping = yield* spawn(function*() {
+          yield* sweep.halt();
+          joined = true;
+        });
+        yield* call(() => new Promise<void>((resolve) => setTimeout(resolve, 0)));
+        assertEquals(joined, false);
+        resume();
+        yield* stopping;
+        assertEquals(joined, true);
+        assertEquals(names(join(hby.db.path!, "payloads", "objects")), []);
+      } finally {
+        resume();
+        yield* sweep.halt();
+        archive.files.open = open;
+      }
+    });
+  });
+});
+
 Deno.test("payload recovery removes interrupted ESSR rows and retains KERIpy exchange owners", async () => {
   await scenario(async (hby, sender) => {
     const accepted = message(sender, "accepted");

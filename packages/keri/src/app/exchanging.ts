@@ -200,6 +200,30 @@ interface ExchangeAdmission {
   decision: ExchangeDecision;
   cues: AgentCue[];
   handling?: Parameters<ExchangeRouteHandler["handle"]>[0];
+  /** A committed terminal removal; its physical file is reclaimed by the operation's cleanup. */
+  retired?: string;
+  ejection?: EscrowEjection;
+}
+
+/** Diagnostic fact emitted only after a committed removal and joined file cleanup. */
+interface EscrowEjection {
+  family: "epse" | "emse";
+  reason: string;
+  detail?: string;
+  cause?: unknown;
+}
+
+/** Current accepted/pending state, read within the admission or retirement writer. */
+type EscrowStatus =
+  | { kind: "accepted" }
+  | { kind: "absent" }
+  | { kind: "pending"; family: "epse" | "emse" }
+  | { kind: "expired" | "missingTimestamp"; family: "epse" | "emse" };
+
+/** One completed input attempt; an obsolete escrow retry returns no attempt. */
+interface ExchangeAttempt {
+  decision: ExchangeDecision;
+  ejection?: EscrowEjection;
 }
 
 /**
@@ -220,8 +244,6 @@ export class Exchanger {
   readonly cues: Deck<AgentCue>;
   readonly routes = new Map<string, ExchangeRouteHandler>();
   private readonly versionedRoutes = new Map<string, Map<number, ExchangeRouteHandler>>();
-  /** Serialize admissions so payload recovery cannot race this owner's unfinished publication. */
-  private processing = false;
   /** Borrow the runtime clock for escrow deadlines and retries. */
   private readonly now: () => number;
   /** Bind route handlers, cues and the escrow clock to one habitat database. */
@@ -270,22 +292,14 @@ export class Exchanger {
    * stored evidence.
    */
   processEvent(args: ExchangeInput): Operation<ExchangeDecision> {
-    return call(() => this.admit(args));
-  }
-  /** Hold one exchange mutation until its child I/O and payload cleanup have finished. */
-  private admission(): Operation<void> {
-    return resource(function*(this: Exchanger, provide: Provide<void>) {
-      if (this.processing) throw new ValidationError("Exchanger has an active admission.");
-      this.processing = true;
-      try {
-        yield* provide(undefined);
-      } finally {
-        this.processing = false;
-      }
+    return call(function*(this: Exchanger) {
+      const attempt = yield* this.admit(args);
+      if (!attempt) throw new Error("A direct exchange input cannot become an obsolete escrow retry");
+      return attempt.decision;
     }.bind(this));
   }
   /** Prepare immutable evidence, decide against current state, then finish committed effects. */
-  private *admit(args: ExchangeInput): Operation<ExchangeDecision> {
+  private *admit(args: ExchangeInput, retry = false): Operation<ExchangeAttempt | undefined> {
     const said = args.serder.said ?? "<unknown>";
     const reject = (reason: string, cause?: unknown): ExchangeDecision => ({
       kind: "reject",
@@ -295,7 +309,15 @@ export class Exchanger {
     });
     let nestStage: string | undefined;
     let prepared: PreparedPayload | undefined;
-    yield* this.admission();
+    let archive: PayloadArchive | undefined;
+    let retired: string | undefined;
+    yield* resource(function*(provide: Provide<void>) {
+      try {
+        yield* provide(undefined);
+      } finally {
+        if (retired) yield* call(() => archive!.reclaim(retired!));
+      }
+    });
     yield* resource(function*(this: Exchanger, provide: Provide<void>) {
       try {
         yield* provide(undefined);
@@ -308,8 +330,10 @@ export class Exchanger {
       }
     }.bind(this));
     if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own the admission transaction");
-    if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
-    if (!args.serder.pre || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
+    if (args.serder.ilk !== "exn") return { decision: reject(`Unsupported exchange ilk ${args.serder.ilk}.`) };
+    if (!args.serder.pre || !args.serder.said) {
+      return { decision: reject("Exchange message is missing sender or SAID.") };
+    }
     if (args.receiverTime !== undefined && timestampMicros(args.receiverTime) === null) {
       throw new Error("Invalid exchange receiver time");
     }
@@ -318,7 +342,6 @@ export class Exchanger {
     // Freeze implied last-establishment coordinates at this input, then authenticate them in the final turn.
     const resolved = this.resolveProofs(args);
     const attachments = normalizeAttachments(args.ptds ?? []);
-    let archive: PayloadArchive | undefined;
     if (args.essrs || args.nests?.length || hasNests(this.hby.db, said) || this.hby.db.exchangeMeta.get([said])?.essr) {
       archive = yield* abortable((signal) => this.hby.db.openPayloads(signal));
     }
@@ -345,34 +368,45 @@ export class Exchanger {
         throw error;
       }
       const essrs = retained ?? args.essrs;
+      let payloadFailure: Extract<ExchangeDecision, { kind: "reject" }> | undefined;
       if (typeof args.serder.a === "string") {
         try {
           const diger = new Diger({ qb64: args.serder.a });
           if (!essrs || !(yield* abortable((signal) => diger.verifyStream(essrRaw(essrs).open(signal))))) {
-            return reject("Exchange ESSR payload digest does not match its signed commitment.");
+            payloadFailure = {
+              kind: "reject",
+              said,
+              reason: "Exchange ESSR payload digest does not match its signed commitment.",
+            };
           }
           if (
             retained && args.essrs
             && !(yield* abortable((signal) => diger.verifyStream(essrRaw(args.essrs!).open(signal))))
           ) {
-            return reject("Duplicate ESSR payload digest does not match its signed commitment.");
+            payloadFailure = {
+              kind: "reject",
+              said,
+              reason: "Duplicate ESSR payload digest does not match its signed commitment.",
+            };
           }
         } catch (error) {
           if (!malformedEssr(error)) throw error;
-          return reject(
-            `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
-            error,
-          );
+          payloadFailure = {
+            kind: "reject",
+            said,
+            reason: `Invalid exchange ESSR payload: ${error instanceof Error ? error.message : String(error)}`,
+            cause: error,
+          };
         }
       }
-      if (essrs && !reference) {
+      if (essrs && !reference && !payloadFailure) {
         if (!archive) archive = yield* abortable((signal) => this.hby.db.openPayloads(signal));
         yield* abortable(async (signal) => {
           prepared = await archive!.prepare(essrWire(essrs), signal);
           signal.throwIfAborted();
         });
       }
-      const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | null => {
+      const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | "obsolete" | null => {
         // A changed file/imported row snapshot requires fresh byte verification, never a stale decision.
         if ((archive?.referenceId(`essr/${said}`) ?? null) !== reference) return null;
         const current = this.hby.db.exchangeMeta.get([said]);
@@ -381,22 +415,54 @@ export class Exchanger {
           const rows = this.hby.db.essrs.get([said]);
           if (rows.length !== imported.length || rows.some((row, index) => row.qb64 !== imported[index])) return null;
         }
-        return this.admitCurrent(args, resolved, handler, {
-          retained,
-          essrs,
-          attachments,
-          nestStage,
-          payload: prepared,
-        }, archive);
+        let status: EscrowStatus | undefined;
+        if (retry) {
+          status = this.escrowStatus(said);
+          if (status.kind === "accepted") {
+            this.clearPending(said);
+            return "obsolete";
+          }
+          if (status.kind === "absent") return "obsolete";
+          if (status.kind !== "pending") {
+            return {
+              decision: { kind: "reject", said, reason: status.kind },
+              cues: [],
+              ...this.retireCurrent(said, archive, this.expiryReport(status)),
+            };
+          }
+        }
+        const currentInput = retry ? this.escrowInput(args.serder) : args;
+        const admission: ExchangeAdmission = payloadFailure
+          ? { decision: payloadFailure, cues: [] }
+          : this.admitCurrent(currentInput, retry ? this.resolveProofs(currentInput) : resolved, handler, {
+            retained,
+            essrs,
+            attachments: retry ? normalizeAttachments(currentInput.ptds ?? []) : attachments,
+            nestStage,
+            payload: prepared,
+          }, archive);
+        if (status?.kind === "pending" && admission.decision.kind === "reject" && !admission.decision.preserveEscrow) {
+          return {
+            ...admission,
+            ...this.retireCurrent(said, archive, {
+              family: status.family,
+              reason: admission.decision.reason,
+              cause: admission.decision.cause,
+            }),
+          };
+        }
+        return admission;
       });
       if (!result) continue;
+      if (result !== "obsolete") retired = result.retired;
       // Commit visibility and durable completion are different boundaries. Cancellation joins this flush.
       yield* abortable(async () => {
         await this.hby.db.env!.flushed;
       });
+      if (result === "obsolete") return undefined;
       for (const cue of result.cues) this.cues.push(cue);
       if (result.handling && handler) yield* call(() => handler.handle(result.handling!));
-      return result.decision;
+      return { decision: result.decision, ejection: result.ejection };
     }
   }
 
@@ -508,7 +574,7 @@ export class Exchanger {
   }
   /** Retry each bounded escrow inside one structured child scope. */
   private *retryEscrows(): Operation<void> {
-    if (this.processing) throw new ValidationError("Exchanger has an active admission.");
+    if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own escrow transactions");
     yield* this.retryEscrowType(false);
     if (this.hby.db.emse) yield* this.retryEscrowType(true);
   }
@@ -539,65 +605,27 @@ export class Exchanger {
       // Skip every schema branch for this EXN, including dependencies inserted by the replay below.
       start = b(schema ? `${said}/` : `${physical}\0`);
       const serder = table.get(keys);
-      if (!serder || serder.said !== said || keys.length !== (schema ? 2 : 1)) {
+      if (!serder || serder.ilk !== "exn" || !serder.pre || serder.said !== said || keys.length !== (schema ? 2 : 1)) {
         throw new Error("Corrupt exchange escrow key or body.");
       }
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
-      if (this.complete(said)) {
-        yield* call(() => this.dropEscrow(said));
-        continue;
-      }
-      const deadline = this.hby.db.emsd?.get([said]);
-      const absolute = deadline && timestampMicros(deadline.dts);
-      if (deadline && absolute === null) throw new Error("Corrupt missing-schema deadline.");
-      const dater = schema ? deadline : this.hby.db.epsd.get([said]);
-      const date = dater && timestampMicros(dater.dts);
-      if (date === null || date === undefined) {
-        if (schema) throw new Error("Corrupt missing-schema deadline.");
-        yield* call(() => this.dropEscrow(said));
+      const expired = yield* call(() => this.expirePending(said));
+      if (expired) {
         consoleLogger.warn("Exchanger ejected exchange escrow", {
-          family: "epse",
           said,
           pre: serder.pre,
           route: serder.route,
-          reason: "missingTimestamp",
-          detail: "Pending exchange has no valid admission timestamp.",
+          ...expired,
         });
         continue;
       }
-      const now = this.nowMicros();
-      if (
-        now > date + (schema ? 0n : BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n)
-        || absolute !== null && absolute !== undefined && now > absolute
-      ) {
-        yield* call(() => this.dropEscrow(said));
+      const attempt = yield* call(() => this.admit(this.escrowInput(serder), true));
+      if (attempt?.ejection) {
         consoleLogger.warn("Exchanger ejected exchange escrow", {
-          family: schema ? "emse" : "epse",
           said,
           pre: serder.pre,
           route: serder.route,
-          reason: "expired",
-          detail: "Exchange dependency exceeded its pending lifetime or absolute schema deadline.",
-        });
-        continue;
-      }
-      const decision = yield* this.processEvent({
-        serder,
-        tsgs: this.rebuildEscrowedGroups(said),
-        cigars: this.storedCigars(said),
-        sourceSeals: this.storedSeals(said),
-        ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
-        mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
-      });
-      if (decision.kind === "reject" && !decision.preserveEscrow) {
-        yield* call(() => this.dropEscrow(said));
-        consoleLogger.warn("Exchanger ejected exchange escrow", {
-          family: schema ? "emse" : "epse",
-          said,
-          pre: serder.pre,
-          route: serder.route,
-          reason: decision.reason,
-          cause: decision.cause,
+          ...attempt.ejection,
         });
       }
     }
@@ -1167,10 +1195,7 @@ export class Exchanger {
 
   /** Clear pending metadata, preserving wire evidence during the acceptance transaction. */
   private clearEscrow(said: string, keepEvidence = false): void {
-    this.hby.db.epse.rem([said]);
-    this.hby.db.epsd.rem([said]);
-    this.hby.db.emse?.trim([said]);
-    this.hby.db.emsd?.rem([said]);
+    this.clearPending(said);
     // First acceptance replaces provisional factors; accepted duplicates accumulate verified proofs.
     if (!keepEvidence || !this.complete(said)) {
       this.hby.db.esigs.trim([said, ""], { topive: false });
@@ -1184,21 +1209,101 @@ export class Exchanger {
       this.hby.db.exchangeMeta.rem([said]);
     }
   }
-  /** Remove pending ownership only; accepted wire evidence always remains retained. */
-  private *dropEscrow(said: string): Operation<void> {
-    yield* this.admission();
-    if (this.complete(said)) {
-      this.hby.db.epse.rem([said]);
-      this.hby.db.epsd.rem([said]);
-      this.hby.db.emse?.trim([said]);
-      this.hby.db.emsd?.rem([said]);
-      return;
+  /** Snapshot current escrow proofs; retry re-reads this data again in its final writer. */
+  private escrowInput(serder: SerderKERI): ExchangeInput {
+    const said = serder.said!;
+    return {
+      serder,
+      tsgs: this.rebuildEscrowedGroups(said),
+      cigars: this.storedCigars(said),
+      sourceSeals: this.storedSeals(said),
+      ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
+      mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
+    };
+  }
+
+  /** Decide eligibility from current accepted records and both protocol deadline stores. */
+  private escrowStatus(said: string): EscrowStatus {
+    if (this.complete(said)) return { kind: "accepted" };
+    const partial = this.hby.db.epse.get([said]) !== null;
+    if (!partial && !this.hby.db.hasSchemaEscrow(said)) return { kind: "absent" };
+    const family = partial ? "epse" : "emse";
+    const deadline = this.hby.db.emsd?.get([said]);
+    const absolute = deadline && timestampMicros(deadline.dts);
+    if (deadline && absolute === null) throw new Error("Corrupt missing-schema deadline.");
+    const dater = partial ? this.hby.db.epsd.get([said]) : deadline;
+    const date = dater && timestampMicros(dater.dts);
+    if (date === null || date === undefined) {
+      if (!partial) throw new Error("Corrupt missing-schema deadline.");
+      return { kind: "missingTimestamp", family };
     }
+    const now = this.nowMicros();
+    if (
+      now > date + (partial ? BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n : 0n)
+      || absolute !== null && absolute !== undefined && now > absolute
+    ) return { kind: "expired", family };
+    return { kind: "pending", family };
+  }
+
+  /** Describe only the terminal decision that the owning writer actually commits. */
+  private expiryReport(status: { kind: "expired" | "missingTimestamp"; family: "epse" | "emse" }): EscrowEjection {
+    const detail = status.kind === "missingTimestamp"
+      ? "Pending exchange has no valid admission timestamp."
+      : "Exchange dependency exceeded its pending lifetime or absolute schema deadline.";
+    return { family: status.family, reason: status.kind, detail };
+  }
+
+  /** Unpublish pending evidence and return its exact retired file, all in the current domain writer. */
+  private retireCurrent(said: string, archive: PayloadArchive | undefined, ejection: EscrowEjection): {
+    retired?: string;
+    ejection: EscrowEjection;
+  } {
+    let retired: string | undefined;
     if (this.hby.db.exchangeMeta.get([said])?.essr) {
-      yield* abortable(async (signal) => {
-        await (await this.hby.db.openPayloads(signal)).remove(`essr/${said}`, () => this.clearEscrow(said), signal);
-      });
-    } else this.hby.db.env!.transactionSync(() => this.clearEscrow(said));
+      if (!archive) throw new Error("Pending exchange file owner is unavailable");
+      retired = archive.unpin(`essr/${said}`) ?? undefined;
+      if (!retired) throw new Error("Pending exchange payload reference is missing");
+    }
+    this.clearEscrow(said);
+    return { retired, ejection };
+  }
+
+  /** Finish archive startup before deciding expiry; commit removal before asynchronous reclamation. */
+  private *expirePending(said: string): Operation<EscrowEjection | undefined> {
+    let archive: PayloadArchive | undefined;
+    let retired: string | undefined;
+    yield* resource(function*(provide: Provide<void>) {
+      try {
+        yield* provide(undefined);
+      } finally {
+        if (retired) yield* call(() => archive!.reclaim(retired!));
+      }
+    });
+    if (this.hby.db.exchangeMeta.get([said])?.essr) {
+      archive = yield* abortable((signal) => this.hby.db.openPayloads(signal));
+    }
+    const result = this.hby.db.env!.transactionSync(() => {
+      const status = this.escrowStatus(said);
+      if (status.kind === "accepted") {
+        this.clearPending(said);
+        return undefined;
+      }
+      if (status.kind === "absent" || status.kind === "pending") return undefined;
+      return this.retireCurrent(said, archive, this.expiryReport(status));
+    });
+    retired = result?.retired;
+    yield* abortable(async () => {
+      await this.hby.db.env!.flushed;
+    });
+    return result?.ejection;
+  }
+
+  /** Clear only dependency markers, keeping all accepted evidence and metadata intact. */
+  private clearPending(said: string): void {
+    this.hby.db.epse.rem([said]);
+    this.hby.db.epsd.rem([said]);
+    this.hby.db.emse?.trim([said]);
+    this.hby.db.emsd?.rem([said]);
   }
 }
 
