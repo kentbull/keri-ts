@@ -19,8 +19,8 @@ import { CESR_ATTACHMENT_HEADER } from "../../../src/app/cesr-http.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
-import { HTTPQuery } from "../../../src/app/http-query.ts";
 import { HTTPStreamMessenger } from "../../../src/app/http-stream-messenger.ts";
+import { processMessages } from "../../../src/app/message-source.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../src/app/messengering.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -428,7 +428,7 @@ Deno.test("CESR input cancellation also aborts the request consuming its deliver
   }
 });
 
-Deno.test("external HTTP query cancellation stops an accepted EXN handler and joins response cleanup", async () => {
+Deno.test("explicit CESR response intake cancellation stops an accepted EXN handler and joins cleanup", async () => {
   for (const cleanupFailure of [undefined, new Error("late response cleanup failure")]) {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -450,28 +450,30 @@ Deno.test("external HTTP query cancellation stops an accepted EXN handler and jo
           }
         },
       });
-      const messenger = new HTTPQuery(
-        protocol,
-        httpClient(() =>
-          Promise.resolve(
-            new Response(
-              new ReadableStream<Uint8Array>({
-                start(body) {
-                  // A following body completes the first frame without closing the response.
-                  body.enqueue(concatBytes(wire, wire));
-                },
-                cancel() {
-                  closed = true;
-                  if (cleanupFailure) throw cleanupFailure;
-                },
-              }),
-            ),
-          )
-        ),
-        systemClock,
+      const transport = httpClient(() =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(body) {
+                // A following body completes the first frame without closing the response.
+                body.enqueue(concatBytes(wire, wire));
+              },
+              cancel() {
+                closed = true;
+                if (cleanupFailure) throw cleanupFailure;
+              },
+            }),
+          ),
+        )
       );
       const task = run(function*() {
-        yield* messenger.query("https://peer.test/", fixture(), { signal: controller.signal });
+        const frames = parse(chunkBytes(fixture()));
+        const frame = (yield* call(() => frames.next())).value!;
+        yield* call(() => frames.return());
+        const response = yield* requestFrame("https://peer.test/", frame, transport, { signal: controller.signal });
+        yield* processMessages(signal => response.body(signal), protocol, protocol.makeKevery(), {
+          signal: controller.signal,
+        });
         resumed = true;
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -509,22 +511,19 @@ Deno.test("external HTTP query cancellation stops an accepted EXN handler and jo
   }
 });
 
-Deno.test("HTTP query sends each valid frame before parsing a later malformed frame", async () => {
+Deno.test("ordinary HTTP delivery sends each valid frame before parsing a later malformed frame", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     let requests = 0;
-    const messenger = new HTTPQuery(
-      createProtocolProcessor(hby),
+    const messenger = new HTTPMessenger(
+      "https://peer.test/",
       httpClient(() => {
         requests++;
         return Promise.resolve(new Response(null, { status: 204 }));
       }),
-      systemClock,
     );
     try {
-      yield* call(() =>
-        assertRejects(() => run(() => messenger.query("https://peer.test/", concatBytes(fixture(), b("!")))))
-      );
+      yield* call(() => assertRejects(() => run(() => messenger.send(concatBytes(fixture(), b("!"))))));
       assertEquals(requests, 1);
     } finally {
       yield* hby.close(true);

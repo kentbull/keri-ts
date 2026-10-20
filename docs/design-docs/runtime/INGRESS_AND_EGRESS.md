@@ -42,12 +42,12 @@ Messenger completion and failure containment use
 The references serve different purposes: scheme preference is HTTPS, HTTP, TCP
 from the routing baseline, rather than the GLEIF revision's HTTP-first ordering.
 
-| Owner / operation    | Endpoint selection                                                                                                                     | Completion boundary                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Ordinary Poster send | All controller endpoints, all agent endpoints, then one random mailbox; witness only without those roles                               | Concrete admitted event, with partial deliveries on failure              |
-| Poster sendStream    | First present controller/agent/mailbox role, witness otherwise; all endpoints of a direct role or one relay for the whole finite batch | One admission/outcome for the ordered source batch                       |
-| Ordinary query       | One random endpoint in the first eligible controller/agent/witness role; supplied witness alternatives select within that list         | Transport intake followed by the continuation's accepted-state predicate |
-| Mailbox polling      | All allowed providers and current KEL witnesses over HTTP(S); one worker per recipient/provider history                                | Awaited event consumption before durable cursor advancement              |
+| Owner / operation    | Endpoint selection                                                                                                                     | Completion boundary                                                  |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| Ordinary Poster send | All controller endpoints, all agent endpoints, then one random mailbox; witness only without those roles                               | Concrete admitted event, with partial deliveries on failure          |
+| Poster sendStream    | First present controller/agent/mailbox role, witness otherwise; all endpoints of a direct role or one relay for the whole finite batch | One admission/outcome for the ordered source batch                   |
+| Ordinary query       | One random endpoint in the first eligible controller/agent/witness role; supplied witness alternatives select within that list         | Transport intake followed by the workflow's accepted-state predicate |
+| Mailbox polling      | All allowed providers and current KEL witnesses over HTTP(S); one worker per recipient/provider history                                | Awaited event consumption before durable cursor advancement          |
 
 Explicitly addressed query attesters and AnchorQuerier's separate recovery requests
 remain distinct from ordinary random selection. No mailbox-only query fallback or
@@ -338,10 +338,11 @@ socket ownership. Every actual HTTP/TCP operation joins cleanup before returning
 WitnessInquisitor owns a private ordinary Deck of QueryRequest records. Its
 inspection surface exposes length/empty/peekHead. The selected local signer is
 resolved at consumption; missing signers stay pending. Signing, introductions and
-endpoint selection precede source removal and preserve exact wire across retry.
-Failed/cancelled drains retain their head, unresolved records rotate, and new work
-waits for the next finite pass. Close joins active consumption before clearing.
-Continuations prepare against committed state without a parent runtime callback.
+endpoint selection precede the attempt. One pending instruction Deck feeds the
+current attempt; failed/cancelled attempts are consumed, unresolved records rotate,
+and new work waits for the next finite pass. Finite delivery propagates failure;
+the background sender reports expected transport/refusal failures once and
+continues unrelated work. Close joins active consumption before clearing.
 OOBI completion waits for accepted resolution and ingress/query/escrow dependencies;
 it does not require background receipt delivery to a static OOBI server. Active
 transport still aborts and joins during runtime close.
@@ -349,9 +350,10 @@ transport still aborts and joins during runtime close.
 QueryReplies correlates exact requesting SAIDs before background consumption.
 These reservations are correlation records, not capacity leases. A response owner
 peeks the ordered batch, prepares/publishes its concrete output synchronously, then
-takes the correlation records. QueryReply executes no destination callback. Only the final
-query controls an HTTP response; earlier authorized replies transfer to ordinary
-delivery. Duplicate requests can iterate the same readonly replay reference.
+takes the correlation records. QueryReply executes no destination callback. TCP
+uses these reservations; HTTP ordinary queries publish through Respondant/Poster
+and return 204. Authorized mailbox queries retain SSE and exact-envelope checks.
+Duplicate TCP requests can iterate the same readonly replay reference.
 Authorization uses the exact frame signatures and current dispatch decision; an
 older matching cue cannot override sender refusal. Final TSN pairs transfer
 atomically before correlation removal. Missing routes permit response-only output.
@@ -387,15 +389,13 @@ and maximum windows keep their existing caller-owned deadlines. Status-only auth
 webhook and receipt-202 workflows close their unread owned source before publication.
 Ordinary CESR sends drain through EOF; finite workers join each request between jobs.
 Their result reports delivery/refusal rather than returning success bytes: ordinary
-send callers requested transmission, while query callers explicitly supply response
-intake. The finite/scoped distinction is response ownership, not a CESR-only type.
+query sending has the same contract and independent receivers process evidence. The finite/scoped distinction is response ownership, not a CESR-only type.
 
 | Need                                            | Entry point                   | Completion and ownership                                                                                             |
 | ----------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Finite JSON/document/proof bytes                | HttpClient.request            | Returns resident bytes after EOF and cleanup.                                                                        |
 | Incremental bytes, SSE, or status-only decision | HttpClient.open               | Lends metadata/body within an enclosing Effection scope; owner closes unread I/O.                                    |
 | Ordinary signed CESR delivery                   | HTTPMessenger.send/sendSource | Consumes every successful response body and joins cleanup; returns complete/refuse, without protocol interpretation. |
-| Query response intake                           | HTTPQuery.query               | Parses CESR or consumes the bounded SSE window before returning; accepted state remains a protocol decision.         |
 
 The header-media alternative is the narrow [COMP-01 compatibility rule](../../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-01--dual-http-media-types-and-narrow-sender-fallback),
 not a retry after arbitrary transport failure. Its source owner documents the exact
@@ -405,10 +405,9 @@ one alternate media attempt and reuses the signed query and attachment bytes.
 Successful SSE consumption and cursor publication keep their existing ordering.
 
 `postCesr` sends successive framed POSTs and drains each ordinary response before
-advancing. It accepts no injected response consumer. HTTPQuery.query instead
-pulls one resident input frame, obtains requestFrame's scoped response and visibly
-processes its CESR/SSE bytes before the next frame. It does not eagerly parse later
-frames; earlier valid sends survive a later malformed input. Success headers alone do not establish completion: Content-Length or
+advancing. It accepts no injected response consumer and does not interpret
+response bytes as protocol evidence. It does not eagerly parse later input frames;
+earlier valid sends survive a later malformed input. Success headers alone do not establish completion: Content-Length or
 chunked truncation fails the attempt. Redirects are refused without following or
 replaying the application message. Native fetch/body-read failures retain their
 original causes in TransportError. Injected implementations use that same explicit
@@ -610,14 +609,14 @@ wrappers are removed; WitnessInquisitor and Poster retain separate queue policie
 
 HTTPMessenger binds its URL, HTTP client and destination/authentication metadata;
 `send` and `sendSource` return typed completion/refusal after ordinary POST response
-consumption. HTTPQuery alone receives protocol, HTTP and clock capabilities and
-owns CESR or bounded SSE response intake. Concrete messengerFrom and
+consumption. WitnessInquisitor uses this ordinary HTTP path; mailbox polling and
+direct/TCP ingress own protocol reception. Concrete messengerFrom and
 streamMessengerFrom factories select already resolved HTTPS/HTTP/TCP endpoints,
 without identity configuration, stores or I/O. HTTPStreamMessenger binds a finite
 opaque payload for one PUT and returns owned HttpResponse bytes after cleanup;
 TCPStreamMessenger admits its bound payload to the shared raw socket writer.
 The shared `processMessages` function owns actual buffered parser iteration and
-joined source cleanup for Reactor, HTTP query responses and receipt request owners.
+joined source cleanup for Reactor and concrete protocol/receipt input owners.
 It is not another dispatch class or worker. Normal sends do not interpret arbitrary
 successful response bytes as protocol messages. Refusal does not absorb source,
 parser, storage or cleanup failures. Stream factories add no worker or delivery queue;

@@ -543,20 +543,6 @@ export class Poster {
   }
 
   /**
-   * A request-owned HTTP response may omit optional outbound delivery when no endpoint exists.
-   *
-   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
-   * @returns Whether current routing finds a target; this is not a connectivity probe.
-   */
-  canDeliver(evt: PosterMsg): boolean {
-    const hab = this.hby.habs.get(evt.src);
-    if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
-    return this.findBytesRoutes(hab, evt.dest, evt.topic).some((route) =>
-      route.targets.some((endpoint) => endpoint.url !== null)
-    );
-  }
-
-  /**
    * Snapshot ordinary Poster's current role traversal without network execution.
    *
    * Controller and agent roles each retain all endpoints. An indirect role picks

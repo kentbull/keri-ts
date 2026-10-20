@@ -4,17 +4,14 @@ import { call, type Operation, race, sleep, spawn, type Task } from "effection";
 import { dgKey } from "keri-ts/db";
 import {
   AnchorQuerier,
-  type Hab,
   type Habery,
   KeyStateNoticer,
-  preferredUrl,
-  Roles,
   runAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "./support/context.ts";
 
-/** Preserve the existing primary/fallback windows until the direct-HTTP behavior cut. */
+/** One elapsed deadline covers query sending and independently received evidence. */
 const QueryTimeoutMs = 10_000;
 
 /** Validate the exact event-seal shape before opening stores or starting workers. */
@@ -39,23 +36,6 @@ function queryCompletedWithin(query: Task<void>, ms: number): Operation<boolean>
       return false;
     }),
   ]);
-}
-
-/** Existing controller-OOBI fallback; removed with direct HTTP query behavior in the next behavior cut. */
-function controllerCatchupUrl(hab: Hab, pre: string): string | null {
-  const ends = hab.endsFor(pre);
-  for (const role of [Roles.controller, Roles.agent]) {
-    for (const locations of Object.values(ends[role] ?? {})) {
-      const selected = preferredUrl(locations);
-      if (!selected) continue;
-      const url = new URL(selected);
-      url.pathname = `/oobi/${pre}/controller`;
-      url.search = "";
-      url.hash = "";
-      return url.toString();
-    }
-  }
-  return null;
 }
 
 /** Capture the KLI-style accepted-state display while the database is open. */
@@ -108,12 +88,8 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
       const worker = yield* spawn(() => runAgentRuntime(runtime, { hab }));
       try {
         const complete = yield* queryCompletedWithin(observing, QueryTimeoutMs);
-        if (!complete && !anchor) {
-          const url = controllerCatchupUrl(hab, prefix);
-          if (url) {
-            runtime.oobiery.resolve(url);
-            yield* queryCompletedWithin(observing, 5_000);
-          }
+        if (!complete) {
+          throw new ValidationError(`Query timed out before accepted evidence satisfied ${prefix}.`);
         }
       } finally {
         yield* observing.halt();

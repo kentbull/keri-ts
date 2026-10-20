@@ -404,7 +404,7 @@ Deno.test("runtime stores - cancelling a live runtime joins output before scope-
     const hab = hby.makeHab("sender");
     hby.db.locs.pin([hab.pre, "https"], { url: "https://query.test/" });
     runtime.querying.enqueue({ pre: hab.pre, src: hab.pre, route: "logs", q: {}, wits: [hab.pre] });
-    yield* runtime.querying.processPending();
+
     ready.resolve();
     yield* action<void>(() => () => {});
   });

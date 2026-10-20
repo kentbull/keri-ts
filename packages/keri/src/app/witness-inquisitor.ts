@@ -4,16 +4,19 @@ import { call, type Operation, resource } from "npm:effection@^3.6.0";
 import type { QueryCue, QueryInstruction, QueryRequest } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
+import { consoleLogger } from "../core/logger.ts";
 import { Roles } from "../core/roles.ts";
 import { Schemes } from "../core/schemes.ts";
+import { CesrHttpRefusal } from "./cesr-egress.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
-import { HTTPQuery } from "./http-query.ts";
+import { HTTPMessenger } from "./http-messenger.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { TCPMessenger } from "./tcp-messenger.ts";
+import { TransportError } from "./transport-error.ts";
 
 /** First eligible role used by KERIpy WitnessInquisitor before random endpoint selection. */
 const QUERY_ROLE_PRIORITY = [Roles.controller, Roles.agent, Roles.witness];
@@ -89,7 +92,7 @@ function resolveQueryDestinationUrl(
   return null;
 }
 
-/** One signed query packet captured before asynchronous transport. */
+/** One attempt's signed query packet captured before asynchronous transport. */
 interface QueryDelivery {
   /**
    * Captured transport endpoint for this packet.
@@ -116,15 +119,13 @@ interface QueryDelivery {
 export class WitnessInquisitor {
   /** Borrowed local signers and accepted-state stores. */
   private readonly hby: Habery;
-  /** Shared protocol owner used by each concrete messenger response parser. */
+  /** Borrowed receive processor for same-socket TCP replies only. */
   private readonly protocol: ProtocolProcessor;
   /** Borrowed HTTP client selected at composition. */
   private readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   private readonly clock: RuntimeClock;
-  /** Signed query packets; the delivery operation removes only completed sends. */
-  private readonly deliveries = new Deck<QueryDelivery>();
-  /** Prevents concurrent delivery passes over retained packets. */
+  /** One operation owns the current network attempt. */
   private delivering = false;
   /** Aborts the active send when this sender closes. */
   private output?: AbortController;
@@ -168,7 +169,7 @@ export class WitnessInquisitor {
     this.hab = hab;
   }
 
-  /** Deferred instructions, captured packets and active sends are this sender's only pending work. */
+  /** Deferred instructions and active sends are this sender's only pending work. */
   hasPendingWork(): boolean {
     return !this.requests.empty || this.hasPendingDelivery;
   }
@@ -189,7 +190,7 @@ export class WitnessInquisitor {
   }
 
   /**
-   * Prepare routed query cues before source removal, or retain unresolved requests for a later turn.
+   * Admit a routed query cue for sender-owned resolution and one concrete transport attempt.
    *
    * @param cue Typed query cue; missing route/subject produces no request.
    * @param hab Optional local signer hint when the cue has no explicit signer.
@@ -199,16 +200,22 @@ export class WitnessInquisitor {
     if (!cue.route || !cue.pre) return;
     const { kin: _, ...request } = cue;
     const selected = { ...request, signer: request.signer ?? hab?.pre };
-    if (!this.prepareRequest(selected)) this.enqueue(selected);
+    this.enqueue(selected);
   }
 
-  /** Include live query I/O and unsent packets in convergence. */
+  /** Include actual query I/O in convergence; pending instructions have their own queue. */
   get hasPendingDelivery(): boolean {
-    return this.delivering || !this.deliveries.empty;
+    return this.delivering;
   }
 
-  /** Join each real response before removing its captured packet; failed/cancelled sends retain exact bytes. */
-  deliverOnce(): Operation<void> {
+  /** Run one finite pending pass; transport/refusal failures propagate after joined cleanup. */
+  *deliverOnce(): Operation<void> {
+    const failure = yield* this.deliveryPass();
+    if (failure) throw failure;
+  }
+
+  /** Keep expected send failures as data so background reporting cannot swallow preparation or cleanup faults. */
+  private deliveryPass(): Operation<TransportError | CesrHttpRefusal | undefined> {
     // deno-lint-ignore no-this-alias -- The operation owns one finite output pass.
     const self = this;
     return call(function*() {
@@ -227,14 +234,24 @@ export class WitnessInquisitor {
           complete();
         }
       });
-      const count = self.deliveries.length;
+      const count = self.requests.length;
       for (let index = 0; index < count && !self.closed; index++) {
-        const packet = self.deliveries.peekHead();
-        if (!packet) break;
+        const request = self.requests.peekHead();
+        if (!request) break;
+        const packet = self.prepareRequest(request);
+        self.requests.pull();
+        if (!packet) {
+          self.requests.append(request);
+          continue;
+        }
         active.signal.throwIfAborted();
-        yield* call(() => self.postQueryMessage(packet, active));
+        try {
+          yield* call(() => self.postQueryMessage(packet, active));
+        } catch (error) {
+          if (!(error instanceof TransportError || error instanceof CesrHttpRefusal)) throw error;
+          return error;
+        }
         active.signal.throwIfAborted();
-        self.deliveries.pull();
       }
     });
   }
@@ -249,7 +266,7 @@ export class WitnessInquisitor {
     delivery: QueryDelivery,
     controller: AbortController,
   ): Operation<void> {
-    // Retained packet ownership stays here; the selected messenger owns only this attempt.
+    // Only this attempt owns signed bytes; failed attempts are never automatically resubmitted.
     const http = this.http, clock = this.clock;
     if (new URL(delivery.url).protocol === "tcp:") {
       yield* new TCPMessenger(delivery.url, clock, this.protocol).send(delivery.body, {
@@ -259,48 +276,24 @@ export class WitnessInquisitor {
       });
       return;
     }
-    yield* new HTTPQuery(this.protocol, http, clock).query(delivery.url, delivery.body, {
-      destination: delivery.destination,
-      signal: controller.signal,
-    });
+    const outcome = yield* new HTTPMessenger(delivery.url, http, { destination: delivery.destination })
+      .send(delivery.body, { signal: controller.signal });
+    if (outcome.kind === "refuse") throw outcome.error;
   }
 
-  /** Sign and queue one initial pass; unresolved requests rotate and appended work waits for the next turn. */
-  *processPending(): Operation<void> {
-    if (this.closed) return;
-    const count = this.requests.length;
-    for (let index = 0; index < count; index++) {
-      const request = this.requests.peekHead();
-      if (!request) break;
-      if (this.prepareRequest(request)) this.requests.pull();
-      else {
-        this.requests.pull();
-        this.requests.append(request);
-      }
-    }
-  }
-
-  /** Abort and join real output before clearing packets and correspondence. */
+  /** Abort and join real output before clearing pending instructions. */
   *close(): Operation<void> {
     this.closed = true;
     this.output?.abort();
     if (this.outputJoined) yield* call(() => this.outputJoined!);
     this.requests.clear();
-    this.deliveries.clear();
   }
 
-  /** Prepare messages independently while the delivery worker may be waiting on a response. */
-  *msgDo(): Operation<never> {
-    while (true) {
-      yield* this.processPending();
-      yield* runtimeTurn();
-    }
-  }
-
-  /** Own concrete attempts independently of preparation; the root joins both workers before close. */
+  /** Report expected peer/transport failures once, then continue unrelated requests; unexpected faults terminate. */
   *deliverDo(): Operation<never> {
     while (true) {
-      yield* this.deliverOnce();
+      const failure = yield* this.deliveryPass();
+      if (failure) consoleLogger.warn("Query delivery failed", failure);
       yield* runtimeTurn();
     }
   }
@@ -321,26 +314,25 @@ export class WitnessInquisitor {
   }
 
   /**
-   * Capture/sign the selected query, introduction and endpoint; unresolved routing retains its source request.
+   * Resolve/sign one selected query and introduction immediately before its attempt.
    *
    * @param request Deferred unsigned request; nested query values must remain immutable.
-   * @returns True after signing and queueing a packet; false when signer/attester is unresolved.
+   * @returns Prepared packet, or null when signer/attester evidence is unresolved.
    * @throws A selected attester with no endpoint URL throws; source removal remains with the caller.
    */
-  private prepareRequest(request: QueryRequest): boolean {
+  private prepareRequest(request: QueryRequest): QueryDelivery | null {
     const hab = this.configuredHab(request.signer);
-    if (!hab) return false;
+    if (!hab) return null;
     const attesters = request.src ? [] : this.attestersFor(request.pre, { signer: hab.pre, wits: request.wits });
     const destination = request.src ?? attesters[Math.floor(Math.random() * attesters.length)];
-    if (!destination) return false;
+    if (!destination) return null;
     const url = resolveQueryDestinationUrl(hab, request.pre, destination, {
       explicitWitness: request.wits?.includes(destination) ?? false,
     });
     if (!url) throw new ValidationError(`No endpoint URL found for query destination ${destination}.`);
     const message = hab.query(request.pre, destination, copyQuery(request));
     const intro = introduce(hab, destination);
-    this.deliveries.push({ url, body: concatBytes(intro, message), destination });
-    return true;
+    return { url, body: concatBytes(intro, message), destination };
   }
 
   /**

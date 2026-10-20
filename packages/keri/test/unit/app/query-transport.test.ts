@@ -1,9 +1,10 @@
-import { call, run, spawn } from "effection";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
-import { attachmentPayload, collectPayload, concatBytes, parse } from "../../../../cesr/mod.ts";
+import { attachmentPayload, collectPayload, concatBytes, parse, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import {
   createAgentRuntime,
+  settleMailboxPollBatch,
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -21,6 +22,7 @@ import {
 
 import { SeqNoQuerier } from "../../../src/app/querying.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { waitForTaskHalt } from "../../effection-http.ts";
 
 /** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
 async function expectedMessages(bytes: Uint8Array): Promise<Uint8Array[]> {
@@ -153,14 +155,12 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           runtime.querying.configure({ hab: sender });
           const sign = sender.query, resolve = sender.endsFor;
           const signed: Uint8Array[] = [];
-          let resolved = 0;
           sender.query = function(...args) {
             const wire = sign.apply(this, args);
             signed.push(wire);
             return wire;
           };
           sender.endsFor = function(...args) {
-            resolved++;
             return resolve.apply(this, args);
           };
           try {
@@ -175,38 +175,28 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
             sender.query = () => {
               throw foreign;
             };
+            yield* processCuesOnce(runtime, { hab: sender });
+            assertEquals(runtime.cues.empty, true);
             assertStrictEquals(
-              yield* call(() => assertRejects(() => run(() => processCuesOnce(runtime, { hab: sender })))),
+              yield* call(() => assertRejects(() => run(() => runtime.querying.deliverOnce()))),
               foreign,
             );
-            assertStrictEquals(runtime.cues.peekHead(), cue);
             assertStrictEquals(runtime.querying.pending.peekHead(), pending);
-
             sender.query = function(...args) {
               const wire = sign.apply(this, args);
               signed.push(wire);
               return wire;
             };
-            yield* processCuesOnce(runtime, { hab: sender });
-            yield* runtime.querying.processPending();
-            assertEquals([runtime.cues.empty, runtime.querying.pending.empty, signed.length], [true, true, 2]);
-            assertEquals(runtime.querying.hasPendingDelivery, true, "both prepared query records await delivery");
-            const captured = concatBytes(introduce(sender, remoteController.pre), signed[0]);
-            sender.rotate();
-            yield* runtime.reactor.process((signal) =>
-              chunkBytes(
-                remoteController.makeLocScheme("http://unreachable.test/", remoteController.pre, "http"),
-                { signal },
-              )
-            );
             const before = bodies.length;
             yield* runtime.querying.deliverOnce();
-            assertEquals(
-              bodies.slice(before, before + (yield* call(() => expectedMessages(captured))).length),
-              yield* call(() => expectedMessages(captured)),
-              "captured endpoint and original signature survive later state changes",
-            );
-            assertEquals(signed.length, 2, "delivery never re-signs the admitted query");
+            assertEquals([runtime.querying.pending.empty, signed.length], [true, 2]);
+            const expected: Uint8Array[] = [];
+            for (const query of signed) {
+              expected.push(
+                ...(yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query)))),
+              );
+            }
+            assertEquals(bodies.slice(before), expected);
           } finally {
             sender.query = sign;
             sender.endsFor = resolve;
@@ -367,7 +357,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             }).queryDo();
             accepted = true;
           });
-          yield* runtime.querying.processPending();
+
           assertEquals(tcpConnections, 0, "guarded query preparation performs no network I/O");
           yield* runtime.querying.deliverOnce();
           assertEquals(runtime.querying.hasPendingDelivery, false);
@@ -379,7 +369,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           );
           reply = acceptedEventReplayMessage(remoteHby, remoteController.pre, 1).message;
           enqueue();
-          yield* runtime.querying.processPending();
+
           yield* runtime.querying.deliverOnce();
           assertEquals(tcpConnections, 2);
           assertEquals(
@@ -387,7 +377,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
             1,
             "signed TCP replay passes Kevery before state advances",
           );
-          yield* runtime.querying.processPending();
+
           yield* waiting;
           assertEquals(accepted, true, "the sequence workflow observes verified accepted state");
           assertEquals(
@@ -424,7 +414,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
   }
 });
 
-Deno.test("query transport ingests open-ended SSE mailbox iterable responses for posted qry delivery", async () => {
+Deno.test("ordinary query acknowledgement leaves state unchanged until an independent mailbox receiver accepts replay", async () => {
   const bodies: Uint8Array[] = [];
   const controller = new AbortController();
   const port = 9338;
@@ -435,7 +425,10 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
     port,
     signal: controller.signal,
   }, async (request) => {
-    bodies.push(await readCesrRequestBytes(request));
+    const wire = await readCesrRequestBytes(request);
+    bodies.push(wire);
+    const body = (await parseBytes(wire))[0].body;
+    if (!(body instanceof SerderKERI) || body.route !== "mbx") return new Response(null, { status: 204 });
     return new Response(
       new ReadableStream<Uint8Array>({
         start(stream) {
@@ -520,20 +513,38 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
           };
           const bodyStart = bodies.length;
 
-          runtime.querying.enqueueCue({
-            kin: "query",
-            pre: remoteController.pre,
-            src: remoteController.pre,
-            route: "logs" as const,
-            q: { s: "0", fn: "0" },
-          }, sender);
+          let accepted = false;
+          const waiting = yield* spawn(function*() {
+            yield* new SeqNoQuerier(hby.db, runtime.querying, remoteController.pre, 1, { signer: sender.pre })
+              .queryDo();
+            accepted = true;
+          });
           yield* runtime.querying.deliverOnce();
-
-          assertEquals(runtime.hby.db.getKever(remoteController.pre)?.sn, 1);
+          assertEquals([hby.db.getKever(remoteController.pre)?.sn, accepted], [0, false]);
           assertEquals(
             bodies.slice(bodyStart),
             yield* call(() => expectedMessages(concatBytes(introduce(sender, remoteController.pre), query))),
           );
+          yield* settleRuntimeIngress(runtime, [sender.makeEndRole(remoteController.pre, EndpointRoles.mailbox, true)]);
+          const receiving = yield* spawn(() =>
+            runtime.mailboxPoller.pollDo(batch => settleMailboxPollBatch(runtime, batch))
+          );
+          try {
+            const deadline = Date.now() + 2_000;
+            while (
+              (!accepted || hby.db.tops.get([sender.pre, remoteController.pre])?.topics["/replay"] !== 0)
+              && Date.now() < deadline
+            ) {
+              yield* sleep(5);
+            }
+            assertEquals(hby.db.getKever(remoteController.pre)?.sn, 1);
+            assertEquals(accepted, true);
+            assertEquals(hby.db.tops.get([sender.pre, remoteController.pre])?.topics["/replay"], 0);
+            yield* waiting;
+          } finally {
+            yield* waitForTaskHalt(receiving);
+            yield* waiting.halt();
+          }
         } finally {
           yield* runtime.close();
         }
@@ -552,7 +563,7 @@ Deno.test("query transport ingests open-ended SSE mailbox iterable responses for
   }
 });
 
-Deno.test("query delivery processes a streamed reply after synchronous preparation", async () => {
+Deno.test("ordinary query delivery drains an unsolicited response while accepted evidence remains with the receiver", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -575,17 +586,11 @@ Deno.test("query delivery processes a streamed reply after synchronous preparati
       hby.db.locs.pin([peer.pre, "http"], { url: "http://query-peer.test/" });
       hby.db.ends.pin([peer.pre, EndpointRoles.controller, peer.pre], { allowed: true });
 
-      const emission = {
-        kind: "wire" as const,
-        cue: { kin: "query" as const, pre: peer.pre, src: peer.pre, route: "logs" as const, q: {} },
-        messages: [sender.query(peer.pre, peer.pre, { route: "logs" as const, q: {} })],
-      };
-      // Queue preparation is synchronous; reply intake happens only in the actual delivery operation.
-      runtime.querying.enqueueCue(emission.cue, sender);
-
-      assertEquals(requests, 0);
-      assertEquals(runtime.querying.hasPendingDelivery, true);
+      runtime.querying.enqueueCue({ kin: "query", pre: peer.pre, src: peer.pre, route: "logs", q: {} }, sender);
+      assertEquals([requests, runtime.querying.pending.length], [0, 1]);
       yield* runtime.querying.deliverOnce();
+      assertEquals(hby.db.getKever(peer.pre), null);
+      yield* runtime.reactor.processBytes(concatBytes(...remote.db.clonePreIter(peer.pre)));
       assertEquals(hby.db.getKever(peer.pre)?.said, peer.kever!.said);
       assertEquals(runtime.querying.hasPendingDelivery, false);
     } finally {

@@ -274,13 +274,14 @@ Deno.test("HTTP cancellation closes a blocked body and joins its parser task", a
     }
   });
 });
-Deno.test("concurrent HTTP queries keep their own replay while background cues drain", async () => {
+Deno.test("concurrent HTTP queries acknowledge intake and publish replay through the ordinary mailbox owner", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-replies-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
     try {
       const alice = hby.makeHab("alice");
       const bob = hby.makeHab("bob");
+      yield* runtime.reactor.processBytes(alice.makeEndRole(alice.pre, "mailbox", true));
       const background: string[] = [];
       const enqueue = runtime.respondant.enqueueCue.bind(runtime.respondant);
       runtime.respondant.enqueueCue = (hab, source, hint) => {
@@ -289,8 +290,8 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         return enqueue(hab, source, hint);
       };
       const worker = yield* spawn(() => cueDo(runtime, { hab: alice }));
-      const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
-      // Both requests share protocol state and the cue worker, but each reserves its query SAID before dispatch.
+      const handler = createProtocolHandler(runtime, { serviceHab: alice });
+      // Replies use the ordinary responder even when requests and cue draining overlap.
       const requests = [alice, bob].map((hab) =>
         handler(
           new Request("http://localhost/", {
@@ -301,24 +302,23 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         )
       );
       const replies = yield* call(() => promptly(Promise.all(requests)));
-      for (let index = 0; index < replies.length; index++) {
-        assertEquals(replies[index].status, 200);
-        const bytes = yield* call(async () => new Uint8Array(await replies[index].arrayBuffer()));
-        const prefixes = (yield* call(() => parseBytes(bytes))).map((frame) => {
-          assertInstanceOf(frame.body, SerderKERI);
-          return frame.body.pre;
-        });
-        assertEquals(prefixes, [[alice.pre], [bob.pre]][index]);
+      assertEquals(replies.map(reply => reply.status), [204, 204]);
+      assertEquals(background.length, 2);
+      yield* runtime.postman.process();
+      const stored = [...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)];
+      const prefixes: (string | null)[] = [];
+      for (const bytes of stored) {
+        prefixes.push(...(yield* call(() => parseBytes(bytes))).map(frame => (frame.body as SerderKERI).pre));
       }
-      assertEquals(background, []);
-      const open = runtime.respondant.openReply.bind(runtime.respondant);
+      assertEquals(prefixes.sort(), [alice.pre, bob.pre].sort());
+      const open = runtime.mailboxDirector.streamQueryResponse.bind(runtime.mailboxDirector);
       for (const fault of [undefined, new DOMException("foreign late abort", "AbortError")]) {
         const abort = new AbortController();
         let cancelling!: () => void, finish!: () => void;
         const closing = new Promise<void>((resolve) => cancelling = resolve),
           gate = new Promise<void>((resolve) => finish = resolve);
-        runtime.respondant.openReply = (hab, slot) => {
-          const response = open(hab, slot)!;
+        runtime.mailboxDirector.streamQueryResponse = said => {
+          const response = open(said);
           const original = response.cancel.bind(response);
           response.cancel = async (reason) => {
             cancelling();
@@ -333,7 +333,9 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
           new Request("http://localhost/", {
             method: "POST",
             headers: { "content-type": "application/cesr" },
-            body: alice.query(bob.pre, alice.pre, { route: "logs", q: {} }) as Uint8Array<ArrayBuffer>,
+            body: alice.query(alice.pre, alice.pre, { route: "mbx", q: { topics: { "/replay": 0 } } }) as Uint8Array<
+              ArrayBuffer
+            >,
             signal: abort.signal,
           }),
         );
@@ -349,7 +351,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
         if (fault) assertStrictEquals(yield* call(() => assertRejects(() => pending)), fault);
         else assertEquals((yield* call(() => promptly(pending))).status, 408);
       }
-      runtime.respondant.openReply = open;
+      runtime.mailboxDirector.streamQueryResponse = open;
       yield* worker.halt();
     } finally {
       yield* runtime.close();
@@ -357,7 +359,7 @@ Deno.test("concurrent HTTP queries keep their own replay while background cues d
     }
   });
 });
-Deno.test("only the final query controls a multi-frame HTTP response", async () => {
+Deno.test("multi-frame ordinary HTTP queries publish every accepted replay without running outgoing workers", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `http-final-query-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
@@ -368,7 +370,7 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       const bob = hby.makeHab("bob");
       // Ordinary replies have a real local mailbox destination, so earlier query delivery is observable.
       yield* runtime.reactor.processBytes(alice.makeEndRole(alice.pre, "mailbox", true));
-      const handler = createProtocolHandler(runtime, { serviceHab: alice, directQueryResponses: true });
+      const handler = createProtocolHandler(runtime, { serviceHab: alice });
       const requests = [
         concatBytes(
           alice.query(alice.pre, alice.pre, { route: "logs", q: {} }),
@@ -393,12 +395,10 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
           ),
         );
       }
-      assertEquals(replies.map((reply) => reply.status), [204, 200]);
-      const direct = yield* call(async () => new Uint8Array(await replies[1].arrayBuffer()));
+      assertEquals(replies.map((reply) => reply.status), [204, 204]);
       /** Read the admitted event identities from both HTTP and mailbox delivery evidence. */
       const prefixes = async (bytes: Uint8Array) =>
         (await parseBytes(bytes)).map(({ body }) => (body as SerderKERI).pre);
-      assertEquals(yield* call(() => prefixes(direct)), [alice.pre]);
       assertEquals(runtime.postman.hasPending, true, "HTTP publishes ordinary delivery without running Poster");
       assertEquals([...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)], []);
       for (let pass = 0; pass < 8 && runtime.postman.hasPending; pass++) yield* runtime.postman.process();
@@ -410,14 +410,6 @@ Deno.test("only the final query controls a multi-frame HTTP response", async () 
       assertEquals(ordinary.includes(alice.pre), true);
       assertEquals(ordinary.includes(bob.pre), true);
       const deniedBody = query("logs", { i: bob.pre, src: alice.pre }, { pre: alice.pre, pvrsn: Vrsn_2_0 });
-      // An older matching capture must not authorize this exact denied frame's ordinary delivery.
-      runtime.cues.push({
-        kin: "replay",
-        querySaid: deniedBody.said!,
-        src: alice.pre,
-        dest: alice.pre,
-        msgs: [acceptedEventReplayMessage(hby, bob.pre, 0).message],
-      });
       runtime.protocol.kvy.denyList.add(alice.pre);
       const before = [...runtime.mailboxer!.getTopicMsgs(`${alice.pre}/replay`)];
       const denied = yield* call(() =>
@@ -647,7 +639,6 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
         yield* runtime.reactor.processBytes(sender.makeEndRole(sender.pre, "controller", true));
         yield* runtime.reactor.processBytes(sender.makeLocScheme("http://example.test/", sender.pre, "http"));
         runtime.querying.configure({ hab: sender });
-        yield* runtime.querying.processPending();
         yield* runtime.querying.deliverOnce();
         assertEquals(
           outgoing.length,
@@ -671,11 +662,11 @@ Deno.test("KRAM HTTP mailbox authorization uses the complete sender pool and ref
     }
   });
 });
-Deno.test("direct HTTP TSN query retains both independently verifiable replies", async () => {
+Deno.test("HTTP TSN queries publish both independently verifiable replies through ordinary mailbox delivery", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"),
-      runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const requester = receiver.makeHab("requester"),
       target = yield* createAgentRuntime(receiver, new FetchHttpClient(), systemClock);
@@ -699,8 +690,11 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
       }
       for (const wire of hby.db.clonePreIter(issuer.pre)) yield* target.reactor.processBytes(wire);
       for (const event of [vcp, iss]) yield* target.reactor.processBytes(reger.cloneTvt(event.pre!, event.said!));
-      const handler = createProtocolHandler(runtime, { serviceHab: issuer, directQueryResponses: true });
+      for (const wire of receiver.db.clonePreIter(requester.pre)) yield* runtime.reactor.processBytes(wire);
+      yield* runtime.reactor.processBytes(requester.makeEndRole(issuer.pre, "mailbox", true));
+      const handler = createProtocolHandler(runtime, { serviceHab: issuer });
       for (const id of [credential, requester.pre]) {
+        const before = [...runtime.mailboxer!.getTopicMsgs(`${requester.pre}/reply`)].length;
         const response = yield* call(() =>
           promptly(handler(
             new Request("http://localhost/", {
@@ -712,13 +706,16 @@ Deno.test("direct HTTP TSN query retains both independently verifiable replies",
             }),
           ))
         );
-        assertEquals(response.status, 200);
-        const bytes = yield* call(async () => new Uint8Array(await response.arrayBuffer()));
+        assertEquals(response.status, 204);
+        yield* runtime.postman.process();
+        const bytes = concatBytes(...[...runtime.mailboxer!.getTopicMsgs(`${requester.pre}/reply`)].slice(before));
 
         const frames = yield* call(() => parseBytes(bytes));
         {
           assertEquals(
-            frames.map((frame) => (frame.body as SerderKERI).route),
+            frames.filter((frame) => (frame.body as SerderKERI).ilk === "rpy").map((frame) =>
+              (frame.body as SerderKERI).route
+            ),
             id === credential
               ? [`/tsn/registry/${issuer.pre}`, `/tsn/credential/${issuer.pre}`]
               : [`/tsn/registry/${issuer.pre}`],
