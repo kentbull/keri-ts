@@ -22,6 +22,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/witness-transport.test.ts",
       "test/unit/app/httping.test.ts",
       "test/unit/app/http-client.test.ts",
+      "test/unit/app/keripy-runtime.test.ts",
       "test/unit/app/mailbox-sse.test.ts",
       "test/unit/app/query-delivery.test.ts",
       "test/unit/app/cesr-http.test.ts",
@@ -78,6 +79,9 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-kli-tufa.test.ts",
       "test/integration/app/interop-saidify-kli-tufa.test.ts",
     ],
+  },
+  "interop-reference-profiles": {
+    files: ["test/integration/app/interop-reference-profile.test.ts"],
   },
   "interop-acdc-deep": {
     // Cold files share a mutable pinned KERIpy venv; run them in separate sequential processes.
@@ -280,6 +284,7 @@ export const required = [
 
 /** Maintained external matrices: full includes DID Webs but excludes endurance sweeps. */
 export const interop = [
+  "interop-reference-profiles",
   "interop-parity",
   "interop-keystore-parity",
   "interop-keystore-storage",

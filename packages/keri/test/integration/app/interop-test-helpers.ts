@@ -8,7 +8,13 @@ import { type Operation } from "npm:effection@^3.6.0";
 import keripyReference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
-import { type KeripyRuntime, recordResolverRuntime, verifyKeripy } from "./keripy-runtime.ts";
+import {
+  keripyProtocolVersionArgs,
+  type KeripyRuntime,
+  recordResolverRuntime,
+  selectedKeripyProfile,
+  verifyKeripy,
+} from "./keripy-runtime.ts";
 
 /** Decoded subprocess result. */
 export interface CmdResult {
@@ -428,6 +434,9 @@ export async function resolveKeripyRuntime(
   workDir: string,
   env: Record<string, string>,
 ): Promise<KeripyRuntime> {
+  if (selectedKeripyProfile(env) && !env.KERIPY_INTEROP_ROOT?.trim()) {
+    throw new Error("A KERIpy release profile requires its isolated KERIPY_INTEROP_ROOT.");
+  }
   if (!env.KERIPY_INTEROP_ROOT) await ensurePinnedKeripyKli(env);
   // Runtime selection does not alter independent historical witness fixture provenance.
   await ensurePinnedKeripyFixtures();
@@ -1460,8 +1469,7 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "init",
-        "--version",
-        "1.0",
+        ...keripyProtocolVersionArgs(env, "1.0"),
         "--name",
         alias,
         "--base",
@@ -1483,8 +1491,7 @@ async function initializeKeriPyWitness(
       kliCommand,
       [
         "incept",
-        "--version",
-        "1.0",
+        ...keripyProtocolVersionArgs(env, "1.0"),
         "--name",
         alias,
         "--base",
@@ -1554,6 +1561,7 @@ export async function startKeriPyWitnessHarness(
       [
         // Current `witness start` cannot select protocol/genus; the fixture does.
         `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
+        ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
         "--name",
         node.name,
         "--base",
