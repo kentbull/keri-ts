@@ -1,8 +1,7 @@
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { corpus } from "../../../../scripts/bench/cesr-corpus.ts";
-import { collectPayload } from "../../src/core/payload.ts";
+import { concatBytes } from "../../src/core/bytes.ts";
 import { parseBytes } from "../../src/parser/complete.ts";
-import { essrRaw } from "../../src/parser/essr.ts";
 
 Deno.test("streaming benchmark corpus has legal counts and stable item bytes in both genera and domains", async () => {
   for (const genus of [1, 2] as const) {
@@ -29,7 +28,7 @@ Deno.test("streaming benchmark corpus has legal counts and stable item bytes in 
         for (const [index, frame] of frames.entries()) {
           assertExists(frame.essrs);
           assertEquals(frame.essrs.length, 1);
-          const raw = await collectPayload(essrRaw(frame.essrs));
+          const raw = concatBytes(...frame.essrs.map((part) => part.raw));
           assertEquals(new DataView(raw.buffer, raw.byteOffset, 8).getBigUint64(0), BigInt(index));
           // Verify ordering first, then normalize the ID for the common digest oracle.
           for (let i = 0; i < 8; i++) raw[i] = i;

@@ -1,4 +1,4 @@
-import { essrWire } from "../../../../cesr/src/parser/essr.ts";
+import { concatBytes } from "cesr-ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
@@ -146,7 +146,10 @@ async function assertTree(actual: CesrFrame, expected: CesrFrame): Promise<void>
   assertEquals(actual.attachments.map((group) => group.raw), expected.attachments.map((group) => group.raw));
   assertEquals(actual.nests?.length ?? 0, expected.nests?.length ?? 0);
   if (expected.essrs) {
-    assertEquals(await collectPayload(essrWire(actual.essrs!)), await collectPayload(essrWire(expected.essrs)));
+    assertEquals(
+      concatBytes(...actual.essrs!.map((part) => part.qb64b)),
+      concatBytes(...expected.essrs.map((part) => part.qb64b)),
+    );
   }
   for (let i = 0; i < (expected.nests?.length ?? 0); i++) await assertTree(actual.nests![i], expected.nests![i]);
 }
@@ -241,7 +244,7 @@ Deno.test("nested forward escrows missing sender state then reopens and retries 
     assertEquals(hby.db.epse.get([input.serder.said!]), null);
     assertEquals([...director.topicIter(recipient.pre, "/nested")].length, 1);
     const loaded = await loadNests(hby.db, input.serder.said!);
-    assertEquals(await collectPayload(essrWire(loaded[0].essrs!)), b("4BABYWJj4BABYWJj4BABeHl6"));
+    assertEquals(concatBytes(...loaded[0].essrs!.map((part) => part.qb64b)), b("4BABYWJj4BABYWJj4BABeHl6"));
   });
 });
 Deno.test("forwarder carries invalid child signatures; recipient withholds acceptance", async () => {
@@ -367,7 +370,7 @@ Deno.test("optional runtime KRAM pools proofs across reopen and forwards current
       );
       const { envelope: ready } = yield* runtime.protocol.dispatch(retry, { mailboxAid: provider.pre });
       assertEquals(ready!.nests[0].body.raw, nest.body.raw);
-      assertEquals(yield* call(() => collectPayload(essrWire(ready!.nests[0].essrs!))), wire);
+      assertEquals(concatBytes(...ready!.nests[0].essrs!.map((part) => part.qb64b)), wire);
       assertEquals(hby.db.pmkm.get(key), null, "acceptance retires partial state before returning accepted evidence");
       assertEquals(hby.db.exns.get(nest.body.said!), null);
       assertExists(hby.db.exns.get(input.serder.said!));

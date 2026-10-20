@@ -41,10 +41,10 @@ the frozen reference. Parent `/fwd` validation checks the child body and signed
 `a.evt` commitment; authenticating child signatures belongs to its recipient.
 The forwarder does not recursively dispatch children.
 
-## Remaining recipient boundary
+## Recipient data
 
-`EssrRecipient` currently returns a transient caller-owned `PayloadStore` file
-after authenticated decryption. Baser never persists it. The next ESSR refactor
-removes that staging API and returns ordinary authenticated data, since sealed-box
-crypto already requires the complete ciphertext and plaintext buffers. Shared
-CESR/transport primitives require an independent dependency audit before removal.
+`EssrRecipient` reads accepted evidence from LMDB and synchronously returns
+ordinary authenticated inner bytes. The caller owns their memory lifetime;
+plaintext is never automatically persisted. File staging, ownership transfer,
+views and sinks are removed. Shared frame serialization, counters and actual
+transport sources remain independent of ESSR persistence.

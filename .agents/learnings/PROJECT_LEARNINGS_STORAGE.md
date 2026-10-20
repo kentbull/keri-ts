@@ -98,8 +98,10 @@ No archive, file references, recovery sweep or durable plaintext store remains.
 precedes the synchronous writer; publication replaces its rows inside that writer.
 Failure rolls back the body, proofs and nested rows together. Retry and replay
 hydrate ordinary finite frames; no private staging database or file lifetime exists.
-Recipient decryption still uses the separate transient PayloadStore pending its
-scheduled ordinary-data refactor; it does not persist plaintext in Baser.
+Recipient decryption synchronously reads accepted LMDB evidence and returns
+caller-owned authenticated inner bytes. No file staging, views, sinks or durable
+plaintext APIs remain. Actual transport sources and frame serialization survive
+independently of ESSR storage.
 
 Opaque pathed evidence uses byte-preserving insertion-ordered storage. UTF-8
 replacement can merge different binary members; never decode wire just to obtain

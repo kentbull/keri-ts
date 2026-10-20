@@ -14,7 +14,6 @@ export * from "./core/vocabulary.ts";
 export { parseAttachmentGroup } from "./parser/attachments.ts";
 export * from "./parser/cold-start.ts";
 export * from "./parser/complete.ts";
-export { essrRaw, essrWire } from "./parser/essr.ts";
 export * from "./parser/parser.ts";
 export * from "./parser/serialize.ts";
 export * from "./primitives/aggor.ts";

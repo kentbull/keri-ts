@@ -15,8 +15,9 @@ protocol evidence, transactions and actual resource cleanup.
 - Chunk boundaries never complete attachments. Keep real framing, exact enclosure
   exhaustion, scoped genus, terminal truncation and fresh invocation selection.
 - ESSR is ordered Texter evidence. Preserve code, order, duplicates and padding
-  validation in the finite primitive reader. Derive raw/wire Payload views and
-  serialized counts from that representation; ordinary values need no disposal.
+  validation in the finite primitive reader. Read raw/qualified primitive bytes and derive serialized counts from that
+  representation; ordinary values need no disposal. Unused ESSR reader adapters,
+  staging sinks and explicit payload-owner interfaces are removed.
 - Annotation is synchronous and walks original wire scopes with each hydrated
   node once. Rendering does not acquire parser payload owners.
 - parse(source) has no options; annotation is presentation-only. Input operations
@@ -26,7 +27,7 @@ protocol evidence, transactions and actual resource cleanup.
   The Effection bridge and subpath are removed. Sources cooperate with their
   owner's signal. Finite essrChunks/chunk formatting and stored-nest/resident-token
   hydration have no lifetime options; Payload.open and replay owners check before
-  each publication. Archive/file-backed ESSR retrieval keeps its actual I/O signal.
+  each publication. ESSR evidence reads are synchronous LMDB operations.
 - Async parse wraps intrinsic wire failures; source, unexpected codec and abort
   failures retain identity. Finite parseBytes throws its underlying error.
 - MessagePack uses private standard extensions with key caching disabled. CBOR

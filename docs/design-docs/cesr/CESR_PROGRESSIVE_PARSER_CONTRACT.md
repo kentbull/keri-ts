@@ -41,8 +41,8 @@ commitment covers concatenated raw bytes; fragment boundaries do not create
 separate ciphertexts. The finite primitive reader validates alphabet, declared
 extent and zero lead padding before admitting an incoming Texter.
 
-`essrRaw(texters)` and `essrWire(texters)` provide derived read-only Payload views
-for existing crypto/storage consumers. They create no staging files or owners.
+ESSR evidence is an ordinary Texter array; consumers access raw or qualified
+bytes directly. ESSR-specific content-reader adapters and staging owners are removed.
 `essrChunks(texters, { gvrsn, domain })` synchronously yields counters and chunks
 derived from the actual array and primitive extents. It has no lifetime policy;
 actual Payload.open readers and replay operations check before publishing each
@@ -57,8 +57,8 @@ text, including from qb2 input. Parsed values remain usable after rendering.
 
 ## Real resource boundaries
 
-`Payload { size, open(signal) }` describes an actual byte source. File sinks and
-`OwnedPayload.discard()` remain for demonstrated storage/crypto consumers.
+`Payload { size, open(signal) }` describes an actual transport or serialized frame
+source. Unused memory/file sinks and owned-payload disposal interfaces are removed.
 `collectPayload` enforces its source's declared extent and joins its reader;
 that is framing, not an allocation quota. Consumers own cancellation and cleanup
 of actual files, sockets, readers and database work. Ordinary parsed values do

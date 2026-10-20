@@ -1,8 +1,6 @@
 import { assertEquals, assertExists, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, WireParseError } from "../../../src/core/errors.ts";
-import { collectPayload } from "../../../src/core/payload.ts";
-import { essrRaw, essrWire } from "../../../src/parser/essr.ts";
 import { parse } from "../../../src/parser/parser.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
@@ -57,11 +55,11 @@ Deno.test("ESSR preserves fragment order, duplicates and mixed Texter lengths in
       assertEquals(frame.attachments.map((group) => group.name), ["ControllerIdxSigs"]);
       assertEquals(frame.gvrsn, v.gvrsn);
       assertEquals(frame.essrs.map((texter) => texter.raw), raw);
-      assertEquals(await collectPayload(essrWire(frame.essrs)), b(wire));
-      assertEquals(await collectPayload(essrRaw(frame.essrs)), concatBytes(...raw));
+      assertEquals(concatBytes(...frame.essrs.map((part) => part.qb64b)), b(wire));
+      assertEquals(concatBytes(...frame.essrs.map((part) => part.raw)), concatBytes(...raw));
       assertEquals((await parser.next()).done, true);
       // Ordinary evidence remains readable after the input has closed.
-      assertEquals(await collectPayload(essrRaw(frame.essrs)), concatBytes(...raw));
+      assertEquals(concatBytes(...frame.essrs.map((part) => part.raw)), concatBytes(...raw));
     }
   }
 });
@@ -73,8 +71,8 @@ Deno.test("ESSR headers survive every source split and preserve a big code for a
       const bytes = encode(v.selector + v.group("BodyWithAttachmentGroup", v.body + v.essr(wire, 2)));
       for await (const frame of parse(chunks(bytes, 1))) {
         assertExists(frame.essrs);
-        assertEquals(await collectPayload(essrWire(frame.essrs)), b(wire));
-        assertEquals(await collectPayload(essrRaw(frame.essrs)), b("abcxy"));
+        assertEquals(concatBytes(...frame.essrs.map((part) => part.qb64b)), b(wire));
+        assertEquals(concatBytes(...frame.essrs.map((part) => part.raw)), b("abcxy"));
       }
     }
   }
@@ -121,7 +119,7 @@ Deno.test("delivered ESSR stays readable after a malformed later sibling in a co
   const first = (await parser.next()).value!;
   assertExists(first.essrs);
   await assertRejects(() => parser.next(), WireParseError);
-  assertEquals(await collectPayload(essrRaw(first.essrs)), b("abc"));
+  assertEquals(concatBytes(...first.essrs.map((part) => part.raw)), b("abc"));
 });
 Deno.test("attachment wrapper selectors restore the enclosing ESSR genus", async () => {
   const one = vector(1), two = vector(2);
@@ -138,7 +136,7 @@ Deno.test("attachment wrapper selectors restore the enclosing ESSR genus", async
         CtrDexV1.ControllerIdxSigs,
         CtrDexV2.ControllerIdxSigs,
       ]);
-      assertEquals(await collectPayload(essrRaw(frame.essrs)), b("abcxyz"));
+      assertEquals(concatBytes(...frame.essrs.map((part) => part.raw)), b("abcxyz"));
     }
   }
 });

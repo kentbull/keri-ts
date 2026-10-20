@@ -378,7 +378,6 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
       assertEquals(left.db.epse.get(grant.said!), null);
       assertEquals(notifier.list().length, 4);
       assertEquals(left.db.exns.get(node.body.said!), null);
-      assertEquals(Array.from(Deno.readDirSync(`${left.db.path}/payloads/staging`)).length, 0);
     } finally {
       yield* noter.close(true);
       yield* right.close(true);

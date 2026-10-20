@@ -3,7 +3,6 @@ import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { SerializeError } from "../../../src/core/errors.ts";
 import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
-import { essrRaw } from "../../../src/parser/essr.ts";
 import { parse } from "../../../src/parser/parser.ts";
 import { attachmentPayload, essrChunks, framePayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
@@ -74,7 +73,7 @@ Deno.test("frame serialization normalizes both genera/domains and preserves inne
           );
           assertExists(roundtrip.essrs);
           assertEquals(roundtrip.essrs.length, 2);
-          assertEquals(await collectPayload(essrRaw(roundtrip.essrs)), b("abcxyz"));
+          assertEquals(concatBytes(...roundtrip.essrs.map((part) => part.raw)), b("abcxyz"));
         }
       }
     }
@@ -137,7 +136,7 @@ Deno.test("detached attachments retain the selected genus independently of the J
   assertEquals(roundtrip.gvrsn, two.gvrsn);
   assertEquals(roundtrip.attachments[0].version, two.gvrsn);
   assertExists(roundtrip.essrs);
-  assertEquals(await collectPayload(essrRaw(roundtrip.essrs)), b("abcxyz"));
+  assertEquals(concatBytes(...roundtrip.essrs.map((part) => part.raw)), b("abcxyz"));
 });
 
 Deno.test("genus conversion rejects a transferable signature tuple needing an unsupported big inner counter", async () => {

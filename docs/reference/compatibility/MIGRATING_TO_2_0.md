@@ -17,5 +17,10 @@ against published 1.0.0 before final release qualification.
   applying set semantics to payload bytes.
 - Exchange metadata retains `gvrsn` directly, without an archive ownership record.
   Private file-reference, ownership, plaintext and nested-staging tables are gone.
-- `PayloadStore.claimStage` is removed with the unused archive transfer mechanism.
-  Recipient transient-file APIs are addressed by the following ESSR refactor.
+- `PayloadStore`, `FilePayload`, `FilePayloadSink` and file-range views are removed.
+  `EssrRecipient` takes only a hosted habitat. `decrypt(said)` synchronously reads
+  accepted evidence from LMDB and returns authenticated inner `body` bytes, with
+  no plaintext file or disposal API. Callers own those bytes' memory lifetime.
+- CESR's unused `OwnedPayload`, `PayloadSink`, `MemoryPayloadSink`, `essrRaw` and
+  `essrWire` are removed. Read ordinary Texter raw/qualified bytes directly.
+  Shared frame serializers, counters, parsing and actual transport sources remain.

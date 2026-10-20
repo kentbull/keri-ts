@@ -1,160 +1,76 @@
-import {
-  collectPayload,
-  Diger,
-  MtrDex,
-  parseBexter,
-  parsePrefixer,
-  ParserError,
-  parseTagger,
-  type Payload,
-} from "cesr-ts";
-import { call, type Operation, resource } from "effection";
-import type { FilePayload, PayloadStore } from "../db/payload-store.ts";
-import { payloadRange } from "../db/payload-view.ts";
-import { abortable } from "./abortable.ts";
+import { Diger, MtrDex, parseBexter, parsePrefixer, ParserError, parseTagger } from "cesr-ts";
 import type { Hab } from "./habbing.ts";
 
-/** Expected recipient outcomes; only acceptance transfers an authenticated plaintext owner. */
+/** Expected recipient outcomes; acceptance returns ordinary authenticated data. */
 export type EssrDecision =
   | { kind: "accept"; message: EssrMessage }
   | { kind: "refuse"; reason: "unaccepted" }
   | { kind: "reject"; reason: "envelope" | "digest" | "decrypt" | "framing" };
 
-/** One owning plaintext file and a non-owning view of its inner CESR stream. */
+/** Authenticated inner bytes, owned by the caller until released or overwritten. */
 export interface EssrMessage {
   /** Sender authenticated by both the signed EXN and decrypted SCS prefix. */
   sender: string;
   /** Explicit hosted recipient selected by the signed destination. */
   recipient: string;
-  /** Owning authenticated envelope file; discard also invalidates body. */
-  plaintext: FilePayload;
-  /** Non-owning inner CESR source, excluding the SCS header and padding. */
-  body: Payload;
+  /** Caller-owned inner CESR bytes, excluding the authenticated SCS header and padding. */
+  body: Uint8Array;
 }
 
-/**
- * Recipient processing compatible with KERIpy StreamPoster's SCS envelope.
- *
- * This is a new explicit receiver integration, not a port of an upstream
- * receiver. Call only after Exchanger acceptance; the accepted EXN is loaded
- * from its durable table. Ciphertext evidence stays owned by that exchange.
- */
+/** Verify and decrypt accepted LMDB evidence for one explicitly hosted recipient. */
 export class EssrRecipient {
-  /** Bind one hosted key owner to its plaintext staging store. */
-  constructor(
-    /** Explicit local key owner; recipient selection never searches other habitats. */
-    private readonly hab: Hab,
-    /** Owns authenticated plaintext staging; the successful caller owns its result. */
-    private readonly store: PayloadStore,
-  ) {}
+  /** Bind the local key owner; recipient selection never searches other habitats. */
+  constructor(private readonly hab: Hab) {}
 
   /**
-   * Verify one accepted exchange's ciphertext, decrypt, then stage plaintext.
+   * Read accepted evidence, verify its signed commitment and return authenticated inner bytes.
    *
-   * Texter fragments must be concatenated by the supplied Payload reader. A
-   * successful result transfers file ownership to the caller; discarding that
-   * file also invalidates body. No complete byte buffer escapes in the result.
+   * Processing is synchronous: LMDB and sealed-box crypto already expose finite bytes.
+   * The result has no file/disposal lifecycle and is never persisted automatically.
    */
-  decrypt(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrDecision> {
-    return call(() => this.receive(said, ciphertext, signal));
-  }
-
-  /** Isolate cancellation and retain ownership until the consumer receives the result. */
-  private *receive(said: string, ciphertext: Payload, signal?: AbortSignal): Operation<EssrDecision> {
-    let received: EssrMessage | undefined;
-    let transferred = false;
-    // The later I/O child is cancelled and joined before this owner is finalized.
-    yield* resource(function*(provide) {
-      try {
-        yield* provide(undefined);
-      } finally {
-        if (!transferred && received) yield* call(() => received!.plaintext.discard());
-      }
-    });
-    const result = yield* abortable(async (scopeSignal) => {
-      const decision = await this.decryptMessage(said, ciphertext, scopeSignal);
-      if (decision.kind === "accept") received = decision.message;
-      scopeSignal.throwIfAborted();
-      return decision;
-    }, signal);
-    transferred = true;
-    return result;
-  }
-
-  /** Own the crypto buffer and unfinished file until signal-aware cleanup completes. */
-  private async decryptMessage(
-    said: string,
-    ciphertext: Payload,
-    signal: AbortSignal,
-  ): Promise<EssrDecision> {
-    signal.throwIfAborted();
-    if (!Number.isSafeInteger(ciphertext.size) || ciphertext.size < 0) {
-      throw new RangeError("Invalid payload size");
-    }
-    if (ciphertext.size < 48) return { kind: "reject", reason: "envelope" };
-    // Keep buffers and any finished file owned until the result can transfer them.
-    let plain: Uint8Array | null = null;
-    let plaintext: FilePayload | undefined;
+  decrypt(said: string): EssrDecision {
+    const serder = this.hab.db.exns.get([said]);
+    if (!serder) return { kind: "refuse", reason: "unaccepted" };
+    if (serder.said !== said) throw new Error("Stored ESSR exchange SAID does not match its key");
+    const modifiers = serder.ked?.q as Record<string, unknown> | undefined;
+    if (
+      serder.ilk !== "exn" || serder.route !== "/essr/req"
+      || !serder.pre || modifiers?.src !== serder.pre
+      || modifiers?.dest !== this.hab.pre || !this.hab.db.prefixes.has(this.hab.pre)
+      || typeof serder.a !== "string"
+    ) return { kind: "reject", reason: "envelope" };
+    const verfer = this.hab.kever?.verfers[0];
+    if (!verfer) throw new Error("ESSR recipient has no accepted verification key");
+    let diger: Diger;
     try {
-      const serder = this.hab.db.exns.get([said]);
-      if (!serder) return { kind: "refuse", reason: "unaccepted" };
-      if (serder.said !== said) throw new Error("Stored ESSR exchange SAID does not match its key");
-      const modifiers = serder.ked?.q as Record<string, unknown> | undefined;
-      if (
-        serder.ilk !== "exn" || serder.route !== "/essr/req"
-        || !serder.pre || modifiers?.src !== serder.pre
-        || modifiers?.dest !== this.hab.pre || !this.hab.db.prefixes.has(this.hab.pre)
-        || typeof serder.a !== "string"
-      ) {
-        return { kind: "reject", reason: "envelope" };
-      }
-      const verfer = this.hab.kever?.verfers[0];
-      if (!verfer) throw new Error("ESSR recipient has no accepted verification key");
-      let diger: Diger;
-      try {
-        diger = new Diger({ qb64: serder.a });
-      } catch (error) {
-        if (error instanceof ParserError) return { kind: "reject", reason: "envelope" };
-        throw error;
-      }
-      const sealed = await collectPayload(ciphertext, signal);
-      if (!diger.verify(sealed)) return { kind: "reject", reason: "digest" };
-      signal?.throwIfAborted();
-      // The raw crypto boundary returns null only for authentication failure.
-      // Keeper reads, key derivation and unexpected backend failures stay abrupt.
-      plain = this.hab.mgr.open(sealed, verfer);
-      if (plain === null) return { kind: "reject", reason: "decrypt" };
-      signal?.throwIfAborted();
-      const offset = bodyOffset(plain, serder.pre);
-      if (offset === null) return { kind: "reject", reason: "framing" };
-      const sink = await this.store.stage(signal);
-      try {
-        for (let start = 0; start < plain.length; start += 65536) {
-          await sink.write(plain.subarray(start, start + 65536));
-        }
-        plaintext = await sink.finish();
-      } finally {
-        // Successful finish transferred ownership, so this only removes an
-        // unfinished stage when writing or cancellation failed.
-        await sink.abort();
-      }
-      return {
-        kind: "accept",
-        message: { sender: serder.pre, recipient: this.hab.pre, plaintext, body: payloadRange(plaintext, offset) },
-      };
+      diger = new Diger({ qb64: serder.a });
     } catch (error) {
-      // finish may have transferred a file before abort/hand-off failed.
-      if (plaintext) {
-        try {
-          await plaintext.discard();
-        } catch (cleanup) {
-          throw new AggregateError([error, cleanup], "ESSR processing and plaintext cleanup failed");
-        }
-      }
+      if (error instanceof ParserError) return { kind: "reject", reason: "envelope" };
       throw error;
-    } finally {
-      plain?.fill(0);
     }
+    const fragments = this.hab.db.getEssrs(said);
+    if (!fragments || !diger.verifyChunks(fragments.map((part) => part.raw))) {
+      return { kind: "reject", reason: "digest" };
+    }
+    const sealed = new Uint8Array(fragments.reduce((size, part) => size + part.raw.length, 0));
+    let at = 0;
+    for (const part of fragments) {
+      sealed.set(part.raw, at);
+      at += part.raw.length;
+    }
+    if (sealed.length < 48) return { kind: "reject", reason: "envelope" };
+    // Only authentication failure returns null. Keeper and backend failures propagate.
+    const plain = this.hab.mgr.open(sealed, verfer);
+    if (plain === null) return { kind: "reject", reason: "decrypt" };
+    const offset = bodyOffset(plain, serder.pre);
+    if (offset === null) {
+      plain.fill(0);
+      return { kind: "reject", reason: "framing" };
+    }
+    return {
+      kind: "accept",
+      message: { sender: serder.pre, recipient: this.hab.pre, body: plain.subarray(offset) },
+    };
   }
 }
 

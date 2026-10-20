@@ -52,6 +52,8 @@ assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing in
 assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
 assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
+assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
+assert(!("PayloadStore" in db), "keri-ts/db retained unused ESSR file staging");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
 assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algorithm selection");
 
@@ -63,28 +65,6 @@ assert(!("reportCliFailure" in keri), "keri-ts root leaked CLI failure helper");
 console.error("keri-ts root exports:", Object.keys(keri).sort().join(", "));
 console.error("keri-ts/runtime exports:", Object.keys(runtime).slice(0, 12).sort().join(", "));
 console.error("keri-ts/db exports:", Object.keys(db).slice(0, 12).sort().join(", "));
-
-// Exercise the generated Deno shim through the public npm storage API, including fsync.
-const payloadRoot = await mkdtemp(join(tmpdir(), "keri-payload-smoke-"));
-const payloadStore = new db.PayloadStore(payloadRoot, 2);
-try {
-  const sink = await payloadStore.stage();
-  await sink.write(new Uint8Array([1, 2, 3]));
-  const payload = await sink.finish();
-  await payload.promote("essr.smoke");
-  const reopened = await payloadStore.open(payload.id);
-  const bytes = [];
-  for await (const chunk of reopened.open()) bytes.push(...chunk);
-  assert(bytes.join(",") === "1,2,3", "npm payload file changed bytes during promotion");
-  await reopened.discard();
-  const aborted = await payloadStore.stage();
-  await aborted.write(new Uint8Array([4]));
-  await aborted.abort();
-  await aborted.abort();
-} finally {
-  await payloadStore.close();
-  await rm(payloadRoot, { recursive: true });
-}
 
 // Exercise the installed native reader above LMDB-js's 16 MiB shared-buffer threshold.
 // This is a fresh current-version raw table, not a prior-version data compatibility test.

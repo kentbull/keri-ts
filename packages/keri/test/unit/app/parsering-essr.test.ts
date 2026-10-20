@@ -1,4 +1,4 @@
-import { collectPayload, essrRaw, essrWire } from "cesr-ts";
+import { concatBytes } from "cesr-ts";
 import { assertEquals, assertStrictEquals } from "jsr:@std/assert";
 import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
 import { parseBytes } from "../../../../cesr/src/parser/complete.ts";
@@ -26,8 +26,8 @@ Deno.test("ESSR evidence passes unchanged into the KERI envelope", async () => {
       const essr = envelopes[0].essrs!;
       assertStrictEquals(essr, frames[0].essrs);
       assertEquals(essr.length, 2);
-      assertEquals(new TextDecoder().decode(await collectPayload(essrRaw(essr))), "abcdefghi");
-      assertEquals(new TextDecoder().decode(await collectPayload(essrWire(essr))), payload);
+      assertEquals(new TextDecoder().decode(concatBytes(...essr.map((part) => part.raw))), "abcdefghi");
+      assertEquals(new TextDecoder().decode(concatBytes(...essr.map((part) => part.qb64b))), payload);
       assertStrictEquals(envelopes[0].serder, frames[0].body);
     }
   }

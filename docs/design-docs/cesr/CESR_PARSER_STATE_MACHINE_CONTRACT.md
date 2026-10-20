@@ -42,7 +42,7 @@ parent signatures never authenticate descendants.
 `CesrFrame.essrs` is an optional ordered `Texter[]`. Qualified codes, token
 boundaries, multiplicity and raw bytes derive from that one representation.
 Empty ESSR groups remain distinguishable from absence. Ordinary frames and
-Texters require no disposal. Storage and crypto own their real file operations.
+Texters require no disposal. ESSR storage owns ordinary LMDB rows; recipient crypto returns ordinary bytes.
 
 `gvrsn` selects counters and attachments independently of body protocol `pvrsn`.
 Explicit root selectors persist between messages. Inner selectors remain local

@@ -2,10 +2,8 @@ import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/asser
 import { annotate, annotateFrames } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { tephraCli } from "../../src/cli/main.ts";
-import { decodeB64 } from "../../src/core/bytes.ts";
+import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { VersionError } from "../../src/core/errors.ts";
-import { collectPayload } from "../../src/core/payload.ts";
-import { essrRaw, essrWire } from "../../src/parser/essr.ts";
 import { Counter } from "../../src/primitives/counter.ts";
 import { Texter } from "../../src/primitives/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../src/tables/counter-codex.ts";
@@ -177,9 +175,9 @@ Deno.test("annotation preserves non-native bodies and ESSR wire through nested e
       const [owned] = await annotateFrames(source);
 
       assertEquals(owned.frame.essrs?.length, 1);
-      assertEquals(TEXT_DECODER.decode(await collectPayload(essrRaw(owned.frame.essrs!))), "one ESSR item");
+      assertEquals(TEXT_DECODER.decode(concatBytes(...owned.frame.essrs!.map((part) => part.raw))), "one ESSR item");
 
-      assertEquals(await collectPayload(essrWire(owned.frame.essrs!)), TEXT_ENCODER.encode(payload));
+      assertEquals(concatBytes(...owned.frame.essrs!.map((part) => part.qb64b)), TEXT_ENCODER.encode(payload));
     }
   }
 });
