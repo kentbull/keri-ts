@@ -21,6 +21,7 @@ import {
 } from "../credential-workflows.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { withAgentRuntime, withExistingHabery } from "./common/context.ts";
+import { parseBooleanOption, parseNumberOption, parseStringListOption, parseStringOption } from "./common/parsing.ts";
 
 interface VcBaseArgs {
   name?: string;
@@ -79,8 +80,10 @@ interface VcSchemaImportArgs extends VcBaseArgs {
 
 /** Implement `tufa vc schema import` by pinning JSON schemas into `schema.`. */
 export function* vcSchemaImportCommand(args: Record<string, unknown>): Operation<void> {
-  const vcArgs = baseArgs(args) as VcSchemaImportArgs;
-  vcArgs.schema = asStringList(args.schema);
+  const vcArgs: VcSchemaImportArgs = {
+    ...baseArgs(args),
+    schema: asStringList(args.schema, "schema"),
+  };
   yield* withVcHabery(vcArgs, function*({ hby }) {
     for (const path of vcArgs.schema ?? []) {
       const schema = pinSchemaBytes(hby, Deno.readFileSync(path));
@@ -144,18 +147,21 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<IssueResult> {
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    registryName: args.registryName as string | undefined,
-    schema: args.schema as string | undefined,
-    schemaFile: args.schemaFile as string | undefined,
-    recipient: args.recipient as string | undefined,
-    data: args.data as string | undefined,
-    edges: args.edges as string | undefined,
-    rules: args.rules as string | undefined,
-    out: args.out as string | undefined,
+    alias: parseStringOption(args.alias, "alias"),
+    registryName: parseStringOption(args.registryName, "registryName"),
+    schema: parseStringOption(args.schema, "schema"),
+    schemaFile: parseStringOption(args.schemaFile, "schemaFile"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    data: parseStringOption(args.data, "data"),
+    edges: parseStringOption(args.edges, "edges"),
+    rules: parseStringOption(args.rules, "rules"),
+    out: parseStringOption(args.out, "out"),
   };
   requireNonEmpty(vcArgs.alias, "Alias");
   requireNonEmpty(vcArgs.registryName, "Registry name");
+  const data = parseSubjectDataArg(vcArgs.data) ?? {};
+  const edges = parseJsonSectionArg(vcArgs.edges, "edges");
+  const rules = parseJsonSectionArg(vcArgs.rules, "rules");
 
   return yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
     const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
@@ -169,9 +175,9 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
           registryName: vcArgs.registryName!,
           schema: schema!,
           recipient,
-          data: parseSubjectDataArg(vcArgs.data) ?? {},
-          edges: parseJsonSectionArg(vcArgs.edges, "edges"),
-          rules: parseJsonSectionArg(vcArgs.rules, "rules"),
+          data,
+          edges,
+          rules,
         });
       } finally {
         yield* worker.halt();
@@ -188,10 +194,10 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
 export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcListArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    aid: args.aid as string | undefined,
-    schema: args.schema as string | undefined,
-    issued: args.issued as boolean | undefined,
+    alias: parseStringOption(args.alias, "alias"),
+    aid: parseStringOption(args.aid, "aid"),
+    schema: parseStringOption(args.schema, "schema"),
+    issued: parseBooleanOption(args.issued, "issued"),
   };
   yield* withVcRuntime(vcArgs, function*({ hby, rgy }) {
     const aid = vcArgs.aid ?? (vcArgs.alias ? requireHab(hby, vcArgs.alias).pre : undefined);
@@ -207,9 +213,9 @@ export function* vcListCommand(args: Record<string, unknown>): Operation<void> {
 export function* vcExportCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),
-    said: args.said as string | undefined,
-    recipient: args.recipient as string | undefined,
-    out: args.out as string | undefined,
+    said: parseStringOption(args.said, "said"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    out: parseStringOption(args.out, "out"),
   };
   requireNonEmpty(vcArgs.said, "Credential SAID");
   yield* withVcRuntime(vcArgs, function*({ hby, reger }) {
@@ -229,13 +235,13 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
  * @throws ValidationError for an invalid deadline or incomplete acceptance; intake and cleanup failures propagate.
  */
 export function* vcImportCommand(args: Record<string, unknown>): Operation<void> {
-  const settlementTimeoutMs = args.settlementTimeoutMs ?? 5_000;
-  if (typeof settlementTimeoutMs !== "number" || !Number.isFinite(settlementTimeoutMs) || settlementTimeoutMs <= 0) {
+  const settlementTimeoutMs = parseNumberOption(args.settlementTimeoutMs, "--settlement-timeout-ms") ?? 5_000;
+  if (settlementTimeoutMs <= 0) {
     throw new ValidationError("--settlement-timeout-ms must be finite and positive.");
   }
   const vcArgs: VcImportArgs = {
     ...baseArgs(args),
-    inPath: args.inPath as string | undefined,
+    inPath: parseStringOption(args.inPath, "inPath"),
     settlementTimeoutMs,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
@@ -263,12 +269,12 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
 export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    registryName: args.registryName as string | undefined,
-    said: args.said as string | undefined,
-    recipient: args.recipient as string | undefined,
-    out: args.out as string | undefined,
-    send: asStringList(args.send),
+    alias: parseStringOption(args.alias, "alias"),
+    registryName: parseStringOption(args.registryName, "registryName"),
+    said: parseStringOption(args.said, "said"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    out: parseStringOption(args.out, "out"),
+    send: asStringList(args.send, "send"),
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
@@ -308,11 +314,11 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
 
 function baseArgs(args: Record<string, unknown>): VcBaseArgs {
   return {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 }
 
@@ -322,11 +328,11 @@ function registryArgs(
 ): VcRegistryArgs {
   const parsed: VcRegistryArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    registryName: args.registryName as string | undefined,
-    noBackers: args.noBackers as boolean | undefined,
-    estOnly: args.estOnly as boolean | undefined,
-    usage: args.usage as string | undefined,
+    alias: parseStringOption(args.alias, "alias"),
+    registryName: parseStringOption(args.registryName, "registryName"),
+    noBackers: parseBooleanOption(args.noBackers, "noBackers"),
+    estOnly: parseBooleanOption(args.estOnly, "estOnly"),
+    usage: parseStringOption(args.usage, "usage"),
   };
   if (aliasRequired) {
     requireNonEmpty(parsed.alias, "Alias");
@@ -454,11 +460,10 @@ function writeBytes(bytes: Uint8Array, path: string | undefined): void {
   Deno.stdout.writeSync(bytes);
 }
 
-function asStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((entry): entry is string => typeof entry === "string");
-  }
-  return typeof value === "string" ? [value] : [];
+/** Accept the command's scalar/list forms without dropping malformed members. */
+function asStringList(value: unknown, label: string): string[] {
+  if (typeof value === "string") return [value];
+  return parseStringListOption(value, label) ?? [];
 }
 
 function requireNonEmpty(value: string | undefined, label: string): void {

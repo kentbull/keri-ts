@@ -5,6 +5,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
 import { validatorsFromVerifierConfig, VerifierAgent } from "../verifier-agent.ts";
 import { withAgentRuntime } from "./common/context.ts";
+import { parseBooleanOption, parseNumberOption, parseStringOption } from "./common/parsing.ts";
 
 interface VerifierRunArgs {
   name?: string;
@@ -27,17 +28,17 @@ interface VerifierRunArgs {
  */
 export function* verifierRunCommand(args: Record<string, unknown>): Operation<void> {
   const runArgs: VerifierRunArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    hook: args.hook as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    hook: parseStringOption(args.hook, "hook"),
     gvrsn: parseGvrsn(args.gvrsn),
-    config: args.config as string | undefined,
-    once: args.once as boolean | undefined,
-    intervalMs: numberArg(args.intervalMs, 1000),
-    timeoutMs: numberArg(args.timeoutMs, undefined),
+    config: parseStringOption(args.config, "config"),
+    once: parseBooleanOption(args.once, "once"),
+    intervalMs: numberArg(args.intervalMs, 1000, "intervalMs"),
+    timeoutMs: numberArg(args.timeoutMs, undefined, "timeoutMs"),
   };
   requireNonEmpty(runArgs.name, "Name");
   requireNonEmpty(runArgs.hook, "Webhook URL");
@@ -104,13 +105,10 @@ function* sleep(ms: number): Operation<void> {
   });
 }
 
-function numberArg(value: unknown, fallback: number | undefined): number | undefined {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
-    throw new ValidationError(`Invalid numeric argument ${String(value)}.`);
+function numberArg(value: unknown, fallback: number | undefined, label: string): number | undefined {
+  const parsed = parseNumberOption(value, label) ?? fallback;
+  if (parsed !== undefined && parsed < 0) {
+    throw new ValidationError(`${label} must not be negative.`);
   }
   return parsed;
 }

@@ -66,6 +66,15 @@ escrows remain available for their owners to retry; later operations must check
 their required accepted evidence. Authentication retains its controller-state and
 authorization requirements, with unfinished attempts reaching the finite deadline. Both commands print final success only after owned stores close.
 
+## Credential command validation
+
+Credential, IPEX and verifier commands reject supplied non-string/non-boolean
+options and malformed schema or recipient lists instead of casting or filtering
+them. Supply decimal timeout values; blank, null, boolean and nonfinite values
+are errors, while omission retains each command's default. IPEX zero/fractional
+waits and positive fractional import settlement windows remain supported.
+Credential JSON sections and IPEX attribute objects validate before stores open.
+
 ## Lifecycle option validation
 
 Inception and rotation preserve file values when flags are omitted. Explicit
