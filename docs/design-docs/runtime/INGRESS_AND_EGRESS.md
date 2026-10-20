@@ -72,6 +72,10 @@ apply/offer/agree implementations use ordinary EXN delivery; the pinned donor's
 corresponding commands are stubs. These are actual producer contracts, not modes
 inferred from a route, topic or test fixture.
 
+Runtime executable selection, the qualified Node container profile and memory
+measurement boundaries are documented in [runtime memory](RUNTIME_MEMORY.md).
+Runtime build choices do not introduce application accounting or change ownership.
+
 ## Input and state ordering
 
 `Reactor.process(source, options)` owns its parser iterator in an Effection

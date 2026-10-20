@@ -57,13 +57,14 @@ function resolveParallelJobs(): ParallelJobResolution {
   };
 }
 
+/** Run CESR tests in the selected Deno build and join the child before reporting its status. */
 async function main(): Promise<void> {
   const jobs = resolveParallelJobs();
   console.log(
     `==> CESR parallel jobs: available=${jobs.available} chosen=${jobs.chosen} cap=${jobs.cap} source=${jobs.source}`,
   );
 
-  const child = new Deno.Command("deno", {
+  const child = new Deno.Command(Deno.execPath(), {
     // Actual decoder retention is checked in-process; no subprocess permission is granted to tests.
     args: ["test", "--parallel", "--v8-flags=--expose-gc", ...Deno.args],
     cwd: fromFileUrl(packageDir),
