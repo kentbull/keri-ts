@@ -4,7 +4,6 @@ import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { essrRaw } from "../../../src/parser/essr.ts";
 import { attachmentPayload, framePayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Siger } from "../../../src/primitives/siger.ts";
@@ -117,7 +116,7 @@ Deno.test("nested ESSR serialization preserves ordered duplicates across repeate
     assertEquals(summary(roundtrip), summary(frame));
     for (const node of nodes(roundtrip)) {
       assertEquals(node.essrs?.length, 3);
-      assertEquals(t(await collectPayload(essrRaw(node.essrs!))), "abcabcxyz");
+      assertEquals(t(concatBytes(...node.essrs!.map((part) => part.raw))), "abcabcxyz");
     }
   }
 });

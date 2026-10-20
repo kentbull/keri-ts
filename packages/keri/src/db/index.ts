@@ -18,6 +18,5 @@ export * from "./koming.ts";
 export * from "./mailboxing.ts";
 export * from "./noting.ts";
 export { type OobiStore, openOobiStore, type OpenOobiStoreOptions } from "./oobi-store.ts";
-export { type FilePayload, type FilePayloadSink, PayloadStore } from "./payload-store.ts";
 export * from "./reger.ts";
 export * from "./subing.ts";

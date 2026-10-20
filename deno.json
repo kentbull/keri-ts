@@ -59,6 +59,7 @@
     "test:qualification": "deno run -A scripts/ci/run-keri-test-group.ts qualification && deno task test:quality:tufa && deno task test:cesr && deno task test:ci-tools",
     "test:package-tools": "deno test -A scripts/npm/vendor-sodium.test.ts scripts/sync_manifest_versions.test.ts",
     "test:quality:keri:app-fast-parallel": "deno run -A scripts/ci/run-keri-test-group.ts app-fast-parallel",
+    "test:quality:keri:interop-essr-exchange": "deno run -A scripts/ci/run-keri-test-group.ts interop-essr-exchange",
     "test:quality:keri:interop-essr-storage": "deno run -A scripts/ci/run-keri-test-group.ts interop-essr-storage",
     "test:quality:keri:interop-parity": "deno run -A scripts/ci/run-keri-test-group.ts interop-parity",
     "test:quality:keri:interop-acdc-deep": "deno run -A scripts/ci/run-keri-test-group.ts interop-acdc-deep",

@@ -86,6 +86,9 @@ export const suites: Record<string, TestSuite> = {
   "interop-reference-profiles": {
     files: ["test/integration/app/interop-reference-profile.test.ts"],
   },
+  "interop-essr-exchange": {
+    files: ["test/integration/app/interop-essr-exchange.test.ts"],
+  },
   "interop-essr-storage": {
     files: ["test/integration/app/interop-essr-storage.test.ts"],
   },
@@ -223,7 +226,6 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/koming.test.ts",
       "test/unit/db/mailboxing.test.ts",
       "test/unit/db/oobi-store.test.ts",
-      "test/unit/db/payload-store.test.ts",
       "test/unit/db/reger.test.ts",
       "test/unit/db/registry-evidence.test.ts",
       "test/unit/db/subing.test.ts",
@@ -295,6 +297,7 @@ export const required = [
 export const interop = [
   "interop-reference-profiles",
   "interop-essr-storage",
+  "interop-essr-exchange",
   "interop-parity",
   "interop-keystore-parity",
   "interop-keystore-storage",

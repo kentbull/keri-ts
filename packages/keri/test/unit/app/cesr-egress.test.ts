@@ -1,6 +1,5 @@
 import {
   b,
-  collectPayload,
   concatBytes,
   Counter,
   decodeB64,
@@ -12,7 +11,6 @@ import type { CesrFrame } from "cesr-ts";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { call, run, suspend } from "npm:effection@^3.6.0";
-import { essrRaw } from "../../../../cesr/src/parser/essr.ts";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { chunkBytes } from "../../../src/app/byte-source.ts";
@@ -140,7 +138,7 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
     const bytes = new Uint8Array(await new Response(init!.body).arrayBuffer());
     const frame = await read(bytes);
 
-    assertEquals(await collectPayload(essrRaw(frame.essrs!)), b("abcxyz"));
+    assertEquals(concatBytes(...frame.essrs!.map((part) => part.raw)), b("abcxyz"));
     if (++requests === 1) {
       opened.resolve();
       await release.promise;
@@ -185,7 +183,7 @@ Deno.test("CESR header egress normalizes binary attachments for HTTP", async () 
 
     assertEquals(frame.body.pvrsn, { major: 1, minor: 0 });
     assertEquals(frame.gvrsn, { major: 2, minor: 0 });
-    assertEquals(await collectPayload(essrRaw(frame.essrs!)), b("abcxyz"));
+    assertEquals(concatBytes(...frame.essrs!.map((part) => part.raw)), b("abcxyz"));
     requests++;
     return new Response(null, { status: 204 });
   });
@@ -596,7 +594,7 @@ Deno.test("TCP frame output preserves nested body, genus, signatures and ESSR ev
         assertEquals(actual.gvrsn, expected.gvrsn);
         assertEquals(actual.attachments.map((group) => group.raw), expected.attachments.map((group) => group.raw));
       }
-      assertEquals(await collectPayload(essrRaw(roundtrip.nests![0].essrs!)), b("abcxyz"));
+      assertEquals(concatBytes(...roundtrip.nests![0].essrs!.map((part) => part.raw)), b("abcxyz"));
     }
     assertEquals(child.essrs, payloadFrame.essrs);
   } finally {

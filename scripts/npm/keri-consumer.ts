@@ -1,9 +1,10 @@
 /** Compile-only installed consumer of public manager, host, ingress and storage contracts. */
-import { createBaser, type Keeper, PayloadStore } from "keri-ts/db";
+import { createBaser, type Keeper } from "keri-ts/db";
 import {
   type AgentRuntime,
   Algos,
   credential,
+  EssrRecipient,
   type Hab,
   inceptRegistry,
   Manager,
@@ -27,4 +28,9 @@ export function receive(runtime: AgentRuntime, wire: Uint8Array) {
   return settleRuntimeIngress(runtime, [wire]);
 }
 export const protocol = { credential, inceptRegistry, messagize };
-export const storage = { PayloadStore, createBaser };
+export const storage = { createBaser };
+
+/** Decrypt accepted evidence through the synchronous public recipient API. */
+export function decryptEssr(hab: Hab, said: string) {
+  return new EssrRecipient(hab).decrypt(said);
+}

@@ -2,12 +2,11 @@ import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { annotate, annotateFrames } from "../../src/annotate/annotator.ts";
 import { denot } from "../../src/annotate/denot.ts";
 import { renderAnnotatedFrames } from "../../src/annotate/render.ts";
-import { b, t } from "../../src/core/bytes.ts";
+import { b, concatBytes, t } from "../../src/core/bytes.ts";
 import { DeserializeError } from "../../src/core/errors.ts";
 import { collectPayload } from "../../src/core/payload.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { parseBytes } from "../../src/parser/complete.ts";
-import { essrRaw } from "../../src/parser/essr.ts";
 import { framePayload } from "../../src/parser/serialize.ts";
 import { Siger } from "../../src/primitives/siger.ts";
 import { Texter } from "../../src/primitives/texter.ts";
@@ -97,7 +96,7 @@ Deno.test("nested annotation preserves ordinary ESSR values and the exact wire",
   const [entry] = annotateFrames(wire);
   const [restored] = parseBytes(denot(annotate(wire)));
   for (const frame of [entry.frame, restored]) {
-    for (const node of nodes(frame)) assertEquals(t(await collectPayload(essrRaw(node.essrs!))), "abc");
+    for (const node of nodes(frame)) assertEquals(t(concatBytes(...node.essrs!.map((part) => part.raw))), "abc");
   }
   assertEquals(denot(annotate(wire)), wire);
   assertThrows(() => annotateFrames(wire, { indent: Infinity }), RangeError);

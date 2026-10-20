@@ -1,9 +1,7 @@
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { b } from "../../../src/core/bytes.ts";
+import { b, concatBytes } from "../../../src/core/bytes.ts";
 import { ShortageError } from "../../../src/core/errors.ts";
-import { collectPayload } from "../../../src/core/payload.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { essrRaw } from "../../../src/parser/essr.ts";
 import { Counter } from "../../../src/primitives/counter.ts";
 import { Texter } from "../../../src/primitives/texter.ts";
 import { CtrDexV1 } from "../../../src/tables/counter-codex.ts";
@@ -34,8 +32,8 @@ Deno.test("complete input parsing accepts large backing buffers and transfers or
   assertEquals(frames.length, 2);
   assertExists(frames[0].essrs);
   assertExists(frames[1].essrs);
-  assertEquals(await collectPayload(essrRaw(frames[0].essrs)), raw);
-  assertEquals(await collectPayload(essrRaw(frames[1].essrs)), b("second"));
+  assertEquals(concatBytes(...frames[0].essrs.map((part) => part.raw)), raw);
+  assertEquals(concatBytes(...frames[1].essrs.map((part) => part.raw)), b("second"));
   assertEquals(parseBytes(new Uint8Array()), []);
 });
 

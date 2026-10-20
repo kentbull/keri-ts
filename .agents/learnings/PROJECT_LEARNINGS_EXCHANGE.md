@@ -14,7 +14,7 @@ reference stub is not a permanent product contract. NOT must distinguish proved
 invalidity from unknown evidence before inversion; missing or unauthenticated
 input cannot establish a negative authorization predicate.
 
-Exchanger prepares file evidence, then rechecks its snapshot and performs sender
+Exchanger serializes resident children, then performs current sender
 authentication, supplemental selection, route verification and publication in one
 synchronous writer. Verification hooks cannot suspend; handlers follow durable
 commit. First acceptance replaces provisional factors; accepted duplicates retain
@@ -29,11 +29,11 @@ state escrows only for opted-in routes; MissingSignatureError counterparts prese
 existing escrow. Signature/dependency cues follow actual new escrow insertion.
 Ordinary Decks carry records without reservation, inspection or retained-byte credit.
 Authentication queries deduplicate coordinates in input order; already published
-queries remain available after later verification or rejection. Nested staging remains publication work; hydrated frames are ordinary values. Exchanger and stored
-ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. Exchanger has no asynchronous admission guard. Archive startup finishes before
-admission; retries refresh current proofs/deadlines in the writer and skip
-obsolete candidates. Commit terminal removal with reference retirement, then
-flush and join file reclamation. Determine whether to
+queries remain available after later verification or rejection. Nested evidence publishes in the owning writer; hydrated frames are ordinary values.
+ESSR/nested helpers have no policy, tree/copy budget or token/byte quota. There is
+no asynchronous admission guard, archive or file lifecycle. Retry reads current
+LMDB proofs, fragments and deadlines; terminal removal commits in that writer
+and joins the actual database flush. Determine whether to
 publish a pending cue from the escrow write result, not a pre-I/O membership plan.
 An incomplete duplicate remains pending without replacing accepted rows or rerunning
 handling; `complete(said)` reports durable acceptance, not the current attempt.

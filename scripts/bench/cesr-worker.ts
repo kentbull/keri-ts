@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { cpuUsage } from "node:process";
 import type { CesrFrame } from "../../packages/cesr/src/core/types.ts";
-import { essrRaw } from "../../packages/cesr/src/parser/essr.ts";
 import { parse } from "../../packages/cesr/src/parser/parser.ts";
 import { corpus, type CorpusOptions } from "./cesr-corpus.ts";
 
@@ -35,7 +34,7 @@ function sampleMemory() {
 }
 
 /** Check each delivered frame before counting it as a usable result. */
-async function consume(frame: CesrFrame) {
+function consume(frame: CesrFrame) {
   sampleMemory();
   if (firstFrameMs === null) {
     firstFrameMs = performance.now() - start;
@@ -48,7 +47,8 @@ async function consume(frame: CesrFrame) {
   const hash = createHash("sha256");
   let size = 0;
   {
-    for await (const chunk of essrRaw(essr).open()) {
+    for (const part of essr) {
+      const chunk = part.raw;
       const take = Math.min(chunk.length, Math.max(0, 8 - size));
       if (take) {
         prefix.set(chunk.subarray(0, take), size);
@@ -82,7 +82,7 @@ async function* source(): AsyncGenerator<Uint8Array> {
 
 try {
   // Consume each result without retaining an output history.
-  for await (const frame of parse(source())) await consume(frame);
+  for await (const frame of parse(source())) consume(frame);
   if (frames !== manifest.items || payloadBytes !== options.payloadBytes) throw new Error("Incomplete parse output");
 } catch (cause) {
   error = cause instanceof Error
