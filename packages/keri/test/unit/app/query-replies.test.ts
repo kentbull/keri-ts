@@ -163,7 +163,6 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
       assertEquals(runtime.postman.hasPending, true, "HTTP EOF leaves queued delivery available");
       yield* runtime.postman.process();
       assertEquals(packets, evts.map(({ msg }) => msg), "the registry and credential replies are attempted in order");
-      assertStrictEquals(runtime.postman.failures[0].evt, evts[0]);
       assertEquals(constructions, constructed, "delivery does not reinterpret protocol cues");
       refuse = false;
 

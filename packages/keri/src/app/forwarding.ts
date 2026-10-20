@@ -100,7 +100,7 @@ export type PosterOutcome =
     kin: "sent";
     /** Exact admitted event identity matched by wait(evt), including repeated same-SAID sends. */
     evt: PosterEvent;
-    /** Successful endpoint URLs from this attempt, including partial success before failure. */
+    /** Successful network URLs or local-mailbox:<eid> publications, including partial success. */
     deliveries: string[];
   }
   | {
@@ -108,7 +108,7 @@ export type PosterOutcome =
     kin: "failed";
     /** Exact admitted event identity matched by wait(evt), including repeated same-SAID sends. */
     evt: PosterEvent;
-    /** Successful endpoint URLs from this attempt, including partial success before failure. */
+    /** Successful network URLs or local-mailbox:<eid> publications, including partial success. */
     deliveries: string[];
     /** Observed failure with original status/cause, including any aggregated target failures. */
     error: unknown;
@@ -205,8 +205,6 @@ export class Poster {
   readonly clock: RuntimeClock;
   /** Runnable signed messages in admission order; the delivery worker is the sole consumer. */
   readonly evts = new Deck<PosterEvent>();
-  /** Terminal failed attempts retained until close, pending the unobserved-failure reporting change. */
-  readonly failures: Extract<PosterOutcome, { kin: "failed" }>[] = [];
   /** Opt-in terminal outcomes, matched by concrete admitted event identity. */
   readonly cues = new Deck<PosterOutcome>();
   /** Events whose callers requested one terminal observation. */
@@ -331,7 +329,8 @@ export class Poster {
     } finally {
       this.notifications.delete(evt);
       this.waiters.delete(evt);
-      this.takeOutcome(evt);
+      const abandoned = this.takeOutcome(evt);
+      if (abandoned) this.publishOutcome(abandoned);
     }
   }
 
@@ -360,7 +359,7 @@ export class Poster {
     }
   }
 
-  /** Runnable and active work determine convergence; retained failures and observations do not. */
+  /** Runnable and active work determine convergence; consumable observations do not. */
   get hasPending(): boolean {
     return this.processing || !this.evts.empty;
   }
@@ -370,19 +369,18 @@ export class Poster {
     if (this.closed) throw new Error("Poster is closed");
   }
 
-  /** Abort and join actual I/O before releasing process-local queued and failed work. */
+  /** Abort/join active I/O, report unconsumed failures, then release process-local work. */
   *close(): Operation<void> {
     // Stop admission first, then abort/join before forgetting process-local work.
     this.closed = true;
     this.active?.abort();
     if (this.joined) yield* call(() => this.joined!);
     this.evts.clear();
-    this.failures.length = 0;
-    this.cues.clear();
     this.notifications.clear();
+    while (!this.cues.empty) this.publishOutcome(this.cues.pull()!);
   }
 
-  /** Deliver the current FIFO contents; recognized refusals retain the whole event and allow later work. */
+  /** Deliver the current FIFO contents; recognized refusals publish failure and allow later work. */
   process(): Operation<void> {
     // deno-lint-ignore no-this-alias -- The operation owns this finite output pass.
     const self = this;
@@ -413,31 +411,39 @@ export class Poster {
         try {
           outcome = yield* self.deliverEvent(evt, deliveries, active.signal);
         } catch (error) {
-          // Preserve the source and partial progress before exposing an unexpected failure.
-          self.finish({ kin: "failed", evt, deliveries, error });
+          // Remove runnable work and expose its outcome before propagating an unexpected fault.
+          self.evts.pull();
+          self.publishOutcome({ kin: "failed", evt, deliveries, error });
           throw error;
         }
-        self.finish(outcome);
+        self.evts.pull();
+        self.publishOutcome(outcome);
       }
     });
   }
 
   /**
-   * Remove runnable work before publishing its optional terminal observation.
+   * Publish an opted-in terminal outcome or report an unobserved failure once.
+   * This owner retains no recovery history. Cancellation and close return abandoned
+   * observations here after removing their notification, so failed work stays visible.
    *
-   * @param outcome Terminal result for the runnable head, including successful target URLs and any failure.
+   * @param outcome Completed attempt, including source identity, original cause and partial delivery.
    */
-  private finish(outcome: PosterOutcome): void {
-    this.evts.pull();
-    if (outcome.kin === "failed") this.failures.push(outcome);
-    if (this.notifications.delete(outcome.evt)) this.cues.push(outcome);
+  private publishOutcome(outcome: PosterOutcome): void {
+    if (this.notifications.delete(outcome.evt)) {
+      this.cues.push(outcome);
+    } else if (outcome.kin === "failed") {
+      // Report routing context and the original error, never the signed source bytes.
+      const { src, dest, topic } = outcome.evt;
+      console.error("CESR delivery failed", { src, dest, topic, deliveries: outcome.deliveries }, outcome.error);
+    }
   }
 
   /**
    * Resolve and execute one event using sequential current endpoints.
    * Observed HTTP refusal and TransportError permit remaining targets to run.
    * Unexpected construction/parser/storage/cleanup errors propagate so process can
-   * retain and publish the failed event before exposing the error.
+   * publish or report the failed outcome before exposing the error.
    *
    * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
    * @param deliveries Mutable accumulator of successfully delivered target URLs, retained even if a later target throws.

@@ -174,22 +174,32 @@ returns raw wire; typed cue kin values route other work directly. HTTP openReply
 publishes independent response and delivery consumers only after complete
 construction. A failed second TSN leaves the pair pending and unpublished.
 Poster owns endpoint selection, forwarding construction, sequential target loops,
-active I/O and joined cleanup. Every evts record is one signed source message.
+active I/O and joined cleanup. Each evts record is a signed message or finite ordered stream.
 Route snapshots and target preparation are private implementation details; callers
 admit signed messages and observe concrete completion outcomes.
-Observed refusals attempt remaining targets, retain the whole event in failures,
-and allow later FIFO events to proceed. Poster exposes no retry/discard operation.
-The process-local failure backlog remains until its separate unobserved-failure
-reporting phase defines a replacement; it is cleared on close. Unknown construction, storage, parser
-and cleanup errors are retained/reported and propagate. Failures are process-local,
-excluded from pending/idle state, and cleared on shutdown after I/O joins.
+Observed refusals attempt remaining targets and let later FIFO events proceed.
+Opted-in callers receive concrete failed outcomes with the original error and
+partial successful deliveries. Poster reports unobserved terminal failures through
+ordinary console diagnostics at delivery completion, with src, dest, topic,
+deliveries and the original error; it never logs the signed msg or key material.
+Cancelling an observation reports a published-but-unconsumed failure once; closing
+reports any remaining failed outcomes before releasing them. Successful unobserved
+outcomes need no history. This reporting is local to Poster, with no reporting
+component, callback, replacement queue or logging dependency.
+
+There is no failure backlog or retry/discard API. After reporting, Poster releases
+its failed source reference; a caller observing an outcome owns its reference.
+Queued work and observations are process-local and do not survive shutdown.
+Unexpected construction, storage, parser and cleanup errors publish/report their
+outcomes before propagating. None of this establishes delivery recovery or remote
+acceptance.
 Concrete native network failures are TransportError values retaining their causes.
 Poster contains those errors only around network execution, attempts remaining
 targets and completes failed waiters. Unexpected construction, source, parser and
 cleanup failures remain visible.
 
-Poster.send accepts src, dest, topic and signed msg bytes, with optional delivery
-preference and same-socket replies. It copies msg on admission and returns a fresh
+Poster.send accepts src, dest, topic and signed msg bytes, with optional same-socket
+replies. It copies msg on admission and returns a fresh
 event identity. Callers needing an outcome opt into notify and wait on that exact
 identity, or consume its published cue. A repeated signed message cannot inherit
 an older success. Outcomes contain kin sent/failed, evt and completed deliveries;
@@ -197,13 +207,15 @@ failed outcomes also retain the error. Missing routes and observed HTTP refusals
 produce failed outcomes; unexpected construction, parser, storage and cleanup
 failures also propagate to the owner. All selected targets are attempted sequentially
 after recognized transport failure or observed refusal; unexpected errors stop the
-pass after the event's failure and partial successful deliveries are retained.
+pass after publishing/reporting the failure and partial successful deliveries.
 
 Only one waiter may observe an event. Cancelling it drops that observation and any
 unconsumed outcome, without withdrawing shared delivery. A published outcome does
 not retain a separate observer registration. Outcome cues are consumable output;
-queued and active work alone determine hasPending. Whole failed events live separately
-in failures until shutdown, as described above.
+queued and active work alone determine hasPending. Failure reporting retains no
+separate delivery history. Outcomes still contain actual network URLs; a
+`local-mailbox:<eid>` entry identifies provider-local publication without claiming
+network transmission.
 
 Ordinary delivery traverses controller, agent and mailbox roles in that order:
 all controller/agent endpoints, then one random mailbox. A composed provider store
