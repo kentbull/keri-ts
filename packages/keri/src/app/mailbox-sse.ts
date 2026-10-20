@@ -1,5 +1,5 @@
 import { call, type Operation, resource } from "npm:effection@^3.6.0";
-import { abortable, rethrowCleanupFailure } from "./abortable.ts";
+import { abortable, cleanupFailures } from "./abortable.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
 import { type RuntimeClock } from "./runtime-clock.ts";
 
@@ -82,6 +82,9 @@ function appendBytes(
  * Consume complete mailbox events with backpressure from the awaited consumer.
  * Returning false stops the poll without acknowledging an unread event. Timeout,
  * EOF, and cancellation discard an incomplete final event so its cursor can retry.
+ * The consumer is immediately awaited in this read owner, not scheduled or queued.
+ * Keeping consumer failure inside this scope lets cleanup retain both failures;
+ * a borrowed pull iterator alone cannot observe a later consumer exception.
  *
  * @param response Borrowed streaming HTTP response; caller keeps its scope open through this operation.
  * @param controller Body cancellation owner aborted when the poll window ends.
@@ -106,7 +109,7 @@ export function consumeMailboxSse(
     yield* consumeChunks(
       response,
       controller,
-      function*(chunk) {
+      function* consumeCompleteEvents(chunk) {
         let start = 0;
         for (let index = 0; index < chunk.length; index++) {
           if (chunk[index] !== 10) continue;
@@ -165,7 +168,7 @@ export function readMailboxSseBody(
     yield* consumeChunks(
       response,
       controller,
-      function*(chunk) {
+      function* collectDiagnosticChunk(chunk) {
         bytes = appendBytes(bytes, size, chunk);
         const end = size + chunk.length;
         // Inspect each terminated block once. A retry/comment header alone must not start the idle deadline.
@@ -240,9 +243,7 @@ function* consumeChunks(
          * @param error Rejection from the pending read or iterator return.
          */
         const remember = (error: unknown) => {
-          try {
-            rethrowCleanupFailure(error, controller.signal);
-          } catch (remaining) {
+          for (const remaining of cleanupFailures(error, controller.signal)) {
             if (!(reported && remaining === reported.error) && !errors.includes(remaining)) errors.push(remaining);
           }
         };

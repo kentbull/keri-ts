@@ -519,7 +519,12 @@ client and clock. No separate polling transport interface or adapter is composed
 Mailbox polling runs one worker per remote endpoint with actual request-open and
 SSE read deadlines. One empty long poll cannot serialize another endpoint's work.
 Each remote SSE event's consumer finishes before another read or durable cursor
-advancement. Stored remote positions are the last consumed ordinal; the next query
+advancement. Keep this immediately awaited local consumer in the read owner's
+scope: it observes consumer failure and preserves it alongside source cleanup
+failure. A borrowed pull iterator would need a separate failure-reporting/closing
+contract to retain both, or a producer task/queue to restore this ownership. Neither
+is justified here. Named consumers identify query intake and delivery-before-cursor
+advancement; general CESR posting accepts no injected protocol consumer. Stored remote positions are the last consumed ordinal; the next query
 starts at that ordinal plus one. MailboxPollBatch carries the subject pre, required
 provider eid and complete messages; it has no local/remote source discriminator.
 EOF/timeout/cancellation discard an unterminated event. There is no automatic
