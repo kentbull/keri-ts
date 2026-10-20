@@ -65,6 +65,11 @@ provided" is an intentional boundary or an unresolved need, not a silent fallbac
 
 ### COMP-01 — Dual HTTP media types and narrow sender fallback
 
+OOBI stream responses use `application/json+cesr`, the label accepted by both
+pinned legacy Oobiery implementations and main. This is separate from ordinary
+POST's `application/cesr` / `application/cesr+json` header-media choices; it does
+not change signed event bytes or select a protocol/body version.
+
 **Bridge.** [CESR HTTP helpers](../../../packages/keri/src/app/cesr-http.ts)
 recognize both media types, including parameters. In
 [CESR egress](../../../packages/keri/src/app/cesr-egress.ts), `isLegacyCesrMediaRejection`

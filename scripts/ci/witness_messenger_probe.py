@@ -20,11 +20,18 @@ class MessengerProbe:
     def process_request(self, req, rep):
         """Observe headers without reading or replacing the protocol request body."""
         if req.path == "/":
-            self.traffic.append(dict(method=req.method, type=req.content_type,
-                                     length=req.content_length,
-                                     destination=req.get_header("CESR-DESTINATION"),
-                                     attachment=req.get_header("CESR-ATTACHMENT"),
-                                     authorization=req.get_header("Authorization")))
+            entry = dict(method=req.method, type=req.content_type, length=req.content_length,
+                         destination=req.get_header("CESR-DESTINATION"),
+                         attachment=req.get_header("CESR-ATTACHMENT"),
+                         authorization=req.get_header("Authorization"))
+            self.traffic.append(entry)
+            req.context.messenger_traffic = entry
+
+    def process_response(self, req, rep, resource, req_succeeded):
+        """Observe final HTTP status without changing response data or protocol processing."""
+        entry = getattr(req.context, "messenger_traffic", None)
+        if entry is not None:
+            entry["status"] = rep.status_code
 
     def on_post(self, req, rep):
         """Surface fixture failures to the parent instead of Falcon's generic 500."""
