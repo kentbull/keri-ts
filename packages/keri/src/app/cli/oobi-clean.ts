@@ -20,6 +20,11 @@ function* loadKeys(path: string): Operation<string[]> {
     if (typeof key !== "string" || key.length === 0) {
       throw new ValidationError(`Key file entry ${index} must be a nonempty string`);
     }
+    // UTF-8 encoding replaces lone surrogates; never select a different stored
+    // key by silently repairing an ill-formed JSON string.
+    if (/[\uD800-\uDFFF]/u.test(key)) {
+      throw new ValidationError(`Key file entry ${index} must be a well-formed Unicode string`);
+    }
     keys.add(key);
   }
   return [...keys];

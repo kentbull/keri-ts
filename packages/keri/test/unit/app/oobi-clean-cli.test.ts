@@ -11,7 +11,7 @@ import { CLITestHarness } from "../../../test/utils.ts";
 
 const first = "https://example.test/oobi/A%2fb";
 const second = " https://example.test/oobi/A%2Fb ";
-const third = "tcp://example.test:5631";
+const third = "tcp://example.test:5631/🧪";
 const keys = [first, second, third];
 
 /** Execute the actual CLI, retaining its separate machine output and diagnostics. */
@@ -117,10 +117,11 @@ Deno.test("oobi clean CLI - invalid key files and missing targets create no data
   try {
     const keyFile = `${headDirPath}/keys.json`;
     const args = ["oobi", "clean", "--name", "missing", "--head-dir", headDirPath, "--key-file", keyFile, "--apply"];
-    for (const text of ["{", "null", "[]", "\"key\"", "[\"valid\", 7]", "[\"\"]"]) {
+    for (const text of ["{", "null", "[]", "\"key\"", "[\"valid\", 7]", "[\"\"]", "[\"\\ud800\"]"]) {
       await Deno.writeTextFile(keyFile, text);
       const result = await command(args);
       assertEquals(result.code, 1, text);
+      assertStringIncludes(result.stderr.toLowerCase(), "key file");
       assertEquals(result.stdout, "");
       assertEquals([...Deno.readDirSync(headDirPath)].map((entry) => entry.name), ["keys.json"]);
     }
