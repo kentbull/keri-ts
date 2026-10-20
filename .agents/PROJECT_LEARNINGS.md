@@ -16,9 +16,8 @@ parsers over shared protocol processing. Composition supplies explicit dependenc
 Provider mailbox storage is independent from direct intake and remote polling.
 Reactor accepts awaited sources/bytes; its unused input queue and worker are removed.
 
-The [active simplification plan](../docs/plans/runtime/runtime-simplification-and-routing-parity.md)
-tracks remaining removals and routing decisions; the
-[reliability roadmap](../docs/plans/runtime/cue-reliability-roadmap.md) retains deferred
+The runtime contract records the exact routing/lifecycle source pins and deliberate
+source exceptions. The [reliability roadmap](../docs/plans/runtime/cue-reliability-roadmap.md) retains deferred
 capabilities. Completed execution plans and declaration ledgers are removed; Git/PR
 history owns delivery chronology. Do not update plan files for routine progress.
 

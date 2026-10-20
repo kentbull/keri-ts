@@ -8,7 +8,6 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
-- [Runtime simplification and KERIpy routing parity](runtime/runtime-simplification-and-routing-parity.md): active removals, producer-side alias resolution, owner-specific routing parity and separately gated failure reporting.
 - [Cue reliability roadmap](runtime/cue-reliability-roadmap.md): deferred capabilities and the evidence needed before design.
 - [KERIpy compatibility ports](compatibility/KERIPY_COMPATIBILITY_PORTS.md): proposed
   1.x/2.x target assessment and ports tied to the maintained v1/v2 compatibility inventory.

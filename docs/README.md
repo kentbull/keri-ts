@@ -7,9 +7,7 @@ maps implemented bridges, supported version boundaries and remaining gaps; its
 [KERIpy porting backlog](plans/compatibility/KERIPY_COMPATIBILITY_PORTS.md) tracks
 future 1.x/2.x branch assessments and acceptance work.
 The [runtime contract](design-docs/runtime/INGRESS_AND_EGRESS.md) owns current cue,
-protocol, messenger and lifetime behavior. The
-[active simplification plan](plans/runtime/runtime-simplification-and-routing-parity.md)
-owns the remaining removals and routing parity decisions; the
+protocol, messenger, routing and lifetime behavior. The
 [reliability roadmap](plans/runtime/cue-reliability-roadmap.md) records deferred
 capabilities and their evidence requirements. Completed execution plans are removed;
 Git history and pull requests retain implementation history.

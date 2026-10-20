@@ -14,7 +14,8 @@
   - `packages/keri/src/db/mailboxing.ts`
   - `packages/keri/src/app/forwarding.ts`
   - `packages/keri/src/app/mailbox-director.ts`
-  - `packages/keri/src/app/server.ts`
+  - `packages/tufa/src/host/kernel.ts`
+  - `packages/tufa/src/http/protocol-handler.ts`
 
 ## Context
 
@@ -32,8 +33,11 @@ KERIpy spreads that behavior across several cooperating pieces:
 - `Poster` and `ForwardHandler` route and store forwarded traffic
 - witness and indirect-mode HTTP handlers expose mailbox query and storage
   behavior
-- mailbox CLI commands expose operator workflows such as add, list, update, and
-  debug
+
+The maintained mailbox-fork reference adds mailbox CLI/admin workflows; those
+are not an unqualified upstream KERIpy capability. The
+[reference environments](../plans/qualification/REFERENCE_ENVIRONMENTS.md) identify
+which source each interoperability claim uses.
 
 `keri-ts` now has those same concerns, but not the same runtime shape:
 
@@ -160,11 +164,12 @@ When the mailbox host receives `/fwd`:
 1. it parses the CESR request stream normally
 2. `ForwardHandler` verifies that the top-level message is a `/fwd` exchange
 3. it extracts `recipient` and `topic` from `q.pre` and `q.topic`
-4. it reconstructs the embedded payload from:
-   - the embedded `e.evt` SAD
-   - any pathed attachment groups targeting `/e/evt`
-5. it verifies that the mailbox AID which received the request is currently
-   authorized for `[recipient, mailbox, mailboxAid]`
+4. it validates and reconstructs one payload:
+   - v1 uses the embedded `e.evt` SAD and pathed evidence for `/e/evt`
+   - v2 requires exactly one nested child whose body verifies against signed
+     `a.evt`, then reconstructs that child with its independent attachment evidence
+5. it verifies current recipient-specific store-forward authority for the receiving
+   AID: an authorized mailbox/agent endpoint or a current KEL witness
 6. only then does it store the reconstructed embedded payload into `Mailboxer`
 
 The provider does not store the outer `/fwd` envelope as mailbox traffic. It
@@ -199,15 +204,19 @@ the recipient's durable mailbox payload model.
 
 ### Recipient Sync Path
 
-1. `MailboxDirector` computes the next wanted topic indices from durable `tops.`
-   cursor state.
-2. `MailboxPoller` replays any local mailbox payloads and issues `mbx` queries
-   to remote mailbox or witness endpoints.
-3. Query acceptance emits a `stream` cue that starts mailbox SSE handling.
-4. The mailbox host streams ordered mailbox payloads back as SSE events.
-5. The runtime ingests those payloads through the normal parser, exchanger, and
-   cue flows.
-6. The last seen indices are persisted back into `tops.`.
+1. `MailboxPoller` asks `MailboxDirector` for next-wanted topic indices from
+   durable `tops.` state for each recipient/provider pair.
+2. Independent endpoint workers issue signed `mbx` queries to allowed mailbox
+   providers and current KEL witnesses over HTTP(S), including co-resident providers.
+   No worker scans local provider storage for recipient input.
+3. Authorized query acceptance emits a correlated `stream` cue at the provider;
+   its request owner opens the response stream.
+4. The provider streams ordered stored payloads as SSE events.
+5. The poller's awaited consumer ingests each payload through normal protocol
+   processing. Failed or cancelled consumption leaves that position uncommitted.
+6. After successful consumption, the last-consumed index is persisted in `tops.`;
+   the next query requests that index plus one. Work done before a later failure
+   can be repeated, so this is not exactly-once application processing.
 
 The important split is:
 
@@ -251,7 +260,7 @@ Ownership rule:
 - key:
   - `(recipient controller, mailbox or witness AID)`
 - value:
-  - `TopicsRecord` containing last seen topic indices
+  - `TopicsRecord` containing last successfully consumed topic indices
 
 These are not stored in `Mailboxer` because they describe polling progress, not
 provider-side stored messages. This durable cursor state remains habery-owned
