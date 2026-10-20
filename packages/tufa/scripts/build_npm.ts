@@ -2,8 +2,8 @@
  * Build the `@keri-ts/tufa` npm package and normalize its CLI metadata.
  *
  * Tufa publishes both a minimal module surface and the `tufa` executable. DNT
- * output paths can move as imports change, so generated entrypoint marker
- * comments are used to discover package.json targets before packing.
+ * output paths can move as imports change, so stable source markers identify
+ * generated package.json targets before packing.
  */
 import { build, emptyDir } from "@deno/dnt";
 import {
@@ -54,13 +54,13 @@ interface TufaNpmTargets {
   bin: string;
 }
 
-// These marker strings live in source entrypoints and should survive DNT
-// rewriting. The CLI marker is its bootstrap expression rather than a comment;
-// both markers make generated target discovery resilient to path-depth drift.
+// Source markers survive DNT path rewriting. Use the host kernel
+// function name in both JavaScript and declarations so maintainer-comment edits
+// cannot change the selected package entrypoint.
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
 const RUNTIME_ENTRYPOINT_MARKER = "npm subpath entrypoint for `@keri-ts/tufa/runtime`.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
-const HOST_KERNEL_MARKER = "Run one shared host kernel over the common runtime lifecycle.";
+const HOST_KERNEL_MARKER = "runHostKernel(";
 const PROTOCOL_HANDLER_MARKER = "Build the shared protocol handler used by the Deno and Node HTTP hosts.";
 const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [

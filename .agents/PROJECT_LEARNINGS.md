@@ -44,8 +44,10 @@ porting backlog separates frozen donor evidence from unassessed 1.x/2.x target w
 HTTP media fallback never translates a signed body or establishes peer genus support.
 
 The [maintainer documentation ledger](../docs/plans/runtime/runtime-maintainer-documentation-coverage.md)
-records reviewed source contracts and cross-component evidence. Its linked plan keeps
-the cursor fix (#554) and minimum-timeout fix (#555) separate from the original prose-only pass.
+records reviewed source contracts and cross-component evidence. The local cursor
+fix (#554) is historical: [automatic local consumption](../docs/plans/runtime/remove-local-mailbox-consumption.md)
+is removed rather than extracted into another component. Provider storage and
+remote polling remain; the minimum-timeout fix (#555) still applies.
 
 ## Read by subject
 

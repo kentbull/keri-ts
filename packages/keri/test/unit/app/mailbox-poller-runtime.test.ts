@@ -1,6 +1,11 @@
 import { call, type Operation, run, spawn, suspend } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
-import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/agent-runtime.ts";
+import {
+  createAgentRuntime,
+  runAgentRuntime,
+  settleMailboxPollBatch,
+  settleRuntimeIngress,
+} from "../../../src/app/agent-runtime.ts";
 import { findVerifiedChallengeResponse } from "../../../src/app/challenging.ts";
 import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { type MailboxPollBatch, MailboxPoller, type MailboxPollingTimeoutPolicy } from "../../../src/app/forwarding.ts";
@@ -388,100 +393,73 @@ Deno.test("MailboxPoller.pollDo starts one concurrent long-lived worker per remo
   await check(Roles.witness);
 });
 
-/**
- * Proves the continuous mailbox consumer preserves local batch boundaries and
- * settles each batch far enough for challenge-response visibility.
- */
-Deno.test("continuous mailbox consumer settles local mailbox batches with source boundaries", async () => {
-  const clientName = `mailbox-turn-client-${crypto.randomUUID()}`;
-  const wordsA = ["able", "baker"];
-  const wordsB = ["charlie", "delta"];
-
+/** Provider storage must not become an implicit recipient inbox while remote intake runs. */
+Deno.test("provider runtime leaves stored local messages untouched while remote polling and direct intake process replies", async () => {
   await run(function*(): Operation<void> {
     const hby = yield* createHabery({
-      name: clientName,
+      name: `mailbox-provider-recipient-${crypto.randomUUID()}`,
       temp: true,
       skipConfig: true,
       skipSignator: true,
     });
-
+    const transport = new FakeMailboxPollTransport();
+    const runtime = yield* createAgentRuntime(hby, new FakeRuntimeHttpClient(), systemClock, transport, {
+      enableMailboxStore: true,
+    });
+    const mbx = runtime.mailboxer;
+    assertExists(mbx);
     try {
       const alice = makeTransferableHab(hby, "alice");
       const bob = makeTransferableHab(hby, "bob");
       const senderA = makeTransferableHab(hby, "sender-a");
       const senderB = makeTransferableHab(hby, "sender-b");
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
-        enableMailboxStore: true,
+      const deliveries = [
+        { recipient: alice, sender: senderA, words: ["able", "baker"] },
+        { recipient: bob, sender: senderB, words: ["charlie", "delta"] },
+      ].map(({ recipient, sender, words }) => {
+        const endpoint = seedMailboxEndpoint(hby, recipient.pre, recipient.name);
+        const storedWords = [...words, "stored"];
+        const msg = (responseWords: string[]) =>
+          sender.endorse(
+            makeExchangeSerder("/challenge/response", { i: sender.pre, words: responseWords }, {
+              sender: sender.pre,
+              recipient: recipient.pre,
+            }),
+          );
+        const stored = msg(storedWords);
+        mbx.storeMsg(mailboxTopicKey(recipient.pre, "/challenge"), stored);
+        transport.enqueue({ messages: [mailboxBytes(msg(words))] });
+        return { recipient, sender, words, storedWords, stored, endpoint };
       });
-      const mailboxer = runtime.mailboxer;
-      if (!mailboxer) {
-        throw new Error("Expected local mailboxer for mailbox turn test.");
-      }
-
       runtime.mailboxDirector.topics.clear();
       runtime.mailboxDirector.registerTopic("/challenge");
-
-      const first = {
-        senderPre: senderA.pre,
-        message: senderA.endorse(
-          makeExchangeSerder("/challenge/response", {
-            i: senderA.pre,
-            words: [...wordsA],
-          }, {
-            sender: senderA.pre,
-            recipient: alice.pre,
-          }),
-        ),
-      };
-      const second = {
-        senderPre: senderB.pre,
-        message: senderB.endorse(
-          makeExchangeSerder("/challenge/response", {
-            i: senderB.pre,
-            words: [...wordsB],
-          }, {
-            sender: senderB.pre,
-            recipient: bob.pre,
-          }),
-        ),
-      };
-
-      mailboxer.storeMsg(
-        mailboxTopicKey(alice.pre, "/challenge"),
-        first.message,
-      );
-      mailboxer.storeMsg(
-        mailboxTopicKey(bob.pre, "/challenge"),
-        second.message,
-      );
-
-      const batches: MailboxPollBatch[] = [];
-      const worker = yield* spawn(() =>
-        runtime.mailboxPoller.pollDo(function*(batch) {
-          yield* settleMailboxPollBatch(runtime, batch);
-          batches.push(batch);
-        })
-      );
+      const worker = yield* spawn(() => runAgentRuntime(runtime));
       try {
-        yield* waitForCondition(() => batches.length === 2, "Expected both local mailbox batches to settle.");
-        assertEquals(
-          batches.map((batch) => ({ source: batch.source, pre: batch.pre })),
-          [
-            { source: "local", pre: alice.pre },
-            { source: "local", pre: bob.pre },
-          ],
+        // Persisted remote positions prove real consumer completion, without a timed absence check.
+        yield* waitForCondition(
+          () =>
+            deliveries.every(({ recipient, endpoint }) =>
+              hby.db.tops.get([recipient.pre, endpoint.eid])?.topics["/challenge"] === 0
+            ),
+          "Expected both remote mailbox events to settle.",
         );
-        assertExists(
-          findVerifiedChallengeResponse(hby.db, first.senderPre, wordsA),
-        );
-        assertExists(
-          findVerifiedChallengeResponse(hby.db, second.senderPre, wordsB),
-        );
+        for (const { recipient, sender, words, storedWords, stored } of deliveries) {
+          assertExists(findVerifiedChallengeResponse(hby.db, sender.pre, words));
+          assertEquals(findVerifiedChallengeResponse(hby.db, sender.pre, storedWords), null);
+          assertEquals([...runtime.mailboxDirector.topicIter(recipient.pre, "/challenge")], [{ idx: 0, msg: stored }]);
+        }
+
+        // Explicit direct intake can process the same signed payloads without consuming provider rows.
+        yield* settleRuntimeIngress(runtime, deliveries.map(({ stored }) => stored));
+        for (const { recipient, sender, storedWords, stored } of deliveries) {
+          assertExists(findVerifiedChallengeResponse(hby.db, sender.pre, storedWords));
+          assertEquals([...runtime.mailboxDirector.topicIter(recipient.pre, "/challenge")], [{ idx: 0, msg: stored }]);
+        }
       } finally {
         yield* waitForTaskHalt(worker);
-        yield* runtime.close();
       }
     } finally {
+      yield* runtime.close();
       yield* hby.close();
     }
   });
@@ -496,7 +474,7 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
     hby.db.ends.pin([hab.pre, Roles.mailbox, eid], { allowed: true });
     const delivered = Promise.withResolvers<void>();
     let pulls = 0;
-    let cancelled = false;
+    let cancelled = false, consumerCleaned = false;
     const responseBody = new ReadableStream<Uint8Array>({
       pull(controller) {
         const idx = pulls++;
@@ -519,7 +497,12 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       poller.pollDo(function*(batch) {
         assertEquals(batch.messages.length, 1);
         delivered.resolve();
-        yield* suspend(); // The consumer must finish before the next event is read.
+        try {
+          yield* suspend(); // The consumer must finish before the next event is read.
+        } finally {
+          yield* runtimeTurn();
+          consumerCleaned = true;
+        }
       })
     );
     try {
@@ -528,36 +511,43 @@ Deno.test("continuous mailbox polling hands off one event before requesting its 
       assertEquals(hby.db.tops.get([hab.pre, eid])?.topics["/reply"], undefined);
     } finally {
       yield* worker.halt();
-      assertEquals([cancelled, responseBody.locked], [true, false]);
+      assertEquals([consumerCleaned, cancelled, responseBody.locked], [true, true, false]);
       yield* hby.close(true);
     }
   });
 });
 
-Deno.test("local mailbox cursors commit whole batches only after successful consumption", async () => {
+/** A failed event consumer must not become persisted remote progress. */
+Deno.test("remote mailbox consumer failures preserve the cursor and join response cleanup", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const alice = hby.makeHab("alice"), bob = hby.makeHab("bob");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
-      enableMailboxStore: true,
-    });
-    const { mailboxPoller: poller, mailboxDirector: director, mailboxer: mbx } = runtime;
-    assertExists(mbx);
-    director.topics.clear();
-    director.registerTopic("/first");
-    director.registerTopic("/second");
-    mbx.storeMsg(mailboxTopicKey(alice.pre, "/first"), new Uint8Array([1]));
-    mbx.storeMsg(mailboxTopicKey(alice.pre, "/second"), new Uint8Array([2]));
-    mbx.storeMsg(mailboxTopicKey(bob.pre, "/first"), new Uint8Array([3]));
-    const failure = new Error("consumer failed");
+    const hab = hby.makeHab("recipient");
+    const endpoint = seedMailboxEndpoint(hby, hab.pre, "consumer-failure");
+    const failure = new Error("mailbox consumer failed");
     try {
-      // Both callback forms leave the complete first prefix/topic batch available.
       for (const delayed of [false, true]) {
-        let observed: MailboxPollBatch | undefined, caught: unknown;
+        let cancelled = false, consumed = 0, caught: unknown;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode("id: 7\nevent: /reply\ndata: message\n\n"));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+        const poller = new MailboxPoller(
+          hby,
+          new MailboxDirector(hby),
+          httpClient(() => Promise.resolve(new Response(body))),
+          systemClock,
+          httpMailboxPollTransport,
+        );
+        poller.registerTopic("/reply");
         try {
           yield* call(() =>
             poller.pollDo((batch) => {
-              observed = batch;
+              assertEquals([batch.pre, batch.eid, batch.messages.length], [hab.pre, endpoint.eid, 1]);
+              consumed++;
               if (!delayed) throw failure;
               return (function*() {
                 yield* runtimeTurn();
@@ -569,119 +559,11 @@ Deno.test("local mailbox cursors commit whole batches only after successful cons
           caught = error;
         }
         assertStrictEquals(caught, failure);
-        assertEquals(observed?.messages, [new Uint8Array([1]), new Uint8Array([2])]);
-      }
-
-      let entered = false, cleaned = false;
-      const cancelled = yield* spawn(() =>
-        poller.pollDo(function*(batch) {
-          assertEquals(batch.messages, [new Uint8Array([1]), new Uint8Array([2])]);
-          entered = true;
-          try {
-            yield* suspend();
-          } finally {
-            yield* runtimeTurn();
-            cleaned = true;
-          }
-        })
-      );
-      yield* waitForCondition(() => entered, "Expected the local consumer to suspend.");
-      yield* waitForTaskHalt(cancelled);
-      assertEquals(cleaned, true, "halting must join the consumer before restarting the same poller");
-
-      const consumed: MailboxPollBatch[] = [];
-      let caught: unknown;
-      try {
-        yield* call(() =>
-          poller.pollDo((batch) => {
-            consumed.push(batch);
-            if (batch.pre === bob.pre) throw failure;
-          })
-        );
-      } catch (error) {
-        caught = error;
-      }
-      assertStrictEquals(caught, failure);
-      assertEquals(consumed.map(({ pre, messages }) => ({ pre, messages })), [
-        { pre: alice.pre, messages: [new Uint8Array([1]), new Uint8Array([2])] },
-        { pre: bob.pre, messages: [new Uint8Array([3])] },
-      ]);
-
-      // Alice's committed batch stays advanced when Bob fails; later rows remain visible.
-      mbx.storeMsg(mailboxTopicKey(alice.pre, "/first"), new Uint8Array([4]));
-      const resumed: MailboxPollBatch[] = [];
-      const worker = yield* spawn(() =>
-        poller.pollDo((batch) => {
-          resumed.push(batch);
-        })
-      );
-      try {
-        yield* waitForCondition(() => resumed.length === 2, "Expected new Alice rows and Bob's uncommitted batch.");
-        yield* runtimeTurn();
-        assertEquals(resumed.map(({ pre, messages }) => ({ pre, messages })), [
-          { pre: alice.pre, messages: [new Uint8Array([4])] },
-          { pre: bob.pre, messages: [new Uint8Array([3])] },
-        ]);
-      } finally {
-        yield* waitForTaskHalt(worker);
+        assertEquals(consumed, 1);
+        assertEquals(hby.db.tops.get([hab.pre, endpoint.eid]), null);
+        assertEquals([cancelled, body.locked], [true, false]);
       }
     } finally {
-      yield* runtime.close();
-      yield* hby.close();
-    }
-  });
-});
-
-Deno.test("local mailbox collection failure publishes no batch or cursor progress", async () => {
-  await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const hab = hby.makeHab("recipient");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
-      enableMailboxStore: true,
-    });
-    const { mailboxPoller: poller, mailboxDirector: director, mailboxer: mbx } = runtime;
-    assertExists(mbx);
-    director.topics.clear();
-    director.registerTopic("/reply");
-    const msgs = [new Uint8Array([1]), new Uint8Array([2])];
-    for (const msg of msgs) mbx.storeMsg(mailboxTopicKey(hab.pre, "/reply"), msg);
-    const topicIter = director.topicIter.bind(director), failure = new Error("row read failed");
-    let published = false, caught: unknown;
-    // Fail after a real row was collected, at the existing provider read boundary.
-    director.topicIter = function*(...args) {
-      for (const row of topicIter(...args)) {
-        yield row;
-        throw failure;
-      }
-    };
-    try {
-      try {
-        yield* call(() =>
-          poller.pollDo(() => {
-            published = true;
-          })
-        );
-      } catch (error) {
-        caught = error;
-      } finally {
-        director.topicIter = topicIter;
-      }
-      assertStrictEquals(caught, failure);
-      assertEquals(published, false);
-      const batches: MailboxPollBatch[] = [];
-      const worker = yield* spawn(() =>
-        poller.pollDo((batch) => {
-          batches.push(batch);
-        })
-      );
-      try {
-        yield* waitForCondition(() => batches.length > 0, "Expected both rows after collection failure.");
-        assertEquals(batches[0].messages, msgs);
-      } finally {
-        yield* waitForTaskHalt(worker);
-      }
-    } finally {
-      yield* runtime.close();
       yield* hby.close();
     }
   });

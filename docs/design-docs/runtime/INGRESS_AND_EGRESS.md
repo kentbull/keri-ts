@@ -404,16 +404,22 @@ missing, nonfinite and nonpositive values use the existing 5-second header and
 belongs to polling configuration, not lower HTTP/SSE transport validation.
 Mailbox polling runs one worker per remote endpoint with actual request-open and
 SSE read deadlines. One empty long poll cannot serialize another endpoint's work.
-For remote SSE polling, each complete event's consumer finishes before another read
-or durable cursor advancement. Stored remote positions are the last consumed ordinal;
-the next query starts at that ordinal plus one. EOF/timeout/cancellation discard an
-unterminated event. Local provider polling tracks next-wanted ordinals in memory.
-It collects a whole prefix/topic batch with proposed cursors, awaits its consumer,
-then publishes those cursors synchronously. Collection failure, consumer failure
-or cancellation leaves that batch uncommitted; restarting the same poller may
-repeat messages processed before failure. Earlier successful batches stay advanced.
-A new poller starts at zero. There is no automatic worker restart, finite polling
-turn, command-local resume index or durable consumer inbox/acknowledgement.
+Each remote SSE event's consumer finishes before another read or durable cursor
+advancement. Stored remote positions are the last consumed ordinal; the next query
+starts at that ordinal plus one. MailboxPollBatch carries the subject pre, required
+provider eid and complete messages; it has no local/remote source discriminator.
+EOF/timeout/cancellation discard an unterminated event. There is no automatic
+worker restart, finite polling turn, command-local resume index or durable consumer
+inbox/acknowledgement.
+
+Provider storage is independent of recipient processing. MailboxPoller never scans
+local provider rows for controlled AIDs, even when the runtime owns Mailboxer.
+Authorized `/fwd` requests and Poster's local-mailbox shortcut still store messages;
+provider query/SSE readers still serve them to authorized requesters. Storage does
+not itself dispatch the payload to this host's application handlers. Direct
+HTTP/TCP delivery or explicit in-process intake reaches the protocol processor
+without passing through mailbox storage. Removing automatic local consumption
+neither deletes provider rows nor changes forwarding/query authorization.
 
 Provider SSE reads only on demand and closes each LMDB iterator before suspension.
 One demanded row is framed in 64 KiB output chunks without rejecting larger rows.
