@@ -69,7 +69,12 @@ export function resolveBootstrap(
       call(function*(): Operation<BootstrapResult> {
         yield* spawn(() => oobiery.oobiDo());
         yield* spawn(() => authenticator.authDo());
-        yield* spawn(() => protocol.escrowDo());
+        yield* spawn(function*() {
+          while (true) {
+            protocol.processKelReplyEscrowsOnce();
+            yield* runtimeTurn();
+          }
+        });
         yield* spawn(() => querying.deliverDo());
         while (true) {
           collectPendingUrls(hby.db, selected);
