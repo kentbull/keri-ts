@@ -80,6 +80,13 @@ Reference keys are nonempty ASCII segments separated by `/`, at most 240
 characters. Scoped keys such as `essr/SAID` and `plain/SAID` keep representations
 independent; equal bytes under distinct keys keep separate file lifetimes.
 
+Domain owners can instead `prepare(payload)` without publishing a reference,
+then `pin(key, candidate)` in their own synchronous writer after validation.
+`referenceId(key)` identifies the immutable evidence read before suspension.
+A candidate belongs to one publication attempt, including a rolled-back attempt;
+dispose it before closing its database. Disposal consults committed ownership
+and cannot delete a referenced file. Join the owning writer's flush before effects.
+
 The private `payload.refs.` and `payload.owners.` tables belong together. They
 must not be edited independently. Recovery scans files and records incrementally,
 deletes unfinished stages and unreferenced objects, and fails closed on a missing

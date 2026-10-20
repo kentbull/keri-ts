@@ -15,7 +15,9 @@ therefore does not establish child acceptance. Further descendants remain guarde
 
 Local-first approval borrows hydrated children; remote-first approval reopens
 the exchange evidence. Exchanger owns accepted/escrow evidence and transactional
-replacement. Replay preserves child proof enclosures. Group leadership considers
+replacement. Commit the authenticated proposal/submitter indexes before awaiting
+approval replay, so a peer wrapper arriving during replay sees that approval and
+processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
 Legacy `/multisig/exn` coordination indexes the embedded-section SAID in meids

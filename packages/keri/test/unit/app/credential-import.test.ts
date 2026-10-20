@@ -471,7 +471,7 @@ Deno.test("finite import normalizes its deadline and waits for it when evidence 
   });
 });
 
-Deno.test("finite import deadline cancels and joins an active escrow handler before returning", async () => {
+Deno.test("finite import deadline joins a post-commit escrow handler and preserves acceptance", async () => {
   await run(function*() {
     const f = yield* fixture(), clock = new ManualRuntimeClock();
     let entered!: () => void, cancelling!: () => void, release!: () => void;
@@ -487,9 +487,11 @@ Deno.test("finite import deadline cancels and joins an active escrow handler bef
     let attempts = 0, closed = false, returned = false, recovered = false;
     f.protocol.exc.addHandler({
       resource: "/import/settlement",
-      *verify(): Operation<ExchangeRouteVerification> {
-        if (recovered) return true;
-        if (++attempts === 1) return { kind: "escrow", reason: "dependency pending" };
+      verify(): ExchangeRouteVerification {
+        return ++attempts === 1 ? { kind: "escrow", reason: "dependency pending" } : true;
+      },
+      *handle() {
+        if (recovered) return;
         yield* ensure(function*() {
           cancelling();
           yield* call(() => cleanup);
@@ -497,9 +499,7 @@ Deno.test("finite import deadline cancels and joins an active escrow handler bef
         });
         entered();
         yield* suspend();
-        return true;
       },
-      *handle() {},
     });
     const msg = createExchangeMessage(f.issuer, { dest: f.holder.pre, route: "/import/settlement", payload: {} });
     const bytes = concatBytes(acceptedEventReplayMessage(f.source, f.issuer.pre, 0).message, msg.msg);
@@ -513,11 +513,11 @@ Deno.test("finite import deadline cancels and joins an active escrow handler bef
     yield* call(() => cancelled);
     assertEquals([closed, returned], [false, false]);
     release();
-    assertEquals(yield* task, { saved: [], complete: false, unaccepted: [msg.serder.said!] });
+    assertEquals(yield* task, { saved: [], complete: true, unaccepted: [] });
     assertEquals([closed, returned], [true, true]);
-    // The original evidence and protocol turn remain available after the timed-out attempt joins.
-    recovered = true;
-    yield* f.protocol.processEscrowsOnce();
     assertEquals(f.protocol.exc.complete(msg.serder.said!), true);
+    // Cancellation joins effects but cannot undo acceptance; an explicit duplicate can run its handler again.
+    recovered = true;
+    for (const frame of parseBytes(msg.msg)) yield* f.protocol.dispatch(frame);
   });
 });

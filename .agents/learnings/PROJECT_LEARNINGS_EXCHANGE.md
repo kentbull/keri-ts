@@ -14,8 +14,11 @@ reference stub is not a permanent product contract. NOT must distinguish proved
 invalidity from unknown evidence before inversion; missing or unauthenticated
 input cannot establish a negative authorization predicate.
 
-Exchanger separates sender authentication, supplemental selection and route
-verification. `verifyEvidence`, `acceptsEvidence`, `acceptsSscs` and
+Exchanger prepares file evidence, then rechecks its snapshot and performs sender
+authentication, supplemental selection, route verification and publication in one
+synchronous writer. Verification hooks cannot suspend; handlers follow durable
+commit. First acceptance replaces provisional factors; accepted duplicates retain
+previously verified proofs without using them to authenticate a fresh input. `verifyEvidence`, `acceptsEvidence`, `acceptsSscs` and
 `acceptsMissingEvidence` are independent capabilities. Sender source seals can
 anchor in historical interaction events; signature groups require establishment
 keys. Resolve known last references before escrow so rotation cannot reinterpret
@@ -61,7 +64,8 @@ duplicates replace child evidence atomically and rerun the handler.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
-frames; remote-first approval reopens evidence. V1 approval replays stored pathed
+frames; remote-first approval reopens evidence. Commit proposal/submitter indexes
+before asynchronous replay so peer arrivals observe the accepted local approval. V1 approval replays stored pathed
 child proofs through the same KEL/reply owners in either arrival order, including
 after database reopen. Replay decodes generic protocol bodies: issuance contains
 an ACDC child as well as KERI TEL/anchor children. Keep the KEL/reply approval

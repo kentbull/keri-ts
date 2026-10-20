@@ -1,4 +1,4 @@
-import type { Payload } from "cesr-ts";
+import type { OwnedPayload, Payload } from "cesr-ts";
 import { dirname, join, resolve } from "jsr:@std/path";
 import { RawRecord } from "../core/records.ts";
 import type { LMDBer } from "./core/lmdber.ts";
@@ -25,6 +25,52 @@ class PayloadRecord extends RawRecord<PayloadRecordShape> implements PayloadReco
 class OwnerRecord extends RawRecord<{ key: string }> {
   /** Immutable application key owning this object. */
   declare key: string;
+}
+
+/** One flushed caller-owned candidate, with no reference-table or mutation internals in its public contract. */
+export interface PreparedPayload extends OwnedPayload {
+  /** Independent physical file identity for synchronous reference publication. */
+  readonly id: string;
+}
+
+/** Private physical owner; disposal never removes a committed reference's file. */
+class PreparedFile implements PreparedPayload {
+  /** Idempotent cleanup also closes this handle to further publication. */
+  private cleanup?: Promise<void>;
+  /** A physical candidate belongs to at most one publication attempt, including a rolled-back attempt. */
+  private submitted = false;
+
+  /** Bind the actual file and reference owner; callers obtain candidates through the archive. */
+  constructor(private readonly file: FilePayload, private readonly owners: Komer<OwnerRecord>) {}
+
+  /** Independently prepared physical identity, unrelated to the application key. */
+  get id(): string {
+    return this.file.id;
+  }
+  /** Exact flushed byte length. */
+  get size(): number {
+    return this.file.size;
+  }
+
+  /** Reopen immutable bytes; borrowed readers retain their ordinary descriptor lifetime. */
+  open(signal?: AbortSignal): AsyncIterable<Uint8Array> {
+    return this.file.open(signal);
+  }
+
+  /** Require this live physical candidate to belong to the publishing reference table. */
+  claim(owners: Komer<OwnerRecord>): void {
+    if (this.owners !== owners || this.cleanup || this.submitted) {
+      throw new Error("Payload candidate is submitted, disposed or belongs to another archive");
+    }
+    this.submitted = true;
+  }
+
+  /** Reclaim an unselected candidate; accepted ownership is decided by committed storage. */
+  discard(): Promise<void> {
+    return this.cleanup ??= (async () => {
+      if (!this.owners.get([this.id])) await this.file.discard();
+    })();
+  }
 }
 
 /** Canonical directories owned by runtimes in this process. */
@@ -152,6 +198,38 @@ export class PayloadArchive {
     }
   }
 
+  /** Prepare and flush one caller-owned file without deciding any protocol or reference state. */
+  prepare(payload: Payload, signal?: AbortSignal): Promise<PreparedPayload> {
+    return this.track(() => this.prepareCandidate(payload, signal));
+  }
+
+  /** Read the current immutable file identity for an admission's evidence snapshot. */
+  referenceId(key: string): string | null {
+    this.check();
+    this.checkKey(key);
+    return this.refs.get([key])?.id ?? null;
+  }
+
+  /** Publish a prepared file inside its domain owner's writer after current-state validation. */
+  pin(key: string, candidate: PreparedPayload): Payload {
+    this.check();
+    this.checkKey(key);
+    return this.pinPrepared(key, candidate);
+  }
+
+  /** Finish an already admitted publication even after close has stopped new work. */
+  private pinPrepared(key: string, candidate: PreparedPayload): Payload {
+    if (!this.db.inWriteTransaction) throw new Error("Prepared payload publication requires the owning writer");
+    if (!(candidate instanceof PreparedFile)) throw new TypeError("Payload candidate was not prepared by an archive");
+    if (this.refs.get([key]) || this.owners.get([candidate.id])) {
+      throw new Error("Payload reference already has an owner");
+    }
+    candidate.claim(this.owners);
+    this.refs.put([key], { id: candidate.id, size: candidate.size });
+    this.owners.put([candidate.id], { key });
+    return this.view(candidate);
+  }
+
   /**
    * Prepare an independent immutable file, then select its reference in one writer.
    * Unclaimed local stages transfer ownership; borrowed/promoted files are copied.
@@ -164,11 +242,9 @@ export class PayloadArchive {
     this.checkKey(key);
     return this.track(async () => {
       signal?.throwIfAborted();
-      const owned = await this.own(payload, signal);
-      let published = false;
+      const owned = await this.prepareCandidate(payload, signal);
       let selected: Payload;
       try {
-        await this.prepare(owned, signal);
         for (;;) {
           signal?.throwIfAborted();
           const existing = await this.reference(key);
@@ -195,27 +271,22 @@ export class PayloadArchive {
           // reference() suspended even for absence: select against current state in this turn.
           if (this.refs.get([key])) continue;
           env.transactionSync(() => {
-            if (this.owners.get([owned.id])) throw new Error("Payload candidate already has an owner");
-            this.refs.put([key], { id: owned.id, size: owned.size });
-            this.owners.put([owned.id], { key });
+            this.pinPrepared(key, owned);
             commit();
           });
-          published = true; // Never reclaim committed bytes, even if the durability wait fails.
           await env.flushed;
           selected = this.view(owned);
           break;
         }
       } catch (error) {
-        if (!published) {
-          try {
-            await owned.discard();
-          } catch (cleanup) {
-            throw new AggregateError([error, cleanup], "Payload publication and candidate cleanup failed");
-          }
+        try {
+          await owned.discard();
+        } catch (cleanup) {
+          throw new AggregateError([error, cleanup], "Payload publication and candidate cleanup failed");
         }
         throw error;
       }
-      if (!published) await owned.discard();
+      await owned.discard();
       return selected;
     });
   }
@@ -279,8 +350,25 @@ export class PayloadArchive {
     }
   }
 
+  /** Keep physical preparation cleanup independent from the later domain transaction. */
+  private async prepareCandidate(payload: Payload, signal?: AbortSignal): Promise<PreparedPayload> {
+    signal?.throwIfAborted();
+    const owned = await this.own(payload, signal);
+    try {
+      await this.flushCandidate(owned, signal);
+      return new PreparedFile(owned, this.owners);
+    } catch (error) {
+      try {
+        await owned.discard();
+      } catch (cleanup) {
+        throw new AggregateError([error, cleanup], "Payload preparation and file cleanup failed");
+      }
+      throw error;
+    }
+  }
+
   /** Flush one independently owned candidate before any database reference can name it. */
-  private async prepare(owned: FilePayload, signal?: AbortSignal): Promise<void> {
+  private async flushCandidate(owned: FilePayload, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
     await owned.promote(owned.id);
     const reopened = await this.files.open(owned.id);
@@ -361,7 +449,7 @@ export class PayloadArchive {
   }
 
   /** Hide mutable file ownership behind the public read-only payload contract. */
-  private view(payload: FilePayload): Payload {
+  private view(payload: Payload): Payload {
     return { size: payload.size, open: (signal) => payload.open(signal) };
   }
 

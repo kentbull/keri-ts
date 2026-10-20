@@ -198,6 +198,73 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     }
   });
 });
+Deno.test("v2 IPEX competing nested offers share one synchronous conversation decision", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+      const left = new Exchanger(hby), right = new Exchanger(hby);
+      loadIpexHandlers(hby, left);
+      loadIpexHandlers(hby, right);
+      yield* call(() => learn(hby, fixture.wires[0]));
+      const reference = parseBytes(b(fixture.cases[0].wire))[0];
+      const node = reference.nests![0];
+      const schema = (node.body as SerderACDC).schema as { $id: string };
+      const apply = ipexExnBody(recipient.pre, "/ipex/apply", [], {
+        kind: Kinds.json,
+        message: "apply",
+        recipient: sender.pre,
+        xid: reference.body.said!,
+        plan: [[schema.$id, "/", []]],
+      });
+      const frame = (hab: typeof sender, body: SerderKERI, nests: readonly CesrFrame[] = []): CesrFrame => ({
+        body,
+        gvrsn: Vrsn_2_0,
+        nests: [...nests],
+        attachments: messageAttachmentGroups({
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: hab.pre }),
+              hab.kever!.sner,
+              new Diger({ qb64: hab.kever!.said }),
+              hab.sign(body.raw, true),
+            ),
+          ],
+        }, Vrsn_2_0),
+      });
+      const opener = yield* dispatchEnvelope(envelopeFromFrame(frame(recipient, apply)), hby.rvy, hby.kevery, left);
+      assertEquals(opener.decision?.kind, "accept");
+      const contenders = ["first offer", "second offer"].map((message) =>
+        frame(
+          sender,
+          ipexExnBody(sender.pre, "/ipex/offer", [node.body as SerderACDC], {
+            kind: Kinds.json,
+            message,
+            prior: apply,
+          }),
+          [node],
+        )
+      );
+      const results = yield* call(() =>
+        Promise.all(
+          contenders.map((offered, index) =>
+            run(() => dispatchEnvelope(envelopeFromFrame(offered), hby.rvy, hby.kevery, index ? right : left))
+          ),
+        )
+      );
+      assertEquals(results.map((result) => result.decision?.kind).sort(), ["accept", "reject"]);
+      const winner = contenders.find((_, index) => results[index].decision?.kind === "accept")!;
+      const loser = contenders.find((offered) => offered !== winner)!;
+      assertEquals(hby.db.erpy.get([apply.said!])?.qb64, winner.body.said);
+      assertExists(hby.db.exns.get([winner.body.said!]));
+      assertEquals(hby.db.exns.get([loser.body.said!]), null);
+      assertEquals(hby.db.enst.get([loser.body.said!]), []);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation preserves frozen commitments", async () => {
   const row = fixture.cases[0];
   const [frame] = await parseBytes(b(row.wire));

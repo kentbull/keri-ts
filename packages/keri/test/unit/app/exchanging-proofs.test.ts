@@ -318,6 +318,27 @@ Deno.test("EXN source proofs preserve the legacy intake guard and reject mismatc
   });
 });
 
+Deno.test("EXN accepted duplicates retain independently authenticated proof factors", async () => {
+  await parties(async (hby, alice, bob) => {
+    const serder = exchange("/proof", {}, { sender: alice.pre, pvrsn: Vrsn_2_0 })[0];
+    const sender = endorse(alice, serder), extra = endorse(bob, serder);
+    const exchanger = new Exchanger(hby, {
+      handlers: [{
+        resource: "/proof",
+        verifyEvidence: ({ factors }) => factors,
+        handle() {},
+      }],
+    });
+    assertEquals((await run(() => exchanger.processEvent({ serder, tsgs: [sender, extra] }))).kind, "accept");
+    assertEquals((await run(() => exchanger.processEvent({ serder, tsgs: [sender] }))).kind, "accept");
+    assertEquals(
+      [...hby.db.esigs.getTopItemIter([serder.said!, ""])].map(([keys]) => keys[1]).sort(),
+      [alice.pre, bob.pre].sort(),
+    );
+    assertEquals(hby.db.eidx.get([bob.pre]).map((diger) => diger.qb64), [serder.said]);
+  });
+});
+
 /** Rejection must leave neither accepted nor partial authentication rows behind. */
 function assertUnstored(hby: Habery, said: string): void {
   assertEquals(hby.db.exns.get([said]), null);
@@ -689,9 +710,7 @@ Deno.test("EXN authentication queries preserve coordinate order through verifica
           : [],
       };
       const cues = new Deck<AgentCue>();
-      let entered!: () => void, release!: () => void, selected = 0, handled = 0;
-      const selecting = new Promise<void>((resolve) => entered = resolve);
-      const gate = new Promise<void>((resolve) => release = resolve);
+      let selected = 0, handled = 0;
       const exchanger = new Exchanger(hby, {
         cues,
         handlers: [{
@@ -701,28 +720,21 @@ Deno.test("EXN authentication queries preserve coordinate order through verifica
           verifyEvidence({ factors }) {
             if (factor !== "last") throw new Error("Strict missing proofs cannot select");
             selected++;
-            return call(async () => {
-              entered();
-              await gate;
-              return factors;
-            });
+            assertEquals(handled, 0);
+            assertEquals(hby.db.exns.get([said]), null);
+            assertEquals(cues.toArray(), queries);
+            return factors;
           },
           handle() {
             handled++;
           },
         }],
       });
-      const task = run(() => exchanger.processEvent(input));
-      if (factor === "last") {
-        await selecting;
-        assertEquals([selected, handled], [1, 0]);
-        assertEquals(hby.db.exns.get([said]), null);
-      }
-      if (factor !== "last") await task;
+      const decision = await run(() => exchanger.processEvent(input));
       assertEquals([cues.pull(), cues.pull()], queries);
       assertEquals(cues.length, 0);
-      release();
-      assertEquals((await task).kind, factor === "last" ? "accept" : factor === "source" ? "escrow" : "reject");
+      assertEquals(decision.kind, factor === "last" ? "accept" : factor === "source" ? "escrow" : "reject");
+      assertEquals(selected, factor === "last" ? 1 : 0);
       assertEquals(handled, factor === "last" ? 1 : 0);
       if (factor === "last") assertEquals([...hby.db.esigs.getTopItemIter([said, ""])].length, 1);
     }

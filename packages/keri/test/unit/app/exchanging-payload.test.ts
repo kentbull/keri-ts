@@ -8,6 +8,7 @@ import {
   MtrDex,
   NumberPrimitive,
   parse,
+  parseBytes,
   type Payload,
   Prefixer,
   type SerderKERI,
@@ -15,13 +16,14 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { join } from "jsr:@std/path";
 import { essrRaw, essrWire } from "../../../../cesr/src/parser/essr.ts";
 import { EssrRecipient } from "../../../src/app/essr.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -96,6 +98,109 @@ Deno.test("exchange persists ordinary fragments and preserves the first accepted
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals((names(join(hby.db.path!, "payloads", "objects"))).length, 1);
     assertEquals(names(join(hby.db.path!, "payloads", "staging")), []);
+  });
+});
+
+Deno.test("overlapping same-SAID admissions preserve the first committed wire and receiver receipt", async () => {
+  await scenario(async (hby, sender) => {
+    const archive = await hby.db.openPayloads();
+    const stage = archive.files.stage.bind(archive.files);
+    let resume!: () => void, entered!: () => void, first = true;
+    const preparing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
+    archive.files.stage = async (signal) => {
+      if (first) {
+        first = false;
+        entered();
+        await gate;
+      }
+      return await stage(signal);
+    };
+    const serder = message(sender), proof = signatures(sender, serder);
+    const earlier = new Exchanger(hby), later = new Exchanger(hby);
+    const incoming = payload(["a", "bcxyz"]);
+    const receipt = "2026-10-20T12:00:01.000000+00:00";
+    const pending = run(() =>
+      earlier.processEvent({
+        serder,
+        tsgs: proof,
+        essrs: payload(),
+        receiverTime: "2026-10-20T12:00:00.000000+00:00",
+      })
+    );
+    try {
+      await preparing;
+      assertEquals(
+        (await run(() => later.processEvent({ serder, tsgs: proof, essrs: incoming, receiverTime: receipt }))).kind,
+        "accept",
+      );
+    } finally {
+      resume();
+      await pending;
+    }
+    assertEquals(hby.db.exchangeMeta.get([serder.said!])?.receiverTime, receipt);
+    assertEquals(
+      (await hby.db.getEssrs(serder.said!))!.map((texter) => texter.qb64),
+      incoming.map((texter) => texter.qb64),
+    );
+    assertEquals(names(join(hby.db.path!, "payloads", "staging")), []);
+    assertEquals(names(join(hby.db.path!, "payloads", "objects")).length, 1);
+  });
+});
+
+Deno.test("exchange admission uses KEL evidence learned while payload preparation is suspended", async () => {
+  await scenario(async (source, sender) => {
+    await run(function*() {
+      const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      let resume!: () => void, entered!: () => void;
+      const preparing = new Promise<void>((resolve) => {
+        entered = resolve;
+      });
+      const gate = new Promise<void>((resolve) => {
+        resume = resolve;
+      });
+      try {
+        const archive = yield* call(() => receiver.db.openPayloads());
+        const stage = archive.files.stage.bind(archive.files);
+        archive.files.stage = async (signal) => {
+          entered();
+          await gate;
+          return await stage(signal);
+        };
+        const serder = message(sender), proof = signatures(sender, serder);
+        const exchanger = new Exchanger(receiver);
+        const task = yield* spawn(() => exchanger.processEvent({ serder, tsgs: proof, essrs: payload() }));
+        try {
+          try {
+            yield* call(() => preparing);
+            assertEquals(receiver.db.getKever(sender.pre), null);
+            sender.rotate();
+            for (const sn of [0, 1]) {
+              const wire = acceptedEventReplayMessage(source, sender.pre, sn).message;
+              for (const frame of parseBytes(wire)) {
+                yield* dispatchEnvelope(envelopeFromFrame(frame), receiver.rvy, receiver.kevery);
+              }
+            }
+            assertEquals(receiver.db.getKever(sender.pre)?.sn, 1);
+          } finally {
+            resume();
+          }
+          assertEquals((yield* task).kind, "accept");
+          assertExists(receiver.db.exns.get([serder.said!]));
+          assertEquals(receiver.db.epse.get([serder.said!]), null);
+        } finally {
+          resume();
+          yield* task.halt();
+        }
+      } finally {
+        resume();
+        yield* receiver.close(true);
+      }
+    });
   });
 });
 
