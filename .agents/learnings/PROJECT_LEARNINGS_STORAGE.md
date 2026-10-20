@@ -59,6 +59,9 @@ Explicit heads never fall back; default discovery requires one existing director
 LMDBer's existing opening neither stamps versions nor creates named tables; an
 absent non-creating native binding returns undefined and must fail explicitly.
 Preview is native read-only, and this owner exposes only exact `oobis.` get/rem.
+`tufa oobi clean` validates/deduplicates explicit keys before opening, preflights
+all rows before apply, and reports actual deleted/remaining work on failure.
+Sequential removals are not a rollback guarantee; adjacent OOBI tables stay intact.
 RegBaser owns the existing public registry evts/tels/heads layout; observer
 accepted-chain reads and public engine intake share that same environment. Readonly old-store opening
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters

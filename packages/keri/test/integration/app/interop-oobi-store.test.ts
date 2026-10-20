@@ -1,9 +1,7 @@
-import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path";
 import { b, bytesHex } from "../../../../cesr/mod.ts";
-import { openOobiStore } from "../../../src/db/oobi-store.ts";
-import { createScenarioContext, runCmd } from "./interop-keystore-helpers.ts";
+import { createScenarioContext, runCmd, runTufa } from "./interop-keystore-helpers.ts";
 
 /** Raw Python-owned table rows plus the preserved root metadata. */
 interface PythonSnapshot {
@@ -39,17 +37,26 @@ Deno.test("interop/oobi-store - remove an exact pending key and reopen the compl
   }
   try {
     const before = await reference("create");
+    const keyFile = `${headDirPath}/keys.json`;
+    await Deno.writeTextFile(keyFile, JSON.stringify([selected, selected]));
+    const args = ["oobi", "clean", "--name", name, "--head-dir", headDirPath, "--compat", "--key-file", keyFile];
     const data = await Deno.readFile(`${before.path}/data.mdb`);
-    await run(function*() {
-      const store = yield* openOobiStore({ headDirPath, name, compat: true });
-      assertEquals(store.path, before.path);
-      assertEquals(store.get(selected)?.date, "2026-10-20T00:00:00.000000+00:00");
+    const preview = await runTufa(args, ctx.env, ctx.packageRoot);
+    assertEquals(preview.code, 0, preview.stderr);
+    assertEquals(JSON.parse(preview.stdout), {
+      path: before.path,
+      mode: "preview",
+      selectedCount: 1,
+      entries: [{ key: selected, present: true }],
+      missing: [],
+      deletedCount: 0,
+      deleted: [],
+      remaining: [selected],
     });
     assertEquals(await Deno.readFile(`${before.path}/data.mdb`), data);
-    await run(function*() {
-      const store = yield* openOobiStore({ headDirPath, name, compat: true, readonly: false });
-      assertEquals(store.rem(selected), true);
-    });
+    const applied = await runTufa([...args, "--apply"], ctx.env, ctx.packageRoot);
+    assertEquals(applied.code, 0, applied.stderr);
+    assertEquals(JSON.parse(applied.stdout).deleted, [selected]);
     before.tables["oobis."] = before.tables["oobis."].filter(([key]) => key !== bytesHex(b(selected)));
     assertEquals(await reference("verify"), before);
   } finally {
