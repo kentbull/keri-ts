@@ -474,12 +474,10 @@ export class Poster {
           const target = yield* this.prepareBytesTarget(hab, route, { eid: endpoint.eid, url: endpoint.url }, evt);
           try {
             if (target.kind === "http") {
-              const outcome = yield* new HTTPMessenger(this.protocol, this.http, this.clock).send(
-                target.url,
+              const outcome = yield* new HTTPMessenger(target.url, this.http, { destination: target.destination }).send(
                 target.message,
                 {
                   bodyMode: target.bodyMode,
-                  destination: target.destination,
                   signal,
                 },
               );
@@ -489,7 +487,7 @@ export class Poster {
               }
             } else if (target.kind === "tcp") {
               // The messenger owns the attempt; Poster keeps source and event-level progress.
-              yield* new TCPMessenger(this.protocol, this.clock).send(target.url, target.message, {
+              yield* new TCPMessenger(target.url, this.clock, this.protocol).send(target.message, {
                 signal,
                 replies: evt.replies,
               });

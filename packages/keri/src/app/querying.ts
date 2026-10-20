@@ -8,7 +8,7 @@ import { Schemes } from "../core/schemes.ts";
 import { introduce } from "./forwarding.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpClient } from "./http-client.ts";
-import { HTTPMessenger } from "./http-messenger.ts";
+import { HTTPQuery } from "./http-query.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -798,14 +798,14 @@ export class QueryCoordinator {
     // Retained packet ownership stays here; the selected messenger owns only this attempt.
     const http = this.http, clock = this.clock;
     if (new URL(delivery.url).protocol === "tcp:") {
-      yield* new TCPMessenger(this.protocol, clock).send(delivery.url, delivery.body, {
+      yield* new TCPMessenger(delivery.url, clock, this.protocol).send(delivery.body, {
         signal: controller.signal,
         replies: true,
         local: true,
       });
       return;
     }
-    yield* new HTTPMessenger(this.protocol, http, clock).query(delivery.url, delivery.body, {
+    yield* new HTTPQuery(this.protocol, http, clock).query(delivery.url, delivery.body, {
       bodyMode: delivery.bodyMode,
       destination: delivery.destination,
       signal: controller.signal,

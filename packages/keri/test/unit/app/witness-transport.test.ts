@@ -713,7 +713,7 @@ Deno.test("TCP messenger owns concurrent signed replies, directional failure and
         yield* call(() =>
           assertRejects(() =>
             run(() =>
-              new TCPMessenger(runtime.protocol, options.clock).stream(url, async function*() {
+              new TCPMessenger(url, options.clock, runtime.protocol).sendSource(async function*() {
                 opened++;
               }, { ...options, replies: true, signal: preAborted.signal })
             )
@@ -762,7 +762,7 @@ Deno.test("TCP messenger owns concurrent signed replies, directional failure and
           }
         };
         const task = run(function*() {
-          yield* new TCPMessenger(runtime.protocol, options.clock).stream(url, source, {
+          yield* new TCPMessenger(url, options.clock, runtime.protocol).sendSource(source, {
             ...options,
             replies: true,
           });

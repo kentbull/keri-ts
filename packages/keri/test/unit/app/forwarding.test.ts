@@ -885,7 +885,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             assertEquals(concatBytes(...tcpBodies[1]).subarray(0, expectedIntro.length), expectedIntro);
 
             hby.db.rcts.rem(receiptKey);
-            yield* new TCPMessenger(null, runtime.clock).send(url, message);
+            yield* new TCPMessenger(url, runtime.clock).send(message);
             assertEquals(hby.db.rcts.get(receiptKey).length, 0, "standalone target is intentionally transmit-only");
             // Local transmission may complete before the remote application accepts the socket.
             yield* call(() => transmitReceived.promise);

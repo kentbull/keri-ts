@@ -390,19 +390,19 @@ Their result reports delivery/refusal rather than returning success bytes: ordin
 send callers requested transmission, while query callers explicitly supply response
 intake. The finite/scoped distinction is response ownership, not a CESR-only type.
 
-| Need                                            | Entry point               | Completion and ownership                                                                                             |
-| ----------------------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| Finite JSON/document/proof bytes                | HttpClient.request        | Returns resident bytes after EOF and cleanup.                                                                        |
-| Incremental bytes, SSE, or status-only decision | HttpClient.open           | Lends metadata/body within an enclosing Effection scope; owner closes unread I/O.                                    |
-| Ordinary signed CESR delivery                   | HTTPMessenger.send/stream | Consumes every successful response body and joins cleanup; returns complete/refuse, without protocol interpretation. |
-| Query response intake                           | HTTPMessenger.query       | Parses CESR or consumes the bounded SSE window before returning; accepted state remains a protocol decision.         |
+| Need                                            | Entry point                   | Completion and ownership                                                                                             |
+| ----------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Finite JSON/document/proof bytes                | HttpClient.request            | Returns resident bytes after EOF and cleanup.                                                                        |
+| Incremental bytes, SSE, or status-only decision | HttpClient.open               | Lends metadata/body within an enclosing Effection scope; owner closes unread I/O.                                    |
+| Ordinary signed CESR delivery                   | HTTPMessenger.send/sendSource | Consumes every successful response body and joins cleanup; returns complete/refuse, without protocol interpretation. |
+| Query response intake                           | HTTPQuery.query               | Parses CESR or consumes the bounded SSE window before returning; accepted state remains a protocol decision.         |
 
 The header-media alternative is the narrow [COMP-01 compatibility rule](../../reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-01--dual-http-media-types-and-narrow-sender-fallback),
 not a retry after arbitrary transport failure. Its source owner documents the exact
 status/text predicate, retained headers and unchanged signed content.
 
 `postCesr` sends successive framed POSTs and drains each ordinary response before
-advancing. It accepts no injected response consumer. HTTPMessenger.query instead
+advancing. It accepts no injected response consumer. HTTPQuery.query instead
 pulls one resident input frame, obtains requestFrame's scoped response and visibly
 processes its CESR/SSE bytes before the next frame. It does not eagerly parse later
 frames; earlier valid sends survive a later malformed input. Success headers alone do not establish completion: Content-Length or
@@ -599,22 +599,26 @@ Group endpoint-role proposals receive Habery, ProtocolProcessor and Poster direc
 their finite input context borrows shared accepted state. Commands own delivery-worker lifetime.
 
 TCPMessenger owns each TCP attempt, including concurrent receive parsing and its
-own Kevery when receive capability is supplied. Its required constructor receives
-the shared protocol processor (or explicit null for transmit-only) and clock.
-`send` adapts finite bytes to `stream`; no stream subclass or nested message queue
-exists. Explicit `replies` selects processed receive EOF. Socket/drain/cleanup facts
+own Kevery when receive capability is supplied. Its constructor binds the URL and
+clock; an optional protocol receiver is needed only for duplex work. `send` adapts
+finite bytes to `sendSource` over the existing socket owner, without another queue. Explicit `replies` selects processed receive EOF. Socket/drain/cleanup facts
 remain in the lower TCP owner. The old conversation and prepared-target application
 wrappers are removed; QueryCoordinator and Poster retain separate queue policies.
 
-HTTPMessenger receives required protocol (or explicit null for send-only), HTTP
-client and clock dependencies. Each receiving instance has its own Kevery. `send`
-and `stream` return the existing typed HTTP completion/refusal after full ordinary
-response consumption; `query` owns explicit CESR or bounded SSE response processing.
+HTTPMessenger binds its URL, HTTP client and destination/authentication metadata;
+`send` and `sendSource` return typed completion/refusal after ordinary POST response
+consumption. HTTPQuery alone receives protocol, HTTP and clock capabilities and
+owns CESR or bounded SSE response intake. Concrete messengerFrom and
+streamMessengerFrom factories select already resolved HTTPS/HTTP/TCP endpoints,
+without identity configuration, stores or I/O. HTTPStreamMessenger binds a finite
+opaque payload for one PUT and returns owned HttpResponse bytes after cleanup;
+TCPStreamMessenger admits its bound payload to the shared raw socket writer.
 The shared `processMessages` function owns actual buffered parser iteration and
 joined source cleanup for Reactor, HTTP query responses and receipt request owners.
 It is not another dispatch class or worker. Normal sends do not interpret arbitrary
 successful response bytes as protocol messages. Refusal does not absorb source,
-parser, storage or cleanup failures. No new stream messenger classes are needed.
+parser, storage or cleanup failures. Stream factories add no worker or delivery queue;
+production stream-routing migration is a separate release-plan change.
 
 QueryCoordinator, Receiptor and WitnessReceiptor receive their ProtocolProcessor
 and I/O services as structural constructor dependencies. Optional force/signatory
