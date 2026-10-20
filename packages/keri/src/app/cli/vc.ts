@@ -65,7 +65,10 @@ interface VcListArgs extends VcBaseArgs {
 }
 
 interface VcImportArgs extends VcBaseArgs {
+  /** Finite CESR file; absence selects stdin, read after command validation. */
   inPath?: string;
+  /** Positive finite post-EOF settlement window in milliseconds; the importer floors with a one-millisecond minimum. */
+  settlementTimeoutMs: number;
 }
 
 interface VcSchemaImportArgs extends VcBaseArgs {
@@ -213,20 +216,37 @@ export function* vcExportCommand(args: Record<string, unknown>): Operation<void>
 }
 
 /**
- * Report finite CESR intake separately from persisted acceptance of this import's targets.
+ * Import finite CESR input and report its observed records' persisted acceptance.
+ * Validate the settlement deadline before opening stores or reading input. The importer owns
+ * normalization and post-EOF settlement; incomplete results are printed before command failure.
  *
- * @param args Parsed store and file/stdin choices; input is buffered before parser ownership begins.
+ * @param args Parsed store/file choices and positive finite settlementTimeoutMs, default 5000 milliseconds.
+ * Input is buffered before parser ownership begins; fractions are floored with a one-millisecond minimum.
+ * @throws ValidationError for an invalid deadline or incomplete acceptance; intake and cleanup failures propagate.
  */
 export function* vcImportCommand(args: Record<string, unknown>): Operation<void> {
+  const settlementTimeoutMs = args.settlementTimeoutMs ?? 5_000;
+  if (typeof settlementTimeoutMs !== "number" || !Number.isFinite(settlementTimeoutMs) || settlementTimeoutMs <= 0) {
+    throw new ValidationError("--settlement-timeout-ms must be finite and positive.");
+  }
   const vcArgs: VcImportArgs = {
     ...baseArgs(args),
     inPath: args.inPath as string | undefined,
+    settlementTimeoutMs,
   };
   yield* withVcRuntime(vcArgs, function*({ runtime, reger }) {
-    const result = yield* importCredentialStream(runtime.protocol, reger, readBytes(vcArgs.inPath), runtime.clock);
+    const result = yield* importCredentialStream(
+      runtime.protocol,
+      reger,
+      readBytes(vcArgs.inPath),
+      runtime.clock,
+      vcArgs.settlementTimeoutMs,
+    );
     console.log(JSON.stringify(result));
     if (!result.complete) {
-      throw new ValidationError("Credential import incomplete; inspect the reported target outcomes.");
+      throw new ValidationError(
+        "Credential import incomplete; inspect the unaccepted identities and stderr diagnostics.",
+      );
     }
   });
 }

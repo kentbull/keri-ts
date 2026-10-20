@@ -127,7 +127,6 @@ export {
 } from "../app/configing.ts";
 export {
   type CredentialImportResult,
-  type CredentialImportTargetResult,
   importCredentialStream,
 } from "../app/credential-importing.ts";
 export {
