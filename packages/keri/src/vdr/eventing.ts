@@ -130,7 +130,7 @@ export interface TeveryOptions {
   cues?: Deck<AgentCue>;
 }
 
-export interface TeverOptions extends Omit<TeveryOptions, "rvy"> {
+export interface TeverOptions extends Omit<TeveryOptions, "rvy" | "cues"> {
   rsr?: RegStateRecord | null;
   serder?: SerderKERI | null;
   seqner?: NumberPrimitive | null;
@@ -285,15 +285,13 @@ function serderForTel(
 /**
  * Registry transaction event verifier.
  *
- * `Tever` owns accepted TEL state for one registry. It writes durable TEL
- * artifacts through `Reger`; `Tevery` owns routing, cache insertion, and escrow
- * replay.
+ * `Tever` carries registry state and evaluates/writes one private admission
+ * candidate through `Reger`. Input policy is supplied for that admission rather
+ * than cached. `Tevery` owns transactions, accepted cache publication, cues and replay.
  */
 export class Tever {
   readonly db: Baser;
   readonly reger: Reger;
-  readonly local: boolean;
-  readonly cues: Deck<AgentCue>;
 
   version: { major: number; minor: number };
   pre!: string;
@@ -312,8 +310,6 @@ export class Tever {
   constructor(options: TeverOptions) {
     this.db = options.db;
     this.reger = options.reger;
-    this.local = options.local ?? false;
-    this.cues = options.cues ?? new Deck<AgentCue>();
 
     if (options.rsr) {
       this.version = { major: 1, minor: 0 };
@@ -339,6 +335,7 @@ export class Tever {
       bigers: options.bigers ?? [],
       toad: this.toad,
       baks: this.baks,
+      local: options.local ?? false,
     });
     if (checked.kind !== "accept") {
       throw new PendingTelInception(checked.decision);
@@ -534,6 +531,7 @@ export class Tever {
       bigers: args.wigers ?? [],
       toad: rotated.toad,
       baks: rotated.baks,
+      local: args.local ?? false,
     });
     if (checked.kind !== "accept") {
       return checked.decision;
@@ -640,6 +638,7 @@ export class Tever {
       bigers: args.wigers ?? [],
       toad: state.toad,
       baks: state.baks,
+      local: args.local ?? false,
     });
     if (checked.kind !== "accept") {
       return checked.decision;
@@ -699,6 +698,7 @@ export class Tever {
       bigers: args.wigers ?? [],
       toad: state.toad,
       baks: state.baks,
+      local: args.local ?? false,
     });
     if (checked.kind !== "accept") {
       return checked.decision;
@@ -707,7 +707,7 @@ export class Tever {
     return accept(serder, this.regk);
   }
 
-  /** Persist accepted TEL evidence before publishing the revocation cue. */
+  /** Persist accepted revocation evidence; Tevery publishes its cue after commit. */
   private logRevoked(
     serder: SerderKERI,
     sn: number,
@@ -716,7 +716,6 @@ export class Tever {
     recordPublicationFailure?: (error: unknown) => void,
   ): void {
     try {
-      const cue: AgentCue = { kin: "revoked", serder };
       this.logEvent({
         pre: okPre(serder),
         sn,
@@ -725,7 +724,6 @@ export class Tever {
         saider: args.saider ?? null,
         bigers,
       });
-      this.cues.push(cue);
     } catch (error) {
       recordPublicationFailure?.(error);
       throw error;
@@ -749,6 +747,7 @@ export class Tever {
     bigers: readonly Siger[];
     toad: number;
     baks: readonly string[];
+    local: boolean;
   }):
     | { kind: "accept"; bigers: Siger[] }
     | { kind: "escrow"; decision: Extract<TelProcessDecision, { kind: "escrow" }>; reason: string }
@@ -772,7 +771,7 @@ export class Tever {
       return { kind: "escrow", decision, reason: decision.reason };
     }
 
-    if (!this.local && args.baks.length > 0) {
+    if (!args.local && args.baks.length > 0) {
       this.validateToad(args.toad, args.baks);
       if (verified.length < args.toad) {
         this.escrowPWEvent(args.serder, args.seqner, args.saider, verified);
@@ -965,8 +964,6 @@ export class Tevery {
         new Tever({
           db: this.db,
           reger: this.reger,
-          local: this.local,
-          cues: this.cues,
           rsr: state,
         }),
       );
@@ -974,71 +971,89 @@ export class Tevery {
     }
   }
 
+  /** Decide and persist under one owned writer, then publish accepted cache state and cues. */
   processEvent(args: TelProcessEventArgs): TelProcessDecision {
+    if (this.reger.inWriteTransaction) {
+      throw new Error("Tevery must own the TEL transaction; process events outside caller-owned writers");
+    }
+    let accepted: Tever | undefined;
     let publicationFailure: { error: unknown } | undefined;
+    let decision: TelProcessDecision;
     try {
-      const serder = args.serder;
-      const ilk = telIlk(serder);
-      const pre = okPre(serder);
-      const sn = okSn(serder);
-      const regk = Tevery.registryKey(serder);
+      decision = this.reger.env!.transactionSync((): TelProcessDecision => {
+        const serder = args.serder;
+        const ilk = telIlk(serder);
+        const pre = okPre(serder);
+        const sn = okSn(serder);
+        const regk = Tevery.registryKey(serder);
 
-      if (!this.lax) {
-        if (this.local && !this.registries.has(regk)) {
-          return reject(`Nonlocal TEL event regk=${regk} in local mode.`, serder, regk);
+        if (!this.lax) {
+          if (this.local && !this.registries.has(regk)) {
+            return reject(`Nonlocal TEL event regk=${regk} in local mode.`, serder, regk);
+          }
+          if (!this.local && this.registries.has(regk)) {
+            return reject(`Local TEL event regk=${regk} in nonlocal mode.`, serder, regk);
+          }
         }
-        if (!this.local && this.registries.has(regk)) {
-          return reject(`Local TEL event regk=${regk} in nonlocal mode.`, serder, regk);
-        }
-      }
 
-      const tever = this.tevers.get(regk);
-      if (!tever) {
-        if (ilk !== Ilks.vcp) {
+        // Work on a private candidate from accepted storage, never a shared cached state machine.
+        const stored = this.reger.states.get(regk);
+        const tever = stored ? new Tever({ db: this.db, reger: this.reger, rsr: stored }) : undefined;
+        if (!tever) {
+          if (ilk !== Ilks.vcp) {
+            this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null);
+            return escrow("outOfOrder", "TEL event arrived before registry inception.", serder, regk);
+          }
+          try {
+            const next = new Tever({
+              serder,
+              seqner: args.seqner ?? null,
+              saider: args.saider ?? null,
+              bigers: args.wigers ?? [],
+              db: this.db,
+              reger: this.reger,
+              regk,
+              local: this.local,
+            });
+            this.reger.states.pin(regk, next.state());
+            accepted = next;
+            return accept(serder, regk);
+          } catch (error) {
+            // Constructor admission persists missing evidence in its real protocol escrow.
+            if (error instanceof PendingTelInception) return error.decision;
+            throw error;
+          }
+        }
+
+        if (ilk === Ilks.vcp) return duplicate("Registry inception already accepted.", serder, regk);
+
+        const expected = ilk === Ilks.vrt ? tever.sn + 1 : (tever.vcSn(pre) ?? -1) + 1;
+        if (sn > expected) {
           this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null);
-          return escrow("outOfOrder", "TEL event arrived before registry inception.", serder, regk);
+          return escrow("outOfOrder", `TEL event sn=${sn} expected=${expected}.`, serder, regk);
         }
-        const next = new Tever({
-          serder,
-          seqner: args.seqner ?? null,
-          saider: args.saider ?? null,
-          bigers: args.wigers ?? [],
-          db: this.db,
-          reger: this.reger,
-          regk,
-          local: this.local,
-          cues: this.cues,
+        if (sn < expected) return duplicate(`TEL event sn=${sn} older than expected=${expected}.`, serder, regk);
+
+        const result = tever.update({ ...args, local: this.local }, (error) => {
+          publicationFailure = { error };
         });
-        this.cacheTever(regk, next);
-        return accept(serder, regk);
-      }
-
-      if (ilk === Ilks.vcp) {
-        return duplicate("Registry inception already accepted.", serder, regk);
-      }
-
-      const expected = ilk === Ilks.vrt ? tever.sn + 1 : (tever.vcSn(pre) ?? -1) + 1;
-      if (sn > expected) {
-        this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null);
-        return escrow("outOfOrder", `TEL event sn=${sn} expected=${expected}.`, serder, regk);
-      }
-      if (sn < expected) {
-        return duplicate(`TEL event sn=${sn} older than expected=${expected}.`, serder, regk);
-      }
-
-      const decision = tever.update(args, (error) => {
-        publicationFailure = { error };
+        if (result.kind === "accept" && ilk === Ilks.vrt) {
+          this.reger.states.pin(regk, tever.state());
+          accepted = tever;
+        }
+        return result;
       });
-      if (decision.kind === "accept" && ilk === Ilks.vrt) {
-        this.cacheTever(regk, tever);
-      }
-      return decision;
     } catch (error) {
       if (publicationFailure && publicationFailure.error === error) throw error;
-      if (error instanceof PendingTelInception) return error.decision;
       if (!(error instanceof ValidationError) && !(error instanceof ParserError)) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
+    if (accepted) this.tevers.set(accepted.regk, accepted);
+    if (decision.kind === "accept" && (decision.ilk === Ilks.rev || decision.ilk === Ilks.brv)) {
+      // Keep publication outside semantic error conversion and after the writer has committed.
+      this.cues.push({ kin: "revoked", serder: args.serder });
+    }
+    return decision;
   }
 
   /**
@@ -1487,11 +1502,6 @@ export class Tevery {
         return regk;
       }
     }
-  }
-
-  private cacheTever(regk: string, tever: Tever): void {
-    this.tevers.set(regk, tever);
-    this.reger.states.pin(regk, tever.state());
   }
 
   /** Preserve the original source seal while waiting for earlier TEL events. */
