@@ -1,6 +1,6 @@
 ---
 "keri-ts": major
-"tufa": minor
+"@keri-ts/tufa": minor
 ---
 
 Simplify finite credential import to dispatch each frame once and let protocol
