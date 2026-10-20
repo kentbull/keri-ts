@@ -39,6 +39,8 @@ The scope includes:
 
 - Correct logging, strict configuration validation and exact-key OOBI cleanup.
 - Explicit acceptance of configurable threshold limits.
+- LMDB-owned ESSR evidence; remove the filesystem archive, unused durable
+  plaintext persistence and unnecessary ESSR staging/streaming infrastructure.
 - The justified architecture/readability changes described below.
 - Complete multisig credential CLI coordination: registry creation, issuance,
   all six IPEX verbs, revocation, peer approval/fanout and observable completion.
@@ -219,7 +221,9 @@ their own lifetime, while background and finite-command escrow work also calls
 it. Those separate input lifetimes are valid. Coupling them to one asynchronous
 state-mutating operation is the part to change.
 
-Current source gives concrete reasons for the split:
+The planning baseline gave concrete reasons for the split. The ESSR redirect
+below supersedes its filesystem-specific design, while preserving synchronous
+semantic ownership:
 
 - `core/eventing.ts` already performs KEL decisions/writes synchronously, then
   publishes the accepted cache and cues. `acdc/regengine.ts` also rechecks
@@ -234,24 +238,24 @@ Current source gives concrete reasons for the split:
 - `vdr/eventing.ts` shares cached Tevers whose original constructor captured
   input policy and cues. Rotation also mutates live fields before logging.
   Separate accepted state from input context and publish only after commit.
-- `db/payload-archive.ts` promotes deterministic filenames before reference
-  publication and rejects overlapping mutations. Its filesystem ownership,
-  cleanup and durability cannot be supplied by LMDB's writer lock.
+- The earlier `db/payload-archive.ts` design adds filesystem publication,
+  ownership and recovery outside LMDB. Remove that architecture in PRs 12a–12b;
+  its extra coordination is not a requirement to preserve.
 
 | Design                                                               | Assessment                                                                                                                                                                       |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Input-local parsing/policy with concrete synchronous semantic owners | Preferred. Existing stores and accepted-state caches remain shared; state-sensitive work cannot suspend.                                                                         |
 | One worker consuming concrete prepared messages                      | Valid if a remaining ownership constraint justifies its queue, completion/cancellation contract and mandatory worker lifetime. Not required merely because several inputs exist. |
 | One worker awaiting today's asynchronous dispatch                    | Does not solve the long shared critical section; retains head-of-line blocking and can deadlock recursive group replay.                                                          |
-| Independent asynchronous processors relying only on database locks   | Reject. Stale decisions, shared caches/cues and filesystem publication remain outside the protected transaction.                                                                 |
+| Independent asynchronous processors relying only on database locks   | Reject. Stale decisions and shared caches/cues remain outside the protected transaction.                                                                                         |
 
 The intended operation shape is:
 
 ```text
 input-owned Effection operation
-  receive / parse / prepare immutable evidence and private payload files
+  receive / parse / normalize immutable evidence
   concrete semantic owner: validate current state -> commit -> publish live state
-  finish required durability and perform the named asynchronous consequences
+  finish required LMDB durability and perform the actual transport/handler work
 ```
 
 The middle step is synchronous. It accepts normalized domain input without
@@ -289,13 +293,14 @@ Preserve Mailboxer's intentional per-topic appearances even when bytes are
 deduplicated. An accepted EXN is not proof that all handler work completed;
 do not suppress required publication with a blanket duplicate-effect rule.
 
-File preparation needs independently owned immutable objects, followed by
-synchronous selection of references with the domain commit. An unselected
-candidate may reclaim only its own file. Preserve exact retained ESSR/nested
-bytes, first receipt time, non-downgrade of acceptance, startup recovery and
-reader/delete lifetimes. Revalidate changed references or repeat the relevant
-preparation; never reuse a stale payload-equality result. Do not make file I/O
-blocking merely to remove yields.
+ESSR evidence must live in LMDB with accepted/escrow state, proof unions and
+receipt metadata committed cohesively. Retain committed ciphertext bytes,
+fragment order/multiplicity and non-downgrade of acceptance. Remove private file
+ownership, publication/reclamation and startup recovery rather than preserving
+those mechanisms behind interfaces. Eliminate asynchronous preparation and
+current-state rechecking whose sole purpose was file I/O; keep checks required
+by real protocol state and remaining suspending handlers. Do not restore a
+whole-protocol mutex or replace files with another persistence framework.
 
 The guarantee here is one process's cooperative protocol execution plus each
 store's real transaction. It does not create atomic transactions across Baser,
@@ -352,7 +357,9 @@ tests until the end.
 | 10      | Add `tufa oobi clean` preview/apply                                                                    | 09          |
 | 11      | Make init honor encryption and persistence choices                                                     | 07, 08      |
 | 12      | Prove AEID failure atomicity; repair only if the regression confirms the gap                           | 02          |
-| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d         |
+| 12a     | Replace the ESSR file archive with ordered LMDB evidence and synchronous publication                   | 12          |
+| 12b     | Remove recipient file staging and unnecessary ESSR streaming; qualify actual peer exchanges            | 12a         |
+| 13      | Give group proposal publication and completion explicit cohesive owners                                | 03d, 12b    |
 | 14      | Route or guard every group-capable CLI entry point before effects                                      | 13          |
 | 15      | Finish group registry inception and issuance completion                                                | 02, 13, 14  |
 | 16      | Complete group initiation/approval for all IPEX verbs                                                  | 15          |
@@ -425,11 +432,11 @@ Compute candidate state before persistence and publish cache changes after a
 successful transaction. Prove a failed TEL write leaves the prior live state
 intact. Keep protocol acceptance changes for the later backer feature PRs.
 
-PR 03b gives the existing payload store a concrete private-file preparation and
-reference-publication contract. Preserve file-before-reference durability,
-same-SAID conflict handling, reader lifetime, recovery and joined cleanup.
-Remove no guard until its protected invariant has a proven owner. This is
-actual immutable-file storage work, not a generic transaction abstraction.
+PRs 03b/03c established a synchronous EXN publication boundary after asynchronous
+preparation. Their private-file design is superseded by the ESSR removal in
+PRs 12a–12b. Preserve useful protocol decisions, proof accumulation, first receipt
+and handler ordering; do not retain archive guards, ownership or recovery merely
+because those earlier PRs introduced them.
 
 PR 03c separates EXN evidence preparation from synchronous current-state
 validation and commit. Built-in route verification is synchronous today; remove
@@ -450,13 +457,14 @@ would create temporary APIs rather than independently reviewable changes.
 
 Use a bounded set of focused tests at the owning PR, reusing existing cases:
 
-- Pause real EXN payload preparation while independent KEL/query processing
-  completes; resume and verify protocol-correct evidence after a related rotation.
+- Preserve independent KEL/query progress and correct current/historical key
+  evidence after a related rotation. Remove file-stage synchronization fixtures
+  when the archive and its asynchronous preparation disappear.
 - Prepare competing IPEX responses and same-SAID proof/payload admissions;
   only the allowed response wins, proofs accumulate and retained bytes/receipt
   remain stable. Include an escrow retry overlapping new proof arrival.
-- Cancel before commit and during post-commit finishing; no abandoned staging,
-  rollback of accepted evidence, unjoined cleanup or duplicate group side effects.
+- Cancel before commit and during actual post-commit work; no partial LMDB
+  evidence, rollback of acceptance, unjoined I/O or duplicate group side effects.
 - Change forwarding authority during child preparation and deliver another
   peer wrapper during local approval replay. Recheck authority before mailbox
   publication; every eligible wrapper must be processed without another approval.
@@ -579,6 +587,101 @@ not silently redefine passcode policy.
 Do not add a passcode-management command, migration framework or crypto redesign.
 If the existing code already satisfies the invariant under the real storage
 semantics, retain only the useful regression and omit a fabricated repair.
+
+### ESSR redirect — next PRs 12a–12b, before multisig feature work
+
+Kent explicitly requires removal of the custom archive and unnecessary ESSR
+content infrastructure. This supersedes the earlier private-file preparation
+contract. Do not retain it behind interfaces, compatibility wrappers or flags.
+Keep the remaining release scope and perform final qualification after this
+refactor and all later implementation/organization changes.
+
+Inspection establishes the starting point:
+
+- `Baser` lazily opens `PayloadArchive`, performs archive startup recovery and
+  reconstructs ESSR evidence through private file references; Exchanger prepares,
+  pins and retires those files around its semantic publication boundary.
+- `Baser.savePlaintext/getPlaintext` and `plaintext.meta.` have no production
+  callers in the inspected source; their callers are tests. `EssrRecipient`
+  already decrypts into a complete crypto buffer before staging another file.
+- Independently pinned KERIpy main `424a50c`, 1.2.14 `bab95c1` and 1.3.6 `4ce4cc7`
+  store exchange evidence in LMDB and verify the committed ESSR digest over
+  concatenated raw Texter bytes. Digest verification is already upstream.
+- A disposable native-LMDB probe against each of those three references inserted
+  two identical Texters: `.essrs.add` returned true then false, reconstruction
+  retained one fragment and failed the original digest. This confirms the
+  sequence-versus-set storage hazard; the implementation PR adds the signed EXN
+  acceptance/retry regression, rather than calling this table probe full interop.
+
+**PR 12a: LMDB evidence and archive removal.** Make accepted evidence and protocol
+escrows authoritative in the ordinary exchange stores: body, signatures, source
+seals, pathed/nested material, ESSR fragments and required receipt/genus facts.
+Inspect the pinned reference's `processEvent`, `logEvent`, escrow/retry and clone/
+reconstruction paths; preserve supported acceptance and retry semantics. Commit
+validation and affected rows together with ordinary native transactions. Remove
+`payload-archive.ts`, `PreparedPayload`, `payload.refs.`, `payload.owners.`, archive
+recovery, file publication/reclamation, archive open/close integration and exports.
+Remove the unused archive-dependent `savePlaintext/getPlaintext`, plaintext
+metadata and their tests in this same persistence PR, so archive deletion needs
+no transitional facade. Inspection found no required production consumer.
+Remove private provisional rows such as `enst.stage.` when their sole purpose is
+archive-era asynchronous preparation. Keep only metadata with a demonstrated
+protocol/application consumer; remove file-reference metadata rather than moving it.
+Simplify Exchanger's file-driven preparation, reference comparisons and finishing;
+keep actual route security, current-state checks and handler responsibilities.
+
+Preserve repeated fragments with the smallest ordinary LMDB representation.
+Prefer the existing ordinal CESR store keyed by exchange SAID and fragment position,
+retaining qualified Texter values, instead of set insertion that deduplicates
+values. Verify its physical layout and actual reconstruction; add no parallel
+content store or ownership index. Do not silently drop bytes, prohibit valid
+repeated fragments, add protocol maxima or rely on coalescing an arbitrarily large
+valid stream into one Texter. Record the necessary sequence-versus-set deviation
+from KERIpy and its byte-commitment reason. Reuse existing tests to prove accepted
+evidence survives close/reopen, missing-proof/dependency escrow reconstructs and
+accepts after retry, duplicate arrivals preserve accepted evidence, and a signed
+digest mismatch is rejected without accepting or corrupting prior evidence.
+Include a repeated-fragment EXN round trip through persistence and retry/replay.
+Delete tests that only verify archive files, recovery, ownership or reclamation.
+
+**PR 12b: ordinary authenticated data and removal of staging infrastructure.**
+With unused durable plaintext APIs removed in PR 12a, simplify the recipient's
+remaining transient plaintext path. Return ordinary authenticated data with an explicit caller lifetime; do not
+persist decrypted plaintext automatically. Retain signed payload-digest checks,
+accepted-EXN/recipient selection, sealed-box authentication and SCS source/envelope
+validation where applicable. Inspect the reference before describing any receiver
+check as absent upstream. Remove the plaintext store constructor dependency,
+`FilePayload` ownership/discard APIs and file staging from `EssrRecipient`.
+Trace all production consumers across CESR, KERI and Tufa, then delete unnecessary
+`payload-store.ts`, `payload-view.ts`, sink/owned-payload types, ESSR content-reader/
+streaming adapters, exports and tests. Replace incidental uses with existing
+finite byte/serialization APIs where appropriate. Preserve independently justified
+CESR counters, framing, parsing, nested message semantics and actual transport
+streams; ESSR having used a shared primitive is not itself a deletion rationale.
+Retain no forwarding-only compatibility facade or replacement storage framework.
+Update package probes and qualification scripts to exercise retained public
+behavior; remove archive-only probes rather than preserving dead APIs for tests.
+
+Keep checks focused and part of these PRs. Adapt existing ESSR/security cases
+instead of building an exhaustive new matrix. Add one bounded bidirectional
+supported ESSR exchange with each relevant pinned main/1.2/1.3 peer, using its
+actual supported wire lane; verify accepted evidence and byte commitments through
+public processing/reconstruction, not only fixture decoding. Credit capability
+limits honestly and keep the repeated-fragment upstream defect explicit rather
+than masking it in ordinary happy-path interop. Preserve digest-mismatch and
+justified recipient/authentication refusals. Run relevant installed-package checks
+for changed public exports/native storage, and record all removed APIs in the
+planned 2.0.0 breaking-changes guide and release notes.
+
+Prepare a concise conceptual upstream recommendation: ESSR fragments form an
+ordered sequence with multiplicity, so persistence and escrow/replay must retain
+positions even when qualified values repeat; include the minimal digest-breaking
+example and a small ordinal-sequence storage suggestion. Do not submit an issue,
+PR or other upstream message without separate authorization. The final completion
+report must state removals, the LMDB evidence owner, justified deviations, actual
+checks and whether this small upstream correctness improvement remains warranted.
+Split a PR further only when a real independently reviewable responsibility needs
+it; do not leave dead compatibility layers as a finished intermediate outcome.
 
 ### Phase D: group credential lifecycle — PRs 13–16 and 20
 
@@ -1027,7 +1130,8 @@ pre-reorganization feature evidence alone cannot authorize publication.
    against the published 1.0.0 package artifacts and their public entrypoints,
    supported exports and CLI contracts, rather than treating changesets as a
    complete inventory. Organize the document by CESR, KERI and Tufa. Cover
-   removed or changed public APIs/types/imports, component ownership and calling
+   removed or changed public APIs/types/imports, including archive/staging and
+   durable-plaintext APIs removed by the ESSR redirect, component ownership and calling
    patterns, CLI options/output/configuration validation, runtime/dependency
    requirements and any storage/encryption implications that actually change.
    For each break, state the old behavior, the replacement or lack of one, and
