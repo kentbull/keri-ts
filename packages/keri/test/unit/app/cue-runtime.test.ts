@@ -95,7 +95,7 @@ Deno.test("Poster copies complete source messages and reports exceptions without
       },
     };
     hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
-    hby.db.locs.pin([hab.pre, "http"], { url: "https://peer.test/" });
+    hby.db.locs.pin([hab.pre, "https"], { url: "https://peer.test/" });
     const reports: unknown[][] = [], report = console.error;
     console.error = (...args: unknown[]) => reports.push(args);
     try {
@@ -151,7 +151,7 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
     })).sort((a, b) => a.eid < b.eid ? -1 : 1);
     for (const { eid, target } of targets) {
       hby.db.ends.pin([second.pre, Roles.controller, eid], { allowed: true });
-      hby.db.locs.pin([eid, "http"], { url: `https://${target}.test/` });
+      hby.db.locs.pin([eid, "https"], { url: `https://${target}.test/` });
     }
     const reports: unknown[][] = [], report = console.error;
     console.error = (...args: unknown[]) => reports.push(args);
@@ -191,7 +191,7 @@ Deno.test("complete replay batches precede receipt delivery while refusals prese
       yield* runtime.postman.process();
       assertEquals(attempts.length, 9, "the successful receipt is complete and reported failures are not retried");
 
-      hby.db.locs.pin([sender.pre, "http"], { url: "https://query.test/" });
+      hby.db.locs.pin([sender.pre, "https"], { url: "https://query.test/" });
       for (let index = 0; index < 9; index++) {
         runtime.querying.enqueue({
           pre: sender.pre,
@@ -247,7 +247,7 @@ Deno.test("cue delivery allows application progress while retaining actual HTTP 
       dest: hab.pre,
     });
     hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
-    hby.db.locs.pin([hab.pre, "http"], { url: "https://peer.test/" });
+    hby.db.locs.pin([hab.pre, "https"], { url: "https://peer.test/" });
     runtime.respondant.enqueueCue(hab, runtime.cues);
     const delivery = yield* spawn(function*() {
       try {

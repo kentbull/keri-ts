@@ -30,7 +30,7 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
     const postman = runtime.postman;
     try {
       for (const hab of [first, second]) {
-        hby.db.locs.pin([hab.pre, "http"], { url: `https://${hab.name}.test/` });
+        hby.db.locs.pin([hab.pre, "https"], { url: `https://${hab.name}.test/` });
         hby.db.ends.pin([hab.pre, Roles.controller, hab.pre], { allowed: true });
       }
       const msg = sender.query(sender.pre, sender.pre, { route: "logs", q: {} });
@@ -66,7 +66,7 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
       const provider = "E" + "A".repeat(43);
       hby.db.ends.rem([first.pre, Roles.controller, first.pre]);
       hby.db.ends.pin([first.pre, Roles.mailbox, provider], { allowed: true });
-      hby.db.locs.pin([provider, "http"], { url: "https://first.test/" });
+      hby.db.locs.pin([provider, "https"], { url: "https://first.test/" });
       for (
         const construction of [
           new ValidationError("invalid constructed protocol message"),
