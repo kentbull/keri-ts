@@ -2,7 +2,6 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { concatBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { QueryReplies } from "../../../src/app/query-replies.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -128,7 +127,6 @@ Deno.test("direct reply pairs publish atomically and keep independent HTTP and q
           : new Response(null, { status: refuse && packets.length === 1 ? 503 : 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const produce = sender.processCuesIter.bind(sender);
     sender.processCuesIter = function*(cues) {
@@ -226,7 +224,6 @@ Deno.test("queue-only reply pairs retain their atomic slot until complete constr
         return new Response(null, { status: 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const produce = sender.processCuesIter.bind(sender);
     sender.processCuesIter = function*(cues) {

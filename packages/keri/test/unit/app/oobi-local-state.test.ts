@@ -13,7 +13,6 @@ import {
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../src/app/oobiery.ts";
@@ -166,7 +165,7 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const endRole = hab.makeEndRole(pre, EndpointRoles.controller, true);
       yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
@@ -260,7 +259,7 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       });
       const pre = hab.pre;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const endRole = hab.makeEndRole(pre, EndpointRoles.mailbox, true);
       yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(hostUrl, pre, "http"), endRole]);
 
@@ -378,7 +377,7 @@ Deno.test("OOBI local state - `/introduce` replies enqueue discovered OOBIs thro
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const introducedUrl = `http://127.0.0.1:1234/oobi/${hab.pre}/controller`;
       const serder = new SerderKERI({
         sad: {

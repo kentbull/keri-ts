@@ -49,6 +49,11 @@ fix (#554) is historical: [automatic local consumption](../docs/plans/runtime/re
 is removed rather than extracted into another component. Provider storage and
 remote polling remain; the minimum-timeout fix (#555) still applies.
 
+The [runtime simplification plan](../docs/plans/runtime/runtime-simplification-and-routing-parity.md)
+tracks removal of unsupported seams and adoption of the recorded donor's routing.
+MailboxPoller now owns its concrete HTTP/SSE operation over explicit HTTP/clock
+dependencies; the extra polling transport interface and fake are retired.
+
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.

@@ -26,7 +26,6 @@ import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { type ExchangeDecision, Exchanger } from "../../../src/app/exchanging.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../src/app/ipex-building.ts";
@@ -126,7 +125,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
     const notifier = new Notifier(hby.signator!, { noter });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
@@ -330,7 +329,6 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       hby,
       new FetchHttpClient(),
       { now: () => now, setTimeout, clearTimeout: (timer) => clearTimeout(timer as number) },
-      httpMailboxPollTransport,
       { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
     );
     const store = runtime.acdc!.store, observer = new RegistryObserver(hby.db, store);

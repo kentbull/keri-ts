@@ -2,7 +2,6 @@ import { action, call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes, Counter, Dater, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
@@ -144,7 +143,6 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
         return Promise.resolve(new Response("", { status: 202 }));
       }),
       fixedClock(),
-      httpMailboxPollTransport,
       { reger: verifierReger },
     );
     try {
@@ -225,7 +223,6 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
         );
       }),
       clock,
-      httpMailboxPollTransport,
       { reger: verifierReger },
     );
     try {
@@ -344,7 +341,6 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
         );
       }),
       clock,
-      httpMailboxPollTransport,
       { reger: verifierReger },
     );
     try {
@@ -425,7 +421,7 @@ Deno.test("VerifierAgent uses one wall clock for webhook admission, headers and 
       requests.push({ headers: new Headers(init?.headers), data: JSON.parse(String(init?.body)).data });
       return Promise.resolve(new Response("refused", { status: 503 }));
     });
-    const runtime = yield* createAgentRuntime(verifierHby, http, clock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(verifierHby, http, clock, {
       reger: verifierReger,
     });
     try {

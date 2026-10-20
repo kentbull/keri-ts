@@ -9,7 +9,6 @@
  * - agent controller bootstrap config behavior
  * - multi-AID host filtering for the selected mailbox alias
  */
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -360,7 +359,7 @@ async function seedMailboxHost(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -403,7 +402,7 @@ async function seedHostedController(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -608,7 +607,6 @@ Deno.test("mailbox admin follows the stored mailbox URL path and does not keep a
       providerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     const hab = providerHby.habByName("relay");

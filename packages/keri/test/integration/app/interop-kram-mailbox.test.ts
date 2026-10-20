@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
@@ -142,7 +141,7 @@ async function typescriptPackets(count: number, witnesses: WitnessOobi[] = []): 
       for (let index = 0; index < count; index++) {
         const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
         hbys.push(hby);
-        runtimes.push(yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport));
+        runtimes.push(yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock));
       }
       const wits = witnesses.map((witness) => witness.pre);
       const witnessing = { wits, toad: wits.length ? 2 : 0 };

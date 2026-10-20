@@ -3,7 +3,6 @@ import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -132,7 +131,7 @@ export async function seedHostedController(
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),

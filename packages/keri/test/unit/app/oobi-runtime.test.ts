@@ -15,7 +15,6 @@ import {
   settleRuntimeIngress,
 } from "../../../src/app/agent-runtime.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -115,7 +114,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const url = `http://127.0.0.1:${port}`;
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
@@ -192,7 +191,7 @@ Deno.test("mailbox and agent OOBIs generate and resolve through shared runtime",
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     const runtimeTask = yield* spawn(function*() {
@@ -293,7 +292,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
       failingWellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?mode=fail`;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -349,7 +348,7 @@ Deno.test("well-known auth converges through rmfa and wkas with honest pending s
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         enqueueOobi(runtime, { url: controllerUrl });
         enqueueOobi(runtime, { url: wellKnownUrl });
 
@@ -487,7 +486,7 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         witnessHab.makeLocScheme(url, witnessHab.pre, "http"),
@@ -545,7 +544,7 @@ Deno.test("controller and witness OOBIs generate and resolve through shared runt
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     const runtimeTask = yield* spawn(function*() {
@@ -662,7 +661,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
       durl = `${url}/oobi/${dPre}/controller`;
       wurl = `${url}/.well-known/keri/oobi/${iPre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       for (const hab of [iHab, dHab]) {
         yield* settleRuntimeIngress(runtime, [
           hab.makeLocScheme(url, hab.pre, "http"),
@@ -699,7 +698,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
       skipConfig: true,
     });
     const hab = hby.habByName("bootstrap-init");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     const runtimeTask = yield* spawn(function*() {
@@ -722,7 +721,6 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
           target,
           new FetchHttpClient(),
           systemClock,
-          httpMailboxPollTransport,
         );
         yield* runAgentRuntimeUntil(targetRuntime, () =>
           target.db.roobi.get(iurl)?.state === "resolved"
@@ -783,7 +781,7 @@ Deno.test("init command waits for configured well-known auth before exit", async
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -902,7 +900,7 @@ Deno.test("incept command waits for configured well-known auth before inception"
       controllerUrl = `${hostUrl}/oobi/${pre}/controller`;
       wellKnownUrl = `${hostUrl}/.well-known/keri/oobi/${pre}?name=Root`;
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -1041,7 +1039,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
         `${hostUrl}/oobi/${pre}/controller?slot=2`,
       ];
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(hostUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -1091,7 +1089,7 @@ Deno.test("reply-based `/oobi/controller` JSON fans out child OOBIs through moob
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* runtime.oobiery.processOnce();
@@ -1180,7 +1178,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
         hab.kever.wits = [witnessPre];
       }
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(hostUrl, hab.pre, "http"),
         witnessHab.makeLocScheme(hostUrl, witnessHab.pre, "http"),
@@ -1231,7 +1229,7 @@ Deno.test("reply-based `/oobi/witness` JSON fans out child OOBIs through moobi",
         skipConfig: true,
       });
       try {
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         enqueueOobi(runtime, { url: parentUrl });
 
         yield* runtime.oobiery.processOnce();

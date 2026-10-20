@@ -9,7 +9,6 @@ import {
   resolveDidWebs,
   runAgentRuntime,
 } from "keri-ts/runtime";
-import { httpMailboxPollTransport } from "../../../keri/src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../keri/src/app/http-client.ts";
 import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
 import { httpClient } from "../../../keri/test/support/http-client.ts";
@@ -21,8 +20,8 @@ Deno.test("tufa/dkr - HTTP waits for every supplied introduction on the existing
   await run(function*() {
     const issuer = yield* createHabery({ name: `dkr-http-source-${crypto.randomUUID()}`, temp: true });
     const reader = yield* createHabery({ name: `dkr-http-reader-${crypto.randomUUID()}`, temp: true });
-    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
-    const resolver = yield* createAgentRuntime(reader, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const source = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock);
+    const resolver = yield* createAgentRuntime(reader, new FetchHttpClient(), systemClock);
     const habs = Array.from({ length: 6 }, (_, index) => issuer.makeHab(`issuer-${index}`));
     const unhosted = issuer.makeHab("unhosted");
     const worker = yield* spawn(() => runAgentRuntime(resolver, { pollMailbox: false }));
@@ -86,13 +85,11 @@ Deno.test("tufa/dws - static artifacts resolve through the Tufa HTTP artifact ro
       issuerHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
     );
     const resolverRuntime = yield* createAgentRuntime(
       resolverHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
     );
     let serverTask;
     try {
@@ -220,7 +217,6 @@ Deno.test("DID adapters reject absent registry before schema writes or introduct
         throw new Error("Registry absence must precede fetch");
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     try {
       const hab = hby.makeHab("issuer");

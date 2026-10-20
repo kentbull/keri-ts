@@ -910,8 +910,6 @@ export class MailboxPoller {
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
-  /** Selected mailbox operation; owns each HTTP/SSE attempt. */
-  readonly pollTransport: MailboxPollTransport;
 
   /**
    * Bind polling inputs and dependencies without starting workers or acquiring stores.
@@ -920,7 +918,6 @@ export class MailboxPoller {
    * @param mailboxDirector Borrowed provider/topic/cursor owner.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
-   * @param pollTransport Explicit per-endpoint HTTP/SSE operation; no hidden transport selection.
    * @param options Optional timeout overrides; finite positive values are floored with a 1 ms minimum. Missing/nonpositive/nonfinite values use 5-second headers and 30-second poll windows.
    */
   constructor(
@@ -928,7 +925,6 @@ export class MailboxPoller {
     mailboxDirector: MailboxDirector,
     http: HttpClient,
     clock: RuntimeClock,
-    pollTransport: MailboxPollTransport,
     options: MailboxPollerOptions = {},
   ) {
     const { timeouts } = options;
@@ -937,7 +933,6 @@ export class MailboxPoller {
     this.timeoutPolicy = normalizeMailboxPollingTimeoutPolicy(timeouts);
     this.http = http;
     this.clock = clock;
-    this.pollTransport = pollTransport;
   }
 
   /**
@@ -992,17 +987,24 @@ export class MailboxPoller {
     const cursor = this.mailboxDirector.remoteQueryCursor(target.targetPre, endpoint.eid);
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    yield* this.pollTransport.poll(this.http, this.clock, {
-      hab: target.signerHab,
-      targetPre: target.targetPre,
-      endpoint,
-      topics: cursor,
-      bodyMode: this.hby.cesrBodyMode,
-      timeouts: mailboxFetchTimeoutPolicy(this.timeoutPolicy),
-    }, function*(message) {
-      yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
-      self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
-    });
+    // The concrete HTTP/SSE operation owns and joins this whole poll attempt.
+    yield* call(() =>
+      fetchMailboxMessages(
+        target.signerHab,
+        target.targetPre,
+        endpoint.eid,
+        endpoint.url,
+        cursor,
+        this.hby.cesrBodyMode,
+        mailboxFetchTimeoutPolicy(this.timeoutPolicy),
+        this.http,
+        this.clock,
+        function*(message) {
+          yield* call(() => onBatch({ pre: target.targetPre, eid: endpoint.eid, messages: [message.msg] }));
+          self.mailboxDirector.updateRemoteCursor(target.targetPre, endpoint.eid, message.topic, message.idx);
+        },
+      )
+    );
   }
 
   /**
@@ -1437,85 +1439,6 @@ export interface MailboxFetchTimeoutPolicy {
    */
   readIdleTimeoutMs: number;
 }
-
-/**
- * Concrete mailbox query data, including its subject/signing habitat and requested ordinals.
- */
-export interface MailboxPollTransportRequest {
-  /**
-   * Local signer, including a group's member habitat when required.
-   */
-  hab: Hab;
-  /**
-   * Mailbox subject AID requested in q.i.
-   */
-  targetPre: string;
-  /**
-   * Selected remote endpoint AID and HTTP(S) URL.
-   */
-  endpoint: { eid: string; url: string };
-  /**
-   * Next-wanted ordinal for each requested topic.
-   */
-  topics: Record<string, number>;
-  /**
-   * CESR attachment placement for the query.
-   */
-  bodyMode: "header" | "body";
-  /**
-   * Header and SSE consumption windows.
-   */
-  timeouts: MailboxFetchTimeoutPolicy;
-}
-
-/**
- * One scoped mailbox attempt; transport mechanics stay separate from consumer cursor publication.
- */
-export interface MailboxPollTransport {
-  /**
-   * Run one scoped HTTP/SSE mailbox attempt, awaiting each complete event consumer.
-   *
-   * @param http Borrowed HTTP implementation selected by composition.
-   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
-   * @param args Prepared mailbox subject/endpoint/topics and window settings.
-   * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
-   */
-  poll(
-    http: HttpClient,
-    clock: RuntimeClock,
-    args: MailboxPollTransportRequest,
-    consume: (message: MailboxSseMessage) => Operation<boolean | void>,
-  ): Operation<void>;
-}
-
-/** Concrete mailbox HTTP/SSE operation selected by composition. */
-export const httpMailboxPollTransport: MailboxPollTransport = {
-  /**
-   * Run one scoped HTTP/SSE mailbox attempt, awaiting each complete event consumer.
-   *
-   * @param http Borrowed HTTP implementation selected by composition.
-   * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
-   * @param args Prepared mailbox subject/endpoint/topics and window settings.
-   * @param consume Awaited complete-event consumer; false stops the poll and errors propagate before remote cursor advancement.
-   */
-  *poll(http, clock, args, consume): Operation<void> {
-    // A completed long poll releases its HTTP resource before the next poll begins.
-    return yield* call(() =>
-      fetchMailboxMessages(
-        args.hab,
-        args.targetPre,
-        args.endpoint.eid,
-        args.endpoint.url,
-        args.topics,
-        args.bodyMode,
-        args.timeouts,
-        http,
-        clock,
-        consume,
-      )
-    );
-  },
-};
 
 /**
  * Query one endpoint and consume complete SSE events within one request scope.

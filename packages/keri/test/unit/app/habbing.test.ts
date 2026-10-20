@@ -28,7 +28,6 @@ import {
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import { createConfiger } from "../../../src/app/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { introduce, type Poster, type PosterEvent } from "../../../src/app/forwarding.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -504,7 +503,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             url: `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
           });
           delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
-          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
           try {
             runtime.postman.send = postman.send; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
             runtime.postman.wait = postman.wait;
@@ -1007,7 +1006,7 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
       name: `habery-group-pending-rot-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     const remoteHby = yield* createHabery({
       name: `habery-group-pending-rot-remote-${crypto.randomUUID()}`,
       temp: true,
@@ -1314,7 +1313,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
 
       assertStrictEquals(hab.kevery, hby.kevery);
       assertStrictEquals(hby.kevery.local, true);
@@ -2051,7 +2050,7 @@ Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with t
   await run(function*() {
     const hby = yield* createHabery({ name: `group-recovery-${crypto.randomUUID()}`, temp: true });
     const observer = yield* createHabery({ name: `group-recovery-observer-${crypto.randomUUID()}`, temp: true });
-    const runtime = yield* createAgentRuntime(observer, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(observer, new FetchHttpClient(), systemClock);
     try {
       const services = [hby.makeHab("service1"), hby.makeHab("service2"), hby.makeHab("service3")];
       const mids = services.map((member) => member.pre);

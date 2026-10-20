@@ -1,7 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -16,7 +15,6 @@ Deno.test("query owner retains actual failed HTTP output for retry and closes or
       hby,
       httpClient(() => Promise.reject(fault)),
       systemClock,
-      httpMailboxPollTransport,
     );
     try {
       const request = { pre: hab.pre, src: hab.pre, route: "logs" as const, q: {}, wits: [hab.pre] };
@@ -60,7 +58,6 @@ Deno.test("runtime query shutdown joins a pending response read before closing s
       hby,
       httpClient(() => Promise.resolve(new Response(body))),
       systemClock,
-      httpMailboxPollTransport,
     );
     try {
       hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });
@@ -116,7 +113,6 @@ Deno.test("query shutdown after successful response consumption cannot send the 
         return Promise.resolve(response);
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const queue = runtime.querying;
     hby.db.locs.pin([hab.pre, "http"], { url: "https://query.test/" });

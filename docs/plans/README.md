@@ -8,6 +8,7 @@ The [parity roadmap](PARITY_ROADMAP.md) records the completed 1.0.0 baseline and
 future change discipline. Subject files below retain acceptance standards and
 explicit profile limits; they do not resume the completed cleanup sequence.
 
+- [Runtime simplification and KERIpy routing parity](runtime/runtime-simplification-and-routing-parity.md): planned removal of unsupported runtime machinery, producer-side alias resolution, owner-specific routing parity and separately gated failure reporting.
 - [Remove automatic local mailbox consumption](runtime/remove-local-mailbox-consumption.md): completed in #556; provider storage, remote polling and direct intake remain.
 - [Runtime maintainer documentation](runtime/runtime-maintainer-documentation.md): completed source-contract review, coverage ledger and separately recorded behavior findings.
 - [Explicit runtime dependencies](runtime/explicit-runtime-dependencies.md): completed removal of RuntimeServices/dependency options and the separate verifier clock correction, with full post-merge qualification.

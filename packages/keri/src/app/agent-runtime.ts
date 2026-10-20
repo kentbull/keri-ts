@@ -29,7 +29,6 @@ import {
   ForwardHandler,
   type MailboxPollBatch,
   MailboxPoller,
-  type MailboxPollTransport,
   mailboxTopicForRoute,
   Poster,
 } from "./forwarding.ts";
@@ -228,7 +227,6 @@ export interface RuntimeOobiTerminalState {
  * @param hby Borrowed local identities and accepted-state stores.
  * @param http Borrowed HTTP implementation selected by composition.
  * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
- * @param pollTransport Explicit mailbox polling operation; receives HTTP and clock separately from its request record.
  * @param options Optional borrowed stores and protocol policy; omitted writable stores follow the documented acquisition rules.
  * @returns A composed runtime within the enclosing Effection scope; workers are started separately.
  * @throws Dependency mismatch/acquisition errors propagate after owned resource cleanup.
@@ -237,7 +235,6 @@ export function* createAgentRuntime(
   hby: Habery,
   http: HttpClient,
   clock: RuntimeClock,
-  pollTransport: MailboxPollTransport,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
@@ -367,7 +364,6 @@ export function* createAgentRuntime(
     mailboxDirector,
     http,
     clock,
-    pollTransport,
     {},
   );
   for (

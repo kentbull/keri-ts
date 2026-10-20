@@ -2,7 +2,6 @@ import { call, run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { dkrResolveCommand } from "../../../src/app/cli/did.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
@@ -38,7 +37,7 @@ Deno.test("did/keri - CLI owns signed HTTP introduction before accepted local pr
       assertEquals(document.id, did);
 
       const accepted = yield* createHabery({ name, headDirPath });
-      const runtime = yield* createAgentRuntime(accepted, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(accepted, new FetchHttpClient(), systemClock);
       try {
         assertEquals(accepted.db.getKever(hab.pre)?.said, hab.kever!.said);
         assertEquals(accepted.db.roobi.get(oobi)?.state, "resolved");

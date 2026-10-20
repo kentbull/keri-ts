@@ -10,7 +10,6 @@ import {
 } from "../agent-runtime.ts";
 import { type CesrBodyMode, normalizeCesrBodyMode } from "../cesr-http.ts";
 import { type Configer, createConfiger } from "../configing.ts";
-import { httpMailboxPollTransport } from "../forwarding.ts";
 import { createHabery, type Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
@@ -155,7 +154,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
     try {
       hby.ks.pinGbls("cesrBodyMode", initArgs.cesrBodyMode ?? "header");
       if (runtimeBootstrapNeeded(hby)) {
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         try {
           yield* runAgentRuntimeUntil(
             runtime,

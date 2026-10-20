@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
@@ -94,7 +93,6 @@ for (const count of [1, 2]) {
                     setTimeout,
                     clearTimeout: (timer) => clearTimeout(timer as number),
                   },
-                  httpMailboxPollTransport,
                   { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } },
                 ),
               );

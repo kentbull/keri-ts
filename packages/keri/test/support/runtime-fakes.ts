@@ -1,18 +1,11 @@
 import type { Operation } from "effection";
 import { createTufaApp } from "../../../tufa/src/http/app.ts";
 import type { AgentRuntime } from "../../src/app/agent-runtime.ts";
-import type {
-  MailboxFetchTimeoutPolicy,
-  MailboxPollTransport,
-  MailboxPollTransportRequest,
-} from "../../src/app/forwarding.ts";
 import type { HttpRequestInit, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
 import type { HttpClient } from "../../src/app/http-client.ts";
-import type { MailboxSseMessage } from "../../src/app/mailbox-sse.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
 import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime-clock.ts";
 
-import { runtimeTurn } from "../../src/app/runtime-turn.ts";
 import { httpClient } from "./http-client.ts";
 
 interface ManualTimer {
@@ -137,54 +130,6 @@ export class FakeRuntimeHttpClient implements HttpClient {
       return new Response("Not Found", { status: 404 });
     }
     return await handler(request);
-  }
-}
-
-export interface FakeMailboxPollResult {
-  messages?: MailboxSseMessage[];
-  advanceMs?: number;
-}
-
-export interface CapturedMailboxPoll {
-  endpoint: { eid: string; url: string };
-  topics: Record<string, number>;
-  timeouts: MailboxFetchTimeoutPolicy;
-}
-
-/** Deterministic mailbox poll transport for poller deadline/cursor tests. */
-export class FakeMailboxPollTransport implements MailboxPollTransport {
-  readonly polls: CapturedMailboxPoll[] = [];
-  private readonly results: FakeMailboxPollResult[];
-
-  constructor(
-    results: FakeMailboxPollResult[] = [],
-    private readonly clock?: ManualRuntimeClock,
-  ) {
-    this.results = [...results];
-  }
-
-  enqueue(result: FakeMailboxPollResult): void {
-    this.results.push(result);
-  }
-
-  *poll(
-    _http: HttpClient,
-    _clock: RuntimeClock,
-    args: MailboxPollTransportRequest,
-    consume: (message: MailboxSseMessage) => Operation<boolean | void>,
-  ): Operation<void> {
-    this.polls.push({
-      endpoint: { ...args.endpoint },
-      topics: { ...args.topics },
-      timeouts: { ...args.timeouts },
-    });
-    const result = this.results.shift() ?? {};
-    if (result.advanceMs !== undefined) {
-      this.clock?.advance(result.advanceMs);
-    }
-    yield* runtimeTurn();
-    // Like the wire transport, a rejected event stops this poll before the next event is read.
-    for (const message of result.messages ?? []) if ((yield* consume(message)) === false) break;
   }
 }
 

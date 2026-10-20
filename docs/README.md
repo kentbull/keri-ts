@@ -21,6 +21,8 @@ tracks explicit HTTP/clock composition and removal of RuntimeServices, followed 
 
 The [local mailbox consumption removal](plans/runtime/remove-local-mailbox-consumption.md)
 keeps provider storage independent from direct protocol intake and remote mailbox polling.
+The [runtime simplification and routing plan](plans/runtime/runtime-simplification-and-routing-parity.md)
+consolidates the next removals, KERIpy routing parity and the separate failure-reporting gate.
 
 The [maintainer documentation pass](plans/runtime/runtime-maintainer-documentation.md)
 records source coverage and the five cross-component reading paths. Current contracts

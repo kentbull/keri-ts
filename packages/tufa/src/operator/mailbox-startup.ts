@@ -7,7 +7,6 @@
  * state, and deriving the concrete host plan.
  */
 import type { Operation } from "effection";
-import { httpMailboxPollTransport } from "keri-ts/runtime";
 import { systemClock } from "keri-ts/runtime";
 import { FetchHttpClient } from "keri-ts/runtime";
 import {
@@ -274,7 +273,7 @@ function* reconcileMailboxIdentity(
   hab: Hab,
   startup: MailboxStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
   try {
     yield* settleRuntimeIngress(runtime, [
       hab.makeLocScheme(startup.url, hab.pre, schemeForUrl(startup.url), startup.datetime),

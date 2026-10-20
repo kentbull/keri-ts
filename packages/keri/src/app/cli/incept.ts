@@ -8,7 +8,6 @@ import {
   runtimeHasWellKnownAuth,
   runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
-import { httpMailboxPollTransport } from "../forwarding.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
 import { systemClock } from "../runtime-clock.ts";
@@ -141,7 +140,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     try {
       if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
-        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock);
         try {
           yield* runAgentRuntimeUntil(
             runtime,
@@ -203,7 +202,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
             `Delegated inception for ${hab.pre} requires --proxy <alias>.`,
           );
         }
-        const runtime = yield* createAgentRuntime(hby, http, systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, http, systemClock);
         try {
           runtime.delegating.beginLatest(hab.pre, 0, {
             communicationHab,

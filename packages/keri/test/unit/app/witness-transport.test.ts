@@ -6,7 +6,6 @@ import { createConnection, createServer, type Socket } from "node:net";
 import { abortable } from "../../../src/app/abortable.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -107,7 +106,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url: `tcp://127.0.0.1:${address.port}` });
-        const runtime = yield* createAgentRuntime(hby, http, clock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, http, clock);
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         const task = run(function*() {
           yield* sendWitnessMessage(
@@ -167,7 +166,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
         yield* call(() =>
           assertRejects(
@@ -490,7 +489,7 @@ Deno.test("receipt POST authorizes the accepted historical event and leaves miss
       controller.interact();
       const historical = acceptedEventReplayMessage(source, controller.pre, 1);
       controller.rotate({ cuts: [before.pre], adds: [after.pre], toad: 1 });
-      const runtime = yield* createAgentRuntime(provider, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(provider, new FetchHttpClient(), systemClock);
       try {
         for (const [sn, message] of [...source.db.clonePreIter(controller.pre)].entries()) {
           const result = yield* witnessReceiptPost(runtime, sn < 2 ? before : after, message);
@@ -684,7 +683,6 @@ Deno.test("TCP conversation owns concurrent signed replies, directional failure 
           return setTimeout(callback, ms);
         },
       },
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     let mode = "drain", expectedSn = 0, received = 0, opened = 0;

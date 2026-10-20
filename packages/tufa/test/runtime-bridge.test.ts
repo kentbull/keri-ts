@@ -1,4 +1,3 @@
-import { httpMailboxPollTransport } from "../../keri/src/app/forwarding.ts";
 import { systemClock } from "../../keri/src/app/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
@@ -27,7 +26,6 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
         return new Response(null, { status: 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     try {
       hby.db.locs.pin([recipient.pre, "http"], { url: "https://recipient.test/" });

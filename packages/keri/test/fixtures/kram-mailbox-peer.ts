@@ -2,7 +2,6 @@
 import { call, ensure, run } from "effection";
 import { createProtocolHandler } from "../../../tufa/src/http/protocol-handler.ts";
 import { createAgentRuntime } from "../../src/app/agent-runtime.ts";
-import { httpMailboxPollTransport } from "../../src/app/forwarding.ts";
 import { createHabery } from "../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../src/app/http-client.ts";
 import { systemClock } from "../../src/app/runtime-clock.ts";
@@ -20,7 +19,7 @@ await run(function*() {
     skipConfig: true,
   });
   yield* ensure(() => hby.close());
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: true,
     kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
   });

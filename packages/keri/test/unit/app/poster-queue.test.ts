@@ -6,7 +6,6 @@ import type { Socket } from "node:net";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame } from "../../../src/app/parsering.ts";
@@ -30,7 +29,6 @@ Deno.test("Poster completion belongs to a concrete admission and does not determ
         return new Response(null, { status: 204 });
       }),
       systemClock,
-      httpMailboxPollTransport,
     );
     const postman = runtime.postman;
     try {
@@ -118,7 +116,7 @@ Deno.test("Poster contains native connection and response-body failures while la
   try {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), later = hby.makeHab("later");
         const postman = runtime.postman;
@@ -189,7 +187,7 @@ Deno.test("explicit retry keeps the signed child and rebuilds forwarding proof a
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const peer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), provider = peer.makeHab("provider");
         const postman = runtime.postman;
@@ -254,7 +252,7 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
   try {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         const postman = runtime.postman;

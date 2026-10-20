@@ -11,7 +11,6 @@ import {
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { queryCommand } from "../../../src/app/cli/query.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { type HttpClient } from "../../../src/app/http-client.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
@@ -93,7 +92,7 @@ Deno.test("default runtime sends queued and cue queries through its concrete own
     const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
     seedControllerEndpoint(hby, subject.pre);
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
     const sign = sender.query;
     let signatures = 0;
     sender.query = function(...args) {
@@ -155,7 +154,7 @@ Deno.test("unrouted notices create no requests; ambiguous identities and missing
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = hby.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
     try {
       runtime.cues.push({ kin: "query", q: { r: "schema", said: subject.pre } });
       runtime.cues.push({ kin: "query", q: { r: "tels", pre: subject.pre } });
@@ -190,7 +189,7 @@ Deno.test("mailbox-only query transport retains the controller as attester", asy
     hby.db.locs.pin([mailbox.pre, "http"], { url: "http://mailbox.test/" });
     hby.db.ends.pin([subject.pre, Roles.mailbox, mailbox.pre], { allowed: true });
     const messages: Uint8Array[] = [], urls: string[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages, urls), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages, urls), systemClock);
     try {
       runtime.cues.push({ kin: "query", pre: subject.pre, route: "logs", q: {} });
       yield* processCuesOnce(runtime, { hab: sender });
@@ -210,7 +209,7 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
     try {
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();
@@ -273,7 +272,7 @@ Deno.test("sequence and anchor continuations preserve the seal snapshot and comp
     const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), subject = remote.makeHab("subject");
     const messages: Uint8Array[] = [];
-    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock, httpMailboxPollTransport);
+    const runtime = yield* createAgentRuntime(hby, queryHttp(messages), systemClock);
     try {
       yield* runtime.reactor.processBytes(acceptedEventReplayMessage(remote, subject.pre, 0).message);
       runtime.cues.clear();

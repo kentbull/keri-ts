@@ -30,7 +30,6 @@ import {
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { groupEndorseReply } from "../../../src/app/endpoint-roleing.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import {
   loadMultisigHandlers,
   type MultisigEventProposal,
@@ -131,7 +130,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {
@@ -187,7 +186,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {
@@ -781,7 +780,7 @@ for (const route of ["ixn", "vcp"] as const) {
           : { ixn: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) },
       });
       await run(function*() {
-        const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+        const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
           notifier,
         });
         try {
@@ -830,7 +829,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
       embeds: { iss: issuance.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
     });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {
@@ -871,14 +870,12 @@ for (const kind of ["apply", "grant"] as const) {
             left,
             new FetchHttpClient(),
             systemClock,
-            httpMailboxPollTransport,
             { notifier },
           );
           const peerRuntime = yield* createAgentRuntime(
             right,
             new FetchHttpClient(),
             systemClock,
-            httpMailboxPollTransport,
           );
           try {
             yield* runtime.reactor.processBytes(
@@ -978,7 +975,7 @@ Deno.test("VDR approval without a registry preserves decline and fails before ac
       embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
     });
     await run(function*() {
-      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {

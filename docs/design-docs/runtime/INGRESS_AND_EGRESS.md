@@ -402,6 +402,8 @@ MailboxPoller floors finite positive timeout overrides with a 1 ms minimum;
 missing, nonfinite and nonpositive values use the existing 5-second header and
 30-second poll defaults. The SSE idle window remains 500 ms. This normalization
 belongs to polling configuration, not lower HTTP/SSE transport validation.
+MailboxPoller directly owns the concrete HTTP/SSE operation over its required HTTP
+client and clock. No separate polling transport interface or adapter is composed.
 Mailbox polling runs one worker per remote endpoint with actual request-open and
 SSE read deadlines. One empty long poll cannot serialize another endpoint's work.
 Each remote SSE event's consumer finishes before another read or durable cursor

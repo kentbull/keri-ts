@@ -1,5 +1,4 @@
 import { type Operation, spawn, type Task } from "effection";
-import { httpMailboxPollTransport } from "keri-ts/runtime";
 import { systemClock } from "keri-ts/runtime";
 import { FetchHttpClient } from "keri-ts/runtime";
 import {
@@ -52,7 +51,7 @@ export function* runHostKernel(
   hby: Habery,
   spec: HostKernelSpec,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
   });
   const hostedPrefixes = spec.hostedPrefixes ?? [spec.serviceHab.pre];

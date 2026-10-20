@@ -8,7 +8,6 @@ import {
 } from "../../../src/app/agent-runtime.ts";
 import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { mailboxTopicKey } from "../../../src/app/mailboxing.ts";
@@ -99,7 +98,6 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
         providerHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       const mailboxer = runtime.mailboxer;
@@ -219,7 +217,6 @@ Deno.test("generic exchange send routes '/oobis' through '/oobi' mailbox storage
             recipientHby,
             new FetchHttpClient(),
             systemClock,
-            httpMailboxPollTransport,
           );
 
           try {

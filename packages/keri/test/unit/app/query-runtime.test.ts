@@ -1,6 +1,5 @@
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { httpMailboxPollTransport } from "../../../src/app/forwarding.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 
@@ -50,7 +49,7 @@ Deno.test("tufa agent host stays protocol-only", async () => {
         toad: 0,
       });
       pre = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(url, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -67,7 +66,7 @@ Deno.test("tufa agent host stays protocol-only", async () => {
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     const runtimeTask = yield* spawn(function*() {
@@ -126,7 +125,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       yield* settleRuntimeIngress(runtime, [
         hab.makeLocScheme(baseUrl, hab.pre, "http"),
         hab.makeEndRole(hab.pre, EndpointRoles.controller, true),
@@ -144,7 +143,7 @@ Deno.test("mailbox host returns 204 for posted `logs`/`ksn` and streams `/reply`
       skipConfig: true,
     });
     const hab = hby.habByName(alias);
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, httpMailboxPollTransport, {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: true,
     });
     const runtimeTask = yield* spawn(function*() {
@@ -316,20 +315,17 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
       proxyHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
     );
     const witnessRuntime = yield* createAgentRuntime(
       witnessHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
     const relayRuntime = yield* createAgentRuntime(
       relayHby,
       new FetchHttpClient(),
       systemClock,
-      httpMailboxPollTransport,
       { enableMailboxStore: true },
     );
 
@@ -520,7 +516,6 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         witnessHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       try {
@@ -559,7 +554,6 @@ Deno.test("reopened witness `logs` queries replay remote accepted KEL state via 
         witnessHby,
         new FetchHttpClient(),
         systemClock,
-        httpMailboxPollTransport,
         { enableMailboxStore: true },
       );
       try {
