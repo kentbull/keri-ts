@@ -66,7 +66,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         assertEquals(hby.db.exns.get([serder.said!])?.raw, serder.raw);
         sent.push({ recipient: evt.dest, said: serder.said! });
         sends++;
-        return evt;
+        return { ...evt, kin: "msg" };
       };
       runtime.postman.wait = function*(evt) {
         return { kin: "sent", evt, deliveries: ["https://mailbox.test/"] };

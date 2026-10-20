@@ -70,16 +70,16 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
         { enableMailboxStore: true },
       );
       const providerHab = providerHby.habByName(provider.alias);
-      const runtimeTask = yield* spawn(function*() {
-        yield* runAgentRuntime(providerRuntime, { hab: providerHab ?? undefined });
-      });
+      // The provider is also a pollable local AID: acquire its listener before consumers.
       const serverTask = yield* spawn(function*() {
         yield* startServer(providerPort, undefined, providerRuntime);
       });
+      yield* waitForServer(providerPort);
+      const runtimeTask = yield* spawn(function*() {
+        yield* runAgentRuntime(providerRuntime, { hab: providerHab ?? undefined });
+      });
 
       try {
-        yield* waitForServer(providerPort);
-
         const groupConfig = `${headRoot}/group-incept.json`;
         yield* waitForPromise(writeJson(groupConfig, {
           aids: stores.map((store) => store.pre),
@@ -188,8 +188,9 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           yield* dwsHby.close(true);
         }
       } finally {
-        yield* waitForTaskHalt(serverTask, 100);
+        // Stop loopback polling before closing the listener it still needs.
         yield* waitForTaskHalt(runtimeTask, 100);
+        yield* waitForTaskHalt(serverTask, 100);
         yield* providerRuntime.close();
         yield* providerHby.close();
       }
