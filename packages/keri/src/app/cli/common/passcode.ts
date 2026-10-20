@@ -2,7 +2,7 @@
 import type { Operation } from "effection";
 import process from "node:process";
 import type { Key } from "node:readline";
-import password from "npm:@inquirer/password@4.0.23";
+import password from "npm:@inquirer/password@3.0.1";
 import { ValidationError } from "../../../core/errors.ts";
 import { abortable } from "../../abortable.ts";
 
