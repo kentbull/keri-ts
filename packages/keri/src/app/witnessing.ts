@@ -880,10 +880,11 @@ export class Receiptor {
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
    */
   constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock) {
-    if (protocol.kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
+    const kvy = protocol.makeKevery();
+    if (kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
     this.hby = hby;
     this.protocol = protocol;
-    this.kvy = protocol.makeKevery();
+    this.kvy = kvy;
     this.http = http;
     this.clock = clock;
   }

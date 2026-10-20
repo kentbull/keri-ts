@@ -262,7 +262,7 @@ Deno.test("OOBI result publication preserves cues appended during HTTP fetch", a
       const reactor = new Reactor(protocolFixture(hby));
       const oobi = new Oobiery(
         hby,
-        reactor,
+        reactor.protocol,
         reactor.protocol.rvy,
         httpClient(() => {
           // Model another producer filling the shared queue while this request is suspended in transport.
@@ -642,7 +642,7 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
       }, { highWaterMark: 0 });
       const oobi = new Oobiery(
         target,
-        reactor,
+        reactor.protocol,
         reactor.protocol.rvy,
         httpClient((_url, init) => {
           requests++;
@@ -656,8 +656,8 @@ Deno.test("OOBI CESR intake accepts before EOF and retains partial work through 
         resultCues,
       );
 
-      const processEvent = reactor.kvy.processEvent;
-      reactor.kvy.processEvent = function(envelope) {
+      const processEvent = oobi.kvy.processEvent;
+      oobi.kvy.processEvent = function(envelope) {
         const decision = processEvent.call(this, envelope);
         if (decision.kind === "accept" && envelope.serder.sn === 0) accepted.open();
         return decision;

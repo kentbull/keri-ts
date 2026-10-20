@@ -464,7 +464,9 @@ export function* multisigRpyCommand(
   yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
     const groupHab = requireHabByAlias(hby, group);
     const result = yield* proposeGroupEndpointRole(
-      runtime,
+      hby,
+      runtime.protocol,
+      runtime.postman,
       groupHab,
       { eid, role, allow: commandArgs.allow },
     );

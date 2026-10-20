@@ -61,7 +61,9 @@ captures request replies before application publication, including synchronous
 capture when a new correlation claims already-published output. No application
 callback gate remains. Waiting cancellation removes the waiter; active ownership
 joins handler cleanup before passing the protocol turn. Reactor owns byte ingress
-and its parser. Actual callers await process/processBytes through input cleanup;
+and its parser; Oobiery independently owns fetched parsing and its Kevery over the
+same store/reply verifier. Endpoint-role proposals receive concrete Habery/protocol/
+Poster dependencies; commands own delivery workers. Actual callers await input cleanup;
 there is no duplicate queued-ingress API or idle msgDo worker. Runtime pending
 state describes its real owners, not a dormant input queue. Explicit close and
 scope exit clear cues after dependent work joins.

@@ -72,7 +72,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
         return { kin: "sent", evt, deliveries: ["https://mailbox.test/"] };
       };
 
-      const result = yield* proposeGroupEndpointRole(runtime, group, {
+      const result = yield* proposeGroupEndpointRole(hby, runtime.protocol, runtime.postman, group, {
         eid: remote.pre,
         role: Roles.mailbox,
         allow: true,
@@ -94,7 +94,7 @@ Deno.test("endpoint-roleing proposes group endpoint roles through /multisig/rpy"
       const caught = yield* call(() =>
         assertRejects(() =>
           run(() =>
-            proposeGroupEndpointRole(runtime, group, {
+            proposeGroupEndpointRole(hby, runtime.protocol, runtime.postman, group, {
               eid: remote.pre,
               role: Roles.mailbox,
               allow: true,
@@ -127,7 +127,7 @@ Deno.test("endpoint-roleing loads accepted group endpoint role replies", async (
         toad: 0,
       });
 
-      const result = yield* proposeGroupEndpointRole(runtime, group, {
+      const result = yield* proposeGroupEndpointRole(hby, runtime.protocol, runtime.postman, group, {
         eid: mailbox.pre,
         role: Roles.mailbox,
         allow: true,

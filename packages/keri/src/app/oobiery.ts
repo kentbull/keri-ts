@@ -4,6 +4,7 @@ import type { AgentCue, OobiResolvedCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
+import type { Kevery } from "../core/eventing.ts";
 import { OOBI_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { exchange } from "../core/protocol-exchanging.ts";
 import type { OobiRecord, OobiRecordShape } from "../core/records.ts";
@@ -17,9 +18,10 @@ import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import type { HttpStreamResponse } from "./http-client.ts";
 import type { HttpClient } from "./http-client.ts";
+import { processMessages } from "./message-source.ts";
 import type { Notifier } from "./notifying.ts";
 import { persistResolvedContact } from "./organizing.ts";
-import type { Reactor } from "./reactor.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 export const OOBI_REQUEST_ROUTE = "/oobis";
@@ -59,8 +61,8 @@ type OobiQueueKind = "oobis" | "woobi";
 export class Oobiery {
   /** Borrowed local identities and durable OOBI job stores. */
   readonly hby: Habery;
-  /** Input owner used for fetched CESR; it joins parser/source cleanup. */
-  readonly reactor: Reactor;
+  /** Input-specific KEL policy sharing accepted state and the composed reply verifier. */
+  readonly kvy: Kevery;
   /** OOBI completion/query observations consumed by the composed application flow. */
   readonly cues: Deck<AgentCue>;
   /** Borrowed HTTP client; no network service is discovered through ingress. */
@@ -72,21 +74,24 @@ export class Oobiery {
    * Bind byte intake and the actual reply verifier used by OOBI proof persistence.
    *
    * @param hby Borrowed local identities and accepted-state stores.
-   * @param reactor Borrowed ingress owner that consumes fetched CESR.
+   * @param protocol Borrowed shared semantic owner; this component owns its fetched byte-input context.
    * @param rvy Actual shared reply verifier used for OOBI reply proof persistence.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param cues Required application result Deck supplied by composition.
    */
   constructor(
     hby: Habery,
-    reactor: Reactor,
+    private readonly protocol: ProtocolProcessor,
     /** Borrowed reply verifier; route installation and proof writes share this owner. */
     private readonly rvy: Revery,
     http: HttpClient,
     cues: Deck<AgentCue>,
   ) {
     this.hby = hby;
-    this.reactor = reactor;
+    this.kvy = protocol.makeKevery();
+    if (this.kvy.db !== hby.db || this.kvy.rvy !== rvy) {
+      throw new TypeError("Oobiery requires the same accepted-state store and reply verifier");
+    }
     this.cues = cues;
     this.http = http;
   }
@@ -122,7 +127,7 @@ export class Oobiery {
    * Behavior:
    * - reads the next queued `oobis.` / `woobi.` record
    * - fetches it under Effection cancellation control
-   * - routes any returned KERI bytes through `Reactor`
+   * - parses fetched KERI bytes through this owner's Kevery and shared semantic handlers
    * - transitions the durable record into `eoobi.` or `roobi.`
    */
   *processOnce(): Operation<void> {
@@ -344,7 +349,7 @@ export class Oobiery {
     };
     this.pinQueueStore(kind, url, queuedRecord);
     this.hby.db.coobi.pin(url, { ...queuedRecord, state: "streaming" });
-    yield* this.reactor.process((signal) => response.body(signal));
+    yield* processMessages((signal) => response.body(signal), this.protocol, this.kvy);
 
     this.hby.db.coobi.rem(url);
     this.hby.db.roobi.pin(url, { ...queuedRecord, date: new Date().toISOString(), state: "resolved" });
