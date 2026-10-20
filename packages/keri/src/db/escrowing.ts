@@ -119,18 +119,26 @@ export class Broker {
   }
 
   /** Retry a finite captured family horizon with typed outcomes and no exception adapter.
-   * Release key cursors before hydration, callbacks or index writes. Failed callbacks
-   * propagate and leave that row eligible for retry. Kept rows and insertions behind
+   * Release key cursors before hydration, callbacks or index writes. Failures
+   * propagate and reset this family's checkpoint, so a later sweep revisits
+   * earlier rows unblocked before the failure. Kept rows and insertions behind
    * the checkpoint return next pass; new rows beyond the horizon cannot extend it.
    * Removing an index retains artifacts that another dependency family may own.
    * Terminal drops are reported only after the index removal succeeds; dependency
    * migration must return accept for the relinquished family, rather than drop.
+   * @param typ Escrow family whose existing finite key horizon is traversed.
+   * @param processReply Synchronous semantic owner; reports its decision and actual
+   * retained evidence changes, including insertions outside this page or horizon.
+   * @param maxRows Maximum rows materialized in this page, from 1 through 1024.
+   * @param now ISO timestamp used to compare the notice age against timeout seconds.
+   * @returns Page position and whether callback writes or completed index removals
+   * changed evidence. Merely visiting a kept row does not count as progress.
    */
   retryStateNotices(
     typ: string,
-    processReply: (args: BrokerProcessReplyArgs) => EscrowProcessDecision,
+    processReply: (args: BrokerProcessReplyArgs) => { decision: EscrowProcessDecision; changed: boolean },
     { maxRows = 64, now = makeNowIso8601() }: { maxRows?: number; now?: string } = {},
-  ): { processed: number; done: boolean } {
+  ): { processed: number; done: boolean; changed: boolean } {
     if (!/^[a-z-]+$/.test(typ) || !Number.isSafeInteger(maxRows) || maxRows < 1 || maxRows > 1024) {
       throw new Error("Invalid Broker retry family or row ceiling.");
     }
@@ -138,66 +146,76 @@ export class Broker {
     if (when === null || !Number.isSafeInteger(ttl) || ttl < 0) throw new Error("Invalid Broker retry time.");
     const encode = (value: string) => new TextEncoder().encode(value);
     const decode = (value: Uint8Array) => new TextDecoder("utf-8", { fatal: true }).decode(value);
-    let scan = this.retryScans.get(typ);
-    if (!scan) {
-      const start = encode(`${typ}.`), ceiling = encode(`${typ}/`);
-      let tail: Uint8Array | undefined;
-      for (const key of this.escrowdb.sdb.getKeys({ start: ceiling, end: start, reverse: true, limit: 1 })) {
-        tail = key.slice();
-      }
-      if (!tail) return { processed: 0, done: true };
-      scan = { start, end: encode(`${decode(tail)}\0`) };
-      this.retryScans.set(typ, scan);
-    }
-    const rows: Uint8Array[] = [];
-    for (const key of this.escrowdb.sdb.getKeys({ start: scan.start, end: scan.end, limit: maxRows })) {
-      rows.push(key.slice());
-    }
-    for (const key of rows) {
-      const parts = decode(key).split(".");
-      if (
-        parts.length !== 4 || parts[0] !== typ || !parts[1] || !parts[2]
-        || parts.some((part) => part.includes("\0")) || !/^[0-9a-f]{32}$/.test(parts[3])
-      ) {
-        throw new Error("Corrupt Broker retry key.");
-      }
-      const raw = this.db.getVal(this.escrowdb.sdb, key);
-      if (!raw || raw.length > 128) throw new Error("Corrupt Broker retry digest row.");
-      const diger = new Diger({ qb64b: raw });
-      const dater = this.daterdb.get([diger.qb64]), serder = this.serderdb.get([diger.qb64]);
-      const tsgs = this.fetchTsgs(diger), couples = this.cigardb.get([diger.qb64]);
-      if (!dater || !serder || (!tsgs.length && !couples.length) || !serder.route) {
-        throw new Error("Corrupt Broker retry artifacts.");
-      }
-      const stamp = timestampMicros(dater.dts);
-      if (stamp === null) throw new Error("Corrupt Broker retry timestamp.");
-      const decision = when - stamp > BigInt(ttl) ? dropEscrow("stale") : processReply({
-        aid: parts[2],
-        diger,
-        serder,
-        route: serder.route,
-        tsgs,
-        cigars: couples.map(([verfer, cigar]) => new Cigar(cigar, verfer)),
-      });
-      if (decision.kind === "accept" || decision.kind === "drop") {
-        const removed = this.escrowdb.rem(parts.slice(0, 3), diger);
-        if (removed && decision.kind === "drop") {
-          consoleLogger.warn("Broker ejected transaction-state notice from escrow", {
-            family: typ,
-            said: diger.qb64,
-            pre: parts[1],
-            aid: parts[2],
-            route: serder.route,
-            reason: decision.reason,
-            detail: decision.message,
-          });
+    try {
+      let scan = this.retryScans.get(typ);
+      if (!scan) {
+        const start = encode(`${typ}.`), ceiling = encode(`${typ}/`);
+        let tail: Uint8Array | undefined;
+        for (const key of this.escrowdb.sdb.getKeys({ start: ceiling, end: start, reverse: true, limit: 1 })) {
+          tail = key.slice();
         }
-      } else if (decision.kind !== "keep") throw new Error("Invalid Broker retry decision.");
-      scan.start = encode(`${decode(key)}\0`);
+        if (!tail) return { processed: 0, done: true, changed: false };
+        scan = { start, end: encode(`${decode(tail)}\0`) };
+        this.retryScans.set(typ, scan);
+      }
+      const rows: Uint8Array[] = [];
+      for (const key of this.escrowdb.sdb.getKeys({ start: scan.start, end: scan.end, limit: maxRows })) {
+        rows.push(key.slice());
+      }
+      let changed = false;
+      for (const key of rows) {
+        const parts = decode(key).split(".");
+        if (
+          parts.length !== 4 || parts[0] !== typ || !parts[1] || !parts[2]
+          || parts.some((part) => part.includes("\0")) || !/^[0-9a-f]{32}$/.test(parts[3])
+        ) {
+          throw new Error("Corrupt Broker retry key.");
+        }
+        const raw = this.db.getVal(this.escrowdb.sdb, key);
+        if (!raw || raw.length > 128) throw new Error("Corrupt Broker retry digest row.");
+        const diger = new Diger({ qb64b: raw });
+        const dater = this.daterdb.get([diger.qb64]), serder = this.serderdb.get([diger.qb64]);
+        const tsgs = this.fetchTsgs(diger), couples = this.cigardb.get([diger.qb64]);
+        if (!dater || !serder || (!tsgs.length && !couples.length) || !serder.route) {
+          throw new Error("Corrupt Broker retry artifacts.");
+        }
+        const stamp = timestampMicros(dater.dts);
+        if (stamp === null) throw new Error("Corrupt Broker retry timestamp.");
+        const result = when - stamp > BigInt(ttl) ? { decision: dropEscrow("stale"), changed: false } : processReply({
+          aid: parts[2],
+          diger,
+          serder,
+          route: serder.route,
+          tsgs,
+          cigars: couples.map(([verfer, cigar]) => new Cigar(cigar, verfer)),
+        });
+        const { decision } = result;
+        changed = result.changed || changed;
+        if (decision.kind === "accept" || decision.kind === "drop") {
+          const removed = this.escrowdb.rem(parts.slice(0, 3), diger);
+          changed = removed || changed;
+          if (removed && decision.kind === "drop") {
+            consoleLogger.warn("Broker ejected transaction-state notice from escrow", {
+              family: typ,
+              said: diger.qb64,
+              pre: parts[1],
+              aid: parts[2],
+              route: serder.route,
+              reason: decision.reason,
+              detail: decision.message,
+            });
+          }
+        } else if (decision.kind !== "keep") throw new Error("Invalid Broker retry decision.");
+        scan.start = encode(`${decode(key)}\0`);
+      }
+      const done = rows.length < maxRows;
+      if (done) this.retryScans.delete(typ);
+      return { processed: rows.length, done, changed };
+    } catch (error) {
+      // A failed sweep cannot resume behind earlier rows whose dependencies may now be ready.
+      this.retryScans.delete(typ);
+      throw error;
     }
-    const done = rows.length < maxRows;
-    if (done) this.retryScans.delete(typ);
-    return { processed: rows.length, done };
   }
 
   /**
@@ -212,6 +230,10 @@ export class Broker {
    * - `tigerdb` for transferable endorsement groups
    * - `cigardb` for non-transferable endorsement couples
    * - `escrowdb` for the broker-specific `(typ, pre, aid)` index
+   *
+   * The returned `added` describes only new family membership. `changed` also
+   * includes new retained bodies, timestamps and signatures under an existing
+   * member; identical retries return false for both fields.
    */
   escrowStateNotice(
     {
@@ -233,16 +255,17 @@ export class Broker {
       cigars?: readonly Cigar[];
       tsgs?: readonly TransIdxSigGroup[];
     },
-  ): boolean {
+  ): { added: boolean; changed: boolean } {
     const keys = [diger.qb64] as const;
-    this.daterdb.put(keys, dater);
-    this.serderdb.put(keys, serder);
+    let changed = this.daterdb.put(keys, dater);
+    changed = this.serderdb.put(keys, serder) || changed;
 
     for (const group of tsgs) {
-      this.tigerdb.put(
-        [diger.qb64, group.pre, group.snh, group.said],
+      // V1 Seqner and v2 Number spell the same ordinal differently; one proof has one stored key.
+      changed = this.tigerdb.put(
+        [diger.qb64, group.pre, group.sn.toString(16).padStart(32, "0"), group.said],
         group.sigers,
-      );
+      ) || changed;
     }
 
     for (const cigar of cigars) {
@@ -251,10 +274,11 @@ export class Broker {
           `Escrowed cigar for ${diger.qb64} is missing verifier context.`,
         );
       }
-      this.cigardb.put(keys, [[cigar.verfer, cigar]]);
+      changed = this.cigardb.put(keys, [[cigar.verfer, cigar]]) || changed;
     }
 
-    return this.escrowdb.put([typ, pre, aid], [diger]);
+    const added = this.escrowdb.put([typ, pre, aid], [diger]);
+    return { added, changed: added || changed };
   }
 
   /**

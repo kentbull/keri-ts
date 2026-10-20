@@ -14,6 +14,7 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 
 import type { AgentCue, ReplayCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
+import { MsgCacheRecord } from "../../../src/core/records.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
 import { httpClient } from "../../support/http-client.ts";
 
@@ -109,13 +110,14 @@ Deno.test("protocol processing waits for cancelled handler cleanup before the ne
       reactor.protocol.exc.processEscrows = function*() {
         if (++passes > 1) {
           second = true;
-          return;
+          return false;
         }
         yield* abortable(async (signal) => {
           started.open();
           await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
           await cleanup.wait;
         });
+        return false;
       };
       const first = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       yield* call(() => started.wait);
@@ -156,6 +158,7 @@ Deno.test("two request reservations survive an interleaved background cue drain"
         yield* call(() => release.wait);
         reactor.kvy.cues.push(ordinary);
         reactor.kvy.cues.push(replayA);
+        return false;
       };
       const producing = yield* spawn(() => reactor.protocol.processEscrowsOnce());
       yield* call(() => ready.wait);
@@ -238,19 +241,54 @@ Deno.test("queued cues do not prevent KEL acceptance or out-of-order escrow reco
       const initial = acceptedEventReplayMessage(source, sender.pre, 0).message;
       const later = sender.interact();
       const reactor = new Reactor(protocolFixture(target));
+      let exchangePasses = 0;
+      const exchangeEscrows = reactor.protocol.exc.processEscrows.bind(reactor.protocol.exc);
+      reactor.protocol.exc.processEscrows = function*() {
+        exchangePasses++;
+        return yield* exchangeEscrows();
+      };
       yield* reactor.process((signal) => chunkBytes(later, { signal }));
 
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 1);
       reactor.protocol.cues.clear();
       reactor.protocol.cues.push({ kin: "replay", msgs: [new Uint8Array()] });
       yield* reactor.process((signal) => chunkBytes(initial, { signal }));
-      yield* reactor.protocol.processEscrowsOnce();
+      assertEquals(yield* reactor.protocol.processEscrowsOnce(), true);
+      assertEquals(exchangePasses, 1, "KEL progress must not skip later configured owners");
       assertEquals(target.db.getKever(sender.pre)!.sn, 1);
       assertEquals(Array.from(target.db.ooes.getTopItemIter()).length, 0);
       assertEquals(reactor.protocol.cues.peekHead()?.kin, "replay", "existing cues remain ahead of new protocol cues");
+      assertEquals(yield* reactor.protocol.processEscrowsOnce(), false, "accepted cleanup does not repeat progress");
+      assertEquals(exchangePasses, 2);
     } finally {
       yield* target.close(true);
       yield* source.close(true);
+    }
+  });
+});
+
+Deno.test("protocol sweeps retain KRAM pruning without counting cache removal as recovery", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const hab = hby.makeHab("controller");
+      const protocol = protocolFixture(hby, { kram: {}, now: () => 10_000 });
+      const key = [hab.pre, hab.kever!.said];
+      hby.db.msgc.pin(
+        key,
+        new MsgCacheRecord({
+          mdt: "1970-01-01T00:00:00.000000+00:00",
+          d: 0,
+          ml: 1,
+          pml: 1,
+          xl: 1,
+          pxl: 1,
+        }),
+      );
+      assertEquals(yield* protocol.processEscrowsOnce(), false);
+      assertEquals(hby.db.msgc.get(key), null, "maintenance still removes expired cache evidence");
+    } finally {
+      yield* hby.close(true);
     }
   });
 });
@@ -371,6 +409,7 @@ Deno.test("external cancellation removes an input waiting for the protocol turn"
       reactor.protocol.exc.processEscrows = function*() {
         held.open();
         yield* call(() => release.wait);
+        return false;
       };
       yield* call(async () => {
         const holder = run(() => reactor.protocol.processEscrowsOnce());
@@ -547,6 +586,7 @@ Deno.test("input cancellation during dispatch joins source and handler cleanup w
             });
             started.open();
             yield* suspend();
+            return false;
           };
           const task = yield* spawn(function*() {
             yield* reactor.process(

@@ -504,6 +504,7 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         const verifier = new Verifier(hby, { reger, cues });
         hby.db.schema.rem(schema.said);
         assertDecision(verifier.processCredential(anchorArgs(creder, issuer)), "escrow", "missingSchema");
+        assertEquals(verifier.processEscrows(), false, "unchanged schema dependency is not progress");
         cues.clear();
         const date = reger.mse.get([creder.said!])!.dts;
         hby.db.schema.pin(schema.said, schema);
@@ -538,11 +539,16 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
             verifier.saveCredential = save;
           }
         }
-        verifier.processEscrows();
+        assertEquals(verifier.processEscrows(), true, "acceptance and dependency migration advance membership");
         assertEquals(reger.mse.get([creder.said!]), null);
         assertEquals(cues.peekTail()?.kin, migration ? "proof" : "saved");
         assertEquals(reger.saved.get([creder.said!]) !== null, !migration);
         assertEquals(reger.mce.get([creder.said!]) !== null, migration);
+        assertEquals(
+          verifier.processEscrows(),
+          false,
+          "pending chain cues and identical proof writes are not progress",
+        );
         cues.clear();
         if (migration) reger.mce.rem([creder.said!]);
       }
@@ -565,7 +571,7 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         assertEquals(reger.mse.get([invalid.said!]), null, "report rejection only after membership is removed");
         warnings.push(args);
       };
-      verifier.processEscrows();
+      assertEquals(verifier.processEscrows(), true, "terminal rejection removes pending membership");
       assertEquals(reger.mse.get([invalid.said!]), null);
       assertEquals(reger.saved.get([invalid.said!]), null);
       assertEquals(cues.length, 0);
@@ -580,7 +586,7 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         reason: "invalidSchema",
       });
       assertInstanceOf(detail.cause, Error, "retain the schema validator's original failure");
-      verifier.processEscrows();
+      assertEquals(verifier.processEscrows(), false);
       assertEquals(warnings.length, 1, "ejected evidence is not reported on later sweeps");
       const expired = makeCredential({
         issuer: issuer.qb64,
@@ -604,7 +610,7 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
         assertEquals(reger.mre.get([expired.said!]), null, "expiry diagnostics follow successful removal");
         warnings.push(args);
       };
-      verifier.processEscrows();
+      assertEquals(verifier.processEscrows(), true, "expiry changes pending membership only after successful removal");
       assertEquals(warnings[1], ["Verifier ejected credential escrow", {
         family: "missingRegistry",
         said: expired.said,

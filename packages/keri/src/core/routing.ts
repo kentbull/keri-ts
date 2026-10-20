@@ -481,13 +481,50 @@ export class Revery {
     return { kind: plan.kind, reason: plan.reason, message: plan.message };
   }
 
-  /** Persist a plain proof plan before the caller publishes its cues. */
-  writeReply(plan: ReplyPlan): void {
-    for (const escrow of plan.escrows) this.escrowReply(escrow);
+  /**
+   * Persist a plain proof plan before the caller publishes its cues.
+   *
+   * @param plan Verified proof effects from the same synchronous processing turn.
+   * @returns Whether retained proof or route membership changed. Identical pins
+   *   and temporary changes overwritten by this plan do not count. A caller-owned
+   *   transaction must commit before its owner reports this result as progress.
+   */
+  writeReply(plan: ReplyPlan): boolean {
+    const saids = new Set(plan.escrows.map((escrow) => escrow.saider.qb64));
+    if (plan.kind === "accept") {
+      saids.add(plan.accepted.saider.qb64);
+      if (plan.previous) saids.add(plan.previous.qb64);
+    }
+    const previous = new Map([...saids].map((said) => [said, this.replyProof(said)]));
+    let changed = false;
+    for (const escrow of plan.escrows) {
+      const retained = this.db.rpes.get([escrow.route]).some((diger) => diger.qb64 === escrow.saider.qb64);
+      this.escrowReply(escrow);
+      if (!retained && escrow.sigers.length > 0) changed = true;
+    }
     if (plan.kind === "accept") {
       this.updateReply(plan.accepted);
       this.removeReply(plan.previous);
     }
+    for (const said of saids) changed = this.replyProof(said) !== previous.get(said) || changed;
+    return changed;
+  }
+
+  /**
+   * Read the stored proof values that can change a later verification attempt.
+   *
+   * @param said Reply digest identifying its body, datetime and signature rows.
+   * @returns A comparable representation of concrete proof values, in database
+   *   order. The SAID identifies the immutable body; row counts alone would miss
+   *   replacement signatures. No cache or observation history is retained.
+   */
+  private replyProof(said: string): string {
+    return JSON.stringify([
+      this.db.sdts.get([said])?.qb64,
+      this.db.rpys.get([said])?.said,
+      this.db.scgs.get([said]).map(([verfer, cigar]) => [verfer.qb64, cigar.qb64]),
+      [...this.db.ssgs.getTopItemIter([said], { topive: true })].map(([keys, siger]) => [keys, siger.qb64]),
+    ]);
   }
 
   /** Evaluate ordered proof groups with a virtual escrow view before any durable reply effects. */
@@ -746,45 +783,44 @@ export class Revery {
   }
 
   /**
-   * Reprocess all pending reply escrows from `rpes.`.
+   * Reprocess the reply escrow rows present at the start of this sweep.
    *
-   * Lifecycle:
-   * - reload stored reply + signatures by SAID
-   * - drop incomplete or stale escrow entries
-   * - rerun normal reply processing
-   * - keep escrow only when verification is still blocked by a recoverable
-   *   live reply `unverified` decision
-   */
-  /**
-   * Process escrowed reply messages.
+   * Accepted replies leave `rpes.`; invalid or expired replies also lose their
+   * proof artifacts. A pending reply may retain improved signatures without
+   * leaving its bucket, so compare its actual proofs around route processing.
+   * Unexpected failures propagate with the original evidence still owned by the
+   * responsible handler; they do not become an unchanged result.
    *
-   * Pass outline:
-   * - walk `rpes.` rows keyed by reply route
-   * - rebuild stored attachments and reply artifacts
-   * - replay the reply through normal verification
-   * - remove the escrow row on `accept` and `drop`, keep it on `keep`
+   * @returns Whether committed membership or retained proof values changed.
+   *   Repeated query cues and identical proof writes do not count as progress.
    */
-  processEscrowReply(): void {
-    for (const [keys, diger] of this.db.rpes.getTopItemIter()) {
+  processEscrowReply(): boolean {
+    let changed = false;
+    const entries = [...this.db.rpes.getTopItemIter()];
+    for (const [keys, diger] of entries) {
       const route = keys[0];
       if (!route) {
         continue;
       }
+      const previous = this.replyProof(diger.qb64);
       const decision = this.reprocessEscrowedReply(diger);
       switch (decision.kind) {
         case "accept":
-          this.db.rpes.rem([route], diger);
+          changed = this.db.rpes.rem([route], diger) || changed;
           break;
         case "drop": {
           const removed = this.db.rpes.rem([route], diger);
           this.removeReply(diger);
+          changed = removed || changed;
           if (removed) logEscrowDecision(`Revery RPE said=${diger.qb64} route=${route}`, decision);
           break;
         }
         case "keep":
           break;
       }
+      changed = this.replyProof(diger.qb64) !== previous || changed;
     }
+    return changed;
   }
 
   /**

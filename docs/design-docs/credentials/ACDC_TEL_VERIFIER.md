@@ -42,6 +42,9 @@ responsibilities into one vague "VC" layer.
   lanes. Do not apply v2 most-compact top-level SAID rules to v1 KERIpy
   registry credentials.
 - TEL decisions should stay typed: accepted, duplicate, escrowed, or rejected.
+  A registry inception still waiting for its issuer anchor remains escrowed
+  across retries. Unexpected processing or storage failures propagate without
+  turning that retained evidence into a peer rejection.
   Expected retry paths are not exception control flow. Revocation evidence writes
   precede ordinary cue publication. Infrastructure failures propagate unchanged;
   cue records have no reservation, credit or capacity lifetime.

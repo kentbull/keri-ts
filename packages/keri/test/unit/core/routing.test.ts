@@ -560,6 +560,67 @@ Deno.test("Revery.acceptReply verifies transferable ECDSA reply signature groups
   });
 });
 
+Deno.test("Revery reports retained proof progress while a reply remains pending", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true });
+    try {
+      const hab = hby.makeHab("endpoint", undefined, { icount: 3, isith: "3", ncount: 3, nsith: "3", toad: 0 });
+      const kever = hab.kever!;
+      const rvy = new Revery(hby.db);
+      new BasicReplyRouteHandler(rvy).registerReplyRoutes();
+      const serder = new SerderKERI({
+        sad: {
+          t: "rpy",
+          dt: makeNowIso8601(),
+          r: "/loc/scheme",
+          a: { eid: hab.pre, scheme: "http", url: "http://endpoint.test" },
+        },
+        makify: true,
+      });
+      const saider = new Diger({ qb64: serder.said! });
+      const sigers = hab.sign(serder.raw, true);
+      const proof = {
+        serder,
+        saider,
+        dater: new Dater({ qb64: encodeDateTimeToDater(serder.ked!.dt as string) }),
+        route: "/loc/scheme",
+        prefixer: new Prefixer({ qb64: hab.pre }),
+        seqner: kever.sner,
+        diger: new Diger({ qb64: kever.said }),
+        sigers,
+      };
+      // The persisted proof has one valid and one invalid signature. Validation
+      // retains only the verified signature, but the three-signature threshold
+      // still blocks acceptance. This is progress without a bucket transition.
+      rvy.escrowReply({ ...proof, sigers: [sigers[0], hab.sign(new TextEncoder().encode("other body"), true)[1]] });
+      assertEquals(rvy.processEscrowReply(), true);
+      assertEquals(hby.db.rpes.get([proof.route]).map((diger) => diger.qb64), [saider.qb64]);
+      assertEquals(rvy.processEscrowReply(), false);
+
+      const key = [saider.qb64, hab.pre, kever.sner.numh, kever.said];
+      assertEquals(hby.db.ssgs.get(key).map((siger) => siger.qb64), [sigers[0].qb64]);
+      hby.db.ssgs.put(key, sigers.slice(1));
+      assertEquals(rvy.processEscrowReply(), true);
+      assertEquals(rvy.processEscrowReply(), false);
+      assertEquals(hby.db.locs.get([hab.pre, "http"])?.url, "http://endpoint.test");
+
+      // A complete plan can stage a partial proof and then restore the same
+      // accepted proof. Compare its retained effects, not individual pin calls.
+      rvy.escrowReply(proof);
+      const plan: ReplyPlan = {
+        kind: "accept",
+        accepted: { ...proof, kind: "transferable" },
+        previous: null,
+        escrows: [{ ...proof, sigers: [sigers[0]] }],
+        cues: [],
+      };
+      assertEquals(hby.db.env!.transactionSync(() => rvy.writeReply(plan)), false);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified replay decisions", async () => {
   await run(function*() {
     const hby = yield* createHabery({
@@ -579,7 +640,7 @@ Deno.test("Revery.processEscrowReply keeps replies on recoverable unverified rep
       });
       withPatchedMethod(consoleLogger, "warn", () => {
         throw new Error("A recoverable reply must not report an escrow ejection.");
-      }, () => replyVerifier.processEscrowReply());
+      }, () => assertEquals(replyVerifier.processEscrowReply(), false));
 
       assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 1);
       assertExists(hby.db.rpys.get([saider.qb64]));
@@ -611,7 +672,8 @@ Deno.test("Revery.processEscrowReply drops malformed escrow artifacts and remove
         assertStringIncludes(message, "missingEscrowArtifact");
         assertEquals(hby.db.rpes.get(["/escrow/reply"]), []);
         assertEquals(hby.db.sdts.get([saider.qb64]), null);
-      }, () => replyVerifier.processEscrowReply());
+      }, () => assertEquals(replyVerifier.processEscrowReply(), true));
+      assertEquals(replyVerifier.processEscrowReply(), false);
       assertEquals(warnings, 1);
 
       assertEquals(hby.db.rpes.get(["/escrow/reply"]).length, 0);

@@ -58,6 +58,10 @@ membership; chain retries emit again. Storage failure preserves the retry family
 Escrow ejection warnings belong after actual owner removal/commit and include the
 message identity and refusal detail. Acceptance cleanup, dependency migration and
 EXN `preserveEscrow` are not rejection ejections; unexpected failures propagate.
+Escrow sweeps report committed semantic changes, including pending proof/anchor
+repairs and family migration. Repeated cues, identical writes and KRAM pruning
+are not credential-recovery progress. Tevery completes each captured TSN horizon
+in bounded pages; a page count alone cannot prove local settlement has stalled.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 

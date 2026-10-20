@@ -14,6 +14,7 @@ import {
   Diger,
   Ilks,
   NumberPrimitive,
+  ParserError,
   Prefixer,
   type SealSource,
   SerderKERI,
@@ -109,6 +110,14 @@ export interface TelProcessEventArgs {
   wigers?: readonly Siger[] | null;
   sigers?: readonly Siger[] | null;
   local?: boolean;
+}
+
+/** Carry an already persisted pending decision across Tever's constructor-only boundary. */
+class PendingTelInception extends Error {
+  /** @param decision Recoverable inception outcome; Tevery returns it without deleting its escrow. */
+  constructor(readonly decision: Extract<TelProcessDecision, { kind: "escrow" }>) {
+    super(decision.reason);
+  }
 }
 
 export interface TeveryOptions {
@@ -332,7 +341,7 @@ export class Tever {
       baks: this.baks,
     });
     if (checked.kind !== "accept") {
-      throw new ValidationError(checked.reason);
+      throw new PendingTelInception(checked.decision);
     }
     this.logEvent({
       pre: this.prefixer.qb64,
@@ -456,6 +465,7 @@ export class Tever {
       return reject(`Unsupported TEL ilk=${ilk}.`, serder, this.regk);
     } catch (error) {
       if (publicationFailure && publicationFailure.error === error) throw error;
+      if (!(error instanceof ValidationError) && !(error instanceof ParserError)) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder, this.regk);
     }
   }
@@ -583,7 +593,8 @@ export class Tever {
     try {
       this.validateToad(toad, next);
     } catch (error) {
-      return reject(error instanceof Error ? error.message : String(error), serder, this.regk);
+      if (!(error instanceof ValidationError) && !(error instanceof ParserError)) throw error;
+      return reject(error.message, serder, this.regk);
     }
     return { kind: "rotated", toad, baks: next, cuts, adds };
   }
@@ -740,7 +751,7 @@ export class Tever {
     baks: readonly string[];
   }):
     | { kind: "accept"; bigers: Siger[] }
-    | { kind: "escrow"; decision: TelProcessDecision; reason: string }
+    | { kind: "escrow"; decision: Extract<TelProcessDecision, { kind: "escrow" }>; reason: string }
   {
     const verfers = args.baks.map((bak) => new Verfer({ qb64: bak }));
     const verified = Kever.verifyIndexedSignatures(
@@ -1024,6 +1035,8 @@ export class Tevery {
       return decision;
     } catch (error) {
       if (publicationFailure && publicationFailure.error === error) throw error;
+      if (error instanceof PendingTelInception) return error.decision;
+      if (!(error instanceof ValidationError) && !(error instanceof ParserError)) throw error;
       return reject(error instanceof Error ? error.message : String(error), args.serder);
     }
   }
@@ -1083,10 +1096,28 @@ export class Tevery {
     return this.rvy;
   }
 
-  /** Admit a registry TSN using independent attester proof, accepted trust and current TEL correspondence. */
-  processReplyRegistryTxnState(
+  /**
+   * Admit a registry TSN using independent proof, accepted trust and current TEL correspondence.
+   * @param args Signed reply and attester identity supplied by normal routing or Broker replay.
+   * @returns The protocol decision; escrow progress is consumed internally by the replay owner.
+   */
+  processReplyRegistryTxnState(args: BrokerProcessReplyArgs): RegistryReplyDecision {
+    return this.retryRegistryTxnState(args).decision;
+  }
+
+  /**
+   * Process a registry TSN and report only evidence retained after this attempt.
+   * @param serder Reply body containing the claimed registry state.
+   * @param diger Reply SAID used to correlate proof and family membership.
+   * @param route Verified registry route identifying the attester.
+   * @param aid Attester AID whose independent authorization is checked.
+   * @param cigars Non-transferable endorsements, absent when transferable proof is supplied.
+   * @param tsgs Transferable endorsement groups, possibly still waiting for signer state.
+   * @returns The semantic decision and progress of retained Broker or accepted state.
+   */
+  private retryRegistryTxnState(
     { serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs,
-  ): RegistryReplyDecision {
+  ): { decision: RegistryReplyDecision; changed: boolean } {
     const rvy = this.replyVerifier();
     const record = registryRecord(serder.ked?.a);
     const stamp = serder.ked?.dt;
@@ -1095,7 +1126,7 @@ export class Tevery {
       || route !== `/tsn/registry/${aid}`
       || serder.said !== diger.qb64 || !serder.verify()
     ) {
-      return unverifiedReplyDecision("Invalid registry transaction-state notice.");
+      return { decision: unverifiedReplyDecision("Invalid registry transaction-state notice."), changed: false };
     }
     const regk = record.i, issuer = record.ii, sn = Number.parseInt(record.s, 16);
     const previous = this.reger.txnsb.current([regk, aid]);
@@ -1104,7 +1135,7 @@ export class Tevery {
     };
     const reject = (reason: string) => {
       disposeIncoming();
-      return unverifiedReplyDecision(reason);
+      return { decision: unverifiedReplyDecision(reason), changed: false };
     };
     const saved = this.reger.states.get(regk);
     const stored = saved ? registryRecord(saved.asDict()) : null;
@@ -1115,7 +1146,11 @@ export class Tevery {
     const kever = this.db.getKever(issuer, { refresh: true });
 
     let queryCues: readonly AgentCue[] = [];
-    const escrow = (typ: RegistryEscrowFamily, query: boolean, proof?: ReplyPlan): RegistryReplyDecision => {
+    const escrow = (
+      typ: RegistryEscrowFamily,
+      query: boolean,
+      proof?: ReplyPlan,
+    ): { decision: RegistryReplyDecision; changed: boolean } => {
       const isNew = !this.reger.txnsb.hasStateNotice(typ, regk, aid, diger);
       const cues: AgentCue[] = !isNew || !query
         ? []
@@ -1123,8 +1158,9 @@ export class Tevery {
         ? [{ kin: "query", pre: issuer, src: aid, route: "logs", q: {} }]
         : [{ kin: "query", pre: issuer, src: aid, route: "tels", q: { ri: regk, i: "" } }];
 
+      // Baser proof below is transient; only the evidence retained by Broker counts as progress.
       if (proof) rvy.writeReply(proof);
-      const added = this.reger.txnsb.escrowStateNotice({
+      const { added, changed } = this.reger.txnsb.escrowStateNotice({
         typ,
         pre: regk,
         aid,
@@ -1140,10 +1176,13 @@ export class Tevery {
       if (queryCues.length) rvy.cues.extend(queryCues);
       if (cues.length) rvy.cues.extend(cues);
       return {
-        kind: "unverified",
-        reason: "dependencyPending",
-        family: typ,
-        message: "Registry state dependency unavailable.",
+        decision: {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: typ,
+          message: "Registry state dependency unavailable.",
+        },
+        changed,
       };
     };
     if (!kever) return escrow("registry-mae", true);
@@ -1198,20 +1237,38 @@ export class Tevery {
     if (previous?.qb64 !== diger.qb64) rvy.removeReply(previous);
     if (queryCues.length) rvy.cues.extend(queryCues);
     if (cues.length) rvy.cues.extend(cues);
-    return acceptReplyDecision();
+    return { decision: acceptReplyDecision(), changed: previous?.qb64 !== diger.qb64 };
   }
 
-  /** Admit a credential TSN against its own proof, registry dependency and current TEL/anchor commitments. */
-  processReplyCredentialTxnState(
+  /**
+   * Admit a credential TSN against its proof, registry dependency and current TEL/anchor commitments.
+   * @param args Signed reply and attester identity supplied by normal routing or Broker replay.
+   * @returns The protocol decision; escrow progress is consumed internally by the replay owner.
+   */
+  processReplyCredentialTxnState(args: BrokerProcessReplyArgs): CredentialReplyDecision {
+    return this.retryCredentialTxnState(args).decision;
+  }
+
+  /**
+   * Process a credential TSN and report only evidence retained after this attempt.
+   * @param serder Reply body containing the claimed credential state.
+   * @param diger Reply SAID used to correlate proof and family membership.
+   * @param route Verified credential route identifying the attester.
+   * @param aid Attester AID whose independent authorization is checked.
+   * @param cigars Non-transferable endorsements, absent when transferable proof is supplied.
+   * @param tsgs Transferable endorsement groups, possibly still waiting for signer state.
+   * @returns The semantic decision and progress of retained Broker or accepted state.
+   */
+  private retryCredentialTxnState(
     { serder, diger, route, aid, cigars = [], tsgs = [] }: BrokerProcessReplyArgs,
-  ): CredentialReplyDecision {
+  ): { decision: CredentialReplyDecision; changed: boolean } {
     const rvy = this.replyVerifier();
     const record = credentialRecord(serder.ked?.a);
     const stamp = serder.ked?.dt;
     if (
       !record || !qualifiedPrefix(aid) || typeof stamp !== "string" || timestampMicros(stamp) === null
       || route !== `/tsn/credential/${aid}` || serder.said !== diger.qb64 || !serder.verify()
-    ) return unverifiedReplyDecision("Invalid credential transaction-state notice.");
+    ) return { decision: unverifiedReplyDecision("Invalid credential transaction-state notice."), changed: false };
     const vci = record.i, regk = record.ri, sn = Number.parseInt(record.s, 16);
     const previous = this.reger.txnsb.current([vci, aid]);
     const disposeIncoming = () => {
@@ -1219,7 +1276,7 @@ export class Tevery {
     };
     const reject = (reason: string) => {
       disposeIncoming();
-      return unverifiedReplyDecision(reason);
+      return { decision: unverifiedReplyDecision(reason), changed: false };
     };
     const saved = this.reger.states.get(regk);
     const stored = saved ? registryRecord(saved.asDict()) : null;
@@ -1227,7 +1284,11 @@ export class Tevery {
     const issuer = stored?.ii ?? aid;
 
     let queryCues: readonly AgentCue[] = [];
-    const escrow = (typ: CredentialEscrowFamily, query: boolean, proof?: ReplyPlan): CredentialReplyDecision => {
+    const escrow = (
+      typ: CredentialEscrowFamily,
+      query: boolean,
+      proof?: ReplyPlan,
+    ): { decision: CredentialReplyDecision; changed: boolean } => {
       const isNew = !this.reger.txnsb.hasStateNotice(typ, vci, aid, diger);
       const cues: AgentCue[] = !isNew || !query
         ? []
@@ -1241,8 +1302,9 @@ export class Tevery {
           q: { ri: regk, i: typ === "credential-mre" ? "" : vci },
         }];
 
+      // Baser proof below is transient; only the evidence retained by Broker counts as progress.
       if (proof) rvy.writeReply(proof);
-      const added = this.reger.txnsb.escrowStateNotice({
+      const { added, changed } = this.reger.txnsb.escrowStateNotice({
         typ,
         pre: vci,
         aid,
@@ -1257,10 +1319,13 @@ export class Tevery {
       if (queryCues.length) rvy.cues.extend(queryCues);
       if (cues.length) rvy.cues.extend(cues);
       return {
-        kind: "unverified",
-        reason: "dependencyPending",
-        family: typ,
-        message: "Credential state dependency unavailable.",
+        decision: {
+          kind: "unverified",
+          reason: "dependencyPending",
+          family: typ,
+          message: "Credential state dependency unavailable.",
+        },
+        changed,
       };
     };
     const regsn = record.ra.s === undefined ? 0 : Number.parseInt(record.ra.s, 16);
@@ -1332,39 +1397,47 @@ export class Tevery {
     if (previous?.qb64 !== diger.qb64) rvy.removeReply(previous);
     if (queryCues.length) rvy.cues.extend(queryCues);
     if (cues.length) rvy.cues.extend(cues);
-    return acceptReplyDecision();
+    return { decision: acceptReplyDecision(), changed: previous?.qb64 !== diger.qb64 };
   }
 
-  /** Retry TEL dependencies first, then registry and credential notices on the same owning processor. */
-  processEscrows(): void {
-    this.processEscrowAnchorless();
-    this.processEscrowOutOfOrders();
-    if (!this.rvy) return;
-    for (const typ of ["registry-mae", "registry-ooo"]) {
-      this.reger.txnsb.retryStateNotices(typ, (args) => {
-        const decision = this.processReplyRegistryTxnState(args);
-        if (decision.kind === "accept") return acceptEscrow();
-        if (decision.reason === "dependencyPending") {
-          // A different family now owns this notice; releasing the old index is not rejection.
-          return decision.family === typ ? keepEscrow("recoverableError") : acceptEscrow();
-        }
-        return dropEscrow("processingError", decision.message);
-      });
+  /**
+   * Retry TEL dependencies and complete each finite TSN family horizon.
+   * Every page is materialized separately, but a turn may process more than one
+   * page. Insertions outside a captured horizon report progress for the next sweep.
+   * @returns Whether retained proofs, accepted records or family membership changed.
+   */
+  processEscrows(): boolean {
+    let changed = this.processEscrowAnchorless();
+    changed = this.processEscrowOutOfOrders() || changed;
+    if (!this.rvy) return changed;
+    for (const typ of ["registry-mae", "registry-ooo", "credential-mre", "credential-mae", "credential-ooo"]) {
+      let done = false;
+      while (!done) {
+        const page = this.reger.txnsb.retryStateNotices(typ, (args) => {
+          const result = typ.startsWith("registry-")
+            ? this.retryRegistryTxnState(args)
+            : this.retryCredentialTxnState(args);
+          const { decision } = result;
+          if (decision.kind === "accept") return { decision: acceptEscrow(), changed: result.changed };
+          if (decision.reason === "dependencyPending") {
+            // A different family now owns this notice; releasing the old index is not rejection.
+            return {
+              decision: decision.family === typ ? keepEscrow("recoverableError") : acceptEscrow(),
+              changed: result.changed,
+            };
+          }
+          return { decision: dropEscrow("processingError", decision.message), changed: result.changed };
+        });
+        changed = page.changed || changed;
+        done = page.done;
+      }
     }
-    for (const typ of ["credential-mre", "credential-mae", "credential-ooo"]) {
-      this.reger.txnsb.retryStateNotices(typ, (args) => {
-        const decision = this.processReplyCredentialTxnState(args);
-        if (decision.kind === "accept") return acceptEscrow();
-        if (decision.reason === "dependencyPending") {
-          return decision.family === typ ? keepEscrow("recoverableError") : acceptEscrow();
-        }
-        return dropEscrow("processingError", decision.message);
-      });
-    }
+    return changed;
   }
 
   /** Retry out-of-order TEL events; report terminal removal after its index write succeeds. */
-  processEscrowOutOfOrders(): void {
+  processEscrowOutOfOrders(): boolean {
+    let changed = false;
     const entries = [...this.reger.oots.getAllItemIter()];
     for (const [keys, sn, dig] of entries) {
       const pre = keys[0] ?? "";
@@ -1373,6 +1446,7 @@ export class Tevery {
       const couple = this.reger.ancs.get(key);
       if (raw === null || couple === null) {
         if (this.reger.oots.remOn(pre, sn, dig)) {
+          changed = true;
           consoleLogger.warn("Tevery ejected out-of-order TEL event from escrow", {
             family: "outOfOrder",
             pre,
@@ -1384,16 +1458,23 @@ export class Tevery {
         continue;
       }
       const [seqner, saider] = couple;
+      const wigers = this.reger.tibs.get(key);
+      const baks = this.reger.baks.get(key);
       const decision = this.processEvent({
         serder: new SerderKERI({ raw }),
         seqner,
         saider,
-        wigers: this.reger.tibs.get(key),
+        wigers,
       });
+      // Replay may retain a different verified backer set while the event still waits.
+      const nextWigers = this.reger.tibs.get(key), nextBaks = this.reger.baks.get(key);
+      changed = wigers.length !== nextWigers.length || wigers.some((siger, i) => siger.qb64 !== nextWigers[i]?.qb64)
+        || baks.length !== nextBaks.length || baks.some((bak, i) => bak !== nextBaks[i]) || changed;
       if (decision.kind === "escrow" && decision.escrow === "outOfOrder") {
         continue;
       }
       const removed = this.reger.oots.remOn(pre, sn, dig);
+      changed = removed || decision.kind === "accept" || changed;
       if (removed && decision.kind === "reject") {
         consoleLogger.warn("Tevery ejected out-of-order TEL event from escrow", {
           family: "outOfOrder",
@@ -1404,10 +1485,12 @@ export class Tevery {
         });
       }
     }
+    return changed;
   }
 
   /** Retry anchorless TEL events; missing source seals remain pending rather than being ejected. */
-  processEscrowAnchorless(): void {
+  processEscrowAnchorless(): boolean {
+    let changed = false;
     const entries = [...this.reger.taes.getAllItemIter()];
     for (const [keys, sn, dig] of entries) {
       const pre = keys[0] ?? "";
@@ -1417,6 +1500,7 @@ export class Tevery {
       if (raw === null || couple === null) {
         if (raw === null) {
           if (this.reger.taes.remOn(pre, sn, dig)) {
+            changed = true;
             consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
               family: "anchorless",
               pre,
@@ -1429,16 +1513,23 @@ export class Tevery {
         continue;
       }
       const [seqner, saider] = couple;
+      const wigers = this.reger.tibs.get(key);
+      const baks = this.reger.baks.get(key);
       const decision = this.processEvent({
         serder: new SerderKERI({ raw }),
         seqner,
         saider,
-        wigers: this.reger.tibs.get(key),
+        wigers,
       });
+      // Replay may retain a different verified backer set while the event still waits.
+      const nextWigers = this.reger.tibs.get(key), nextBaks = this.reger.baks.get(key);
+      changed = wigers.length !== nextWigers.length || wigers.some((siger, i) => siger.qb64 !== nextWigers[i]?.qb64)
+        || baks.length !== nextBaks.length || baks.some((bak, i) => bak !== nextBaks[i]) || changed;
       if (decision.kind === "escrow" && decision.escrow === "anchorless") {
         continue;
       }
       const removed = this.reger.taes.remOn(pre, sn, dig);
+      changed = removed || decision.kind === "accept" || changed;
       if (removed && decision.kind === "reject") {
         consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
           family: "anchorless",
@@ -1449,6 +1540,7 @@ export class Tevery {
         });
       }
     }
+    return changed;
   }
 
   static registryKey(serder: SerderKERI): string {

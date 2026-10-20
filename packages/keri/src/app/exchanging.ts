@@ -251,9 +251,14 @@ export class Exchanger {
    * Accepted messages are durably logged before any route-specific side
    * effects run so later reopen and verification paths can reuse the same
    * stored evidence.
+   *
+   * @param args Exchange body, proof candidates and input provenance for this attempt.
+   * @returns Its protocol decision after route handling and joined admission cleanup.
+   * Unexpected handler, storage and cleanup failures propagate instead of becoming peer refusals.
    */
-  processEvent(args: ExchangeInput): Operation<ExchangeDecision> {
-    return call(() => this.admit(args));
+  *processEvent(args: ExchangeInput): Operation<ExchangeDecision> {
+    const { decision } = yield* call(() => this.admit(args));
+    return decision;
   }
   /** Hold one exchange mutation until its child I/O and payload cleanup have finished. */
   private admission(): Operation<void> {
@@ -267,15 +272,24 @@ export class Exchanger {
       }
     }.bind(this));
   }
-  /** Isolate admission cleanup so cancelling it cannot resume the caller after delegation. */
-  private *admit(args: ExchangeInput): Operation<ExchangeDecision> {
+  /**
+   * Isolate admission cleanup and return recovery progress only after committed writes.
+   *
+   * @param args One exchange with its independently authenticated proof candidates.
+   * @returns The protocol decision and whether pending membership/evidence or acceptance advanced.
+   * Retrying identical evidence and repeating dependency cues leave progress false.
+   */
+  private *admit(args: ExchangeInput): Operation<{ decision: ExchangeDecision; changed: boolean }> {
     const said = args.serder.said ?? "<unknown>";
-    /** Keep normal remote admission failures in the decision channel. */
-    const reject = (reason: string, cause?: unknown): ExchangeDecision => ({
-      kind: "reject",
-      reason,
-      said,
-      ...(cause !== undefined ? { cause } : {}),
+    /**
+     * Preserve a refused attempt without claiming any recovery progress.
+     *
+     * @param reason Actual protocol refusal detail.
+     * @param cause Original malformed-wire failure when available.
+     */
+    const reject = (reason: string, cause?: unknown): { decision: ExchangeDecision; changed: boolean } => ({
+      decision: { kind: "reject", reason, said, ...(cause !== undefined ? { cause } : {}) },
+      changed: false,
     });
     let nestStage: string | undefined;
     let nests: readonly CesrFrame[] = args.nests ?? [];
@@ -295,7 +309,7 @@ export class Exchanger {
     const handler = this.versionedRoutes.get(route)?.get(args.serder.pvrsn.major) ?? this.routes.get(route);
     const resolved = this.resolveProofs(args);
     const authentication = yield* this.authenticate(args.serder, resolved, handler);
-    if (authentication.kind === "reject") return authentication;
+    if (authentication.kind === "reject") return { decision: authentication, changed: false };
     let pending = authentication.kind === "escrow"
       ? { kind: authentication.kind, said, reason: authentication.reason }
       : undefined;
@@ -303,6 +317,7 @@ export class Exchanger {
     let needsProof = false;
     let missingSchema: string | undefined;
     let newEscrow = false;
+    let changed = false;
     const approved = authentication.kind === "verified" ? authentication : undefined;
     const retainedFactors = approved?.retained ?? resolved;
 
@@ -391,7 +406,7 @@ export class Exchanger {
     }
     // An already accepted exchange cannot be downgraded by an incomplete duplicate.
     if (pending && this.complete(said)) {
-      return pending;
+      return { decision: pending, changed: false };
     }
     if (args.nests?.length) {
       nestStage = crypto.randomUUID();
@@ -404,7 +419,8 @@ export class Exchanger {
       }
       if (nestStage) publishNests(this.hby.db, said, nestStage);
       if (!pending && approved) {
-        this.clearEscrow(said, true);
+        const accepted = this.complete(said);
+        changed = this.clearEscrow(said, true) || !accepted;
         this.logAcceptedEvent({
           serder: args.serder,
           ...approved.retained,
@@ -412,9 +428,11 @@ export class Exchanger {
           ptds: args.ptds ?? [],
         });
       } else {
-        newEscrow = missingSchema === undefined
+        const escrow = missingSchema === undefined
           ? this.escrowPartialSigned(args.serder, retainedFactors, args.ptds ?? [])
           : this.escrowMissingSchema(args.serder, missingSchema, retainedFactors, args.ptds ?? []);
+        newEscrow = escrow.inserted;
+        changed = escrow.changed;
       }
       if (essrs && !retained) {
         this.hby.db.essrs.rem([said]);
@@ -454,7 +472,7 @@ export class Exchanger {
         if (needsProof) this.cues.push({ kin: "proof", said });
         if (missingSchema) this.cues.push({ kin: "query", q: { r: "schema", said: missingSchema } });
       }
-      return pending;
+      return { decision: pending, changed };
     }
     if (handler) {
       yield* call(() =>
@@ -469,26 +487,37 @@ export class Exchanger {
         })
       );
     }
-    return { kind: "accept", said };
+    return { decision: { kind: "accept", said }, changed };
   }
 
-  /** Retry escrows using their persisted payload references and mailbox provenance. */
-  processEscrows(): Operation<void> {
+  /**
+   * Retry finite escrow horizons using persisted evidence and mailbox provenance.
+   *
+   * @returns Whether committed acceptance, pending evidence or escrow membership changed.
+   * Cleanup finishes before returning; repeated cues and identical rewrites are not progress.
+   */
+  processEscrows(): Operation<boolean> {
     return call(() => this.retryEscrows());
   }
-  /** Retry each bounded escrow inside one structured child scope. */
-  private *retryEscrows(): Operation<void> {
+  /**
+   * Retry both finite families inside one structured child scope.
+   *
+   * @returns Whether either family changed; both are processed even when the first advances.
+   */
+  private *retryEscrows(): Operation<boolean> {
     if (this.processing) throw new ValidationError("Exchanger has an active admission.");
-    yield* this.retryEscrowType(false);
-    if (this.hby.db.emse) yield* this.retryEscrowType(true);
+    const proofs = yield* this.retryEscrowType(false);
+    const schemas = this.hby.db.emse ? yield* this.retryEscrowType(true) : false;
+    return proofs || schemas;
   }
   /**
    * Close each cursor before replay; newly discovered dependencies wait for the next finite pass.
    * Terminal diagnostics follow joined evidence cleanup, while acceptance and dependency migration stay silent.
    *
    * @param schema Select missing-schema escrow instead of partial-signature/proof escrow.
+   * @returns Whether this captured horizon changed committed pending work or acceptance.
    */
-  private *retryEscrowType(schema: boolean): Operation<void> {
+  private *retryEscrowType(schema: boolean): Operation<boolean> {
     const table = schema ? this.hby.db.emse! : this.hby.db.epse;
     let end: Uint8Array | undefined;
     // Capture a finite key horizon without retaining bodies or holding a cursor across mutations.
@@ -496,8 +525,9 @@ export class Exchanger {
       end = b(`${textDecoder.decode(key)}\0`);
     }
     if (!end) {
-      return;
+      return false;
     }
+    let changed = false;
     let start: Uint8Array | undefined;
     for (;;) {
       let physical: string | undefined;
@@ -514,7 +544,7 @@ export class Exchanger {
       }
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
       if (this.complete(said)) {
-        yield* call(() => this.dropEscrow(said));
+        changed = (yield* call(() => this.dropEscrow(said))) || changed;
         continue;
       }
       const deadline = this.hby.db.emsd?.get([said]);
@@ -524,7 +554,7 @@ export class Exchanger {
       const date = dater && timestampMicros(dater.dts);
       if (date === null || date === undefined) {
         if (schema) throw new Error("Corrupt missing-schema deadline.");
-        yield* call(() => this.dropEscrow(said));
+        changed = (yield* call(() => this.dropEscrow(said))) || changed;
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           family: "epse",
           said,
@@ -540,7 +570,7 @@ export class Exchanger {
         now > date + (schema ? 0n : BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n)
         || absolute !== null && absolute !== undefined && now > absolute
       ) {
-        yield* call(() => this.dropEscrow(said));
+        changed = (yield* call(() => this.dropEscrow(said))) || changed;
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           family: schema ? "emse" : "epse",
           said,
@@ -551,16 +581,22 @@ export class Exchanger {
         });
         continue;
       }
-      const decision = yield* this.processEvent({
-        serder,
-        tsgs: this.rebuildEscrowedGroups(said),
-        cigars: this.storedCigars(said),
-        sourceSeals: this.storedSeals(said),
-        ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
-        mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
-      });
+      const attempt = yield* call(() =>
+        this.admit({
+          serder,
+          tsgs: this.rebuildEscrowedGroups(said),
+          cigars: this.storedCigars(said),
+          sourceSeals: this.storedSeals(said),
+          ptds: this.hby.db.epath.get([said]).map((text) =>
+            PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))
+          ),
+          mailboxAid: this.hby.db.exchangeMeta.get([said])?.mailboxAid,
+        })
+      );
+      const { decision } = attempt;
+      changed = attempt.changed || changed;
       if (decision.kind === "reject" && !decision.preserveEscrow) {
-        yield* call(() => this.dropEscrow(said));
+        changed = (yield* call(() => this.dropEscrow(said))) || changed;
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           family: schema ? "emse" : "epse",
           said,
@@ -571,6 +607,7 @@ export class Exchanger {
         });
       }
     }
+    return changed;
   }
   /** Own accepted-evidence replay and its actual payload readers through completion or cancellation. */
   async *replay(said: string, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
@@ -952,61 +989,94 @@ export class Exchanger {
       said: args.serder.said ?? "<unknown>",
     };
   }
-  /** Retain incomplete endorsements and the original expiration clock for retry. */
+  /**
+   * Retain incomplete endorsements and the original expiration clock inside admission's transaction.
+   *
+   * @param serder Pending exchange body.
+   * @param factors Sender and selected supplemental proofs to merge with retained evidence.
+   * @param ptds Current ordered pathed attachments.
+   * @returns New family membership for cue policy, separately from logical evidence/membership progress.
+   */
   private escrowPartialSigned(
     serder: SerderKERI,
     factors: Required<ExchangeFactors>,
     ptds: readonly PathedMaterialGroup[],
-  ): boolean {
+  ): { inserted: boolean; changed: boolean } {
     const said = serder.said;
     if (!said) {
       throw new ValidationError("Cannot escrow an exchange without a SAID.");
     }
     if (this.complete(said)) {
-      return false;
+      return { inserted: false, changed: false };
     }
-    this.storeEscrowEvidence(serder, factors, ptds);
-    this.hby.db.emse?.trim([said]);
+    let changed = this.storeEscrowEvidence(serder, factors, ptds);
+    changed = (this.hby.db.emse?.trim([said]) ?? false) || changed;
     // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
     this.hby.db.epsd.put([said], new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(this.now()))) }));
-    return this.hby.db.epse.put([said], serder);
+    const inserted = this.hby.db.epse.put([said], serder);
+    return { inserted, changed: inserted || changed };
   }
-  /** Persist the same independently authenticated evidence for signature and schema dependencies. */
+  /**
+   * Merge independently authenticated proof evidence inside admission's transaction.
+   *
+   * @param serder Exchange whose evidence is being retained.
+   * @param factors Historical proofs; duplicate members do not establish progress.
+   * @param ptds Current ordered pathed attachments, replacing the previous logical set.
+   * @returns Whether proofs or the logical attachment sequence changed.
+   */
   private storeEscrowEvidence(
     serder: SerderKERI,
     factors: Required<ExchangeFactors>,
     ptds: readonly PathedMaterialGroup[],
-  ): void {
+  ): boolean {
     const said = serder.said!;
+    let changed = false;
 
     for (const tsg of factors.tsgs) {
       const quadKey = [said, tsg.pre, tsg.sn.toString(16).padStart(32, "0"), tsg.said] as const;
       for (const siger of tsg.sigers) {
-        this.hby.db.esigs.add(quadKey, siger);
+        changed = this.hby.db.esigs.add(quadKey, siger) || changed;
       }
     }
     for (const cigar of factors.cigars) {
       if (cigar.verfer) {
-        this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
+        changed = this.hby.db.ecigs.add([said], [cigar.verfer, cigar]) || changed;
       }
     }
-    for (const seal of factors.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
-    this.hby.db.epath.pin(
-      [said],
-      ptds.map((group) => textDecoder.decode(group.raw)),
-    );
+    for (const seal of factors.sourceSeals) {
+      changed = this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]) || changed;
+    }
+    const paths = [...new Set(ptds.map((group) => textDecoder.decode(group.raw)))];
+    const storedPaths = this.hby.db.epath.get([said]);
+    // IoSet.pin ignores empty inputs and deduplicates nonempty values in insertion order.
+    if (
+      paths.length && (paths.length !== storedPaths.length || paths.some((path, index) => path !== storedPaths[index]))
+    ) {
+      changed = true;
+    }
+    this.hby.db.epath.pin([said], paths);
+    return changed;
   }
-  /** One absolute deadline spans sequential schema dependencies; receiver receipt is not the TMSC opener. */
+  /**
+   * Retain a schema dependency under one absolute deadline inside admission's transaction.
+   *
+   * @param serder Pending exchange body.
+   * @param schema Missing schema SAID reported by its route owner.
+   * @param factors Independently authenticated proofs to retain through dependency migration.
+   * @param ptds Current ordered pathed attachments.
+   * @returns New schema membership for cue policy, separately from logical evidence/membership progress.
+   * Replacing the same schema row does not count as progress or renew its deadline.
+   */
   private escrowMissingSchema(
     serder: SerderKERI,
     schema: string,
     factors: Required<ExchangeFactors>,
     ptds: readonly PathedMaterialGroup[],
-  ): boolean {
+  ): { inserted: boolean; changed: boolean } {
     const { emse, emsd } = this.hby.db, said = serder.said!;
     if (!emse || !emsd) throw new ValidationError("Missing-schema storage is unavailable on this readonly layout.");
     if (this.complete(said)) {
-      return false;
+      return { inserted: false, changed: false };
     }
     const prior = emsd.get([said]);
     if (prior && timestampMicros(prior.dts) === null) throw new Error("Corrupt missing-schema deadline.");
@@ -1024,13 +1094,15 @@ export class Exchanger {
       if (timestampMicros(text) !== expiry) throw new Error("Missing-schema deadline exceeds supported date range.");
       emsd.put([said], new Dater({ qb64: encodeDateTimeToDater(text) }));
     }
-    this.storeEscrowEvidence(serder, factors, ptds);
-    this.hby.db.epse.rem([said]);
+    let changed = this.storeEscrowEvidence(serder, factors, ptds);
+    changed = this.hby.db.epse.rem([said]) || changed;
     this.hby.db.epsd.rem([said]);
-    const stored = emse.get([said, schema]) === null;
+    const inserted = emse.get([said, schema]) === null;
+    // Compare logical schema membership before its existing replace-all operation.
+    const replaced = [...emse.getTopItemIter([said])].some(([keys]) => keys[1] !== schema);
     emse.trim([said]);
     emse.put([said, schema], serder);
-    return stored;
+    return { inserted, changed: changed || inserted || replaced };
   }
   /** Trusted clock failures remain infrastructure errors rather than expiring remote work. */
   private nowMicros(): bigint {
@@ -1128,11 +1200,17 @@ export class Exchanger {
     return groups;
   }
 
-  /** Clear pending metadata, preserving wire evidence during the acceptance transaction. */
-  private clearEscrow(said: string, keepEvidence = false): void {
-    this.hby.db.epse.rem([said]);
+  /**
+   * Clear pending metadata inside the caller's transaction.
+   *
+   * @param said Exchange identity whose pending ownership ends.
+   * @param keepEvidence Preserve payload ownership while accepted proofs are republished.
+   * @returns Whether pending membership was removed; clearing/rebuilding accepted proof rows is not progress.
+   */
+  private clearEscrow(said: string, keepEvidence = false): boolean {
+    let changed = this.hby.db.epse.rem([said]);
     this.hby.db.epsd.rem([said]);
-    this.hby.db.emse?.trim([said]);
+    changed = (this.hby.db.emse?.trim([said]) ?? false) || changed;
     this.hby.db.emsd?.rem([said]);
     this.hby.db.esigs.trim([said, ""], { topive: false });
     this.hby.db.ecigs.rem([said]);
@@ -1143,22 +1221,36 @@ export class Exchanger {
       this.hby.db.enst.rem([said]);
       this.hby.db.exchangeMeta.rem([said]);
     }
+    return changed;
   }
-  /** Remove pending ownership only; accepted wire evidence always remains retained. */
-  private *dropEscrow(said: string): Operation<void> {
+  /**
+   * Remove pending ownership and join any payload cleanup before reporting progress.
+   *
+   * @param said Exchange identity to remove from pending families.
+   * @returns Whether pending membership was removed; accepted wire evidence always remains retained.
+   */
+  private *dropEscrow(said: string): Operation<boolean> {
     yield* this.admission();
     if (this.complete(said)) {
-      this.hby.db.epse.rem([said]);
+      let changed = this.hby.db.epse.rem([said]);
       this.hby.db.epsd.rem([said]);
-      this.hby.db.emse?.trim([said]);
+      changed = (this.hby.db.emse?.trim([said]) ?? false) || changed;
       this.hby.db.emsd?.rem([said]);
-      return;
+      return changed;
     }
+    let changed = false;
     if (this.hby.db.exchangeMeta.get([said])?.essr) {
       yield* abortable(async (signal) => {
-        await (await this.hby.db.openPayloads(signal)).remove(`essr/${said}`, () => this.clearEscrow(said), signal);
+        await (await this.hby.db.openPayloads(signal)).remove(`essr/${said}`, () => {
+          changed = this.clearEscrow(said);
+        }, signal);
       });
-    } else this.hby.db.env!.transactionSync(() => this.clearEscrow(said));
+    } else {
+      this.hby.db.env!.transactionSync(() => {
+        changed = this.clearEscrow(said);
+      });
+    }
+    return changed;
   }
 }
 

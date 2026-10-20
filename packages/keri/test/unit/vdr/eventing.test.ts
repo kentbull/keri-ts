@@ -161,9 +161,21 @@ Deno.test("vdr/eventing - escrows out-of-order issue and unescrows after registr
       const vcpAnchor = anchorTel(hab, vcp);
       assertEquals(tvy.processEvent({ serder: vcp, ...vcpAnchor }).kind, "accept");
 
-      tvy.processEscrows();
+      const put = reger.tvts.put;
+      const failure = new Error("TEL storage unavailable");
+      try {
+        reger.tvts.put = () => {
+          throw failure;
+        };
+        assertEquals(assertThrows(() => tvy.processEscrows()), failure);
+        assertEquals(reger.oots.getOn(iss.pre!, 0), [iss.said], "Storage failure preserves pending source evidence");
+      } finally {
+        reger.tvts.put = put;
+      }
+      assertEquals(tvy.processEscrows(), true);
       assertEquals(reger.oots.getOn(iss.pre!, 0), []);
       assertEquals(reger.tels.getOn(iss.pre!, 0)?.qb64, iss.said);
+      assertEquals(tvy.processEscrows(), false);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);
@@ -213,6 +225,51 @@ Deno.test("vdr/eventing - reports missing TEL artifacts only when their escrow r
       consoleLogger.warn = warn;
       yield* reger.close(true);
       yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Tevery retains pending inception and completes a TSN horizon larger than one page", async () => {
+  await run(function*() {
+    const sender = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const source = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    const target = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(target, new FetchHttpClient(), systemClock);
+    try {
+      const issuer = sender.makeHab("issuer");
+      const producing = new Tevery({ db: sender.db, reger: source });
+      const vcp = inceptRegistry(issuer.pre, { cnfg: [TraitDex.NoBackers] });
+      const anchor = anchorTel(issuer, vcp);
+      assertEquals(producing.processEvent({ serder: vcp, ...anchor }).kind, "accept");
+      const { tvy, reger } = runtime.vdr!;
+      assertEquals(tvy.processEvent({ serder: vcp, ...anchor }).kind, "escrow");
+      assertEquals(tvy.processEscrows(), false, "Replaying the same unavailable KEL anchor retains inception");
+      assertEquals(reger.taes.getOn(vcp.pre!, 0), [vcp.said]);
+
+      const state = producing.tevers.get(vcp.pre!)!.state().asDict();
+      let last: SerderKERI | undefined;
+      const now = Date.now();
+      for (let i = 0; i < 65; i++) {
+        last = reply(`/tsn/registry/${issuer.pre}`, state, {
+          pre: issuer.pre,
+          stamp: makeNowIso8601(new Date(now + i)),
+        });
+        yield* runtime.reactor.processBytes(issuer.endorse(last));
+      }
+      assertEquals(reger.txnsb.escrowdb.cnt(), 65);
+      assertEquals(tvy.processEscrows(), false, "Stable pending notices do not report transient Baser proof writes");
+      for (const wire of sender.db.clonePreIter(issuer.pre)) yield* runtime.reactor.processBytes(wire);
+      assertEquals(tvy.processEscrows(), true);
+      assertEquals(reger.taes.getOn(vcp.pre!, 0), []);
+      assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
+      assertEquals(reger.txnsb.escrowdb.cnt(), 0, "A complete sweep processes all 65 notices");
+      assertEquals(reger.txnsb.current([vcp.pre!, issuer.pre])?.qb64, last!.said);
+      assertEquals(tvy.processEscrows(), false);
+    } finally {
+      yield* runtime.close();
+      yield* target.close(true);
+      yield* source.close(true);
+      yield* sender.close(true);
     }
   });
 });

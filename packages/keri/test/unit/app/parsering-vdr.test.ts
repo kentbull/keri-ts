@@ -181,7 +181,7 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
         protocolCues: runtime.vdr!.cues,
       }));
 
-      yield* reactor.protocol.processEscrowsOnce();
+      assertEquals(yield* reactor.protocol.processEscrowsOnce(), false);
       assertEquals(telEscrows, 1);
       assertEquals(verifierEscrows, 1);
     } finally {
