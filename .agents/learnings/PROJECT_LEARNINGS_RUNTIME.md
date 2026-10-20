@@ -121,6 +121,10 @@ POST/CESR/SSE response scope; send-only HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message
 POST iteration for HTTP or raw source output for TCP, not a stream HTTP PUT.
+Concrete messenger factories select resolved HTTPS/HTTP/TCP URLs without looking up
+identity preferences. HTTPStreamMessenger sends one prepared opaque PUT and returns
+owned response bytes; TCPStreamMessenger uses the existing raw writer. Neither
+adds a queue, worker, receive callback or payload-persistence framework.
 No CueSink, generic preparation/delivery wrapper, custom-emission injector or no-op
 query sender remains. QueryReply peek/take returns data; request owners publish
 both TSN replies before taking records. Current authorization defeats old matching

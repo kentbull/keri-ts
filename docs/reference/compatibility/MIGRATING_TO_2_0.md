@@ -66,3 +66,9 @@ longer requires protocol state or a clock. `TCPMessenger` takes
 replies. Its `send(bytes, options)` and `sendSource(source, options)` share the
 existing socket implementation. Ordinary HTTP source iteration is named
 `sendSource`; it splits messages into POSTs and does not mean whole-stream PUT.
+
+Use `messengerFrom(destination, urls, http, clock, headers?)` for ordinary delivery
+or `streamMessengerFrom(destination, urls, bytes, http, clock, headers?)` for a
+prepared stream. `HTTPStreamMessenger.send()` sends one opaque PUT and returns an
+owned `HttpResponse`; `TCPStreamMessenger.send()` uses the shared raw writer.
+Construction opens no connection or storage and accepts no framing preference.

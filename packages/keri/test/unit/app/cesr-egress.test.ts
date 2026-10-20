@@ -8,7 +8,7 @@ import {
   Texter,
 } from "cesr-ts";
 import type { CesrFrame } from "cesr-ts";
-import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import { call, run, suspend } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../cesr/test/fixtures/external-vectors.ts";
@@ -20,8 +20,12 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/http-messenger.ts";
 import { HTTPQuery } from "../../../src/app/http-query.ts";
+import { HTTPStreamMessenger } from "../../../src/app/http-stream-messenger.ts";
+import { messengerFrom, streamMessengerFrom } from "../../../src/app/messengering.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { TCPMessenger } from "../../../src/app/tcp-messenger.ts";
+import { TCPStreamMessenger } from "../../../src/app/tcp-stream-messenger.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 
 import { sendCesrTcpFrame } from "../../../src/app/tcp-egress.ts";
@@ -770,4 +774,181 @@ Deno.test("native HTTP completion drains the response and neither redirects nor 
   assertEquals(combined.errors[0].cause instanceof Error, true);
   assertStrictEquals(combined.errors[1], cleanup);
   assertStrictEquals(combined.cause, combined.errors[0]);
+});
+
+Deno.test("messenger construction selects concrete endpoints before I/O without identity preferences", () => {
+  let requests = 0;
+  const http = httpClient(() => {
+    requests++;
+    return new Response(null, { status: 204 });
+  });
+  for (
+    const [urls, expected, ordinaryType, streamType] of [
+      [
+        { https: "https://peer.test/good", http: "http://peer.test/other", tcp: "tcp://localhost:1234" },
+        "https://peer.test/good",
+        HTTPMessenger,
+        HTTPStreamMessenger,
+      ],
+      [
+        { http: "http://peer.test/good", tcp: "tcp://localhost:1234" },
+        "http://peer.test/good",
+        HTTPMessenger,
+        HTTPStreamMessenger,
+      ],
+      [{ tcp: "tcp://localhost:1234" }, "tcp://localhost:1234", TCPMessenger, TCPStreamMessenger],
+    ] as const
+  ) {
+    const ordinary = messengerFrom("recipient", urls, http, systemClock);
+    const stream = streamMessengerFrom("recipient", urls, fixture(), http, systemClock);
+    assertEquals(ordinary instanceof ordinaryType, true);
+    assertEquals(stream instanceof streamType, true);
+    assertEquals([ordinary.url, stream.url], [expected, expected]);
+  }
+  for (const urls of [{}, { https: "http://peer.test/" }, { tcp: "tcp://localhost:0" }]) {
+    assertThrows(() => messengerFrom("recipient", urls, http, systemClock));
+    assertThrows(() => streamMessengerFrom("recipient", urls, fixture(), http, systemClock));
+  }
+  assertEquals(requests, 0);
+});
+
+Deno.test("ordinary factory sends ordered signed POSTs with destination and authentication", async () => {
+  const requests: Array<{ method: string; body: Uint8Array; headers: Headers }> = [];
+  const http = httpClient(async (url, init) => {
+    assertEquals(url, "https://peer.test/good");
+    requests.push({
+      method: init!.method!,
+      body: new Uint8Array(await new Response(init!.body).arrayBuffer()),
+      headers: new Headers(init!.headers),
+    });
+    return new Response(null, { status: 204 });
+  });
+  const messenger = messengerFrom("provider", { https: "https://peer.test/good" }, http, systemClock, {
+    Authorization: "witness-code",
+  });
+  if (!(messenger instanceof HTTPMessenger)) throw new Error("Expected ordinary HTTP messenger");
+  const result = await run(() => messenger.send(concatBytes(fixture(), b(json))));
+  assertEquals(result, { kind: "complete" });
+  assertEquals(requests.map(request => request.method), ["POST", "POST"]);
+  assertEquals(requests.map(request => request.body), [b(json), b(json)]);
+  for (const request of requests) {
+    assertEquals(request.headers.get("CESR-DESTINATION"), "provider");
+    assertEquals(request.headers.get("Authorization"), "witness-code");
+    assertEquals(request.headers.get("Content-Type"), "application/cesr");
+  }
+  const first = await read(concatBytes(
+    Counter.makeGVC({ major: 2, minor: 0 }),
+    requests[0].body,
+    b(requests[0].headers.get(CESR_ATTACHMENT_HEADER)!),
+  ));
+  assertEquals(concatBytes(...first.essrs!.map(part => part.raw)), b("abcxyz"));
+  const second = await read(concatBytes(
+    Counter.makeGVC({ major: 2, minor: 0 }),
+    requests[1].body,
+    b(requests[1].headers.get(CESR_ATTACHMENT_HEADER)!),
+  ));
+  assertEquals(second.essrs?.length ?? 0, 0);
+});
+
+Deno.test("stream factory sends one exact binary PUT and returns owned response bytes without POST fallback", async () => {
+  const payload = concatBytes(b(json), decodeB64(t(fixture())), decodeB64(t(fixture())));
+  let requests = 0;
+  const http = httpClient(async (url, init) => {
+    requests++;
+    assertEquals(url, "https://peer.test/good");
+    assertEquals(init!.method, "PUT");
+    assertEquals(init!.redirect, "manual");
+    assertEquals(new Uint8Array(await new Response(init!.body).arrayBuffer()), payload);
+    const headers = new Headers(init!.headers);
+    assertEquals(headers.get("Content-Length"), String(payload.byteLength));
+    assertEquals(headers.get("Content-Type"), "application/cesr");
+    assertEquals(headers.get("CESR-DESTINATION"), "provider");
+    assertEquals(headers.get("Authorization"), "witness-code");
+    assertEquals(headers.has(CESR_ATTACHMENT_HEADER), false);
+    return new Response("owned response", { status: requests === 1 ? 200 : 406 });
+  });
+  const messenger = streamMessengerFrom("provider", { https: "https://peer.test/good" }, payload, http, systemClock, {
+    Authorization: "witness-code",
+    "Content-Type": "incorrect",
+    [CESR_ATTACHMENT_HEADER]: "incorrect",
+  });
+  if (!(messenger instanceof HTTPStreamMessenger)) throw new Error("Expected HTTP stream messenger");
+  const accepted = await run(() => messenger.send());
+  assertEquals([accepted.status, accepted.ok, t(accepted.body)], [200, true, "owned response"]);
+  const refused = await run(() => messenger.send());
+  assertEquals([refused.status, refused.ok, t(refused.body)], [406, false, "owned response"]);
+  assertEquals(requests, 2, "one request per explicit send, including content-type refusal");
+});
+
+Deno.test("TCP stream factory admits its full payload and completes without waiting for remote EOF", async () => {
+  const payload = concatBytes(fixture(), decodeB64(t(fixture())), b(json));
+  const received = Promise.withResolvers<Uint8Array>();
+  const sockets = new Set<Socket>();
+  const server = createServer({ allowHalfOpen: true }, socket => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    const chunks: Uint8Array[] = [];
+    socket.on("data", chunk => chunks.push(chunk.slice()));
+    socket.once("end", () => received.resolve(concatBytes(...chunks)));
+    // Leave the receiving side open. Delivery must not require this peer to end it.
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const messenger = streamMessengerFrom("peer", { tcp: url }, payload, new FetchHttpClient(), systemClock);
+    if (!(messenger instanceof TCPStreamMessenger)) throw new Error("Expected TCP stream messenger");
+    const [, bytes] = await Promise.race([
+      Promise.all([run(() => messenger.send({ maxChunkBytes: 7 })), received.promise]),
+      new Promise<never>((_, reject) =>
+        timer = setTimeout(() => reject(new Error("stream waited for peer EOF")), 2000)
+      ),
+    ]);
+    assertEquals(bytes, payload);
+    assertEquals([...sockets].every(socket => !socket.writableEnded), true);
+  } finally {
+    clearTimeout(timer);
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+Deno.test("native stream PUT cancellation joins request cleanup without POST fallback", async () => {
+  const started = Promise.withResolvers<Socket>();
+  const sockets = new Set<Socket>();
+  let requests = 0;
+  const server = createServer(socket => {
+    sockets.add(socket);
+    socket.on("error", () => {});
+    socket.once("data", bytes => {
+      requests++;
+      assertEquals(t(bytes).startsWith("PUT /stream HTTP/1.1"), true);
+      socket.write("HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nx");
+      started.resolve(socket);
+    });
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stream`;
+  const messenger = streamMessengerFrom("provider", { http: url }, fixture(), new FetchHttpClient(), systemClock);
+  const controller = new AbortController(), reason = new Error("cancel finite PUT");
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const task = run(function*() {
+    return yield* messenger.send({ signal: controller.signal });
+  });
+  try {
+    const socket = await started.promise;
+    const closed = new Promise<void>(resolve => socket.once("close", () => resolve()));
+    controller.abort(reason);
+    assertStrictEquals(await assertRejects(() => task), reason);
+    await Promise.race([
+      closed,
+      new Promise<never>((_, reject) => timer = setTimeout(() => reject(new Error("PUT socket remained open")), 2000)),
+    ]);
+    assertEquals(requests, 1);
+  } finally {
+    clearTimeout(timer);
+    await task.halt().catch(() => {});
+    for (const socket of sockets) socket.destroy();
+    await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
 });
