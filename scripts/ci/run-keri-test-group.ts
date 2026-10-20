@@ -87,7 +87,7 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
   const env = { ...suite.env };
   // Native protocol and storage owners use main; legacy/mailbox owners retain their selected peer.
   const mainRoot = Deno.env.get("KERIPY_MAIN_ROOT");
-  if (["interop-essr-storage", "interop-ipex-disclosure", "interop-kram"].includes(name) && mainRoot) {
+  if (["interop-essr-storage", "interop-ipex-disclosure"].includes(name) && mainRoot) {
     const python = Deno.env.get("KERIPY_MAIN_PYTHON");
     if (!python) throw new Error("Main peer requires KERIPY_MAIN_PYTHON.");
     Object.assign(env, {

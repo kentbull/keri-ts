@@ -109,6 +109,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-ipex-progressive.test.ts",
       "test/integration/app/interop-ipex-edge-refusals.test.ts",
       "test/integration/app/interop-ipex-conversation-refusals.test.ts",
+      "test/integration/app/interop-ipex-presentation.test.ts",
     ],
   },
   "interop-acdc-extended": {
@@ -265,7 +266,7 @@ export const suites: Record<string, TestSuite> = {
   "interop-kram": {
     files: [
       "test/integration/app/interop-kram-mailbox.test.ts",
-      "test/integration/app/interop-ipex-presentation.test.ts",
+      "test/integration/app/interop-ipex-presentation-mailbox.test.ts",
       "test/integration/app/interop-ipex-mailbox.test.ts",
       "test/integration/app/interop-ipex-mailbox-pairwise.test.ts",
     ],

@@ -145,7 +145,7 @@ jobs:
         run: bash scripts/ci/assert-environment.sh
 
       - name: Prepare pinned main protocol and storage peer
-        if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure", "interop-kram", "extended-interop", "qualification", "full"]'), inputs.target)
+        if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure", "extended-interop", "qualification", "full"]'), inputs.target)
         uses: ./.github/actions/setup-keripy-main-peer
 
       - name: run selected extended interop target
