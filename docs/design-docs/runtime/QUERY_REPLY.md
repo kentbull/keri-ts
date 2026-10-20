@@ -225,7 +225,7 @@ Respondant owns eager reply construction and atomic publication; Poster owns
 queued FIFO execution and cleanup. HTTP reply and outbound consumers remain
 independent. Complete local replay sequences are materialized in the production
 pass; no reply cursor survives delivery passes. Failed events retain source bytes
-and partial success for explicit retry/discard, without automatic retry.
+and partial success without automatic retry; no retry/discard API remains.
 QueryCoordinator remains separate and keeps its existing continuation/response
 ownership. The [runtime contract](INGRESS_AND_EGRESS.md) defines transport completion.
 QueryCoordinator prepares its signed packets directly without public custom-emission

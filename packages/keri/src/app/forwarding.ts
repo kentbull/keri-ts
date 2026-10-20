@@ -53,7 +53,6 @@ import {
   mailboxPollEndpoints,
   mailboxTopicKey,
 } from "./mailboxing.ts";
-import { Organizer } from "./organizing.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -210,15 +209,13 @@ export class Poster {
   readonly hby: Habery;
   /** Borrowed mailbox store (mbx); null means this host provides no local mailbox. */
   readonly mbx: Mailboxer | null;
-  /** Contact reader used only to resolve user-provided recipient aliases. */
-  readonly organizer: Organizer;
   /** Borrowed HTTP client selected explicitly by composition. */
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
   /** Runnable signed messages in admission order; the delivery worker is the sole consumer. */
   readonly evts = new Deck<PosterEvent>();
-  /** Whole failed attempts retained until explicit retry, discard or close. */
+  /** Terminal failed attempts retained until close, pending the unobserved-failure reporting change. */
   readonly failures: Extract<PosterOutcome, { kin: "failed" }>[] = [];
   /** Opt-in terminal outcomes, matched by concrete admitted event identity. */
   readonly cues = new Deck<PosterOutcome>();
@@ -257,7 +254,6 @@ export class Poster {
     if (protocol && protocol.kvy.db !== hby.db) throw new RangeError("Poster protocol must use the same database");
     this.hby = hby;
     this.mbx = mbx;
-    this.organizer = new Organizer(hby.db, hby.signator);
     this.http = http;
     this.clock = clock;
     this.protocol = protocol;
@@ -299,41 +295,11 @@ export class Poster {
   }
 
   /**
-   * Admit a retained source message as a fresh attempt.
-   * Routing and outer packets are rebuilt from current state. Prior successful targets
-   * may receive duplicates; no per-target retry position or durable retry record exists.
-   *
-   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
-   * @param options Optional notification for the fresh admission; default false.
-   * @returns A new admission; only then is the retained failure removed.
-   */
-  retry(evt: PosterEvent, options: { notify?: boolean } = {}): PosterEvent {
-    const index = this.failures.findIndex((failure) => failure.evt === evt);
-    if (index < 0) throw new Error("Event is not retained as a failure");
-    const admitted = this.send(evt, options);
-    this.failures.splice(index, 1);
-    return admitted;
-  }
-
-  /**
-   * Discard failed work without sending it again.
-   *
-   * @param evt Concrete source-message record; completion/failure lookup uses object identity, not message SAID.
-   * @returns True if the retained failure was removed; false if absent.
-   */
-  discard(evt: PosterEvent): boolean {
-    const index = this.failures.findIndex((failure) => failure.evt === evt);
-    if (index < 0) return false;
-    this.failures.splice(index, 1);
-    return true;
-  }
-
-  /**
    * Wait for one admission without owning its delivery.
    * The delivery worker must run independently. Cancellation removes the observer and
    * its notification; it does not withdraw queued work or abort the attempt.
    *
-   * @param evt Exact record returned by send/retry with notify enabled.
+   * @param evt Exact record returned by send with notify enabled.
    * @returns This admission's sent or failed outcome, consuming its notification.
    * @throws Missing notification, duplicate waiter or closure before an outcome is available.
    */
@@ -456,35 +422,6 @@ export class Poster {
   }
 
   /**
-   * Resolve one CLI or user recipient input into the actual destination prefix.
-   *
-   * Resolution order matches the mailbox CLI mental model:
-   * - exact known prefix wins
-   * - otherwise exact organizer alias lookup is required
-   *
-   * @param recipient Known AID prefix or exact organizer alias.
-   * @returns Resolved destination AID.
-   * @throws ValidationError for absent or ambiguous aliases.
-   */
-  resolveRecipient(recipient: string): string {
-    if (this.hby.db.getKever(recipient)) {
-      return recipient;
-    }
-
-    const matches = this.organizer.findExact("alias", recipient);
-    if (matches.length === 0) {
-      throw new ValidationError(`no contact found with alias '${recipient}'`);
-    }
-    if (matches.length > 1) {
-      throw new ValidationError(
-        `multiple contacts match alias '${recipient}', use prefix instead`,
-      );
-    }
-
-    return matches[0]!.id;
-  }
-
-  /**
    * Resolve and execute one event using sequential current endpoints.
    * Observed HTTP refusal and TransportError permit remaining targets to run.
    * Unexpected construction/parser/storage/cleanup errors propagate so process can
@@ -500,7 +437,6 @@ export class Poster {
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
     const route = this.findBytesRoute(hab, {
       recipient: evt.dest,
-      recipientIsPrefix: true,
       topic: evt.topic,
       delivery: evt.delivery,
     });
@@ -572,7 +508,6 @@ export class Poster {
     if (!hab) throw new Error(`Unknown local sender ${evt.src}`);
     return this.findBytesRoute(hab, {
       recipient: evt.dest,
-      recipientIsPrefix: true,
       topic: evt.topic,
       delivery: evt.delivery,
     }) !== null;
@@ -582,7 +517,7 @@ export class Poster {
    * Snapshot mailbox/direct/witness policy without opening transport or reading message bytes.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param args Recipient, optional mailbox topic and delivery preference. findBytesRoute may bypass alias lookup with recipientIsPrefix.
+   * @param args Resolved recipient AID, optional mailbox topic and delivery preference.
    * @returns Current route snapshot.
    * @throws Invalid recipient/topic policy or storage lookup failures propagate. Missing routing throws ValidationError.
    */
@@ -590,25 +525,25 @@ export class Poster {
     hab: Hab,
     args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
   ): RawCesrRoute {
-    const recipient = this.resolveRecipient(args.recipient);
-    const route = this.findBytesRoute(hab, { ...args, recipient, recipientIsPrefix: true });
+    const recipient = args.recipient;
+    const route = this.findBytesRoute(hab, { ...args, recipient });
     if (!route) throw new ValidationError(`No end roles for ${recipient} to send raw CESR payload.`);
     return route;
   }
 
   /**
-   * Same policy; parsed-prefix lookup bypasses aliases, absence is explicit, other failures propagate.
+   * Resolve the prepared destination AID; absence is explicit and other failures propagate.
    *
    * @param hab Local habitat used to construct/sign this output; stores remain borrowed.
-   * @param args Recipient, optional mailbox topic and delivery preference. findBytesRoute may bypass alias lookup with recipientIsPrefix.
+   * @param args Resolved recipient AID, optional mailbox topic and delivery preference.
    * @returns Current route snapshot, or null when no target is known.
    * @throws Invalid recipient/topic policy or storage lookup failures propagate.
    */
   findBytesRoute(
     hab: Hab,
-    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference; recipientIsPrefix?: boolean },
+    args: { recipient: string; topic?: string; delivery?: ExchangeDeliveryPreference },
   ): RawCesrRoute | null {
-    const recipient = args.recipientIsPrefix ? args.recipient : this.resolveRecipient(args.recipient);
+    const recipient = args.recipient;
     const topic = args.topic ?? "";
     const delivery = args.delivery ?? "auto";
     const base = { sender: hab.pre, recipient, topic, bodyMode: this.hby.cesrBodyMode };

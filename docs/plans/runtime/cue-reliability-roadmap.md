@@ -4,27 +4,11 @@ Status: deferred capabilities, not an active implementation queue. The [runtime 
 delivery behavior. This document records the evidence required before adding
 a delivery or recovery mechanism.
 
-## Baseline after the approved refactor
-
-Poster owns one ephemeral `evts` queue, sequential FIFO delivery and
-explicit whole-event failures. Ordinary records carry signed source messages.
-Known refusals allow the remaining destinations of that event to be attempted;
-partial results remain with the failed event. Explicit retry refreshes routing,
-introductions and forwarding envelopes, may repeat successful destinations, and
-does not promise byte-identical final packets. Explicit discard removes retained
-failed work. The concrete transport boundaries preserve local TCP completion
-separately from duplex receive, and require complete successful HTTP response bodies.
-
-Local TCP drain or completed successful HTTP exchange does not establish remote
-protocol acceptance. Independent request response streams keep their own
-lifetimes. Protocol escrows and accepted evidence retain their existing durable
-owners; the outbound queue does not become a durable business workflow.
-
 ## Deferred capabilities and evidence required
 
 | Capability                                | Why it is outside the approved baseline                                                  | Evidence needed before design                                                                                           |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Automatic retries and backoff             | Retained failure plus explicit retry is the selected policy                              | A caller's retry obligation, retryable failure taxonomy, attempt/deadline semantics and duplicate tolerance             |
+| Automatic retries and backoff             | Failure containment exists; recovery needs a concrete application owner                  | A caller's retry obligation, retryable failure taxonomy, attempt/deadline semantics and duplicate tolerance             |
 | Delivery deadlines and failover           | Concrete I/O owners keep actual lifecycle controls; no new workflow policy is added      | A measured operational failure, required end-to-end deadline and authorized alternate route behavior                    |
 | Exact final-wire retries                  | Retry retains the signed source, while current routes/introduction/forwarding may change | A protocol or product requirement for identical final bytes, and rules for stale route/key/authentication state         |
 | Per-target progress and deduplication     | Failure retains the whole event; retry may repeat successful destinations                | A demonstrated harmful duplicate and a recipient-scoped completion/deduplication contract                               |

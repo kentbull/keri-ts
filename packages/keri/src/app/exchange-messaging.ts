@@ -1,3 +1,4 @@
+import { Organizer } from "./organizing.ts";
 /** Construct signed exchanges in their producer and run standalone queued sends. */
 import { concatBytes, type SerderKERI } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
@@ -92,7 +93,7 @@ export function sendExchangeMessage(
         yield* postman.close();
       }
     });
-    const dest = postman.resolveRecipient(args.dest);
+    const dest = new Organizer(hby.db, hby.signator).resolveRecipient(args.dest);
     const topic = args.topic ?? mailboxTopicForRoute(args.route);
     if (!topic) throw new ValidationError(`Unable to derive mailbox topic from route ${args.route}.`);
     const { serder, msg } = createExchangeMessage(hab, { ...args, dest });

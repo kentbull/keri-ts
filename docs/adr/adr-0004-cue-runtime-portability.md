@@ -70,8 +70,7 @@ HTTP and witness ingress publish without driving delivery. Producers construct
 signed messages and callers await identity-matched sent/failed outcomes when
 transmission gates their workflow. Ordinary event and target loops replace reply
 cursors and cross-batch scheduling. Refusals attempt remaining destinations and
-retain failed events without automatic retry. Explicit retry preserves the signed
-source message but rebuilds routing and outer wire; duplicates are possible.
+retain failed events without automatic retry. Failure records remain process-local until close; Poster has no retry/discard API.
 HTTP completion requires successful body EOF. Transmit-only TCP completion is
 local drain followed by joined cleanup; duplex preserves receive processing.
 Concrete network failures are retained without disguising construction or cleanup

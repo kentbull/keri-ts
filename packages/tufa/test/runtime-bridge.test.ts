@@ -54,11 +54,6 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       yield* runtime.postman.process();
       assertEquals(sends, 1, "retained failures do not retry automatically");
       failure = undefined;
-      runtime.postman.retry(runtime.postman.failures[0].evt);
-      yield* runtime.postman.process();
-      assertEquals(runtime.postman.hasPending, false);
-      assertEquals(runtime.postman.failures.length, 0);
-      assertEquals(sends, 2);
 
       started = new Promise<void>((resolve) => start = resolve);
       gate = new Promise<void>((resolve) => finish = resolve);
@@ -86,9 +81,8 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       yield* runtime.postman.process();
       assertEquals(sends, beforeSends, "absent endpoints cannot transmit");
       assertEquals(runtime.postman.hasPending, false);
-      assertEquals(runtime.postman.failures.length, 1, "missing endpoints retain the source for explicit retry");
-      assertEquals(runtime.postman.failures[0].evt.msg, wire);
-      runtime.postman.discard(runtime.postman.failures[0].evt);
+      assertEquals(runtime.postman.failures.length, 2, "missing endpoints remain terminal failure evidence");
+      assertEquals(runtime.postman.failures.at(-1)!.evt.msg, wire);
 
       const event = hby.db.getEvtSerder(sender.pre, sender.kever!.serder.said!)!;
       const stream = { kin: "stream" as const, serder: event, pre: sender.pre, src: sender.pre, topics: { logs: 0 } };

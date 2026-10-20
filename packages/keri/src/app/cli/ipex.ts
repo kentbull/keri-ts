@@ -35,6 +35,7 @@ import {
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
 } from "../ipexing.ts";
+import { Organizer } from "../organizing.ts";
 import { withAgentRuntime } from "./common/context.ts";
 
 interface IpexBaseArgs {
@@ -80,7 +81,9 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
   requireNonEmpty(schema, "Schema");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
+      requireString(ipexArgs.recipient, "Recipient"),
+    );
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route: IPEX_APPLY_ROUTE,
@@ -121,7 +124,9 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
   requireNonEmpty(acdcFile, "ACDC file");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
+      requireString(ipexArgs.recipient, "Recipient"),
+    );
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route: IPEX_OFFER_ROUTE,
@@ -178,7 +183,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = ipexArgs.out
       ? resolveAid(hby, requireString(ipexArgs.recipient, "Recipient"))
-      : runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+      : new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const grant = ipexCredentialGrant({
       hby,
       hab,
@@ -492,7 +497,9 @@ function* sendPriorResponse(
   requireNonEmpty(prior, priorLabel);
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = runtime.postman.resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
+      requireString(ipexArgs.recipient, "Recipient"),
+    );
     const { serder, msg } = createExchangeMessage(hab, {
       dest: recipient,
       route,

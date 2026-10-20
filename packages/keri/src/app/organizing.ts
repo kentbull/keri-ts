@@ -22,6 +22,35 @@ export class Organizer {
   /** Borrow contact storage and its optional signing authority without owning their lifetime. */
   constructor(readonly db: Baser, readonly signator: Signator | null) {}
 
+  /**
+   * Resolve one application recipient input into the actual destination prefix.
+   *
+   * Resolution order matches the mailbox CLI mental model:
+   * - exact known prefix wins
+   * - otherwise exact organizer alias lookup is required
+   *
+   * @param recipient Known AID prefix or exact organizer alias.
+   * @returns Resolved destination AID.
+   * @throws ValidationError for absent or ambiguous aliases.
+   */
+  resolveRecipient(recipient: string): string {
+    if (this.db.getKever(recipient)) {
+      return recipient;
+    }
+
+    const matches = this.findExact("alias", recipient);
+    if (matches.length === 0) {
+      throw new ValidationError(`no contact found with alias '${recipient}'`);
+    }
+    if (matches.length > 1) {
+      throw new ValidationError(
+        `multiple contacts match alias '${recipient}', use prefix instead`,
+      );
+    }
+
+    return matches[0]!.id;
+  }
+
   /** Load one signed contact record by identifier prefix. */
   get(pre: string): ContactRecord | null {
     const raw = this.db.cons.get([pre]);

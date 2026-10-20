@@ -176,10 +176,9 @@ construction. A failed second TSN leaves the pair pending and unpublished.
 Poster owns endpoint selection, forwarding construction, sequential target loops,
 active I/O and joined cleanup. Every evts record is one signed source message.
 Observed refusals attempt remaining targets, retain the whole event in failures,
-and allow later FIFO events to proceed. No automatic retry occurs. Explicit
-retry(evt) creates a fresh admission from the same signed source bytes, using
-current endpoints and fresh outer forwarding material; prior successes may be
-repeated. discard(evt) removes failed work. Unknown construction, storage, parser
+and allow later FIFO events to proceed. Poster exposes no retry/discard operation.
+The process-local failure backlog remains until its separate unobserved-failure
+reporting phase defines a replacement; it is cleared on close. Unknown construction, storage, parser
 and cleanup errors are retained/reported and propagate. Failures are process-local,
 excluded from pending/idle state, and cleared on shutdown after I/O joins.
 Concrete native network failures are TransportError values retaining their causes.
@@ -202,7 +201,7 @@ Only one waiter may observe an event. Cancelling it drops that observation and a
 unconsumed outcome, without withdrawing shared delivery. A published outcome does
 not retain a separate observer registration. Outcome cues are consumable output;
 queued and active work alone determine hasPending. Whole failed events live separately
-in failures until explicit retry/discard or shutdown, as described above.
+in failures until shutdown, as described above.
 
 Exchange construction and signing live in exchange-messaging.ts. Producers call
 createExchangeMessage before publishing; the standalone sendExchangeMessage helper

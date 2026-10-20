@@ -1,3 +1,4 @@
+import { Organizer } from "./organizing.ts";
 /**
  * Multisig proposal and approval workflows.
  *
@@ -124,7 +125,7 @@ export function* publishProposal(
   const deliveries: string[] = [];
   for (const recipient of uniqueMembers(recipients)) {
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) continue;
-    const destination = runtime.postman.resolveRecipient(recipient);
+    const destination = new Organizer(runtime.hby.db, runtime.hby.signator).resolveRecipient(recipient);
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
       childGvrsn,
@@ -168,7 +169,7 @@ function* publishVdrProposal(
     if (recipient === member.pre || runtime.hby.habs.has(recipient)) {
       continue;
     }
-    const destination = runtime.postman.resolveRecipient(recipient);
+    const destination = new Organizer(runtime.hby.db, runtime.hby.signator).resolveRecipient(recipient);
     const [serder, attachments] = exchange(route, payload, {
       sender: member.pre,
       recipient: destination,
