@@ -25,7 +25,7 @@ import {
 } from "cesr-ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { ValidationError } from "../core/errors.ts";
+import { DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import type { QueryEnvelope } from "../core/eventing.ts";
 import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
 import { Kever } from "../core/kever.ts";
@@ -49,6 +49,7 @@ import { dgKey } from "../db/core/keys.ts";
 import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
+import { resolveBackerState } from "./backer-state.ts";
 import { credentialRecord } from "./credential-tsn-record.ts";
 import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
 import { prepareTsnQuery } from "./tsn-query.ts";
@@ -627,10 +628,9 @@ export class Tever {
     if (this.noBackers) {
       return reject("Backer issue is invalid against backerless registry.", serder, this.regk);
     }
-    const state = this.getBackerState(okKed(serder), serder);
-    if (state.kind === "reject") {
-      return state;
-    }
+    const state = resolveBackerState(this.reger, this.regk, okKed(serder).ra);
+    if (state.kind === "reject") return reject(state.reason, serder, this.regk);
+    if (state.kind === "missing") return escrow("outOfOrder", state.reason, serder, this.regk);
     const checked = this.valAnchorBigs({
       serder,
       seqner: args.seqner ?? null,
@@ -687,10 +687,9 @@ export class Tever {
     if (this.noBackers) {
       return reject("Backer revoke is invalid against backerless registry.", serder, this.regk);
     }
-    const state = this.getBackerState(okKed(serder), serder);
-    if (state.kind === "reject") {
-      return state;
-    }
+    const state = resolveBackerState(this.reger, this.regk, okKed(serder).ra);
+    if (state.kind === "reject") return reject(state.reason, serder, this.regk);
+    if (state.kind === "missing") return escrow("outOfOrder", state.reason, serder, this.regk);
     const checked = this.valAnchorBigs({
       serder,
       seqner: args.seqner ?? null,
@@ -755,7 +754,8 @@ export class Tever {
     const verfers = args.baks.map((bak) => new Verfer({ qb64: bak }));
     const verified = Kever.verifyIndexedSignatures(
       args.serder.raw,
-      args.bigers,
+      // Every arrival and retry verifies the union against this exact historical cohort.
+      [...this.reger.tibs.get(dgKey(okPre(args.serder), okSaid(args.serder))), ...args.bigers],
       verfers,
     ).sigers;
 
@@ -827,9 +827,7 @@ export class Tever {
     if (seqner && saider) {
       this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
-    if (bigers.length > 0) {
-      this.reger.tibs.pin(key, [...bigers]);
-    }
+    this.reger.tibs.pin(key, [...bigers]);
     this.reger.tvts.put(key, serder.raw);
     this.reger.twes.put(pre, okSn(serder), said);
   }
@@ -848,37 +846,13 @@ export class Tever {
     if (seqner && saider) {
       this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
-    if (bigers.length > 0) {
-      this.reger.tibs.pin(key, [...bigers]);
-    }
+    this.reger.tibs.pin(key, [...bigers]);
     if (baks.length > 0) {
       this.reger.baks.rem(key);
       this.reger.baks.put(key, [...baks]);
     }
     this.reger.tvts.put(key, serder.raw);
     this.reger.taes.put(pre, okSn(serder), said);
-  }
-
-  private getBackerState(
-    ked: Record<string, unknown>,
-    serder: SerderKERI,
-  ):
-    | { kind: "backers"; toad: number; baks: string[] }
-    | Extract<TelProcessDecision, { kind: "reject" }>
-  {
-    const ra = sealRecord(ked.ra);
-    const regi = ra && "i" in ra && typeof ra.i === "string" ? ra.i : null;
-    const regd = ra && "d" in ra && typeof ra.d === "string" ? ra.d : null;
-    if (!regi || !regd || regi !== this.prefixer.qb64) {
-      return reject("Backer TEL event registry anchor mismatch.", serder, this.regk);
-    }
-    const rserder = serderForTel(this.reger, regi, regd);
-    if (!rserder) {
-      return reject("Backer TEL event references missing registry state.", serder, this.regk);
-    }
-    const toad = parseInt(stringField(okKed(rserder), "bt") ?? "0", 16);
-    const baks = this.reger.baks.get(dgKey(regi, regd));
-    return { kind: "backers", toad, baks };
   }
 
   /** Persist accepted TEL evidence and the exact qualified source seal. */
@@ -898,9 +872,7 @@ export class Tever {
     }
     // Keep the qualified Number; widening it here would alter v2 replay evidence.
     this.reger.ancs.put(key, [args.seqner, new Diger({ qb64: args.saider.qb64 })]);
-    if (args.bigers && args.bigers.length > 0) {
-      this.reger.tibs.pin(key, [...args.bigers]);
-    }
+    this.reger.tibs.pin(key, [...(args.bigers ?? [])]);
     if (args.baks && args.baks.length > 0) {
       this.reger.baks.rem(key);
       this.reger.baks.put(key, [...args.baks]);
@@ -1001,7 +973,7 @@ export class Tevery {
         const tever = stored ? new Tever({ db: this.db, reger: this.reger, rsr: stored }) : undefined;
         if (!tever) {
           if (ilk !== Ilks.vcp) {
-            this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null);
+            this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null, args.wigers ?? []);
             return escrow("outOfOrder", "TEL event arrived before registry inception.", serder, regk);
           }
           try {
@@ -1025,18 +997,21 @@ export class Tevery {
           }
         }
 
-        if (ilk === Ilks.vcp) return duplicate("Registry inception already accepted.", serder, regk);
+        if (ilk === Ilks.vcp) return this.processAcceptedDuplicate(args, regk);
 
         const expected = ilk === Ilks.vrt ? tever.sn + 1 : (tever.vcSn(pre) ?? -1) + 1;
         if (sn > expected) {
-          this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null);
+          this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null, args.wigers ?? []);
           return escrow("outOfOrder", `TEL event sn=${sn} expected=${expected}.`, serder, regk);
         }
-        if (sn < expected) return duplicate(`TEL event sn=${sn} older than expected=${expected}.`, serder, regk);
+        if (sn < expected) return this.processAcceptedDuplicate(args, regk);
 
         const result = tever.update({ ...args, local: this.local }, (error) => {
           publicationFailure = { error };
         });
+        if (result.kind === "escrow" && result.escrow === "outOfOrder") {
+          this.escrowOOEvent(serder, args.seqner ?? null, args.saider ?? null, args.wigers ?? []);
+        }
         if (result.kind === "accept" && ilk === Ilks.vrt) {
           this.reger.states.pin(regk, tever.state());
           accepted = tever;
@@ -1054,6 +1029,32 @@ export class Tevery {
       this.cues.push({ kin: "revoked", serder: args.serder });
     }
     return decision;
+  }
+
+  /** Add valid late backer receipts to an exact accepted event without reapplying its business state. */
+  private processAcceptedDuplicate(args: TelProcessEventArgs, regk: string): TelProcessDecision {
+    const { serder } = args;
+    const pre = okPre(serder), sn = okSn(serder), said = okSaid(serder);
+    if (this.reger.tels.getOn(pre, sn)?.qb64 !== said) {
+      return reject("TEL event conflicts with the accepted coordinate.", serder, regk);
+    }
+    if (args.wigers?.length && serder.ilk !== Ilks.iss && serder.ilk !== Ilks.rev) {
+      const seal = serder.ilk === Ilks.vcp || serder.ilk === Ilks.vrt
+        ? { i: pre, s: serder.snh, d: said }
+        : okKed(serder).ra;
+      const state = resolveBackerState(this.reger, regk, seal);
+      if (state.kind !== "backers") {
+        throw new DatabaseOperationError("Accepted TEL event has no accepted backer cohort.");
+      }
+      const key = dgKey(pre, said);
+      const verified = Kever.verifyIndexedSignatures(
+        serder.raw,
+        [...this.reger.tibs.get(key), ...args.wigers],
+        state.baks.map((bak) => new Verfer({ qb64: bak })),
+      ).sigers;
+      this.reger.tibs.pin(key, verified);
+    }
+    return duplicate("TEL event already accepted.", serder, regk);
   }
 
   /**
@@ -1371,6 +1372,7 @@ export class Tevery {
   processEscrows(): void {
     this.processEscrowAnchorless();
     this.processEscrowOutOfOrders();
+    this.retryDependencyEscrow("partialWitness", this.reger.twes);
     if (!this.rvy) return;
     for (const typ of ["registry-mae", "registry-ooo", "credential-mre", "credential-mae", "credential-ooo"]) {
       let done = false;
@@ -1436,7 +1438,12 @@ export class Tevery {
 
   /** Retry anchorless TEL events; missing source seals remain pending rather than being ejected. */
   processEscrowAnchorless(): void {
-    const entries = [...this.reger.taes.getAllItemIter()];
+    this.retryDependencyEscrow("anchorless", this.reger.taes);
+  }
+
+  /** Retry each retained body with its accumulated proofs; commit before removing the old family index. */
+  private retryDependencyEscrow(family: "anchorless" | "partialWitness", table: Reger["taes"]): void {
+    const entries = [...table.getAllItemIter()];
     for (const [keys, sn, dig] of entries) {
       const pre = keys[0] ?? "";
       const key = dgKey(pre, dig);
@@ -1444,9 +1451,9 @@ export class Tevery {
       const couple = this.reger.ancs.get(key);
       if (raw === null || couple === null) {
         if (raw === null) {
-          if (this.reger.taes.remOn(pre, sn, dig)) {
-            consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
-              family: "anchorless",
+          if (table.remOn(pre, sn, dig)) {
+            consoleLogger.warn("Tevery ejected TEL dependency escrow", {
+              family,
               pre,
               sn,
               said: dig,
@@ -1463,13 +1470,13 @@ export class Tevery {
         saider,
         wigers: this.reger.tibs.get(key),
       });
-      if (decision.kind === "escrow" && decision.escrow === "anchorless") {
+      if (decision.kind === "escrow" && decision.escrow === family) {
         continue;
       }
-      const removed = this.reger.taes.remOn(pre, sn, dig);
+      const removed = table.remOn(pre, sn, dig);
       if (removed && decision.kind === "reject") {
-        consoleLogger.warn("Tevery ejected anchorless TEL event from escrow", {
-          family: "anchorless",
+        consoleLogger.warn("Tevery ejected TEL dependency escrow", {
+          family,
           pre,
           sn,
           said: dig,
@@ -1509,10 +1516,14 @@ export class Tevery {
     serder: SerderKERI,
     seqner?: NumberPrimitive | null,
     saider?: Diger | null,
+    bigers: readonly Siger[] = [],
   ): void {
     const pre = okPre(serder);
     const said = okSaid(serder);
     const key = dgKey(pre, said);
+    // The historical roster may be unavailable. Retain candidates, then verify
+    // their union in valAnchorBigs before any threshold or acceptance decision.
+    this.reger.tibs.put(key, bigers);
     this.reger.tvts.put(key, serder.raw);
     if (seqner && saider) {
       this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);

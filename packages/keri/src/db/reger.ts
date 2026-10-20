@@ -115,7 +115,8 @@ export class Reger extends LMDBer {
   public tels!: CesrOnSuber<Diger>; // TEL sequence ordinals mapped to event digests.
   public ancs!: CatCesrSuber<TelAnchorTuple>; // TEL event source seal couples.
   public baks!: IoDupSuber<string>; // Backer AIDs at one TEL management state.
-  public tibs!: CesrDupSuber<Siger>; // Indexed backer receipt signatures.
+  /** Indexed backer proofs; out-of-order candidates are reverified against accepted cohorts before admission. */
+  public tibs!: CesrDupSuber<Siger>;
   public oots!: OnIoDupSuber<string>; // Out-of-order TEL event escrows.
   public twes!: OnIoDupSuber<string>; // Partially witnessed TEL event escrows.
   public taes!: OnIoDupSuber<string>; // Anchorless TEL event escrows.

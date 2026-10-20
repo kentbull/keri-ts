@@ -8,6 +8,7 @@ import {
   Prefixer,
   SerderACDC,
   SerderKERI,
+  Siger,
   TraitDex,
   Vrsn_1_0,
   Vrsn_2_0,
@@ -1511,6 +1512,109 @@ Deno.test("TSN runtime query delivers ordered replies with independent credentia
       yield* receiver.close(true);
       yield* runtime.close();
       yield* sender.close(true);
+    }
+  });
+});
+
+Deno.test("backer cohorts require accepted management coordinates and retain historical rosters", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const old = hby.makeHab("old-backer", undefined, { transferable: false });
+      const next = hby.makeHab("new-backer", undefined, { transferable: false });
+      const tvy = new Tevery({ db: hby.db, reger });
+      const vcp = inceptRegistry(issuer.pre, { baks: [old.pre], toad: 1 });
+      assertEquals(
+        tvy.processEvent({ serder: vcp, ...anchorTel(issuer, vcp), wigers: old.sign(vcp.raw, true) }).kind,
+        "accept",
+      );
+      const vrt = rotateRegistry(vcp.pre!, vcp.said!, { baks: [old.pre], cuts: [old.pre], adds: [next.pre], toad: 1 });
+      // Staging records the rotated roster, but neither its body nor roster is accepted authority.
+      assertEquals(tvy.processEvent({ serder: vrt, wigers: next.sign(vrt.raw, true) }).kind, "escrow");
+      assertEquals(reger.baks.get(dgKey(vrt.pre!, vrt.said!)), [next.pre]);
+      const credential = makeCredential(issuer.pre);
+      const bis = backerIssue(credential.said!, vcp.pre!, 1, vrt.said!);
+      const anchored = anchorTel(issuer, bis);
+      const pending = tvy.processEvent({ serder: bis, ...anchored, wigers: next.sign(bis.raw, true) });
+      assertEquals(pending.kind === "escrow" && pending.escrow, "outOfOrder");
+      assertEquals(reger.tels.getOn(bis.pre!, 0), null);
+      assertEquals(tvy.processEvent({ serder: vrt, ...anchorTel(issuer, vrt) }).kind, "accept");
+      tvy.processEscrows();
+      assertEquals(reger.tels.getOn(bis.pre!, 0)?.qb64, bis.said);
+      assertEquals(reger.oots.getOn(bis.pre!, 0), []);
+
+      // Reuse a historical cohort after rotation; a sequence/digest mismatch is not that cohort.
+      const other = new SerderACDC({
+        sad: { d: "", i: issuer.pre, s: SCHEMA_SAID, a: { name: "other" } },
+        makify: true,
+      });
+      const mismatched = backerIssue(other.said!, vcp.pre!, 1, vcp.said!);
+      assertEquals(
+        tvy.processEvent({
+          serder: mismatched,
+          ...anchorTel(issuer, mismatched),
+          wigers: old.sign(mismatched.raw, true),
+        }).kind,
+        "reject",
+      );
+      const historic = backerIssue(other.said!, vcp.pre!, 0, vcp.said!);
+      assertEquals(
+        tvy.processEvent({ serder: historic, ...anchorTel(issuer, historic), wigers: old.sign(historic.raw, true) })
+          .kind,
+        "accept",
+      );
+      const brv = backerRevoke(other.said!, vcp.pre!, 1, vrt.said!, historic.said!);
+      assertEquals(
+        tvy.processEvent({ serder: brv, ...anchorTel(issuer, brv), wigers: next.sign(brv.raw, true) }).kind,
+        "accept",
+      );
+      assertEquals(tvy.tevers.get(vcp.pre!)!.vcState(other.said!)?.et, "brv");
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("backer contributions accumulate by verified index across reopen and escrow retry", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const backers = [0, 1, 2].map((i) => hby.makeHab(`backer-${i}`, undefined, { transferable: false }));
+      const vcp = inceptRegistry(issuer.pre, { baks: backers.map((hab) => hab.pre), toad: 2 });
+      const source = anchorTel(issuer, vcp);
+      const sigs = backers.map((hab, index) => {
+        const signature = hab.sign(vcp.raw, true)[0];
+        return new Siger({ code: signature.code, raw: signature.raw, index });
+      });
+      let tvy = new Tevery({ db: hby.db, reger });
+      const first = tvy.processEvent({ serder: vcp, ...source, wigers: [sigs[0], sigs[0]] });
+      assertEquals(first.kind === "escrow" && first.escrow, "partialWitness");
+      assertEquals(reger.tibs.get(dgKey(vcp.pre!, vcp.said!)).map((sig) => sig.index), [0]);
+      yield* reger.reopen();
+      tvy = new Tevery({ db: hby.db, reger });
+      tvy.processEscrows();
+      assertEquals(reger.tels.getOn(vcp.pre!, 0), null);
+      assertEquals(reger.twes.getOn(vcp.pre!, 0), [vcp.said]);
+      // The real second contribution alone must complete the event; repeat index zero is not quorum.
+      const replay = tvy.processEvent({ serder: vcp, ...source, wigers: [sigs[0]] });
+      assertEquals(replay.kind === "escrow" && replay.escrow, "partialWitness");
+      assertEquals(tvy.processEvent({ serder: vcp, ...source, wigers: [sigs[1]] }).kind, "accept");
+      assertEquals(reger.tibs.get(dgKey(vcp.pre!, vcp.said!)).map((sig) => sig.index), [0, 1]);
+      tvy.processEscrows();
+      assertEquals(reger.twes.getOn(vcp.pre!, 0), []);
+      assertEquals(tvy.processEvent({ serder: vcp, wigers: [sigs[2]] }).kind, "duplicate");
+      assertEquals(reger.tibs.get(dgKey(vcp.pre!, vcp.said!)).map((sig) => sig.index), [0, 1, 2]);
+      yield* reger.reopen();
+      assertEquals(reger.tels.getOn(vcp.pre!, 0)?.qb64, vcp.said);
+      assertEquals(reger.tibs.get(dgKey(vcp.pre!, vcp.said!)).map((sig) => sig.index), [0, 1, 2]);
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
     }
   });
 });

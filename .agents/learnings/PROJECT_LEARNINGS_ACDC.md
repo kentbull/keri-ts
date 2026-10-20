@@ -50,7 +50,13 @@ record schemas in structing.ts and counted transport in wrappers.
 
 ## TEL, verifier and IPEX
 
-Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless escrow.
+Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
+BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
+Missing management state stays pending with its candidate signatures. Every admission
+reverifies the union by unique index against that historical roster; accepted and
+anchorless/partial evidence retains only verified contributions. Exact accepted
+duplicates can add valid late receipts without reapplying state. Ordinary sweeps
+retry partial backer evidence and remove completed family indexes after commit.
 Tevery owns the synchronous Reger writer, using a private admission candidate from
 accepted storage. Tever retains no input policy/cue Deck; Tevery supplies policy
 and publishes cache changes/revocation cues after commit. Caller-owned writers

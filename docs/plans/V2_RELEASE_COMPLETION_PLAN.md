@@ -1,6 +1,6 @@
 # Complete the coordinated 2.0.0 release
 
-Status: active; checked against merged master `f202bc13` (#626), 2026-10-20.
+Status: active; checked against merged master `fb9eb08d` (#627), 2026-10-20.
 Approved goal: publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 
 ## Current state
@@ -104,7 +104,7 @@ implementation PR before the next; split only for independent human review.
 | Cut          | Remaining result                                                                                                     | Depends on                       |
 | ------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
 | R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation              |
-| R2           | Small live backer/native proofs and frozen signing/custody contracts before broad features.                          | R1                               |
+| R2           | Native registry API proof/intake merged #627; backer service proof and signing/custody contracts remain.             | R1                               |
 | 13k          | Finish endpoint/DID/query and signed-event utility validation; preserve explicit values and field-specific defaults. | #621–624; after R1               |
 | 13 remainder | Durable exact-event group selection/resume after notification consumption.                                           | Reporting already merged         |
 | 14           | Route or guard every group-capable command before effects.                                                           | 13k, 13 remainder                |
@@ -112,7 +112,7 @@ implementation PR before the next; split only for independent human review.
 | 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                               |
 | 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged |
 | 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                           |
-| 21           | Accepted historical backer cohorts and durable accumulated partial proofs.                                           | 20                               |
+| 21           | Accepted historical backer cohorts and durable accumulated partial proofs; advance before the R2 backer service.     | R1                               |
 | 22           | Complete real TEL backer signing/collection through public hosting.                                                  | 21, R2 backer slice              |
 | 23           | Explicit backer roster/threshold and group registry inception/rotation.                                              | 14, 22                           |
 | 24           | BIS/BRV, rotated cohorts and fresh-observer replay.                                                                  | 18, 20, 23                       |
@@ -149,8 +149,9 @@ Re-run the maintained main-profile probes and affected IPEX/disclosure/KRAM owne
 retain old legacy/mailbox pins. Final qualification uses the manifest, not old
 literal pins in reports or fixture provenance. Never relabel old results.
 
-**R2 backer slice: define the signing contract before registry rotation.** First
-settle a small concrete service contract in the owning design/source:
+**R2 backer slice: define the signing contract before registry rotation.** Advance
+cut 21 as its prerequisite: accepted cohorts, proof accumulation and partial-backer
+retry must be reliable before the service uses them. Then settle a small concrete service contract in the owning design/source:
 
 - The issuer selects the ordered backer AIDs explicitly. Resolve each AID through
   existing signed endpoint roles/locations; use a supported controller or authorized
@@ -169,7 +170,10 @@ settle a small concrete service contract in the owning design/source:
   same event. Include one conflict case for the chosen signing contract. This
   starts B1/B2 using existing helpers; it is not an additional harness or an outbox.
 
-**R2 native proof: freeze claims before broad CLI authoring.** Use the maintained
+**R2 native proof: freeze claims before broad CLI authoring.** #627 proves the
+first two registry-evidence directions below against main through ordinary TS HTTP
+intake, reopened TS state and Python vet/vetBinds. Native IPEX/wallet and CLI custody
+claims still require their separate gates. Use the maintained
 registry/disclosure/IPEX helpers against unmodified main. The minimum contract is:
 
 | Direction                   | Concrete entrypoint and observable result                                                                    | Release claim                                                                                                                |
