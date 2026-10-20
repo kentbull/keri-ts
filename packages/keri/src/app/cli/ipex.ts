@@ -37,6 +37,7 @@ import {
 } from "../ipexing.ts";
 import { Organizer } from "../organizing.ts";
 import { withAgentRuntime } from "./common/context.ts";
+import { parseBooleanOption, parseNumberOption, parseStringOption } from "./common/parsing.ts";
 
 interface IpexBaseArgs {
   name?: string;
@@ -76,8 +77,9 @@ interface IpexJoinArgs extends IpexBaseArgs {
  */
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const schema = args.schema as string | undefined;
+  const schema = parseStringOption(args.schema, "schema");
   requireNonEmpty(schema, "Schema");
+  const attrs = parseJsonArg(parseStringOption(args.attrs, "attrs")) ?? {};
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
@@ -89,7 +91,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
       payload: {
         m: ipexArgs.message ?? "",
         s: schema,
-        a: parseJsonArg(args.attrs as string | undefined) ?? {},
+        a: attrs,
         i: recipient,
       },
     });
@@ -118,8 +120,9 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
  */
 export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const acdcFile = args.acdc as string | undefined;
+  const acdcFile = parseStringOption(args.acdc, "acdc");
   requireNonEmpty(acdcFile, "ACDC file");
+  const apply = parseStringOption(args.apply, "apply");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
@@ -129,7 +132,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
       dest: recipient,
       route: IPEX_OFFER_ROUTE,
       payload: { m: ipexArgs.message ?? "" },
-      dig: args.apply as string | undefined,
+      dig: apply,
       embeds: { acdc: Deno.readFileSync(acdcFile!) },
     });
     const postman = runtime.postman;
@@ -161,7 +164,7 @@ export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void
  */
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const prior = requireString(args.prior as string | undefined, "Prior message");
+  const prior = requireString(parseStringOption(args.prior, "prior"), "Prior message");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const dest = new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
@@ -188,8 +191,8 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexGrantArgs = {
     ...ipexBaseArgs(args),
-    said: args.said as string | undefined,
-    agree: args.agree as string | undefined,
+    said: parseStringOption(args.said, "said"),
+    agree: parseStringOption(args.agree, "agree"),
     approvalTimeoutSeconds: nonNegativeNumber(
       args.approvalTimeoutSeconds,
       120,
@@ -199,9 +202,14 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
   requireNonEmpty(ipexArgs.said, "Credential SAID");
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const recipient = ipexArgs.out
-      ? resolveAid(hby, requireString(ipexArgs.recipient, "Recipient"))
-      : new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
+    const selectedRecipient = requireString(ipexArgs.recipient, "Recipient");
+    // Offline export accepts the supplied AID; network delivery resolves contacts/endpoints.
+    let recipient: string;
+    if (ipexArgs.out) {
+      recipient = resolveAid(hby, selectedRecipient);
+    } else {
+      recipient = new Organizer(hby.db, hby.signator).resolveRecipient(selectedRecipient);
+    }
     const grant = ipexCredentialGrant({
       hby,
       hab,
@@ -309,9 +317,9 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
 export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexAdmitArgs = {
     ...ipexBaseArgs(args),
-    said: args.said as string | undefined,
-    grantFile: args.grantFile as string | undefined,
-    noWait: args.noWait as boolean | undefined,
+    said: parseStringOption(args.said, "said"),
+    grantFile: parseStringOption(args.grantFile, "grantFile"),
+    noWait: parseBooleanOption(args.noWait, "noWait"),
   };
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
@@ -427,8 +435,8 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
   const ipexArgs: IpexJoinArgs = {
     ...ipexBaseArgs(args),
-    said: args.said as string | undefined,
-    auto: args.auto as boolean | undefined,
+    said: parseStringOption(args.said, "said"),
+    auto: parseBooleanOption(args.auto, "auto"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
@@ -517,7 +525,7 @@ function* sendPriorResponse(
   priorLabel: string,
 ): Operation<void> {
   const ipexArgs = ipexBaseArgs(args);
-  const prior = args[priorLabel] as string | undefined;
+  const prior = parseStringOption(args[priorLabel], priorLabel);
   requireNonEmpty(prior, priorLabel);
   yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
@@ -550,15 +558,15 @@ function* sendPriorResponse(
 
 function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {
   return {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    alias: args.alias as string | undefined,
-    recipient: args.recipient as string | undefined,
-    message: args.message as string | undefined,
-    out: args.out as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    alias: parseStringOption(args.alias, "alias"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    message: parseStringOption(args.message, "message"),
+    out: parseStringOption(args.out, "out"),
     gvrsn: parseGvrsn(args.gvrsn),
   };
 }
@@ -608,11 +616,8 @@ function requireString(value: string | undefined, label: string): string {
 }
 
 function nonNegativeNumber(value: unknown, fallback: number, label: string): number {
-  if (value === undefined || value === null || value === "") {
-    return fallback;
-  }
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) {
+  const parsed = parseNumberOption(value, label) ?? fallback;
+  if (parsed < 0 || !Number.isFinite(parsed * 1000)) {
     throw new ValidationError(`${label} must be a finite nonnegative number.`);
   }
   return parsed;
@@ -680,7 +685,11 @@ function parseJsonArg(value: string | undefined): Record<string, unknown> | unde
     return undefined;
   }
   const text = value.startsWith("@") ? Deno.readTextFileSync(value.slice(1)) : value;
-  return JSON.parse(text) as Record<string, unknown>;
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new ValidationError("attrs must be a JSON object.");
+  }
+  return parsed as Record<string, unknown>;
 }
 /** Scan a file through valid EOF before choosing a grant, or use its persisted exchange record. */
 function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {

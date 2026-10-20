@@ -147,8 +147,6 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
         .option(
           "--settlement-timeout-ms <milliseconds>",
           "Positive post-input settlement timeout; fractions floor with a 1 ms minimum",
-          Number,
-          5_000,
         ),
     ),
     dispatch,
@@ -245,7 +243,6 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
             .option(
               "--approval-timeout <seconds>",
               "Seconds to wait for multisig IPEX approval before returning",
-              (value: string) => Number(value),
             )
             .option("--out <file>", "Write support artifacts plus grant wire"),
         ),
@@ -306,7 +303,6 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .option(
             "--timeout <seconds>",
             "Elapsed mailbox wait in seconds (default 40)",
-            (value: string) => Number(value),
           ),
       )),
     ),
@@ -325,7 +321,6 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .option(
             "--approval-timeout <seconds>",
             "Elapsed proposal wait in seconds (default 60)",
-            (value: string) => Number(value),
           ),
       ),
     ),

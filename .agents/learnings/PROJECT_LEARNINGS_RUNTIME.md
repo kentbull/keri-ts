@@ -38,6 +38,9 @@ Config iurls/durls/wurls/curls are absent or arrays of nonblank strings; preserv
 accepted strings exactly. Habery validates all three preload lists before either
 OOBI store changes, even without dt; alias curls validate before signed replies. Location
 and role changes use signed Revery intake, not direct locs/lans mutation.
+Credential/IPEX/verifier command boundaries use shared primitive validators;
+only omission selects timeout defaults. Credential JSON shapes validate before
+store opening, and scalar/list schema or recipient input never drops bad members.
 Init validates one explicit encryption method before opening config/stores;
 AEID/seed bypasses prompting. Interactive passcodes use the scoped hidden-input
 owner, including EOF/cancellation cleanup. Noninteractive reopen preserves its
