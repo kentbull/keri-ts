@@ -15,14 +15,20 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
-import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE } from "./grouping.ts";
+import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE, type MultisigVdrProposal, prepareMultisigVdrExn } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
 
-const MULTISIG_TOPIC = "multisig";
+import {
+  type ProposalDelivery,
+  type ProposalPublication,
+  proposalPublication,
+  remoteProposalMembers,
+  sendGroupProposal,
+  signGroupProposal,
+} from "./multisig-publication.ts";
 
 export interface CredentialRegistryInceptOptions {
   registryName: string;
@@ -363,12 +369,10 @@ function* proposeGroupRegistryIncept(
     markTelComplete(reger, regk, 0, requireSerderSaid(vcp, "registry inception"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(hby, postman, hab, MULTISIG_VCP_ROUTE, {
-    gid: hab.pre,
-    usage: options.usage ?? options.registryName ?? "credential registry",
-  }, {
-    vcp: vcp.raw,
-    anc: anchor.message,
+  const publication = yield* publishGroupVcProposal(hby, postman, hab, {
+    route: MULTISIG_VCP_ROUTE,
+    attrs: { gid: hab.pre, usage: options.usage ?? options.registryName },
+    embeds: { vcp: vcp.raw, anc: anchor.message },
   });
 
   return {
@@ -378,7 +382,7 @@ function* proposeGroupRegistryIncept(
     route: MULTISIG_VCP_ROUTE,
     status: decision.kind,
     accepted: telAccepted(reger, regk, 0, requireSerderSaid(vcp, "registry inception")),
-    deliveries,
+    ...publication,
   };
 }
 
@@ -439,17 +443,19 @@ function* proposeGroupCredentialIssue(
     markTelComplete(reger, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
   }
 
-  const deliveries = yield* publishGroupVcProposal(hby, postman, registry.hab, MULTISIG_ISS_ROUTE, {
-    gid: registry.hab.pre,
-  }, {
-    acdc: serializeCredential(
-      creder,
-      credentialSeal.prefixer,
-      credentialSeal.seqner,
-      credentialSeal.saider,
-    ),
-    iss: iss.raw,
-    anc: anchor.message,
+  const publication = yield* publishGroupVcProposal(hby, postman, registry.hab, {
+    route: MULTISIG_ISS_ROUTE,
+    attrs: { gid: registry.hab.pre },
+    embeds: {
+      acdc: serializeCredential(
+        creder,
+        credentialSeal.prefixer,
+        credentialSeal.seqner,
+        credentialSeal.saider,
+      ),
+      iss: iss.raw,
+      anc: anchor.message,
+    },
   });
 
   return {
@@ -463,7 +469,7 @@ function* proposeGroupCredentialIssue(
     status: verifierDecision.kind,
     telStatus: telDecision.kind,
     saved: credentialSaved(reger, creder),
-    deliveries,
+    ...publication,
   };
 }
 
@@ -474,37 +480,22 @@ function* proposeGroupCredentialIssue(
  * @param hby Borrowed local identities and accepted-state stores.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param groupHab Group issuer habitat whose remote signing members receive the proposal.
- * @param route Existing registry-inception or issuance multisig route.
- * @param payload Route-defined group proposal data.
- * @param embeds Named credential/TEL/anchor wire attachments.
- * @returns Successful target URLs after each member's concrete Poster outcome.
+ * @param proposal Registry or issuance route with its required named evidence.
+ * @returns Stable proposal/wrapper identities and successful target URLs after concrete Poster completion.
  */
 function* publishGroupVcProposal(
   hby: Habery,
   postman: Poster,
   groupHab: Hab,
-  route: typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE,
-  payload: Record<string, unknown>,
-  embeds: Record<string, Uint8Array>,
-) {
+  proposal: MultisigVdrProposal,
+): Operation<ProposalPublication> {
   const member = localGroupMember(hby, groupHab.pre);
-  const deliveries: string[] = [];
-  for (const recipient of groupSigningMembers(hby, groupHab.pre)) {
-    if (recipient === member.pre || hby.habs.has(recipient)) {
-      continue;
-    }
-    const { msg } = createExchangeMessage(member, {
-      dest: recipient,
-      route,
-      payload,
-      embeds,
-    });
-    const evt = postman.send({ src: member.pre, dest: recipient, topic: MULTISIG_TOPIC, msg }, { notify: true });
-    const outcome = yield* postman.wait(evt);
-    if (outcome.kin === "failed") throw outcome.error;
-    deliveries.push(...outcome.deliveries);
+  const outcomes: ProposalDelivery[] = [];
+  for (const recipient of remoteProposalMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
+    const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient });
+    outcomes.push(yield* sendGroupProposal(postman, signGroupProposal(member, recipient, prepared)));
   }
-  return deliveries;
+  return proposalPublication(outcomes);
 }
 
 function registerRegistry(

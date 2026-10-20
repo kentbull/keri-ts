@@ -43,12 +43,12 @@ Keep ests/eidx and cigar verifier context; recheck proof factors on replay.
 Retry captures an initial horizon, reads one key and closes the LMDB cursor before
 awaiting/removing rows. Mutating a suspended range can skip the next escrow.
 Group leadership intentionally uses group signatures, excluding foreign endorsements.
-Missing-schema EXNs retain the same evidence ownership through emse/emsd and
-archive recovery. One absolute deadline spans sequential schema dependencies;
+Missing-schema EXNs retain the same LMDB evidence ownership through emse/emsd
+and retry. One absolute deadline spans sequential schema dependencies;
 TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
-ESSR syntax failures reject; unexpected asynchronous payload read/hash failures
-propagate before retry can drop pending proofs or archive ownership.
+ESSR syntax failures reject; unexpected evidence read/hash failures propagate
+before retry can remove pending proofs or fragments.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
@@ -63,6 +63,13 @@ projection and cannot select the reps/chas identity.
 V2 forwarding binds exactly one child to signed `a.evt`. The recipient authenticates
 its signatures. Children survive enst storage, retry and replay; verified
 duplicates replace child evidence atomically and rerun the handler.
+
+Group publication uses typed VCP/ISS named-child contracts and ordinary signed
+records shared by initiation and approval. Packet signing and concrete Poster
+completion are separate from local processing policy and worker ownership.
+Publication exposes recipient wrapper SAIDs and the shared Multiplexor index key:
+v1 embedded-bundle SAID or v2 signed-child SAID. Extraction is not authentication;
+Multiplexor owns commitment validation and accepted proposal/submitter indexes.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
