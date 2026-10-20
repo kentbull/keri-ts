@@ -31,9 +31,13 @@ query before it can verify signatures from the newly active key state.
   - `Hab.rotate(...)`, `Hab.interact(...)`, event builders, local acceptance,
     and keeper rollback.
 - `packages/keri/src/app/reactor.ts`
-  - Parser ingress plus escrow retry seam for recoverable reply failures.
+  - Awaited source/byte ingress, including mailbox and OOBI intake.
+- `packages/keri/src/app/protocol-processing.ts`
+  - Serialized dispatch, reply capture, escrow advancement and cue publication.
+- `packages/keri/src/app/http-messenger.ts` and `tcp-messenger.ts`
+  - Request-owned response intake through an input-specific parser and Kevery.
 - `packages/tufa/src/http/protocol-handler.ts`
-  - Runtime cue draining plus mailbox replay publication used by query catch-up.
+  - HTTP ingress and request-owned replies; queued output is delivered by Poster.
 
 ## KERIpy Correspondence
 
@@ -69,7 +73,6 @@ What is intentionally different in `keri-ts`:
 - Effection operations replace KERIpy's HIO doers.
 - query transport and mailbox polling are composed explicitly per command
   instead of being mostly ambient long-lived runtime behavior.
-- attester selection is deterministic instead of randomized.
 - parser ingress uses CESR frames/envelopes plus `dispatchEnvelope(...)` instead
   of KERIpy's monolithic `Parser` object model.
 
@@ -84,13 +87,15 @@ The query path is:
 
 1. `tufa query` opens a local runtime and registers a continuation.
 2. `QueryCoordinator` turns continuations into honest outbound `qry` messages.
-3. transport sends the query and ingests any immediate CESR reply bytes.
-4. `Reactor` parses ingress and dispatches envelopes through `Revery`, `Kevery`,
-   and `Exchanger`.
-5. if a reply is not yet verifiable, it may be recoverable and escrowed rather
-   than treated as terminal failure.
-6. later turns retry reply/KEL escrow processing until accepted state converges
-   or the bounded command time expires.
+3. a concrete messenger sends the query and owns immediate response intake with
+   its input-specific parser and Kevery. Mailbox and OOBI intake use awaited Reactor
+   operations over the same protocol state.
+4. `ProtocolProcessor` serializes dispatch through the semantic handlers and
+   captures correlated replies before publishing application cues.
+5. recoverable proof dependencies remain with Revery's reply escrows and Kevery's
+   KEL escrows; transport completion alone does not establish accepted state.
+6. the shared escrow worker advances those dependencies while query continuations
+   observe accepted state, until convergence or the command deadline.
 
 The recoverability model is conceptually the same as KERIpy's
 `UnverifiedReplyError` handling:
@@ -101,12 +106,19 @@ The recoverability model is conceptually the same as KERIpy's
 
 `keri-ts` expresses that differently:
 
-- `Reactor.processOnce()` treats `UnverifiedReplyError` as recoverable ingress
-  work
-- `Reactor.processEscrowsOnce()` performs the later retry pass
-- `protocol-handler.ts` can publish replay catch-up material into mailbox topics after a
-  successful `ksn` reply so later polling turns have the actual KEL material
-  needed to update local accepted state
+- Revery evaluates reply proofs and persists recoverable evidence instead of
+  relying on an ingress exception catcher.
+- `ProtocolProcessor.processEscrowsOnce()` advances the composed protocol escrows
+  under the same serialization as dispatch.
+- `KeyStateNoticer` requests logs when a saved remote key state is ahead; accepted
+  KEL intake, rather than receipt of the key-state notice, completes the follow-on.
+- The bounded CLI can request controller OOBI catch-up if correspondence has not
+  converged. The HTTP handler does not synthesize mailbox replay after a `ksn` reply.
+
+Ordinary queries select one random endpoint within the first eligible controller,
+agent or witness role, as in the pinned KERIpy reference. Explicit attesters and
+witness alternatives retain their separate contracts. See
+[query ownership](../runtime/QUERY_REPLY.md) for signer, subject and attester distinctions.
 
 ## Rotate Flow
 

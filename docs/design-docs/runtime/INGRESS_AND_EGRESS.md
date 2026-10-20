@@ -14,7 +14,7 @@ composed, failure/restart and installed-package evidence gates.
 One runtime serves a Habery or command invocation. Provider storage is selected
 with `enableMailboxStore` or an injected Mailboxer; there is no host mode.
 Components receive the actual HttpClient and RuntimeClock separately. Application
-roots call createAgentRuntime(hby, http, clock, pollTransport, options); required
+roots call createAgentRuntime(hby, http, clock, options); required
 collaborators have no options-bag override or lower-level production fallback. Baser, Habery,
 Reactor, CLI and client constructors carry no shared accounting options.
 
@@ -32,6 +32,45 @@ registering either route. ProtocolProcessor does not name individual TSN handler
 closes only defaults it acquired. A legacy borrowed Reger gets runtime-created
 processors using the same cue Deck. Application workflows may reject genuine
 registry absence, without repeated class assertions or a replacement service bag.
+
+## Routing references and operation boundaries
+
+Routing and producer correspondence follow
+[KERIpy 71438328](https://github.com/WebOfTrust/keripy/tree/7143832813cac6a394ab1faf9be83bb3372be87c).
+Messenger completion and failure containment use
+[GLEIF-IT b8626e1d](https://github.com/GLEIF-IT/keripy/tree/b8626e1d58770a4a480ea72a01acc5580278a9f2).
+The references serve different purposes: scheme preference is HTTPS, HTTP, TCP
+from the routing baseline, rather than the GLEIF revision's HTTP-first ordering.
+
+| Owner / operation    | Endpoint selection                                                                                                                     | Completion boundary                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| Ordinary Poster send | All controller endpoints, all agent endpoints, then one random mailbox; witness only without those roles                               | Concrete admitted event, with partial deliveries on failure              |
+| Poster sendStream    | First present controller/agent/mailbox role, witness otherwise; all endpoints of a direct role or one relay for the whole finite batch | One admission/outcome for the ordered source batch                       |
+| Ordinary query       | One random endpoint in the first eligible controller/agent/witness role; supplied witness alternatives select within that list         | Transport intake followed by the continuation's accepted-state predicate |
+| Mailbox polling      | All allowed providers and current KEL witnesses over HTTP(S); one worker per recipient/provider history                                | Awaited event consumption before durable cursor advancement              |
+
+Explicitly addressed query attesters and AnchorQuerier's separate recovery requests
+remain distinct from ordinary random selection. No mailbox-only query fallback or
+user delivery-mode selector exists. Missing selected locations remain visible;
+selection is not refusal-driven failover. Provider-local publication requires a
+composed store and any eligible local provider AID, without requiring a URL or
+matching the sender. It stores payloads without consuming them locally.
+
+Accepted authorization remains mandatory. Unlike both donor `endsFor` methods,
+TypeScript retains its existing `allowed || enabled` filter; ordinary cut rows
+without either flag are excluded. Empty location maps remain selected endpoints
+so missing configuration is reported rather than hidden by role promotion.
+Stream construction deliberately corrects the donor's mixed-role wrapping and
+local-EID lookup defects: direct targets receive signed source frames, relays
+receive bound `/fwd` children, and local storage keeps the recipient stream.
+
+Respondant, challenge/EXN/OOBI sharing, delegation, ordinary multisig,
+credential/registry and endpoint-publication producers use ordinary sends. Initial
+IPEX grant/admit/spurn, including their initial member proposals, use stream
+admission; IPEX join signaling and completed output use ordinary sends. The
+apply/offer/agree implementations use ordinary EXN delivery; the pinned donor's
+corresponding commands are stubs. These are actual producer contracts, not modes
+inferred from a route, topic or test fixture.
 
 ## Input and state ordering
 

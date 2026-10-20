@@ -17,7 +17,7 @@ child can discover siblings. One runtime serves a Habery or command invocation.
 | Oobiery                         | Durable introduction jobs and joined retrieval/intake                             |
 | Authenticator                   | Well-known authorization retrieval                                                |
 | QueryCoordinator                | Query correspondence, selected signer/attester, signed packets and response I/O   |
-| Respondant / Poster             | Signed message production, FIFO delivery and explicit whole-event retry           |
+| Respondant / Poster             | Signed message production, FIFO delivery and concrete completion outcomes         |
 | MailboxDirector / MailboxPoller | Provider response correlation and continuous client polling                       |
 | Regery owners                   | Distinct legacy VDR and v2 registry processing/storage                            |
 
@@ -40,8 +40,9 @@ record. Do not add a renamed test pump or another scheduler.
 
 ## Construction and lifetime
 
-Application roots supply HttpClient, RuntimeClock and the existing mailbox poll
-transport as required createAgentRuntime arguments. Components receive their
+Application roots supply HttpClient and RuntimeClock as required
+createAgentRuntime arguments. MailboxPoller owns its concrete HTTP/SSE operation;
+there is no injected polling strategy. Components receive their
 actual collaborators directly; options contain policy and optional store acquisition
 choices. No partial services resolver or lower-level production fallback remains.
 Choose actual processors at construction. Provider
