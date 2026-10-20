@@ -94,7 +94,9 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
         const opening = makeBlindState({ acdc: acdc.said!, state: "issued" });
         const update = blindate(rip.said!, rip.said!, opening.d.nonce);
         issuer.interact({ data: [{ i: rip.said, s: "1", d: update.said }] });
-        const kel = [0, 1, 2].map((sn) => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join("");
+        const kel = [0, 1, 2].map((sn) => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(
+          "",
+        );
         return {
           rip: t(rip.raw),
           update: t(update.raw),
