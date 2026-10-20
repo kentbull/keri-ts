@@ -95,7 +95,6 @@ Deno.test("init credentials - passcode and explicit key pair reopen encrypted st
       const initialized = await command(["init", "--name", name, "--head-dir", headDirPath, "--salt", salt, ...flags]);
       assertEquals(initialized.code, 0, initialized.stderr);
       assertStringIncludes(initialized.stdout, first.aeid);
-      assertEquals(initialized.stdout.includes("Credential Store created"), false);
       assertEquals(initialized.stderr.includes("Passcode:"), false);
       assertEquals(initialized.stdout.includes("please enter"), false);
       let pub = "";

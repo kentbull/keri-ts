@@ -1,18 +1,12 @@
 import { Encrypter } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import {
-  type AgentRuntime,
-  createAgentRuntime,
-  runAgentRuntimeUntil,
-  runtimeHasPendingWork,
-  runtimeHasWellKnownAuth,
-  runtimeOobiTerminalState,
-} from "../agent-runtime.ts";
+import { resolveBootstrap } from "../bootstrapping.ts";
 import { type Configer, createConfiger } from "../configing.ts";
 import { branToSeedAeid, createHabery, type Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 import { readPasscode } from "./common/passcode.ts";
 
 /**
@@ -53,17 +47,17 @@ interface InitArgs {
 export function* initCommand(args: Record<string, unknown>): Operation<void> {
   // Extract values from args
   const initArgs: InitArgs = {
-    name: stringOption(args.name, "--name"),
-    base: stringOption(args.base, "--base"),
-    headDirPath: stringOption(args.headDirPath, "--head-dir"),
-    temp: booleanOption(args.temp, "--temp"),
-    salt: stringOption(args.salt, "--salt"),
-    configDir: stringOption(args.configDir, "--config-dir"),
-    configFile: stringOption(args.configFile, "--config-file"),
-    passcode: stringOption(args.passcode, "--passcode"),
-    nopasscode: booleanOption(args.nopasscode, "--nopasscode"),
-    aeid: stringOption(args.aeid, "--aeid"),
-    seed: stringOption(args.seed, "--seed"),
+    name: parseStringOption(args.name, "--name"),
+    base: parseStringOption(args.base, "--base"),
+    headDirPath: parseStringOption(args.headDirPath, "--head-dir"),
+    temp: parseBooleanOption(args.temp, "--temp") ?? false,
+    salt: parseStringOption(args.salt, "--salt"),
+    configDir: parseStringOption(args.configDir, "--config-dir"),
+    configFile: parseStringOption(args.configFile, "--config-file"),
+    passcode: parseStringOption(args.passcode, "--passcode"),
+    nopasscode: parseBooleanOption(args.nopasscode, "--nopasscode") ?? false,
+    aeid: parseStringOption(args.aeid, "--aeid"),
+    seed: parseStringOption(args.seed, "--seed"),
   };
 
   const name = initArgs.name;
@@ -110,24 +104,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       seed,
       salt: initArgs.salt,
     });
-    if (runtimeBootstrapNeeded(hby)) {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-      try {
-        yield* runAgentRuntimeUntil(
-          runtime,
-          () => !runtimeHasPendingWork(runtime),
-          { timeoutMs: 30_000, pollMailbox: false },
-        );
-        if (hby.db.eoobi.cnt() > 0) {
-          throw new ValidationError(
-            "Bootstrap OOBI resolution failed during init.",
-          );
-        }
-        assertConfiguredWellKnownAuth(runtime, hby, "init");
-      } finally {
-        yield* runtime.close();
-      }
-    }
+    yield* resolveBootstrap(hby, new FetchHttpClient(), systemClock);
 
     console.log("KERI Keystore created at:", hby.ks.path);
     console.log("KERI Database created at:", hby.db.path);
@@ -145,20 +122,6 @@ type InitCredentials =
   | { kind: "plaintext" }
   | { kind: "encrypted"; aeid: string; seed: string }
   | { kind: "prompt" };
-
-/** Validate the open CLI-helper argument boundary without coercing credentials. */
-function stringOption(value: unknown, flag: string): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value !== "string") throw new ValidationError(`${flag} must be a string`);
-  return value;
-}
-
-/** Flags are booleans; truthy strings/numbers cannot select plaintext or temp. */
-function booleanOption(value: unknown, flag: string): boolean {
-  if (value === undefined) return false;
-  if (typeof value !== "boolean") throw new ValidationError(`${flag} must be a boolean`);
-  return value;
-}
 
 /** Refuse empty secrets without changing passcode normalization or derivation. */
 function requirePasscode(passcode: string): void {
@@ -202,35 +165,4 @@ function resolveCredentials(args: InitArgs): InitCredentials {
     return { kind: "encrypted", aeid: args.aeid, seed: args.seed };
   }
   return { kind: "prompt" };
-}
-
-function runtimeBootstrapNeeded(
-  hby: Habery,
-): boolean {
-  return hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0;
-}
-
-function configuredWellKnownUrls(hby: Habery): string[] {
-  return Array.isArray(hby.config.wurls)
-    ? hby.config.wurls.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
-function assertConfiguredWellKnownAuth(
-  runtime: AgentRuntime,
-  hby: Habery,
-  context: string,
-): void {
-  const failed = configuredWellKnownUrls(hby).filter((url) => !runtimeHasWellKnownAuth(runtime, url));
-  if (failed.length === 0) {
-    return;
-  }
-
-  const details = failed.map((url) => {
-    const terminal = runtimeOobiTerminalState(runtime, url);
-    return `${url} (${terminal.record?.state ?? terminal.status})`;
-  }).join(", ");
-  throw new ValidationError(
-    `Bootstrap well-known auth failed during ${context}: ${details}`,
-  );
 }

@@ -1,4 +1,5 @@
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { oobiTerminalState } from "../../../src/app/oobiery.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 
@@ -26,7 +27,6 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeOobiTerminalState,
 } from "../../../src/app/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -134,11 +134,11 @@ for (const count of [1, 2]) {
               for (const url of oobis) runtime.oobiery.resolve(url);
               yield* runAgentRuntimeUntil(
                 runtime,
-                () => oobis.every((url) => runtimeOobiTerminalState(runtime, url).status !== "pending"),
+                () => oobis.every((url) => oobiTerminalState(runtime.hby.db, url).status !== "pending"),
                 { hab: signer, timeoutMs: 20_000, pollMailbox: false },
               );
               for (const url of oobis) {
-                assertEquals(runtimeOobiTerminalState(runtime, url).status, "resolved");
+                assertEquals(oobiTerminalState(runtime.hby.db, url).status, "resolved");
               }
             }
 

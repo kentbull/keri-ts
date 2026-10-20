@@ -1,20 +1,16 @@
-import { createQueue, type Operation, spawn } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import {
-  type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-  runtimeHasPendingWork,
-  runtimeHasWellKnownAuth,
-  runtimeOobiTerminalState,
 } from "../agent-runtime.ts";
+import { resolveBootstrap } from "../bootstrapping.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { createProtocolProcessor } from "../protocol-processing.ts";
 import { systemClock } from "../runtime-clock.ts";
 
 import { type Configer, createConfiger } from "../configing.ts";
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
-import type { Habery } from "../habbing.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { setupHby } from "./common/existing.ts";
 import { InceptFileOptions, loadInceptFileOptions, parseDataItems, parseThresholdOption } from "./common/parsing.ts";
@@ -107,14 +103,10 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     throw new ValidationError("Alias is required and cannot be empty");
   }
 
-  if (inceptArgs.endpoint) {
-    // supported below
-  }
   const opts = mergeWithFile(inceptArgs);
 
-  const cues = createQueue<{ kin: string; pre?: string; mode: string }, void>();
-
-  const doer = yield* spawn(function*() {
+  // A command-local scope owns acquisition and teardown; there is no independent child consumer.
+  yield* call(function*() {
     const cf: Configer | undefined = inceptArgs.configFile
       ? (yield* createConfiger({
         name: inceptArgs.configFile,
@@ -139,24 +131,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
       },
     );
     try {
-      if (hby.db.oobis.cnt() > 0 || hby.db.woobi.cnt() > 0) {
-        const runtime = yield* createAgentRuntime(hby, http, systemClock);
-        try {
-          yield* runAgentRuntimeUntil(
-            runtime,
-            () => !runtimeHasPendingWork(runtime),
-            { timeoutMs: 30_000, pollMailbox: false },
-          );
-          if (hby.db.eoobi.cnt() > 0) {
-            throw new ValidationError(
-              "Bootstrap OOBI resolution failed before inception.",
-            );
-          }
-          assertConfiguredWellKnownAuth(runtime, hby, "inception");
-        } finally {
-          yield* runtime.close();
-        }
-      }
+      yield* resolveBootstrap(hby, http, systemClock);
 
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {
         transferable: opts.transferable ?? false,
@@ -229,38 +204,8 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         console.log(`Delegation status  ${delegationPhase}`);
       }
       console.log("");
-      cues.add({ kin: "incept", pre: hab.pre, mode: "native" });
     } finally {
       yield* hby.close();
     }
   });
-
-  yield* doer;
-  const cue = yield* cues.next();
-  if (cue.done) return;
-}
-
-function configuredWellKnownUrls(hby: Habery): string[] {
-  return Array.isArray(hby.config.wurls)
-    ? hby.config.wurls.filter((entry): entry is string => typeof entry === "string")
-    : [];
-}
-
-function assertConfiguredWellKnownAuth(
-  runtime: AgentRuntime,
-  hby: Habery,
-  context: string,
-): void {
-  const failed = configuredWellKnownUrls(hby).filter((url) => !runtimeHasWellKnownAuth(runtime, url));
-  if (failed.length === 0) {
-    return;
-  }
-
-  const details = failed.map((url) => {
-    const terminal = runtimeOobiTerminalState(runtime, url);
-    return `${url} (${terminal.record?.state ?? terminal.status})`;
-  }).join(", ");
-  throw new ValidationError(
-    `Bootstrap well-known auth failed before ${context}: ${details}`,
-  );
 }
