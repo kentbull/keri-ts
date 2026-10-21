@@ -6,7 +6,7 @@
  * here never turns a successful proposal send into credential lifecycle success.
  */
 import type { Operation } from "effection";
-import { vcCreateCommand as create, vcRegistryInceptCommand as incept } from "keri-ts/cli";
+import { vcCreateCommand as create, vcRegistryInceptCommand as incept, vcRevokeCommand as revoke } from "keri-ts/cli";
 import { writeJsonLine } from "./support/rendering.ts";
 
 /** Display the created registry or group proposal, after its owned resources close. */
@@ -52,4 +52,18 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
   } else {
     writeJsonLine(issued);
   }
+}
+
+/** Render revocation after its host and database owners close; keep proposal sends distinct from delivery. */
+export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
+  const { said, tel, status, accepted, publicationComplete, deliveries, group } = yield* revoke(args);
+  writeJsonLine({
+    said,
+    tel,
+    status,
+    accepted,
+    publicationComplete,
+    deliveries,
+    ...(group ? { route: group.route, messages: group.messages, memberDeliveries: group.deliveries } : {}),
+  });
 }

@@ -5,7 +5,12 @@ import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 import { importCredentialStream } from "../credential-importing.ts";
-import { revocationRecipients, revokeCredential } from "../credential-revoking.ts";
+import {
+  type CredentialRevokeResult,
+  deliverCredentialRevocation,
+  revocationRecipients,
+  revokeCredential,
+} from "../credential-revoking.ts";
 import {
   createCredential,
   credentialRegistryRecords,
@@ -292,7 +297,8 @@ export function* vcImportCommand(args: Record<string, unknown>): Operation<void>
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
+export function* vcRevokeCommand(args: Record<string, unknown>): Operation<CredentialRevokeResult> {
+  const timeout = publicationTimeout(args.timeout);
   const vcArgs: VcSaidArgs = {
     ...baseArgs(args),
     alias: parseStringOption(args.alias, "alias"),
@@ -304,37 +310,43 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void>
   };
   requireNonEmpty(vcArgs.registryName, "Registry name");
   requireNonEmpty(vcArgs.said, "Credential SAID");
-  yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
-    const [creder] = reger.cloneCred(vcArgs.said!);
+  return yield* withVcRuntime(vcArgs, function*({ hby, runtime, reger, rgy }) {
+    const registry = rgy.registryByName(vcArgs.registryName!);
+    if (!registry) throw new ValidationError(`Registry ${vcArgs.registryName} not found.`);
+    if (vcArgs.alias && requireHab(hby, vcArgs.alias).pre !== registry.hab.pre) {
+      throw new ValidationError("Selected alias does not control this registry.");
+    }
     if ((vcArgs.send?.length ?? 0) > 0 && !vcArgs.alias) {
       throw new ValidationError("Alias is required when sending revocation events.");
     }
-    const sendRecipients = revocationRecipients(creder, vcArgs.send ?? [], !!vcArgs.alias);
-    const senderHab = sendRecipients.length > 0 ? requireHab(hby, vcArgs.alias) : undefined;
+    const group = isLocalGroupHab(hby, registry.hab);
+    const signer = group ? localGroupMember(hby, registry.hab.pre) : registry.hab;
     const result = yield* call(function*() {
       const postman = runtime.postman;
-      const worker = yield* spawn(() => postman.deliverDo());
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
       try {
-        return yield* revokeCredential(rgy, postman, {
+        const deadline = Date.now() + timeout * 1000;
+        const revoked = yield* revokeCredential(rgy, runtime.reactor, postman, {
           registryName: vcArgs.registryName!,
           credentialSaid: vcArgs.said!,
-          sendRecipients,
-          senderHab,
         });
+        revoked.publicationComplete = yield* waitForTelPublication(rgy.publication, revoked.said, 1, deadline);
+        revoked.accepted = reger.tels.getOn(revoked.said, 1)?.qb64 === revoked.tel;
+        if (revoked.accepted) revoked.status = "accept";
+        const recipients = revocationRecipients(revoked.creder, vcArgs.send ?? [], !!vcArgs.alias);
+        if (recipients.length > 0) {
+          revoked.deliveries = yield* deliverCredentialRevocation(rgy, postman, revoked.said, recipients);
+        }
+        return revoked;
       } finally {
         yield* worker.halt();
       }
     });
-    if (vcArgs.out) {
+    if (vcArgs.out && result.accepted && result.publicationComplete) {
       const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : result.creder.issuee ?? "";
       writeBytes(credentialStreamBytes(hby, reger, result.creder, recipient), vcArgs.out);
     }
-    console.log(JSON.stringify({
-      said: result.said,
-      tel: result.tel,
-      status: result.status,
-      deliveries: result.deliveries,
-    }));
+    return result;
   });
 }
 

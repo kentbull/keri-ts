@@ -126,6 +126,7 @@ export {
 export {
   type CredentialRevokeOptions,
   type CredentialRevokeResult,
+  deliverCredentialRevocation,
   revokeCredential,
 } from "../app/credential-revoking.ts";
 export {

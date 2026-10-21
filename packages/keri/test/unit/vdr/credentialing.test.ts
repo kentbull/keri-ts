@@ -408,7 +408,10 @@ Deno.test("credential workflows share the supplied registry store and processors
       assertEquals(rgy.reger.tels.getOn(creder.said!, 0)?.qb64, issued.tel);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre }).map((item) => item.said), [creder.said]);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "iss");
-      yield* revokeCredential(rgy, runtime.postman, { registryName: "explicit", credentialSaid: creder.said! });
+      yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
+        registryName: "explicit",
+        credentialSaid: creder.said!,
+      });
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "rev");
     } finally {
       yield* runtime.close();

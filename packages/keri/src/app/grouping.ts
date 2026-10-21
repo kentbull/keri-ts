@@ -86,6 +86,11 @@ export type MultisigVdrProposal =
     route: typeof MULTISIG_ISS_ROUTE;
     attrs: { gid: string; cgvrsn?: readonly [number, number] };
     embeds: { acdc: Uint8Array; iss: Uint8Array; anc: Uint8Array };
+  }
+  | {
+    route: typeof MULTISIG_REV_ROUTE;
+    attrs: { gid: string; said: string; cgvrsn?: readonly [number, number] };
+    embeds: { rev: Uint8Array; anc: Uint8Array };
   };
 
 /** Build an unsigned legacy VDR wrapper with its required named children. */
@@ -267,16 +272,11 @@ export function multisigRevokeExn(
   anc: Uint8Array | RawMessage,
   options: MultisigBuilderOptions = {},
 ): MultisigMessage {
-  return exchange(MULTISIG_REV_ROUTE, {
-    gid: groupPrefix(group),
-    said,
-  }, {
-    ...exchangeOptions(member, options),
-    embeds: {
-      rev: rawMessage(rev),
-      anc: rawMessage(anc),
-    },
-  });
+  return prepareMultisigVdrExn(member.pre, {
+    route: MULTISIG_REV_ROUTE,
+    attrs: { gid: groupPrefix(group), said },
+    embeds: { rev: rawMessage(rev), anc: rawMessage(anc) },
+  }, exchangeOptions(member, options));
 }
 
 /** Coordinate one proposed multisig reply event. */

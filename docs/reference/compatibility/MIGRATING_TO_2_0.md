@@ -240,6 +240,17 @@ another registry, and the create alias must control the selected registry.
 Ordinary establishment-only registries use rotation anchors and retain their
 stored policy on reopen, as group workflows do.
 
+`revokeCredential` now takes `(Regery, Reactor, Poster, options)` and returns
+accepted/publication/group facts. Its options select the registry and credential;
+use `deliverCredentialRevocation` separately after completion for explicit business
+recipients. `vcRevokeCommand` returns typed data; Tufa prints JSON after closure.
+`vc revoke --timeout` shares the finite command host and reports pending approval
+without writing `--out` or sending incomplete evidence. Resume with the same
+credential/registry after `multisig join --said <outer EXN SAID>`; the original
+REV, anchor and recorded recipient wrapper are reused. Group external delivery
+uses the lowest verified historical anchor signer. `deliveries` reports business
+transport; `memberDeliveries` reports coordination transport, not acceptance.
+
 ## IPEX command results and presentation
 
 The eight IPEX send, grant, admit, poll and join helpers under `keri-ts/cli` now

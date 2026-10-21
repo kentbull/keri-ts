@@ -93,19 +93,19 @@ A selected group alias does not authorize a single member to finish a group
 operation. Command owners either coordinate member approval or refuse before
 business signing and mutation. Normal store loading still occurs.
 
-| Command family                            | Group behavior                                                                                             |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Inception                                 | `multisig incept/join`; ordinary inception requires an unused alias.                                       |
-| Interaction and rotation                  | `multisig interact/rotate`; ordinary commands refuse group aliases.                                        |
-| Delegation confirmation                   | Group interaction approval/fanout; group rotation approval is explicitly unsupported.                      |
-| Endpoint roles and mailbox administration | Explicit group propose/complete modes; mailbox removal remains unsupported for groups.                     |
-| Raw text signing                          | Emits an identified partial member contribution with group signature indices, without collecting approval. |
-| Generic EXN send and challenge response   | Refuse group aliases; select a member or a supported group business workflow.                              |
-| Location publication and query requester  | Require an endpoint-owner or member alias rather than an uncoordinated group signature.                    |
-| DID binding                               | Refuses group aliases; group artifact generation exports accepted evidence.                                |
-| Legacy VCP/ISS                            | Preflight, local approval, witnessed publication and restart are implemented; final peer gates remain.     |
-| Legacy revocation and IPEX                | Group lifecycle completion remains assigned to the release plan, including all six IPEX verbs.             |
-| Inspection, verification and export       | Read accepted group state; do not author a group event.                                                    |
+| Command family                            | Group behavior                                                                                                                                                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Inception                                 | `multisig incept/join`; ordinary inception requires an unused alias.                                                                                                                                       |
+| Interaction and rotation                  | `multisig interact/rotate`; ordinary commands refuse group aliases.                                                                                                                                        |
+| Delegation confirmation                   | Group interaction approval/fanout; group rotation approval is explicitly unsupported.                                                                                                                      |
+| Endpoint roles and mailbox administration | Explicit group propose/complete modes; mailbox removal remains unsupported for groups.                                                                                                                     |
+| Raw text signing                          | Emits an identified partial member contribution with group signature indices, without collecting approval.                                                                                                 |
+| Generic EXN send and challenge response   | Refuse group aliases; select a member or a supported group business workflow.                                                                                                                              |
+| Location publication and query requester  | Require an endpoint-owner or member alias rather than an uncoordinated group signature.                                                                                                                    |
+| DID binding                               | Refuses group aliases; group artifact generation exports accepted evidence.                                                                                                                                |
+| Legacy VCP/ISS                            | Preflight, local approval, witnessed publication and restart are implemented; final peer gates remain.                                                                                                     |
+| Legacy revocation and IPEX                | VCP/ISS/REV and all six IPEX verbs support member approval/fanout. REV delivery/export waits for accepted, publication-complete evidence; actual-peer lifecycle qualification remains in the release plan. |
+| Inspection, verification and export       | Read accepted group state; do not author a group event.                                                                                                                                                    |
 
 Revocation and IPEX completion remain implementation work. Selected VCP/ISS
 checks do not replace the final interoperability matrix.

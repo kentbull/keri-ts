@@ -13,6 +13,7 @@ import { ValidationError } from "../core/errors.ts";
 import type { Reger } from "../db/reger.ts";
 import { Credentialer, type Regery } from "../vdr/credentialing.ts";
 import { validateRegistryInception } from "../vdr/eventing.ts";
+import { validateCredentialRevocation } from "../vdr/revoking.ts";
 import { telAnchorMatches } from "../vdr/tel-anchor.ts";
 import type { Habery } from "./habbing.ts";
 import { envelopeFromFrame } from "./parsering.ts";
@@ -94,6 +95,21 @@ export function validateCredentialIssueProposal(
   const schema = creder.schema;
   if (typeof schema === "string" && !resolveCachedSchema(rgy.hby, schema)) return false;
   new Credentialer(rgy.hby, { reger: rgy.reger, vry: rgy.vry }).validate(creder);
+  return true;
+}
+
+/** Require saved issuer/registry/issuance authority and the exact REV anchor before approving. */
+export function validateCredentialRevocationProposal(
+  rgy: Regery,
+  issuer: string,
+  credentialSaid: string,
+  event: SerderKERI,
+  anchor: SerderKERI,
+): boolean {
+  if (event.pre !== credentialSaid) throw new ValidationError("Revocation selector does not match its TEL event.");
+  if (!validateCredentialRevocation(rgy.reger, issuer, event)) return false;
+  const state = rgy.reger.states.get(rgy.reger.creds.get(credentialSaid)!.regid!)!;
+  validateProposalAnchor(issuer, event, anchor, (state.c ?? []).includes(TraitDex.EstOnly));
   return true;
 }
 

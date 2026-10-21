@@ -158,7 +158,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
     (options) => ({ ...dispatchArgs(options), inPath: options.in }),
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addStoreOptions(
       vc.command("revoke")
         .description("Revoke a local credential")
@@ -175,11 +175,11 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
           },
           [],
         )
-        .option("--out <file>", "Write updated credential stream"),
+        .option("--timeout <seconds>", "Wait for local REV publication (default: 60; 0 returns pending state)")
+        .option("--out <file>", "Write the updated credential stream only after REV publication completes"),
     ),
     dispatch,
-    "vc.revoke",
-    "vcRevokeCommand",
+    { name: "vc.revoke", load: () => import("../credentials.ts"), exportName: "vcRevokeCommand", args: dispatchArgs },
   );
 }
 

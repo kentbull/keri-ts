@@ -40,8 +40,8 @@ import {
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
+  prepareGroupMessage,
   remoteGroupMembers,
-  signGroupMessage,
 } from "./multisig-messaging.ts";
 
 export interface CredentialRegistryInceptOptions {
@@ -440,10 +440,10 @@ function* proposeGroupCredentialIssue(
  * @param hby Borrowed local identities and accepted-state stores.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param groupHab Group issuer habitat whose remote signing members receive the proposal.
- * @param proposal Registry or issuance route with its required named evidence.
+ * @param proposal Registry, issuance or revocation route with its required named evidence.
  * @returns Stable proposal/wrapper identities and successful target URLs after concrete Poster completion.
  */
-function* publishGroupVcProposal(
+export function* publishGroupVcProposal(
   hby: Habery,
   input: Reactor,
   postman: Poster,
@@ -454,7 +454,8 @@ function* publishGroupVcProposal(
   const outcomes: GroupDelivery[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient });
-    outcomes.push(yield* admitAndSendGroupMessage(input, postman, signGroupMessage(member, recipient, prepared)));
+    const signed = yield* prepareGroupMessage(input.protocol.exc, member, recipient, prepared);
+    outcomes.push(yield* admitAndSendGroupMessage(input, postman, signed));
   }
   return groupSendResult(outcomes);
 }
