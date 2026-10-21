@@ -23,6 +23,17 @@ message production, delivery, completion and lifecycle behavior. The
 [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
 capabilities and the evidence required before extending that behavior.
 
+## Native-v2 ACDC/registry: deferred beyond 2.0.0
+
+The [native ACDC/registry roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md)
+owns remaining work dependent on KERIpy `rip`, `bup` and `upd` completion, including
+native CLI authoring, disclosure custody, group native approval, IPEX/wallet,
+presentation and reciprocal peer qualification. Re-entry requires inspecting and
+pinning the completed reference implementation. Merged partial capability stays;
+legacy TEL/group backers and independent KERI/CESR v2 remain in the
+[active 2.0.0 plan](V2_RELEASE_COMPLETION_PLAN.md). The historical 1.0.0 baseline
+above does not describe completion of this current release work.
+
 ## Retained architecture
 
 The [runtime contract](../design-docs/runtime/INGRESS_AND_EGRESS.md)
