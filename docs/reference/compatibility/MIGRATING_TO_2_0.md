@@ -251,6 +251,11 @@ cannot print command success and does not undo a completed transmission. File
 output stays with the existing command owner. Join display includes the selected
 outer EXN SAID even when discovered by polling.
 
+`Exchanger.lead` requires an accepted group EXN and uses its first authenticated
+sender establishment proof. The elected key belongs to that historical cohort,
+not the current group index order. The member retains that identity through
+rotation via its accepted KEL history. Pending group evidence returns false.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the
