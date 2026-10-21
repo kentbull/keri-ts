@@ -269,6 +269,61 @@ function stringListField(
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? [...value] : [];
 }
 
+/** Validated inception fields shared by TEL admission and local signing policy. */
+export interface RegistryInception {
+  issuer: string;
+  prefixer: Prefixer;
+  baks: string[];
+  toad: number;
+  noBackers: boolean;
+  estOnly: boolean;
+}
+
+/**
+ * Validate VCP identity, ordinal, backer policy and configuration without writes.
+ * Existing constructor overrides retain their KERIpy semantics: an explicit true
+ * or a signed configuration trait enables the corresponding registry policy.
+ */
+export function validateRegistryInception(
+  serder: SerderKERI,
+  noBackers?: boolean | null,
+  estOnly?: boolean | null,
+): RegistryInception {
+  if (serder.ilk !== Ilks.vcp) throw new ValidationError(`Expected vcp got ${String(serder.ilk)}.`);
+  const ked = okKed(serder);
+  const issuer = stringField(ked, "ii");
+  if (!issuer) throw new ValidationError("Registry inception missing ii.");
+  const prefixer = new Prefixer({ qb64: okPre(serder) });
+  const sn = okSn(serder);
+  if (sn !== 0) throw new ValidationError(`Invalid vcp sn=${sn}.`);
+  const baks = stringListField(ked, "b");
+  if (!unique(baks)) throw new ValidationError(`Invalid duplicate baks=${baks}.`);
+  const toad = backerThreshold(ked.bt);
+  if (toad === null) throw new ValidationError("Invalid registry backer threshold.");
+  validateBackerThreshold(toad, baks);
+  const cnfg = stringListField(ked, "c");
+  const backerless = (noBackers ?? false) || cnfg.includes(TraitDex.NoBackers);
+  if (backerless && baks.length > 0) throw new ValidationError("NoBackers registry may not configure baks.");
+  return {
+    issuer,
+    prefixer,
+    baks,
+    toad,
+    noBackers: backerless,
+    estOnly: (estOnly ?? false) || cnfg.includes(TraitDex.EstOnly),
+  };
+}
+
+/** Enforce the same exact quorum bounds for inception, rotation and endorsement admission. */
+function validateBackerThreshold(toad: number, baks: readonly string[]): void {
+  if (!Number.isSafeInteger(toad) || toad < 0) throw new ValidationError("Invalid registry backer threshold.");
+  if (baks.length === 0) {
+    if (toad !== 0) throw new ValidationError(`Invalid toad=${toad} for empty backer set.`);
+  } else if (toad < 1 || toad > baks.length) {
+    throw new ValidationError(`Invalid toad=${toad} for baks=${baks}.`);
+  }
+}
+
 /** Leave untrusted fields unknown until each lookup checks the fields it consumes. */
 function sealRecord(value: unknown): object | null {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : null;
@@ -330,8 +385,16 @@ export class Tever {
 
     this.version = options.serder.pvrsn;
     this.regk = options.regk ?? okPre(options.serder);
-    this.incept(options.serder);
-    this.config(options.serder, options.noBackers, options.estOnly);
+    const inception = validateRegistryInception(options.serder, options.noBackers, options.estOnly);
+    this.pre = inception.issuer;
+    this.prefixer = inception.prefixer;
+    this.sn = 0;
+    this.baks = inception.baks;
+    this.toad = inception.toad;
+    this.noBackers = inception.noBackers;
+    this.estOnly = inception.estOnly;
+    this.ilk = Ilks.vcp;
+    this.serder = options.serder;
 
     const checked = this.valAnchorBigs({
       serder: options.serder,
@@ -474,52 +537,6 @@ export class Tever {
     }
   }
 
-  private incept(serder: SerderKERI): void {
-    const ked = okKed(serder);
-    const pre = stringField(ked, "ii");
-    if (!pre) {
-      throw new ValidationError("Registry inception missing ii.");
-    }
-    this.pre = pre;
-    this.prefixer = new Prefixer({ qb64: okPre(serder) });
-    this.sn = okSn(serder);
-    if (this.sn !== 0) {
-      throw new ValidationError(`Invalid vcp sn=${this.sn}.`);
-    }
-    this.cuts = [];
-    this.adds = [];
-    const baks = stringListField(ked, "b");
-    if (!unique(baks)) {
-      throw new ValidationError(`Invalid duplicate baks=${baks}.`);
-    }
-    this.baks = baks;
-    const toad = backerThreshold(ked.bt);
-    if (toad === null) throw new ValidationError("Invalid registry backer threshold.");
-    this.validateToad(toad, baks);
-    this.toad = toad;
-    this.ilk = Ilks.vcp;
-    this.serder = serder;
-  }
-
-  private config(
-    serder: SerderKERI,
-    noBackers?: boolean | null,
-    estOnly?: boolean | null,
-  ): void {
-    const cnfg = stringListField(okKed(serder), "c");
-    this.noBackers = noBackers ?? false;
-    this.estOnly = estOnly ?? false;
-    if (cnfg.includes(TraitDex.NoBackers)) {
-      this.noBackers = true;
-    }
-    if (cnfg.includes(TraitDex.EstOnly)) {
-      this.estOnly = true;
-    }
-    if (this.noBackers && this.baks.length > 0) {
-      throw new ValidationError("NoBackers registry may not configure baks.");
-    }
-  }
-
   private updateRotation(
     serder: SerderKERI,
     sn: number,
@@ -598,7 +615,7 @@ export class Tever {
     const toad = backerThreshold(ked.bt);
     if (toad === null) return reject("Invalid registry backer threshold.", serder, this.regk);
     try {
-      this.validateToad(toad, next);
+      validateBackerThreshold(toad, next);
     } catch (error) {
       if (!(error instanceof ValidationError) && !(error instanceof ParserError)) throw error;
       return reject(error.message, serder, this.regk);
@@ -737,17 +754,6 @@ export class Tever {
     }
   }
 
-  private validateToad(toad: number, baks: readonly string[]): void {
-    if (!Number.isSafeInteger(toad) || toad < 0) throw new ValidationError("Invalid registry backer threshold.");
-    if (baks.length === 0) {
-      if (toad !== 0) {
-        throw new ValidationError(`Invalid toad=${toad} for empty backer set.`);
-      }
-    } else if (toad < 1 || toad > baks.length) {
-      throw new ValidationError(`Invalid toad=${toad} for baks=${baks}.`);
-    }
-  }
-
   private valAnchorBigs(args: {
     serder: SerderKERI;
     seqner: NumberPrimitive | null;
@@ -781,7 +787,7 @@ export class Tever {
     }
 
     if (!args.local && args.baks.length > 0) {
-      this.validateToad(args.toad, args.baks);
+      validateBackerThreshold(args.toad, args.baks);
       if (verified.length < args.toad) {
         this.escrowPWEvent(args.serder, args.seqner, args.saider, verified, args.baks);
         const decision = escrow(
