@@ -41,7 +41,7 @@ import {
   routeForKelEvent,
 } from "../../app/multisig/multisig-workflows.ts";
 import { type AgentRuntime, runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { KeyStateRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";

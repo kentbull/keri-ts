@@ -16,17 +16,13 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import {
-  ForwardHandler,
-  introduce,
-  introductionMessages,
-  mailboxTopicForRoute,
-  Poster,
-} from "../../../../src/app/delivery/forwarding.ts";
+import { Poster } from "../../../../src/app/delivery/forwarding.ts";
+import { introduce, introductionMessages } from "../../../../src/app/delivery/introducing.ts";
 import { createExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
 import { createHabery, type Hab } from "../../../../src/app/identity/habbing.ts";
 import { Organizer, persistResolvedContact } from "../../../../src/app/identity/organizing.ts";
+import { ForwardHandler } from "../../../../src/app/mailbox/forward-handler.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import {
   mailboxQueryTopics,
@@ -34,6 +30,7 @@ import {
   openMailboxerForHabery,
   updateMailboxRemoteCursor,
 } from "../../../../src/app/mailbox/mailboxing.ts";
+import { mailboxTopicForRoute } from "../../../../src/app/mailbox/topic-routing.ts";
 import type { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import {
   createAgentRuntime,

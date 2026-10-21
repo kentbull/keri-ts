@@ -20,7 +20,7 @@ import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { type HttpClient } from "../../../../src/app/transport/http-client.ts";
-import { drainWitnessCues } from "../../../../src/app/witness/witnessing.ts";
+import { drainWitnessCues } from "../../../../src/app/witness/ingress.ts";
 
 import type { AgentCue, QueryCue, QueryInstruction, QueryRequest, TelQueryCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";

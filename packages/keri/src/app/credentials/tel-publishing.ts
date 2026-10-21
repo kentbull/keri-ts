@@ -5,7 +5,8 @@ import type { TelPublication } from "../../vdr/tel-publication.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { type Receiptor, sendWitnessMessage } from "../witness/witnessing.ts";
+import { sendWitnessMessage } from "../witness/receipt-client.ts";
+import { type Receiptor } from "../witness/receipting.ts";
 
 /**
  * Advance one captured set of protocol escrows. Receipt collection includes

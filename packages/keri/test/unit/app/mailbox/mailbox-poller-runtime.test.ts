@@ -1,9 +1,9 @@
 import { call, type Operation, run, spawn, suspend } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/delivery/forwarding.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
+import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,

@@ -18,7 +18,7 @@ import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
-import { introduce } from "../../../../src/app/delivery/forwarding.ts";
+import { introduce } from "../../../../src/app/delivery/introducing.ts";
 import {
   acceptedEventReplayMessage,
   createHabery,

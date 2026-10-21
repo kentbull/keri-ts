@@ -16,7 +16,7 @@ import {
   runAgentRuntimeUntil,
 } from "../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
-import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";

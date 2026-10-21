@@ -16,7 +16,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { Roles } from "../../core/roles.ts";
 import { Schemes } from "../../core/schemes.ts";
-import { introduce } from "../delivery/forwarding.ts";
+import { introduce } from "../delivery/introducing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";

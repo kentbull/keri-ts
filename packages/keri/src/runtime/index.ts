@@ -138,10 +138,6 @@ export {
   type RegistryResult,
 } from "../app/credentials/credential-workflows.ts";
 export {
-  type MailboxFetchTimeoutPolicy,
-  type MailboxPollBatch,
-  MailboxPoller,
-  type MailboxPollingTimeoutPolicy,
   Poster,
   type PosterEvent,
   type PosterMsg,
@@ -250,6 +246,12 @@ export {
   MailboxDirector,
 } from "../app/mailbox/mailbox-director.ts";
 export {
+  type MailboxFetchTimeoutPolicy,
+  type MailboxPollBatch,
+  MailboxPoller,
+  type MailboxPollingTimeoutPolicy,
+} from "../app/mailbox/mailbox-poller.ts";
+export {
   consumeMailboxSse,
   type MailboxSseMessage,
   type MailboxSseOptions,
@@ -307,24 +309,28 @@ export {
   type VerifierRejectReason,
 } from "../app/credentials/verifying.ts";
 export {
-  drainWitnessCues,
-  processWitnessIngress,
-  processWitnessIngressSource,
-  Receiptor,
-  type WitnessAuthMap,
-  type WitnessIngressOptions,
   witnessKeyStateGet,
   type WitnessKeyStateGetResult,
   witnessQueryGet,
   type WitnessQueryGetResult,
-  type WitnessReceiptEndpointResponse,
   witnessReceiptGet,
   type WitnessReceiptGetResult,
-  WitnessReceiptor,
   witnessReceiptPost,
   type WitnessReceiptPostResult,
+} from "../app/witness/http-endpoints.ts";
+export {
+  drainWitnessCues,
+  processWitnessIngress,
+  processWitnessIngressSource,
+  type WitnessIngressOptions,
+} from "../app/witness/ingress.ts";
+export { type WitnessReceiptEndpointResponse } from "../app/witness/receipt-client.ts";
+export {
+  Receiptor,
+  type WitnessAuthMap,
+  WitnessReceiptor,
   type WitnessReceiptRunResult,
-} from "../app/witness/witnessing.ts";
+} from "../app/witness/receipting.ts";
 export {
   BUILD_METADATA,
   DISPLAY_VERSION,

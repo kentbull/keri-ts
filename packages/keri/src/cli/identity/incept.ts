@@ -13,7 +13,7 @@ import { assertBootstrapComplete } from "../common/bootstrap.ts";
 
 import { type Configer, createConfiger } from "../../app/identity/configing.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { setupHby } from "../common/existing.ts";
 import {
   InceptFileOptions,

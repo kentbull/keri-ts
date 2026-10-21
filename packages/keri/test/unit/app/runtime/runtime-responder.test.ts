@@ -16,7 +16,7 @@ import {
   drainWitnessCues,
   processWitnessIngress,
   processWitnessIngressSource,
-} from "../../../../src/app/witness/witnessing.ts";
+} from "../../../../src/app/witness/ingress.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { query as queryEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";

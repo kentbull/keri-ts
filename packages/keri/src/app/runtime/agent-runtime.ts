@@ -23,13 +23,7 @@ import { Tevery } from "../../vdr/eventing.ts";
 import { Authenticator } from "../bootstrap/authenticating.ts";
 import { loadOobiHandlers, Oobiery, type OobiJob, oobiTerminalState } from "../bootstrap/oobiery.ts";
 import { publishPendingTel } from "../credentials/tel-publishing.ts";
-import {
-  ForwardHandler,
-  type MailboxPollBatch,
-  MailboxPoller,
-  mailboxTopicForRoute,
-  Poster,
-} from "../delivery/forwarding.ts";
+import { Poster } from "../delivery/forwarding.ts";
 import { ReplyStreams } from "../delivery/reply-streams.ts";
 import { Respondant } from "../delivery/respondant.ts";
 import { Exchanger } from "../exchanges/exchanging.ts";
@@ -37,8 +31,11 @@ import { loadChallengeHandlers } from "../identity/challenging.ts";
 import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { loadIpexHandlers } from "../ipex/ipexing.ts";
+import { ForwardHandler } from "../mailbox/forward-handler.ts";
 import { MailboxDirector } from "../mailbox/mailbox-director.ts";
+import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
+import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
 import { loadMultisigHandlers } from "../multisig/grouping.ts";
 import { noterOptionsForHabery, Notifier } from "../notifications/notifying.ts";
 import { Signaler } from "../notifications/signaling.ts";
@@ -47,7 +44,7 @@ import { Reactor } from "../protocol/reactor.ts";
 import { QueryReplies } from "../queries/query-replies.ts";
 import { WitnessInquisitor } from "../queries/witness-inquisitor.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { Receiptor } from "../witness/witnessing.ts";
+import { Receiptor } from "../witness/receipting.ts";
 import { cueDo } from "./cue-runtime.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";

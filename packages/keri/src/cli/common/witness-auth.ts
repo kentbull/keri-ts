@@ -1,4 +1,4 @@
-import type { WitnessAuthMap } from "../../app/witness/witnessing.ts";
+import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 

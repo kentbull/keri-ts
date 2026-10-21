@@ -22,12 +22,9 @@ import {
 } from "../../../../src/app/transport/tcp-egress.ts";
 import { TCPMessenger } from "../../../../src/app/transport/tcp-messenger.ts";
 import { TransportError } from "../../../../src/app/transport/transport-error.ts";
-import {
-  Receiptor,
-  sendWitnessMessage,
-  WitnessReceiptor,
-  witnessReceiptPost,
-} from "../../../../src/app/witness/witnessing.ts";
+import { witnessReceiptPost } from "../../../../src/app/witness/http-endpoints.ts";
+import { sendWitnessMessage } from "../../../../src/app/witness/receipt-client.ts";
+import { Receiptor, WitnessReceiptor } from "../../../../src/app/witness/receipting.ts";
 import { receipt as receiptEvent } from "../../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../../src/core/protocol-serialization.ts";
 

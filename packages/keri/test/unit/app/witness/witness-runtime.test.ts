@@ -31,7 +31,7 @@ import { buildCesrRequest } from "../../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 
 import { socketBytes } from "../../../../src/app/transport/socket-source.ts";
-import { Receiptor } from "../../../../src/app/witness/witnessing.ts";
+import { Receiptor } from "../../../../src/app/witness/receipting.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { Schemes } from "../../../../src/core/schemes.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
