@@ -227,6 +227,17 @@ owner. Ordinary host workers collect receipts and publish accepted evidence;
 `ctel` values now identify the issuer anchor, matching KERIpy. Transport completion
 still does not establish a remote observer's accepted state.
 
+`inceptCredentialRegistry` and `createCredential` now take the shared `Reactor`
+after `Regery`, before `Poster`, to admit the exact signed local coordination
+wrapper before sending it. Registry/issuance results add `publicationComplete`;
+VCP/ISS join results carry `tel: { pre, sn, publicationComplete }` separately from
+business `accepted`. `vc registry incept` and `vc create` run one command host and
+wait up to `--timeout` seconds (default 60; zero reports current pending state).
+Issuance also waits for saved credential evidence. Registry names cannot overwrite
+another registry, and the create alias must control the selected registry.
+Ordinary establishment-only registries use rotation anchors and retain their
+stored policy on reopen, as group workflows do.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

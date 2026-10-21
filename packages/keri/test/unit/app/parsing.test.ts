@@ -22,7 +22,12 @@ import { initCommand } from "../../../src/app/cli/init.ts";
 import { ipexApplyCommand, ipexJoinCommand, ipexPollCommand } from "../../../src/app/cli/ipex.ts";
 import { multisigInceptCommand, multisigJoinCommand, multisigRotateCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
-import { vcCreateCommand, vcImportCommand, vcSchemaImportCommand } from "../../../src/app/cli/vc.ts";
+import {
+  vcCreateCommand,
+  vcImportCommand,
+  vcRegistryInceptCommand,
+  vcSchemaImportCommand,
+} from "../../../src/app/cli/vc.ts";
 import { verifierRunCommand } from "../../../src/app/cli/verifier.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 
@@ -258,6 +263,12 @@ Deno.test("credential command inputs reject malformed supplied values before sto
     const cases = [
       { command: vcSchemaImportCommand, args: { schema: ["schema.json", 7] }, field: "schema" },
       { command: vcCreateCommand, args: { alias: "issuer", registryName: "registry", data: "[]" }, field: "data" },
+      { command: vcCreateCommand, args: { alias: "issuer", registryName: "registry", timeout: -1 }, field: "timeout" },
+      {
+        command: vcRegistryInceptCommand,
+        args: { alias: "issuer", registryName: "registry", timeout: false },
+        field: "timeout",
+      },
       { command: vcCreateCommand, args: { alias: "issuer", registryName: "registry", rules: "[7]" }, field: "rules" },
       { command: ipexApplyCommand, args: { schema: "schema", attrs: "[]" }, field: "attrs" },
       { command: ipexApplyCommand, args: { schema: 7 }, field: "schema" },

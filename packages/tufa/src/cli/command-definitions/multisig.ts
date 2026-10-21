@@ -122,7 +122,7 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
           )
           .option(
             "--approval-timeout <seconds>",
-            "Elapsed time to wait for a matching proposal or group acceptance",
+            "Elapsed time to wait for a matching proposal, group acceptance and required TEL publication",
           ),
       )
         .option("--proxy <alias>", "Alias for delegation communication proxy"),

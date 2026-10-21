@@ -1,6 +1,7 @@
 import { call, run } from "effection";
-import { assertEquals, assertRejects } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
+import { runTufa } from "../../../../tufa/test/test-helpers.ts";
 import { createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -9,6 +10,7 @@ import { publishPendingTel } from "../../../src/app/tel-publishing.ts";
 import { Receiptor } from "../../../src/app/witnessing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { Schemes } from "../../../src/core/schemes.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 import { credential, Regery } from "../../../src/vdr/credentialing.ts";
 
 Deno.test("TEL publication resumes receipt and dissemination escrows across reopen before completion", async () => {
@@ -117,4 +119,130 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       yield* witnessHby.close(true);
     }
   });
+});
+
+Deno.test("credential CLI waits for witnessed establishment-only registry and issuance after reopen", async () => {
+  const root = await Deno.makeTempDir({ prefix: "credential-cli-publication-" });
+  try {
+    await run(function*() {
+      const store = { name: "issuer", headDirPath: root, skipConfig: true };
+      const hby = yield* createHabery(store);
+      const witnessHby = yield* createHabery({
+        name: `cli-witness-${crypto.randomUUID()}`,
+        temp: true,
+        skipConfig: true,
+      });
+      const witness = witnessHby.makeHab("witness", undefined, { transferable: false });
+      const issuer = hby.makeHab("issuer", undefined, { wits: [witness.pre], toad: 1 });
+      hby.makeHab("other");
+      const http = new FetchHttpClient();
+      const source = yield* createAgentRuntime(hby, http, systemClock);
+      const observer = yield* createAgentRuntime(witnessHby, http, systemClock);
+      const handler = createProtocolHandler(observer, {
+        hostedPrefixes: [witness.pre],
+        serviceHab: witness,
+        witnessHab: witness,
+      });
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
+      try {
+        const url = `http://127.0.0.1:${server.addr.port}/`;
+        for (const message of witnessHby.db.clonePreIter(witness.pre)) yield* source.reactor.processBytes(message);
+        yield* source.reactor.processBytes(witness.makeLocScheme(url, witness.pre, Schemes.http));
+        yield* source.reactor.processBytes(witness.makeEndRole(witness.pre, Roles.controller, true));
+        yield* new Receiptor(hby, source.protocol, http, systemClock).receipt(issuer.pre, { sn: 0 });
+        const schema = new Schemer({ sed: { $id: "", type: "object" } });
+        hby.db.schema.pin(schema.said, schema);
+        yield* source.close();
+        yield* hby.close();
+
+        const location = ["--name", store.name, "--head-dir", store.headDirPath, "--alias", "issuer"];
+        const inception = yield* call(() =>
+          runTufa([
+            "vc",
+            "registry",
+            "incept",
+            ...location,
+            "--registry-name",
+            "registry",
+            "--est-only",
+            "--timeout",
+            "8",
+          ])
+        );
+        assertEquals(inception.code, 0, inception.stdout + inception.stderr);
+        const registry = JSON.parse(inception.stdout.trim().split(/\r?\n/).at(-1)!);
+        assertEquals(registry.publicationComplete, true);
+        assertEquals(observer.vdr!.tvy.tevers.get(registry.registry)?.estOnly, true);
+        assertEquals(witnessHby.db.getKever(issuer.pre)?.ilk, "rot");
+        const repeated = yield* call(() =>
+          runTufa([
+            "vc",
+            "registry",
+            "incept",
+            ...location,
+            "--registry-name",
+            "registry",
+            "--timeout",
+            "0",
+          ])
+        );
+        assertEquals(repeated.code === 0, false);
+        assertStringIncludes(repeated.stderr, "already");
+        const wrongIssuer = yield* call(() =>
+          runTufa([
+            "vc",
+            "create",
+            "--name",
+            store.name,
+            "--head-dir",
+            root,
+            "--alias",
+            "other",
+            "--registry-name",
+            "registry",
+            "--schema",
+            schema.said,
+            "--timeout",
+            "0",
+          ])
+        );
+        assertEquals(wrongIssuer.code === 0, false);
+        assertStringIncludes(wrongIssuer.stderr, "does not control this registry");
+        assertEquals(witnessHby.db.getKever(issuer.pre)?.sn, 1);
+        const issuance = yield* call(() =>
+          runTufa([
+            "vc",
+            "create",
+            ...location,
+            "--registry-name",
+            "registry",
+            "--schema",
+            schema.said,
+            "--recipient",
+            witness.pre,
+            "--data",
+            "{\"role\":\"holder\"}",
+            "--timeout",
+            "8",
+          ])
+        );
+        assertEquals(issuance.code, 0, issuance.stderr);
+        const issued = JSON.parse(issuance.stdout.trim().split(/\r?\n/).at(-1)!);
+        assertEquals(issued.status, "accept");
+        assertEquals(issued.publicationComplete, true);
+        assertEquals(observer.vdr!.tvy.tevers.get(registry.registry)?.vcState(issued.said)?.et, "iss");
+        assertEquals(witnessHby.db.getKever(issuer.pre)?.sn, 2);
+        assertEquals(witnessHby.db.getKever(issuer.pre)?.ilk, "rot");
+      } finally {
+        yield* call(() => server.shutdown());
+        handler.close?.();
+        yield* source.close();
+        yield* observer.close();
+        yield* hby.close();
+        yield* witnessHby.close(true);
+      }
+    });
+  } finally {
+    await Deno.remove(root, { recursive: true });
+  }
 });

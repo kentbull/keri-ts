@@ -146,13 +146,14 @@ function requireHabPrefix(hab: Hab): string {
   return hab.pre;
 }
 
-function anchorTelEvent(hab: Hab, serder: SerderKERI): AnchorSeal {
+/** Anchor under the registry or issuer establishment policy; callers retain the resulting exact coordinate. */
+function anchorTelEvent(hab: Hab, serder: SerderKERI, estOnly: boolean): AnchorSeal {
   if (!serder.pre || !serder.snh || !serder.said) {
     throw new ValidationError("TEL event missing seal fields.");
   }
-  hab.interact({
-    data: [{ i: serder.pre, s: serder.snh, d: serder.said }],
-  });
+  const data = [{ i: serder.pre, s: serder.snh, d: serder.said }];
+  if (estOnly || hab.kever?.estOnly) hab.rotate({ data });
+  else hab.interact({ data });
   const sn = hab.kever?.sn;
   const said = hab.kever?.said;
   if (sn === undefined || sn === null || !said) {
@@ -398,8 +399,9 @@ export class Registry {
     this.tvy = options.tvy;
     this.cues = options.cues ?? new Deck<AgentCue>();
     this.regk = options.regk ?? null;
-    this.noBackers = options.noBackers ?? true;
-    this.estOnly = options.estOnly ?? false;
+    const config = this.regk ? this.reger.states.get(this.regk)?.c ?? [] : [];
+    this.noBackers = options.noBackers ?? (this.regk === null || config.includes(TraitDex.NoBackers));
+    this.estOnly = options.estOnly ?? config.includes(TraitDex.EstOnly);
   }
 
   incept(options: RegistryInceptOptions = {}): TelProcessDecision {
@@ -413,7 +415,7 @@ export class Registry {
       toad: options.toad,
       nonce: options.nonce,
     });
-    const seal = anchorTelEvent(this.hab, serder);
+    const seal = anchorTelEvent(this.hab, serder, options.estOnly ?? this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     if (decision.kind !== "accept") {
       throw new ValidationError(`Registry inception failed: ${decision.kind}`);
@@ -446,7 +448,7 @@ export class Registry {
       cuts: options.cuts,
       adds: options.adds,
     });
-    const seal = anchorTelEvent(this.hab, serder);
+    const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
     return decision;
@@ -458,7 +460,7 @@ export class Registry {
     const serder = tever.noBackers
       ? issueEvent(said(creder), regk)
       : backerIssue(said(creder), regk, tever.sn, said(tever.serder));
-    const seal = anchorTelEvent(this.hab, serder);
+    const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
     return { serder, decision, seal };
@@ -476,7 +478,7 @@ export class Registry {
     const serder = tever.noBackers
       ? revokeEvent(credentialSaid, regk, prior.qb64)
       : backerRevoke(credentialSaid, regk, tever.sn, said(tever.serder), prior.qb64);
-    const seal = anchorTelEvent(this.hab, serder);
+    const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
     return { serder, decision, seal };

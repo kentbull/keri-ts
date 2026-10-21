@@ -379,9 +379,11 @@ Deno.test("credential workflows share the supplied registry store and processors
       const hab = hby.makeHab("issuer");
       const schema = new Schemer({ sed: schemaSed() });
       hby.db.schema.pin(schema.said, schema);
-      const registry = yield* inceptCredentialRegistry(rgy, runtime.postman, hab, { registryName: "explicit" });
+      const registry = yield* inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, hab, {
+        registryName: "explicit",
+      });
       assertEquals(credentialRegistryStatus(rgy, "explicit").registry, registry.registry);
-      const issued = yield* createCredential(rgy, runtime.postman, {
+      const issued = yield* createCredential(rgy, runtime.reactor, runtime.postman, {
         registryName: "explicit",
         schema: schema.said,
         recipient: hab.pre,

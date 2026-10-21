@@ -3,7 +3,7 @@ import { call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
-import { type AgentRuntime } from "../agent-runtime.ts";
+import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 import { importCredentialStream } from "../credential-importing.ts";
 import {
   createCredential,
@@ -19,9 +19,11 @@ import {
   revocationRecipients,
   revokeCredential,
 } from "../credential-workflows.ts";
+import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import { withAgentRuntime, withExistingHabery } from "./common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringListOption, parseStringOption } from "./common/parsing.ts";
+import { waitForIssuedCredential, waitForTelPublication } from "./common/tel-completion.ts";
 
 interface VcBaseArgs {
   name?: string;
@@ -101,18 +103,28 @@ export function* vcRegistryInceptCommand(
   args: Record<string, unknown>,
 ): Operation<RegistryResult> {
   const vcArgs = registryArgs(args);
+  const timeout = publicationTimeout(args.timeout);
   return yield* withVcRuntime(vcArgs, function*({ hby, runtime, rgy }) {
     const hab = requireHab(hby, vcArgs.alias);
+    const group = isLocalGroupHab(hby, hab);
+    const signer = group ? localGroupMember(hby, hab.pre) : hab;
     const result = yield* call(function*() {
       const postman = runtime.postman;
-      const worker = yield* spawn(() => postman.deliverDo());
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
       try {
-        return yield* inceptCredentialRegistry(rgy, postman, hab, {
+        const deadline = Date.now() + timeout * 1000;
+        const created = yield* inceptCredentialRegistry(rgy, runtime.reactor, postman, hab, {
           registryName: vcArgs.registryName!,
           noBackers: vcArgs.noBackers,
           estOnly: vcArgs.estOnly,
           usage: vcArgs.usage,
         });
+        created.publicationComplete = yield* waitForTelPublication(rgy.publication, created.registry!, 0, deadline);
+        if (created.group) {
+          created.group.accepted = rgy.reger.tels.getOn(created.registry!, 0)?.qb64 === created.registry;
+          if (created.group.accepted) created.group.status = "accept";
+        }
+        return created;
       } finally {
         yield* worker.halt();
       }
@@ -145,6 +157,7 @@ export function* vcRegistryStatusCommand(args: Record<string, unknown>): Operati
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<IssueResult> {
+  const timeout = publicationTimeout(args.timeout);
   const vcArgs: VcCreateArgs = {
     ...baseArgs(args),
     alias: parseStringOption(args.alias, "alias"),
@@ -167,11 +180,18 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
     const schema = vcArgs.schemaFile ? pinSchemaBytes(hby, Deno.readFileSync(vcArgs.schemaFile)) : vcArgs.schema;
     requireNonEmpty(schema, "Schema");
     const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : undefined;
+    const registry = rgy.registryByName(vcArgs.registryName!);
+    if (!registry) throw new ValidationError(`Registry ${vcArgs.registryName} not found.`);
+    const issuer = requireHab(hby, vcArgs.alias);
+    if (issuer.pre !== registry.hab.pre) throw new ValidationError("Selected alias does not control this registry.");
+    const group = isLocalGroupHab(hby, issuer);
+    const signer = group ? localGroupMember(hby, issuer.pre) : issuer;
     const result = yield* call(function*() {
       const postman = runtime.postman;
-      const worker = yield* spawn(() => postman.deliverDo());
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
       try {
-        return yield* createCredential(rgy, postman, {
+        const deadline = Date.now() + timeout * 1000;
+        const created = yield* createCredential(rgy, runtime.reactor, postman, {
           registryName: vcArgs.registryName!,
           schema: schema!,
           recipient,
@@ -179,6 +199,15 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
           edges,
           rules,
         });
+        yield* waitForIssuedCredential(rgy.publication, created.creder.said!, deadline);
+        const saved = rgy.reger.saved.get(created.creder.said!) !== null;
+        created.publicationComplete = rgy.publication.complete(created.creder.said!);
+        if (saved) created.status = "accept";
+        if (created.group) {
+          created.group.saved = saved;
+          if (rgy.reger.tels.getOn(created.creder.said!, 0)?.qb64 === created.tel) created.group.telStatus = "accept";
+        }
+        return created;
       } finally {
         yield* worker.halt();
       }
@@ -470,4 +499,13 @@ function requireNonEmpty(value: string | undefined, label: string): void {
   if (!value) {
     throw new ValidationError(`${label} is required and cannot be empty.`);
   }
+}
+
+/** Publication waits accept explicit zero/fractions and reject malformed or overflowing values before opening storage. */
+function publicationTimeout(value: unknown): number {
+  const seconds = parseNumberOption(value, "timeout") ?? 60;
+  if (seconds < 0 || !Number.isFinite(seconds * 1000)) {
+    throw new ValidationError("timeout must be a finite nonnegative duration.");
+  }
+  return seconds;
 }

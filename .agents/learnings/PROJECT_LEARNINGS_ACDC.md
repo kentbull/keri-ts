@@ -90,6 +90,9 @@ stay typed. No queue capacity or metadata-credit contract belongs in these paths
 Group VCP/ISS approval checks business bindings and actual credential source proof
 before prompts/signatures. Missing registry/schema/predecessor evidence stays
 pending; malformed evidence and conflicting aliases produce no local anchor.
+Proposers admit each exact signed local wrapper before member delivery so returning
+proofs can join an approved payload. Independently counted local/peer contributions
+remain complete messages; never append a closed attachment enclosure as bare proof.
 Reuse read-only registry-inception and exact TEL-seal checks from the TEL owners,
 without processor construction or escrow writes for validation. Establishment-only
 group anchors rotate using participants' prepared next keys. TelPublication owns
@@ -99,6 +102,11 @@ and local TEL publication must finish. The host runs finite receipt/fanout and
 dissemination operations without a writer across I/O; interrupted work remains
 in ordinary protocol escrow. ctel stores the anchor SAID, not the TEL SAID.
 Remote observer acceptance is a separate fact.
+Finite credential CLI commands run one host, polling member mailboxes for group
+approval. They observe publication and saved-credential facts under elapsed deadlines,
+join workers before stores close, and report partial state on timeout. Registry
+policy comes from accepted configuration after reopen; EO anchors rotate for both
+ordinary and group issuers.
 
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
 RegistryObserver intake owns per-event engine publication. Normal dispatch routes RIP/BUP
