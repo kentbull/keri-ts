@@ -5,33 +5,33 @@ import { codecSyntaxFailure } from "../core/codec-errors.ts";
 import { DeserializeError, SerializeError } from "../core/errors.ts";
 import type { CesrBody, CesrFrame, Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
-import { Aggor } from "../primitives/aggor.ts";
-import { Blinder, isBlinderCode } from "../primitives/blinder.ts";
 import {
   DigDex,
   DIGEST_CODES,
   NON_DIGEST_PREFIX_CODES,
   NON_TRANSFERABLE_CODES,
   PREFIX_CODES,
-} from "../primitives/codex.ts";
-import { Compactor } from "../primitives/compactor.ts";
-import { Diger } from "../primitives/diger.ts";
-import { Mapper, type MapperMap } from "../primitives/mapper.ts";
-import { parseMatter } from "../primitives/matter.ts";
-import { isMediarCode, Mediar } from "../primitives/mediar.ts";
-import { NumberPrimitive } from "../primitives/number.ts";
+} from "../primitives/base/codex.ts";
+import { parseMatter } from "../primitives/base/matter.ts";
 import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
   isGroupTuple,
-} from "../primitives/primitive.ts";
-import { Saider } from "../primitives/saider.ts";
-import { isSealerCode, Sealer } from "../primitives/sealer.ts";
-import { SealDescriptors, SealEvent, type SealRecord } from "../primitives/structing.ts";
-import { Structor } from "../primitives/structor.ts";
-import { Tholder, type ThresholdInput } from "../primitives/tholder.ts";
-import { Verfer } from "../primitives/verfer.ts";
+} from "../primitives/base/primitive.ts";
+import { Diger } from "../primitives/crypto/diger.ts";
+import { Saider } from "../primitives/crypto/saider.ts";
+import { Tholder, type ThresholdInput } from "../primitives/crypto/tholder.ts";
+import { Verfer } from "../primitives/crypto/verfer.ts";
+import { Aggor } from "../primitives/structuring/aggor.ts";
+import { Blinder, isBlinderCode } from "../primitives/structuring/blinder.ts";
+import { Compactor } from "../primitives/structuring/compactor.ts";
+import { Mapper, type MapperMap } from "../primitives/structuring/mapper.ts";
+import { isMediarCode, Mediar } from "../primitives/structuring/mediar.ts";
+import { isSealerCode, Sealer } from "../primitives/structuring/sealer.ts";
+import { SealDescriptors, SealEvent, type SealRecord } from "../primitives/structuring/structing.ts";
+import { Structor } from "../primitives/structuring/structor.ts";
+import { NumberPrimitive } from "../primitives/values/number.ts";
 import { AGGOR_CODES } from "../tables/counter-groups.ts";
 import { type CounterCodex, resolveMUDex } from "../tables/counter-version-registry.ts";
 import { MATTER_SIZES } from "../tables/matter.tables.generated.ts";

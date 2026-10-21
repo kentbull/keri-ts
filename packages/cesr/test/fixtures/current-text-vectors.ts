@@ -1,8 +1,8 @@
 import { b } from "../../src/core/bytes.ts";
-import { Bexter } from "../../src/primitives/bexter.ts";
-import { Labeler } from "../../src/primitives/labeler.ts";
-import type { Matter } from "../../src/primitives/matter.ts";
-import { makePather } from "../../src/primitives/pather.ts";
+import type { Matter } from "../../src/primitives/base/matter.ts";
+import { makePather } from "../../src/primitives/structuring/pather.ts";
+import { Bexter } from "../../src/primitives/values/bexter.ts";
+import { Labeler } from "../../src/primitives/values/labeler.ts";
 import { wireHex } from "./current-reference-vectors.ts";
 import vectors from "./current-text-vectors.json" with { type: "json" };
 

@@ -92,6 +92,14 @@ tufa version
 tufa annotate --in mystream.cesr --pretty
 ```
 
+## Source organization
+
+`src/primitives` groups encoding bases in `base`, keys/digests/signatures and
+ciphers in `crypto`, scalar/text/tag values in `values`, and counted structures,
+mapping and disclosure in `structuring`. Primitive tests use the same categories.
+Parsing, body serialization, annotation, generated tables and CLI adapters retain
+their own directories. Consumers import supported names from `cesr-ts`.
+
 ## License
 
 Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the top-level

@@ -4,9 +4,9 @@ import { ColdStartError, ShortageError } from "../../../src/core/errors.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse } from "../../../src/parser/parser.ts";
-import { Counter } from "../../../src/primitives/counter.ts";
-import { Siger } from "../../../src/primitives/siger.ts";
-import { Verfer } from "../../../src/primitives/verfer.ts";
+import { Counter } from "../../../src/primitives/base/counter.ts";
+import { Siger } from "../../../src/primitives/crypto/siger.ts";
+import { Verfer } from "../../../src/primitives/crypto/verfer.ts";
 import { groupV2 } from "../../fixtures/counter-token-fixtures.ts";
 import vectors from "../../fixtures/nested-vectors.json" with { type: "json" };
 

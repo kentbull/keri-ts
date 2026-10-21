@@ -3,7 +3,7 @@ import { concatBytes, decodeB64 } from "../../src/core/bytes.ts";
 import { WireParseError } from "../../src/core/errors.ts";
 import type { CesrFrame } from "../../src/core/types.ts";
 import { parse } from "../../src/parser/parser.ts";
-import { Counter } from "../../src/primitives/counter.ts";
+import { Counter } from "../../src/primitives/base/counter.ts";
 import { CtrDexV2 } from "../../src/tables/counter-codex.ts";
 import { counterV2, groupV2, sigerToken } from "./counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "./external-vectors.ts";

@@ -1,6 +1,6 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { DeserializeError } from "../../../src/core/errors.ts";
-import type { MapperMap } from "../../../src/primitives/mapper.ts";
+import type { MapperMap } from "../../../src/primitives/structuring/mapper.ts";
 import { canonicalizeCesrNativeRaw, dumpCesrNativeSad, parseCesrNativeKed } from "../../../src/serder/native.ts";
 import { SerderKERI } from "../../../src/serder/serder.ts";
 import { Serdery } from "../../../src/serder/serdery.ts";

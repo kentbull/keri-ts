@@ -2,8 +2,8 @@
 import { isCesrDomain, tokenSize, unitBytes } from "../core/domain.ts";
 import { ColdStartError, GroupSizeError, ShortageError } from "../core/errors.ts";
 import type { CesrFrame } from "../core/types.ts";
-import { decodeGenusVersion, parseCounter } from "../primitives/counter.ts";
-import { Texter } from "../primitives/texter.ts";
+import { decodeGenusVersion, parseCounter } from "../primitives/base/counter.ts";
+import { Texter } from "../primitives/values/texter.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { parseAttachmentGroup, startsFrame } from "./attachments.ts";
 import { parseBody, readFrameCounter } from "./body.ts";

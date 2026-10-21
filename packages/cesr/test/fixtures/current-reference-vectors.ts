@@ -1,8 +1,8 @@
 import { b, concatBytes } from "../../src/core/bytes.ts";
-import { Counter } from "../../src/primitives/counter.ts";
-import { Matter } from "../../src/primitives/matter.ts";
-import { Noncer } from "../../src/primitives/noncer.ts";
-import { SealNonce } from "../../src/primitives/structing.ts";
+import { Counter } from "../../src/primitives/base/counter.ts";
+import { Matter } from "../../src/primitives/base/matter.ts";
+import { Noncer } from "../../src/primitives/crypto/noncer.ts";
+import { SealNonce } from "../../src/primitives/structuring/structing.ts";
 import { Vrsn_2_0 } from "../../src/tables/versions.ts";
 
 /** Hex output makes binary expectations independent of TS base64 decoding. */

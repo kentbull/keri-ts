@@ -2,8 +2,8 @@ import { assertEquals, assertExists, assertInstanceOf, assertRejects } from "jsr
 import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { DeserializeError, GroupSizeError, ShortageError, WireParseError } from "../../../src/core/errors.ts";
 import { parse } from "../../../src/parser/parser.ts";
-import { Counter } from "../../../src/primitives/counter.ts";
-import { Texter } from "../../../src/primitives/texter.ts";
+import { Counter } from "../../../src/primitives/base/counter.ts";
+import { Texter } from "../../../src/primitives/values/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_V1_JSON_ICP_BODY } from "../../fixtures/external-vectors.ts";

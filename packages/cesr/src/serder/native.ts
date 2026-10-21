@@ -4,19 +4,15 @@ import { type Smellage } from "../core/types.ts";
 import { Ilks } from "../core/vocabulary.ts";
 import { parseAttachmentGroup } from "../parser/attachments.ts";
 import { sniff } from "../parser/cold-start.ts";
-import { Aggor } from "../primitives/aggor.ts";
-import { Bexter } from "../primitives/bexter.ts";
-import { LabelDex, MtrDex } from "../primitives/codex.ts";
-import { Counter, parseCounter } from "../primitives/counter.ts";
-import { Dater } from "../primitives/dater.ts";
-import { parseIlker } from "../primitives/ilker.ts";
-import { Labeler, parseLabeler } from "../primitives/labeler.ts";
-import { Mapper, type MapperMap, type MapperValue } from "../primitives/mapper.ts";
-import { parseMatter } from "../primitives/matter.ts";
-import { parseNoncer } from "../primitives/noncer.ts";
-import { NumberPrimitive } from "../primitives/number.ts";
-import { makePather, parsePather } from "../primitives/pather.ts";
-import { isGroupTuple } from "../primitives/primitive.ts";
+import { LabelDex, MtrDex } from "../primitives/base/codex.ts";
+import { Counter, parseCounter } from "../primitives/base/counter.ts";
+import { parseMatter } from "../primitives/base/matter.ts";
+import { isGroupTuple } from "../primitives/base/primitive.ts";
+import { parseNoncer } from "../primitives/crypto/noncer.ts";
+import { Tholder, type ThresholdSith } from "../primitives/crypto/tholder.ts";
+import { Aggor } from "../primitives/structuring/aggor.ts";
+import { Mapper, type MapperMap, type MapperValue } from "../primitives/structuring/mapper.ts";
+import { makePather, parsePather } from "../primitives/structuring/pather.ts";
 import {
   SealBack,
   SealDigest,
@@ -28,11 +24,15 @@ import {
   SealRoot,
   SealSource,
   type StructingPrimitive,
-} from "../primitives/structing.ts";
-import { Texter } from "../primitives/texter.ts";
-import { Tholder, type ThresholdSith } from "../primitives/tholder.ts";
-import { parseTraitor } from "../primitives/traitor.ts";
-import { parseVerser } from "../primitives/verser.ts";
+} from "../primitives/structuring/structing.ts";
+import { Bexter } from "../primitives/values/bexter.ts";
+import { Dater } from "../primitives/values/dater.ts";
+import { parseIlker } from "../primitives/values/ilker.ts";
+import { Labeler, parseLabeler } from "../primitives/values/labeler.ts";
+import { NumberPrimitive } from "../primitives/values/number.ts";
+import { Texter } from "../primitives/values/texter.ts";
+import { parseTraitor } from "../primitives/values/traitor.ts";
+import { parseVerser } from "../primitives/values/verser.ts";
 import { CtrDexV2 } from "../tables/counter-codex.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds, type Protocol, Protocols, Vrsn_2_0 } from "../tables/versions.ts";

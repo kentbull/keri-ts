@@ -3,10 +3,10 @@ import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../core/bytes.
 import { SerializeError } from "../core/errors.ts";
 import type { Payload } from "../core/payload.ts";
 import type { AttachmentGroup, CesrDomain, CesrFrame } from "../core/types.ts";
-import { Counter } from "../primitives/counter.ts";
-import { OpaqueSpan } from "../primitives/opaque.ts";
-import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/primitive.ts";
-import { Texter } from "../primitives/texter.ts";
+import { Counter } from "../primitives/base/counter.ts";
+import { OpaqueSpan } from "../primitives/base/opaque.ts";
+import { type GroupEntry, isCounterGroupLike, isGroupTuple } from "../primitives/base/primitive.ts";
+import { Texter } from "../primitives/values/texter.ts";
 import { resolveCounterSizeTable, resolveCtrDex } from "../tables/counter-version-registry.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import { Kinds } from "../tables/versions.ts";

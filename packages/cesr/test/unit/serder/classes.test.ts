@@ -3,7 +3,7 @@ import { decodeHex } from "jsr:@std/encoding/hex";
 import { DeserializeError } from "../../../src/core/errors.ts";
 import { b } from "../../../src/index.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { Matter } from "../../../src/primitives/matter.ts";
+import { Matter } from "../../../src/primitives/base/matter.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../../src/serder/serder.ts";
 import { reapSerder } from "../../../src/serder/serdery.ts";
 import { smell, versify } from "../../../src/serder/smell.ts";

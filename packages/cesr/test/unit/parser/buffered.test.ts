@@ -13,9 +13,9 @@ import {
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { parse } from "../../../src/parser/parser.ts";
-import { Counter } from "../../../src/primitives/counter.ts";
-import { Siger } from "../../../src/primitives/siger.ts";
-import { Texter } from "../../../src/primitives/texter.ts";
+import { Counter } from "../../../src/primitives/base/counter.ts";
+import { Siger } from "../../../src/primitives/crypto/siger.ts";
+import { Texter } from "../../../src/primitives/values/texter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../../src/tables/counter-codex.ts";
 import { counterV1, counterV2, groupV2, sigerToken } from "../../fixtures/counter-token-fixtures.ts";
 import {

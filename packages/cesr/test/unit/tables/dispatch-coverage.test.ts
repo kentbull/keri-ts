@@ -1,7 +1,7 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { ShortageError, UnknownCodeError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
-import { Counter } from "../../../src/primitives/counter.ts";
+import { Counter } from "../../../src/primitives/base/counter.ts";
 import {
   CtrDexByVersion,
   LEGACY_COMPAT_COUNTER_CODES_BY_VERSION,
