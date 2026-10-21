@@ -16,7 +16,7 @@ acceptance. Unrelated escrow recovery is excluded from saved results; incomplete
 CLI imports return failure. TEL row helpers
 receive Reger directly. Multisig VDR approval checks availability after malformed/
 declined proposal handling but before signing/intake. Group IPEX requires Reger for
-grant lead sending, not non-grant or approval-only operations.
+grant approval/delivery and fresh admit approval; non-credential verbs need none.
 
 ## Commitments and disclosure
 

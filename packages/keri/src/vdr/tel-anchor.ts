@@ -20,11 +20,18 @@ export function verifyTelAnchor(
 
 /** Match the complete TEL seal in an issuer KEL body before that anchor is signed or accepted. */
 export function telAnchorMatches(issuer: string, event: SerderKERI, anchor: SerderKERI): boolean {
+  const seals = anchor.ked?.a;
+  return Array.isArray(seals) && seals.length === 1 && telAnchorIncludes(issuer, event, anchor);
+}
+
+/** Recognize the exact TEL tuple within an issuer event, including a batch of other seals. */
+export function telAnchorIncludes(issuer: string, event: SerderKERI, anchor: SerderKERI): boolean {
   if (anchor.pre !== issuer || (!anchor.estive && anchor.ilk !== Ilks.ixn)) return false;
   const seals = anchor.ked?.a;
-  if (!Array.isArray(seals) || seals.length !== 1) return false;
-  const seal: unknown = seals[0];
-  return !!seal && typeof seal === "object" && !Array.isArray(seal)
-    && "i" in seal && seal.i === event.pre && "s" in seal && seal.s === event.snh
-    && "d" in seal && seal.d === event.said;
+  return Array.isArray(seals)
+    && seals.some((seal: unknown) =>
+      !!seal && typeof seal === "object" && !Array.isArray(seal)
+      && "i" in seal && seal.i === event.pre && "s" in seal && seal.s === event.snh
+      && "d" in seal && seal.d === event.said
+    );
 }

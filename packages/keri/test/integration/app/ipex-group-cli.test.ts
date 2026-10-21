@@ -60,6 +60,7 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
       said: string;
       status: string;
       lead: boolean;
+      approved?: boolean;
       messages: { exnSaid: string }[];
       saved?: boolean;
       credential: string;
@@ -289,6 +290,7 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
             const beforeDelivery = businessDeliveries;
             const joined = await command("right", ["join", "--said", selected, "--auto"]);
             assertEquals(joined.status, "multisig-approved");
+            assertEquals(joined.approved, true);
             assertEquals(joined.lead, false);
             assertEquals(businessDeliveries, beforeDelivery, "The other member must only fan out approval");
             const completed = await command("left", ["join", "--said", selected, "--auto"]);
@@ -381,6 +383,7 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
           const beforeAdmit = businessDeliveries;
           const missing = await command("right", ["join", "--said", selected, "--auto", "--approval-timeout", "0"]);
           assertEquals(missing.saved, false);
+          assertEquals(missing.approved, false);
           assertEquals(missing.status, "credential-pending");
           assertEquals(businessDeliveries, beforeAdmit);
           for (const [, signature] of receivers.get("right")!.hby.db.esigs.getTopItemIter([started.said])) {

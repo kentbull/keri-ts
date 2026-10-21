@@ -11,6 +11,8 @@ import type { Operation } from "npm:effection@^3.6.0";
 import {
   concatBytes,
   Counter,
+  Ilks,
+  parseBytes,
   parsePather,
   type Serder,
   SerderACDC,
@@ -23,10 +25,13 @@ import { ValidationError } from "../core/errors.ts";
 import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
 import { CredentialWallet, serializeCredential } from "../vdr/credentialing.ts";
+import { telAnchorIncludes } from "../vdr/tel-anchor.ts";
 import { chunkBytes } from "./byte-source.ts";
+import { validateCredentialSource } from "./credential-proposals.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 import { IPEX_GRANT_ROUTE, ipexAdmitExn, type IpexBuilderOptions, ipexGrantExn, ipexRecipient } from "./ipexing.ts";
 import { processMessages } from "./message-source.ts";
+import { envelopeFromFrame } from "./parsering.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 
 const textEncoder = new TextEncoder();
@@ -208,6 +213,80 @@ export function credentialPresentationArtifacts(
   };
 }
 
+/**
+ * Check a grant against this member's verified credential and accepted issuer/TEL
+ * evidence before signing. A group holder may present another issuer's credential.
+ * Optional legacy embeds/proofs may be omitted when that authority is already
+ * local; supplied bodies and source seals must agree with it. Nothing is written.
+ */
+export function credentialGrantReady(
+  hby: Habery,
+  reger: Reger,
+  grant: SerderKERI,
+  attachments: Uint8Array,
+  genus: Versionage,
+): boolean {
+  if (grant.route !== IPEX_GRANT_ROUTE) throw new ValidationError("Expected an IPEX grant.");
+  const embeds = embeddedSection(grant);
+  const creder = acdcBody(embeds?.acdc, "acdc");
+  if (!creder.verify()) throw new ValidationError("Grant credential has an invalid SAID.");
+  const suppliedIss = embeds?.iss === undefined ? null : keriBody(embeds.iss, "iss");
+  const suppliedAnc = embeds?.anc === undefined ? null : keriBody(embeds.anc, "anc");
+  if (
+    suppliedIss
+    && (!suppliedIss.verify() || ![Ilks.iss, Ilks.bis].some(ilk => ilk === suppliedIss.ilk)
+      || suppliedIss.pre !== creder.said || suppliedIss.sn !== 0)
+  ) {
+    throw new ValidationError("Grant issuance does not match its credential.");
+  }
+  if (suppliedAnc && (!suppliedAnc.verify() || suppliedAnc.pre !== creder.issuer)) {
+    throw new ValidationError("Grant anchor does not match its credential issuer.");
+  }
+  const frames = parseBytes(concatBytes(Counter.makeGVC(genus), grant.raw, attachments));
+  if (frames.length !== 1) throw new ValidationError("Grant evidence must contain one exchange.");
+  const paths = envelopeFromFrame(frames[0]).ptds.map(group => group.raw);
+  if (!reger.saved.get([creder.said!])) return false;
+  const expected = credentialPresentationArtifacts(hby, reger, creder.said!, genus);
+  const issuance = new SerderKERI({ raw: expected.iss.wire });
+  if (suppliedIss && suppliedIss.said !== issuance.said) {
+    throw new ValidationError("Grant issuance conflicts with the saved credential.");
+  }
+  const source = pathedAttachment(paths, "acdc");
+  if (source.length) validateCredentialSource(creder, issuance, source, genus);
+  if (suppliedAnc && !acceptedGrantAnchor(hby, creder.issuer!, issuance, suppliedAnc)) return false;
+  const telProof = pathedAttachment(paths, "iss");
+  if (telProof.length) {
+    const proofFrames = parseBytes(concatBytes(Counter.makeGVC(genus), issuance.raw, telProof));
+    if (proofFrames.length !== 1) throw new ValidationError("Grant TEL evidence must contain one event.");
+    const seal = envelopeFromFrame(proofFrames[0]).lastSsc;
+    if (seal) {
+      if (seal.s.num > BigInt(Number.MAX_SAFE_INTEGER)) {
+        throw new ValidationError("Grant issuer anchor exceeds supported storage ordinals.");
+      }
+      const anchor = hby.db.getEvtSerder(creder.issuer!, seal.d.qb64);
+      if (!anchor) return false;
+      if (anchor.sn !== Number(seal.s.num) || (suppliedAnc && suppliedAnc.said !== anchor.said)) {
+        throw new ValidationError("Grant TEL source seal does not match its anchor.");
+      }
+      if (!acceptedGrantAnchor(hby, creder.issuer!, issuance, anchor)) return false;
+    }
+  }
+  return true;
+}
+
+/** Local accepted KEL authority, not a proposed anchor or proof supplied by its wrapper. */
+function acceptedGrantAnchor(hby: Habery, issuer: string, issuance: SerderKERI, anchor: SerderKERI): boolean {
+  if (anchor.sn === null || !Number.isSafeInteger(anchor.sn)) {
+    throw new ValidationError("Grant anchor sequence exceeds supported storage ordinals.");
+  }
+  const accepted = hby.db.kels.getLast(issuer, anchor.sn);
+  if (!accepted) return false;
+  if (accepted !== anchor.said || !telAnchorIncludes(issuer, issuance, anchor)) {
+    throw new ValidationError("Grant anchor does not bind the saved credential issuance.");
+  }
+  return true;
+}
+
 /** Build a signed `/ipex/grant` message with embedded credential artifacts. */
 export function ipexCredentialGrant(args: {
   hby: Habery;
@@ -246,6 +325,9 @@ export function ipexCredentialGrant(args: {
       agree: args.options?.agree ?? null,
     },
   );
+  if (!credentialGrantReady(args.hby, args.reger, grant, attachments, gvrsn)) {
+    throw new ValidationError(`Credential ${args.credentialSaid} is missing verified local evidence.`);
+  }
   return {
     grant,
     attachments,
@@ -325,17 +407,31 @@ export function storedGrantArtifacts(
   grant: SerderKERI,
   gvrsn: Versionage = Vrsn_1_0,
 ): CredentialPresentationArtifacts {
+  if (!grant.said) throw new ValidationError("Grant is missing its SAID.");
+  return grantPresentationArtifacts(grant, hby.db.epath.get([grant.said]).map(text => textEncoder.encode(text)), gvrsn);
+}
+
+/**
+ * Decode the supplied grant's bodies and counted path groups without storage or
+ * admission. Approval passes the selected proposal's own evidence; stored replay
+ * passes its retained LMDB groups. Neither source can substitute for the other.
+ */
+export function grantPresentationArtifacts(
+  grant: SerderKERI,
+  pathed: readonly Uint8Array[],
+  gvrsn: Versionage = Vrsn_1_0,
+): CredentialPresentationArtifacts {
   if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
-    throw new ValidationError(`Expected stored ${IPEX_GRANT_ROUTE} EXN.`);
+    throw new ValidationError(`Expected ${IPEX_GRANT_ROUTE} EXN.`);
   }
   const embeds = embeddedSection(grant);
   if (!embeds) {
     throw new ValidationError(`Grant ${grant.said} is missing embedded artifacts.`);
   }
   return {
-    anc: storedArtifact(keriBody(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc"), gvrsn),
-    iss: storedArtifact(keriBody(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss"), gvrsn),
-    acdc: storedArtifact(acdcBody(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc"), gvrsn),
+    anc: storedArtifact(keriBody(embeds.anc, "anc"), pathedAttachment(pathed, "anc"), gvrsn),
+    iss: storedArtifact(keriBody(embeds.iss, "iss"), pathedAttachment(pathed, "iss"), gvrsn),
+    acdc: storedArtifact(acdcBody(embeds.acdc, "acdc"), pathedAttachment(pathed, "acdc"), gvrsn),
   };
 }
 
@@ -401,10 +497,10 @@ function storedArtifact(body: Serder, attachment: Uint8Array, gvrsn: Versionage)
   return { wire: concatBytes(body.raw, attachment), genus: resolveAttachmentGvrsn(body, gvrsn) };
 }
 
-function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {
+function pathedAttachment(pathed: readonly Uint8Array[], label: string): Uint8Array {
   const path = `/e/${label}`;
-  for (const text of hby.db.epath.get([said])) {
-    const attachment = pathedAttachmentFromRaw(textEncoder.encode(text), path);
+  for (const raw of pathed) {
+    const attachment = pathedAttachmentFromRaw(raw, path);
     if (attachment) {
       return attachment;
     }

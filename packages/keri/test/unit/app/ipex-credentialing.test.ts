@@ -4,6 +4,7 @@ import {
   concatBytes,
   Counter,
   CtrDexV2,
+  Diger,
   parseCounterFromText,
   SerderACDC,
   SerderKERI,
@@ -13,6 +14,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import {
+  credentialGrantReady,
   credentialPresentationArtifacts,
   ipexCredentialAdmit,
   ipexCredentialGrant,
@@ -23,6 +25,7 @@ import { storedExchangeMessage } from "../../../src/app/ipex-grouping.ts";
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
+import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-countering.ts";
 import { Revery } from "../../../src/core/routing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";
@@ -142,6 +145,26 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
       assertEquals(ancReplayCounter.code, CtrDexV2.AttachmentGroup);
       assertEquals(grant.support.length > 0, true);
       assertEquals(grant.wire.length > grant.grant.raw.length, true);
+      // A later accepted issuer event may repeat the TEL seal among other seals.
+      // Grant approval checks membership, not the one-event proposal-signing policy.
+      const reanchor = issuer.interact({
+        data: [{ i: creder.said, s: "0", d: issued.tel.said }, { i: holder.pre, s: "0", d: schemer.said }],
+      });
+      const anchor = new SerderKERI({ raw: reanchor });
+      const seal = [anchor.sner!.qb64b, new Diger({ qb64: anchor.said! }).qb64b];
+      const reanchoredIss = concatBytes(
+        issued.tel.raw,
+        attachmentCounterPayloadQb64b("SealSourceCouples", 1, seal, Vrsn_1_0),
+        ...seal,
+      );
+      const [reanchored, paths] = ipexGrantExn(
+        issuer,
+        holder.pre,
+        "repeated source anchor",
+        grant.artifacts.acdc.wire,
+        { iss: reanchoredIss, anc: reanchor },
+      );
+      assertEquals(credentialGrantReady(hby, reger, reanchored, paths, Vrsn_1_0), true);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);

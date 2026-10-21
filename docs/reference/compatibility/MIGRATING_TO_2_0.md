@@ -284,6 +284,15 @@ and reports actual `saved` state. `IpexAdmitResult.admit` is nullable and result
 checks the member wallet before fresh admit approval and reports `credential-pending`
 until it saves the credential; the original wrapper remains the resume selector.
 
+Fresh group approvals also preflight the conversation graph and known parties.
+Grants require a verified local credential, with any supplied source proofs bound
+to its accepted issuance and issuer anchor. Missing local evidence returns
+`approval-pending` without a new contribution or fanout. Join snapshots/JSON add
+`approved` separately from `accepted`; completion by other members is not a local
+approval. Delivery retains the stored grant's actual child proofs instead of
+substituting reconstructed ones. The lower protocol builders still allow valid
+minimal legacy grants, and a group holder can present another issuer's credential.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

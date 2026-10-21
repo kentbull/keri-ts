@@ -37,8 +37,7 @@ import {
   IPEX_GRANT_ROUTE,
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
-  ipexRecipient,
-  PREVIOUS_IPEX_ROUTES,
+  validateIpexReply,
 } from "../ipexing.ts";
 import type { GroupSendResult } from "../multisig-messaging.ts";
 import { Organizer } from "../organizing.ts";
@@ -119,6 +118,8 @@ export interface IpexJoinResult {
   group?: GroupSendResult & {
     embedded: SerderKERI;
     accepted: boolean | null;
+    /** Local member approval; null in preview and independent of group acceptance. */
+    approved: boolean | null;
     lead: boolean | null;
     /** Present for admit approval; each member checks its own wallet before a fresh signature. */
     credentialSaved?: boolean;
@@ -529,7 +530,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
     }
 
     if (!ipexArgs.auto) {
-      return { exn, group: { embedded, accepted: null, lead: null, messages: [], deliveries: [] } };
+      return { exn, group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [] } };
     }
 
     const host = yield* spawn(() => runAgentRuntime(runtime, { hab: localGroupMember(hby, group) }));
@@ -553,6 +554,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
             group: {
               embedded,
               accepted: runtime.exc.complete(embedded.said!),
+              approved: false,
               lead: null,
               credentialSaved,
               messages: [],
@@ -573,6 +575,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
         group: {
           embedded,
           accepted: approval.accepted,
+          approved: approval.approved !== null,
           lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
           credentialSaved,
           messages: approval.messages,
@@ -623,13 +626,8 @@ function requireConversationPrior(
   verb: "offer" | "agree" | "grant" | "admit" | "spurn",
 ): void {
   const prior = hby.db.exns.get([said]);
-  if (!prior || !PREVIOUS_IPEX_ROUTES.get(verb)!.some(route => prior.route === `/ipex/${route}`)) {
-    throw new ValidationError("Prior IPEX exchange is missing or has the wrong route.");
-  }
-  const intended = ipexRecipient(prior);
-  if (prior.pre !== recipient || (typeof intended === "string" && intended.length > 0 && intended !== hab.pre)) {
-    throw new ValidationError("IPEX response parties do not match the accepted prior exchange.");
-  }
+  if (!prior) throw new ValidationError("Prior IPEX exchange is not accepted.");
+  validateIpexReply(prior, verb, hab.pre, recipient);
   if (hby.db.erpy.get([said])) {
     throw new ValidationError("Prior IPEX exchange already has an accepted response; resume the existing exchange.");
   }

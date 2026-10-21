@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; checked against merged master `b48c7dae` (#641), 2026-10-20.
+Status: active; merged implementation baseline `e66d6ef1` (#649), 2026-10-20.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -9,9 +9,10 @@ plan. This goal may finish when all other required work and qualification pass.
 ## Current state
 
 Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
-are implemented, including weighted and witnessed CLI restart evidence. IPEX,
-revocation, backer policy, verifier separation, organization and final qualification
-remain. Selected feature checks are not a release-readiness claim.
+are implemented, including weighted and witnessed CLI restart evidence. Six-verb
+IPEX authoring/approval and wallet settlement are implemented, with grant preflight
+in the current cut; peer/witnessed lifecycle qualification remains. Revocation,
+backer policy, verifier separation, organization and final qualification remain. Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,7 +24,7 @@ remain. Selected feature checks are not a release-readiness claim.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| IPEX/revocation, backer lifecycle, verifier separation                                 | Not complete; acceptance criteria and order below.                                                                                                        |
+| Revocation, backer lifecycle, verifier separation                                      | Not complete; acceptance criteria and order below.                                                                                                        |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -126,7 +127,7 @@ implementation PR before the next; split only for independent human review.
 | 13 remainder | Complete in #633–634 and #641: durable selection, proof reuse and interrupted-index replay.                          | Reporting already merged                              |
 | 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                | 13k, 13 remainder                                     |
 | 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31. | 14                                                    |
-| 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                                                    |
+| 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.  | 15                                                    |
 | 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged                      |
 | 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                                                |
 | 21           | Complete in #628: accepted historical backer cohorts, accumulated partial proofs and retry/reopen.                   | R1                                                    |
