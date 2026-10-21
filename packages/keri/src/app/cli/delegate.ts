@@ -17,6 +17,7 @@ import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
+import { parseBooleanOption, parseStringListOption, parseStringOption } from "./common/parsing.ts";
 
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../endpoint-roleing.ts";
 import { createExchangeMessage } from "../exchange-messaging.ts";
@@ -410,17 +411,17 @@ export function* delegateConfirmCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const confirmArgs: DelegateConfirmArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
-    interact: args.interact as boolean | undefined,
-    auto: args.auto as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    interact: parseBooleanOption(args.interact, "interact"),
+    auto: parseBooleanOption(args.auto, "auto"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
   };
 
   if (!confirmArgs.name) {

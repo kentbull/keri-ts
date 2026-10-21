@@ -359,8 +359,7 @@ function registerHookCmds(program: Command, dispatch: CommandDispatch): void {
       .option(
         "-p, --http <port>",
         "Port on which to listen for webhook events",
-        (value: string) => Number(value),
-        9923,
+        "9923",
       ),
     dispatch,
     {

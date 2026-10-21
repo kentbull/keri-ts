@@ -15,7 +15,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
-import { parseDataItems } from "./common/parsing.ts";
+import { parseBooleanOption, parseDataItems, parseStringListOption, parseStringOption } from "./common/parsing.ts";
 import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 /** Parsed command arguments for one `tufa interact` invocation. */
@@ -49,17 +49,17 @@ export function* interactCommand(
   // Select one HTTP implementation for all work owned by this command.
   const http = new FetchHttpClient();
   const interactArgs: InteractArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
-    data: args.data as string[] | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
+    data: parseStringListOption(args.data, "data"),
   };
 
   if (!interactArgs.name) {

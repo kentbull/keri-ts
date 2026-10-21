@@ -3,6 +3,7 @@ import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../abortable.ts";
 import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
 import { colorizeAnnotatedOutput } from "./annotate-color.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 import { writeStdout } from "./output.ts";
 
 /** CLI presentation flags. */
@@ -19,7 +20,12 @@ interface AnnotateArgs {
 
 /** Annotate bounded file/stdin input with every I/O leaf owned by this operation. */
 export function* annotateCommand(args: Record<string, unknown>): Operation<void> {
-  const options = args as AnnotateArgs;
+  const options: AnnotateArgs = {
+    inPath: parseStringOption(args.inPath, "inPath"),
+    outPath: parseStringOption(args.outPath, "outPath"),
+    pretty: parseBooleanOption(args.pretty, "pretty"),
+    colored: parseBooleanOption(args.colored, "colored"),
+  };
   const bytes = yield* abortable((signal) =>
     collectBytes(options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }))
   );

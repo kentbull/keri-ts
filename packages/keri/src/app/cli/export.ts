@@ -2,6 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { withExistingHab } from "./common/context.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 interface ExportArgs {
   name?: string;
@@ -20,13 +21,13 @@ interface ExportArgs {
  */
 export function* exportCommand(args: Record<string, unknown>): Operation<void> {
   const exportArgs: ExportArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    files: args.files as boolean | undefined,
-    ends: args.ends as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    files: parseBooleanOption(args.files, "files"),
+    ends: parseBooleanOption(args.ends, "ends"),
   };
 
   if (!exportArgs.name) {

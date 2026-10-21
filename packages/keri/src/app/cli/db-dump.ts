@@ -14,6 +14,7 @@ import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
 import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
 import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailboxing.ts";
 import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
+import { parseBooleanOption, parseIntegerOption, parseStringOption } from "./common/parsing.ts";
 
 type DomainName = "baser" | "keeper" | "mailboxer" | "noter";
 type DumpDomain = Baser | Keeper | Mailboxer | Noter;
@@ -359,15 +360,15 @@ function resolveLimit(rawLimit: number | undefined): number {
  * - `mailboxer.tpcs`
  */
 export function* dumpDatabase(args: Record<string, unknown>): Operation<void> {
-  const name = args.name as string | undefined;
-  const base = args.base as string | undefined;
-  const headDirPath = args.headDirPath as string | undefined;
-  const temp = args.temp as boolean | undefined;
-  const compat = args.compat as boolean | undefined;
-  const mapSize = resolveMapSize(args.mapSize as number | undefined);
-  const target = args.target as string | undefined;
-  const prefix = args.prefix as string | undefined;
-  const limit = resolveLimit(args.limit as number | undefined);
+  const name = parseStringOption(args.name, "name");
+  const base = parseStringOption(args.base, "base");
+  const headDirPath = parseStringOption(args.headDirPath, "headDirPath");
+  const temp = parseBooleanOption(args.temp, "temp");
+  const compat = parseBooleanOption(args.compat, "compat");
+  const mapSize = resolveMapSize(parseIntegerOption(args.mapSize, "mapSize"));
+  const target = parseStringOption(args.target, "target");
+  const prefix = parseStringOption(args.prefix, "prefix");
+  const limit = resolveLimit(parseIntegerOption(args.limit, "limit"));
 
   if (!name) {
     throw new ValidationError("`--name` is required");

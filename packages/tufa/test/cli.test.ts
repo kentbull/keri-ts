@@ -1,5 +1,6 @@
 import { agentCommand } from "../src/cli/agent.ts";
 import { dwsResolverCommand } from "../src/cli/dws.ts";
+import { hookDemoCommand } from "../src/cli/hook.ts";
 import { queryCommand } from "../src/cli/query.ts";
 import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/witness.ts";
 // @file-test-lane app-fast-isolated
@@ -1017,5 +1018,21 @@ Deno.test({
       ValidationError,
       "code must be an array of strings",
     );
+  },
+});
+
+Deno.test({
+  name: "hook port validation preserves supplied input and rejects coercion before listening",
+  permissions: { read: false, write: false, net: false },
+  async fn() {
+    for (const http of [false, "", "0x50", "1.5"]) {
+      await assertRejects(() => run(() => hookDemoCommand({ http })), ValidationError);
+    }
+    const hook = parseCommandSelection(["hook", "demo", "--http", "0x50"]);
+    assertEquals(hook.args.http, "0x50");
+    const notices = parseCommandSelection(["notifications", "list", "-n", "store", "--limit", "1.5"]);
+    assertEquals(notices.args.limit, "1.5");
+    const dump = parseCommandSelection(["db", "dump", "-n", "store", "--map-size", "100junk"]);
+    assertEquals(dump.args.mapSize, "100junk");
   },
 });

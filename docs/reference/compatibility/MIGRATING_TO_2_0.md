@@ -92,7 +92,10 @@ Endpoint, signing, query, DID and witness command adapters now reject malformed 
 types before opening stores. Repeated signature/DID/OOBI/hosted-prefix lists must
 contain only strings. DID resolver ports accept decimal integers, not coercible
 booleans, fractional values or hexadecimal text. An explicitly empty query anchor
-path is invalid rather than an instruction to query key state.
+path is invalid rather than an instruction to query key state. Operator and
+publication commands apply the same type validation: malformed entries cannot be
+dropped from exchange data, cleanup flags must be booleans, and notification
+counts/database dump limits must be valid decimal integers.
 
 ## Lifecycle option validation
 

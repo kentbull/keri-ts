@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHabery } from "./common/context.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 interface ListArgs {
   name?: string;
@@ -13,11 +14,11 @@ interface ListArgs {
 /** Implements `tufa list`. */
 export function* listCommand(args: Record<string, unknown>): Operation<void> {
   const listArgs: ListArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!listArgs.name) {

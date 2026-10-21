@@ -1,6 +1,7 @@
 import { Saider } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { parseStringOption } from "./common/parsing.ts";
 
 interface SaidifyArgs {
   file?: string;
@@ -10,8 +11,8 @@ interface SaidifyArgs {
 /** Implement KLI-compatible `saidify`: mutate one JSON SAD file in place. */
 export function* saidifyCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: SaidifyArgs = {
-    file: args.file as string | undefined,
-    label: args.label as string | undefined,
+    file: parseStringOption(args.file, "file"),
+    label: parseStringOption(args.label, "label"),
   };
   if (!commandArgs.file) {
     throw new ValidationError("File is required and cannot be empty.");
