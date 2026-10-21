@@ -47,6 +47,7 @@ import {
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { credentialStreamMessages, ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import { approveMultisigIpex, groupIpexPartial, publishInitialGroupIpex } from "../../../src/app/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../src/app/ipexing.ts";
 import { signGroupMessage } from "../../../src/app/multisig-messaging.ts";
@@ -61,7 +62,7 @@ import { messageAttachmentGroups, messagize, serializeMessage } from "../../../s
 import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { Reger } from "../../../src/db/reger.ts";
-import { credential, Regery, serializeCredential } from "../../../src/vdr/credentialing.ts";
+import { credential, Credentialer, Regery, serializeCredential } from "../../../src/vdr/credentialing.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error Event publication cannot accept a registry proposal.
@@ -1154,20 +1155,42 @@ for (const kind of ["apply", "grant"] as const) {
             const schema = new Schemer({ sed: { $id: "", type: "object" } });
             left.db.schema.pin(schema.said, schema);
             right.db.schema.pin(schema.said, schema);
-            const [embedded] = kind === "apply"
-              ? ipexApplyExn(remote.hab, bob.pre, "apply", schema.said, {})
-              : ipexGrantExn(
-                remote.hab,
-                bob.pre,
-                "grant",
-                credential({
-                  issuer: remote.hab.pre,
-                  registry: inceptRegistry(remote.hab.pre, { cnfg: ["NB"] }).pre!,
-                  schema: schema.said,
-                  data: {},
-                }).raw,
-              );
-            const partial = groupIpexPartial(right, remote.hab, embedded, new Uint8Array(), genus);
+            let embedded: SerderKERI;
+            let attachments: Uint8Array = new Uint8Array();
+            let support: Uint8Array[] = [];
+            let fullGrant: ReturnType<typeof ipexCredentialGrant> | undefined;
+            if (kind === "apply") [embedded, attachments] = ipexApplyExn(remote.hab, bob.pre, "apply", schema.said, {});
+            else {
+              const rgy = peerRuntime.vdr!;
+              const registry = rgy.makeRegistry("grant-proof", bob);
+              const credentialer = new Credentialer(right, { reger: rgy.reger, vry: rgy.vry });
+              const creder = credentialer.create({
+                registry,
+                schema: schema.said,
+                recipient: remote.hab.pre,
+                data: {},
+              });
+              credentialer.issue(registry, creder);
+              fullGrant = ipexCredentialGrant({
+                hby: right,
+                hab: remote.hab,
+                reger: rgy.reger,
+                recipient: bob.pre,
+                credentialSaid: creder.said!,
+                options: { gvrsn: genus },
+                sign: false,
+              });
+              // A valid minimal grant can rely on the member's already verified
+              // credential. The presenting group is the holder, not its issuer.
+              [embedded, attachments] = ipexGrantExn(remote.hab, bob.pre, "grant", creder.raw, { gvrsn: genus });
+              support = credentialStreamMessages(right, rgy.reger, creder, bob.pre, genus);
+              if (genus.major === 2) {
+                for (const message of support) {
+                  yield* runtime.reactor.processBytes(message);
+                }
+              }
+            }
+            const partial = groupIpexPartial(right, remote.hab, embedded, attachments, genus);
             const hint = genus.major === 2 ? { cgvrsn: [2, 0] } : {};
             let initial: { serder: SerderKERI; message: Uint8Array } | undefined;
             peerRuntime.postman.sendStream = function(evt) {
@@ -1261,6 +1284,60 @@ for (const kind of ["apply", "grant"] as const) {
               );
               assertEquals(runtime.exc.complete(embedded.said!), false);
               assertEquals(outgoing, undefined);
+              if (genus.major === 1) {
+                const pending = yield* approveMultisigIpex(
+                  left,
+                  runtime.protocol,
+                  runtime.postman,
+                  runtime.vdr!.reger,
+                  wrapper,
+                  { publish: true, sendLead: false },
+                );
+                assertEquals(pending.approved, null);
+                assertEquals(pending.accepted, false);
+                assertEquals(outgoing, undefined);
+                for (const message of support) yield* runtime.reactor.processBytes(message);
+                assertExists(fullGrant);
+                const creder = new SerderACDC({ raw: fullGrant.artifacts.acdc.wire });
+                const issuance = new SerderKERI({ raw: fullGrant.artifacts.iss.wire });
+                const wrongProof = serializeCredential(
+                  creder,
+                  new Prefixer({ qb64: creder.said! }),
+                  issuance.sner!,
+                  new Diger({ qb64: schema.said }),
+                );
+                const [bad, badPaths] = ipexGrantExn(remote.hab, bob.pre, "bad source", wrongProof, {
+                  iss: fullGrant.artifacts.iss.wire,
+                  anc: fullGrant.artifacts.anc.wire,
+                });
+                const badPartial = groupIpexPartial(right, remote.hab, bad, badPaths);
+                const [badWrapper, outerPaths] = exchange("/multisig/exn", { gid: remote.hab.pre, i: alice.pre }, {
+                  sender: bob.pre,
+                  embeds: { exn: badPartial },
+                });
+                yield* runtime.reactor.processBytes(
+                  concatBytes(bob.endorse(badWrapper, { pipelined: false }), outerPaths),
+                  { local: true },
+                );
+                yield* call(() =>
+                  assertRejects(
+                    () =>
+                      run(() =>
+                        approveMultisigIpex(left, runtime.protocol, runtime.postman, runtime.vdr!.reger, badWrapper, {
+                          publish: true,
+                          sendLead: false,
+                        })
+                      ),
+                    Error,
+                    "Credential source seal does not match",
+                  )
+                );
+                assertEquals(
+                  [...left.db.esigs.getTopItemIter([bad.said!, ""])].some(([, signature]) => signature.index === 0),
+                  false,
+                );
+                assertEquals(outgoing, undefined);
+              }
             }
             let selected = wrapper;
             if (kind === "apply" && genus.major === 2) {
@@ -1279,7 +1356,7 @@ for (const kind of ["apply", "grant"] as const) {
                   assertRejects(
                     () =>
                       run(() =>
-                        approveMultisigIpex(left, runtime.protocol, runtime.postman, null, wrapper, {
+                        approveMultisigIpex(left, runtime.protocol, runtime.postman, runtime.vdr!.reger, wrapper, {
                           publish: true,
                           sendLead: false,
                         })
@@ -1296,10 +1373,17 @@ for (const kind of ["apply", "grant"] as const) {
               yield* left.db.reopen();
               selected = interrupted;
             }
-            const result = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, selected, {
-              publish: true,
-              sendLead: false,
-            });
+            const result = yield* approveMultisigIpex(
+              left,
+              runtime.protocol,
+              runtime.postman,
+              runtime.vdr!.reger,
+              selected,
+              {
+                publish: true,
+                sendLead: false,
+              },
+            );
             assertEquals(result.accepted, true);
             assertEquals(runtime.exc.complete(embedded.said!), true);
             assertExists(outgoing);
@@ -1311,7 +1395,7 @@ for (const kind of ["apply", "grant"] as const) {
               right,
               peerRuntime.protocol,
               peerRuntime.postman,
-              null,
+              peerRuntime.vdr!.reger,
               outgoing.serder,
               {
                 publish: false,
@@ -1332,10 +1416,17 @@ for (const kind of ["apply", "grant"] as const) {
               return Reflect.apply(sign, alice.mgr, [ser, args, indexed]);
             }) as typeof sign;
             try {
-              const resumed = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, selected, {
-                publish: true,
-                sendLead: false,
-              });
+              const resumed = yield* approveMultisigIpex(
+                left,
+                runtime.protocol,
+                runtime.postman,
+                runtime.vdr!.reger,
+                selected,
+                {
+                  publish: true,
+                  sendLead: false,
+                },
+              );
               assertEquals(resumed.accepted, true);
               assertEquals(resumed.approved, result.approved);
               assertEquals(resumed.messages, result.messages);

@@ -1,5 +1,5 @@
 import { call, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { Diger, Prefixer, Saider } from "../../../../cesr/mod.ts";
 import { Exchanger } from "../../../src/app/exchanging.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -14,6 +14,7 @@ import {
   ipexAdmitExn,
   ipexAgreeExn,
   ipexApplyExn,
+  ipexConversationReady,
   ipexGrantExn,
   IpexHandler,
   ipexOfferExn,
@@ -139,11 +140,16 @@ Deno.test("IPEX handler enforces KERIpy route graph and one response per prior",
       assertEquals(handlers.get(IPEX_ADMIT_ROUTE)!.verify({ serder: admit }), false);
       assertEquals(handlers.get(IPEX_APPLY_ROUTE)!.verify({ serder: offer }), false);
 
+      assertEquals(ipexConversationReady(hby.db, spurn), false);
       hby.db.exns.pin([apply.said!], apply);
+      assertEquals(ipexConversationReady(hby.db, spurn), true);
+      const [wrongParty] = ipexSpurnExn(sender, "wrong responding party", apply);
+      assertThrows(() => ipexConversationReady(hby.db, wrongParty), Error, "parties do not match");
       assertEquals(handlers.get(IPEX_OFFER_ROUTE)!.verify({ serder: offer }), true);
       assertEquals(handlers.get(IPEX_SPURN_ROUTE)!.verify({ serder: spurn }), true);
 
       hby.db.erpy.pin([apply.said!], new Saider({ qb64: offer.said! }));
+      assertThrows(() => ipexConversationReady(hby.db, spurn), Error, "another accepted response");
       assertEquals(handlers.get(IPEX_OFFER_ROUTE)!.verify({ serder: offer }), false);
       assertEquals(handlers.get(IPEX_SPURN_ROUTE)!.verify({ serder: spurn }), false);
 

@@ -11,7 +11,9 @@
  */
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
 import type { RegistryStore } from "../acdc/registering.ts";
+import { ValidationError } from "../core/errors.ts";
 import { exchange, type IpexVerb, isIpexVerb } from "../core/protocol-exchanging.ts";
+import type { Baser } from "../db/basing.ts";
 import type { Exchanger, ExchangeRouteHandler } from "./exchanging.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { IpexV2Handler } from "./ipex-v2.ts";
@@ -310,6 +312,43 @@ function requiredSaid(serder: SerderKERI, label: string): string {
 
 function rawMessage(message: Uint8Array | RawMessage): Uint8Array {
   return message instanceof Uint8Array ? message : message.raw;
+}
+
+/** Validate known signed response parties and the existing legacy predecessor graph. */
+export function validateIpexReply(prior: SerderKERI, verb: IpexVerb, sender: string, recipient: string): void {
+  if (!(PREVIOUS_IPEX_ROUTES.get(verb) ?? []).some(route => prior.route === `/ipex/${route}`)) {
+    throw new ValidationError("Prior IPEX exchange is missing or has the wrong route.");
+  }
+  const intended = ipexRecipient(prior);
+  if (prior.pre !== recipient || (intended && intended !== sender)) {
+    throw new ValidationError("IPEX response parties do not match the accepted prior exchange.");
+  }
+}
+
+/**
+ * Preflight a proposed legacy conversation before a member adds a signature.
+ * Missing accepted predecessors stay pending; malformed routes, changed parties
+ * and replacement responses fail. This does not admit an EXN or change its indexes.
+ */
+export function ipexConversationReady(db: Baser, exn: SerderKERI): boolean {
+  const verb = ipexVerbForRoute(exn.route ?? "");
+  if (!verb || !exn.pre || exn.pvrsn.major !== 1) throw new ValidationError("Unsupported IPEX conversation profile.");
+  const said = priorSaid(exn);
+  if (!said) {
+    if (!STARTABLE_WITHOUT_PRIOR.has(verb)) throw new ValidationError("IPEX response requires its predecessor.");
+    if (!ipexRecipient(exn)) throw new ValidationError("IPEX proposal is missing its recipient.");
+    return true;
+  }
+  const prior = db.exns.get([said]);
+  if (!prior) return false;
+  const recipient = ipexRecipient(exn, prior);
+  if (!recipient) throw new ValidationError("IPEX proposal is missing its recipient.");
+  validateIpexReply(prior, verb, exn.pre, recipient);
+  const response = db.erpy.get([said]);
+  if (response && response.qb64 !== exn.said) {
+    throw new ValidationError("Prior IPEX exchange already has another accepted response.");
+  }
+  return true;
 }
 
 /**

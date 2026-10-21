@@ -140,6 +140,14 @@ checks its own accepted grant, recipient and saved marker; original verified
 approvals remain reusable. Legacy admit destination derives from the accepted
 linked grant's sender. Wallet pending, child acceptance and transport are distinct
 facts; no admit/export exists when the wallet deadline expires before authoring.
+Fresh IPEX member signatures require the accepted predecessor/party relationship.
+Grant preflight inspects the selected wrapper's proof bytes against the local
+verified credential, accepted issuance and issuer KEL; it must not substitute
+previously stored good proof for a malformed selected candidate. Optional legacy
+embeds/proofs remain optional when authority is already local, and the presenting
+group need not be the issuer. Keep actual stored grant paths on delivery; support
+reconstruction supplies dependencies, not replacement signed-child evidence.
+Local approval, accepted quorum and transport remain separate result facts.
 
 Normalization and Exchanger share supportsNestedExchange for the structural v2
 route gate. Handler opt-in, route-local child validation and independent proofs

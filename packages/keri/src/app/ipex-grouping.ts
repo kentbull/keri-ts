@@ -12,13 +12,11 @@ import {
   concatBytes,
   Counter,
   Diger,
-  makePather,
   parseBytes,
   Prefixer,
   Seqner,
   SerderKERI,
   type Siger,
-  smell,
   type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
@@ -38,12 +36,12 @@ import { groupMemberHasKey, groupSigningMembers, localGroupMember } from "./grou
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import {
-  credentialPresentationArtifacts,
+  credentialGrantReady,
   credentialPresentationSupportMessages,
   credentialSaidFromGrant,
   validateAdmitGrant,
 } from "./ipex-credentialing.ts";
-import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexRecipient } from "./ipexing.ts";
+import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexConversationReady, ipexRecipient } from "./ipexing.ts";
 import {
   type GroupDelivery,
   type GroupSendResult,
@@ -67,7 +65,7 @@ export interface MultisigIpexApprovalOptions {
 
 export interface MultisigIpexApprovalResult extends GroupSendResult {
   accepted: boolean;
-  approved: Uint8Array;
+  approved: Uint8Array | null;
 }
 
 /**
@@ -76,7 +74,7 @@ export interface MultisigIpexApprovalResult extends GroupSendResult {
  * @param hby Borrowed local identities and accepted-state stores.
  * @param protocol Borrowed semantic owner; this approval creates its own byte-input context.
  * @param postman Borrowed delivery owner; the caller runs and joins its worker.
- * @param reger Explicit legacy store, required for completed grant delivery and fresh admit approval.
+ * @param reger Explicit legacy store, required for grant approval/delivery and fresh admit approval.
  * @param wrapper Accepted multisig exchange carrying the proposed IPEX child.
  * @param options Approval/genus policy used for the existing group workflow.
  * @returns Approval and current group/protocol completion information.
@@ -92,7 +90,7 @@ export function* approveMultisigIpex(
   const { child, groupHab } = loadIpexProposal(hby, wrapper);
   const { event: embedded, genus } = child;
   const embeddedSaid = embedded.said!;
-  if (embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true) && !reger) {
+  if (embedded.route === IPEX_GRANT_ROUTE && !reger) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
   const payloadSaid = multisigPayloadSaid(wrapper);
@@ -107,6 +105,7 @@ export function* approveMultisigIpex(
     }
   }
   const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
+  if (!approved) return { approved: null, accepted: protocol.exc.complete(embeddedSaid), messages: [], deliveries: [] };
   const publication = options.publish
     ? yield* publishGroupIpexProposal(hby, protocol, postman, groupHab, approved, genus)
     : { messages: [], deliveries: [] };
@@ -160,7 +159,11 @@ function* approveIpexChild(
   { event: embedded, attachment: peerAttachment, genus }: ReturnType<typeof loadIpexProposal>["child"],
   wrapper: SerderKERI,
   reger: Reger | null,
-): Operation<Uint8Array> {
+): Operation<Uint8Array | null> {
+  if (embedded.route === IPEX_GRANT_ROUTE) {
+    if (!reger) throw new ValidationError("Grant approval requires the local credential wallet.");
+    if (!credentialGrantReady(hby, reger, embedded, peerAttachment, genus)) return null;
+  }
   const input = new Reactor(protocol);
   if (peerAttachment.length > 0) {
     yield* input.processBytes(concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment), { local: true });
@@ -182,6 +185,7 @@ function* approveIpexChild(
     if (!proof) throw new ValidationError("Recorded IPEX approval lacks a valid member contribution.");
     approved = concatBytes(serializeMessage(embedded, { tsgs: [proof], gvrsn: genus }), peerAttachment);
   } else {
+    if (!ipexConversationReady(hby.db, embedded)) return null;
     if (embedded.route === IPEX_ADMIT_ROUTE) {
       if (!reger) throw new ValidationError("Admit approval requires the local credential wallet.");
       const prior = embedded.ked?.p;
@@ -440,21 +444,17 @@ export function* sendCompletedGroupIpex(
   }
 
   const messages: Uint8Array[] = [];
-  let grantPathed: Uint8Array[] | undefined;
   if (embedded.route === IPEX_GRANT_ROUTE) {
     if (!reger) {
       throw new ValidationError("VDR runtime did not open Reger.");
     }
-    const support = groupGrantSupport(hby, reger, embedded, recipient, gvrsn);
-    grantPathed = support.pathed;
-    messages.push(...support.messages);
+    messages.push(...groupGrantSupport(hby, reger, embedded, recipient, gvrsn));
   }
 
   messages.push(storedExchangeMessage(
     hby,
     requireStoredExchange(hby, embedded.said),
     gvrsn,
-    grantPathed,
   ));
   return yield* sendCredentialBytes(
     postman,
@@ -471,15 +471,11 @@ function groupGrantSupport(
   embedded: SerderKERI,
   recipient: string,
   gvrsn: Versionage,
-): { pathed?: Uint8Array[]; messages: Uint8Array[] } {
+): Uint8Array[] {
   const credentialSaid = credentialSaidFromGrant(embedded);
-  if (!credentialSaid) return { messages: [] };
+  if (!credentialSaid) throw new ValidationError("Grant is missing its credential SAID.");
   const [creder] = reger.cloneCred(credentialSaid);
-  const artifacts = credentialPresentationArtifacts(hby, reger, credentialSaid, gvrsn);
-  return {
-    pathed: grantPathedMaterials(artifacts),
-    messages: credentialPresentationSupportMessages(hby, reger, creder, recipient, gvrsn),
-  };
+  return credentialPresentationSupportMessages(hby, reger, creder, recipient, gvrsn);
 }
 
 /** Load one accepted stored EXN by SAID. */
@@ -494,21 +490,20 @@ export function requireStoredExchange(hby: Habery, said: string): SerderKERI {
 /**
  * Rebuild an accepted EXN with its signatures and path/proof payloads.
  * epath stores complete counted groups; remove each source counter before the
- * serializer supplies the selected output genus's counter. Overrides already
- * contain uncounted payloads, as returned by the credential artifact builder.
+ * serializer supplies the selected output genus's counter. Retain the selected
+ * grant's actual child proofs; support reconstruction must not replace them.
  */
 export function storedExchangeMessage(
   hby: Habery,
   serder: SerderKERI,
   gvrsn: Versionage = Vrsn_1_0,
-  pathedOverride?: readonly Uint8Array[],
 ): Uint8Array {
   if (!serder.said) {
     throw new ValidationError("Exchange message is missing a SAID.");
   }
   const cigars = hby.db.ecigs.get([serder.said]).map(([, cigar]) => cigar) as Cigar[];
   const sourceGenus = resolveAttachmentGvrsn(serder, hby.db.exchangeMeta.get([serder.said])?.gvrsn);
-  const pathed = pathedOverride ?? hby.db.epath.get([serder.said]).map((text) => {
+  const pathed = hby.db.epath.get([serder.said]).map((text) => {
     const raw = new TextEncoder().encode(text);
     return raw.slice(new Counter({ qb64b: raw, version: sourceGenus }).fullSize);
   });
@@ -570,25 +565,6 @@ export function* sendCredentialStream(
   const outcome = yield* postman.wait(evt);
   if (outcome.kin === "failed") throw outcome.error;
   return outcome.deliveries;
-}
-
-function grantPathedMaterials(
-  artifacts: ReturnType<typeof credentialPresentationArtifacts>,
-): Uint8Array[] {
-  return [
-    pathedMaterial("anc", artifacts.anc.wire),
-    pathedMaterial("iss", artifacts.iss.wire),
-    pathedMaterial("acdc", artifacts.acdc.wire),
-  ];
-}
-
-function pathedMaterial(label: string, message: Uint8Array): Uint8Array {
-  const { smellage } = smell(message);
-  const atc = message.slice(smellage.size);
-  if (atc.length === 0) {
-    return makePather(["e", label]).qb64b;
-  }
-  return concatBytes(makePather(["e", label]).qb64b, atc);
 }
 
 function rebuildStoredExchangeGroups(db: Baser, said: string): TransIdxSigGroup[] {

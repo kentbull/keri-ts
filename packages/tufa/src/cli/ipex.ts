@@ -107,11 +107,13 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     writeJsonLine({ ...identity, status: "multisig-pending" });
   } else {
     let status = group.accepted ? "multisig-approved" : "multisig-escrowed";
+    if (group.approved === false) status = "approval-pending";
     if (group.credentialSaved === false) status = "credential-pending";
     writeJsonLine({
       ...identity,
       status,
       accepted: group.accepted,
+      approved: group.approved,
       lead: group.lead,
       messages: group.messages,
       deliveries: group.deliveries,
