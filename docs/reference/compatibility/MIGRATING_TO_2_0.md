@@ -365,3 +365,8 @@ the same paths and table encodings. Local `ack`/`rack` mean HTTP success after
 cleanup, not a KERI acknowledgement or exactly-once business receipt. The moved
 application still uses legacy Reger state; this does not add native-v2 application
 verification or change Sally-inspired workflow behavior.
+
+`verifier run --once` now prints its final JSON only after its cue store, runtime
+and Habery close. Close failures remain command failures; simultaneous operation
+and cue-store cleanup failures are preserved in AggregateError. Per-pass output
+from the long-running loop remains progress rather than final command success.

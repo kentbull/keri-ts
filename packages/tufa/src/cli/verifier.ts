@@ -44,7 +44,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
   requireNonEmpty(runArgs.hook, "Webhook URL");
   const hook = runArgs.hook!;
 
-  yield* withAgentRuntime(
+  const completed = yield* withAgentRuntime(
     runArgs,
     {
       compat: runArgs.compat ?? false,
@@ -61,6 +61,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
         headDirPath: hby.headDirPath,
         compat: hby.compat,
       });
+      let failure: { error: unknown } | undefined;
       try {
         const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
         const agent = new VerifierAgent(
@@ -82,8 +83,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
 
         if (runArgs.once ?? false) {
           const result = yield* agent.processOnce();
-          console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
-          return;
+          return { result, counts: cdb.getCounts() };
         }
 
         while (true) {
@@ -91,11 +91,28 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
           console.log(JSON.stringify({ result, counts: cdb.getCounts() }));
           yield* sleep(runArgs.intervalMs ?? 1000);
         }
+      } catch (error) {
+        failure = { error };
+        throw error;
       } finally {
-        yield* cdb.close();
+        try {
+          yield* cdb.close();
+        } catch (error) {
+          if (failure) {
+            // deno-lint-ignore no-unsafe-finally -- Preserve operation failure alongside owned-store shutdown failure.
+            throw new AggregateError([failure.error, error], "Verifier operation and cue-store close failed", {
+              cause: failure.error,
+            });
+          }
+          // deno-lint-ignore no-unsafe-finally -- A failed owned shutdown cannot become successful command completion.
+          throw error;
+        }
       }
     },
   );
+  // --once is a final command result; the loop's per-pass output is progress.
+  // Required cue-store, runtime and Habery cleanup finishes before this success line.
+  if (completed) console.log(JSON.stringify(completed));
 }
 
 function* sleep(ms: number): Operation<void> {

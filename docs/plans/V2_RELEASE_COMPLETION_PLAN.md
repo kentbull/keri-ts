@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `f1ae0dd4` (#653), 2026-10-21.
+Status: active; merged implementation baseline `3fb79534` (#655), 2026-10-21.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -8,12 +8,13 @@ plan. This goal may finish when all other required work and qualification pass.
 
 ## Current state
 
-Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
-are implemented, including weighted and witnessed CLI restart evidence. Six-verb
-IPEX authoring/approval and wallet settlement are implemented, with grant preflight merged in #650; peer/witnessed lifecycle qualification remains.
-Legacy TEL replay is merged in #651; autonomous legacy TEL backing is retired
-in #652 with observer verification retained. Revocation is the current implementation
-cut, followed by verifier separation, bounded peer evidence, organization and final qualification. Selected feature checks are not a release-readiness claim.
+Foundational refactors, operator fixes, legacy VCP/ISS/REV approval and publication,
+and six-verb IPEX/wallet settlement are implemented through #654. Legacy TEL replay
+is merged in #651; autonomous backing is retired in #652 with observer verification
+retained. The verifier's public protocol prerequisites are merged in #655; its Tufa
+ownership/close/package cut is current. Bounded actual-peer/witnessed lifecycle
+qualification, final ownership assessment, organization and release preparation remain.
+Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -25,7 +26,7 @@ cut, followed by verifier separation, bounded peer evidence, organization and fi
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| Backer retirement, revocation, verifier separation                                     | Not complete; acceptance criteria and order below.                                                                                                        |
+| Backer retirement, revocation, verifier separation                                     | Backing retired #652; REV implemented #654; verifier move is the current cut.                                                                             |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -133,9 +134,10 @@ implementation PR before the next; split only for independent human review.
 | 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.    | 15                                                    |
 | 17–18        | Complete in #651: query wire context, legacy TEL replay and explicit unsupported downgrade.                            | Query composition already merged                      |
 | R3           | Complete in #652: autonomous backing retired; design archived, rejection ADR recorded, observer verification retained. | 17–18 (#651)                                          |
-| 20           | Group revocation and independently observed revoked state.                                                             | 15, 18, R3                                            |
+| 20           | Implemented in #654: group REV, holder delivery and verifier reopen/stale replay; peer gates remain in 31.             | 15, 18, R3                                            |
 | 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                    | R3                                                    |
-| 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                            | Legacy lifecycle; independent of deferred native cuts |
+| 30a–30b      | 30a complete #655; Tufa verifier application move/close/installed-package cut is current.                              | Legacy lifecycle; independent of deferred native cuts |
+| 30c          | Count actual per-pass verifier business refusals; preserve accepted protocol state and existing workflow semantics.    | 30b                                                   |
 | 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                     | All feature work                                      |
 | 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                               | 31                                                    |
 | 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                     | 31a                                                   |
@@ -256,76 +258,21 @@ Required adversarial/lifetime cases:
 - Every participating member converges on the same accepted business state;
   elected external delivery is independently observed.
 
-### Phase E: legacy replay and peer interoperability — PRs 17–19
+### Phase E: legacy replay — complete in #651
 
-PR 17 carries parsed attachment genus through `queryEnvelopeFromDispatch` into
-the TEL query policy owner, preserving current emitted bytes. Keep body protocol
-version, attachment genus and HTTP media type separate. Introduce no peer
-capability registry or inferred protocol downgrade.
+Parsed query attachment genus reaches TEL replay independently of signed body
+version. Legacy requests receive v1 framing; explicit v2 contexts retain v2.
+Unsupported downgrade fails explicitly without substituting newer bytes or
+partially publishing a constructed indirect reply. Actual TCP replay/observer
+checks pass on the three frozen peer profiles; full lifecycle qualification remains in 31.
 
-PR 18 selects replay framing from the actual request context. Genuine unselected
-legacy requests receive v1-compatible attachment counters/source seals without
-a v2-only selector. Explicit v2 contexts retain v2 framing. Direct library
-callers select their intended wire settings explicitly. Reuse `Reger.cloneTvt`
-and known semantic attachment conversion; preserve raw signed bodies, SAIDs,
-signatures and source-seal meaning.
+### R3: autonomous legacy TEL backing — complete in #652
 
-Reger currently treats requested genus as a floor. A v1 request for an event
-whose signed body or proof requires v2 must receive an explicit unsupported
-outcome; do not silently raise the floor and call it v1 compatibility. Missing,
-opaque or unmappable proof material must never be rewritten into plausible wire.
-Preserve replay horizons, order, lazy reads and cursor cleanup.
-
-Define refusal per delivery owner. Local export returns a typed unsupported
-outcome/nonzero command result; if its existing iterator has emitted a prefix,
-retain that fact without reporting complete export. Direct TCP terminates the
-actual replay operation on unsupported evidence; inspect whether that owner has
-already emitted bytes and test that real boundary. An EOF is not a remote semantic
-refusal message. Indirect HTTP/mailbox Respondant currently materializes the whole
-cue before atomic Poster admission: preserve no-publication on construction failure
-and expose the local failure without claiming that the older peer received a typed
-refusal. Do not invent a negative-response protocol or streaming redesign. In all
-paths, never substitute v2-only bytes for a purported v1 replay.
-
-### R3: retire autonomous legacy TEL backing — immediately after replay
-
-Use one cohesive removal PR unless inspection reveals independently reviewable
-responsibilities large enough to justify a split. This replaces cuts 21–24;
-there is no remaining backer-feature completion or qualification requirement.
-
-- Write `docs/reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md` describing the
-  current design, source commit/PR references, receipt wire and durable ownership,
-  checks already performed and limits of the Python correspondence. This is a
-  reference report, not retained executable code or a new roadmap.
-- Add `docs/adr/adr-0014-legacy-tel-backer-retirement.md`: reject autonomous TEL
-  backing and backed-registry authoring because the additional lifetime,
-  persistence, signing and integration obligations lack a current justified
-  application requirement. Distinguish KERIpy's legacy wire/observer support
-  from autonomous signing, and native ACDC v2's different registry model. Do not
-  turn the claimed historical lack of adoption into an independently verified fact.
-- Remove `Backer`, `BackerService`, their request/result flows, runtime ownership,
-  workers, hosting options, `--backer-alias`, backed-registry authoring options,
-  public exports and dedicated `bens.` endorsement-choice table. Trace and delete
-  feature-only eligibility publication, proof-input distinctions, escrow hooks
-  and helpers; do not merely disconnect the service or leave wrappers/flags.
-- Inspect registry/credential authoring and remove backer-policy management and
-  local signing/collection branches that exist only for this feature. Keep the
-  ordinary NoBackers lifecycle, issuer multisig authority and KEL witnessing.
-  External legacy backed evidence remains subject to actual observer validation;
-  removal must not bypass its quorum, accept partial proof, or silently author
-  backed evidence through a leftover application path.
-- Remove feature-only tests, the hosted-backer Python driver and CI owner, stale
-  help/design claims and unreleased feature promises. Keep useful protocol
-  decoding/observer/replay regressions and shared primitives with real consumers.
-  Add no tests or lint rules asserting that discarded names stay absent.
-- Record public API/CLI removals in concise breaking guidance and an appropriate
-  changeset. Validate affected authoring, ordinary runtime/hosting, observer and
-  replay behavior with focused checks and relevant existing peer tests. Broad
-  final qualification still follows all implementation and organization work.
-
-No compatibility shim, dormant service, feature flag, generic provider, replacement
-storage framework or speculative future reintroduction belongs in this cut.
-The ADR may be reconsidered only with a concrete new requirement and design review.
+The [retirement report](../reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md)
+preserves the former design; [ADR-0014](../adr/adr-0014-legacy-tel-backer-retirement.md)
+rejects its autonomous signing/hosting and backed-registry application authoring.
+External legacy backed-TEL observer verification, historical cohorts, escrows and
+replay remain supported. Cuts 21–24 are cancelled, not pending expansion work.
 
 ### Native-v2 ACDC/registry — deferred cuts 25–30
 
@@ -384,6 +331,14 @@ guide/release notes. Broad final qualification follows this move and all remaini
 implementation and organization work. Old keri-ts APIs and private formats impose
 no compatibility requirement; preserve protocol interoperability and document
 intentional breaks.
+
+### Verifier reporting follow-up — cut 30c
+
+The existing `rejected` result is initialized but never incremented for business
+policy refusal. After the ownership move, count actual per-pass business refusals
+using decision data, without changing saved protocol evidence, notification
+suppression, expiry or HTTP retry behavior. Extend the existing saved-credential
+policy test; no new behavior matrix or reporting framework is needed.
 
 ### Phase H: bounded actual-peer confidence — PR 31
 
@@ -472,6 +427,10 @@ rerun peer paths when their composition changes. Full qualification comes afterw
    into changelogs before deleting notes. Reconcile manifests, Deno mirrors, npm
    lock entries, generated modules and internal dependencies using manifest/version
    checks. Preserve prior release history. Version preparation does not publish.
+   Review actual installed runtime advisories before qualification, including
+   pinned Ajv 8.17.1 / GHSA-2g4f-4pwh-qvx6 (`$data` ReDoS). Inspect configured
+   options and update to a verified patched pin with focused schema/package checks;
+   do not infer exposure from npm's transitive package count alone.
 2. **Finish breaking-change documentation.** Audit final supported APIs, exports,
    CLI/configuration, ownership/runtime requirements and storage/encryption changes
    against published 1.0.0 artifacts. Complete

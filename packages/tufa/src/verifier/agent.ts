@@ -414,6 +414,7 @@ export class VerifierAgent {
   }
 }
 
+/** Read the existing legacy Reger observer state; this application does not interpret native-v2 registries. */
 function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape | null {
   const regk = creder.regid;
   const said = creder.said;
@@ -437,6 +438,7 @@ function nowDater(now: number): Dater {
   return new Dater({ dts: makeNowIso8601(new Date(now)) });
 }
 
+/** Refuse absent signed identifiers before writing workflow coordinates. */
 function requireString(value: string | null, label: string): string {
   if (!value) {
     throw new ValidationError(`Missing ${label}.`);
@@ -444,6 +446,7 @@ function requireString(value: string | null, label: string): string {
   return value;
 }
 
+/** Narrow structural provider/attribute data at the public protocol boundary. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

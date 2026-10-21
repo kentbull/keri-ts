@@ -63,6 +63,7 @@ export function credentialSchema(creder: SerderACDC): string {
   return typeof creder.schema === "string" ? creder.schema : "";
 }
 
+/** Narrow operator JSON mappings without imposing protocol or schema validation here. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

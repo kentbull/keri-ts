@@ -21,6 +21,7 @@ export function webhookBody(
   return { action, actor, data };
 }
 
+/** Preserve the supported legacy attribute projection; this adds no authentication. */
 function presentationPayload(creder: SerderACDC): Record<string, unknown> {
   const attrs = isRecord(creder.attrib) ? creder.attrib : {};
   return {
@@ -34,6 +35,7 @@ function presentationPayload(creder: SerderACDC): Record<string, unknown> {
   };
 }
 
+/** Report the accepted TEL timestamp rather than the local delivery-attempt clock. */
 function revocationPayload(creder: SerderACDC, state: VcStateRecordShape | null): Record<string, unknown> {
   return {
     schema: credentialSchema(creder),

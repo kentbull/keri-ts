@@ -52,6 +52,7 @@ export class VerifierCueBaser extends LMDBer {
     });
   }
 
+  /** Open ordinary LMDB storage and bind this application's typed tables. */
   override *reopen(options: VerifierCueBaserOptions = {}): Operation<boolean> {
     const opened = yield* super.reopen(options);
     if (!opened) {
@@ -68,6 +69,7 @@ export class VerifierCueBaser extends LMDBer {
     return true;
   }
 
+  /** Clear workflow records, including the existing local delivered markers. */
   clearEscrows(): void {
     this.iss.trim();
     this.rev.trim();
@@ -77,6 +79,7 @@ export class VerifierCueBaser extends LMDBer {
     this.rack.trim();
   }
 
+  /** Snapshot application row counts for command output, never protocol acceptance. */
   getCounts(): VerifierCueCounts {
     return {
       senders: this.snd.cntAll(),

@@ -47,7 +47,7 @@ npm init -y >/dev/null 2>&1
 npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${TUFA_TARBALL}" >/dev/null
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
 
-cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs /smoke-scripts/keri-consumer.ts "${WORK_DIR}/"
+cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs /smoke-scripts/keri-consumer.ts /smoke-scripts/tufa-consumer.ts "${WORK_DIR}/"
 node ./smoke-keri-installed.mjs
 
 TUFA_BIN="${WORK_DIR}/node_modules/.bin/tufa"
@@ -58,6 +58,7 @@ fi
 
 cp /smoke-scripts/smoke-tufa-authoring.mjs "${WORK_DIR}/"
 node ./smoke-tufa-authoring.mjs
+node /smoke-scripts/smoke-tufa-runtime.mjs "${WORK_DIR}/node_modules/@keri-ts/tufa"
 
 V1="$("${TUFA_BIN}" version | tr -d "\r")"
 V2="$("${TUFA_BIN}" --version | tr -d "\r")"
@@ -115,5 +116,7 @@ TUFA_SMOKE_PORT="${PORT}" \
   TUFA_SMOKE_AGENT_EXIT_FILE="/tmp/tufa-agent.exitcode" \
   TUFA_SMOKE_AGENT_LOG="/tmp/tufa-agent.log" \
   node /smoke-scripts/wait-for-tufa-health.mjs >/dev/null
+
+node /smoke-scripts/smoke-installed-declarations.mjs keri-consumer.ts tufa-consumer.ts
 
 echo "Combined smoke test passed for keri-ts and @keri-ts/tufa ${V1} on ${SMOKE_NODE_IMAGE:-node}"

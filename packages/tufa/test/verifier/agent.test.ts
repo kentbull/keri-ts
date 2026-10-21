@@ -165,6 +165,25 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
         {},
         { hook: "http://example.test/hook", gvrsn },
       );
+      if (gvrsn.major === 1) {
+        const schema = fixture.creder.schema;
+        if (typeof schema !== "string") throw new Error("Fixture requires a schema SAID");
+        const refused = new VerifierAgent(
+          verifierHby,
+          verifierReger,
+          cdb,
+          runtime.protocol,
+          runtime.cues,
+          runtime.http,
+          () => runtime.clock.now(),
+          { [schema]: () => false },
+          { hook: "http://example.test/hook", gvrsn },
+        );
+        const denied = yield* refused.processOnce();
+        assertEquals(denied.webhooksSent, 0);
+        assertEquals(requests.length, 0);
+        assertEquals(verifierReger.saved.get(fixture.creder.said!)?.qb64, fixture.creder.said);
+      }
       const result = yield* agent.processOnce();
 
       assertEquals(result.grantsQueued, 1);
