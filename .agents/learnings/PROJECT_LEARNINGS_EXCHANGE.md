@@ -99,7 +99,10 @@ returns those actual proposal identities. Preserve first-notice behavior or retr
 can republish approval unnecessarily.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
-EXNs and their Multiplexor indexes independently of notification presence. Group
+EXNs and their Multiplexor indexes independently of notification presence. When
+explicitly selected accepted evidence lacks its index after interrupted handling,
+replay it through ordinary authenticated intake; the real handler rebuilds its
+index. Apply the group selector first and never synthesize approval rows. Group
 filters resolve local aliases and bind the actual KEL child identity (inception
 need not carry gid); notices discover candidates but do not authorize their route.
 Resume reuses the recorded member contribution and membership choices. Existing

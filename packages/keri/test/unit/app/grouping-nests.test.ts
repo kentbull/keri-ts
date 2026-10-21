@@ -217,6 +217,108 @@ Deno.test("multisig publication records its actual local proposal before deliver
     });
   });
 });
+for (const localSender of [false, true]) {
+  Deno.test(`stored multisig replay recovers admission before indexing (${localSender ? "local" : "peer"})`, async () => {
+    await participants(async (left, right, alice, bob, notifier) => {
+      const mids = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      await run(function*() {
+        let runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+        try {
+          const sender = localSender ? alice : bob;
+          const recipient = localSender ? bob : alice;
+          const child = localSender ? local : remote;
+          const prepared = yield* prepareMultisigEventExn(
+            sender.pre,
+            {
+              route: "/multisig/icp",
+              attrs: { smids: mids, rmids: mids },
+            },
+            messagize(child.serder, { sigers: child.sigers }),
+            { recipient: recipient.pre },
+          );
+          const signed = signGroupMessage(sender, recipient.pre, prepared);
+          const handler = runtime.exc.routes.get("/multisig/icp")!;
+          const handle = handler.handle;
+          const fault = new Error("interrupted before Multiplexor indexing");
+          handler.handle = function*() {
+            throw fault;
+          };
+          try {
+            const error = yield* call(() =>
+              assertRejects(() => run(() => runtime.reactor.processBytes(signed.message, { local: true })))
+            );
+            assertEquals(error, fault);
+          } finally {
+            handler.handle = handle;
+          }
+          assertEquals(runtime.exc.complete(signed.exnSaid), true);
+          assertEquals(left.db.meids.get([signed.payloadSaid]), []);
+          yield* runtime.close();
+          yield* left.db.reopen();
+          runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+          runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+          runtime.postman.wait = function*(evt) {
+            return { kin: "sent", evt, deliveries: ["test"] };
+          };
+          let prompts = 0;
+          const callbacks = {
+            approveProposal: () => {
+              prompts++;
+              return true;
+            },
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "unused",
+          };
+          if (!localSender) {
+            yield* call(() =>
+              assertRejects(
+                () =>
+                  run(() =>
+                    approvePendingMultisigProposal(left, runtime, {
+                      said: signed.exnSaid,
+                      group: bob.pre,
+                      callbacks,
+                    })
+                  ),
+                Error,
+                "belongs to group",
+              )
+            );
+            assertEquals(left.db.meids.get([signed.payloadSaid]), []);
+            assertEquals(prompts, 0);
+          }
+          const sign = alice.mgr.sign;
+          if (localSender) {
+            alice.mgr.sign = () => {
+              throw new Error("Recorded approval must reuse its original signatures.");
+            };
+          }
+          try {
+            const result = yield* approvePendingMultisigProposal(left, runtime, {
+              said: signed.exnSaid,
+              group: local.hab.pre,
+              callbacks,
+            });
+            assertExists(result);
+            assertEquals(result.said, signed.exnSaid);
+            assertEquals(result.embedded, child.serder.said);
+            assertEquals(result.accepted, !localSender);
+            assertEquals(prompts, localSender ? 0 : 1);
+            assertEquals(left.db.meids.get([signed.payloadSaid]).some(index => index.qb64 === signed.exnSaid), true);
+            if (localSender) assertEquals(result.messages[0].exnSaid, signed.exnSaid);
+          } finally {
+            alice.mgr.sign = sign;
+          }
+        } finally {
+          yield* runtime.close();
+        }
+      });
+    });
+  });
+}
+
 Deno.test("multisig approval honors signed child genus through KEL, replies, registry and credential issuance", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
