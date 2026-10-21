@@ -7,8 +7,8 @@
  * - raw schema bytes remain the stored value in `schema.`
  */
 import { DigDex, dumps, type Kind, Saider } from "cesr-ts";
-import Ajv from "npm:ajv@8.17.1";
-import Ajv2020 from "npm:ajv@8.17.1/dist/2020.js";
+import Ajv from "npm:ajv@8.18.0";
+import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "./errors.ts";
 
 type JsonObject = Record<string, unknown>;
