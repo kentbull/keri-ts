@@ -322,3 +322,22 @@ An iterator can already have emitted earlier compatible events before refusal.
 Respondant and TCP responders construct a whole cue before sending it; TCP reports
 `unsupported-replay` locally and closes that connection without a semantic refusal
 message. `WitnessTcpOptions.onRefusal` therefore has that additional reason.
+
+## Retired autonomous legacy TEL backing
+
+Local registry/credential applications now author NoBackers `vcp`/`iss`/`rev` TELs.
+The autonomous signer/service, its runtime worker/flow and private `Reger.bens`
+choice table are removed. `tufa agent --backer-alias` and registry `--backers`
+are removed, as are `AgentRuntime.backerService`, runtime/host `backerHab` options
+and `TeveryOptions.backerRequests`. Registry application options no longer take
+`noBackers`, `baks` or `toad`; `Registry.noBackers` and backer-management
+`Registry.rotate()` are removed. `CredentialRegistryInceptOptions.noBackers`
+is removed. Establishment-only issuer anchoring and KEL rotation remain supported.
+
+External legacy backed evidence still uses normal decoding, exact historical
+quorum verification, escrow/retry and replay. Imported credentials can still be
+presented with their proofs; a loaded backed registry does not authorize fresh
+local TEL authoring. No old API or private-table migration path is provided.
+[ADR-0014](../../adr/adr-0014-legacy-tel-backer-retirement.md) records the decision;
+the [reference report](../../reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md)
+preserves the former design and source references.

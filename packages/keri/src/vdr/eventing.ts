@@ -50,7 +50,6 @@ import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { backerThreshold, resolveBackerState } from "./backer-state.ts";
-import type { BackerRequest } from "./backing.ts";
 import { credentialRecord } from "./credential-tsn-record.ts";
 import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
 import { verifyTelAnchor } from "./tel-anchor.ts";
@@ -131,11 +130,9 @@ export interface TeveryOptions {
   local?: boolean;
   lax?: boolean;
   cues?: Deck<AgentCue>;
-  /** Explicit hosted backer work; absent for ordinary observers and issuers. */
-  backerRequests?: Deck<BackerRequest>;
 }
 
-export interface TeverOptions extends Omit<TeveryOptions, "rvy" | "cues" | "backerRequests"> {
+export interface TeverOptions extends Omit<TeveryOptions, "rvy" | "cues"> {
   rsr?: RegStateRecord | null;
   serder?: SerderKERI | null;
   seqner?: NumberPrimitive | null;
@@ -905,7 +902,6 @@ export class Tevery {
   readonly local: boolean;
   readonly lax: boolean;
   readonly cues: Deck<AgentCue>;
-  private readonly backerRequests?: Deck<BackerRequest>;
 
   constructor(options: TeveryOptions) {
     this.rvy = options.rvy;
@@ -914,7 +910,6 @@ export class Tevery {
     this.local = options.local ?? false;
     this.lax = options.lax ?? true;
     this.cues = options.cues ?? new Deck<AgentCue>();
-    this.backerRequests = options.backerRequests;
     this.reloadRegistryStates();
   }
 
@@ -1028,19 +1023,6 @@ export class Tevery {
     if (decision.kind === "accept" && (decision.ilk === Ilks.rev || decision.ilk === Ilks.brv)) {
       // Keep publication outside semantic error conversion and after the writer has committed.
       this.cues.push({ kin: "revoked", serder: args.serder });
-    }
-    if (
-      this.backerRequests && [Ilks.vcp, Ilks.vrt, Ilks.bis, Ilks.brv].some((ilk) => ilk === args.serder.ilk)
-      && (decision.kind === "accept" || decision.kind === "duplicate"
-        || (decision.kind === "escrow" && decision.escrow === "partialWitness"))
-    ) {
-      // Durable acceptance or partial quorum proves semantic/anchor eligibility.
-      // Keep received proofs distinct from the durable union so retries do not echo our own receipt.
-      this.backerRequests.push({
-        pre: okPre(args.serder),
-        said: okSaid(args.serder),
-        received: [...(args.wigers ?? [])],
-      });
     }
     return decision;
   }

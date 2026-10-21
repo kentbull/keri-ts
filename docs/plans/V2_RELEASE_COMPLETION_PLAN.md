@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `dad074ae` (#650), 2026-10-20.
+Status: active; merged implementation baseline `dda5a9d4` (#651), 2026-10-20.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -11,8 +11,8 @@ plan. This goal may finish when all other required work and qualification pass.
 Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
 are implemented, including weighted and witnessed CLI restart evidence. Six-verb
 IPEX authoring/approval and wallet settlement are implemented, with grant preflight merged in #650; peer/witnessed lifecycle qualification remains.
-Legacy TEL replay is the current cut. Retirement of the autonomous legacy TEL
-backer feature follows immediately, then revocation, verifier separation,
+Legacy TEL replay is merged in #651. Retirement of the autonomous legacy TEL
+backer feature is the current cut, then revocation, verifier separation,
 organization and final qualification. Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
@@ -44,8 +44,7 @@ Git/PRs own detailed history; this file owns current scope, order and gates.
 - Required: complete multisig approval/fanout throughout CLI credential workflows,
   legacy TEL replay, removal of the autonomous legacy TEL backer feature, verifier separation
   and package organization. KERI/CESR v2 work independent of native ACDC stays required.
-- **Legacy TEL backing is retired as an active feature.** Immediately after the
-  current replay PR, preserve its design/source references in one report, record
+- **Legacy TEL backing is retired as an active feature.** Immediately after replay (#651), preserve its design/source references in one report, record
   an ADR rejecting reintroduction without a new justified requirement, and remove
   autonomous signing, collection, runtime/CLI hosting, backed-registry authoring
   and feature-only storage/escrow machinery. Cancel the planned group backer,
@@ -132,8 +131,8 @@ implementation PR before the next; split only for independent human review.
 | 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                | 13k, 13 remainder                                     |
 | 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31. | 14                                                    |
 | 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.  | 15                                                    |
-| 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged                      |
-| R3           | Retire the autonomous legacy TEL backer feature, archive the design and record its rejection ADR.                    | 17–18; immediately after current PR                   |
+| 17–18        | Complete in #651: query wire context, legacy TEL replay and explicit unsupported downgrade.                          | Query composition already merged                      |
+| R3           | Retire the autonomous legacy TEL backer feature, archive the design and record its rejection ADR.                    | 17–18 (#651)                                          |
 | 20           | Group revocation and independently observed revoked state.                                                           | 15, 18, R3                                            |
 | 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                  | R3                                                    |
 | 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                          | Legacy lifecycle; independent of deferred native cuts |

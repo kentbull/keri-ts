@@ -36,7 +36,6 @@ interface VcBaseArgs {
 interface VcRegistryArgs extends VcBaseArgs {
   alias?: string;
   registryName?: string;
-  noBackers?: boolean;
   estOnly?: boolean;
   usage?: string;
 }
@@ -115,7 +114,6 @@ export function* vcRegistryInceptCommand(
         const deadline = Date.now() + timeout * 1000;
         const created = yield* inceptCredentialRegistry(rgy, runtime.reactor, postman, hab, {
           registryName: vcArgs.registryName!,
-          noBackers: vcArgs.noBackers,
           estOnly: vcArgs.estOnly,
           usage: vcArgs.usage,
         });
@@ -359,7 +357,6 @@ function registryArgs(
     ...baseArgs(args),
     alias: parseStringOption(args.alias, "alias"),
     registryName: parseStringOption(args.registryName, "registryName"),
-    noBackers: parseBooleanOption(args.noBackers, "noBackers"),
     estOnly: parseBooleanOption(args.estOnly, "estOnly"),
     usage: parseStringOption(args.usage, "usage"),
   };

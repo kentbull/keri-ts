@@ -52,11 +52,6 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
           .requiredOption("--registry-name <name>", "Registry name")
           .option("--usage <text>", "Human-readable registry usage for multisig proposals")
           .option("--timeout <seconds>", "Wait for local TEL publication (default: 60; 0 returns pending state)")
-          .option(
-            "--backers",
-            "Enable legacy/v1-style TEL backing by a configured backer quorum (not native ACDC v2)",
-            false,
-          )
           .option("--est-only", "Anchor TEL events only in establishment events", false),
       ),
     ),
@@ -67,7 +62,6 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
       exportName: "vcRegistryInceptCommand",
       args: (options) => ({
         ...dispatchArgs(options),
-        noBackers: !(options.backers || false),
         estOnly: options.estOnly || false,
         usage: options.usage,
       }),

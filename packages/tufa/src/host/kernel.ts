@@ -33,11 +33,6 @@ export interface HostKernelSpec {
   /** Whether this host constructs provider mailbox storage. */
   enableMailboxStore: boolean;
   serviceHab: Hab;
-  /**
-   * Explicit optional legacy/v1-style TEL backer, independent of hosted prefixes,
-   * issuer multisig approval and KEL witnessing. Native ACDC v2 does not require it.
-   */
-  backerHab?: Hab;
   hostedPrefixes?: readonly string[];
   http: HostKernelHttpSpec;
   protocolPolicy: Omit<ProtocolHostPolicy, "serviceHab" | "hostedPrefixes">;
@@ -58,7 +53,6 @@ export function* runHostKernel(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
-    backerHab: spec.backerHab,
   });
   const hostedPrefixes = spec.hostedPrefixes ?? [spec.serviceHab.pre];
   const protocolPolicy: ProtocolHostPolicy = {

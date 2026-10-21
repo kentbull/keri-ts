@@ -1,6 +1,16 @@
 import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
-import { concatBytes, Counter, parseBytes, SerderKERI, t } from "../../../../cesr/mod.ts";
+import {
+  concatBytes,
+  Counter,
+  Diger,
+  NumberPrimitive,
+  NumDex,
+  parseBytes,
+  SerderKERI,
+  Siger,
+  t,
+} from "../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runtime.ts";
@@ -10,6 +20,7 @@ import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { Credentialer } from "../../../src/vdr/credentialing.ts";
@@ -413,6 +424,75 @@ Deno.test("selected Python profile accepts actual TCP TEL replay through issued 
         } finally {
           yield* waitForTaskHalt(listener);
         }
+      } finally {
+        yield* runtime.close();
+        yield* hby.close(true);
+      }
+    });
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
+Deno.test("selected Python observer accepts indexed legacy TEL evidence", async () => {
+  const ctx = await createInteropContext();
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        const issuer = hby.makeHab("issuer");
+        const signers = ["first", "second"].map(name => hby.makeHab(name, undefined, { transferable: false }));
+        const backers = signers.map(hab => hab.pre);
+        // Protocol-level fixture signing supplies independent indexed receipt evidence.
+        const vcp = inceptRegistry(issuer.pre, { baks: backers, toad: 2 });
+        issuer.interact({ data: [{ i: vcp.pre, s: vcp.snh, d: vcp.said }] });
+        const ordinal = new Uint8Array(16);
+        ordinal[15] = 1;
+        const proofs = signers.map((hab, index) => {
+          const signature = hab.sign(vcp.raw, true)[0];
+          return new Siger({ code: signature.code, raw: signature.raw, index });
+        });
+        const rgy = runtime.vdr!;
+        assertEquals(
+          rgy.tvy.processEvent({
+            serder: vcp,
+            seqner: new NumberPrimitive({ code: NumDex.Huge, raw: ordinal }),
+            saider: new Diger({ qb64: issuer.kever!.said }),
+            wigers: proofs,
+          }).kind,
+          "accept",
+        );
+        const evidence = `${ctx.home}/tel-observer.json`;
+        yield* call(() =>
+          Deno.writeTextFile(
+            evidence,
+            JSON.stringify({
+              registry: vcp.pre,
+              backers,
+              kel: [...hby.db.clonePreIter(issuer.pre)].map(t).join(""),
+              tel: t(rgy.reger.cloneTvt(vcp.pre!, vcp.said!)),
+            }),
+          )
+        );
+        const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+        const result = yield* call(() =>
+          requireSuccess(
+            "Python observes indexed TEL evidence",
+            runCmdWithTimeout(
+              ctx.pythonCommand,
+              ["packages/keri/test/fixtures/tel_observer_peer.py", evidence, ...(legacy ? ["--legacy"] : [])],
+              ctx.env,
+              20_000,
+              ctx.repoRoot,
+            ),
+          )
+        );
+        assertEquals(JSON.parse(result.stdout.trim().split("\n").at(-1)!), {
+          registry: vcp.pre,
+          threshold: 2,
+          backers,
+        });
       } finally {
         yield* runtime.close();
         yield* hby.close(true);

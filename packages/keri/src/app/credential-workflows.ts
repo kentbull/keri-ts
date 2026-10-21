@@ -48,7 +48,6 @@ import {
 
 export interface CredentialRegistryInceptOptions {
   registryName: string;
-  noBackers?: boolean;
   estOnly?: boolean;
   usage?: string;
 }
@@ -174,7 +173,6 @@ export function* inceptCredentialRegistry(
     return yield* proposeGroupRegistryIncept(rgy, input, postman, hab, options);
   }
   const registry = rgy.makeRegistry(options.registryName, hab, {
-    noBackers: options.noBackers ?? true,
     estOnly: options.estOnly ?? false,
   });
   return {
@@ -396,7 +394,7 @@ export function anchorGroupCredentialEvent(hby: Habery, hab: Hab, event: SerderK
  * @param input Borrowed byte intake; commits each exact local wrapper before peer delivery.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param hab Group issuer habitat.
- * @param options Registry name and no-backers/establishment policy; group backer registries are unsupported.
+ * @param options Registry name and establishment policy; local authoring always uses NoBackers.
  * @returns Proposal route, registry identity, TEL status and completed target deliveries.
  */
 function* proposeGroupRegistryIncept(
@@ -407,13 +405,9 @@ function* proposeGroupRegistryIncept(
   options: CredentialRegistryInceptOptions,
 ): Operation<RegistryResult> {
   const { hby, reger } = rgy;
-  const noBackers = options.noBackers ?? true;
   const estOnly = options.estOnly ?? false;
-  if (!noBackers) {
-    throw new ValidationError("Group registry inception currently requires a no-backers registry.");
-  }
   const cnfg = [
-    ...(noBackers ? [TraitDex.NoBackers] : []),
+    TraitDex.NoBackers,
     ...(estOnly ? [TraitDex.EstOnly] : []),
   ];
   const vcp = inceptRegistryEvent(hab.pre, { cnfg });
@@ -428,7 +422,7 @@ function* proposeGroupRegistryIncept(
   rgy.processEscrows();
 
   const regk = requireSerderPrefix(vcp, "registry inception");
-  registerRegistry(rgy, options.registryName, hab, regk, { noBackers, estOnly });
+  registerRegistry(rgy, options.registryName, hab, regk, { estOnly });
   rgy.publication.track(vcp, anchor.serder);
 
   const publication = yield* publishGroupVcProposal(hby, input, postman, hab, {
@@ -561,7 +555,7 @@ function registerRegistry(
   name: string,
   hab: Hab,
   regk: string,
-  options: { noBackers: boolean; estOnly: boolean },
+  options: { estOnly: boolean },
 ): void {
   rgy.reger.registries.add(regk);
   rgy.reger.regs.pin(
@@ -582,7 +576,6 @@ function registerRegistry(
         tvy: rgy.tvy,
         cues: rgy.cues,
         regk,
-        noBackers: options.noBackers,
         estOnly: options.estOnly,
       }),
     );
