@@ -1,5 +1,220 @@
 # keri-ts
 
+## 2.0.0
+
+### Major Changes
+
+- fb981fa: Remove Reactor's unused complete-record queue and its runtime worker. Callers await
+  process or processBytes directly; queued-ingress methods, ingestKeriBytes and the
+  queue-only RuntimePendingState.ingress field are removed without compatibility shims.
+- 3090e2e: Separate send-only messenger construction from HTTP query response ownership. Bind transport endpoints explicitly and use sendSource for ordinary message iteration; no old constructor or query-method compatibility shims remain.
+
+  Construct ordinary or finite stream delivery explicitly with `messengerFrom` or
+  `streamMessengerFrom`. Stream HTTP sends one opaque PUT and returns owned response
+  bytes; stream TCP admits the full payload through the existing raw socket writer.
+
+- d2ff334: Make EXN validation and commit synchronous after evidence preparation.
+- 5d69134: Use pinned-main Baser's ordinary insertion-ordered Texter set for ESSR evidence.
+  Remove `pinEssrs` and custom ordinal/first-representation rules. Duplicate values
+  deduplicate and alternate fragmentations append, matching the reference's known
+  reconstruction limitations; incoming digest and recipient authentication checks
+  remain enforced. Legacy wire interoperability remains supported, while direct
+  legacy LMDB interchange is deferred. See the 2.0 breaking-changes guide.
+- 9b06d9e: Replace query key-state Channels with an explicitly supplied command-owned cue Deck and one KeyStateNoticer consumer. Remove AgentRuntime.keyStateUpdates and its subscription contract; pass queryCues to runAgentRuntime before I/O. A matching notice selects one accepted catch-up target without broadcast or moving-target task replacement.
+- e9f6396: Make EXN escrow retry and retirement atomic before asynchronous cleanup.
+- f5c88b0: Replace RuntimeHttpClient.fetch with scoped request ownership. The composed FetchHttpClient validates Request before fetch and owns upload, response-body transport failures and joined cleanup. HttpResponse exposes status, headers and a cancellable byte source instead of a native Response. CESR helpers require an explicit HTTP client, and obsolete raw response-handle APIs are removed without compatibility aliases. Migrate HTTPMessenger, mailbox/SSE, OOBI, receipt, DID-webs, webhook and Tufa callers to the shared error contract, eliminating client identity checks.
+- 52f27ba: Remove the replaceable mailbox polling transport from MailboxPoller and runtime
+  composition. Supply the HTTP client and clock directly; polling owns its concrete
+  HTTP/SSE operation. Retire the exported transport types and adapter without aliases.
+- e216314: Simplify finite credential import to dispatch each frame once and let protocol
+  escrows recover local dependencies. Replace the public target/status taxonomy
+  with saved, complete and unaccepted results; accepted state determines completion.
+  Remove escrow progress tracking and bound ordinary recovery sweeps with the post-EOF deadline
+  exposed through tufa vc import --settlement-timeout-ms, defaulting to 5000 milliseconds.
+- b2d16d7: Use ordinary Baser ownership for OOBI cleanup and report completion only after shutdown.
+
+  Remove `openOobiStore`, its options/store interface and the special existing-path
+  selector. Use ordinary Baser ownership and `Baser.oobis` with the canonical `>`
+  separator. Preview does not delete selected rows, but normal writable startup can
+  initialize tables and reload/clean habitat records. A missing database still
+  fails, although normal path preparation may create empty directories. CLI JSON
+  now reports complete/failed status after closure and preserves actual deletion
+  counts when shutdown fails. Generic LMDBer `openExisting` remains non-creating.
+
+- ef148de: Simplify TCP send operations to return completion; remove unused result variants and counters while preserving reply processing and joined cleanup.
+- 6c8e597: Pass concrete registry, transport, signing and contact-store dependencies into
+  application operations. Remove the runtime registry lookup export and update
+  credential/DID workflows, Notifier and Organizer constructors without compatibility
+  shims. CLI and HTTP adapters validate required capabilities before protocol effects.
+- 1ab1bd3: Require explicit HTTP, clock and mailbox transport collaborators in delivery owners and explicit clocks in TCP/SSE operations. Remove dependency-bearing options and mailbox request fields.
+- 2c5d3d1: Require explicit HTTP and verifier dependencies instead of constructor services options. Replace the RuntimeHttpClient alias with HttpClient and export the standalone runtime clock contract.
+- 54e7f3c: Require HTTP, clock and mailbox transport in createAgentRuntime. Remove RuntimeServices, defaultRuntimeServices, partial resolution and services options; expose the individually selected HTTP/clock references to application callers.
+- 8a22aa7: Separate completed finite HTTP requests from scoped streaming responses. HttpClient.request now returns complete HttpResponse.body bytes after cleanup; HttpClient.open lends HttpStreamResponse.body(signal) for streaming and status-only consumers. Migrate CESR sends, queries, mailbox/OOBI/DID workflows, receipt endpoints, CLI callers and injected clients without compatibility aliases.
+- a87d8eb: Introduce HTTPMessenger with explicit HTTP/clock/protocol dependencies and input-owned Kevery/parser lifetimes. Query and receipt owners depend directly on ProtocolProcessor rather than Reactor; finite/streamed sends share lower HTTP cleanup and framing. Remove the unused postCesrMessage wrapper and migrate constructor contracts without compatibility aliases.
+- 0fba195: Use ordinary HTTP query acknowledgements and independently composed protocol receivers. Remove custom direct HTTP query replies, response policy options and the signed-packet retry backlog. Keep TCP reply processing and authorized mailbox SSE. Query commands fail their single deadline instead of falling back to OOBI and displaying stale state.
+- 2171aaa: Remove the persisted CESR body preference and CLI flags. Select ordinary signed POSTs or finite opaque stream PUTs explicitly, retain raw TCP and query semantics, and qualify mixed-genus forwarding introductions without changing signed bodies.
+- 3e19c78: Rename multisig send reporting to explicit message identities: `GroupSendResult`, `GroupMessageRef`, `messages`, `exnSaid` and `payloadSaid`. Delivery reports completed transport destinations rather than participant approval; `join --said` continues selecting the outer coordination EXN.
+
+  Return one `RegistryResult` or `IssueResult` per credential operation, with optional group coordination facts, instead of `CredentialCreateResult.output`. Keep signed-message and per-message delivery helpers internal to the application module. Affected KERI CLI helpers return results, while Tufa adapters own final JSON and identifier presentation. Preserve protocol bytes, signing order, routing and acceptance behavior.
+
+- 32acb96: Make HTTP query response ownership explicit and remove injected response consumers from send-only CESR egress, preserving cancellation and cleanup failures.
+- c3655de: Use KERIpy ordinary Poster traversal and finite-stream first-role delivery with random relay selection. Initial IPEX workflows use the queued stream operation while joins retain ordinary sends. Remove auto/direct/indirect delivery selectors, CLI flags and obsolete endpoint projection APIs.
+- 44cd60d: Give protocol inputs explicit owners and endpoint-role proposals narrow dependencies.
+- 29cd6b2: Require explicit Poster constructor dependencies, name its mailbox store mbx, and rename assertOpen to ensureOpen. Remove redundant producer lifecycle checks while preserving admission and pre-production guards.
+- bb65d89: Move reply delivery progress and joined transport cleanup from Respondant to Poster.
+  Callers now drive Poster.process(), inspect Poster.hasPending, and close Poster;
+  Respondant constructs and publishes replies without owning transport services.
+  Existing reply ordering and retry behavior are preserved for this ownership step.
+- 051e077: Require prepared HTTP request bodies and remove asynchronous upload-source support. CESR body-mode delivery now serializes each complete frame before starting its request, keeping source failures outside native transport classification and eliminating upload lifecycle machinery.
+- dd3e7d2: Remove Poster.resolveBytesRoute and make route selection and target preparation
+  private. Tests and callers use queued message admission and accepted endpoint state;
+  route snapshots and prepared-target types are no longer exported contracts.
+- f1bbeb2: Move recipient alias resolution from Poster to Organizer at the producer boundary.
+  Remove Poster.organizer, resolveRecipient, retry and discard without aliases.
+  Concrete delivery outcomes and retained terminal failures remain available.
+- 27fdd28: Route all Poster sends through its queue and independent deliverDo worker. Producers
+  publish signed source messages with send({ src, dest, topic, msg }) and optionally
+  request notification, then wait for the returned event's concrete sent/failed outcome.
+  HTTP and witness ingress publish delivery work without running the Poster worker.
+
+  Remove Poster.sendBytes, Poster.sendExchange, Poster.sendPreparedExchange,
+  ExchangeSendResult and RawCesrSendResult. Exchange construction moves to
+  createExchangeMessage in exchange-messaging; sendExchangeMessage uses the queued
+  worker and accepts dest instead of recipient. Standalone callers must run a Poster
+  worker when awaiting queued delivery. Existing cue cursor scheduling and exact-packet
+  retry remain unchanged until the next simplifying refactor.
+
+- d11497f: Match KERIpy query endpoint selection and poll both authorized mailbox providers and current witnesses. Remove the mailbox-only query fallback and the unused Habery argument from mailboxPollEndpoints.
+- 20da8ba: Remove automatic consumption of locally stored mailbox messages by runtime hosts. MailboxPoller now retrieves messages only from mailbox endpoints over HTTP/SSE; MailboxPollBatch drops source and requires the provider eid. Use direct HTTP/TCP delivery or explicit protocol intake for immediate recipient processing. Provider storage, authorized forwarding, SSE serving and remote polling remain available.
+- 10f1693: Remove Poster's unused failure backlog. Concrete completion outcomes retain errors and partial delivery; unobserved or abandoned failures are reported at Poster without keeping signed-message recovery history.
+- ddc0ded: Use typed multisig proposal evidence and expose exact publication identities through explicit owners.
+
+  Group publication helpers now take explicit owners and return proposal identities
+  alongside deliveries. VCP/ISS construction requires route-specific named children;
+  initiation and approval share signing/delivery records without a runtime bundle.
+  Group CLI results expose each recipient wrapper SAID and the shared proposal index
+  key. Transport completion remains distinct from group acceptance. Callers using
+  internal publication helpers must consume the structured result instead of a URL
+  array; no legacy signature adapter is provided.
+
+- b1a51d8: Reserve keyStateSaved for validated and persisted remote KSN replies. Ordinary KEL acceptance no longer emits a remote-notice cue; query workflows wait for a genuine saved KSN before comparing its target with accepted local state.
+- 4dc3939: Separate WitnessInquisitor query sending from scoped KeyStateNoticer, LogQuerier, SeqNoQuerier and AnchorQuerier operations. Await accepted-state completion instead of registering generic runtime continuations; composition routes live saved key-state facts through Effection's channel.
+
+  Move query command composition and final display into Tufa. Remove queryCommand from keri-ts/cli and make HTTPQuery an internal transport operation. Preserve current wire/framing, signer/attester selection, finite anchor recovery and joined transport cleanup during this ownership refactor.
+
+- 5c56360: Extract ProtocolProcessor from Reactor. Reactor owns byte input and an independent Kevery; protocol dispatch, cue publication, correlation and escrow scheduling belong to their actual shared owners. Require explicit shared protocol dependencies for Poster/TCP replies, expose composed exchange and reply owners, and remove Reactor dispatch/escrow/handler proxy APIs.
+- 8e13f57: Allow independent payload preparation and select immutable file references under a synchronous writer.
+- b2ae804: Yield raw wire from Hab.processCuesIter, rename ReplayCue.messages to msgs and runtime.poster to postman, and remove CueEmission and reply cursors. Respondant publishes complete local replay batches atomically. Poster delivers events FIFO, retains whole failed events with partial successful deliveries, and exposes explicit retry/discard instead of automatic exact-packet retries.
+
+  Remove the unused immediate sendSignedExchangeMessage API and its ExchangeTransport endpoint policy. Standalone exchange sends use the queued sendExchangeMessage helper.
+
+- c5cbca1: Return ordinary authenticated ESSR bytes from accepted LMDB evidence. Remove unused file staging, payload ownership/sink APIs and ESSR content-reader adapters while preserving shared framing and transport sources.
+
+  Construct `EssrRecipient(hab)` and call synchronous `decrypt(said)`; consume the accepted message body as a caller-owned Uint8Array. Use ordinary Texter raw or qualified bytes instead of removed ESSR reader adapters. See `docs/reference/compatibility/MIGRATING_TO_2_0.md` for removed public APIs.
+
+- aee2e28: Allow independent protocol inputs and escrow scans during EXN I/O while keeping synchronous commits, query authorization and correlated replies correct.
+- 5dcc8b6: Propagate database close failures, prevent uncertain handle reuse, and preserve operation and cleanup errors.
+
+  LMDBer no longer warns and reports success after an ordinary close failure.
+  Shutdown starts disabling the binding before completion, so failed wrappers cannot
+  be reused, reopened or cleared; `env` is now a getter exposing only a usable handle.
+  Keep `openExisting` for non-creating access. Await owned closure before reporting
+  success, and handle `AggregateError` when an operation and its cleanup both fail.
+
+- 3cd3bd7: Persist ESSR evidence in pinned-main Baser's insertion-ordered LMDB set, including its documented deduplication limitation. Remove the payload archive, durable plaintext APIs and archive ownership machinery; getEssrs is now synchronous.
+
+  Use synchronous `Baser.getEssrs(said)` for ordered qualified evidence; plaintext consumers retain their own ordinary data instead of calling Baser persistence methods. See `docs/reference/compatibility/MIGRATING_TO_2_0.md` for the removed APIs and storage boundary.
+
+- 7f688e1: Introduce TCPMessenger with explicit protocol/clock dependencies, owned parsing and Kevery, and shared finite/streamed sending. Replace conversation and prepared-target application wrappers, migrate Poster/query/witness callers, and give delegation the actual protocol dependency instead of Reactor.
+- 976b0f1: Move the verifier webhook application, its business policy and workflow database into Tufa. Import VerifierAgent and createVerifierCueBaser from @keri-ts/tufa/runtime. The keri-ts runtime application-agent and CLI verifier command exports are removed without aliases; protocol Verifier, IPEX and evidence APIs remain in keri-ts. Preserve the existing legacy-Reger application profile and workflow storage encoding.
+
+  Verifier run --once now reports final success only after its cue store, runtime and Habery close. Unexpected shutdown failures propagate, preserving simultaneous operation/cleanup failures. HTTP success still requires joined response cleanup before a local delivered marker.
+
+- bef1328: Separate TEL input policy from committed registry state and publish cache changes after commit.
+
+### Minor Changes
+
+- 2472a4d: Complete group NoBackers credential revocation through `/multisig/rev` approval and member fanout. Reuse the original REV/anchor across restart, validate credential/registry/issuance authority before signing, and deliver completed evidence from the elected historical anchor signer.
+
+  Breaking: `revokeCredential` now takes Regery, Reactor, Poster and selection options; explicit recipient delivery uses `deliverCredentialRevocation` after publication. `vcRevokeCommand` returns typed data for Tufa to render after closure. CLI JSON distinguishes accepted REV, completed publication, member deliveries and business deliveries; pending revocation does not write a completed export.
+
+- b82f698: Settle authenticated grant evidence in the local wallet before authoring admits by default. Admit and join commands keep one host alive through wallet/approval waits and delivery; group members independently check their wallet before a fresh admit contribution. Support bounded pending results, stable group approval resume and elected delivery to the accepted grant sender.
+
+  Grant files must pass valid EOF and ordinary exchange authentication before a response is signed. `--no-wait` now reaches the command handler and skips only the saved-credential requirement, reporting `saved: false` when appropriate. Admit results expose nullable `admit`, credential/saved facts, completed deliveries and optional group completion; Tufa formats these after cleanup. New `--timeout`, `--approval-timeout` and `--gvrsn` admit options select the existing finite waits and attachment context.
+
+- f4c6004: Support group apply, offer, agree and spurn authoring with member approval/fanout, exact wrapper selection and elected external delivery. A single command host owns progress and cleanup. Persist local single-sig conversation history before delivery, validate accepted predecessors and known counterparties before signing, and collect stored peer child proofs during explicit join. These four commands accept `--approval-timeout` (default 60 seconds; zero returns pending group state) and report group status and message identities separately from transport destinations. Grant/admit settlement remains a separate release cut.
+- 492c1fb: Add scoped access to existing pending OOBI rows without path creation, table creation or protocol startup. Share Baser layout defaults; replace its former static layout constants with the owning storage helper.
+- 6329e23: Route native RIP/BUP evidence through ordinary protocol intake and recover foreign registry escrows after reopen. Preserve pending IPEX grants while the first issuer update or source-referenced presentation update is missing. ProtocolProcessor now borrows RegistryObserver instead of the local Regery manager; AgentRuntime retains database ownership.
+- 41011c7: Add offline tufa oobi clean with read-only preview, exact-key apply and honest partial-failure reports.
+
+### Patch Changes
+
+- 31d31c7: Require accepted historical registry coordinates for backed issuance and revocation. Retain and verify accumulated backer signatures across dependency retries and reopen, retry partial-backer escrows, and add valid late receipts only to the exact accepted event.
+- ac932d7: Validate endpoint, signing, query, DID and witness command options before opening stores. Reject malformed option types and mixed-type repeated lists instead of casting or discarding values. Resolver ports must be decimal integers in the supported range; explicit empty query anchor paths fail instead of silently selecting a different query.
+- 3ea5a31: Validate operator and publication command inputs before resource access. Reject mixed-type exchange/data lists, malformed storage flags, invalid notification counts and numeric option coercion. Preserve decimal input spelling through notification, database dump and demo webhook dispatch.
+- 7e59f6e: Keep mailbox SSE consumers immediately awaited within their read owner, name query and cursor delivery responsibilities, and simplify cleanup failure filtering.
+- aa8002a: Run registry inception and credential issuance under one command-owned host and observe actual local TEL publication, with a 60-second default wait and explicit zero-timeout pending output. Report publication independently from business acceptance and saved credentials; VCP/ISS join reports the exact TEL coordinates. Record credential proposers' exact local wrappers before peer delivery, and process independently counted local/peer proofs as complete messages during approval and resume. Credential workflow APIs now take a shared Reactor before Poster. Honor ordinary establishment-only anchoring and stored registry policy after reopen. Refuse registry-name replacement and issuance with an alias that does not control the registry.
+- 737b816: Report terminal escrow ejections at their protocol owners with message identities
+  and refusal details. Preserve reply escrow evidence when unexpected handler or
+  infrastructure errors occur instead of treating those failures as peer rejection.
+- 7b38173: Give credential import, presentation intake, and VerifierAgent explicit shared protocol dependencies and input-owned parsers.
+- d8a0f26: Validate credential, IPEX and verifier options before storage. Reject malformed
+  list members and coercible timeout values while preserving omitted defaults and
+  supported zero/fractional waits. Validate credential JSON sections before effects.
+- 505859b: Validate group VCP/ISS business evidence before member approval or signing: bind issuer, registry, credential, source triple and exact anchor; leave missing registry/schema/predecessor evidence pending and refuse conflicting aliases before KEL mutation. Establishment-only group credential workflows now author rotation anchors, using participants' prepared next keys. Reuse read-only TEL validation without constructing processors or writing escrow for preflight.
+- c257d71: Select multisig approval by the accepted outer EXN SAID even after its notification is consumed. Enforce the requested group before prompting or signing, and use stored protocol evidence rather than notification attributes for route selection.
+- 3abab08: Report input-scoped persisted acceptance and bounded local settlement for finite credential imports, including explicit unresolved and rejected outcomes.
+- 9b2ed3e: Compose initialization and inception bootstrap from OOBI/authentication and minimal KEL/reply processing. Ordinary resolution reports response processing, while protocol owners retain unaccepted evidence in escrow and authentication requires current authorization. Complete selected current attempts, resume in-flight work and multi-OOBI children, ignore unrelated historical work, and join I/O before returning or reporting command success. Reconstruct reply signature groups from their stored ordinals so missing signer KEL evidence survives escrow retry.
+- 0c37762: Reject uncoordinated group aliases in ordinary event, exchange, challenge, location, query and DID-binding commands before business signing or mutation. Direct interaction/rotation users to multisig commands, refuse occupied inception aliases, and label raw group signatures as partial member contributions.
+- d2a0470: Elect the external sender of an accepted group EXN from its authenticated historical establishment proof and the local member's accepted key history. Member rotation and a changed current group index order no longer erase or transfer an existing approval's lead. Pending group evidence has no elected external sender; transport and acceptance semantics are unchanged.
+- f1f9185: Preserve verified historical IPEX grant source seals after the anchorer rotates,
+  matching the pinned KERIpy main reference. Keep current-key freshness for
+  supplemental signatures and reject anchors that do not commit to the exact grant.
+- dc01225: Validate host ports, schema paths, mailbox cursors and challenge options before
+  effects. Preserve mailbox reset index -1 and distinguish omitted timing values
+  from explicit zero or fractional challenge waits.
+- 48922f9: Keep enabled diagnostics on stderr at every log level so CLI credential JSON and other command data remain valid stdout.
+- 595b193: Register exact group IPEX wrappers locally before transmission, reuse their original outer EXNs on resume, and reuse cryptographically verified member contributions from accepted or partial-signature evidence after restart and rotation. Explicit selection repairs an interrupted wrapper index through ordinary replay. Preserve initial StreamPoster routing and ordinary approval sends. Group grant/join results now include `messages` with recipient, `exnSaid` and `payloadSaid`, allowing selection of the original outer EXN independently of business completion or completed transport destinations.
+- 0c1088e: Return typed IPEX command snapshots after owned worker and database cleanup, and move their final JSON projection into Tufa. Send, grant, admit, poll and join helpers expose ordinary EXNs and concrete outcome data rather than printing success inside resource scopes. A close failure prevents final success output without implying that completed transmission rolled back. Poll-discovered join output includes the selected outer EXN SAID. Signing, wire, routing, acceptance, file output and existing worker composition are unchanged.
+- 8d85fa5: Validate group IPEX conversation parties and predecessors before a fresh approval. Grant authoring/approval requires the local verified credential and checks supplied source proofs against its accepted issuance and issuer KEL. A presenting group need not be the issuer. Valid minimal legacy grants remain supported when their authority is already local; missing member evidence stays pending without signing or fanout.
+
+  Preserve a stored grant's actual pathed proofs during delivery instead of replacing them with newly assembled artifacts. Join results and JSON now separate local `approved` state from child acceptance; `approval-pending` reports an unmet local preflight gate. Breaking-change guidance records the additional public approval result fact.
+
+- 1c94381: Keep one command host running through grant intake, group approval and elected delivery. Validate selected agree predecessors before signing, retain local single-signature grant history before export or delivery, and expose actual completed transport destinations in grant results and CLI JSON. Pending group evidence does not produce a completed grant export. Credential holders can present a saved credential without being its original issuer.
+- 6ee8acc: Give group IPEX approval and publication their explicit protocol, delivery and credential dependencies. Approval owns its local byte-input context, while the CLI continues to own workers and stores. Pending selection reads accepted Baser exchanges directly. Signing, evidence order, transmission and acceptance behavior are unchanged; this ownership refactor precedes the remaining group lifecycle features.
+- 8daaee8: Use the habitat's accepted group contribution when creating IPEX endorsements, including when a member has rotated ahead of the group. Preserve recorded approvals on resume. Reconstruct stored grant path/proof material without duplicating CESR counters, so recipients can import the credential evidence after the sender reopens its database.
+- cebca90: Validate inception and rotation options before opening stores. Preserve omitted flags through option-file merging, apply defaults afterward, and honor explicit false, zero and empty-list overrides. Reject malformed counts, thresholds and list entries instead of coercing or filtering them.
+- 6846a69: Advance local mailbox cursors only after successful batch consumption so failed or cancelled batches remain available when polling restarts on the same instance.
+- c2c4671: Simplify native HTTP response cleanup around Fetch cancellation, pending I/O joining and reader release. Remove redundant closing paths and error-history state. Status-only callers close ordinary request scopes before publishing results. Qualify native EOF, truncation, unread/blocked-body cancellation, early return and external abort reasons on Deno and Node 20.3; normalize Node 20 replacement body AbortErrors at the native boundary.
+- 420d96c: Clamp positive mailbox polling timeout overrides to at least one millisecond so fractional values cannot create an immediate header deadline or an invalid SSE window.
+- fa8c101: Validate multisig command options and every configured member before opening stores. Reject malformed member/witness lists and supplied approval timeouts, retain fractional-second waits, and preserve rotation-file data when flags are omitted. Explicit empty data remains an override.
+- 8d339fa: Recover explicitly selected multisig evidence accepted before interrupted handler indexing. Apply group selection first, replay the original authenticated wrapper through normal protocol intake, and let Multiplexor rebuild its own indexes before approval. Recorded local approvals reuse their original signatures and recipient wrapper; fresh peer proposals still require approval. No direct index repair, background recovery queue or new persistence is added.
+- bd3905c: Pin schema validation to Ajv 8.18.0, the patched release for GHSA-2g4f-4pwh-qvx6. Legacy and native schema owners keep their current validation options; neither enables the advisory's `$data` option.
+- f63a697: Allow signed mailbox polling against legacy KERIpy HTTP media profiles. Reuse the signed query after closing the preprocessing refusal, and restrict media negotiation to the reference Falcon content-type error rather than unrelated diagnostic text.
+- cf8942d: Preserve pending TEL inceptions and retain evidence when unexpected processing
+  or storage failures propagate. Complete finite TSN family scans and use the
+  numeric proof key shared by both recorded KERIpy references, combining equivalent
+  ordinal encodings without duplicating partial signatures on retry.
+- 4eb294f: Expose the existing credentialSaidFromGrant, storedGrantArtifacts and IPEX_GRANT_ROUTE through keri-ts/runtime for application consumers. Expose the existing strict parseGvrsn through keri-ts/cli. Protocol behavior is unchanged; the verifier application can use public package boundaries without private sibling imports.
+- 18694a0: Require complete successful HTTP response bodies and refuse redirects without replay. Complete transmit-only TCP at local drain with joined cleanup, preserving duplex receive and half-close behavior. Retain native transport failures with their causes and let Poster continue other destinations and queued events without swallowing construction or cleanup errors.
+- 85cf1f8: Remove autonomous legacy TEL signing, collection/hosting and backed-registry application authoring, including the private endorsement-choice table, runtime request flow/worker, hosting options, agent --backer-alias, registry --backers and Registry.rotate. Registry application options now express only NoBackers authoring and ordinary establishment policy.
+
+  Retain external legacy backed evidence decoding, exact historical quorum verification, observer escrows/retries, replay and credential presentation. Issuer multisig and KEL witnessing remain separate supported responsibilities. ADR-0014 rejects reintroduction without a newly justified requirement; the reference report preserves the retired design, and the 2.0.0 breaking guide lists removed APIs. No compatibility wrappers or migration machinery are retained.
+
+- 11b9ca8: Validate revocation authority before signing an issuer anchor. Repeated revocation reuses the original TEL event and anchor across reopen, including locally tracked pending publication, instead of constructing another event.
+- 50e3196: Resume recorded multisig KEL, reply, registry-inception and issuance approvals from LMDB without prompting or signing the group contribution again. Reuse original recipient EXNs during explicit resend, keep pending thresholds honest, and preserve historical membership. Fix exchange replay's doubled pathed-material counters.
+- 6f555aa: Share initialization and inception bootstrap ownership, move OOBI/authentication inspection to direct Baser dependencies, and consolidate primitive option shape validation. Keep initialization credential policy local and replace inception's unused result queue with a directly awaited command scope.
+- 3bb53ec: Preserve the original rejection cause in transaction-state escrow ejection diagnostics after successful removal.
+- 0d6780e: Validate init encryption choices before stores open, hide passcode input, and remove implicit temporary fallback.
+- c4b0dd1: Commit AEID changes and all stored secret reencryption atomically before publishing live crypto state.
+- 76f0359: Separate accepted legacy TEL evidence from completed publication. Regery's TelPublication owner persists anchor, witness and dissemination progress through the existing tmse/tpwe/tede tables, and ordinary host workers collect/fan out receipts before sending accepted TEL replay to the historical witness cohort. Interrupted work remains pending across reopen. Registry.complete and ctel now reflect completed local publication; ctel stores the issuer anchor SAID, matching KERIpy, without claiming remote observer acceptance. RegistryOptions now requires the shared publication owner.
+- e142a57: Use parsed request attachment context for legacy TEL replay, serving v1-compatible source seals/counters without a v2 selector to unselected legacy requests while retaining explicit v2 framing. Preserve signed bodies and proof meaning.
+
+  Replay APIs now honor the selected version exactly and expose UnsupportedTelReplayError instead of silently raising it. TCP confines this expected refusal to the requesting connection and reports unsupported-replay locally; whole-cue responders publish nothing from an incompatible cue. No remote refusal protocol is added. See the 2.0.0 breaking guide for iterator-prefix and callback result changes.
+
+- 1844829: Reject malformed bootstrap URL collections before any OOBI or endpoint reply writes, while preserving exact accepted URL strings and empty-list semantics.
+- 564e28c: Use VerifierAgent's injected wall clock for issuance and revocation workflow timestamps as well as webhook headers and expiry. Preserve credential/TEL source timestamps and the existing expiry boundary.
+
 ## 1.0.0
 
 ### Breaking API and architecture changes
