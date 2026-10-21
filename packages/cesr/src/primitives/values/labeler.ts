@@ -1,0 +1,91 @@
+import { UnknownCodeError } from "../../core/errors.ts";
+import type { CesrDomain } from "../../core/types.ts";
+import { BEXTER_CODES, isAttLabel, LABELER_CODES, TAG_CODES } from "../base/codex.ts";
+import { Matter, type MatterInit, parseMatter } from "../base/matter.ts";
+import { Bexter } from "./bexter.ts";
+import { Tagger } from "./tagger.ts";
+
+const TEXT_DECODER = new TextDecoder();
+
+/** True when code belongs to KERIpy `LabelCodex` accepted by native map labels. */
+export function isLabelerCode(code: string): boolean {
+  return LABELER_CODES.has(code);
+}
+
+/**
+ * Decode a label/text token according to LabelCodex encoding rules.
+ *
+ * Bext shares Bexter's escape convention for both labels and arbitrary text;
+ * tag encodings decode separately, and other forms project raw bytes.
+ */
+function decodeLabelText(matter: Matter): string {
+  if (TAG_CODES.has(matter.code)) {
+    return new Tagger(matter).tag;
+  }
+  if (BEXTER_CODES.has(matter.code)) {
+    return Bexter.derawify(matter.raw, matter.code);
+  }
+  return TEXT_DECODER.decode(matter.raw);
+}
+
+/**
+ * Label/text primitive used for native map keys and textual field values.
+ *
+ * KERIpy semantics: `Labeler` accepts Tag/Bext/Bytes families (plus compact
+ * label codes) and provides both strict attribute-label projection (`label`)
+ * and generic text projection (`text`).
+ */
+export class Labeler extends Matter {
+  constructor(init: Matter | MatterInit) {
+    super(init);
+    if (!isLabelerCode(this.code)) {
+      throw new UnknownCodeError(`Expected labeler code, got ${this.code}`);
+    }
+  }
+
+  /** Canonical qb64 token for emit/roundtrip paths. */
+  get token(): string {
+    return this.qb64;
+  }
+
+  /** Attribute-safe label projection used for map key semantics. */
+  get label(): string {
+    const label = decodeLabelText(this);
+    if (!isAttLabel(label)) {
+      throw new UnknownCodeError(`Invalid label text: ${label}`);
+    }
+    return label;
+  }
+
+  /** Raw text projection without attribute-name validation. */
+  get text(): string {
+    return decodeLabelText(this);
+  }
+
+  /** Numeric projection helper used for compact fixed-width label values. */
+  get index(): number {
+    let index = 0;
+    for (const b of this.raw) {
+      index = (index << 8) | b;
+    }
+    return index;
+  }
+
+  /** Raw decoded bytes backing the label/text token. */
+  get bytes(): Uint8Array {
+    return this.raw;
+  }
+}
+
+/**
+ * Parse and hydrate a `Labeler` from txt/qb2 bytes.
+ *
+ * Boundary contract: parsing is syntactic; semantic label validity is enforced
+ * when `label` accessor is read.
+ */
+export function parseLabeler(
+  input: Uint8Array,
+  cold: CesrDomain,
+): Labeler {
+  return new Labeler(parseMatter(input, cold));
+}

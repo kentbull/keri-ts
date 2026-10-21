@@ -3,7 +3,7 @@ import { decodeB64 } from "../../../src/core/bytes.ts";
 import { GroupSizeError, ShortageError, UnknownCodeError, VersionError } from "../../../src/core/errors.ts";
 import { parseAttachmentGroup } from "../../../src/parser/attachments.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { Texter } from "../../../src/primitives/texter.ts";
+import { Texter } from "../../../src/primitives/values/texter.ts";
 import { counterV1, groupV2, sigerToken, token } from "../../fixtures/counter-token-fixtures.ts";
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../fixtures/external-vectors.ts";
 

@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { createHash } from "node:crypto";
-import { Counter } from "../../packages/cesr/src/primitives/counter.ts";
+import { Counter } from "../../packages/cesr/src/primitives/base/counter.ts";
 import { CtrDexV1, CtrDexV2 } from "../../packages/cesr/src/tables/counter-codex.ts";
 import {
   KERIPY_NATIVE_V2_EXN_FIX_BODY,

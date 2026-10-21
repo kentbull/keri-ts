@@ -1,5 +1,5 @@
-import type { CounterGroupLike } from "../primitives/primitive.ts";
-import type { Texter } from "../primitives/texter.ts";
+import type { CounterGroupLike } from "../primitives/base/primitive.ts";
+import type { Texter } from "../primitives/values/texter.ts";
 import type { Versionage } from "../tables/table-types.ts";
 import type { Kind, Protocol } from "../tables/versions.ts";
 

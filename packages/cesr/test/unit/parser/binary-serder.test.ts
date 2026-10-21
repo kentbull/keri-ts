@@ -5,7 +5,7 @@ import { decodeHex } from "jsr:@std/encoding/hex";
 import { concatBytes } from "../../../src/core/bytes.ts";
 import { decodeKeriCbor, encodeKeriCbor } from "../../../src/core/cbor.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { Texter } from "../../../src/primitives/texter.ts";
+import { Texter } from "../../../src/primitives/values/texter.ts";
 import { SerderKERI } from "../../../src/serder/serder.ts";
 import { reapSerder } from "../../../src/serder/serdery.ts";
 import { groupV2 } from "../../fixtures/counter-token-fixtures.ts";

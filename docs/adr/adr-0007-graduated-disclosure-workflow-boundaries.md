@@ -4,14 +4,14 @@
 - Date: 2026-04-05
 - Scope: `packages/cesr` fixed-field graduated disclosure architecture
 - Related:
-  - `packages/cesr/src/primitives/structing.ts`
-  - `packages/cesr/src/primitives/disclosure.ts`
-  - `packages/cesr/src/primitives/structor.ts`
-  - `packages/cesr/src/primitives/blinder.ts`
-  - `packages/cesr/src/primitives/mediar.ts`
-  - `packages/cesr/src/primitives/mapper.ts`
-  - `packages/cesr/src/primitives/compactor.ts`
-  - `packages/cesr/src/primitives/aggor.ts`
+  - `packages/cesr/src/primitives/structuring/structing.ts`
+  - `packages/cesr/src/primitives/structuring/disclosure.ts`
+  - `packages/cesr/src/primitives/structuring/structor.ts`
+  - `packages/cesr/src/primitives/structuring/blinder.ts`
+  - `packages/cesr/src/primitives/structuring/mediar.ts`
+  - `packages/cesr/src/primitives/structuring/mapper.ts`
+  - `packages/cesr/src/primitives/structuring/compactor.ts`
+  - `packages/cesr/src/primitives/structuring/aggor.ts`
   - `docs/design-docs/credentials/GRADUATED_DISCLOSURE.md`
   - `keripy/src/keri/core/structing.py`
   - `keripy/src/keri/core/mapping.py`

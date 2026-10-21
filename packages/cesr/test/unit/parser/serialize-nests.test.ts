@@ -5,10 +5,10 @@ import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { attachmentPayload, framePayload } from "../../../src/parser/serialize.ts";
-import { Counter } from "../../../src/primitives/counter.ts";
-import { Siger } from "../../../src/primitives/siger.ts";
-import { Texter } from "../../../src/primitives/texter.ts";
-import { Verfer } from "../../../src/primitives/verfer.ts";
+import { Counter } from "../../../src/primitives/base/counter.ts";
+import { Siger } from "../../../src/primitives/crypto/siger.ts";
+import { Verfer } from "../../../src/primitives/crypto/verfer.ts";
+import { Texter } from "../../../src/primitives/values/texter.ts";
 import depthVector from "../../fixtures/nested-depth.json" with { type: "json" };
 import vectors from "../../fixtures/nested-vectors.json" with { type: "json" };
 

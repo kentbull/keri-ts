@@ -60,13 +60,13 @@ Examples:
 
 Ownership in `keri-ts`:
 
-- `packages/cesr/src/primitives/structing.ts`
+- `packages/cesr/src/primitives/structuring/structing.ts`
   - defines the fixed-field record shapes and conversions
-- `packages/cesr/src/primitives/disclosure.ts`
+- `packages/cesr/src/primitives/structuring/disclosure.ts`
   - defines blind/unblind/commit workflow verbs over those records
-- `packages/cesr/src/primitives/blinder.ts`
+- `packages/cesr/src/primitives/structuring/blinder.ts`
   - counted-group transport wrapper for blind/bound state payload groups
-- `packages/cesr/src/primitives/mediar.ts`
+- `packages/cesr/src/primitives/structuring/mediar.ts`
   - counted-group transport wrapper for typed-media payload groups
 
 ### 2. Hierarchical graduated disclosure
@@ -83,8 +83,8 @@ Example:
 
 Ownership in `keri-ts`:
 
-- `packages/cesr/src/primitives/mapper.ts`
-- `packages/cesr/src/primitives/compactor.ts`
+- `packages/cesr/src/primitives/structuring/mapper.ts`
+- `packages/cesr/src/primitives/structuring/compactor.ts`
 
 Standalone `Mapper({saidive:true, verify:true})` verifies each present configured
 top-level claim against the selected serialization format, regardless of input
@@ -128,7 +128,7 @@ Example:
 
 Ownership in `keri-ts`:
 
-- `packages/cesr/src/primitives/aggor.ts`
+- `packages/cesr/src/primitives/structuring/aggor.ts`
 
 ## Representation ladder
 
@@ -484,12 +484,12 @@ Keep the raw-first boundary unless a concrete semantic use site exists.
 If you are new to this area, read in this order:
 
 1. this guide
-2. `packages/cesr/src/primitives/structing.ts`
-3. `packages/cesr/src/primitives/disclosure.ts`
-4. `packages/cesr/src/primitives/blinder.ts`
-5. `packages/cesr/src/primitives/mediar.ts`
-6. `packages/cesr/src/primitives/mapper.ts`
-7. `packages/cesr/src/primitives/compactor.ts`
-8. `packages/cesr/src/primitives/aggor.ts`
+2. `packages/cesr/src/primitives/structuring/structing.ts`
+3. `packages/cesr/src/primitives/structuring/disclosure.ts`
+4. `packages/cesr/src/primitives/structuring/blinder.ts`
+5. `packages/cesr/src/primitives/structuring/mediar.ts`
+6. `packages/cesr/src/primitives/structuring/mapper.ts`
+7. `packages/cesr/src/primitives/structuring/compactor.ts`
+8. `packages/cesr/src/primitives/structuring/aggor.ts`
 9. `packages/cesr/src/serder/serder.ts`
 10. the unit tests for each of those modules

@@ -1,7 +1,7 @@
 /** Explicit high-memory parity qualification, isolated from ordinary unit-test processes. */
 import { assertEquals } from "jsr:@std/assert";
-import { MtrDex } from "../src/primitives/codex.ts";
-import { Salter } from "../src/primitives/salter.ts";
+import { MtrDex } from "../src/primitives/base/codex.ts";
+import { Salter } from "../src/primitives/crypto/salter.ts";
 import { SALTER_PWHASH_VECTORS } from "../test/fixtures/salter-pwhash-vectors.ts";
 
 if (Deno.args.join(" ") !== "--allow-high-memory") {

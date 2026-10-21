@@ -4,7 +4,7 @@ import { collectPayload } from "../src/core/payload.ts";
 import type { CesrFrame } from "../src/core/types.ts";
 import { parseBytes } from "../src/parser/complete.ts";
 import { framePayload, type SerializeOptions } from "../src/parser/serialize.ts";
-import { Texter } from "../src/primitives/texter.ts";
+import { Texter } from "../src/primitives/values/texter.ts";
 import depthVector from "../test/fixtures/nested-depth.json" with { type: "json" };
 import vectors from "../test/fixtures/nested-vectors.json" with { type: "json" };
 

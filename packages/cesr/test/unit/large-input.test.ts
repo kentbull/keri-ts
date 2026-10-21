@@ -2,11 +2,11 @@ import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { Buffer } from "node:buffer";
 import { b, byteString, concatBytes, decodeB64, encodeB64 } from "../../src/core/bytes.ts";
 import { ShortageError } from "../../src/core/errors.ts";
-import { MtrDex } from "../../src/primitives/codex.ts";
-import { Counter, parseCounter } from "../../src/primitives/counter.ts";
-import { Indexer, parseIndexer } from "../../src/primitives/indexer.ts";
-import { Matter, parseMatter } from "../../src/primitives/matter.ts";
-import { Texter } from "../../src/primitives/texter.ts";
+import { MtrDex } from "../../src/primitives/base/codex.ts";
+import { Counter, parseCounter } from "../../src/primitives/base/counter.ts";
+import { Indexer, parseIndexer } from "../../src/primitives/base/indexer.ts";
+import { Matter, parseMatter } from "../../src/primitives/base/matter.ts";
+import { Texter } from "../../src/primitives/values/texter.ts";
 import { KERIPY_INDEXER_VECTORS, KERIPY_MATTER_VECTORS } from "../fixtures/keripy-primitive-vectors.ts";
 
 const V2 = { major: 2, minor: 0 } as const;

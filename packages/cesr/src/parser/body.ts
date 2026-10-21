@@ -9,8 +9,8 @@ import {
   VersionError,
 } from "../core/errors.ts";
 import type { CesrBody, CesrDomain, Smellage } from "../core/types.ts";
-import { type Counter, parseCounter } from "../primitives/counter.ts";
-import { parseMatter } from "../primitives/matter.ts";
+import { type Counter, parseCounter } from "../primitives/base/counter.ts";
+import { parseMatter } from "../primitives/base/matter.ts";
 import { reapSerder } from "../serder/serdery.ts";
 import { smell } from "../serder/smell.ts";
 import { resolveCounterSizeTable } from "../tables/counter-version-registry.ts";

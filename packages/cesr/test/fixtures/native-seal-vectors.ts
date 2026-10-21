@@ -1,6 +1,6 @@
 import { b, codeB64ToB2, t } from "../../src/core/bytes.ts";
-import { NumberPrimitive } from "../../src/primitives/number.ts";
-import { Tholder } from "../../src/primitives/tholder.ts";
+import { Tholder } from "../../src/primitives/crypto/tholder.ts";
+import { NumberPrimitive } from "../../src/primitives/values/number.ts";
 import { SerderKERI } from "../../src/serder/serder.ts";
 import vectors from "./native-seal-vectors.json" with { type: "json" };
 

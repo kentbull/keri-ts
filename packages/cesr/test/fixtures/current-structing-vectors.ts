@@ -1,11 +1,11 @@
 import { b, concatBytes } from "../../src/core/bytes.ts";
-import { Counter } from "../../src/primitives/counter.ts";
-import { Dater } from "../../src/primitives/dater.ts";
-import { Matter } from "../../src/primitives/matter.ts";
-import { Noncer } from "../../src/primitives/noncer.ts";
-import { NumberPrimitive } from "../../src/primitives/number.ts";
-import { FirstSeen, SealKind } from "../../src/primitives/structing.ts";
-import { Verser } from "../../src/primitives/verser.ts";
+import { Counter } from "../../src/primitives/base/counter.ts";
+import { Matter } from "../../src/primitives/base/matter.ts";
+import { Noncer } from "../../src/primitives/crypto/noncer.ts";
+import { FirstSeen, SealKind } from "../../src/primitives/structuring/structing.ts";
+import { Dater } from "../../src/primitives/values/dater.ts";
+import { NumberPrimitive } from "../../src/primitives/values/number.ts";
+import { Verser } from "../../src/primitives/values/verser.ts";
 import { Vrsn_1_0, Vrsn_2_0 } from "../../src/tables/versions.ts";
 import { hexWire, wireHex } from "./current-reference-vectors.ts";
 import vectors from "./current-structing-vectors.json" with { type: "json" };

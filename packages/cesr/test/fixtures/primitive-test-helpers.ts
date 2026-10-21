@@ -1,12 +1,12 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
 import { b, codeB64ToB2, t } from "../../src/core/bytes.ts";
-import { Counter } from "../../src/primitives/counter.ts";
+import { Counter } from "../../src/primitives/base/counter.ts";
 import {
   type CounterGroupLike,
   type GroupEntry,
   isCounterGroupLike,
   type Primitive,
-} from "../../src/primitives/primitive.ts";
+} from "../../src/primitives/base/primitive.ts";
 
 /** Encode UTF-8 fixture text into parser input bytes. */
 export function txt(input: string): Uint8Array {
