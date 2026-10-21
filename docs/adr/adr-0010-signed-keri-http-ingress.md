@@ -8,7 +8,7 @@
   - `docs/design-docs/mailbox/MAILBOX.md`
   - `packages/keri/src/app/transport/cesr-http.ts`
   - `packages/keri/src/app/server.ts`
-  - `packages/keri/src/cli/mailbox.ts`
+  - `packages/keri/src/cli/commands/mailbox.ts`
 
 ## Context
 

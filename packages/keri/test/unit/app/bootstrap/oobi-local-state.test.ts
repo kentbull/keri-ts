@@ -10,7 +10,7 @@ import {
   SerderKERI,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import { endsAddCommand } from "../../../../../tufa/src/cli/endpoints.ts";
+import { endsAddCommand } from "../../../../../tufa/src/cli/commands/endpoints.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../../src/app/bootstrap/oobiery.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";

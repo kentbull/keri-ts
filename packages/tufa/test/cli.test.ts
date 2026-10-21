@@ -1,8 +1,8 @@
-import { agentCommand } from "../src/cli/agent.ts";
-import { dwsResolverCommand } from "../src/cli/dws.ts";
-import { hookDemoCommand } from "../src/cli/hook.ts";
-import { queryCommand } from "../src/cli/query.ts";
-import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/witness.ts";
+import { agentCommand } from "../src/cli/commands/agent.ts";
+import { dwsResolverCommand } from "../src/cli/commands/dws.ts";
+import { hookDemoCommand } from "../src/cli/commands/hook.ts";
+import { queryCommand } from "../src/cli/commands/query.ts";
+import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/commands/witness.ts";
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
@@ -21,9 +21,9 @@ import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
+import { ipexApplyCommand } from "../src/cli/commands/ipex.ts";
+import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/commands/mailbox.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
-import { ipexApplyCommand } from "../src/cli/ipex.ts";
-import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
 interface CmdResult {

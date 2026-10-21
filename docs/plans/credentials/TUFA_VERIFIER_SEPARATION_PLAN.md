@@ -106,7 +106,7 @@ packages/tufa/src/verifier/
   cue-store.ts   # existing VerifierCueBaser tables and their LMDB lifecycle
   policy.ts      # business-validator types, config mapping and acceptance checks
   webhook.ts     # application payloads, headers and scoped HTTP delivery
-packages/tufa/src/cli/verifier.ts
+packages/tufa/src/cli/commands/verifier.ts
 ```
 
 Keep small local helpers with their owner. Do not add a file per method, a
@@ -116,16 +116,16 @@ redesigning all database owners is outside this change.
 
 Concrete move map:
 
-| Current artifact under `packages/keri`                                                                 | Destination or disposition                                 |
-| ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
-| `src/app/verifier-agent.ts`                                                                            | Split by the four responsibilities above; remove original  |
-| `src/db/verifier-cueing.ts`                                                                            | `packages/tufa/src/verifier/cue-store.ts`; remove original |
-| `src/cli/verifier.ts`                                                                                  | `packages/tufa/src/cli/verifier.ts`; remove original       |
-| `src/runtime/index.ts` application-agent export block                                                  | Remove; keep protocol `Verifier` and `VerifierCue` exports |
-| `src/cli/index.ts` `verifierRunCommand` export                                                         | Remove; no forwarding shim                                 |
-| `test/unit/app/verifier-agent.test.ts`                                                                 | `packages/tufa/test/verifier/agent.test.ts`                |
-| `test/integration/app/acdc-verifier-workflow.test.ts`                                                  | `packages/tufa/test/integration/verifier-workflow.test.ts` |
-| `test/unit/app/credentials/verifying.test.ts`, `ipex-credentialing.test.ts` and protocol interop tests | Keep in keri-ts                                            |
+| Current artifact under `packages/keri`                                                                 | Destination or disposition                                    |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `src/app/verifier-agent.ts`                                                                            | Split by the four responsibilities above; remove original     |
+| `src/db/verifier-cueing.ts`                                                                            | `packages/tufa/src/verifier/cue-store.ts`; remove original    |
+| `src/cli/commands/verifier.ts`                                                                         | `packages/tufa/src/cli/commands/verifier.ts`; remove original |
+| `src/runtime/index.ts` application-agent export block                                                  | Remove; keep protocol `Verifier` and `VerifierCue` exports    |
+| `src/cli/index.ts` `verifierRunCommand` export                                                         | Remove; no forwarding shim                                    |
+| `test/unit/app/verifier-agent.test.ts`                                                                 | `packages/tufa/test/verifier/agent.test.ts`                   |
+| `test/integration/app/acdc-verifier-workflow.test.ts`                                                  | `packages/tufa/test/integration/verifier-workflow.test.ts`    |
+| `test/unit/app/credentials/verifying.test.ts`, `ipex-credentialing.test.ts` and protocol interop tests | Keep in keri-ts                                               |
 
 Split policy/webhook tests only where independent behavior warrants them.
 Put any small verifier fixture helper under `packages/tufa/test/verifier/`.

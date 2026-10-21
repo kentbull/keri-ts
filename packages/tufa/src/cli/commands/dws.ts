@@ -8,8 +8,8 @@ import {
   createAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
-import { startServer } from "../host/http-server.ts";
-import { setupHby } from "./support/existing.ts";
+import { startServer } from "../../host/http-server.ts";
+import { setupHby } from "../support/existing.ts";
 
 interface DwsResolverArgs {
   port?: number;

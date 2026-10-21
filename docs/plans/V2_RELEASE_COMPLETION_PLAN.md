@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged baseline `a816f5ee` (#662), 2026-10-21.
+Status: active; merged baseline `bf7e797f` (#667), 2026-10-21.
 Complete implementation, release preparation and fresh qualification for
 **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded** pending the side-chat native ACDC/registry work.
@@ -14,12 +14,13 @@ CLI multisig approval/fanout, legacy NoBackers VCP/ISS/REV and six-verb IPEX,
 legacy TEL replay and Tufa verifier separation. Autonomous legacy TEL backing
 is retired; external observer verification remains supported.
 
-Bounded peer evidence is implemented through #662, including weighted CLI quorum
+Bounded peer evidence is implemented through #663, including weighted CLI quorum
 with an offline non-required member and native-v2 KEL acceptance/refusal boundaries.
 The independent-holder main KLI audit found separately documented upstream URL
 and framing-context limits. Fresh independent Python wallet grant/admit/revocation
 evidence uses unmodified public APIs, separately from the maintained mailbox-fork
-CLI workflow. These checks do not replace fresh final qualification after organization.
+CLI workflow. Package organization is complete in this change. These checks do not replace
+fresh final qualification of the coordinated 2.0.0 source and artifacts.
 The last broad checkpoint is #650; Git/PRs own detailed delivery history.
 
 | Review cut    | Disposition                                                                                                                                                |
@@ -31,7 +32,7 @@ The last broad checkpoint is #650; Git/PRs own detailed delivery history.
 | 30a–30c       | Public dependencies, Tufa verifier ownership and refusal counts #655–657.                                                                                  |
 | 31            | Reciprocal TEL, mixed CLI roles and legacy group credential/IPEX API evidence #658–661; profile boundaries #662 and independent Python recipient evidence. |
 | 31a           | Ownership review: retain ProtocolProcessor's cohesive dispatch/publication boundary; see below.                                                            |
-| 31b–31d       | **Next:** organize CESR, KERI and Tufa, separate human-reviewable package cuts.                                                                            |
+| 31b–31d       | Complete: CESR primitive families, KERI application/CLI/core/storage and concrete witness/mailbox modules; Tufa command organization in this change.       |
 | 32            | Exact 2.0.0 metadata/changelogs/breaking guide, dependency review and fresh full qualification.                                                            |
 | Preparation   | Qualify and retain unpublished artifacts; no npm/tag/GitHub publication.                                                                                   |
 
@@ -152,7 +153,7 @@ The [parity roadmap](PARITY_ROADMAP.md),
 and [qualification standard](qualification/QUALIFICATION_PLAN.md) retain their
 own roles. Historical unchecked boxes are not new implementation scope.
 
-## Final ownership assessment and package organization — cuts 31a–31d
+## Completed ownership assessment and package organization — cuts 31a–31d
 
 Source/caller review supports retaining ProtocolProcessor: it registers semantic
 routes once, creates input-specific Kevery instances, captures exact request replies
@@ -162,18 +163,17 @@ this shared boundary among inputs or recreate a forwarding facade. Components
 needing only a concrete semantic dependency should receive it directly; do not
 retain this owner solely as a dependency bag or for the moved verifier application.
 
-Organize each package by change-together responsibilities, especially crowded
-app/CLI modules. Use recognizable KERIpy categories where useful; actual
-responsibility/dependencies and human navigation decide the layout. Split large
-files only at demonstrated responsibility boundaries. No file quotas, new published
-packages, wildcard barrels or old-path shims. Keep behavior changes separate.
+The packages now group change-together responsibilities. CESR has encoding bases,
+crypto, values and structured primitives with matching tests. KERI separates
+application families, CLI operations, KEL/KRAM/exchange units and database replay;
+witness and mailbox files separate actual component responsibilities. Tufa
+separates command adapters and topic registrations. Package READMEs own navigation.
 
-Review CESR, KERI and Tufa in separate cohesive cuts; split further when human
-review benefits. Preserve public entrypoints and update actual imports, test
-ownership, build/DNT discovery and maintained source links together. Give each PR
-a concise category map. Run affected existing tests, packed-entrypoint/strict
-NodeNext checks and relevant peer paths; do not add file-layout/retired-idea absence
-tests. Full qualification follows all moves and any necessary fixes.
+Supported entrypoints remain stable; source imports, test ownership, build/DNT
+and version-generation references move with their owners. No old-path shims,
+new published packages, layout tests or new wildcard barrels are introduced.
+Each review cut receives scoped native/peer/package checks. Full qualification follows
+all implementation and the remaining dependency/version preparation.
 
 ## Review and validation discipline
 

@@ -45,7 +45,7 @@ export function registerWitnessCmds(
     dispatch,
     {
       name: "witness.start",
-      load: () => import("../witness.ts"),
+      load: () => import("../commands/witness.ts"),
       exportName: "witnessStartCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -89,7 +89,7 @@ export function registerWitnessCmds(
     dispatch,
     {
       name: "witness.submit",
-      load: () => import("../witness.ts"),
+      load: () => import("../commands/witness.ts"),
       exportName: "witnessSubmitCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,

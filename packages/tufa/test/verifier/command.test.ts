@@ -3,7 +3,7 @@ import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createHabery, ValidationError } from "keri-ts/runtime";
 import { VerifierAgent, VerifierCueBaser } from "../../runtime.ts";
-import { verifierRunCommand } from "../../src/cli/verifier.ts";
+import { verifierRunCommand } from "../../src/cli/commands/verifier.ts";
 
 Deno.test({
   name: "verifier command rejects malformed flags before storage or config I/O",

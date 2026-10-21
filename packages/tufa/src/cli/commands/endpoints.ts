@@ -8,7 +8,7 @@
 import type { Operation } from "effection";
 import { endsAddCommand as addEndpointRole } from "keri-ts/cli";
 import type { GroupRoleResult } from "keri-ts/runtime";
-import { writeJsonLine } from "./support/rendering.ts";
+import { writeJsonLine } from "../support/rendering.ts";
 
 /** Project protocol/transport facts without serializing the internal signed reply bytes. */
 export function writeGroupEndpointRoleProposal(result: GroupRoleResult): void {

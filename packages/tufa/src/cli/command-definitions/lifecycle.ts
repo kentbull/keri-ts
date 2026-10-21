@@ -7,8 +7,8 @@
  * - long-lived agent hosting
  */
 import { Command } from "npm:commander@^10.0.1";
-import { tufaCliVersionLine } from "../../version-display.ts";
 import type { CommandDispatch } from "../command-types.ts";
+import { tufaCliVersionLine } from "../version-display.ts";
 import { registerMultisigCmd } from "./multisig.ts";
 import { addWitnessAuthOptions, collectOption, witnessAuthArgs } from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
@@ -426,7 +426,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
     dispatch,
     {
       name: "agent",
-      load: () => import("../agent.ts"),
+      load: () => import("../commands/agent.ts"),
       exportName: "agentCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,

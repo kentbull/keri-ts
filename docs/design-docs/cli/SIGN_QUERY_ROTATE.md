@@ -18,7 +18,7 @@ query before it can verify signatures from the newly active key state.
   - CLI surface for signing UTF-8 text or `@file` contents.
 - `packages/keri/src/cli/tools/verify.ts`
   - CLI surface for verifying indexed signatures against locally accepted state.
-- `packages/keri/src/cli/query.ts`
+- `packages/keri/src/cli/commands/query.ts`
   - Bounded command runtime that drives query continuations, transport, mailbox
     polling, and optional catch-up replay fallback before printing state.
 - `packages/keri/src/cli/identity/interact.ts`

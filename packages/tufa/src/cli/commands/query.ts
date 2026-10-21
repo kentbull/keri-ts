@@ -22,7 +22,7 @@ import {
   runAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
-import { withHabAndAgentRuntime } from "./support/context.ts";
+import { withHabAndAgentRuntime } from "../support/context.ts";
 
 /** One elapsed deadline covers query sending and independently received evidence. */
 const QueryTimeoutMs = 10_000;

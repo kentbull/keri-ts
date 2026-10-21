@@ -109,7 +109,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
     dispatch,
     {
       name: "dws.resolver",
-      load: () => import("../dws.ts"),
+      load: () => import("../commands/dws.ts"),
       exportName: "dwsResolverCommand",
       args: dispatchArgs,
     },

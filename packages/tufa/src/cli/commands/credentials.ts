@@ -7,7 +7,7 @@
  */
 import type { Operation } from "effection";
 import { vcCreateCommand as create, vcRegistryInceptCommand as incept, vcRevokeCommand as revoke } from "keri-ts/cli";
-import { writeJsonLine } from "./support/rendering.ts";
+import { writeJsonLine } from "../support/rendering.ts";
 
 /** Display the created registry or group proposal, after its owned resources close. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {

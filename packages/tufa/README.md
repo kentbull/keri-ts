@@ -31,3 +31,12 @@ The published npm package name is `@keri-ts/tufa`. The installed binary remains
 
 Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the top-level
 `LICENSE` file in this repository.
+
+## Source organization
+
+`src/cli/commands` holds effectful command adapters; `src/cli/command-definitions`
+holds lazy Commander registration by subject. The CLI driver, dispatch contracts,
+version display and Node executable stay beside them, with shared command support
+in `src/cli/support`. Listener composition, HTTP policies, operator planning and
+verifier application state retain their separate `host`, `http`, `operator` and
+`verifier` directories.

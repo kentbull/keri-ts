@@ -16,8 +16,8 @@ import type { HttpRequestInit, HttpStreamResponse } from "../../../../src/app/tr
 import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../../cesr/mod.ts";
-import { agentCommand } from "../../../../../tufa/src/cli/agent.ts";
-import { endsAddCommand } from "../../../../../tufa/src/cli/endpoints.ts";
+import { agentCommand } from "../../../../../tufa/src/cli/commands/agent.ts";
+import { endsAddCommand } from "../../../../../tufa/src/cli/commands/endpoints.ts";
 import {
   mailboxAddCommand,
   mailboxDebugCommand,
@@ -25,7 +25,7 @@ import {
   mailboxRemoveCommand,
   mailboxStartCommand,
   mailboxUpdateCommand,
-} from "../../../../../tufa/src/cli/mailbox.ts";
+} from "../../../../../tufa/src/cli/commands/mailbox.ts";
 import { spawnTufa, stopChild } from "../../../../../tufa/test/test-helpers.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";

@@ -8,15 +8,18 @@
  */
 import { Command } from "npm:commander@^10.0.1";
 import { registerChallengeCmds } from "./command-definitions/challenge.ts";
-import { registerCredentialCmds } from "./command-definitions/credentials.ts";
 import { registerDidCmds } from "./command-definitions/did.ts";
 import { registerEndpointCmds } from "./command-definitions/endpoints.ts";
+import { registerHookCmds } from "./command-definitions/hook.ts";
 import { registerIdentityCmds } from "./command-definitions/identity.ts";
+import { registerIpexCmds } from "./command-definitions/ipex.ts";
 import { registerLifecycleCmds } from "./command-definitions/lifecycle.ts";
 import { registerMailboxCmds } from "./command-definitions/mailbox.ts";
 import { registerMessagingCmds } from "./command-definitions/messaging.ts";
 import { registerNotificationCmds } from "./command-definitions/notifications.ts";
 import { registerToolingCmds } from "./command-definitions/tooling.ts";
+import { registerVcCmds } from "./command-definitions/vc.ts";
+import { registerVerifierCmds } from "./command-definitions/verifier.ts";
 import { registerWitnessCmds } from "./command-definitions/witness.ts";
 import type { CommandDispatch } from "./command-types.ts";
 
@@ -28,7 +31,10 @@ export function registerCmds(
   registerLifecycleCmds(program, dispatch);
   registerIdentityCmds(program, dispatch);
   registerChallengeCmds(program, dispatch);
-  registerCredentialCmds(program, dispatch);
+  registerVcCmds(program, dispatch);
+  registerIpexCmds(program, dispatch);
+  registerVerifierCmds(program, dispatch);
+  registerHookCmds(program, dispatch);
   registerDidCmds(program, dispatch);
   registerMessagingCmds(program, dispatch);
   registerEndpointCmds(program, dispatch);
