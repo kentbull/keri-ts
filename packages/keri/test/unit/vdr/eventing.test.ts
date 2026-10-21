@@ -1,6 +1,8 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
+  concatBytes,
+  Counter,
   Diger,
   NumberPrimitive,
   NumDex,
@@ -527,15 +529,18 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       }
       // Frozen 927 processQuery emits management then credential, using default v2 proof counters.
       const responses: Iterable<Uint8Array>[] = [];
-      for (const pvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+      for (const [pvrsn, gvrsn] of [[Vrsn_1_0, Vrsn_1_0], [Vrsn_1_0, Vrsn_2_0], [Vrsn_2_0, Vrsn_2_0]]) {
         const request = query("tels", { ri: vcp.pre!, src: issuer.pre, i: iss.pre! }, { pre: issuer.pre, pvrsn });
         const reply = runtime.replies.reserve(request.said!);
         try {
-          const wire = messagize(request, {
+          const signed = messagize(request, {
             sigers: issuer.sign(request.raw, true),
             seal: { i: new Prefixer({ qb64: issuer.pre }) },
-            gvrsn: pvrsn,
+            gvrsn,
           });
+          const wire = gvrsn.major === 1 ? signed : concatBytes(Counter.makeGVC(gvrsn), signed);
+          const parsed = queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(wire)[0]));
+          assertEquals(parsed.gvrsn, gvrsn, "Query normalization retains the actual wire genus");
           yield* runtime.reactor.processBytes(wire);
           const batch = reply.takeAll();
           assertExists(batch);

@@ -9,6 +9,7 @@ import {
   SerderKERI,
   Siger,
   Verfer,
+  type Versionage,
 } from "cesr-ts";
 import { Baser } from "../db/basing.ts";
 import { dgKey, snKey } from "../db/core/keys.ts";
@@ -124,6 +125,8 @@ export type KeverEventEnvelope =
  * - `q.src` still lives in the query body and must be explicit
  */
 export interface QueryEnvelope {
+  /** Parsed attachment genus, independent of the signed body version and HTTP media type. */
+  gvrsn?: Versionage;
   serder: SerderKERI;
   source?: Prefixer;
   sigers?: Siger[];
