@@ -24,7 +24,7 @@
     "npm:@noble/curves@1.9.7": "1.9.7",
     "npm:@noble/hashes@1.8.0": "1.8.0",
     "npm:@types/node@*": "22.20.5",
-    "npm:ajv@8.17.1": "8.17.1",
+    "npm:ajv@8.18.0": "8.18.0",
     "npm:cbor-x@1.6.0": "1.6.0",
     "npm:commander@^10.0.1": "10.0.1",
     "npm:dprint@0.49.0": "0.49.0",
@@ -352,8 +352,8 @@
     "@types/wrap-ansi@3.0.0": {
       "integrity": "sha512-ltIpx+kM7g/MLRZfkbL7EsCEjfzCcScLpkg37eXEtx5kmrAKBkTJwd1GIAjDSL8wTpM6Hzn5YO4pSb91BEwu1g=="
     },
-    "ajv@8.17.1": {
-      "integrity": "sha512-B/gBuNg5SiMTrPkC+A2+cW0RszwxYmn6VYxB/inlBStS5nx6xHIt/ehKRhIMhqusl7a8LjQoZnjCs5vhwxOQ1g==",
+    "ajv@8.18.0": {
+      "integrity": "sha512-PlXPeEWMXMZ7sPYOHqmDyCJzcfNrUr3fGNKtezX14ykXOEIvyK81d+qydx89KY5O71FKMPaQ2vBfBFI5NHR63A==",
       "dependencies": [
         "fast-deep-equal",
         "fast-uri",

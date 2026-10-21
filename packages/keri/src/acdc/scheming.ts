@@ -1,6 +1,6 @@
 /** Local v2 ACDC schema validation against the inspected 71438328 profile; no network resolution. */
 import { Diger, dumps, ParserError, type SerderACDC } from "cesr-ts";
-import Ajv2020 from "npm:ajv@8.17.1/dist/2020.js";
+import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
