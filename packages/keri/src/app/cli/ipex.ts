@@ -1,5 +1,5 @@
 import { concatBytes, Counter, parse, SerderKERI, type Versionage } from "cesr-ts";
-import { action, call, type Operation, spawn } from "npm:effection@^3.6.0";
+import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
@@ -7,7 +7,7 @@ import { exchange } from "../../core/protocol-exchanging.ts";
 import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
 import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../agent-runtime.ts";
-import { fileBytes } from "../byte-source.ts";
+import { chunkBytes, collectBytes, fileBytes } from "../byte-source.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -17,6 +17,7 @@ import {
   ipexCredentialGrant,
   processCredentialPresentationArtifacts,
   storedGrantArtifacts,
+  validateAdmitGrant,
 } from "../ipex-credentialing.ts";
 import {
   approveMultisigIpex,
@@ -30,11 +31,13 @@ import {
   storedExchangeMessage,
 } from "../ipex-grouping.ts";
 import {
+  IPEX_ADMIT_ROUTE,
   IPEX_AGREE_ROUTE,
   IPEX_APPLY_ROUTE,
   IPEX_GRANT_ROUTE,
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
+  ipexRecipient,
   PREVIOUS_IPEX_ROUTES,
 } from "../ipexing.ts";
 import type { GroupSendResult } from "../multisig-messaging.ts";
@@ -66,6 +69,8 @@ interface IpexAdmitArgs extends IpexBaseArgs {
   said?: string;
   grantFile?: string;
   noWait?: boolean;
+  timeout: number;
+  approvalTimeoutSeconds: number;
 }
 
 interface IpexJoinArgs extends IpexBaseArgs {
@@ -90,10 +95,14 @@ export interface IpexGrantResult {
   group?: GroupSendResult & { complete: boolean; lead: boolean | null };
 }
 
-/** Authored admit and the actual accepted grant it answers. */
+/** Wallet and authored-admit facts after cleanup; null admit means no response was signed. */
 export interface IpexAdmitResult {
-  admit: SerderKERI;
+  admit: SerderKERI | null;
   grant: SerderKERI;
+  credential: string;
+  saved: boolean;
+  deliveries: string[];
+  group?: GroupSendResult & { complete: boolean; lead: boolean | null };
 }
 
 /** Settled mailbox observations and ordinary Serders, captured before the stores close. */
@@ -111,6 +120,8 @@ export interface IpexJoinResult {
     embedded: SerderKERI;
     accepted: boolean | null;
     lead: boolean | null;
+    /** Present for admit approval; each member checks its own wallet before a fresh signature. */
+    credentialSaved?: boolean;
   };
 }
 
@@ -264,6 +275,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
         runtime.protocol,
         grant.grant.said!,
         ipexArgs.approvalTimeoutSeconds,
+        reger,
       );
       const deliveries = [...publication.deliveries];
       if (!complete) {
@@ -314,30 +326,80 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<Ipex
     said: parseStringOption(args.said, "said"),
     grantFile: parseStringOption(args.grantFile, "grantFile"),
     noWait: parseBooleanOption(args.noWait, "noWait"),
+    timeout: nonNegativeNumber(args.timeout, 60, "credential timeout seconds"),
+    approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
+  if (!ipexArgs.said && !ipexArgs.grantFile) throw new ValidationError("Grant SAID or grant file is required.");
   return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
-    const grant = yield* loadGrant(hby, ipexArgs);
-    const admit = ipexCredentialAdmit({
-      hab,
-      reger,
-      grant,
-      message: ipexArgs.message ?? "",
-      options: { requireSaved: !(ipexArgs.noWait ?? false) },
-    });
-    const recipient = grantSender(grant);
-    if (ipexArgs.out) {
-      Deno.writeFileSync(ipexArgs.out, admit.wire);
-    } else {
-      const postman = runtime.postman;
-      const worker = yield* spawn(() => postman.deliverDo());
-      try {
-        yield* sendCredentialStream(postman, hab, recipient, [admit.wire]);
-      } finally {
-        yield* worker.halt();
+    // Validate the entire file before admitting any prefix or starting host work.
+    const selected = yield* loadGrant(hby, ipexArgs);
+    const group = isLocalGroupHab(hby, hab);
+    const signer = group ? localGroupMember(hby, hab.pre) : hab;
+    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
+    try {
+      if (selected.wire) yield* runtime.reactor.processBytes(selected.wire);
+      const grant = requireStoredExchange(hby, selected.grant.said!);
+      const recipient = grantSender(grant);
+      requireConversationPrior(hby, hab, recipient, grant.said!, "admit");
+      const credential = validateAdmitGrant(grant, hab.pre, reger, false);
+      if (
+        !ipexArgs.noWait
+        && !(yield* settleGrantCredential(
+          hby,
+          runtime.protocol,
+          reger,
+          grant,
+          hab.pre,
+          ipexArgs.gvrsn,
+          ipexArgs.timeout,
+        ))
+      ) {
+        return { admit: null, grant, credential, saved: false, deliveries: [] };
       }
+      const saved = !!reger.saved.get([credential]);
+      const prepared = ipexCredentialAdmit({
+        hab,
+        reger,
+        grant,
+        message: ipexArgs.message ?? "",
+        options: { requireSaved: !ipexArgs.noWait, gvrsn: ipexArgs.gvrsn },
+        sign: !group,
+      });
+      const genus = prepared.admit.gvrsn ?? ipexArgs.gvrsn ?? prepared.admit.pvrsn;
+      const wire = group ? groupIpexPartial(hby, hab, prepared.admit, prepared.attachments, genus) : prepared.wire;
+      yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), wire), { local: true });
+      yield* runtime.protocol.processEscrowsOnce();
+      const deliveries: string[] = [];
+      if (!group) {
+        if (!runtime.exc.complete(prepared.admit.said!)) {
+          throw new ValidationError("Local IPEX admit was not accepted.");
+        }
+        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, wire);
+        else deliveries.push(...yield* sendCredentialStream(runtime.postman, signer, recipient, [wire]));
+        return { admit: prepared.admit, grant, credential, saved, deliveries };
+      }
+      const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
+      deliveries.push(...publication.deliveries);
+      const complete = yield* waitForGroupIpexApproval(
+        hby,
+        runtime.protocol,
+        prepared.admit.said!,
+        ipexArgs.approvalTimeoutSeconds,
+        reger,
+      );
+      const lead = complete ? runtime.exc.lead(hab, prepared.admit.said!) : null;
+      if (complete) {
+        const completedWire = storedExchangeMessage(hby, requireStoredExchange(hby, prepared.admit.said!), genus);
+        if (ipexArgs.out) Deno.writeFileSync(ipexArgs.out, completedWire);
+        else if (lead) {
+          deliveries.push(...yield* sendCredentialStream(runtime.postman, signer, recipient, [completedWire]));
+        }
+      }
+      return { admit: prepared.admit, grant, credential, saved, deliveries, group: { ...publication, complete, lead } };
+    } finally {
+      yield* host.halt();
     }
-    return { admit: admit.admit, grant };
   });
 }
 
@@ -433,7 +495,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
     auto: parseBooleanOption(args.auto, "auto"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
-  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const exn = ipexArgs.said ? hby.db.exns.get([ipexArgs.said]) : yield* nextPendingMultisigIpex(hby, runtime, {
       hab: pollHab,
@@ -470,32 +532,56 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
       return { exn, group: { embedded, accepted: null, lead: null, messages: [], deliveries: [] } };
     }
 
-    const approval = yield* call(function*() {
-      const postman = runtime.postman;
-      const worker = yield* spawn(() => postman.deliverDo());
-      try {
-        // A fresh command may have received peer wrappers without a live IPEX
-        // input owner. Collect their independent child proofs before deciding
-        // completion or electing external delivery for this selected message.
-        yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embedded.said!);
-        return yield* approveMultisigIpex(hby, runtime.protocol, postman, runtime.vdr?.reger ?? null, exn, {
-          publish: true,
-          gvrsn: ipexArgs.gvrsn,
-        });
-      } finally {
-        yield* worker.halt();
+    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: localGroupMember(hby, group) }));
+    let credentialSaved: boolean | undefined;
+    try {
+      if (embedded.route === IPEX_ADMIT_ROUTE) {
+        const prior = embedded.ked?.p;
+        const grant = typeof prior === "string" && prior.length > 0 ? hby.db.exns.get([prior]) : null;
+        credentialSaved = !!grant && (yield* settleGrantCredential(
+          hby,
+          runtime.protocol,
+          reger,
+          grant,
+          group,
+          ipexArgs.gvrsn,
+          ipexArgs.approvalTimeoutSeconds,
+        ));
+        if (!credentialSaved) {
+          return {
+            exn,
+            group: {
+              embedded,
+              accepted: runtime.exc.complete(embedded.said!),
+              lead: null,
+              credentialSaved,
+              messages: [],
+              deliveries: [],
+            },
+          };
+        }
       }
-    });
-    return {
-      exn,
-      group: {
-        embedded,
-        accepted: approval.accepted,
-        lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
-        messages: approval.messages,
-        deliveries: approval.deliveries,
-      },
-    };
+      // Collect independent stored child proofs before deciding completion or
+      // electing delivery, without losing the original approved wrapper identity.
+      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embedded.said!, reger);
+      const approval = yield* approveMultisigIpex(hby, runtime.protocol, runtime.postman, reger, exn, {
+        publish: true,
+        gvrsn: ipexArgs.gvrsn,
+      });
+      return {
+        exn,
+        group: {
+          embedded,
+          accepted: approval.accepted,
+          lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
+          credentialSaved,
+          messages: approval.messages,
+          deliveries: approval.deliveries,
+        },
+      };
+    } finally {
+      yield* host.halt();
+    }
   });
 }
 
@@ -534,15 +620,13 @@ function requireConversationPrior(
   hab: Hab,
   recipient: string,
   said: string,
-  verb: "offer" | "agree" | "grant" | "spurn",
+  verb: "offer" | "agree" | "grant" | "admit" | "spurn",
 ): void {
   const prior = hby.db.exns.get([said]);
   if (!prior || !PREVIOUS_IPEX_ROUTES.get(verb)!.some(route => prior.route === `/ipex/${route}`)) {
     throw new ValidationError("Prior IPEX exchange is missing or has the wrong route.");
   }
-  const attrs = prior.ked?.a;
-  const intended = prior.ked?.rp
-    || (attrs && typeof attrs === "object" && !Array.isArray(attrs) && "i" in attrs ? attrs.i : undefined);
+  const intended = ipexRecipient(prior);
   if (prior.pre !== recipient || (typeof intended === "string" && intended.length > 0 && intended !== hab.pre)) {
     throw new ValidationError("IPEX response parties do not match the accepted prior exchange.");
   }
@@ -592,7 +676,7 @@ function* sendConversation(
       return { exn, deliveries };
     }
     const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
-    const complete = yield* waitForGroupIpexApproval(hby, runtime.protocol, exn.said!, timeout);
+    const complete = yield* waitForGroupIpexApproval(hby, runtime.protocol, exn.said!, timeout, null);
     const lead = complete ? runtime.exc.lead(hab, exn.said!) : null;
     const deliveries = [...publication.deliveries];
     if (lead) deliveries.push(...yield* sendCompletedGroupIpex(hby, runtime.postman, null, hab, exn, genus));
@@ -733,12 +817,13 @@ function parseJsonArg(value: string | undefined): Record<string, unknown> | unde
   return parsed as Record<string, unknown>;
 }
 /** Scan a file through valid EOF before choosing a grant, or use its persisted exchange record. */
-function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
+function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<{ grant: SerderKERI; wire?: Uint8Array }> {
   if (args.grantFile) {
     const path = args.grantFile;
     return yield* abortable(async (signal) => {
       let grant: SerderKERI | undefined;
-      const frames = parse(fileBytes(path, { signal }));
+      const wire = await collectBytes(fileBytes(path, { signal }));
+      const frames = parse(chunkBytes(wire, { signal }));
       try {
         while (true) {
           signal.throwIfAborted();
@@ -751,7 +836,7 @@ function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
       } finally {
         await frames.return();
       }
-      if (grant) return grant;
+      if (grant) return { grant, wire };
       throw new ValidationError(`Grant file ${path} does not contain an IPEX grant.`);
     });
   }
@@ -760,7 +845,7 @@ function* loadGrant(hby: Habery, args: IpexAdmitArgs): Operation<SerderKERI> {
   if (!grant || grant.route !== IPEX_GRANT_ROUTE) {
     throw new ValidationError(`Grant ${args.said} not found.`);
   }
-  return grant;
+  return { grant };
 }
 
 function grantSender(grant: SerderKERI): string {
@@ -769,6 +854,31 @@ function grantSender(grant: SerderKERI): string {
     throw new ValidationError("Grant is missing sender AID.");
   }
   return sender;
+}
+
+/**
+ * Import this grant's authenticated artifacts once, then observe ordinary wallet
+ * escrow progress. The caller runs the host and selects the elapsed wait; no
+ * admit signature is produced here. Missing evidence remains pending on expiry.
+ */
+function* settleGrantCredential(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  reger: Reger,
+  grant: SerderKERI,
+  recipient: string,
+  genus: Versionage | undefined,
+  timeout: number,
+): Operation<boolean> {
+  const said = validateAdmitGrant(grant, recipient, reger, false);
+  if (reger.saved.get([said])) return true;
+  const deadline = Date.now() + timeout * 1000;
+  yield* processCredentialPresentationArtifacts(protocol, storedGrantArtifacts(hby, grant, genus));
+  while (!reger.saved.get([said])) {
+    if (Date.now() >= deadline) return false;
+    yield* sleep(Math.min(250, deadline - Date.now()));
+  }
+  return true;
 }
 
 /**
@@ -781,10 +891,11 @@ function* waitForGroupIpexApproval(
   protocol: ProtocolProcessor,
   embeddedSaid: string,
   timeout: number,
+  reger: Reger | null,
 ): Operation<boolean> {
   const deadline = Date.now() + timeout * 1000;
   while (!protocol.exc.complete(embeddedSaid)) {
-    yield* approveStoredMultisigIpexWrappers(hby, protocol, embeddedSaid);
+    yield* approveStoredMultisigIpexWrappers(hby, protocol, embeddedSaid, reger);
     if (protocol.exc.complete(embeddedSaid)) return true;
     if (Date.now() >= deadline) return false;
     yield* sleep(Math.min(250, deadline - Date.now()));

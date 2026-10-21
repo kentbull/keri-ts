@@ -272,8 +272,17 @@ failure leaves that history intact. Grants now retain local EXN history before
 export/delivery as well, and selected `--agree` predecessors must have the correct
 route and known parties. Grant results and JSON add `deliveries`, covering actual
 member fanout and elected external transport; offline exports report no external
-delivery. Pending group grants do not write a completed export. Admit settlement
-remains separate.
+delivery. Pending group grants do not write a completed export.
+
+Admit now authenticates grant files and settles their credential artifacts before
+signing by default. `--timeout 0` returns `credential-pending` without creating an
+admit when wallet evidence is missing; `--approval-timeout 0` returns partial group
+state. Neither pending path writes a completed admit export. `--gvrsn` selects the
+credential proof context. `--no-wait` skips the saved marker, never authentication,
+and reports actual `saved` state. `IpexAdmitResult.admit` is nullable and results add
+`credential`, `saved`, `deliveries` and optional group facts. Join independently
+checks the member wallet before fresh admit approval and reports `credential-pending`
+until it saves the credential; the original wrapper remains the resume selector.
 
 ## Native-v2 interoperability boundary
 

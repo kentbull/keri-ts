@@ -65,8 +65,17 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
 
 /** Display the admit/grant relationship after cleanup; wallet acceptance remains a protocol fact. */
 export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
-  const { admit: exn, grant } = yield* admit(args);
-  writeJsonLine({ said: exn.said, grant: grant.said });
+  const { admit: exn, grant, credential, saved, deliveries, group } = yield* admit(args);
+  const facts = { grant: grant.said, credential, saved, deliveries };
+  if (!exn) writeJsonLine({ ...facts, status: "credential-pending" });
+  else if (!group) writeJsonLine({ ...facts, said: exn.said });
+  else {writeJsonLine({
+      ...facts,
+      said: exn.said,
+      status: group.complete ? "multisig-complete" : "multisig-pending",
+      lead: group.lead,
+      messages: group.messages,
+    });}
 }
 
 /** Project settled mailbox records without exposing Serder internals in CLI JSON. */
@@ -97,12 +106,16 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
   if (group.accepted === null) {
     writeJsonLine({ ...identity, status: "multisig-pending" });
   } else {
+    let status = group.accepted ? "multisig-approved" : "multisig-escrowed";
+    if (group.credentialSaved === false) status = "credential-pending";
     writeJsonLine({
       ...identity,
-      status: group.accepted ? "multisig-approved" : "multisig-escrowed",
+      status,
+      accepted: group.accepted,
       lead: group.lead,
       messages: group.messages,
       deliveries: group.deliveries,
+      saved: group.credentialSaved,
     });
   }
 }
