@@ -104,8 +104,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * VDR/TEL credential database owner.
  *
- * Bound stores are literal KERIpy `Reger` subkeys. Keeping this class thin
- * lets higher VDR processors share one storage contract with KERIpy fixtures.
+ * Protocol evidence uses literal KERIpy `Reger` subkeys. The local `bens.`
+ * endorsement-choice table additionally prevents a hosted signer from endorsing
+ * competing digests; it is not reference protocol evidence or a delivery queue.
  */
 export class Reger extends LMDBer {
   public readonly registries = new Set<string>();

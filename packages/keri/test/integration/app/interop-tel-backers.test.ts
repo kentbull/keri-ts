@@ -70,7 +70,7 @@ Deno.test("interop/backers - public agent persists a partial endorsement across 
     );
   try {
     await run(function*() {
-      const hby = yield* createHabery({ name: "backer-issuer", temp: true, skipConfig: true });
+      const hby = yield* createHabery({ name: `backer-issuer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
       const issuer = hby.makeHab("issuer");
       const withheld = hby.makeHab("withheld", undefined, { transferable: false });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
@@ -153,7 +153,7 @@ Deno.test("interop/backers - public agent persists a partial endorsement across 
         yield* call(() => server.shutdown());
         yield* call(() => handler.close?.());
         yield* runtime.close();
-        yield* hby.close();
+        yield* hby.close(true);
       }
     });
   } finally {
