@@ -1376,9 +1376,14 @@ Deno.test("group IPEX reuses a verified pending contribution after reopen instea
           [new Siger({ code: forged.code, raw: forged.raw, index: 0 })],
         );
         yield* runtime.reactor.processBytes(serializeMessage(embedded, { tsgs: [invalid] }), { local: true });
+        const contributedKey = alice.kever!.verfers[0];
+        alice.rotate(); // Member keys may advance before the group accepts a rotation.
         const approved = groupIpexPartial(left, local.hab, embedded);
         const proof = envelopeFromFrame(parseBytes(approved)[0]).tsgs[0].sigers[0];
-        assertEquals(alice.kever!.verfers[0].verify(proof.raw, embedded.raw), true);
+        assertEquals(proof.index, 0);
+        assertEquals(proof.ondex, undefined); // An endorsement does not assert prior-next rotation authority.
+        assertEquals(contributedKey.verify(proof.raw, embedded.raw), true);
+        assertEquals(alice.kever!.verfers[0].verify(proof.raw, embedded.raw), false);
         yield* runtime.reactor.processBytes(approved, { local: true });
         assertEquals(runtime.exc.complete(embedded.said!), false);
         assertExists(left.db.epse.get([embedded.said!]));

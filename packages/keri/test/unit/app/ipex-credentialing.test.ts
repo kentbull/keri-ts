@@ -19,6 +19,7 @@ import {
   processCredentialPresentationArtifacts,
   storedGrantArtifacts,
 } from "../../../src/app/ipex-credentialing.ts";
+import { storedExchangeMessage } from "../../../src/app/ipex-grouping.ts";
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
@@ -188,7 +189,8 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
       issuerHby.db.schema.pin(schemer.said, schemer);
       holderHby.db.schema.pin(schemer.said, schemer);
 
-      const issuerTvy = new Tevery({ db: issuerHby.db, reger: issuerReger });
+      const issuerRevery = new Revery(issuerHby.db);
+      const issuerTvy = new Tevery({ db: issuerHby.db, reger: issuerReger, rvy: issuerRevery });
       const issuerVry = new Verifier(issuerHby, { reger: issuerReger });
       const rgy = new Regery(issuerHby, { reger: issuerReger, tvy: issuerTvy, vry: issuerVry });
       const registry = rgy.makeRegistry("issuer-reg", issuer);
@@ -225,6 +227,20 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
         };
       }
 
+      const issuerReactor = new Reactor(protocolFixture(issuerHby, {
+        revery: issuerRevery,
+        tevery: issuerTvy,
+        verifier: issuerVry,
+      }));
+      loadIpexHandlers(issuerHby, issuerReactor.protocol.exc);
+      yield* issuerReactor.processBytes(concatBytes(Counter.makeGVC(envelopeGenus), grant.wire), { local: true });
+      yield* issuerHby.db.reopen();
+      const acceptedGrant = issuerHby.db.exns.get([grant.grant.said!]);
+      assertExists(acceptedGrant);
+      // The recipient receives reconstructed durable evidence, not the builder's original wire.
+      const replay = storedExchangeMessage(issuerHby, acceptedGrant, envelopeGenus);
+      assertEquals(replay, grant.wire);
+
       const revery = new Revery(holderHby.db);
       const holderTvy = new Tevery({ db: holderHby.db, reger: holderReger, rvy: revery });
       const holderVry = new Verifier(holderHby, { reger: holderReger });
@@ -238,7 +254,7 @@ async function assertCredentialArtifactIntake(genus: Versionage, envelopeGenus =
       }
       yield* holderReactor.protocol.processEscrowsOnce();
       loadIpexHandlers(holderHby, holderReactor.protocol.exc);
-      yield* holderReactor.processBytes(concatBytes(Counter.makeGVC(envelopeGenus), grant.wire));
+      yield* holderReactor.processBytes(concatBytes(Counter.makeGVC(envelopeGenus), replay));
       yield* holderHby.db.reopen();
       const storedGrant = holderHby.db.exns.get([grant.grant.said!]);
       assertExists(storedGrant);
