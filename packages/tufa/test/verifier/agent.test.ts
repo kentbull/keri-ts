@@ -181,12 +181,14 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
         );
         const denied = yield* refused.processOnce();
         assertEquals(denied.webhooksSent, 0);
+        assertEquals(denied.rejected, 1);
         assertEquals(requests.length, 0);
         assertEquals(verifierReger.saved.get(fixture.creder.said!)?.qb64, fixture.creder.said);
       }
       const result = yield* agent.processOnce();
 
       assertEquals(result.grantsQueued, 1);
+      assertEquals(result.rejected, 0);
       assertEquals(result.presentationsReady, 1);
       assertEquals(result.webhooksSent, 1);
       assertEquals(requests.length, 1);
