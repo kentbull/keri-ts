@@ -1540,6 +1540,61 @@ Deno.test("group TEL publication retains the original pending anchor across reop
         assertEquals(reger.regs.get("pending")?.registryKey, regk);
         assertEquals(reger.tels.getOn(regk, 0)?.qb64, regk);
         assertEquals([...reger.ctel.getTopItemIter()][0][1].qb64, approval.serder.said);
+
+        // Prepare an actually issued credential under the two-member group. Both
+        // anchors enter ordinary KEL/TEL intake; no accepted rows are seeded.
+        yield* call(() => learn(right, local.hab));
+        const schema = new Schemer({ sed: { $id: "", type: "object" } });
+        left.db.schema.pin(schema.said, schema);
+        const creder = credential({ issuer: local.hab.pre, registry: regk, schema: schema.said, data: {} });
+        const issuance = issueCredential(creder.said!, regk);
+        const data = [{ i: creder.said!, s: "0", d: issuance.said! }];
+        const issuedLeft = left.interactGroupHab("group", mids, { data });
+        const issuedRight = right.interactGroupHab("group", mids, { data });
+        assertEquals(issuedLeft.serder.raw, issuedRight.serder.raw);
+        const signed = messagize(issuedLeft.serder, { sigers: [...issuedLeft.sigers, ...issuedRight.sigers] });
+        yield* runtime.reactor.processBytes(signed, { local: true });
+        yield* call(() => learn(right, local.hab));
+        const source = { seqner: issuedLeft.serder.sner!, saider: new Diger({ qb64: issuedLeft.serder.said! }) };
+        assertEquals(resumed.tvy.processEvent({ serder: issuance, ...source }).kind, "accept");
+        assertEquals(
+          resumed.vry.processCredential({
+            creder,
+            prefixer: new Prefixer({ qb64: creder.said! }),
+            seqner: issuance.sner!,
+            saider: new Diger({ qb64: issuance.said! }),
+          }).kind,
+          "accept",
+        );
+        const registry = resumed.registryByName("pending")!;
+        const rev = registry.prepareRevocation(creder.said!);
+        const pendingAnchor = left.interactGroupHab("group", mids, {
+          data: [{ i: rev.pre!, s: rev.snh!, d: rev.said! }],
+        });
+        const revSource = {
+          seqner: pendingAnchor.serder.sner!,
+          saider: new Diger({ qb64: pendingAnchor.serder.said! }),
+        };
+        assertEquals(resumed.tvy.processEvent({ serder: rev, ...revSource }).kind, "escrow");
+        resumed.publication.track(rev, pendingAnchor.serder);
+        yield* reger.reopen();
+        const reopened = new Regery(left, { reger });
+        const retry = reopened.registryByName("pending")!.revoke(creder.said!);
+        assertEquals(retry.serder.raw, rev.raw);
+        assertEquals(retry.seal.saider.qb64, pendingAnchor.serder.said);
+        assertEquals(retry.decision.kind, "escrow");
+        assertEquals(local.hab.kever!.said, issuedLeft.serder.said);
+        const otherApproval = right.interactGroupHab("group", mids, {
+          data: [{ i: rev.pre!, s: rev.snh!, d: rev.said! }],
+        });
+        assertEquals(otherApproval.serder.raw, pendingAnchor.serder.raw);
+        yield* runtime.reactor.processBytes(messagize(otherApproval.serder, { sigers: otherApproval.sigers }), {
+          local: true,
+        });
+        yield* runtime.protocol.processEscrowsOnce();
+        reopened.processEscrows();
+        assertEquals(reger.tels.getOn(creder.said!, 1)?.qb64, rev.said);
+        assertEquals(reopened.publication.complete(creder.said!, 1), true);
       } finally {
         yield* runtime.close();
       }

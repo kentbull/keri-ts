@@ -83,6 +83,11 @@ EXN `preserveEscrow` are not rejection ejections; unexpected failures propagate.
 Escrow owners return no recovery-progress status and take no proof/hint snapshots
 for finite import. Tevery completes each captured TSN horizon in bounded pages;
 new work beyond that horizon waits for a later sweep.
+Local revocation checks the saved credential, selected issuer/NoBackers registry
+and accepted issuance before any anchor signature. Explicit retry reuses the
+accepted REV or original locally tracked tmse candidate and its source seal;
+unrelated remote escrow cannot select a local authoring event. Corrupt retained
+evidence fails instead of authoring a replacement anchor.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 
