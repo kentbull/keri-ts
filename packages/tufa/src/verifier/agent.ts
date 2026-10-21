@@ -41,6 +41,7 @@ export interface VerifierAgentProcessResult {
   revocationsReady: number;
   webhooksSent: number;
   webhooksFailed: number;
+  /** Business-policy refusals in this pass; accepted protocol evidence remains valid and saved. */
   rejected: number;
 }
 
@@ -145,7 +146,9 @@ export class VerifierAgent {
     yield* this.protocol.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
     // Project accepted evidence into ready work, then observe real webhook delivery outcomes.
-    result.presentationsReady += this.processPresentations();
+    const presentations = this.processPresentations();
+    result.presentationsReady += presentations.ready;
+    result.rejected += presentations.rejected;
     result.revocationsReady += this.processRevocations();
     result.webhooksSent += yield* this.processReady(this.cdb.recv, "iss", result);
     result.webhooksSent += yield* this.processReady(this.cdb.revk, "rev", result);
@@ -252,8 +255,9 @@ export class VerifierAgent {
   }
 
   /** Move accepted, unexpired and business-valid credentials into the ready presentation store. */
-  private processPresentations(): number {
+  private processPresentations(): { ready: number; rejected: number } {
     let ready = 0;
+    let rejected = 0;
     for (const [keys, dater] of [...this.cdb.iss.getTopItemIter()]) {
       const said = keys[0];
       if (!said) {
@@ -286,13 +290,14 @@ export class VerifierAgent {
       );
       if (rejection) {
         this.cdb.iss.rem([said]);
+        rejected += 1;
         continue;
       }
       this.cdb.recv.pin([said, dater.qb64], creder);
       this.cdb.iss.rem([said]);
       ready += 1;
     }
-    return ready;
+    return { ready, rejected };
   }
 
   /** Move confirmed revocations into the ready revocation store, retaining unresolved evidence. */

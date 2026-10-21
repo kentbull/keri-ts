@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `3fb79534` (#655), 2026-10-21.
+Status: active; merged implementation baseline `132b59ae` (#656), 2026-10-21.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -11,8 +11,9 @@ plan. This goal may finish when all other required work and qualification pass.
 Foundational refactors, operator fixes, legacy VCP/ISS/REV approval and publication,
 and six-verb IPEX/wallet settlement are implemented through #654. Legacy TEL replay
 is merged in #651; autonomous backing is retired in #652 with observer verification
-retained. The verifier's public protocol prerequisites are merged in #655; its Tufa
-ownership/close/package cut is current. Bounded actual-peer/witnessed lifecycle
+retained. The verifier application move, close contract and installed-package
+checks are merged in #656; the small business-refusal count correction is current.
+Bounded actual-peer/witnessed lifecycle
 qualification, final ownership assessment, organization and release preparation remain.
 Selected feature checks are not a release-readiness claim.
 
@@ -26,7 +27,7 @@ Selected feature checks are not a release-readiness claim.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| Backer retirement, revocation, verifier separation                                     | Backing retired #652; REV implemented #654; verifier move is the current cut.                                                                             |
+| Backer retirement, revocation, verifier separation                                     | Backing retired #652; REV implemented #654; verifier moved #656; refusal count follow-up is current.                                                      |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -136,7 +137,7 @@ implementation PR before the next; split only for independent human review.
 | R3           | Complete in #652: autonomous backing retired; design archived, rejection ADR recorded, observer verification retained. | 17–18 (#651)                                          |
 | 20           | Implemented in #654: group REV, holder delivery and verifier reopen/stale replay; peer gates remain in 31.             | 15, 18, R3                                            |
 | 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                    | R3                                                    |
-| 30a–30b      | 30a complete #655; Tufa verifier application move/close/installed-package cut is current.                              | Legacy lifecycle; independent of deferred native cuts |
+| 30a–30b      | Complete #655–656: public protocol dependencies and Tufa application ownership/close/package checks.                   | Legacy lifecycle; independent of deferred native cuts |
 | 30c          | Count actual per-pass verifier business refusals; preserve accepted protocol state and existing workflow semantics.    | 30b                                                   |
 | 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                     | All feature work                                      |
 | 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                               | 31                                                    |
