@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `132b59ae` (#656), 2026-10-21.
+Status: active; merged implementation baseline `8de97efa` (#658), 2026-10-21.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -12,7 +12,8 @@ Foundational refactors, operator fixes, legacy VCP/ISS/REV approval and publicat
 and six-verb IPEX/wallet settlement are implemented through #654. Legacy TEL replay
 is merged in #651; autonomous backing is retired in #652 with observer verification
 retained. The verifier application move, close contract and installed-package
-checks are merged in #656; the small business-refusal count correction is current.
+checks are merged in #656; business-refusal counts are corrected in #657.
+Python-to-TypeScript TEL intake/reopen/stale replay is added in #658.
 Bounded actual-peer/witnessed lifecycle
 qualification, final ownership assessment, organization and release preparation remain.
 Selected feature checks are not a release-readiness claim.
@@ -27,7 +28,7 @@ Selected feature checks are not a release-readiness claim.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| Backer retirement, revocation, verifier separation                                     | Backing retired #652; REV implemented #654; verifier moved #656; refusal count follow-up is current.                                                      |
+| Backer retirement, revocation, verifier separation                                     | Backing retired #652; REV implemented #654; verifier moved #656; refusal counts corrected #657; reciprocal TEL replay #658.                               |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -138,7 +139,7 @@ implementation PR before the next; split only for independent human review.
 | 20           | Implemented in #654: group REV, holder delivery and verifier reopen/stale replay; peer gates remain in 31.             | 15, 18, R3                                            |
 | 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                    | R3                                                    |
 | 30a–30b      | Complete #655–656: public protocol dependencies and Tufa application ownership/close/package checks.                   | Legacy lifecycle; independent of deferred native cuts |
-| 30c          | Count actual per-pass verifier business refusals; preserve accepted protocol state and existing workflow semantics.    | 30b                                                   |
+| 30c          | Complete #657: count actual per-pass business refusals without changing protocol acceptance.                           | 30b                                                   |
 | 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                     | All feature work                                      |
 | 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                               | 31                                                    |
 | 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                     | 31a                                                   |
@@ -333,14 +334,6 @@ implementation and organization work. Old keri-ts APIs and private formats impos
 no compatibility requirement; preserve protocol interoperability and document
 intentional breaks.
 
-### Verifier reporting follow-up — cut 30c
-
-The existing `rejected` result is initialized but never incremented for business
-policy refusal. After the ownership move, count actual per-pass business refusals
-using decision data, without changing saved protocol evidence, notification
-suppression, expiry or HTTP retry behavior. Extend the existing saved-credential
-policy test; no new behavior matrix or reporting framework is needed.
-
 ### Phase H: bounded actual-peer confidence — PR 31
 
 Kent explicitly requested sufficient happy-path interoperability with limited,
@@ -385,6 +378,9 @@ fixture evidence separately. Do not patch the reference silently, claim full KLI
 command parity from TS-only tests, or make a TS feature imitate an upstream stub.
 Any required lane blocked by a genuine reference defect must be reported with
 its exact source and reproducer; do not count it as passing.
+The [pinned-main VCP child-genus finding](../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md)
+records one such CLI blocker. Preserve it explicitly; use unmodified public APIs
+with valid framing to qualify protocol capability separately.
 The broad negative/recovery row above is an existing regression boundary, not a
 request for a Cartesian interop matrix. Preserve useful coverage and add only
 the limited cases justified by the supported lifecycle.
