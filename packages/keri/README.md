@@ -57,3 +57,8 @@ shared records and serialization remain shared core modules. Database replay
 helpers live in `src/db/replay`, with exchange evidence and mailbox storage in
 `src/db/exchange` and `src/db/mailbox`; Baser, Keeper, Reger and typed LMDB tables
 remain recognizable store owners.
+
+Queued sending and sender introductions are separate delivery modules. Mailbox
+forwarding intake, polling and topic routing are separate mailbox modules. Witness
+receipt collection, receipt transport, proof encoding, host ingress and HTTP
+semantic endpoints each live with their own responsibility.

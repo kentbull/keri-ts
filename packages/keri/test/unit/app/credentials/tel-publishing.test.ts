@@ -7,7 +7,7 @@ import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { createAgentRuntime, runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
-import { Receiptor } from "../../../../src/app/witness/witnessing.ts";
+import { Receiptor } from "../../../../src/app/witness/receipting.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { Schemes } from "../../../../src/core/schemes.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";

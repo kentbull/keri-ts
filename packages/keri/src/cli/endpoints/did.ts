@@ -5,7 +5,7 @@ import { type Operation } from "effection";
 import type { Habery } from "../../app/identity/habbing.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
-import { WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import {
   bindDesignatedAliases,

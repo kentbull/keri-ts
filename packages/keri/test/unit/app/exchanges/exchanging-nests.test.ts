@@ -21,9 +21,9 @@ import {
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import depthVector from "../../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
-import { ForwardHandler } from "../../../../src/app/delivery/forwarding.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { ForwardHandler } from "../../../../src/app/mailbox/forward-handler.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";

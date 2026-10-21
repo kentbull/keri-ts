@@ -25,7 +25,7 @@ import { ValidationError } from "../../core/errors.ts";
 
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { withExistingHab } from "../common/context.ts";
 import {
   loadRotateFileOptions,

@@ -27,11 +27,11 @@ import {
   mailboxUpdateCommand,
 } from "../../../../../tufa/src/cli/mailbox.ts";
 import { spawnTufa, stopChild } from "../../../../../tufa/test/test-helpers.ts";
-import { MailboxPoller } from "../../../../src/app/delivery/forwarding.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
+import { MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,

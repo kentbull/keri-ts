@@ -25,7 +25,7 @@ import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { MULTISIG_IXN_ROUTE } from "../../app/multisig/grouping.ts";
 import { SeqNoQuerier } from "../../app/queries/querying.ts";
 import { runtimeTurn } from "../../app/runtime/runtime-turn.ts";
-import { WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { withHabAndAgentRuntime } from "../common/context.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
 

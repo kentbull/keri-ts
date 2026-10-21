@@ -13,7 +13,7 @@ import { FetchHttpClient } from "../../app/transport/http-client.ts";
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/witnessing.ts";
+import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHab } from "../common/context.ts";
 import { parseBooleanOption, parseDataItems, parseStringListOption, parseStringOption } from "../common/parsing.ts";

@@ -25,7 +25,8 @@ import {
   Verfer,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import { introduce, type Poster, type PosterEvent, type PosterMsg } from "../../../../src/app/delivery/forwarding.ts";
+import { type Poster, type PosterEvent, type PosterMsg } from "../../../../src/app/delivery/forwarding.ts";
+import { introduce } from "../../../../src/app/delivery/introducing.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
 import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";

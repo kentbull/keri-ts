@@ -22,7 +22,7 @@ import type { Registry } from "../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import type { AgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
-import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 

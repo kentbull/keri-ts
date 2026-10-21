@@ -29,7 +29,7 @@ import {
   runAgentRuntimeUntil,
 } from "../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
-import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";

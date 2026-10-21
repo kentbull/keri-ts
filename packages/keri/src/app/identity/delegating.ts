@@ -26,7 +26,7 @@ import type { Notifier } from "../notifications/notifying.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { HttpClient } from "../transport/http-client.ts";
-import { sendWitnessMessage } from "../witness/witnessing.ts";
+import { sendWitnessMessage } from "../witness/receipt-client.ts";
 import { eventPayloadMessage, eventReplayMessage, type Hab, type Habery } from "./habbing.ts";
 
 export const DELEGATE_REQUEST_ROUTE = "/delegate/request";

@@ -15,7 +15,7 @@ import { readMailboxSseBody } from "../../../../src/app/mailbox/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
-import { witnessReceiptPost } from "../../../../src/app/witness/witnessing.ts";
+import { witnessReceiptPost } from "../../../../src/app/witness/http-endpoints.ts";
 
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";

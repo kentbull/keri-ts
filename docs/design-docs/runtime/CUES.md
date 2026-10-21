@@ -146,7 +146,7 @@ do not. UI notification storage and Signaler hints are a separate observation pa
 | Protocol cues          | core/eventing.py, core/routing.py, peer/exchanging.py                | core/eventing.ts, core/routing.ts, app/exchanging.ts, core/cues.ts      |
 | Habitat interpretation | app/habbing.py BaseHab.processCuesIter                               | app/habbing.ts Hab.processCuesIter                                      |
 | Deferred queries       | app/querying.py and app/agenting.py WitnessInquisitor                | app/querying.ts concrete workflows and app/witness-inquisitor.ts sender |
-| Reply delivery         | app/storing.py Respondant, app/forwarding.py                         | app/respondant.ts, app/forwarding.ts                                    |
+| Reply delivery         | app/storing.py Respondant, app/forwarding.py                         | app/delivery/respondant.ts, app/delivery/forwarding.ts                  |
 | Mailbox host           | fork app/mailboxing.py setupMailbox / MailboxStart                   | app/mailbox-director.ts and application host composition                |
 | Query-to-SSE           | app/indirecting.py HttpEnd / QryRpyMailboxIterable / MailboxIterable | app/mailbox-director.ts, app/mailbox-sse.ts                             |
 | Runtime routing        | host cueDo operations                                                | app/agent-runtime.ts, app/cue-runtime.ts, app/protocol-processing.ts    |
