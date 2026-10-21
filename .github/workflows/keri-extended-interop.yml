@@ -15,7 +15,6 @@ on:
           - interop-essr-exchange
           - interop-keystore-storage
           - interop-oobi-bootstrap
-          - interop-acdc-verifier
           - interop-witness-main
           - interop-witness-cli
           - extended-interop

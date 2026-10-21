@@ -69,7 +69,6 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/runtime-responder.test.ts",
       "test/unit/app/runtime-store-ownership.test.ts",
       "test/unit/app/sign-verify.test.ts",
-      "test/unit/app/verifier-agent.test.ts",
       "test/unit/app/verifying.test.ts",
       "test/unit/app/witness-auth.test.ts",
       "test/unit/did/keri.test.ts",
@@ -256,11 +255,6 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/interop-oobi-bootstrap.test.ts",
     ],
   },
-  "interop-acdc-verifier": {
-    files: [
-      "test/integration/app/acdc-verifier-workflow.test.ts",
-    ],
-  },
   "interop-mailbox": {
     files: [
       "test/integration/app/interop-mailbox-kli-tufa.test.ts",
@@ -309,7 +303,6 @@ export const interop = [
   "interop-keystore-parity",
   "interop-keystore-storage",
   "interop-oobi-bootstrap",
-  "interop-acdc-verifier",
   "interop-acdc-extended",
   "interop-acdc-deep",
   "interop-ipex-disclosure",

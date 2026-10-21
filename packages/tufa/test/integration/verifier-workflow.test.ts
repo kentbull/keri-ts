@@ -1,7 +1,7 @@
+import { t } from "cesr-ts";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { t } from "../../../../cesr/mod.ts";
-import { Schemer } from "../../../src/core/scheming.ts";
-import { startStaticHttpHost } from "../../http-test-support.ts";
+import { Schemer } from "keri-ts/runtime";
+import { startStaticHttpHost } from "../verifier/fixtures.ts";
 
 interface CmdResult {
   code: number;
@@ -10,7 +10,7 @@ interface CmdResult {
 }
 
 function packageRoot(): string {
-  return new URL("../../../../../", import.meta.url).pathname;
+  return new URL("../../../../", import.meta.url).pathname;
 }
 
 async function runTufa(

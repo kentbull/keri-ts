@@ -1,15 +1,14 @@
 /**
  * Sally-like verifier communication cue database.
  *
- * This sidecar intentionally stays outside the KERIpy `Reger` namespace. The
- * VDR stores remain byte-compatible with KERIpy, while verifier webhook retry
- * and ack state lives in this operational database.
+ * These application records remain outside protocol Baser/Reger evidence.
+ * ack/rack mark local HTTP success, not business receipts or KERI acknowledgements.
+ * This is Sally-inspired workflow state, not a claim of exact Sally storage parity.
  */
 import { Dater, Prefixer, SerderACDC } from "cesr-ts";
+import { CesrSuber, LMDBer, type LMDBerOptions, SerderSuber } from "keri-ts/db";
+import { DatabaseNotOpenError } from "keri-ts/runtime";
 import { type Operation } from "npm:effection@^3.6.0";
-import { DatabaseNotOpenError } from "../core/errors.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { CesrSuber, SerderSuber } from "./subing.ts";
 
 /** Options for opening the verifier cue sidecar. */
 export interface VerifierCueBaserOptions extends LMDBerOptions {
@@ -27,7 +26,7 @@ export interface VerifierCueCounts {
   rack: number;
 }
 
-/** Durable cue DB matching Sally's `CueBaser` store layout. */
+/** Durable local workflow records for pending, ready and delivered webhook work. */
 export class VerifierCueBaser extends LMDBer {
   snd!: CesrSuber<Prefixer>;
   iss!: CesrSuber<Dater>;

@@ -352,3 +352,16 @@ local TEL authoring. No old API or private-table migration path is provided.
 [ADR-0014](../../adr/adr-0014-legacy-tel-backer-retirement.md) records the decision;
 the [reference report](../../reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md)
 preserves the former design and source references.
+
+## Verifier application ownership
+
+Import `VerifierAgent`, its options/result and business-validator types, and
+`createVerifierCueBaser`/`VerifierCueBaser` from `@keri-ts/tufa/runtime`.
+The application agent and `verifierRunCommand` are removed from keri-ts runtime
+and CLI exports; no forwarding aliases remain. Protocol `Verifier`, IPEX artifact
+operations and accepted KEL/TEL/ACDC evidence stay in `keri-ts/runtime` and
+`keri-ts/db`. Tufa owns webhook policy and its separate workflow database, using
+the same paths and table encodings. Local `ack`/`rack` mean HTTP success after
+cleanup, not a KERI acknowledgement or exactly-once business receipt. The moved
+application still uses legacy Reger state; this does not add native-v2 application
+verification or change Sally-inspired workflow behavior.

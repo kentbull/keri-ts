@@ -12,23 +12,26 @@
  */
 
 import { Dater, Ilks, Prefixer, SerderACDC, type Versionage, Vrsn_1_0 } from "cesr-ts";
-import { call, type Operation } from "npm:effection@^3.6.0";
-import type { AgentCue, CredentialRevokedCue } from "../core/cues.ts";
-import { Deck } from "../core/deck.ts";
-import { ValidationError } from "../core/errors.ts";
-import type { VcStateRecordShape } from "../core/records.ts";
-import type { Reger } from "../db/reger.ts";
-import type { VerifierCueBaser } from "../db/verifier-cueing.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import type { Habery } from "./habbing.ts";
-import type { HttpClient } from "./http-client.ts";
+import type { Reger } from "keri-ts/db";
 import {
+  type AgentCue,
+  type CredentialRevokedCue,
   credentialSaidFromGrant,
+  Deck,
+  type Habery,
+  type HttpClient,
+  IPEX_GRANT_ROUTE,
+  makeNowIso8601,
   processCredentialPresentationArtifacts,
+  type ProtocolProcessor,
   storedGrantArtifacts,
-} from "./ipex-credentialing.ts";
-import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
-import type { ProtocolProcessor } from "./protocol-processing.ts";
+  ValidationError,
+  type VcStateRecordShape,
+} from "keri-ts/runtime";
+import { type Operation } from "npm:effection@^3.6.0";
+import type { VerifierCueBaser } from "./cue-store.ts";
+import { validateCredential, type VerifierBusinessValidator } from "./policy.ts";
+import { postWebhook, webhookBody } from "./webhook.ts";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 export interface VerifierAgentProcessResult {
@@ -40,22 +43,6 @@ export interface VerifierAgentProcessResult {
   webhooksFailed: number;
   rejected: number;
 }
-
-export interface VerifierWebhookBody {
-  action: "iss" | "rev";
-  actor: string;
-  data: Record<string, unknown>;
-}
-
-export interface VerifierBusinessValidatorContext {
-  hby: Habery;
-  reger: Reger;
-}
-
-export type VerifierBusinessValidator = (
-  creder: SerderACDC,
-  context: VerifierBusinessValidatorContext,
-) => boolean | string | void;
 
 /**
  * Verifier business/webhook settings; stores, intake, HTTP, time and validators are explicit dependencies.
@@ -79,7 +66,7 @@ export class VerifierAgent {
   readonly reger: Reger;
   /** Verifier workflow store for pending, ready and acknowledged webhook records. */
   readonly cdb: VerifierCueBaser;
-  /** Borrowed serialized protocol owner; artifact intake owns its own parser and Kevery. */
+  /** Borrowed protocol dispatch and escrow owner; artifact intake owns its own parser and Kevery. */
   readonly protocol: ProtocolProcessor;
   /** Application cue flow; this owner consumes revocation cues and preserves unrelated records. */
   readonly cues: Deck<AgentCue>;
@@ -291,7 +278,12 @@ export class VerifierAgent {
         this.cdb.iss.rem([said]);
         continue;
       }
-      const rejection = this.validateCredential(creder);
+      const rejection = validateCredential(
+        creder,
+        this.validators,
+        { hby: this.hby, reger: this.reger },
+        this.requireKnownSchemas,
+      );
       if (rejection) {
         this.cdb.iss.rem([said]);
         continue;
@@ -348,8 +340,10 @@ export class VerifierAgent {
         continue;
       }
 
-      const payload = webhookBody(this.reger, creder, action);
-      const accepted = yield* this.postWebhook(payload);
+      let state: VcStateRecordShape | null = null;
+      if (action === "rev") state = credentialState(this.reger, creder);
+      const payload = webhookBody(creder, action, state);
+      const accepted = yield* postWebhook(this.http, this.now, this.hook, payload);
       if (accepted) {
         db.rem([said, daterQb64]);
         if (action === "iss") {
@@ -368,48 +362,6 @@ export class VerifierAgent {
       }
     }
     return sent;
-  }
-
-  /**
-   * Bind webhook transport cancellation and completion to the enclosing operation.
-   *
-   * @param body Business notification serialized as JSON; protocol timestamps in data remain unchanged.
-   * @returns HTTP status success after unread response cleanup; this status-only consumer does not parse a receipt.
-   * @throws HTTP/cancellation/cleanup failures propagate rather than acknowledge the work.
-   */
-  private *postWebhook(body: VerifierWebhookBody): Operation<boolean> {
-    const raw = JSON.stringify(body);
-    const http = this.http, now = this.now, hook = this.hook;
-    return yield* call(function*() {
-      const response = yield* http.open(hook, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "sally-resource": String(body.data.schema ?? ""),
-          "sally-timestamp": new Date(now()).toISOString(),
-        },
-        body: raw,
-      });
-      // Returning from this call scope closes the unread response before publishing success.
-      return response.ok;
-    });
-  }
-
-  /** Apply the configured business validator; return a refusal reason without changing protocol evidence. */
-  private validateCredential(creder: SerderACDC): string | null {
-    const schema = schemaOf(creder);
-    if (!schema) {
-      return "missing credential schema";
-    }
-    const validator = this.validators[schema];
-    if (!validator) {
-      return this.requireKnownSchemas ? `unsupported credential schema ${schema}` : null;
-    }
-    const result = validator(creder, { hby: this.hby, reger: this.reger });
-    if (typeof result === "string") {
-      return result;
-    }
-    return result === false ? `credential ${creder.said ?? "<unknown>"} failed business validation` : null;
   }
 
   /** Avoid duplicate presentation work already pending, ready or acknowledged. */
@@ -462,65 +414,6 @@ export class VerifierAgent {
   }
 }
 
-/** Build validators from a local JSON config object. */
-export function validatorsFromVerifierConfig(
-  config: unknown,
-): Record<string, VerifierBusinessValidator> {
-  if (!isRecord(config) || !isRecord(config.schemas)) {
-    return {};
-  }
-  const validators: Record<string, VerifierBusinessValidator> = {};
-  for (const [schema, policy] of Object.entries(config.schemas)) {
-    if (!isRecord(policy)) {
-      continue;
-    }
-    validators[schema] = (creder) => {
-      const issuer = typeof policy.issuer === "string" ? policy.issuer : "";
-      if (issuer && creder.issuer !== issuer) {
-        return `expected issuer ${issuer}, got ${creder.issuer ?? "<missing>"}`;
-      }
-      return true;
-    };
-  }
-  return validators;
-}
-
-function webhookBody(
-  reger: Reger,
-  creder: SerderACDC,
-  action: "iss" | "rev",
-): VerifierWebhookBody {
-  const actor = creder.issuer ?? "";
-  const data = action === "iss" ? presentationPayload(creder) : revocationPayload(reger, creder);
-  return { action, actor, data };
-}
-
-function presentationPayload(creder: SerderACDC): Record<string, unknown> {
-  const attrs = isRecord(creder.attrib) ? creder.attrib : {};
-  return {
-    schema: schemaOf(creder),
-    issuer: creder.issuer,
-    issueTimestamp: typeof attrs.dt === "string" ? attrs.dt : undefined,
-    credential: creder.said,
-    recipient: typeof attrs.i === "string" ? attrs.i : undefined,
-    attributes: attrs,
-    edge: creder.edge ?? undefined,
-  };
-}
-
-function revocationPayload(reger: Reger, creder: SerderACDC): Record<string, unknown> {
-  const state = credentialState(reger, creder);
-  return {
-    schema: schemaOf(creder),
-    credential: creder.said,
-    revocationTimestamp: state?.dt,
-  };
-}
-
-function schemaOf(creder: SerderACDC): string {
-  return typeof creder.schema === "string" ? creder.schema : "";
-}
-
 function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape | null {
   const regk = creder.regid;
   const said = creder.said;
@@ -541,7 +434,7 @@ function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape |
  * @returns CESR Dater used for durable workflow admission, not the signed protocol timestamp.
  */
 function nowDater(now: number): Dater {
-  return new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(now))) });
+  return new Dater({ dts: makeNowIso8601(new Date(now)) });
 }
 
 function requireString(value: string | null, label: string): string {

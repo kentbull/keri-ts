@@ -1,11 +1,11 @@
 import type { Versionage } from "cesr-ts";
+import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import { ValidationError } from "keri-ts/runtime";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { parseGvrsn } from "../../core/attachment-countering.ts";
-import { ValidationError } from "../../core/errors.ts";
-import { createVerifierCueBaser } from "../../db/verifier-cueing.ts";
-import { validatorsFromVerifierConfig, VerifierAgent } from "../verifier-agent.ts";
-import { withAgentRuntime } from "./common/context.ts";
-import { parseBooleanOption, parseNumberOption, parseStringOption } from "./common/parsing.ts";
+import { VerifierAgent } from "../verifier/agent.ts";
+import { createVerifierCueBaser } from "../verifier/cue-store.ts";
+import { validatorsFromVerifierConfig } from "../verifier/policy.ts";
+import { withAgentRuntime } from "./support/context.ts";
 
 interface VerifierRunArgs {
   name?: string;

@@ -44,7 +44,6 @@
     "test:quality:interop-keystore-parity": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-keystore-parity",
     "test:quality:interop-keystore-storage": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-keystore-storage",
     "test:quality:interop-oobi-bootstrap": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-oobi-bootstrap",
-    "test:quality:interop-acdc-verifier": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-acdc-verifier",
     "test:quality:interop-mailbox": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-mailbox",
     "test:quality:manual-delegation": "deno run -A ../../scripts/ci/run-keri-test-group.ts manual-delegation",
     "test:quality:manual-witness-soak": "deno run -A ../../scripts/ci/run-keri-test-group.ts manual-witness-soak",
