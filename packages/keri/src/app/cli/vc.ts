@@ -5,6 +5,7 @@ import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { type AgentRuntime, runAgentRuntime } from "../agent-runtime.ts";
 import { importCredentialStream } from "../credential-importing.ts";
+import { revocationRecipients, revokeCredential } from "../credential-revoking.ts";
 import {
   createCredential,
   credentialRegistryRecords,
@@ -16,8 +17,6 @@ import {
   listCredentials,
   pinSchemaBytes,
   type RegistryResult,
-  revocationRecipients,
-  revokeCredential,
 } from "../credential-workflows.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import type { Hab, Habery } from "../habbing.ts";

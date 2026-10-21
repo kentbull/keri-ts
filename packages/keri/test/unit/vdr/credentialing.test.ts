@@ -13,13 +13,12 @@ import {
 } from "../../../../cesr/mod.ts";
 import issueeVectors from "../../../../cesr/test/fixtures/issuee-vectors.json" with { type: "json" };
 import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
+import { revocationRecipients, revokeCredential } from "../../../src/app/credential-revoking.ts";
 import {
   createCredential,
   credentialRegistryStatus,
   inceptCredentialRegistry,
   listCredentials,
-  revocationRecipients,
-  revokeCredential,
 } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
