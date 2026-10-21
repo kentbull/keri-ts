@@ -53,7 +53,12 @@ import {
   OnIoDupSuber,
   SerderSuber,
 } from "./subing.ts";
-import { CapturedTelReplay, type TelReplayRange, type TelReplaySettings } from "./tel-replay.ts";
+import {
+  CapturedTelReplay,
+  type TelReplayRange,
+  type TelReplaySettings,
+  UnsupportedTelReplayError,
+} from "./tel-replay.ts";
 
 type KeyPart = string | Uint8Array;
 type TelAnchorTuple = [NumberPrimitive, Diger];
@@ -302,7 +307,7 @@ export class Reger extends LMDBer {
     return [creder, prefixer, number, diger];
   }
 
-  /** Iterate TEL events from ordinal `fn`, honoring the requested attachment genus floor. */
+  /** Iterate TEL events from ordinal `fn`, using the requested attachment genus exactly. */
   *clonePreIter(
     pre: KeyPart,
     fn = 0,
@@ -361,7 +366,7 @@ export class Reger extends LMDBer {
     }
   }
 
-  /** Clone one TEL event at sequence `sn`, preserving its body and honoring the genus floor. */
+  /** Clone one TEL event at sequence `sn`, preserving its body and using the requested genus exactly. */
   cloneTvtAt(
     pre: KeyPart,
     sn = 0,
@@ -376,7 +381,7 @@ export class Reger extends LMDBer {
     return this.cloneTvt(pre, diger, gvrsn);
   }
 
-  /** Clone one TEL body and its stored proofs, preserving its minimum/requested genus. */
+  /** Clone a TEL body/proof in the requested genus, refusing evidence that requires a newer version. */
   cloneTvt(
     pre: KeyPart,
     dig: string | Uint8Array | Diger | Saider,
@@ -391,6 +396,11 @@ export class Reger extends LMDBer {
       throw new ValidationError(`Missing event for dig=${digText}.`);
     }
 
+    const serder = new SerderKERI({ raw });
+    const required = resolveAttachmentGvrsn(serder, serder.pvrsn);
+    if (gvrsn.major < required.major || (gvrsn.major === required.major && gvrsn.minor < required.minor)) {
+      throw new UnsupportedTelReplayError(preText, digText, gvrsn, required);
+    }
     // Native dupsort yields one fixed signature record at a time, without collecting its bucket.
     const tibPayload: Uint8Array[] = [];
     for (const tib of this.tibs.getIter([preText, digText])) {
@@ -398,8 +408,6 @@ export class Reger extends LMDBer {
     }
     const couple = this.ancs.get(dgkey);
     if (tibPayload.length === 0 && couple === null && !genusify) return raw;
-    // A requested genus is a floor; retain the body bytes and honor its declared minimum.
-    gvrsn = resolveAttachmentGvrsn(new SerderKERI({ raw }), gvrsn);
     const selector = genusify ? Counter.makeGVC(gvrsn) : new Uint8Array();
     if (tibPayload.length === 0 && couple === null) {
       return concatBytes(selector, raw);

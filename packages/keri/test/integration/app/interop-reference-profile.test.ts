@@ -1,6 +1,7 @@
 import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
-import { concatBytes, Counter, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
+import { concatBytes, Counter, parseBytes, SerderKERI, t } from "../../../../cesr/mod.ts";
+import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
@@ -10,7 +11,10 @@ import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts
 import { Reactor } from "../../../src/app/reactor.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Roles } from "../../../src/core/roles.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
+import { Credentialer } from "../../../src/vdr/credentialing.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
+import { reserveTcpPort } from "../../http-test-support.ts";
 import {
   createInteropContext,
   extractPrefix,
@@ -344,6 +348,76 @@ Deno.test("selected Python and Tufa query commands converge from stale accepted 
     } finally {
       await python.close();
     }
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
+Deno.test("selected Python profile accepts actual TCP TEL replay through issued and revoked state", async () => {
+  const ctx = await createInteropContext();
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const issuer = hby.makeHab("issuer");
+      const service = hby.makeHab("service", undefined, { transferable: false });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        const rgy = runtime.vdr!;
+        const schema = new Schemer({ sed: { $id: "", type: "object" } });
+        hby.db.schema.pin(schema.said, schema);
+        const registry = rgy.makeRegistry("replay", issuer);
+        const credentialer = new Credentialer(hby, { reger: rgy.reger, vry: rgy.vry });
+        const creder = credentialer.create({ registry, schema: schema.said, recipient: issuer.pre, data: {} });
+        assertEquals(credentialer.issue(registry, creder).telDecision.kind, "accept");
+        const revoked = registry.revoke(creder.said!);
+        assertEquals(revoked.decision.kind, "accept");
+        runtime.cues.clear();
+        const port = reserveTcpPort();
+        const listener = yield* spawn(() => startWitnessTcpServer(port, "127.0.0.1", runtime, service));
+        try {
+          const evidence = `${ctx.home}/tel-replay.json`;
+          yield* call(() =>
+            Deno.writeTextFile(
+              evidence,
+              JSON.stringify({
+                port,
+                service: service.pre,
+                registry: registry.regk,
+                credential: creder.said,
+                revocation: revoked.serder.said,
+                kel: [...hby.db.clonePreIter(issuer.pre)].map(t).join(""),
+              }),
+            )
+          );
+          const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+          const result = yield* call(() =>
+            requireSuccess(
+              "Python observes TEL query replay",
+              runCmdWithTimeout(
+                ctx.pythonCommand,
+                ["packages/keri/test/fixtures/tel_replay_peer.py", evidence, ...(legacy ? ["--legacy"] : [])],
+                ctx.env,
+                30_000,
+                ctx.repoRoot,
+              ),
+            )
+          );
+          assertEquals(
+            JSON.parse(result.stdout.trim().split("\n").at(-1)!),
+            (legacy ? [1] : [1, 2]).map(genus => ({
+              genus,
+              events: ["iss", "rev"],
+              said: revoked.serder.said,
+            })),
+          );
+        } finally {
+          yield* waitForTaskHalt(listener);
+        }
+      } finally {
+        yield* runtime.close();
+        yield* hby.close(true);
+      }
+    });
   } finally {
     await Deno.remove(ctx.home, { recursive: true });
   }

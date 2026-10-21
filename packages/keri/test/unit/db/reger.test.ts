@@ -24,7 +24,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
-import { CapturedTelReplay } from "../../../src/db/tel-replay.ts";
+import { CapturedTelReplay, UnsupportedTelReplayError } from "../../../src/db/tel-replay.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -318,6 +318,27 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
       assertEquals(reger.cloneTvt(regk, regk), expected);
       assertEquals(reger.cloneTvtAt(regk, 0), expected);
       assertEquals([...reger.clonePreIter(regk)], [expected]);
+      // Reconstruction is below admission: a stored v2 body must never be relabeled
+      // as legacy output, even without attachments. This is not an accepted v2 TEL claim.
+      const newer = new SerderKERI({
+        sad: { t: "ixn", i: regk, s: "1", p: regk, a: [] },
+        pvrsn: Vrsn_2_0,
+        makify: true,
+      });
+      reger.tvts.put(dgKey(regk, newer.said!), newer.raw);
+      reger.tels.putOn(regk, 1, new Diger({ qb64: newer.said! }));
+      const legacy = reger.clonePreIter(regk);
+      assertEquals(legacy.next().value, expected);
+      const refusal = assertThrows(() => legacy.next(), UnsupportedTelReplayError);
+      assertEquals([refusal.pre, refusal.said, refusal.requested, refusal.required], [
+        regk,
+        newer.said,
+        KERI_V1,
+        Vrsn_2_0,
+      ]);
+      assertThrows(() => reger.cloneTvtAt(regk, 1), UnsupportedTelReplayError);
+      assertEquals(reger.cloneTvt(regk, newer.said!, Vrsn_2_0), newer.raw);
+      assertEquals(reger.tvts.get(dgKey(regk, newer.said!)), newer.raw);
     } finally {
       yield* reger.close(true);
     }

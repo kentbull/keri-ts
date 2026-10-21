@@ -308,3 +308,17 @@ Ordinary native examples and Python interop use the shared I2I/NI2I/E1E and AND/
 operator subset. DI2I and the bounded NOT interpretation remain TypeScript-only
 capabilities, not Python compatibility claims. The release plan's early live
 proofs and final qualification must establish these claims before publication.
+
+## Explicit TEL replay versions
+
+`QueryEnvelope.gvrsn` retains parsed attachment context independently of body
+version. Legacy TEL queries receive v1 replay without a v2 selector; explicit v2
+contexts retain v2 framing. `Reger.cloneTvt`, `cloneTvtAt`, `clonePreIter` and
+captured replay honor the selected version exactly rather than treating it as a
+floor. `UnsupportedTelReplayError` (available from `keri-ts/db` and
+`keri-ts/runtime`) identifies stored evidence requiring a newer version; signed
+bodies and proof meaning are never rewritten to disguise compatibility.
+An iterator can already have emitted earlier compatible events before refusal.
+Respondant and TCP responders construct a whole cue before sending it; TCP reports
+`unsupported-replay` locally and closes that connection without a semantic refusal
+message. `WitnessTcpOptions.onRefusal` therefore has that additional reason.

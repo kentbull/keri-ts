@@ -522,6 +522,7 @@ export {
   Schemer,
   type SchemerInit,
 } from "../core/scheming.ts";
+export { UnsupportedTelReplayError } from "../db/tel-replay.ts";
 export {
   type AnchorSeal,
   credential,

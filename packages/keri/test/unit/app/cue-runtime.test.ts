@@ -1,6 +1,6 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { SerderKERI } from "../../../../cesr/mod.ts";
+import { SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { processCuesOnce } from "../../../src/app/cue-runtime.ts";
@@ -10,6 +10,7 @@ import { systemClock } from "../../../src/app/runtime-clock.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { Roles } from "../../../src/core/roles.ts";
+import { UnsupportedTelReplayError } from "../../../src/db/tel-replay.ts";
 import { httpClient } from "../../support/http-client.ts";
 
 Deno.test("Respondant finishes local replay construction before publishing or removing its source", async () => {
@@ -19,7 +20,7 @@ Deno.test("Respondant finishes local replay construction before publishing or re
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
     const first = hab.query(hab.pre, hab.pre, { route: "logs", q: {} });
     const second = hab.query(hab.pre, hab.pre, { route: "logs", q: { s: "1" } });
-    const failure = new Error("second replay message could not be constructed");
+    const failure = new UnsupportedTelReplayError(hab.pre, hab.pre, Vrsn_1_0, Vrsn_2_0);
     const cloning = new Error("second message copy failed");
     const broken = second.slice();
     broken.slice = () => {

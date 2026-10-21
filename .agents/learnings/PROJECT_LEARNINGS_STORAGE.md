@@ -42,7 +42,10 @@ TEL capture metadata retains no event bodies or cursors. Readers close each
 cursor before clone/yield, including reopened stores. No message/proof ceiling
 or canonical pair/brand inspection remains. Tevery composes management then
 credential iterables directly, preserving missing and duplicate ranges. Genus
-and genus-selector settings remain actual wire semantics and snapshot on capture.
+and genus-selector settings snapshot on capture. TEL replay honors the requested
+version exactly; incompatible stored bodies throw UnsupportedTelReplayError before
+that event is yielded, even without attachments. Earlier iterator output is not
+rolled back. Tevery uses actual parsed request genus; v1 output has no v2 selector.
 KEL replay captures immutable identity/ordinal horizons without event bytes or
 open cursors. It has no message/depth ceiling or copy accounting. Cycle detection,
 ordinal validity, current proof reads and cursor closure remain correctness rules.

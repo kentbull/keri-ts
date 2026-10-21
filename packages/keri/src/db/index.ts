@@ -19,3 +19,4 @@ export * from "./mailboxing.ts";
 export * from "./noting.ts";
 export * from "./reger.ts";
 export * from "./subing.ts";
+export { UnsupportedTelReplayError } from "./tel-replay.ts";
