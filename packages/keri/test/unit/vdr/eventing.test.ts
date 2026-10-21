@@ -1,6 +1,8 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import {
+  concatBytes,
+  Counter,
   Diger,
   NumberPrimitive,
   NumDex,
@@ -10,6 +12,7 @@ import {
   SerderKERI,
   Siger,
   TraitDex,
+  type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
@@ -525,17 +528,20 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       for (const [index, serder] of [vcp, iss].entries()) {
         assertEquals(tvy.processEvent({ serder, ...anchors[index] }).kind, "accept");
       }
-      // Frozen 927 processQuery emits management then credential, using default v2 proof counters.
-      const responses: Iterable<Uint8Array>[] = [];
-      for (const pvrsn of [Vrsn_1_0, Vrsn_2_0]) {
+      // Request wire genus selects proof counters independently of the signed body version.
+      const responses: { messages: Iterable<Uint8Array>; genus: Versionage }[] = [];
+      for (const [pvrsn, gvrsn] of [[Vrsn_1_0, Vrsn_1_0], [Vrsn_1_0, Vrsn_2_0], [Vrsn_2_0, Vrsn_2_0]]) {
         const request = query("tels", { ri: vcp.pre!, src: issuer.pre, i: iss.pre! }, { pre: issuer.pre, pvrsn });
         const reply = runtime.replies.reserve(request.said!);
         try {
-          const wire = messagize(request, {
+          const signed = messagize(request, {
             sigers: issuer.sign(request.raw, true),
             seal: { i: new Prefixer({ qb64: issuer.pre }) },
-            gvrsn: pvrsn,
+            gvrsn,
           });
+          const wire = gvrsn.major === 1 ? signed : concatBytes(Counter.makeGVC(gvrsn), signed);
+          const parsed = queryEnvelopeFromDispatch(envelopeFromFrame(parseBytes(wire)[0]));
+          assertEquals(parsed.gvrsn, gvrsn, "Query normalization retains the actual wire genus");
           yield* runtime.reactor.processBytes(wire);
           const batch = reply.takeAll();
           assertExists(batch);
@@ -558,14 +564,14 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
           } finally {
             reger.cloneTvt = clone;
           }
-          responses.push(cue.msgs);
+          responses.push({ messages: cue.msgs, genus: gvrsn });
         } finally {
           reply.close();
         }
       }
       const rev = revoke(iss.pre!, vcp.pre!, iss.said!);
       assertEquals(tvy.processEvent({ serder: rev, ...anchorTel(issuer, rev) }).kind, "accept");
-      for (const response of responses) {
+      for (const { messages: response, genus } of responses) {
         for (let attempt = 0; attempt < 2; attempt++) {
           const messages = [...response];
           assertEquals(messages.length, 2, "Later revocation remains outside both captured responses");
@@ -576,7 +582,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
               assertEquals(envelope.serder.raw, [vcp, iss][index].raw);
               assertEquals(envelope.lastSsc?.s.num, anchors[index].seqner.num);
               assertEquals(envelope.lastSsc?.d.qb64, anchors[index].saider.qb64);
-              assertEquals(frame.gvrsn?.major, 2);
+              assertEquals(frame.gvrsn, genus);
             }
           }
         }
@@ -591,7 +597,7 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       tvy.processQuery({ serder: request(vcp.pre!, vcp.pre!), source });
       const duplicate = tvy.cues.pull();
       if (duplicate?.kin !== "replay") throw new Error("Expected duplicate TEL replay");
-      const first = [...responses[0]][0];
+      const first = [...responses[1].messages][0];
       assertEquals([...duplicate.msgs], [first, first], "Repeated ranges preserve management/credential order");
       assertEquals(tvy.processQuery({ serder: request(issuer.pre), source }), undefined);
       assertEquals(tvy.cues.length, 0, "Unknown TEL has no response or query escrow");
@@ -612,9 +618,9 @@ Deno.test("tels queries reach the built-in owner and retain captured management/
       assertEquals(tvy.processQuery({ serder, cigars: unsigned.sign(serder.raw, false) }), undefined);
       assertEquals(tvy.cues.pull()?.kin, "replay");
       yield* reger.close();
-      assertThrows(() => [...responses[0]], Error, "not open");
+      assertThrows(() => [...responses[0].messages], Error, "not open");
       yield* reger.reopen();
-      assertEquals([...responses[0]].length, 2, "Captured response reopens independently of query processing");
+      assertEquals([...responses[0].messages].length, 2, "Captured response reopens independently of query processing");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

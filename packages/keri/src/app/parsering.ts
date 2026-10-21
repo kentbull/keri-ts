@@ -633,6 +633,7 @@ export function queryEnvelopeFromDispatch(
     : undefined;
   return {
     serder: envelope.serder,
+    gvrsn: envelope.gvrsn,
     source: lastSsg?.prefixer ?? rawSource,
     sigers: lastSsg ? [...lastSsg.sigers] : rawSource ? [...envelope.sigers] : [],
     cigars: [...envelope.cigars],

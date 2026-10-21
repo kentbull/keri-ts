@@ -8,6 +8,7 @@ import {
   type QueryReply,
   rethrowCleanupFailure,
   socketBytes,
+  UnsupportedTelReplayError,
   writeCesrTcpSocket,
 } from "keri-ts/runtime";
 import { createServer, type Socket } from "node:net";
@@ -17,7 +18,7 @@ export interface WitnessTcpOptions {
   /** Absolute deadline after genuine receive EOF, never refreshed by output activity; default 30 seconds. */
   drainTimeoutMs?: number;
   /** Observe expected connection refusal without suppressing storage/invariant failures. */
-  onRefusal?: (reason: "wire" | "peer") => void;
+  onRefusal?: (reason: "wire" | "peer" | "unsupported-replay") => void;
 }
 
 const PEER_ERRORS = new Set(["ECONNRESET", "ECONNABORTED", "EPIPE", "ETIMEDOUT"]);
@@ -330,7 +331,8 @@ function* processWitnessSocket(
       }),
     ]);
   } catch (error) {
-    if (error instanceof WireParseError) onRefusal("wire");
+    if (error instanceof UnsupportedTelReplayError) onRefusal("unsupported-replay");
+    else if (error instanceof WireParseError) onRefusal("wire");
     else if (peers.has(error)) onRefusal("peer");
     else throw error;
   }

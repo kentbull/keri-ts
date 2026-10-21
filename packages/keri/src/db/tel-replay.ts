@@ -1,6 +1,22 @@
 /** Captured TEL metadata is retained; the runtime-owned Reger and its readers remain borrowed. */
 import type { Versionage } from "cesr-ts";
+import { ValidationError } from "../core/errors.ts";
 import type { Reger } from "./reger.ts";
+
+/** Requested replay cannot represent this stored body/proof; its signed bytes are never rewritten. */
+export class UnsupportedTelReplayError extends ValidationError {
+  readonly requested: Readonly<Versionage>;
+  readonly required: Readonly<Versionage>;
+
+  /** Retain the refused event and owned version values for a local caller or transport boundary. */
+  constructor(readonly pre: string, readonly said: string, requested: Versionage, required: Versionage) {
+    super(
+      `TEL replay ${pre}/${said} requires version ${required.major}.${required.minor}; requested ${requested.major}.${requested.minor}.`,
+    );
+    this.requested = Object.freeze({ ...requested });
+    this.required = Object.freeze({ ...required });
+  }
+}
 
 /** Prefix and inclusive TEL ordinal horizon; every range starts at zero. */
 export type TelReplayRange = readonly [pre: string, end: number];

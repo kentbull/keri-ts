@@ -245,6 +245,13 @@ CueSink and its optional hooks/root adapters are deleted. Network output runs
 in their concrete delivery operations. A pass consumes its initial extent, so newly appended
 work waits for the next pass. A cue with no emission is still consumed.
 
+TEL query replay selects the parsed request genus independently of body version
+and media type. A stored event requiring a newer version raises
+`UnsupportedTelReplayError`; no silent upgrade or signed-body conversion occurs.
+Direct iterators may have yielded earlier events. TCP constructs the whole cue,
+reports `unsupported-replay` locally and closes that connection; EOF is not a
+semantic refusal received by the peer.
+
 Respondant fully constructs local KEL/TEL replay messages before atomic queue
 publication and source removal. Hab.processCuesIter returns raw wire; typed cue
 kin values route other work directly. Direct TCP response owners prepare complete

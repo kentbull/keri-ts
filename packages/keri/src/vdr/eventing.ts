@@ -1074,11 +1074,12 @@ export class Tevery {
   /**
    * Serve legacy TEL replay or an ordered TSN pair with independent receiver verification.
    * Actual 714 leaves query signature validation TODO. Requester material identifies the destination;
-   * optional KRAM and sender policy remain separate. Replay output uses the reference's default v2 genus.
+   * optional KRAM and sender policy remain separate. Replay uses the parsed request genus;
+   * direct callers default to the body-declared context and may select another genus explicitly.
    *
    * @param args TEL query body, authenticated source and nontransferable cigar evidence.
    */
-  processQuery({ serder, source, cigars }: QueryEnvelope): TelQueryDecision {
+  processQuery({ serder, source, cigars, gvrsn }: QueryEnvelope): TelQueryDecision {
     if (serder.route === "tsn") {
       const result = prepareTsnQuery({ serder, source, cigars }, this.tevers);
       if (result.kind === "drop") return result;
@@ -1095,8 +1096,10 @@ export class Tevery {
       || !("src" in query) || typeof query.src !== "string" || !query.src
       || !("i" in query) || typeof query.i !== "string"
     ) return { kind: "drop", reason: "invalidQuery" };
-    const management = this.reger.replay(query.ri, { gvrsn: Vrsn_2_0, genusify: true });
-    const credential = query.i ? this.reger.replay(query.i, { gvrsn: Vrsn_2_0, genusify: true }) : null;
+    const selected = gvrsn ?? serder.gvrsn ?? serder.pvrsn;
+    const settings = { gvrsn: selected, genusify: selected.major >= 2 };
+    const management = this.reger.replay(query.ri, settings);
+    const credential = query.i ? this.reger.replay(query.i, settings) : null;
     if (!management && !credential) return;
     const messages = {
       *[Symbol.iterator]() {

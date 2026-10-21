@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `e66d6ef1` (#649), 2026-10-20.
+Status: active; merged implementation baseline `dad074ae` (#650), 2026-10-20.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -10,9 +10,10 @@ plan. This goal may finish when all other required work and qualification pass.
 
 Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
 are implemented, including weighted and witnessed CLI restart evidence. Six-verb
-IPEX authoring/approval and wallet settlement are implemented, with grant preflight
-in the current cut; peer/witnessed lifecycle qualification remains. Revocation,
-backer policy, verifier separation, organization and final qualification remain. Selected feature checks are not a release-readiness claim.
+IPEX authoring/approval and wallet settlement are implemented, with grant preflight merged in #650; peer/witnessed lifecycle qualification remains.
+Legacy TEL replay is the current cut. Retirement of the autonomous legacy TEL
+backer feature follows immediately, then revocation, verifier separation,
+organization and final qualification. Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -24,13 +25,13 @@ backer policy, verifier separation, organization and final qualification remain.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| Revocation, backer lifecycle, verifier separation                                      | Not complete; acceptance criteria and order below.                                                                                                        |
+| Backer retirement, revocation, verifier separation                                     | Not complete; acceptance criteria and order below.                                                                                                        |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
 IPEX/disclosure and mailbox gates passed. Main-native owners used `c7e74ad`; the
 mailbox owner retained its separate fork. These checks do not qualify the whole release.
-The last broad checkpoint was #631; run another at roughly 20 implementation PRs,
+The last broad checkpoint was #650; run another at roughly 20 implementation PRs,
 and fresh full qualification after the final changes.
 Git/PRs own detailed history; this file owns current scope, order and gates.
 
@@ -41,13 +42,16 @@ Git/PRs own detailed history; this file owns current scope, order and gates.
   storage formats need no compatibility**: remove obsolete abstractions and
   document breaks rather than adding aliases, shims or migration readers.
 - Required: complete multisig approval/fanout throughout CLI credential workflows,
-  legacy TEL replay, actual legacy group backer registries, verifier separation
+  legacy TEL replay, removal of the autonomous legacy TEL backer feature, verifier separation
   and package organization. KERI/CESR v2 work independent of native ACDC stays required.
-- Hosted backer comments/help and the pending release note are clarified in #636: optional
-  legacy/v1-style TEL backing (`vcp`/`vrt`/`bis`/`brv`) supplies indexed backer-quorum
-  endorsements, separate from issuer multisig approval and KEL witnessing.
-  Native ACDC v2 `rip`/`bup`/`upd` registries do not use or require this mechanism;
-  the event model does not identify a library, KERIpy or wire/genus version.
+- **Legacy TEL backing is retired as an active feature.** Immediately after the
+  current replay PR, preserve its design/source references in one report, record
+  an ADR rejecting reintroduction without a new justified requirement, and remove
+  autonomous signing, collection, runtime/CLI hosting, backed-registry authoring
+  and feature-only storage/escrow machinery. Cancel the planned group backer,
+  VRT and BIS/BRV authoring expansion and its new interop families. Retain the
+  independently required wire decoding, observer verification and replay of
+  external legacy evidence; these must never imply that a backer service exists.
 - Deferred native scope: all remaining work depending on native-v2 ACDC/registry
   `rip`/`bup`/`upd`, including CLI authoring, disclosure custody, native IPEX/wallet
   completion and presentation. The [native roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md)
@@ -122,18 +126,16 @@ implementation PR before the next; split only for independent human review.
 | Cut          | Remaining result                                                                                                     | Depends on                                            |
 | ------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation                                   |
-| R2           | Native partial proof #627 retained; hosted backer proof #629 complete. Native remainder deferred.                    | R1                                                    |
+| R2           | Native partial proof #627 retained; native remainder deferred. Backer implementation superseded by R3.               | R1                                                    |
 | 13k          | Complete in #621–624 and #631–632: strict command input validation.                                                  | R1                                                    |
 | 13 remainder | Complete in #633–634 and #641: durable selection, proof reuse and interrupted-index replay.                          | Reporting already merged                              |
 | 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                | 13k, 13 remainder                                     |
 | 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31. | 14                                                    |
 | 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.  | 15                                                    |
 | 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged                      |
-| 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                                                |
-| 21           | Complete in #628: accepted historical backer cohorts, accumulated partial proofs and retry/reopen.                   | R1                                                    |
-| 22           | Hosted signing/collection merged #629; full group lifecycle evidence continues in 23–24.                             | 21, R2 backer slice                                   |
-| 23           | Explicit backer roster/threshold and group registry inception/rotation.                                              | 14, 22                                                |
-| 24           | BIS/BRV, rotated cohorts and fresh-observer replay.                                                                  | 18, 20, 23                                            |
+| R3           | Retire the autonomous legacy TEL backer feature, archive the design and record its rejection ADR.                    | 17–18; immediately after current PR                   |
+| 20           | Group revocation and independently observed revoked state.                                                           | 15, 18, R3                                            |
+| 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                  | R3                                                    |
 | 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                          | Legacy lifecycle; independent of deferred native cuts |
 | 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                   | All feature work                                      |
 | 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                             | 31                                                    |
@@ -144,7 +146,7 @@ implementation PR before the next; split only for independent human review.
 [CLI bootstrap supplement](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md) owns 13k
 input details; 13i/13j are complete. The messenger, query, result-contract and
 ESSR supplements describe merged designs, not extra pending implementation.
-R1/R2 take precedence over their historical ordering and pin references.
+R1 and the native R2 boundary retain their pin precedence. R3 supersedes all earlier backer implementation requirements.
 
 ## Early design and interoperability gates — R1/R2
 
@@ -161,34 +163,10 @@ Re-run the maintained main-profile probes and affected IPEX/disclosure/KRAM owne
 retain old legacy/mailbox pins. Final qualification uses the manifest, not old
 literal pins in reports or fixture provenance. Never relabel old results.
 
-**R2 backer slice: define the signing contract before registry rotation.** Advance
-cut 21 as its prerequisite: accepted cohorts, proof accumulation and partial-backer
-retry must be reliable before the service uses them. Then settle a small concrete service contract in the owning design/source:
-
-- The issuer selects the ordered backer AIDs explicitly. Resolve each AID through
-  existing signed endpoint roles/locations; use a supported controller or authorized
-  agent endpoint, not a new `backer` protocol role. Specify how the issuer return
-  destination is authenticated and how the contribution reaches its ordinary intake.
-- A hosted nontransferable backer checks event digest, issuer anchor, accepted
-  management history, its roster index and authorization before endorsing. It must
-  not require the quorum it is helping form. No global local-processing bypass.
-- Persist its own event coordinate/digest and indexed contribution in the existing
-  TEL evidence model where possible. Commit the endorsement before transmission;
-  duplicate input reuses it after restart. Inspect whether existing rows enforce
-  one digest per coordinate; add only a narrow record if they cannot. Refuse a
-  conflicting endorsement, without pretending this prevents issuer duplicity.
-- Prove one real hosted backer/issuer path into Python Tevery observer acceptance
-  before cuts 23/24. Withhold a required contribution, reopen, then complete the
-  same event. Include one conflict case for the chosen signing contract. This
-  starts B1/B2 using existing helpers; it is not an additional harness or an outbox.
-
-**Legacy VRT approval contract, before cut 23.** Bind the separate VRT evidence
-to the exact outer proposal EXN and issuer anchor payload before local approval.
-Persist evidence and its association; notification presence is not authority.
-Members obtain the original evidence, validate the management policy and anchor,
-then sign. Missing evidence stays pending. Python ixn/rot approval alone proves
-KEL approval, not credential-aware business review. Native signing/disclosure
-custody contracts and proofs are retained in the deferred native roadmap.
+The former R2 backer signing/rotation contracts are superseded by R3. Preserve
+implementation evidence in the retirement report, not as an active design or
+roadmap commitment. Native signing/disclosure contracts remain in the deferred
+native roadmap.
 
 ## Remaining feature acceptance criteria
 
@@ -258,8 +236,8 @@ PR 20 extends VDR proposal approval with REV and uses the completed owner:
 
 This phase completes the legacy no-backer baseline, including ordinary and
 establishment-only anchors, single/group counterparties and witnessed operation.
-The required backer phase extends that same lifecycle with separate TEL backer
-evidence. Native-v2 CLI authoring is deferred; do not claim it from legacy success.
+Autonomous legacy TEL backing and backed-registry authoring are retired, separate
+from issuer group approval and KEL witnessing. Native-v2 CLI authoring is deferred; do not claim it from legacy success.
 
 Required adversarial/lifetime cases:
 
@@ -310,70 +288,45 @@ and expose the local failure without claiming that the older peer received a typ
 refusal. Do not invent a negative-response protocol or streaming redesign. In all
 paths, never substitute v2-only bytes for a purported v1 replay.
 
-### Phase F: real group backer registries — PRs 21–24
+### R3: retire autonomous legacy TEL backing — immediately after replay
 
-**PR 21: accepted cohorts and accumulated evidence.** Extract the narrow
-backer-state selection responsibility before changing admission. Resolve
-`ra.i/ra.s/ra.d` against accepted registry management evidence, not a raw or
-escrowed body. VCP uses its validated initial roster; VRT uses its validated
-rotated ordered roster and threshold; BIS/BRV use their exact historical
-management tuple. Reuse existing signature verification and merge valid proofs
-by unique index. Retry and reopen partial-witness `twes` evidence; repeated
-bodies may contribute missing proofs without reapplying business state.
-Preserve earlier valid contributions instead of replacing `tibs`.
+Use one cohesive removal PR unless inspection reveals independently reviewable
+responsibilities large enough to justify a split. This replaces cuts 21–24;
+there is no remaining backer-feature completion or qualification requirement.
 
-**PR 22: real backer participation.** Add one concrete backer-operation owner,
-composed with explicitly hosted nontransferable backer signers, the parser,
-existing endpoint resolution and Poster/messengers. It validates the exact
-event, issuer anchor, registry history and its authorized index before signing.
-Expose activation through the existing agent/witness hosting CLI composition,
-with an explicit selected backer AID and role; do not auto-host or sign as every
-local Hab. Use the established listener and endpoint ownership. B1 must launch
-backers through this public command, not a test-only service constructor.
-Eligibility to endorse is separate from observer acceptance: requiring a full
-backer threshold before producing a contribution would deadlock the workflow.
-Do not bypass verification by globally enabling local processing.
+- Write `docs/reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md` describing the
+  current design, source commit/PR references, receipt wire and durable ownership,
+  checks already performed and limits of the Python correspondence. This is a
+  reference report, not retained executable code or a new roadmap.
+- Add `docs/adr/adr-0014-legacy-tel-backer-retirement.md`: reject autonomous TEL
+  backing and backed-registry authoring because the additional lifetime,
+  persistence, signing and integration obligations lack a current justified
+  application requirement. Distinguish KERIpy's legacy wire/observer support
+  from autonomous signing, and native ACDC v2's different registry model. Do not
+  turn the claimed historical lack of adoption into an independently verified fact.
+- Remove `Backer`, `BackerService`, their request/result flows, runtime ownership,
+  workers, hosting options, `--backer-alias`, backed-registry authoring options,
+  public exports and dedicated `bens.` endorsement-choice table. Trace and delete
+  feature-only eligibility publication, proof-input distinctions, escrow hooks
+  and helpers; do not merely disconnect the service or leave wrappers/flags.
+- Inspect registry/credential authoring and remove backer-policy management and
+  local signing/collection branches that exist only for this feature. Keep the
+  ordinary NoBackers lifecycle, issuer multisig authority and KEL witnessing.
+  External legacy backed evidence remains subject to actual observer validation;
+  removal must not bypass its quorum, accept partial proof, or silently author
+  backed evidence through a leftover application path.
+- Remove feature-only tests, the hosted-backer Python driver and CI owner, stale
+  help/design claims and unreleased feature promises. Keep useful protocol
+  decoding/observer/replay regressions and shared primitives with real consumers.
+  Add no tests or lint rules asserting that discarded names stay absent.
+- Record public API/CLI removals in concise breaking guidance and an appropriate
+  changeset. Validate affected authoring, ordinary runtime/hosting, observer and
+  replay behavior with focused checks and relevant existing peer tests. Broad
+  final qualification still follows all implementation and organization work.
 
-Use the existing wire: original TEL body, indexed backer signatures
-(`WitnessIdxSigs`) and issuer source proof (`SealSourceCouples`), in the selected
-CESR genus. Both parsers already deliver these to Tevery. Add no new receipt
-message or KEL `rct`. Collect verified contributions, then disseminate the
-threshold-complete evidence. Persist received evidence and protocol progression;
-delivery retries/outboxes remain outside scope.
-
-**PR 23: backer policy and management.** Replace the inadequate boolean-only
-input with explicit ordered backer roster and threshold input, retaining a
-clear no-backer choice. Add registry rotation with cuts/additions/threshold.
-Validate the proposed policy before effects and display the policy change for
-group approval. Remove the group-backers rejection only when the actual receipt
-path is available.
-
-There is no inspected standard `/multisig/vrt` handler or Python registry-rotation
-CLI. Use existing `/multisig/ixn` or `/multisig/rot` approval for the exact issuer
-anchor, with the VRT evidence supplied separately and verified before signing.
-Prove the binding between both parts. Do not invent a TS-only route and label
-it Python CLI compatibility. Keep establishment-only anchoring distinct from
-registry management rotation.
-
-**PR 24: issuance/revocation and completion.** Select BIS/BRV from accepted
-registry mode and historical management state. Existing issuance/revocation
-coordination must validate the actual embedded ilk and relationships. Complete
-three separate obligations: group authority over the issuer anchor, required
-issuer KEL witness evidence, and TEL backer quorum with completed dissemination.
-None alone establishes remote acceptance.
-
-Exercise a nonempty roster and a real threshold, change the backer roster
-between issuance and revocation, then replay both states to a fresh observer.
-The old event retains its original authorized cohort. Use existing protocol
-tests for signature/ordering invariants; add focused regressions only for the
-accepted-coordinate and partial-proof bugs and the new concrete owner.
-
-Inspected Python main, 1.2.x and 1.3.x do not automatically produce TEL backer
-receipts; their Tevery comments disable that cue path. Python Registrar's
-witness progression does not implement it. Qualify TS backer services against
-real Python observer intake. A helper invoking the unmodified Python signer
-can independently produce proof bytes, but must be labeled a Python API driver,
-not a native autonomous backer service.
+No compatibility shim, dormant service, feature flag, generic provider, replacement
+storage framework or speculative future reintroduction belongs in this cut.
+The ADR may be reconsidered only with a concrete new requirement and design review.
 
 ### Native-v2 ACDC/registry — deferred cuts 25–30
 
@@ -441,25 +394,14 @@ existing tests; do not multiply every feature by every transport, threshold,
 runtime and Python version. Use HTTP for the new end-to-end cases; retain the
 existing transport suite for TCP/lifetime coverage.
 
-The release additions have two backer scenario families. Native N1–N3 and
-their completion gates are deferred to the roadmap, not silently skipped passes:
-
-| Case                                        | Focused happy path                                                                                                                                                                                                          | Independent interoperability evidence                                                                                                                                                                                                                                |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B1: group-backed lifecycle to Python        | Tufa group issuer uses separate real backer processes with a nonempty roster and meaningful threshold: VCP -> BIS -> VRT -> BRV. Rotate the roster between issuance and revocation, then replay to a fresh Python observer. | Run the same compact verifier case against main, 1.2.x and 1.3.x; each parses original TEL plus real backer/source proofs and reaches issued then revoked state. Assert the historic management tuple as well as the final status.                                   |
-| B2: Python-produced backed evidence to Tufa | Python's real constructors/signers produce a short VCP/BIS/VRT/BRV chain; ordinary Tufa CLI/runtime ingestion reaches matching accepted/revoked state.                                                                      | Reuse the three pinned profiles and their genuine crypto/parser APIs, with no TS-built fixture substituted for Python output. A minimal API driver is allowed; it must not patch reference code, preaccept rows, or claim to be an autonomous KERIpy backer service. |
-
-Use only a few targeted failure checks for this expansion:
-
-- Withhold one required backer contribution, observe honest pending state, reopen
-  and deliver it; the same event must complete. This also checks the concrete
-  partial-proof recovery bug without a separate broad failure matrix.
-- Keep the accepted-management-coordinate regression local to Tevery; raw or
-  escrowed management evidence must not authorize a historical backer cohort.
+The former B1/B2 autonomous group-backed lifecycle additions are cancelled by
+R3. Do not build replacement backer harnesses or retain their feature-only suites.
+Keep existing useful observer/wire verification where it protects supported legacy
+protocol intake. Native N1–N3 and their completion gates remain deferred.
 
 Existing threshold, duplicate-index, wrong-signer, cancellation and ordering
-tests remain relevant; do not reproduce all of them as new multi-process interop
-scenarios. Add another negative only for a newly demonstrated defect.
+coverage remains relevant to ordinary multisig and protocol verification; add
+another negative only for a demonstrated defect.
 
 Retain existing useful native regression coverage and report partial API capabilities
 honestly. New native lifecycle and reciprocal acceptance claims belong to the roadmap.
@@ -489,8 +431,8 @@ command parity from TS-only tests, or make a TS feature imitate an upstream stub
 Any required lane blocked by a genuine reference defect must be reported with
 its exact source and reproducer; do not count it as passing.
 The broad negative/recovery row above is an existing regression boundary, not a
-request to multiply the two added backer interop families. Preserve its current useful
-coverage and add only the limited cases justified here.
+request for a Cartesian interop matrix. Preserve useful coverage and add only
+the limited cases justified by the supported lifecycle.
 
 ## Final ownership assessment and organization — cuts 31a–31d
 

@@ -2,7 +2,7 @@ import { action, call, type Operation, race, run, spawn, type Task } from "effec
 import { assert, assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
 import { createConnection, type Socket } from "node:net";
-import { b, parseBytes, ParserError, WireParseError } from "../../../../cesr/mod.ts";
+import { b, concatBytes, parseBytes, ParserError, Vrsn_1_0, Vrsn_2_0, WireParseError } from "../../../../cesr/mod.ts";
 import { startServer } from "../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import {
@@ -22,6 +22,7 @@ import { Receiptor } from "../../../src/app/witnessing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { Schemes } from "../../../src/core/schemes.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { UnsupportedTelReplayError } from "../../../src/db/tel-replay.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../effection-http.ts";
 
 function randomPort(): number {
@@ -809,6 +810,72 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
     } finally {
       yield* providerHby.close();
       yield* sourceHby.close();
+    }
+  });
+});
+
+Deno.test("TCP TEL replay refuses an incompatible cue without bytes and continues serving compatible requests", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const service = hby.makeHab("service", undefined, { transferable: false });
+    const issuer = hby.makeHab("issuer");
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const registry = runtime.vdr!.makeRegistry("replay", issuer);
+    const regk = registry.regk;
+    assertExists(regk);
+    runtime.cues.clear();
+    const port = randomPort(), refusals: string[] = [];
+    const listener = yield* spawn(() =>
+      startWitnessTcpServer(port, "127.0.0.1", runtime, service, {
+        onRefusal: reason => refusals.push(reason),
+      })
+    );
+    const reger = runtime.vdr!.reger, clone = reger.cloneTvt;
+    /** Read actual socket output through peer close; a refusal has no semantic wire response. */
+    const request = async (credential: string): Promise<Uint8Array> => {
+      const socket = createConnection({ host: "127.0.0.1", port, allowHalfOpen: true });
+      const parts: Uint8Array[] = [];
+      socket.on("data", part => parts.push(Uint8Array.from(part)));
+      socket.on("end", () => socket.end());
+      socket.on("error", () => {});
+      socket.setTimeout(2000, () => socket.destroy());
+      const closed = new Promise<void>(resolve => socket.once("close", resolve));
+      try {
+        await once(socket, "connect");
+        socket.end(
+          service.query(regk, service.pre, { route: "tels", q: { ri: regk, i: credential } }),
+        );
+        await closed;
+        return concatBytes(...parts);
+      } finally {
+        socket.destroy();
+        await closed;
+      }
+    };
+    try {
+      yield* sleepOp(25);
+      let reads = 0;
+      reger.cloneTvt = function(...args) {
+        if (++reads === 2) throw new UnsupportedTelReplayError(String(args[0]), service.pre, Vrsn_1_0, Vrsn_2_0);
+        return clone.apply(this, args);
+      };
+      // Repeated ranges are legal query input. A later failure must not leak the
+      // first already-constructed event of the same response.
+      assertEquals((yield* call(() => request(regk))).length, 0);
+      assertEquals(reads, 2);
+      assertEquals(refusals, ["unsupported-replay"]);
+      reger.cloneTvt = clone;
+      const bytes = yield* call(() => request(""));
+      const frames = parseBytes(bytes);
+      assertEquals(frames.length, 1);
+      assertEquals(frames[0].body.said, regk);
+      assertEquals(frames[0].gvrsn, Vrsn_1_0);
+      assertEquals(refusals, ["unsupported-replay"]);
+    } finally {
+      reger.cloneTvt = clone;
+      yield* waitForTaskHalt(listener);
+      yield* runtime.close();
+      yield* hby.close(true);
     }
   });
 });

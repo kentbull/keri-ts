@@ -30,9 +30,11 @@ owns remaining work dependent on KERIpy `rip`, `bup` and `upd` completion, inclu
 native CLI authoring, disclosure custody, group native approval, IPEX/wallet,
 presentation and reciprocal peer qualification. Re-entry requires inspecting and
 pinning the completed reference implementation. Merged partial capability stays;
-legacy TEL/group backers and independent KERI/CESR v2 remain in the
+legacy TEL replay and independent KERI/CESR v2 remain in the
 [active 2.0.0 plan](V2_RELEASE_COMPLETION_PLAN.md). The historical 1.0.0 baseline
-above does not describe completion of this current release work.
+above does not describe completion of this current release work. Autonomous legacy
+TEL backing and backed-registry authoring are rejected; the active plan schedules
+their removal and an ADR rather than further feature expansion.
 
 ## Retained architecture
 
