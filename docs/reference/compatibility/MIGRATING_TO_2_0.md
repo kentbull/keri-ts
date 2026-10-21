@@ -240,6 +240,17 @@ another registry, and the create alias must control the selected registry.
 Ordinary establishment-only registries use rotation anchors and retain their
 stored policy on reopen, as group workflows do.
 
+## IPEX command results and presentation
+
+The eight IPEX send, grant, admit, poll and join helpers under `keri-ts/cli` now
+return typed snapshots after owned cleanup. `IpexSendResult` carries an EXN and
+transport destinations; grant/admit results carry their actual Serders, poll
+returns settled Serders, and join separates selection from optional approval
+facts. Tufa projects final JSON after these operations return. A shutdown failure
+cannot print command success and does not undo a completed transmission. File
+output stays with the existing command owner. Join display includes the selected
+outer EXN SAID even when discovered by polling.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

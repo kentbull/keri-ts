@@ -70,17 +70,56 @@ interface IpexJoinArgs extends IpexBaseArgs {
   approvalTimeoutSeconds: number;
 }
 
+/** Captured EXN and finished transport destinations; presentation belongs to Tufa. */
+export interface IpexSendResult {
+  exn: SerderKERI;
+  deliveries: string[];
+}
+
+/** Grant facts survive command cleanup. Group completion is distinct from completed member delivery. */
+export interface IpexGrantResult {
+  grant: SerderKERI;
+  credential: string;
+  support: number;
+  group?: { complete: boolean; lead: boolean | null; deliveries: string[] };
+}
+
+/** Authored admit and the actual accepted grant it answers. */
+export interface IpexAdmitResult {
+  admit: SerderKERI;
+  grant: SerderKERI;
+}
+
+/** Settled mailbox observations and ordinary Serders, captured before the stores close. */
+export interface IpexPollResult {
+  batches: number;
+  messages: number;
+  ipex: SerderKERI[];
+  saved: string[];
+}
+
+/** One selected exchange; null group approval/lead facts mean approval was not requested. */
+export interface IpexJoinResult {
+  exn: SerderKERI;
+  group?: {
+    embedded: SerderKERI;
+    accepted: boolean | null;
+    lead: boolean | null;
+    deliveries: string[];
+  };
+}
+
 /**
  * Implement `tufa ipex apply` by sending a schema/attribute request EXN.
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexApplyCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
   const schema = parseStringOption(args.schema, "schema");
   requireNonEmpty(schema, "Schema");
   const attrs = parseJsonArg(parseStringOption(args.attrs, "attrs")) ?? {};
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
@@ -106,7 +145,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
-      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+      return { exn: serder, deliveries: result.deliveries };
     } finally {
       yield* worker.halt();
     }
@@ -118,12 +157,12 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<void
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexOfferCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
   const acdcFile = parseStringOption(args.acdc, "acdc");
   requireNonEmpty(acdcFile, "ACDC file");
   const apply = parseStringOption(args.apply, "apply");
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
@@ -146,7 +185,7 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
-      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+      return { exn: serder, deliveries: result.deliveries };
     } finally {
       yield* worker.halt();
     }
@@ -154,18 +193,18 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<void
 }
 
 /** Implement `tufa ipex agree` as a response to an accepted offer EXN. */
-export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<void> {
-  yield* sendPriorResponse(args, IPEX_AGREE_ROUTE, "offer");
+export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
+  return yield* sendPriorResponse(args, IPEX_AGREE_ROUTE, "offer");
 }
 
 /**
  * Send an initial IPEX rejection using the donor's stream-delivery operation.
  * @param args Command values identifying recipient, prior exchange and optional message.
  */
-export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
   const prior = requireString(parseStringOption(args.prior, "prior"), "Prior message");
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const dest = new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
     const { serder, msg } = createExchangeMessage(hab, {
@@ -177,7 +216,7 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
     const worker = yield* spawn(() => runtime.postman.deliverDo());
     try {
       const deliveries = yield* sendCredentialStream(runtime.postman, hab, dest, [msg]);
-      console.log(JSON.stringify({ said: serder.said, deliveries }));
+      return { exn: serder, deliveries };
     } finally {
       yield* worker.halt();
     }
@@ -188,7 +227,7 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexGrantCommand(args: Record<string, unknown>): Operation<IpexGrantResult> {
   const ipexArgs: IpexGrantArgs = {
     ...ipexBaseArgs(args),
     said: parseStringOption(args.said, "said"),
@@ -200,7 +239,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     ),
   };
   requireNonEmpty(ipexArgs.said, "Credential SAID");
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const selectedRecipient = requireString(ipexArgs.recipient, "Recipient");
     // Offline export accepts the supplied AID; network delivery resolves contacts/endpoints.
@@ -251,14 +290,12 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         : runtime.exc.complete(grant.grant.said!);
 
       if (!complete) {
-        console.log(JSON.stringify({
-          said: grant.grant.said,
-          credential: ipexArgs.said,
+        return {
+          grant: grant.grant,
+          credential: ipexArgs.said!,
           support: grant.support.length,
-          status: "multisig-pending",
-          deliveries,
-        }));
-        return;
+          group: { complete: false, lead: null, deliveries },
+        };
       }
 
       const completedGrant = requireStoredExchange(hby, grant.grant.said!);
@@ -282,15 +319,12 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
           yield* worker.halt();
         }
       }
-      console.log(JSON.stringify({
-        said: completedGrant.said,
-        credential: ipexArgs.said,
+      return {
+        grant: completedGrant,
+        credential: ipexArgs.said!,
         support: grant.support.length,
-        status: "multisig-complete",
-        lead: runtime.exc.lead(hab, completedGrant.said!),
-        deliveries,
-      }));
-      return;
+        group: { complete: true, lead: runtime.exc.lead(hab, completedGrant.said!), deliveries },
+      };
     }
 
     const stream = concatBytes(...grant.support, grant.wire);
@@ -305,7 +339,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
         yield* worker.halt();
       }
     }
-    console.log(JSON.stringify({ said: grant.grant.said, credential: ipexArgs.said, support: grant.support.length }));
+    return { grant: grant.grant, credential: ipexArgs.said!, support: grant.support.length };
   });
 }
 
@@ -314,14 +348,14 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<IpexAdmitResult> {
   const ipexArgs: IpexAdmitArgs = {
     ...ipexBaseArgs(args),
     said: parseStringOption(args.said, "said"),
     grantFile: parseStringOption(args.grantFile, "grantFile"),
     noWait: parseBooleanOption(args.noWait, "noWait"),
   };
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const grant = yield* loadGrant(hby, ipexArgs);
     const admit = ipexCredentialAdmit({
@@ -343,7 +377,7 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
         yield* worker.halt();
       }
     }
-    console.log(JSON.stringify({ said: admit.admit.said, grant: grant.said }));
+    return { admit: admit.admit, grant };
   });
 }
 
@@ -367,10 +401,10 @@ export function* ipexListCommand(args: Record<string, unknown>): Operation<void>
 }
 
 /** Observe settled mailbox input and stored grant replay until new IPEX state or an elapsed deadline. */
-export function* ipexPollCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexPollCommand(args: Record<string, unknown>): Operation<IpexPollResult> {
   const ipexArgs = ipexBaseArgs(args);
   const timeoutMs = nonNegativeNumber(args.timeout, 40, "poll timeout seconds") * 1000;
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
     const hab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const beforeExns = new Set(
       [...hby.db.exns.getTopItemIter()]
@@ -418,12 +452,12 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
       yield* host.halt();
     }
 
-    console.log(JSON.stringify({
+    return {
       batches: batchesSeen,
       messages: messagesSeen,
       ipex: newIpexMessages(hby, beforeExns),
       saved: newSavedCredentials(reger, beforeSaved),
-    }));
+    };
   });
 }
 
@@ -432,14 +466,14 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
-export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
+export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJoinResult> {
   const ipexArgs: IpexJoinArgs = {
     ...ipexBaseArgs(args),
     said: parseStringOption(args.said, "said"),
     auto: parseBooleanOption(args.auto, "auto"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
     const exn = ipexArgs.said ? hby.db.exns.get([ipexArgs.said]) : yield* nextPendingMultisigIpex(hby, runtime, {
       hab: pollHab,
@@ -454,8 +488,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     }
 
     if (exn.route?.startsWith("/ipex/")) {
-      console.log(JSON.stringify({ said: exn.said, route: exn.route, status: "single-sig" }));
-      return;
+      return { exn };
     }
 
     if (exn.route !== MULTISIG_EXN_ROUTE) {
@@ -474,15 +507,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
     }
 
     if (!ipexArgs.auto) {
-      console.log(JSON.stringify({
-        said: ipexArgs.said,
-        route: exn.route,
-        status: "multisig-pending",
-        embedded: embedded.said,
-        embeddedRoute: embedded.route,
-        group,
-      }));
-      return;
+      return { exn, group: { embedded, accepted: null, lead: null, deliveries: [] } };
     }
 
     const approval = yield* call(function*() {
@@ -497,23 +522,22 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
         yield* worker.halt();
       }
     });
-    console.log(JSON.stringify({
-      said: ipexArgs.said,
-      route: exn.route,
-      status: approval.accepted ? "multisig-approved" : "multisig-escrowed",
-      embedded: embedded.said,
-      embeddedRoute: embedded.route,
-      group,
-      lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
-      deliveries: approval.deliveries,
-    }));
+    return {
+      exn,
+      group: {
+        embedded,
+        accepted: approval.accepted,
+        lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
+        deliveries: approval.deliveries,
+      },
+    };
   });
 }
 
 /**
  * Send a prior-correlated IPEX response with an explicit Poster worker.
- * Await this admission's outcome before printing delivered URLs, and join the
- * worker before leaving the command scope.
+ * Await this admission's outcome and return its EXN and delivered URLs after
+ * joining the worker. The outer resource owner closes stores before returning.
  *
  * @param args Parsed IPEX command flags, including recipient and prior-message SAID.
  * @param route Response exchange route to construct.
@@ -523,11 +547,11 @@ function* sendPriorResponse(
   args: Record<string, unknown>,
   route: string,
   priorLabel: string,
-): Operation<void> {
+): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
   const prior = parseStringOption(args[priorLabel], priorLabel);
   requireNonEmpty(prior, priorLabel);
-  yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
+  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
@@ -549,7 +573,7 @@ function* sendPriorResponse(
       }, { notify: true });
       const result = yield* postman.wait(evt);
       if (result.kin === "failed") throw result.error;
-      console.log(JSON.stringify({ said: serder.said, deliveries: result.deliveries }));
+      return { exn: serder, deliveries: result.deliveries };
     } finally {
       yield* worker.halt();
     }
@@ -632,20 +656,15 @@ function requireNonEmpty(value: string | undefined, label: string): void {
 function newIpexMessages(
   hby: Habery,
   before: Set<string>,
-): Array<{ said: string; route: string; sender: unknown; prior: unknown }> {
-  const messages: Array<{ said: string; route: string; sender: unknown; prior: unknown }> = [];
+): SerderKERI[] {
+  const messages: SerderKERI[] = [];
   for (const [, exn] of hby.db.exns.getTopItemIter()) {
     const said = exn.said;
     const route = exn.route ?? "";
     if (!said || before.has(said) || !route.startsWith("/ipex/")) {
       continue;
     }
-    messages.push({
-      said,
-      route,
-      sender: exn.ked?.i,
-      prior: exn.ked?.p,
-    });
+    messages.push(exn);
   }
   return messages;
 }

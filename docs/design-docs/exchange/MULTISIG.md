@@ -103,9 +103,10 @@ business signing and mutation. Normal store loading still occurs.
 | Generic EXN send and challenge response   | Refuse group aliases; select a member or a supported group business workflow.                              |
 | Location publication and query requester  | Require an endpoint-owner or member alias rather than an uncoordinated group signature.                    |
 | DID binding                               | Refuses group aliases; group artifact generation exports accepted evidence.                                |
-| Legacy VCP/ISS                            | Group proposal paths exist; witnessed completion/preflight remains a release-plan gate.                    |
+| Legacy VCP/ISS                            | Preflight, local approval, witnessed publication and restart are implemented; final peer gates remain.     |
 | Legacy revocation and IPEX                | Group lifecycle completion remains assigned to the release plan, including all six IPEX verbs.             |
 | Inspection, verification and export       | Read accepted group state; do not author a group event.                                                    |
 
-The credential/IPEX rows are remaining implementation work, not parity claims.
+Revocation and IPEX completion remain implementation work. Selected VCP/ISS
+checks do not replace the final interoperability matrix.
 Native-v2 ACDC/registry authoring remains in its deferred roadmap.

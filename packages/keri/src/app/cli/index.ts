@@ -43,13 +43,18 @@ export { initCommand } from "./init.ts";
 export { interactCommand } from "./interact.ts";
 export {
   ipexAdmitCommand,
+  type IpexAdmitResult,
   ipexAgreeCommand,
   ipexApplyCommand,
   ipexGrantCommand,
+  type IpexGrantResult,
   ipexJoinCommand,
+  type IpexJoinResult,
   ipexListCommand,
   ipexOfferCommand,
   ipexPollCommand,
+  type IpexPollResult,
+  type IpexSendResult,
   ipexSpurnCommand,
 } from "./ipex.ts";
 export { listCommand } from "./list.ts";

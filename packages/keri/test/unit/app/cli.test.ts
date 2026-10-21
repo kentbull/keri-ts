@@ -167,8 +167,8 @@ Deno.test("CLI - IPEX empty poll and join deadlines close workers before store r
   });
 
   const started = Date.now();
-  const polled = await captureCommand(ipexPollCommand({ name, headDirPath, alias: "holder", timeout: 0.05 }));
-  assertEquals(JSON.parse(polled.stdout), { batches: 0, messages: 0, ipex: [], saved: [] });
+  const polled = await run(() => ipexPollCommand({ name, headDirPath, alias: "holder", timeout: 0.05 }));
+  assertEquals(polled, { batches: 0, messages: 0, ipex: [], saved: [] });
   await assertOperationThrows(
     ipexJoinCommand({ name, headDirPath, approvalTimeoutSeconds: 0.05 }),
     "No pending multisig IPEX proposal was available to join.",
@@ -211,19 +211,21 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
         yield* hby.close();
       }
     });
-    const output = await captureCommand(race([
-      ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
-      (function*() {
-        yield* sleep(5_000);
-        throw new Error("IPEX apply did not complete its queued delivery");
-      })(),
-    ]));
-    const result = JSON.parse(output.stdout);
+    const result = await run(() =>
+      race([
+        ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
+        (function*() {
+          yield* sleep(5_000);
+          throw new Error("IPEX apply did not complete its queued delivery");
+        })(),
+      ])
+    );
     assertEquals(messages.length, 1);
     assertEquals(messages[0].route, "/ipex/apply");
     assertEquals(messages[0].pre, src);
     assertEquals(messages[0].ked?.a, { m: "", s: src, a: {}, i: dest });
-    assertEquals(result, { said: messages[0].said, deliveries: [url] });
+    assertEquals(result.exn.said, messages[0].said);
+    assertEquals(result.deliveries, [url]);
     await run(function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, { readonly: true, skipConfig: true });
       try {
@@ -233,26 +235,19 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
       }
     });
     status = 503;
-    const harness = new CLITestHarness();
-    harness.captureOutput();
-    try {
-      const failure = await assertRejects(() =>
-        run(() =>
-          race([
-            ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
-            (function*() {
-              yield* sleep(5_000);
-              throw new Error("IPEX apply did not report its queued delivery failure");
-            })(),
-          ])
-        ), CesrHttpRefusal);
-      assertEquals(failure.status, 503);
-      assertEquals(messages.length, 2, "the failed command makes one attempt without automatic retry");
-      assertEquals(messages[1].route, "/ipex/apply");
-      assertEquals(harness.getOutput(), [], "a refused delivery cannot print command success");
-    } finally {
-      harness.restoreOutput();
-    }
+    const failure = await assertRejects(() =>
+      run(() =>
+        race([
+          ipexApplyCommand({ name, headDirPath, alias: "sender", recipient: dest, schema: src }),
+          (function*() {
+            yield* sleep(5_000);
+            throw new Error("IPEX apply did not report its queued delivery failure");
+          })(),
+        ])
+      ), CesrHttpRefusal);
+    assertEquals(failure.status, 503);
+    assertEquals(messages.length, 2, "the failed command makes one attempt without automatic retry");
+    assertEquals(messages[1].route, "/ipex/apply");
     await run(function*() {
       const hby = yield* setupHby(name, "", undefined, false, headDirPath, { readonly: true, skipConfig: true });
       try {
@@ -864,12 +859,12 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
     assertEquals(error.cause instanceof ShortageError, true);
     await assertRejects(() => Deno.stat(out), Deno.errors.NotFound);
     await Deno.writeFile(grantFile, wire);
-    const result = await captureCommand(ipexAdmitCommand(args));
-    assertEquals(result.code, 0);
+    const result = await run(() => ipexAdmitCommand(args));
     const admit = new SerderKERI({ raw: await Deno.readFile(out) });
     assertEquals(admit.route, "/ipex/admit");
     assertEquals(admit.ked?.p, said);
-    assertStringIncludes(result.stdout, said);
+    assertEquals(result.grant.said, said);
+    assertEquals(result.admit.said, admit.said);
   } finally {
     await Deno.remove(headDirPath, { recursive: true });
   }

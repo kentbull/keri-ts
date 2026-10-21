@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; checked against merged master `57b39666` (#632), 2026-10-20.
+Status: active; checked against merged master `b48c7dae` (#641), 2026-10-20.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -8,10 +8,10 @@ plan. This goal may finish when all other required work and qualification pass.
 
 ## Current state
 
-The previous **55% estimate is superseded by the native-v2 scope deferral**;
-remaining effort must be re-estimated against this reduced scope. Foundational
-refactors and operator fixes are merged. Legacy/group credential completion,
-organization and final qualification remain; no release-readiness claim is made.
+Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
+are implemented, including weighted and witnessed CLI restart evidence. IPEX,
+revocation, backer policy, verifier separation, organization and final qualification
+remain. Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -23,7 +23,7 @@ organization and final qualification remain; no release-readiness claim is made.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
 | CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
 | CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
-| Legacy credential lifecycle, backers, verifier separation                              | Not complete; acceptance criteria and order below.                                                                                                        |
+| IPEX/revocation, backer lifecycle, verifier separation                                 | Not complete; acceptance criteria and order below.                                                                                                        |
 | ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -42,7 +42,7 @@ Git/PRs own detailed history; this file owns current scope, order and gates.
 - Required: complete multisig approval/fanout throughout CLI credential workflows,
   legacy TEL replay, actual legacy group backer registries, verifier separation
   and package organization. KERI/CESR v2 work independent of native ACDC stays required.
-- Clarify hosted backer comments/help and the pending release note: optional
+- Hosted backer comments/help and the pending release note are clarified in #636: optional
   legacy/v1-style TEL backing (`vcp`/`vrt`/`bis`/`brv`) supplies indexed backer-quorum
   endorsements, separate from issuer multisig approval and KEL witnessing.
   Native ACDC v2 `rip`/`bup`/`upd` registries do not use or require this mechanism;
@@ -122,10 +122,10 @@ implementation PR before the next; split only for independent human review.
 | ------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation                                   |
 | R2           | Native partial proof #627 retained; hosted backer proof #629 complete. Native remainder deferred.                    | R1                                                    |
-| 13k          | Finish endpoint/DID/query and signed-event utility validation; preserve explicit values and field-specific defaults. | #621–624; after R1                                    |
-| 13 remainder | Durable exact-event group selection/resume after notification consumption.                                           | Reporting already merged                              |
-| 14           | Route or guard every group-capable command before effects.                                                           | 13k, 13 remainder                                     |
-| 15           | Complete group registry inception/issuance, approval and witness/TEL obligations.                                    | 14                                                    |
+| 13k          | Complete in #621–624 and #631–632: strict command input validation.                                                  | R1                                                    |
+| 13 remainder | Complete in #633–634 and #641: durable selection, proof reuse and interrupted-index replay.                          | Reporting already merged                              |
+| 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                | 13k, 13 remainder                                     |
+| 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31. | 14                                                    |
 | 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                                                    |
 | 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged                      |
 | 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                                                |
@@ -230,6 +230,11 @@ facade by name; add a domain owner only for the demonstrated work. Do not mark
 remain. Match reference completion semantics without describing fire-and-forget
 TEL publication or local transmission as remote acceptance. Prove remote state
 separately. Honor advertised establishment-only anchoring through rotation.
+
+Split cut 16 for human review: first return typed CLI results and move final
+presentation to Tufa; then clarify shared group approval/publication ownership;
+then enable the conversation verbs and credential grant/admit settlement. Keep
+signing, wire and acceptance changes separate from the ownership cuts.
 
 PR 16 applies group initiation to **apply, offer, agree, grant, admit and spurn**,
 reusing existing wrapped-IPEX approval, group-index signing, threshold aggregation
