@@ -14,9 +14,9 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { type ExchangeInput, Exchanger } from "../src/app/exchanging.ts";
-import { createHabery, type Hab } from "../src/app/habbing.ts";
-import { envelopeFromFrame } from "../src/app/parsering.ts";
+import { type ExchangeInput, Exchanger } from "../src/app/exchanges/exchanging.ts";
+import { createHabery, type Hab } from "../src/app/identity/habbing.ts";
+import { envelopeFromFrame } from "../src/app/protocol/parsering.ts";
 import { TransIdxSigGroup } from "../src/core/dispatch.ts";
 import { exchange } from "../src/core/protocol-exchanging.ts";
 

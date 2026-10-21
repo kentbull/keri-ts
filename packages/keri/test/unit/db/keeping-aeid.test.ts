@@ -1,8 +1,8 @@
 import { run } from "effection";
 import { assert, assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { b, t, Verfer } from "../../../../cesr/mod.ts";
-import { branToSeedAeid } from "../../../src/app/habbing.ts";
-import { Manager } from "../../../src/app/keeping.ts";
+import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
+import { Manager } from "../../../src/app/identity/keeping.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { createKeeper, type Keeper } from "../../../src/db/keeping.ts";
 

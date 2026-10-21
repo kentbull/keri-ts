@@ -3,23 +3,23 @@ import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { concatBytes, parseBytes, type SerderKERI } from "../../../../cesr/mod.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
-import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { collectBytes } from "../../../src/app/byte-source.ts";
-import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { waitForTelPublication } from "../../../src/app/cli/common/tel-completion.ts";
-import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credential-revoking.ts";
-import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
+import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
+import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex/ipex-credentialing.ts";
 import {
   approveMultisigIpex,
   publishInitialGroupIpex,
   sendCompletedGroupIpex,
-} from "../../../src/app/ipex-grouping.ts";
-import { ipexOfferExn, ipexSpurnExn } from "../../../src/app/ipexing.ts";
-import { approvePendingMultisigProposal } from "../../../src/app/multisig-workflows.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+} from "../../../src/app/ipex/ipex-grouping.ts";
+import { ipexOfferExn, ipexSpurnExn } from "../../../src/app/ipex/ipexing.ts";
+import { approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
+import { createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { collectBytes } from "../../../src/app/transport/byte-source.ts";
+import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
+import { waitForTelPublication } from "../../../src/cli/common/tel-completion.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createInteropContext, randomPort, spawnChild, withStartedChild } from "./interop-test-helpers.ts";
 import { selectedKeripyProfile } from "./keripy-runtime.ts";

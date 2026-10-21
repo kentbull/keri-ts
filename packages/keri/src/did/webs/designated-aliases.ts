@@ -13,7 +13,7 @@ import {
   Saider,
   type SerderACDC,
 } from "cesr-ts";
-import type { Hab, Habery } from "../../app/habbing.ts";
+import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemer } from "../../core/scheming.ts";
 import type { Baser } from "../../db/basing.ts";

@@ -6,7 +6,7 @@
  * `did:web`, but resolver comparison normalizes them back to `did:webs`.
  */
 import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "cesr-ts";
-import type { Habery } from "../../app/habbing.ts";
+import type { Habery } from "../../app/identity/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Kever } from "../../core/kever.ts";
 import { Roles } from "../../core/roles.ts";

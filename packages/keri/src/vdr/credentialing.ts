@@ -28,9 +28,9 @@ import {
   type Versionage,
   Vrsn_1_0,
 } from "cesr-ts";
-import type { Hab, Habery } from "../app/habbing.ts";
-import { resolveCachedSchema } from "../app/schema-resolving.ts";
-import { Verifier, type VerifierDecision } from "../app/verifying.ts";
+import { resolveCachedSchema } from "../app/credentials/schema-resolving.ts";
+import { Verifier, type VerifierDecision } from "../app/credentials/verifying.ts";
+import type { Hab, Habery } from "../app/identity/habbing.ts";
 import { attachmentCounterPayloadQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";

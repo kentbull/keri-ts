@@ -1,7 +1,7 @@
 /** Real mixed-language group approval through a pinned witness's ordinary mailbox. */
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import {
   createInteropContext,

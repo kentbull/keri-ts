@@ -100,7 +100,7 @@ reference material and historical reports.
 
 - `packages/keri/src/db/core/*`
   - LMDB/path internals and key encoding details.
-- `packages/keri/src/app/cli/*`
+- `packages/keri/src/cli/*`
   - Transitional source location for the remaining reusable non-host command
     implementation bodies only; the active runnable CLI, command tree, dispatch
     plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
@@ -192,15 +192,15 @@ reference material and historical reports.
 - Runtime persistence/LMDB:
   - `packages/keri/src/db/core`, `packages/keri/src/db/basing.ts`
 - ACDC/TEL/IPEX/verifier behavior:
-  - `packages/keri/src/vdr`, `packages/keri/src/app/ipexing.ts`,
-    `packages/keri/src/app/ipex-credentialing.ts`,
-    `packages/keri/src/app/verifying.ts`,
+  - `packages/keri/src/vdr`, `packages/keri/src/app/ipex/ipexing.ts`,
+    `packages/keri/src/app/ipex/ipex-credentialing.ts`,
+    `packages/keri/src/app/credentials/verifying.ts`,
     `packages/keri/src/app/verifier-agent.ts`
 - Delegation, multisig, and endpoint-role workflow:
-  - `packages/keri/src/app/delegating.ts`,
-    `packages/keri/src/app/grouping.ts`,
-    `packages/keri/src/app/endpoint-roleing.ts`,
-    `packages/keri/src/app/cli/multisig.ts`
+  - `packages/keri/src/app/identity/delegating.ts`,
+    `packages/keri/src/app/multisig/grouping.ts`,
+    `packages/keri/src/app/identity/endpoint-roleing.ts`,
+    `packages/keri/src/cli/messaging/multisig.ts`
 - CLI/server orchestration:
   - `packages/tufa/**`
 

@@ -7,9 +7,9 @@ import {
   settleMailboxAdminIngress,
   validateMailboxAuthorizationReply,
 } from "../../../../../tufa/src/http/protocol/endpoints/mailbox-admin.ts";
-import type { AgentRuntime } from "../../../../src/app/agent-runtime.ts";
-import { collectBytes } from "../../../../src/app/byte-source.ts";
-import type { CesrStreamInspection } from "../../../../src/app/cesr-http.ts";
+import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import { collectBytes } from "../../../../src/app/transport/byte-source.ts";
+import type { CesrStreamInspection } from "../../../../src/app/transport/cesr-http.ts";
 
 function inspectionFor(
   route: string,

@@ -17,8 +17,8 @@ import {
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery } from "../../../src/acdc/registraring.ts";
 import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
-import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/habbing.ts";
-import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
 import { receipt } from "../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";

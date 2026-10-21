@@ -1,6 +1,6 @@
 import { action, type Operation } from "effection";
 import { t } from "../../../../cesr/mod.ts";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
 import { resolveKeripyRuntime } from "./interop-test-helpers.ts";
 
 /** Exit status and decoded diagnostics from one CLI invocation. */

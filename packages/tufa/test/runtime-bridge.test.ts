@@ -1,4 +1,4 @@
-import { systemClock } from "../../keri/src/app/runtime-clock.ts";
+import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 

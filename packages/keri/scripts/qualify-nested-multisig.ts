@@ -1,16 +1,16 @@
 /** Qualify actual multisig builders, accepted exchange storage, and replay against frozen Python927. */
 import { b, type CesrFrame, concatBytes, Counter, Kinds, parseBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
-import { Exchanger } from "../src/app/exchanging.ts";
+import { Exchanger } from "../src/app/exchanges/exchanging.ts";
+import { createHabery } from "../src/app/identity/habbing.ts";
 import {
   loadMultisigHandlers,
   multisigInceptExn,
   multisigInteractExn,
   multisigRotateExn,
   multisigRpyExn,
-} from "../src/app/grouping.ts";
-import { createHabery } from "../src/app/habbing.ts";
-import { envelopeFromFrame } from "../src/app/parsering.ts";
+} from "../src/app/multisig/grouping.ts";
+import { envelopeFromFrame } from "../src/app/protocol/parsering.ts";
 
 /** Require explicit executable selection independently of shell PATH. */
 const python = Deno.args[0];

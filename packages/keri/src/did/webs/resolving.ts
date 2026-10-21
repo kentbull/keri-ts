@@ -4,14 +4,14 @@
  * Resolution succeeds only when hosted `did.json` matches the DID document
  * regenerated from the fetched `keri.cesr` KERI/VDR stream.
  */
-import type { HttpStreamResponse } from "../../app/http-client.ts";
-import { TransportError } from "../../app/transport-error.ts";
+import type { HttpStreamResponse } from "../../app/transport/http-client.ts";
+import { TransportError } from "../../app/transport/transport-error.ts";
 
 import { call, type Operation, resource, scoped } from "effection";
-import { abortable } from "../../app/abortable.ts";
-import { collectBytes } from "../../app/byte-source.ts";
-import { type HttpClient } from "../../app/http-client.ts";
-import type { Reactor } from "../../app/reactor.ts";
+import type { Reactor } from "../../app/protocol/reactor.ts";
+import { abortable } from "../../app/runtime/abortable.ts";
+import { collectBytes } from "../../app/transport/byte-source.ts";
+import { type HttpClient } from "../../app/transport/http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { pinDesignatedAliasesSchema } from "./designated-aliases.ts";

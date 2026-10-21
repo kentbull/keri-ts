@@ -1,8 +1,8 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { IdrDex, SerderKERI } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { Reactor } from "../../../src/app/reactor.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import { type KeverEventEnvelope, Kevery } from "../../../src/core/eventing.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
 

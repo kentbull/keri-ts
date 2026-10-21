@@ -2,8 +2,8 @@
 import { Compactor, Kinds, type MapperMap, NonceDex, Noncer, type SerderACDC } from "cesr-ts";
 import { assertEquals } from "jsr:@std/assert";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
-import type { Hab, Habery } from "../../../../src/app/habbing.ts";
-import type { DisclosurePlan } from "../../../../src/app/ipex-graph.ts";
+import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 
 /** Build a full commitment and its status-only partial with identical SAIDs. */

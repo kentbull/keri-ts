@@ -30,8 +30,8 @@ import { decodeB64 } from "../../../../cesr/src/core/bytes.ts";
 import { hexWire } from "../../../../cesr/test/fixtures/current-reference-vectors.ts";
 import vectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
 import { KERIPY_NATIVE_V2_ICP_FIX_BODY } from "../../../../cesr/test/fixtures/external-vectors.ts";
-import { encodeHugeNumber, Manager } from "../../../src/app/keeping.ts";
-import { envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { encodeHugeNumber, Manager } from "../../../src/app/identity/keeping.ts";
+import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import {
   KeriDispatchEnvelope,
   PathedMaterialGroup,

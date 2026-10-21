@@ -14,27 +14,27 @@ query before it can verify signatures from the newly active key state.
 
 ## Module Map
 
-- `packages/keri/src/app/cli/sign.ts`
+- `packages/keri/src/cli/tools/sign.ts`
   - CLI surface for signing UTF-8 text or `@file` contents.
-- `packages/keri/src/app/cli/verify.ts`
+- `packages/keri/src/cli/tools/verify.ts`
   - CLI surface for verifying indexed signatures against locally accepted state.
-- `packages/keri/src/app/cli/query.ts`
+- `packages/keri/src/cli/query.ts`
   - Bounded command runtime that drives query continuations, transport, mailbox
     polling, and optional catch-up replay fallback before printing state.
-- `packages/keri/src/app/cli/interact.ts`
+- `packages/keri/src/cli/identity/interact.ts`
   - CLI surface for authoring one local `ixn` and optionally converging witness
     receipts.
-- `packages/keri/src/app/querying.ts`
+- `packages/keri/src/app/queries/querying.ts`
   - Query correspondence layer: `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier`,
     `AnchorQuerier`, and `QueryCoordinator`.
-- `packages/keri/src/app/habbing.ts`
+- `packages/keri/src/app/identity/habbing.ts`
   - `Hab.rotate(...)`, `Hab.interact(...)`, event builders, local acceptance,
     and keeper rollback.
-- `packages/keri/src/app/reactor.ts`
+- `packages/keri/src/app/protocol/reactor.ts`
   - Awaited source/byte ingress, including mailbox and OOBI intake.
-- `packages/keri/src/app/protocol-processing.ts`
+- `packages/keri/src/app/protocol/protocol-processing.ts`
   - Serialized dispatch, reply capture, escrow advancement and cue publication.
-- `packages/keri/src/app/http-messenger.ts` and `tcp-messenger.ts`
+- `packages/keri/src/app/transport/http-messenger.ts` and `tcp-messenger.ts`
   - Request-owned response intake through an input-specific parser and Kevery.
 - `packages/tufa/src/http/protocol-handler.ts`
   - HTTP ingress and request-owned replies; queued output is delivered by Poster.

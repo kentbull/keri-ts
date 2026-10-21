@@ -70,15 +70,15 @@ pinned legacy Oobiery implementations and main. This is separate from ordinary
 POST's `application/cesr` / `application/cesr+json` header-media choices; it does
 not change signed event bytes or select a protocol/body version.
 
-**Bridge.** [CESR HTTP helpers](../../../packages/keri/src/app/cesr-http.ts)
+**Bridge.** [CESR HTTP helpers](../../../packages/keri/src/app/transport/cesr-http.ts)
 recognize both media types, including parameters. In
-[CESR egress](../../../packages/keri/src/app/cesr-egress.ts), `isLegacyCesrMediaRejection`
+[CESR egress](../../../packages/keri/src/app/transport/cesr-egress.ts), `isLegacyCesrMediaRejection`
 allows one alternative only when `CESR-ATTACHMENT` is present, status is 406,
 the attempted type is `application/cesr`, and the JSON refusal has the pinned Falcon
 `Content type error` title and `Unacceptable content type.` description. Mailbox
 polling shares that predicate and reuses the signed query after joined response
 cleanup; unrelated refusals cannot cause an alternate submission.
-[Witness receipt POST](../../../packages/keri/src/app/witnessing.ts) has the same
+[Witness receipt POST](../../../packages/keri/src/app/witness/witnessing.ts) has the same
 type fallback at its owner.
 
 G1's [HTTP parser](https://github.com/GLEIF-IT/keripy/blob/b8626e1d58770a4a480ea72a01acc5580278a9f2/src/keri/app/httping.py)
@@ -96,18 +96,18 @@ has no second media choice. Do not assume every HTTP caller uses the fallback:
 direct mailbox polling through `requestWithHeaderTimeout` is a separate path.
 The [HTTP ownership contract](../../design-docs/runtime/INGRESS_AND_EGRESS.md#http-ownership)
 explains finite versus scoped responses and ordinary-send versus query intake.
-Evidence: [media recognition/framing](../../../packages/keri/test/unit/app/cesr-http.test.ts),
-[header fallback and body refusal](../../../packages/keri/test/unit/app/cesr-egress.test.ts),
-[per-frame fallback with authorization](../../../packages/keri/test/unit/app/witness-transport.test.ts).
+Evidence: [media recognition/framing](../../../packages/keri/test/unit/app/transport/cesr-http.test.ts),
+[header fallback and body refusal](../../../packages/keri/test/unit/app/transport/cesr-egress.test.ts),
+[per-frame fallback with authorization](../../../packages/keri/test/unit/app/witness/witness-transport.test.ts).
 
 ### COMP-02 — Detached and full-body HTTP framing
 
-**Coexistence.** [CESR HTTP helpers](../../../packages/keri/src/app/cesr-http.ts)
+**Coexistence.** [CESR HTTP helpers](../../../packages/keri/src/app/transport/cesr-http.ts)
 default to one body plus detached `CESR-ATTACHMENT`, reconstruct inbound wire in
 order, and expose explicit full-body/stream requests. Header-mode sending prepares
 one complete frame per HTTP request. Full-body mode is a supported TS integration,
 not a universally portable replacement for the Python detached convention.
-Evidence: [CESR HTTP framing tests](../../../packages/keri/test/unit/app/cesr-http.test.ts).
+Evidence: [CESR HTTP framing tests](../../../packages/keri/test/unit/app/transport/cesr-http.test.ts).
 
 ### COMP-03 — Independent body and attachment versions
 
@@ -152,29 +152,29 @@ Selecting counter output is not reissuing or rewriting a signed event. Native
 body conversion has its own restrictions and must not be presented as a generic
 byte-preserving protocol downgrade. Evidence:
 [protocol serialization](../../../packages/keri/test/unit/core/protocol-serialization.test.ts)
-and [replay sources](../../../packages/keri/test/unit/app/replay-source.test.ts).
+and [replay sources](../../../packages/keri/test/unit/app/delivery/replay-source.test.ts).
 
 ### COMP-07 — Version-aware forwarding envelopes
 
-**Coexistence.** [Poster forwarding construction](../../../packages/keri/src/app/forwarding.ts)
+**Coexistence.** [Poster forwarding construction](../../../packages/keri/src/app/delivery/forwarding.ts)
 uses legacy pathed embeds for legacy children and a v2 `/fwd` binding one nested
 child to signed `a.evt` when the child body or genus requires v2. Preserve the
 child's own signatures; the forwarding signature is not child authentication.
 This resembles W2's separate Poster/StreamPoster paths; it does not discover an
 old mailbox's capabilities. Evidence:
-[legacy/v2 forwarding shapes](../../../packages/keri/test/unit/app/forwarding.test.ts)
-and [nested exchange acceptance](../../../packages/keri/src/app/exchanging.ts).
+[legacy/v2 forwarding shapes](../../../packages/keri/test/unit/app/delivery/forwarding.test.ts)
+and [nested exchange acceptance](../../../packages/keri/src/app/exchanges/exchanging.ts).
 
 ### COMP-08 — Multisig child genus survives approval and replay
 
-**Bridge.** [Grouping](../../../packages/keri/src/app/grouping.ts) preserves
+**Bridge.** [Grouping](../../../packages/keri/src/app/multisig/grouping.ts) preserves
 `childGvrsn` separately from the wrapper. A v1 wrapper carries signed `a.cgvrsn`
 only when its legacy child body does not declare the differing genus. An explicit
 child genus wins over the hint; a hint applies to carried child attachments.
 Approval, reopen/retry and KEL/reply/TEL/credential intake must agree on that
 context. Do not retrofit a hint into an already signed proposal. Evidence:
-[grouping and malformed hints](../../../packages/keri/test/unit/app/grouping.test.ts),
-[mixed-genus approval and replay](../../../packages/keri/test/unit/app/grouping-nests.test.ts)
+[grouping and malformed hints](../../../packages/keri/test/unit/app/multisig/grouping.test.ts),
+[mixed-genus approval and replay](../../../packages/keri/test/unit/app/multisig/grouping-nests.test.ts)
 and [independent 714 vectors](../../../packages/keri/test/fixtures/multisig-framing-714.json).
 
 ### COMP-09 — Preserve the legacy credential lane
@@ -191,13 +191,13 @@ and [disclosure interop](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.
 ### COMP-10 — Version-specific IPEX and nested-route gates
 
 **Coexistence and guard.** [Exchange construction](../../../packages/keri/src/core/protocol-exchanging.ts),
-[legacy IPEX](../../../packages/keri/src/app/ipexing.ts) and
-[v2 IPEX](../../../packages/keri/src/app/ipex-v2.ts) retain different shapes and
+[legacy IPEX](../../../packages/keri/src/app/ipex/ipexing.ts) and
+[v2 IPEX](../../../packages/keri/src/app/ipex/ipex-v2.ts) retain different shapes and
 predecessor rules. In particular, v2 grant can follow apply or agree; v1's
 prior-route rule remains distinct. Nested exchange support is route-specific;
 decoding a v2 child does not enable every application route. Evidence:
-[v1 IPEX](../../../packages/keri/test/unit/app/ipexing.test.ts),
-[v2 IPEX](../../../packages/keri/test/unit/app/ipex-v2.test.ts)
+[v1 IPEX](../../../packages/keri/test/unit/app/ipex/ipexing.test.ts),
+[v2 IPEX](../../../packages/keri/test/unit/app/ipex/ipex-v2.test.ts)
 and [disclosure interop limitations](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md).
 
 ### COMP-11 — Explicit KRAM adoption without a downgrade escape

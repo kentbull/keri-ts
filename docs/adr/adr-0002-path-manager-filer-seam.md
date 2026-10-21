@@ -6,7 +6,7 @@
 - Related:
   - `packages/keri/src/db/core/path-manager.ts`
   - `packages/keri/src/db/core/lmdber.ts`
-  - `packages/keri/src/app/configing.ts`
+  - `packages/keri/src/app/identity/configing.ts`
 
 ## Context
 

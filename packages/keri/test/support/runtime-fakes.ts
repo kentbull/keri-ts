@@ -1,10 +1,10 @@
 import type { Operation } from "effection";
 import { createTufaApp } from "../../../tufa/src/http/app.ts";
-import type { AgentRuntime } from "../../src/app/agent-runtime.ts";
-import type { HttpRequestInit, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
-import type { HttpClient } from "../../src/app/http-client.ts";
-import type { ProtocolHostPolicy } from "../../src/app/protocol-host-policy.ts";
-import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime-clock.ts";
+import type { ProtocolHostPolicy } from "../../src/app/protocol/protocol-host-policy.ts";
+import type { AgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
+import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime/runtime-clock.ts";
+import type { HttpRequestInit, HttpResponse, HttpStreamResponse } from "../../src/app/transport/http-client.ts";
+import type { HttpClient } from "../../src/app/transport/http-client.ts";
 
 import { httpClient } from "./http-client.ts";
 

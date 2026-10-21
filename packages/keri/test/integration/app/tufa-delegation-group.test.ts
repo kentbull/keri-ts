@@ -10,14 +10,14 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Counter, CtrDexV1, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
+import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/identity/delegating.ts";
+import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import {
   createAgentRuntime,
   settleRuntimeIngress,
-} from "../../../src/app/agent-runtime.ts";
-import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+} from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";

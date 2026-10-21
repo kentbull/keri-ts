@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { randomPort } from "./interop-test-helpers.ts";

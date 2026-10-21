@@ -2,7 +2,7 @@
 import { call, run, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import process from "node:process";
-import { readPasscode } from "../../src/app/cli/common/passcode.ts";
+import { readPasscode } from "../../src/cli/common/passcode.ts";
 
 const input = process.stdin;
 input.setRawMode(true); // The prompt must restore a caller's already-raw mode too.

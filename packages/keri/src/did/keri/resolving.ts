@@ -1,7 +1,7 @@
 /**
  * `did:keri` projection from accepted local state.
  */
-import type { Habery } from "../../app/habbing.ts";
+import type { Habery } from "../../app/identity/habbing.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { parseDidKeriIdentifier } from "../webs/dids.ts";
 import {

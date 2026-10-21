@@ -5,18 +5,18 @@ completion/genus rules and the [evidence contract](CESR_PROGRESSIVE_PARSER_CONTR
 for codec and ESSR semantics. One finite decoder serves complete input and the
 buffered receiving loop.
 
-| Module                    | Responsibility                                                            |
-| ------------------------- | ------------------------------------------------------------------------- |
-| parser/decoder.ts         | Decode complete finite ranges, enclosure bounds and local genus scopes.   |
-| parser/parser.ts          | Accumulate fragments and request more bytes on shortage; join the source. |
-| parser/complete.ts        | Synchronous parseBytes through the same finite decoder.                   |
-| parser/body.ts            | Decode native, non-native or opaque body framing.                         |
-| parser/attachments.ts     | Hydrate finite v1/v2 evidence leaves and tuples.                          |
-| parser/essr.ts            | Derive raw/qualified byte views from ordered Texters.                     |
-| primitives/texter.ts      | Validate qualification and zero lead padding.                             |
-| parser/serialize.ts       | Derive output counters and lengths from complete evidence.                |
-| annotate/render.ts        | Render each node within its original wire scope.                          |
-| keri/src/app/parsering.ts | Project hydrated values into protocol envelopes.                          |
+| Module                             | Responsibility                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------- |
+| parser/decoder.ts                  | Decode complete finite ranges, enclosure bounds and local genus scopes.   |
+| parser/parser.ts                   | Accumulate fragments and request more bytes on shortage; join the source. |
+| parser/complete.ts                 | Synchronous parseBytes through the same finite decoder.                   |
+| parser/body.ts                     | Decode native, non-native or opaque body framing.                         |
+| parser/attachments.ts              | Hydrate finite v1/v2 evidence leaves and tuples.                          |
+| parser/essr.ts                     | Derive raw/qualified byte views from ordered Texters.                     |
+| primitives/texter.ts               | Validate qualification and zero lead padding.                             |
+| parser/serialize.ts                | Derive output counters and lengths from complete evidence.                |
+| annotate/render.ts                 | Render each node within its original wire scope.                          |
+| keri/src/app/protocol/parsering.ts | Project hydrated values into protocol envelopes.                          |
 
 ## Follow a message
 

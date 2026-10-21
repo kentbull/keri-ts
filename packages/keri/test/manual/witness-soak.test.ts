@@ -1,6 +1,6 @@
 /** Six KERIpy witnesses, threshold six, inception and two rotations; explicit manual selection only. */
 import { run } from "npm:effection@^3.6.0";
-import { createHabery } from "../../src/app/habbing.ts";
+import { createHabery } from "../../src/app/identity/habbing.ts";
 import {
   createInteropContext,
   extractPrefix,

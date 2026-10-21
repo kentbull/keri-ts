@@ -33,11 +33,10 @@ const CLI_DEFINITION_ROOT = "packages/tufa/src/cli/command-definitions";
 
 const scopes: Scope[] = [
   { name: "tufa cli", root: "packages/tufa/src/cli" },
-  { name: "keri cli operations", root: "packages/keri/src/app/cli" },
+  { name: "keri cli operations", root: "packages/keri/src/cli" },
   {
     name: "keri app services",
     root: "packages/keri/src/app",
-    exclude: (path) => path.startsWith("packages/keri/src/app/cli/"),
   },
   { name: "keri core", root: "packages/keri/src/core" },
   { name: "keri database", root: "packages/keri/src/db" },

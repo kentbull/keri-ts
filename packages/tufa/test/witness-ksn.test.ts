@@ -7,8 +7,8 @@ import {
   settleRuntimeIngress,
   witnessReceiptPost,
 } from "keri-ts/runtime";
-import { FetchHttpClient } from "../../keri/src/app/http-client.ts";
-import { systemClock } from "../../keri/src/app/runtime-clock.ts";
+import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../keri/src/app/transport/http-client.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";
 
 Deno.test("tufa witness KSN requires destination and receipts and independently verifies endorsed state", async () => {

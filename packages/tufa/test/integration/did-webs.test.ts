@@ -9,8 +9,8 @@ import {
   resolveDidWebs,
   runAgentRuntime,
 } from "keri-ts/runtime";
-import { FetchHttpClient } from "../../../keri/src/app/http-client.ts";
-import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
+import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
 import { httpClient } from "../../../keri/test/support/http-client.ts";
 import { startServer } from "../../src/host/http-server.ts";
 import { createProtocolHandler } from "../../src/http/protocol-handler.ts";

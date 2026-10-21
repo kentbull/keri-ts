@@ -1,0 +1,636 @@
+/**
+ * Runtime-composed mailbox publication, query, and stream coordination.
+ *
+ * KERIpy correspondence:
+ * - gathers responsibilities that KERIpy spreads across `Mailboxer`,
+ *   mailbox iterables, and indirect-mode query handling
+ *
+ * Boundary rule:
+ * - this module is mailbox storage/query infrastructure, not the general
+ *   responder path
+ * - non-`stream` cue delivery such as `reply`, `replay`, `receipt`, and
+ *   `witness` belongs in `Respondant`
+ *
+ * Current `keri-ts` difference:
+ * - one runtime host receives an explicit mailbox sidecar instead of
+ *   discovering mailbox storage through `Habery`
+ */
+import type { AgentCue, StreamCue } from "../../core/cues.ts";
+import { Deck } from "../../core/deck.ts";
+import { ValidationError } from "../../core/errors.ts";
+import type { MbxTopicCursor } from "../../core/mailbox-topics.ts";
+import type { Mailboxer } from "../../db/mailboxing.ts";
+import type { Habery } from "../identity/habbing.ts";
+import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
+
+/** Shared encoder for SSE mailbox stream framing. */
+const textEncoder = new TextEncoder();
+/** Transport pull granularity; it does not restrict complete mailbox message size. */
+const STREAM_CHUNK_BYTES = 65536;
+
+/**
+ * Provider SSE response timing; these settings do not control remote poll consumers.
+ */
+interface MailboxStreamOptions {
+  /**
+   * SSE reconnect hint in milliseconds; default 5000, zero allowed.
+   */
+  retryMs?: number;
+  /**
+   * Native timer interval for new local rows/cues; default 50 milliseconds, strictly positive.
+   */
+  pollIntervalMs?: number;
+  /**
+   * Direct-stream idle expiry in milliseconds; default 2000, null disables expiry.
+   */
+  idleTimeoutMs?: number | null;
+  /**
+   * Emit the initial retry hint; default true. Nested query readers suppress a duplicate hint.
+   */
+  emitRetryHeader?: boolean;
+}
+
+/**
+ * Mailbox topic director for one runtime host.
+ *
+ * Responsibilities:
+ * - retain mailbox stream requests so protocol hosts can answer `mbx` queries
+ * - expose ordered topic iteration backed by the dedicated `Mailboxer` and
+ *   durable remote cursor state in `tops.`
+ * - publish only explicitly forwarded mailbox payloads such as authorized
+ *   `/fwd` deliveries
+ *
+ * Non-responsibilities:
+ * - do not absorb generic non-`stream` cue emissions as implicit local mailbox
+ *   side effects
+ * - do not replace `Respondant` / `Poster` endpoint delivery
+ *
+ * KERIpy correspondence:
+ * - coordinates the storage/query slice around `Mailboxer` and
+ *   `MailboxIterable`
+ */
+export class MailboxDirector {
+  /**
+   * Borrowed local identities and accepted-state stores.
+   */
+  readonly hby: Habery;
+  /**
+   * Borrowed provider mailbox store, or null when this host cannot serve stored messages.
+   */
+  readonly mailboxer: Mailboxer | null;
+  /** Exclusive correlation ownership; external producers append but do not take/release query owners. */
+  readonly queryCues: Deck<AgentCue>;
+  /**
+   * Registered protocol topics, copied from construction input and extended by registerTopic.
+   */
+  readonly topics: Set<string>;
+  /**
+   * Live response finalizers joined before the provider store can close.
+   */
+  private readonly streamCleanups = new Set<() => Promise<void>>();
+  /**
+   * Terminal stream/correlation admission state.
+   */
+  private closed = false;
+
+  /**
+   * Compose provider publication and request-owned stream tracking.
+   * Absent mailboxer disables storage/serving; correlation and topic registration
+   * remain available. A new query Deck is created only when none is supplied.
+   *
+   * @param hby Borrowed local identities and accepted-state stores.
+   * @param options Optional borrowed mailbox store, exclusive query-cue Deck and initial topics; no store is opened.
+   */
+  constructor(
+    hby: Habery,
+    {
+      mailboxer,
+      queryCues,
+      topics = [],
+    }: {
+      mailboxer?: Mailboxer;
+      queryCues?: Deck<AgentCue>;
+      topics?: readonly string[];
+    } = {},
+  ) {
+    this.hby = hby;
+    this.mailboxer = mailboxer ?? null;
+    this.queryCues = queryCues ?? new Deck<AgentCue>();
+    this.topics = new Set(topics);
+  }
+
+  /**
+   * Register one mailbox topic this runtime should poll/stream.
+   *
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   */
+  registerTopic(topic: string): void {
+    if (topic.length > 0) {
+      this.topics.add(topic);
+    }
+  }
+
+  /**
+   * Snapshot the currently configured mailbox topic set.
+   *
+   * @returns Independent array snapshot of the configured topic set.
+   */
+  registeredTopics(): string[] {
+    return [...this.topics];
+  }
+
+  /** Stop every request-owned mailbox stream before its backing store closes. */
+  async close(): Promise<void> {
+    this.closed = true;
+    const outcomes = await Promise.allSettled(
+      [...this.streamCleanups].map((cleanup) => Promise.resolve().then(cleanup)),
+    );
+    const failures = outcomes.flatMap((result) => result.status === "rejected" ? [result.reason] : []);
+    try {
+      this.queryCues.clear();
+    } catch (error) {
+      if (!failures.includes(error)) failures.push(error);
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length) throw new AggregateError(failures, "Mailbox stream cleanup failed");
+  }
+
+  /**
+   * Validate exact cursor ordinals before copying the caller's query positions.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topics Topic-to-next-wanted ordinal map; each value must be a nonnegative safe integer.
+   * @returns A copied cursor map owned by this response.
+   * @throws RangeError for malformed prefix/map/ordinals.
+   */
+  private cursor(pre: string, topics: MbxTopicCursor): MbxTopicCursor {
+    if (typeof pre !== "string" || !topics || typeof topics !== "object" || Array.isArray(topics)) {
+      throw new RangeError("Invalid mailbox topic metadata");
+    }
+    for (const topic in topics) {
+      if (!Object.hasOwn(topics, topic)) continue;
+      if (!Number.isSafeInteger(topics[topic]) || topics[topic] < 0) {
+        throw new RangeError("Invalid mailbox topic cursor");
+      }
+    }
+    return { ...topics };
+  }
+
+  /**
+   * Queue a query cue for correlation with its mailbox response.
+   *
+   * @param cue Authorized stream request produced by protocol processing; the director owns later correlation consumption.
+   */
+  retainQueryCue(
+    cue: StreamCue,
+  ): void {
+    if (this.closed) throw new Error("Mailbox query correlation is closed");
+    this.queryCues.push(cue);
+  }
+
+  /**
+   * Persist one outbound mailbox payload under the ordered topic bucket for
+   * `pre/topic`.
+   *
+   * The returned index is the newly assigned mailbox event id for that topic.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   * @param msg Complete already-authorized wire message to persist under this recipient/topic.
+   * @returns Assigned mailbox index; persistence is not remote consumption.
+   */
+  publish(pre: string, topic: string, msg: Uint8Array): number {
+    const idx = this.lastIndex(pre, topic) + 1;
+    this.requireMailboxer().storeMsg(mailboxTopicKey(pre, topic), msg);
+    return idx;
+  }
+
+  /**
+   * Return the latest stored publication index for one topic, or `-1`.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   * @returns Latest stored insertion ordinal, or -1 for an empty topic.
+   */
+  lastIndex(pre: string, topic: string): number {
+    const count = this.requireMailboxer().tpcs.cntOn(
+      mailboxTopicKey(pre, topic),
+    );
+    return count > 0 ? count - 1 : -1;
+  }
+
+  /**
+   * Return ordered topic payloads starting at the provided insertion index.
+   *
+   * The returned index is the mailbox event id that should be reflected in the
+   * SSE `id:` field for the emitted message.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   * @param from Inclusive insertion ordinal; default zero.
+   * @returns Synchronous iterator of ordinal/message pairs in storage order.
+   */
+  *topicIter(
+    pre: string,
+    topic: string,
+    from = 0,
+  ): Generator<{ idx: number; msg: Uint8Array }> {
+    for (
+      const [idx, , msg] of this.requireMailboxer().cloneTopicIter(
+        mailboxTopicKey(pre, topic),
+        from,
+      )
+    ) {
+      yield { idx, msg };
+    }
+  }
+
+  /**
+   * Return a server-sent-event stream over mailbox topics until the idle window
+   * expires.
+   *
+   * SSE policy:
+   * - emit one initial `retry:` hint
+   * - stream ordered mailbox payloads as `id/event/data`
+   * - close once the idle window expires without new mailbox traffic
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param topicCursor Next wanted insertion ordinal for each requested topic; copied before streaming.
+   * @param options SSE retry hint, local polling interval, optional idle expiry and initial hint selection.
+   * @returns Demand-driven response tracked until EOF, cancellation or director close.
+   */
+  streamMailbox(
+    pre: string,
+    topicCursor: MbxTopicCursor,
+    options: MailboxStreamOptions = {},
+  ): ReadableStream<Uint8Array> {
+    if (this.closed) throw new Error("Mailbox stream is closed");
+    return this.mailboxStream(pre, this.cursor(pre, topicCursor), options, true);
+  }
+
+  /**
+   * Own one demand-driven mailbox reader; query responses join their nested reader themselves.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param cursors Response-owned next-wanted ordinals, advanced as rows are framed.
+   * @param options Millisecond retry/poll/idle settings; null idle timeout keeps the response open.
+   * @param tracked Track direct responses here; nested query responses are joined by their outer owner.
+   * @returns SSE bytes in 64 KiB chunks; database iterators close before awaiting HTTP demand.
+   */
+  private mailboxStream(
+    pre: string,
+    cursors: MbxTopicCursor,
+    {
+      retryMs = 5000,
+      pollIntervalMs = 50,
+      idleTimeoutMs = 2000,
+      emitRetryHeader = true,
+    }: MailboxStreamOptions,
+    tracked: boolean,
+  ): ReadableStream<Uint8Array> {
+    for (const value of [retryMs, pollIntervalMs, idleTimeoutMs]) {
+      if (value !== null && (!Number.isSafeInteger(value) || value < 0)) {
+        throw new RangeError("Invalid mailbox stream timing");
+      }
+    }
+    if (pollIntervalMs < 1) throw new RangeError("Mailbox poll interval must be positive");
+    let closed = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let wake: (() => void) | undefined;
+    let stream: ReadableStreamDefaultController<Uint8Array>;
+    let retry = emitRetryHeader;
+    let parts: Uint8Array[] = [];
+    let offset = 0;
+    let idleSince: number | undefined;
+    let pending: Promise<void> | undefined;
+    let closing: Promise<void> | undefined;
+    /** Closing wakes a pending pull before its database owner is released. */
+    const stop = () => {
+      if (closed) return;
+      closed = true;
+      if (timer !== undefined) clearTimeout(timer);
+      wake?.();
+      parts = [];
+    };
+    /** Remove this direct stream from shutdown tracking after its pending pull settles. */
+    const finish = () => {
+      this.streamCleanups.delete(close);
+    };
+    /** Wake and join the pending pull once before forgetting this response owner. */
+    const cleanup = (): Promise<void> => {
+      stop();
+      return closing ??= Promise.resolve(pending).finally(finish);
+    };
+    /** Runtime shutdown completes the response even when its consumer still holds a reader. */
+    const close = (): Promise<void> => {
+      if (!closed) {
+        stop();
+        stream.close();
+      }
+      return cleanup();
+    };
+    const readable = new ReadableStream<Uint8Array>({
+      /**
+       * Bind the Web stream controller before response demand begins.
+       *
+       * @param controller Web response controller retained for later pulls/shutdown.
+       */
+      start(controller) {
+        stream = controller;
+      },
+      pull: async (controller) => {
+        let finished!: () => void;
+        pending = new Promise<void>((resolve) => {
+          finished = resolve;
+        });
+        try {
+          if (retry) {
+            retry = false;
+            controller.enqueue(textEncoder.encode(`retry: ${retryMs}\n\n`));
+            return;
+          }
+          while (!closed) {
+            if (parts.length) {
+              const part = parts[0];
+              const end = Math.min(part.length, offset + STREAM_CHUNK_BYTES);
+              controller.enqueue(part.slice(offset, end));
+              offset = end;
+              if (offset === part.length) {
+                parts.shift();
+                offset = 0;
+              }
+              return;
+            }
+            for (const [topic, start] of Object.entries(cursors)) {
+              // Take one stored item, then release the LMDB iterator before suspending on HTTP demand.
+              const items = this.topicIter(pre, topic, start);
+              let item: { idx: number; msg: Uint8Array } | undefined;
+              try {
+                item = items.next().value;
+              } finally {
+                items.return(undefined);
+              }
+              if (!item) continue;
+              parts = [
+                textEncoder.encode(`id: ${item.idx}\nevent: ${topic}\nretry: ${retryMs}\ndata: `),
+                item.msg,
+                textEncoder.encode("\n\n"),
+              ];
+              cursors[topic] = item.idx + 1;
+              idleSince = undefined;
+              break;
+            }
+            if (parts.length) continue;
+            idleSince ??= Date.now();
+            if (idleTimeoutMs !== null && Date.now() - idleSince >= idleTimeoutMs) {
+              stop();
+              controller.close();
+              return;
+            }
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              timer = setTimeout(resolve, pollIntervalMs);
+            });
+            wake = undefined;
+            timer = undefined;
+          }
+        } catch (error) {
+          if (!closed) {
+            stop();
+            controller.error(error);
+          }
+        } finally {
+          finished();
+          pending = undefined;
+          if (closed) finish();
+        }
+      },
+      cancel: cleanup,
+    }, { highWaterMark: 0 });
+    if (tracked) this.streamCleanups.add(close);
+    return readable;
+  }
+
+  /**
+   * Return a KERIpy-style long-lived SSE response for one posted `qry`.
+   *
+   * Correlation rule:
+   * - emit the initial `retry:` hint immediately
+   * - wait until a matching `stream` cue for the query SAID appears
+   * - once matched, proxy the normal mailbox iterable for that cue
+   *
+   * This mirrors KERIpy `QryRpyMailboxIterable` ownership closely: the HTTP
+   * route does not guess mailbox topics itself; it waits for mailbox query
+   * correlation to tell it what to stream.
+   *
+   * @param said Query SAID used to locate an already-authorized stream cue; correlation alone is not authorization.
+   * @param options Retry hint and query-cue polling interval in milliseconds; defaults 5000 and 50.
+   * @returns Request-owned SSE response that waits for its cue then proxies an unbounded mailbox reader.
+   */
+  streamQueryResponse(
+    said: string,
+    { retryMs = 5000, pollIntervalMs = 50 }: Pick<MailboxStreamOptions, "retryMs" | "pollIntervalMs"> = {},
+  ): ReadableStream<Uint8Array> {
+    if (this.closed) throw new Error("Mailbox query correlation is closed");
+    if (typeof said !== "string") throw new RangeError("Invalid mailbox query SAID");
+    if (!Number.isSafeInteger(retryMs) || retryMs < 0 || !Number.isSafeInteger(pollIntervalMs) || pollIntervalMs < 1) {
+      throw new RangeError("Invalid mailbox query timing");
+    }
+    let closed = false;
+    let retry = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let wake: (() => void) | undefined;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+    let selected: AgentCue | undefined;
+    let pending: Promise<ReadableStreamReadResult<Uint8Array>> | undefined;
+    let closing: Promise<void> | undefined;
+    let stream: ReadableStreamDefaultController<Uint8Array>;
+    /** Stop cue polling and join the single nested read before releasing its reader. */
+    const cleanup = (): Promise<void> => {
+      if (closing) return closing;
+      closed = true;
+      if (timer !== undefined) clearTimeout(timer);
+      wake?.();
+      closing = (async () => {
+        const failures: unknown[] = [];
+        try {
+          await reader?.cancel();
+        } catch (error) {
+          failures.push(error);
+        }
+        try {
+          await pending;
+        } catch (error) {
+          if (!failures.includes(error)) failures.push(error);
+        }
+        try {
+          reader?.releaseLock();
+        } catch (error) {
+          failures.push(error);
+        }
+        selected = undefined;
+        this.streamCleanups.delete(close);
+        if (failures.length === 1) throw failures[0];
+        if (failures.length) throw new AggregateError(failures, "Nested mailbox cleanup failed");
+      })();
+      return closing;
+    };
+    /** Director shutdown closes the outer response and starts joined nested cleanup. */
+    const close = (): Promise<void> => {
+      const open = !closed;
+      const completed = cleanup();
+      if (open) stream.close();
+      return completed;
+    };
+    const readable = new ReadableStream<Uint8Array>({
+      /** Bind this nested response controller before the first pull.
+       * @param controller Web response controller used by pull and shutdown.
+       */
+      start(controller) {
+        stream = controller;
+      },
+      pull: async (controller) => {
+        try {
+          if (retry) {
+            retry = false;
+            controller.enqueue(textEncoder.encode(`retry: ${retryMs}\n\n`));
+            return;
+          }
+          while (!reader && !closed) {
+            selected = this.takeQueryCue(said) ?? undefined;
+            if (selected) {
+              const cue = selected;
+              if (cue.kin !== "stream") throw new Error("Mailbox query owner is not a stream cue");
+              reader = this.mailboxStream(
+                cue.pre,
+                this.cursor(cue.pre, cue.topics),
+                {
+                  retryMs,
+                  pollIntervalMs,
+                  idleTimeoutMs: null,
+                  emitRetryHeader: false,
+                },
+                false,
+              ).getReader();
+              break;
+            }
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+              timer = setTimeout(resolve, pollIntervalMs);
+            });
+            wake = undefined;
+            timer = undefined;
+          }
+          if (closed || !reader) return;
+          pending = reader.read();
+          const next = await pending;
+          pending = undefined;
+          if (closed) return;
+          if (next.done) {
+            await cleanup();
+            controller.close();
+          } else controller.enqueue(next.value);
+        } catch (error) {
+          if (!closed) {
+            let failure = error;
+            try {
+              await cleanup();
+            } catch (cleanupError) {
+              if (cleanupError !== error) {
+                failure = new AggregateError([error, cleanupError], "Mailbox read and cleanup failed");
+              }
+            }
+            controller.error(failure);
+          }
+        }
+      },
+      cancel: cleanup,
+    }, { highWaterMark: 0 });
+    this.streamCleanups.add(close);
+    return readable;
+  }
+
+  /**
+   * Build the next `mbx` query cursor map for one `(pre, witness)` pair.
+   *
+   * Stored cursor rows track the last seen index, while the wire query asks for
+   * the next wanted index.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param witness Remote mailbox/witness endpoint AID, not the local signer.
+   * @returns Next-wanted ordinals (last consumed + 1, or zero) for registered topics.
+   */
+  remoteQueryCursor(pre: string, witness: string): Record<string, number> {
+    return mailboxQueryTopics(this.hby, pre, witness, this.topics);
+  }
+
+  /**
+   * Persist one consumed remote mailbox index for one `(pre, witness, topic)`.
+   *
+   * @param pre AID whose mailbox or accepted state is addressed.
+   * @param witness Remote endpoint AID.
+   * @param topic Protocol mailbox topic; leading slash is normalized where required.
+   * @param idx Last successfully consumed insertion ordinal, not the next requested ordinal.
+   */
+  updateRemoteCursor(
+    pre: string,
+    witness: string,
+    topic: string,
+    idx: number,
+  ): void {
+    updateMailboxRemoteCursor(this.hby, pre, witness, topic, idx);
+  }
+
+  /**
+   * Check whether the runtime has seen a matching `stream` cue for one query
+   * SAID without discarding other pending query cues.
+   *
+   * This keeps query correlation observable without consuming cues that later
+   * host work still needs.
+   *
+   * @param said Exact query SAID whose stream request is sought.
+   * @returns Whether a matching request exists.
+   */
+  hasQueryCue(said: string): boolean {
+    for (const cue of this.queryCues) {
+      if (cue.kin === "stream" && cue.serder.said === said) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Select the first matching owner without re-admission or changing preceding cue order.
+   *
+   * @param said Exact query SAID whose stream request is sought.
+   * @returns Removed matching cue, or null; other cues retain their order.
+   */
+  private takeQueryCue(said: string): AgentCue | null {
+    let preceding = 0;
+    for (const cue of this.queryCues) {
+      if (cue.kin === "stream" && cue.serder.said === said) {
+        const kept: AgentCue[] = [];
+        for (let i = 0; i < preceding; i++) kept.push(this.queryCues.pull()!);
+        const selected = this.queryCues.pull()!;
+        for (let i = kept.length - 1; i >= 0; i--) this.queryCues.prepend(kept[i]);
+        return selected;
+      }
+      preceding++;
+    }
+    return null;
+  }
+
+  /**
+   * Require provider mailbox storage for publication or mailbox serving.
+   *
+   * @returns Borrowed provider store.
+   * @throws ValidationError when storage is absent.
+   */
+  private requireMailboxer(): Mailboxer {
+    if (!this.mailboxer) {
+      throw new ValidationError(
+        "Provider mailbox storage is unavailable for this runtime.",
+      );
+    }
+    return this.mailboxer;
+  }
+}

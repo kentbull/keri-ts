@@ -10,4 +10,4 @@ export {
   BUILD_METADATA,
   DISPLAY_VERSION,
   PACKAGE_VERSION,
-} from "../app/version.ts";
+} from "../version.ts";

@@ -7,7 +7,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import keripyReference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import { t } from "../../../../cesr/mod.ts";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
 import {
   keripyProtocolVersionArgs,
   type KeripyRuntime,

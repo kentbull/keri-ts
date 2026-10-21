@@ -211,7 +211,7 @@ normalization guards remain in force.
 [Signed reference vectors](../../../packages/keri/test/fixtures/keripy-admission-vectors.json)
 record upstream delegation and prerequisite failures, not downstream verification.
 Their adjacent generator verifies imported module bytes against the frozen commit.
-[Runtime regressions](../../../packages/keri/test/unit/app/message-admission.test.ts)
+[Runtime regressions](../../../packages/keri/test/unit/app/protocol/message-admission.test.ts)
 cover real acceptance, invalid signatures, refusal and joined owner disposal;
 [Tufa ingress tests](../../../packages/tufa/test/progressive-ingress.test.ts) cover
 HTTP readmission. Remaining KRAM/presentation work belongs to [3f](../../plans/exchange/EXCHANGE_ADMISSION_PLAN.md).

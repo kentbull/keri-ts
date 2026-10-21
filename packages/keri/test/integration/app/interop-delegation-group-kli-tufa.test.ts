@@ -8,14 +8,14 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { action, call, type Operation, run, spawn } from "npm:effection@^3.6.0";
 import type { SerderKERI } from "../../../../cesr/mod.ts";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
-import { buildCesrStreamRequest } from "../../../src/app/cesr-http.ts";
-import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/delegating.ts";
-import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
-import { createHabery, eventPayloadMessage } from "../../../src/app/habbing.ts";
-import type { Habery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { createExchangeMessage } from "../../../src/app/exchanges/exchange-messaging.ts";
+import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/identity/delegating.ts";
+import { createHabery, eventPayloadMessage } from "../../../src/app/identity/habbing.ts";
+import type { Habery } from "../../../src/app/identity/habbing.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { buildCesrStreamRequest } from "../../../src/app/transport/cesr-http.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
 import {
   addKliMailbox,
