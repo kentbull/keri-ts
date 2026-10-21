@@ -11,7 +11,7 @@ import { Receiptor } from "../../../../src/app/witness/witnessing.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { Schemes } from "../../../../src/core/schemes.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
-import { credential, Regery } from "../../../../src/vdr/credentialing.ts";
+import { Credentialer, Regery } from "../../../../src/vdr/credentialing.ts";
 
 Deno.test("TEL publication resumes receipt and dissemination escrows across reopen before completion", async () => {
   await run(function*() {
@@ -95,14 +95,21 @@ Deno.test("TEL publication resumes receipt and dissemination escrows across reop
       const reopened = new Regery(issuerHby, { reger });
       const loaded = reopened.registryByName("registry")!;
       assertEquals(loaded.complete(regk), true);
-      const creder = credential({ issuer: issuer.pre, registry: regk, schema: regk });
-      loaded.issue(creder);
+      const schema = new Schemer({ sed: { $id: "", type: "object" } });
+      issuerHby.db.schema.pin(schema.said, schema);
+      const credentialer = new Credentialer(issuerHby, { reger, vry: reopened.vry });
+      const creder = credentialer.create({ registry: loaded, schema: schema.said, recipient: issuer.pre });
+      credentialer.issue(loaded, creder);
       assertEquals(loaded.complete(creder.said!), false);
-      yield* runAgentRuntimeUntil(source, () => loaded.complete(creder.said!), {
-        hab: issuer,
-        timeoutMs: 3000,
-        pollMailbox: false,
-      });
+      yield* runAgentRuntimeUntil(
+        source,
+        () => loaded.complete(creder.said!) && reger.saved.get(creder.said!) !== null,
+        {
+          hab: issuer,
+          timeoutMs: 3000,
+          pollMailbox: false,
+        },
+      );
       assertEquals(loaded.complete(creder.said!), true);
       assertEquals(observer.vdr!.tvy.tevers.get(regk)?.vcState(creder.said!)?.et, "iss");
       loaded.revoke(creder.said!);
