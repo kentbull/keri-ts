@@ -212,12 +212,21 @@ The query CLI uses one ten-second deadline and fails if accepted evidence never
 satisfies its workflow. It no longer performs implicit OOBI catch-up or displays
 stale state as successful query completion.
 
+## Group credential approval
+
+VCP/ISS approval validates issuer, registry, credential/schema, source triple and
+exact anchor before signing or changing aliases. Missing dependencies stay pending;
+conflicting registry names fail before authoring another anchor. Establishment-only
+group credential operations use rotation anchors, requiring participant KELs and
+keys to be prepared for the group's next establishment event.
+
 ## Native-v2 interoperability boundary
 
-The release requires a complete Tufa native credential workflow, with Python
-construction and independent verification against the execution manifest's main
-pin. Python exchange/proof acceptance does not imply a persistent Python native
-wallet or credential-aware multisig approval. Mixed-language ixn/rot signatures
+Native-v2 registry and credential CLI/wallet completion is deferred to the
+[separate roadmap](../../plans/credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
+Retained library capabilities do not establish a complete native workflow.
+Python exchange/proof acceptance does not imply a persistent Python native wallet
+or credential-aware multisig approval. Mixed-language ixn/rot signatures
 prove KEL approval only unless business validation is independently demonstrated.
 The relocated `tufa verifier run` application remains legacy-Reger based; native
 protocol observers are separate from that webhook application.

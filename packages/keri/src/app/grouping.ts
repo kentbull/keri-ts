@@ -694,7 +694,7 @@ export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): 
 }
 
 /** Resolve the stored proof and signed genus independently of the child protocol. */
-function multisigChildEvidence(
+export function multisigChildEvidence(
   hby: Habery,
   wrapper: SerderKERI,
   label: string,
