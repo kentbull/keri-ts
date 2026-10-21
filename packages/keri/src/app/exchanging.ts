@@ -36,6 +36,7 @@ import { messageAttachmentGroups, serializeMessage } from "../core/protocol-seri
 import { hasNests, loadNests, prepareNests, publishNests } from "../db/exchange-nests.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { abortable } from "./abortable.ts";
+import { groupMemberHasKey } from "./group-members.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 const textDecoder = new TextDecoder();
@@ -659,11 +660,7 @@ export class Exchanger {
     const establishment = db.getEvtSerder(hab.pre, proof.said);
     const leadKey = establishment?.verfers[index]?.qb64;
     if (!leadKey) return false;
-    for (const [, memberSaid] of db.getKelItemIter(record.mid)) {
-      const memberEvent = db.getEvtSerder(record.mid, memberSaid);
-      if (memberEvent?.estive && memberEvent.verfers[0]?.qb64 === leadKey) return true;
-    }
-    return false;
+    return groupMemberHasKey(db, record.mid, leadKey);
   }
 
   /** Freeze last-establishment groups and expand sender-implied seals before durable admission. */

@@ -1,4 +1,5 @@
 import { ValidationError } from "../core/errors.ts";
+import type { Baser } from "../db/basing.ts";
 import type { Hab, Habery } from "./habbing.ts";
 
 /** True when the selected habitat is a local group habitat. */
@@ -40,4 +41,13 @@ export function findLocalGroupMember(hby: Habery, members: readonly string[]): H
 /** Return unique non-empty member AIDs while preserving first-seen order. */
 export function uniqueMembers(members: readonly string[]): string[] {
   return [...new Set(members.filter((member) => member.length > 0))];
+}
+
+/** Match a group signing key to one member's accepted establishment history, including retired keys. */
+export function groupMemberHasKey(db: Baser, member: string, key: string): boolean {
+  for (const [, said] of db.getKelItemIter(member)) {
+    const event = db.getEvtSerder(member, said);
+    if (event?.estive && event.verfers[0]?.qb64 === key) return true;
+  }
+  return false;
 }
