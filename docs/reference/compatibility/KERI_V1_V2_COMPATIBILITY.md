@@ -78,7 +78,7 @@ the attempted type is `application/cesr`, and the JSON refusal has the pinned Fa
 `Content type error` title and `Unacceptable content type.` description. Mailbox
 polling shares that predicate and reuses the signed query after joined response
 cleanup; unrelated refusals cannot cause an alternate submission.
-[Witness receipt POST](../../../packages/keri/src/app/witness/witnessing.ts) has the same
+[Witness receipt POST](../../../packages/keri/src/app/witness/receipt-client.ts) has the same
 type fallback at its owner.
 
 G1's [HTTP parser](https://github.com/GLEIF-IT/keripy/blob/b8626e1d58770a4a480ea72a01acc5580278a9f2/src/keri/app/httping.py)
@@ -244,7 +244,7 @@ General database transition qualification remains GAP-03.
 
 | Frozen Python reference | Actual `Baser.essrs` binding |
 | ----------------------- | ---------------------------- |
-| main `424a50c`          | `essrs.`                     |
+| main `c7e74ad`          | `essrs.`                     |
 | 1.2.14 `bab95c16`       | `.essrs`                     |
 | 1.3.6 `4ce4cc79`        | `.essrs`                     |
 

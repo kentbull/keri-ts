@@ -1,6 +1,7 @@
 # Native-v2 ACDC and registry roadmap
 
-Status: deferred from the 2.0.0 release on 2026-10-20 by explicit scope decision.
+Status: deferred from the current implementation/qualification goal by explicit
+scope decision on 2026-10-20. Publication of 2.0.0 waits for the separate work.
 KERIpy `rip`, `bup` and `upd` implementation is being completed separately.
 No completion date or package version is promised here. This roadmap owns the
 remaining native-dependent work formerly tracked as R2 native and cuts 25–30,
@@ -21,8 +22,9 @@ reopen/API proofs, as partial capability. Those checks do not establish a comple
 native registry or credential lifecycle. Existing relevant regression tests remain;
 new native feature development and completion gates are deferred. Known failures
 must remain visible with their pin and claim boundary, never relabeled as passes.
-Independent legacy TEL/backers and KERI/CESR v2 work remain in the release plan.
-The legacy verifier application move is independent and remains required for 2.0.0.
+Independent legacy NoBackers TEL and KERI/CESR v2 work remain in the release
+plan. Autonomous legacy backing is retired; observer verification remains. The
+independent verifier application move is complete.
 
 ## Contract and evidence preparation
 
