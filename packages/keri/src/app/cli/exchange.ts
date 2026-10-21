@@ -5,7 +5,7 @@ import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
 
 import { withExistingHab } from "./common/context.ts";
-import { parseExnDataItems } from "./common/parsing.ts";
+import { parseBooleanOption, parseExnDataItems, parseStringListOption, parseStringOption } from "./common/parsing.ts";
 
 interface ExnSendArgs {
   name?: string;
@@ -35,16 +35,16 @@ export function* exchangeSendCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: ExnSendArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    sender: args.sender as string | undefined,
-    recipient: args.recipient as string | undefined,
-    route: args.route as string | undefined,
-    topic: args.topic as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    sender: parseStringOption(args.sender, "sender"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    route: parseStringOption(args.route, "route"),
+    topic: parseStringOption(args.topic, "topic"),
     data: normalizeDataArgs(args.data),
-    compat: args.compat as boolean | undefined,
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!commandArgs.name) {
@@ -92,11 +92,8 @@ export function* exchangeSendCommand(
 }
 
 function normalizeDataArgs(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
   if (typeof value === "string") {
     return [value];
   }
-  return [];
+  return parseStringListOption(value, "data") ?? [];
 }

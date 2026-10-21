@@ -1,4 +1,5 @@
 import { action, type Operation } from "effection";
+import { parseIntegerOption } from "keri-ts/cli";
 
 interface HookDemoArgs {
   http?: number;
@@ -16,7 +17,7 @@ interface HookPresentation {
 /** Start a Sally-style sample webhook target for verifier callbacks. */
 export function* hookDemoCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: HookDemoArgs = {
-    http: args.http ? Number(args.http) : 9923,
+    http: parseIntegerOption(args.http, "http") ?? 9923,
   };
   const port = commandArgs.http ?? 9923;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {

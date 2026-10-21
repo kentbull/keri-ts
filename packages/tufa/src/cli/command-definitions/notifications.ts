@@ -26,14 +26,12 @@ export function registerNotificationCmds(
       .option(
         "--start <start>",
         "Zero-based starting row",
-        (value: string) => Number(value),
-        0,
+        "0",
       )
       .option(
         "--limit <limit>",
         "Maximum rows to return",
-        (value: string) => Number(value),
-        25,
+        "25",
       ),
     dispatch,
     {

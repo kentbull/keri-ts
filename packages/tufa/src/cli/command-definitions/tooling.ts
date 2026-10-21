@@ -27,20 +27,17 @@ function registerBenchmarkCmds(
       .option(
         "--iterations <count>",
         "Measured benchmark iterations",
-        (value: string) => Number(value),
-        50,
+        "50",
       )
       .option(
         "--warmup <count>",
         "Warmup iterations before measurement",
-        (value: string) => Number(value),
-        5,
+        "5",
       )
       .option(
         "--chunk-size <bytes>",
         "Chunk size for simulated streaming input",
-        (value: string) => Number(value),
-        65536,
+        "65536",
       )
       .option("--json", "Emit benchmark result as one JSON line"),
     dispatch,
@@ -81,7 +78,6 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
       .option(
         "--map-size <bytes>",
         "LMDB map size override in bytes (also honors KERI_LMDB_MAP_SIZE / KERI_BASER_MAP_SIZE; auto-adapts to existing data.mdb)",
-        (value: string) => Number.parseInt(value, 10),
       )
       .option(
         "--prefix <prefix>",
@@ -90,7 +86,6 @@ function registerDbCmds(program: Command, dispatch: CommandDispatch): void {
       .option(
         "--limit <count>",
         "Maximum number of entries to print for one targeted sub-database",
-        (value: string) => Number.parseInt(value, 10),
       ),
     dispatch,
     {

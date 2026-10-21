@@ -17,10 +17,16 @@ import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { multisigJoinCommand } from "../../../../tufa/src/cli/multisig.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { aidCommand } from "../../../src/app/cli/aid.ts";
+import { annotateCommand } from "../../../src/app/cli/annotate.ts";
+import { benchmarkCommand } from "../../../src/app/cli/benchmark.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
+import { dumpDatabase } from "../../../src/app/cli/db-dump.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
 import { dkrResolveCommand, dwsBindCommand } from "../../../src/app/cli/did.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
+import { exchangeSendCommand } from "../../../src/app/cli/exchange.ts";
+import { exportCommand } from "../../../src/app/cli/export.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
 import { interactCommand } from "../../../src/app/cli/interact.ts";
@@ -31,9 +37,14 @@ import {
   ipexJoinCommand,
   ipexPollCommand,
 } from "../../../src/app/cli/ipex.ts";
+import { listCommand } from "../../../src/app/cli/list.ts";
 import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { multisigInceptCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
+import { notificationsListCommand } from "../../../src/app/cli/notifications.ts";
+import { oobiCleanCommand } from "../../../src/app/cli/oobi-clean.ts";
+import { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "../../../src/app/cli/oobi.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
+import { saidifyCommand } from "../../../src/app/cli/saidify.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
@@ -895,6 +906,37 @@ Deno.test({
         () => locAddCommand({ ...base, url: "https://example.com", headDirPath: 1 }),
         "--head-dir must be a string",
       ],
+    ];
+    for (const [command, message] of cases) {
+      await assertRejects(() => run(command), ValidationError, message);
+    }
+  },
+});
+
+Deno.test({
+  name: "CLI - operator and publication options validate before resource access",
+  permissions: { read: false, write: false, net: false },
+  async fn() {
+    const base = { name: "validation", alias: "alice" };
+    const cases: [() => Operation<unknown>, string][] = [
+      [() => annotateCommand({ pretty: "false" }), "pretty must be a boolean"],
+      [() => benchmarkCommand({ iterations: "1.5" }), "iterations must be a decimal integer"],
+      [() => benchmarkCommand({ chunkSize: 0 }), "iterations and chunkSize must be positive"],
+      [() => aidCommand({ ...base, compat: "false" }), "compat must be a boolean"],
+      [() => listCommand({ ...base, name: 1 }), "name must be a string"],
+      [() => exportCommand({ ...base, files: "false" }), "files must be a boolean"],
+      [() => interactCommand({ ...base, data: ["{}", 1] }), "data must be an array of strings"],
+      [() => delegateConfirmCommand({ ...base, auto: "false" }), "auto must be a boolean"],
+      [() => exchangeSendCommand({ ...base, data: ["{}", false] }), "data must be an array of strings"],
+      [() => oobiGenerateCommand({ ...base, role: 1 }), "role must be a string"],
+      [() => oobiResolveCommand({ ...base, url: false }), "url must be a string"],
+      [() => oobiRequestCommand({ ...base, recipient: 1 }), "recipient must be a string"],
+      [() => oobiCleanCommand({ ...base, keyFile: "keys.json", apply: "false" }), "apply must be a boolean"],
+      [() => notificationsListCommand({ ...base, start: -1 }), "start must not be negative"],
+      [() => notificationsListCommand({ ...base, limit: "1.5" }), "limit must be a decimal integer"],
+      [() => saidifyCommand({ file: "sad.json", label: false }), "label must be a string"],
+      [() => dumpDatabase({ ...base, mapSize: "100junk" }), "mapSize must be a decimal integer"],
+      [() => dumpDatabase({ ...base, limit: false }), "limit must be a safe integer"],
     ];
     for (const [command, message] of cases) {
       await assertRejects(() => run(command), ValidationError, message);

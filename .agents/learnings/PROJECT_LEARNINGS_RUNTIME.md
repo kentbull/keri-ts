@@ -80,6 +80,8 @@ booleans and supplied timeouts before stores; never silently filter participants
 Endpoint/signing/query/DID/witness adapters validate primitive shapes before resource
 access. Query anchor omission differs from an invalid explicit empty path; resolver
 ports are decimal integers, and repeated lists reject invalid members as a whole.
+Operator/publication commands retain this boundary too: validate cleanup options
+before reading key files and preserve count/limit spelling through dispatch.
 Approval waits allow fractional seconds and default only on omission. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.
 

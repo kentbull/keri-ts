@@ -9,6 +9,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Notifier, openNoterForHabery } from "../notifying.ts";
 import { withExistingHabery } from "./common/context.ts";
+import { parseBooleanOption, parseCountOption, parseStringOption } from "./common/parsing.ts";
 
 interface NotificationsOpenArgs {
   name?: string;
@@ -79,13 +80,13 @@ export function* notificationsListCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: NotificationsListArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    start: args.start as number | undefined,
-    limit: args.limit as number | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    start: parseCountOption(args.start, "start"),
+    limit: parseCountOption(args.limit, "limit"),
   };
 
   yield* withNotifier(commandArgs, function*({ notifier }) {
@@ -115,12 +116,12 @@ export function* notificationsMarkReadCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: NotificationsRidArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    rid: args.rid as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    rid: parseStringOption(args.rid, "rid"),
   };
 
   yield* withNotifier(commandArgs, function*({ notifier }) {
@@ -135,12 +136,12 @@ export function* notificationsRemoveCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: NotificationsRidArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    rid: args.rid as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    rid: parseStringOption(args.rid, "rid"),
   };
 
   yield* withNotifier(commandArgs, function*({ notifier }) {

@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHab } from "./common/context.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 interface AidArgs {
   name?: string;
@@ -14,12 +15,12 @@ interface AidArgs {
 /** Implements `tufa aid`. */
 export function* aidCommand(args: Record<string, unknown>): Operation<void> {
   const aidArgs: AidArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!aidArgs.name) {

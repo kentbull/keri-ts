@@ -4,8 +4,10 @@ import {
   type BenchmarkResult,
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import { ValidationError } from "../../core/errors.ts";
 import { abortable } from "../abortable.ts";
 import { collectBytes, fileBytes, streamBytes } from "../byte-source.ts";
+import { parseBooleanOption, parseCountOption, parseStringOption } from "./common/parsing.ts";
 import { writeStdout } from "./output.ts";
 
 /** CLI transport choices extend the shared benchmark controls without a second parser loop. */
@@ -33,7 +35,16 @@ function formatBenchmarkText(source: string, result: BenchmarkResult): string {
 
 /** Retain one admitted corpus and own every input, parse, and output leaf in this operation. */
 export function* benchmarkCommand(args: Record<string, unknown>): Operation<void> {
-  const options = args as BenchmarkArgs;
+  const options: BenchmarkArgs = {
+    inPath: parseStringOption(args.inPath, "inPath"),
+    json: parseBooleanOption(args.json, "json"),
+    iterations: parseCountOption(args.iterations, "iterations"),
+    warmupIterations: parseCountOption(args.warmupIterations, "warmupIterations"),
+    chunkSize: parseCountOption(args.chunkSize, "chunkSize"),
+  };
+  if (options.iterations === 0 || options.chunkSize === 0) {
+    throw new ValidationError("iterations and chunkSize must be positive");
+  }
   const source = options.inPath ?? "stdin";
   const bytes = yield* abortable((signal) =>
     collectBytes(options.inPath ? fileBytes(options.inPath, { signal }) : streamBytes(Deno.stdin.readable, { signal }))

@@ -4,6 +4,7 @@ import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { baserDefaults } from "../../db/baser-defaults.ts";
 import { createBaser } from "../../db/basing.ts";
 import { PathManager } from "../../db/core/path-manager.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 import { writeJsonLine } from "./common/rendering.ts";
 
 /** Read a nonempty JSON list, preserving exact keys and first-seen order. */
@@ -45,14 +46,14 @@ export function* oobiCleanCommand(args: Record<string, unknown>): Operation<void
     throw new ValidationError("A JSON --key-file is required");
   }
   const name = args.name;
-  const keys = yield* loadKeys(args.keyFile);
-  const apply = args.apply === true;
+  const apply = parseBooleanOption(args.apply, "apply") ?? false;
   const options = {
     name,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    compat: args.compat === true,
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    compat: parseBooleanOption(args.compat, "compat") ?? false,
   };
+  const keys = yield* loadKeys(args.keyFile);
   // Resolve through ordinary path preparation before Baser can create data.mdb.
   // Empty directories are ordinary startup effects; missing databases still fail.
   const paths = new PathManager(options, baserDefaults(options.compat));

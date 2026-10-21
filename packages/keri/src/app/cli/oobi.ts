@@ -7,6 +7,7 @@ import { FetchHttpClient } from "../http-client.ts";
 import { oobiTerminalState } from "../oobiery.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../oobiery.ts";
 import { systemClock } from "../runtime-clock.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 import { withAgentRuntime, withExistingHab } from "./common/context.ts";
 
@@ -74,13 +75,13 @@ export function* oobiGenerateCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: OobiGenerateArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    role: args.role as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    role: parseStringOption(args.role, "role"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!commandArgs.name) {
@@ -173,13 +174,13 @@ export function* oobiResolveCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: OobiResolveArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    url: args.url as string | undefined,
-    oobiAlias: args.oobiAlias as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    url: parseStringOption(args.url, "url"),
+    oobiAlias: parseStringOption(args.oobiAlias, "oobiAlias"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!commandArgs.name) {
@@ -235,14 +236,14 @@ export function* oobiRequestCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: OobiRequestArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    recipient: args.recipient as string | undefined,
-    url: args.url as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    recipient: parseStringOption(args.recipient, "recipient"),
+    url: parseStringOption(args.url, "url"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 
   if (!commandArgs.name) {
