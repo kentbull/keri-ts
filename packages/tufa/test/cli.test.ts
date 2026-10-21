@@ -7,12 +7,22 @@ import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/witness.ts
 
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
-import { createHabery, DISPLAY_VERSION as KERI_DISPLAY_VERSION, Schemer, ValidationError } from "keri-ts/runtime";
+import {
+  createAgentRuntime,
+  createHabery,
+  DISPLAY_VERSION as KERI_DISPLAY_VERSION,
+  FetchHttpClient,
+  Habery,
+  Schemer,
+  systemClock,
+  ValidationError,
+} from "keri-ts/runtime";
 import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
+import { ipexApplyCommand } from "../src/cli/ipex.ts";
 import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/mailbox.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
 
@@ -774,6 +784,73 @@ Deno.test("tufa/cli - verifier run accepts the grant child attachment genus", ()
   ]);
   assertEquals(verifier.name, "verifier.run");
   assertEquals(verifier.args.gvrsn, "2.0");
+});
+
+Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure retains the completed send", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "tufa-ipex-shutdown-" });
+  const name = "ipex-shutdown";
+  let transmissions = 0;
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+    await request.arrayBuffer();
+    transmissions++;
+    return new Response(null, { status: 204 });
+  });
+  const url = `http://127.0.0.1:${server.addr.port}/`;
+  let sender = "", recipient = "";
+  const close = Habery.prototype.close;
+  const log = console.log;
+  const records: string[] = [];
+  let closed = false, failClose = false, injected = false;
+  const fault = new Error("IPEX owned shutdown failed");
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        sender = hby.makeHab("sender").pre;
+        const target = hby.makeHab("recipient");
+        recipient = target.pre;
+        yield* runtime.reactor.processBytes(target.makeEndRole(target.pre, "controller", true));
+        yield* runtime.reactor.processBytes(target.makeLocScheme(url, target.pre, "http"));
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+    // Inject only after real shutdown; no native handle or failure classification is mocked.
+    Habery.prototype.close = function*(clear = false) {
+      yield* close.call(this, clear);
+      if (this.name === name) {
+        closed = true;
+        if (failClose && !injected) {
+          injected = true;
+          throw fault;
+        }
+      }
+    };
+    console.log = (...values: unknown[]) => {
+      assertEquals(closed, true, "Final IPEX JSON must follow owned resource closure");
+      records.push(values.map(String).join(" "));
+    };
+    const args = { name, headDirPath, alias: "sender", recipient, schema: sender };
+    await run(() => ipexApplyCommand(args));
+    assertEquals(records.length, 1);
+    assertEquals(JSON.parse(records[0]).deliveries, [url]);
+    assertEquals(transmissions, 1);
+    records.length = 0;
+    closed = false;
+    failClose = true;
+    const error = await assertRejects(() => run(() => ipexApplyCommand(args)));
+    assertEquals(error, fault);
+    assertEquals(closed, true);
+    assertEquals(transmissions, 2, "Shutdown failure does not undo a completed HTTP transmission");
+    assertEquals(records, [], "Failed shutdown must not publish final command success");
+  } finally {
+    Habery.prototype.close = close;
+    console.log = log;
+    await server.shutdown();
+    await Deno.remove(headDirPath, { recursive: true });
+  }
 });
 
 Deno.test("tufa/cli - debug and info diagnostics preserve credential JSON stdout", async () => {

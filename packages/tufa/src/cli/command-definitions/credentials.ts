@@ -192,7 +192,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
 function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   const ipex = program.command("ipex").description("IPEX credential exchange operations");
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         ipex.command("apply")
@@ -204,11 +204,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.apply",
-    "ipexApplyCommand",
+    { name: "ipex.apply", load: () => import("../ipex.ts"), exportName: "ipexApplyCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         ipex.command("offer")
@@ -220,11 +219,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.offer",
-    "ipexOfferCommand",
+    { name: "ipex.offer", load: () => import("../ipex.ts"), exportName: "ipexOfferCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         ipex.command("agree")
@@ -235,11 +233,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.agree",
-    "ipexAgreeCommand",
+    { name: "ipex.agree", load: () => import("../ipex.ts"), exportName: "ipexAgreeCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addGvrsnOption(
       addHabOption(
         addStoreOptions(
@@ -258,11 +255,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.grant",
-    "ipexGrantCommand",
+    { name: "ipex.grant", load: () => import("../ipex.ts"), exportName: "ipexGrantCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         ipex.command("admit")
@@ -275,11 +271,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.admit",
-    "ipexAdmitCommand",
+    { name: "ipex.admit", load: () => import("../ipex.ts"), exportName: "ipexAdmitCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
         ipex.command("spurn")
@@ -290,8 +285,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.spurn",
-    "ipexSpurnCommand",
+    { name: "ipex.spurn", load: () => import("../ipex.ts"), exportName: "ipexSpurnCommand", args: dispatchArgs },
   );
 
   registerKeriCliCommand(
@@ -304,7 +298,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
     "ipexListCommand",
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addHabOption(
       addGvrsnOption(addStoreOptions(
         ipex.command("poll")
@@ -316,11 +310,10 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       )),
     ),
     dispatch,
-    "ipex.poll",
-    "ipexPollCommand",
+    { name: "ipex.poll", load: () => import("../ipex.ts"), exportName: "ipexPollCommand", args: dispatchArgs },
   );
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addGvrsnOption(
       addStoreOptions(
         ipex.command("join")
@@ -334,8 +327,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
       ),
     ),
     dispatch,
-    "ipex.join",
-    "ipexJoinCommand",
+    { name: "ipex.join", load: () => import("../ipex.ts"), exportName: "ipexJoinCommand", args: dispatchArgs },
   );
 }
 
