@@ -17,6 +17,7 @@ import {
   AnchorQuerier,
   Deck,
   type Habery,
+  isLocalGroupHab,
   KeyStateNoticer,
   runAgentRuntime,
   ValidationError,
@@ -79,7 +80,8 @@ function externalStateLines(hby: Habery, pre: string): string[] {
 
 /**
  * Query current key state, or an exact event seal from --anchor, for --prefix.
- * --alias selects the local signing Hab; it is not the queried subject. Wire the
+ * --alias selects a member/single-controller requester, not an uncoordinated
+ * group contribution; it is not the queried subject. Wire the
  * command-owned cue Deck before workers can emit a reply, and return final display
  * only after the shared resource owner closes. A close failure therefore prevents
  * final success output even if the accepted-state predicate already passed.
@@ -114,6 +116,11 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     alias,
     { compat: compat ?? false, readonly: false, skipConfig: true, skipSignator: true },
     function*({ hby, runtime, hab }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Query --alias must select a member requester, not a group requiring additional signatures.",
+        );
+      }
       let queryCues: Deck<AgentCue> | undefined;
       let workflow: AnchorQuerier | KeyStateNoticer;
       if (anchor) {

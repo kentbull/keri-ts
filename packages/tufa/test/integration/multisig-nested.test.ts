@@ -3,7 +3,7 @@ import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
 // @file-test-lane app-stateful-a
 
 import { action, type Operation, run, spawn } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import {
   createAgentRuntime,
   createHabery,
@@ -114,6 +114,7 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
         assertExists(groupPre);
         assertEquals(inceptStatus.accepted, true);
         assertEquals(parseLastJson(incept.joiner.stdout).accepted, true);
+        yield* waitForPromise(assertGroupCommandBoundaries(bob, alice.pre, groupPre));
 
         const interact = yield* waitForPromise(runProposalWithJoin(
           [
@@ -243,6 +244,60 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
 });
 
 /** Compare CLI send identities with actual persisted wrappers and Multiplexor indexes. */
+/** Public commands must refuse uncoordinated group work before business-state writes. */
+async function assertGroupCommandBoundaries(store: StoreSpec, recipient: string, group: string): Promise<void> {
+  const before = await groupSigningState(store, group);
+  const location = ["--name", store.name, "--head-dir", store.headDirPath];
+  const cases: [string[], string][] = [
+    [["incept", ...location, "--alias", "team"], "inception requires an unused alias"],
+    [["interact", ...location, "--alias", "team", "--data", "{\"unexpected\":true}"], "multisig interact"],
+    [["rotate", ...location, "--alias", "team"], "multisig rotate"],
+    [
+      ["exchange", "send", ...location, "--sender", "team", "--recipient", recipient, "--route", "/test"],
+      "does not coordinate group approval",
+    ],
+    [
+      ["challenge", "respond", ...location, "--alias", "team", "--recipient", recipient, "--words", "alpha beta gamma"],
+      "Select the responding member alias",
+    ],
+    [["loc", "add", ...location, "--alias", "team", "--url", "http://127.0.0.1:12345"], "endpoint-owner alias"],
+    [["query", ...location, "--alias", "team", "--prefix", recipient], "member requester"],
+    [
+      ["dws", "bind", ...location, "--alias", "team", "--did", `did:webs:example.com:${group}`],
+      "does not coordinate group credential approval",
+    ],
+  ];
+  for (const [args, message] of cases) {
+    const result = await runTufa(args);
+    assertEquals(result.code === 0, false, `${args[0]} must refuse uncoordinated group signing`);
+    assertStringIncludes(`${result.stdout}\n${result.stderr}`, message);
+  }
+  const contribution = await runTufa(["sign", ...location, "--alias", "team", "--text", "member contribution"]);
+  assertCommandOk(contribution, "raw group contribution");
+  assertStringIncludes(contribution.stdout, "Partial multisig signature contribution");
+  assertEquals(await groupSigningState(store, group), before);
+}
+
+/** Compare the exact accepted state, keeper state and retained signatures across refused commands. */
+async function groupSigningState(store: StoreSpec, group: string) {
+  return await run(function*() {
+    const hby = yield* createHabery({ name: store.name, headDirPath: store.headDirPath, skipConfig: true });
+    try {
+      return {
+        alias: hby.db.getName("", "team"),
+        habitat: hby.db.getHab(group),
+        state: hby.db.getState(group),
+        memberKeys: hby.ks.getSits(store.pre),
+        signatures: [...hby.db.sigs.getTopItemIter([group])].map(([keys, sig]) => [keys, sig.qb64]),
+        messages: [...hby.db.exns.getItemIter()].map(([, exn]) => exn.said),
+        locations: [...hby.db.locs.getTopItemIter()],
+      };
+    } finally {
+      yield* hby.close();
+    }
+  });
+}
+
 async function assertStoredMessageIdentities(
   store: StoreSpec,
   reports: Record<string, unknown>[],

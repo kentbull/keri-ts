@@ -29,7 +29,7 @@ function registerSignCmd(program: Command, dispatch: CommandDispatch): void {
   registerDispatchedCommand(
     program
       .command("sign")
-      .description("Sign an arbitrary string")
+      .description("Sign text; group aliases emit a partial member contribution")
       .requiredOption("-n, --name <name>", "Keystore name")
       .requiredOption(
         "-a, --alias <alias>",

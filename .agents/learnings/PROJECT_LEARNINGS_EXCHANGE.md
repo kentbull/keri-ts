@@ -57,6 +57,13 @@ Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 
+CLI group selection is an authorization boundary. Ordinary interaction/rotation
+must direct operators to multisig commands before signing; generic exchange,
+challenge, location, query and DID-binding commands cannot silently send a partial
+group signature as completion. Raw text signing may emit an explicitly labeled
+member contribution. The [CLI inventory](../../docs/design-docs/exchange/MULTISIG.md#cli-group-boundaries)
+records remaining credential/IPEX lifecycle work separately from these guards.
+
 Challenge responses share one word-list contract between CLI production, decoded
 EXN validation and verifier lookup. Read decoded attributes as unknown; narrow
 words before domain use instead of asserting an open record. CLI JSON uses the

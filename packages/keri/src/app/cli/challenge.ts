@@ -12,6 +12,7 @@ import {
   parseChallengeWords,
 } from "../challenging.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import type { Habery } from "../habbing.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { Organizer } from "../organizing.ts";
@@ -113,6 +114,11 @@ export function* challengeRespondCommand(
       skipSignator: false,
     },
     function*({ hby, hab }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Challenge respond does not coordinate group approval. Select the responding member alias.",
+        );
+      }
       const payload: ChallengeResponsePayload = { words };
       const { serder } = yield* sendExchangeMessage(
         hby,

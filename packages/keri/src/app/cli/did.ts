@@ -13,6 +13,7 @@ import {
   resolveDidWebs,
 } from "../../did/index.ts";
 import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from "../agent-runtime.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
@@ -73,6 +74,11 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
       const rgy = runtime.vdr;
       if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
       const hab = hby.habByName(alias);
+      if (hab && isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "DID binding does not coordinate group credential approval. Use a single-controller alias.",
+        );
+      }
       const priorSn = hab?.kever?.sn ?? 0;
       const result = bindDesignatedAliases(rgy, {
         alias,

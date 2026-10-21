@@ -86,3 +86,26 @@ a proposal and its local-completion fallback (default 60 seconds). Zero permits
 an immediate stored-state attempt. Proposer approval waits also use elapsed
 seconds rather than deriving a turn count. Acceptance remains the actual KEL or
 endpoint-role state, not a mailbox poll or successful transmission.
+
+## CLI group boundaries
+
+A selected group alias does not authorize a single member to finish a group
+operation. Command owners either coordinate member approval or refuse before
+business signing and mutation. Normal store loading still occurs.
+
+| Command family                            | Group behavior                                                                                             |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Inception                                 | `multisig incept/join`; ordinary inception requires an unused alias.                                       |
+| Interaction and rotation                  | `multisig interact/rotate`; ordinary commands refuse group aliases.                                        |
+| Delegation confirmation                   | Group interaction approval/fanout; group rotation approval is explicitly unsupported.                      |
+| Endpoint roles and mailbox administration | Explicit group propose/complete modes; mailbox removal remains unsupported for groups.                     |
+| Raw text signing                          | Emits an identified partial member contribution with group signature indices, without collecting approval. |
+| Generic EXN send and challenge response   | Refuse group aliases; select a member or a supported group business workflow.                              |
+| Location publication and query requester  | Require an endpoint-owner or member alias rather than an uncoordinated group signature.                    |
+| DID binding                               | Refuses group aliases; group artifact generation exports accepted evidence.                                |
+| Legacy VCP/ISS                            | Group proposal paths exist; witnessed completion/preflight remains a release-plan gate.                    |
+| Legacy revocation and IPEX                | Group lifecycle completion remains assigned to the release plan, including all six IPEX verbs.             |
+| Inspection, verification and export       | Read accepted group state; do not author a group event.                                                    |
+
+The credential/IPEX rows are remaining implementation work, not parity claims.
+Native-v2 ACDC/registry authoring remains in its deferred roadmap.

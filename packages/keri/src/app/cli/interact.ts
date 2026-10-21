@@ -13,6 +13,7 @@ import { systemClock } from "../runtime-clock.ts";
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import { parseBooleanOption, parseDataItems, parseStringListOption, parseStringOption } from "./common/parsing.ts";
@@ -81,6 +82,11 @@ export function* interactCommand(
       skipSignator: true,
     },
     function*({ hby, hab }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Group aliases require tufa multisig interact so member approval and fanout are coordinated.",
+        );
+      }
       if (!hab.kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
