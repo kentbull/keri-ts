@@ -1219,7 +1219,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         });
 
         /** Store an authenticated peer wrapper without lending its signature to the group anchor. */
-        function* submit(creder: SerderACDC, wrongSource = false, wrongPredecessor = false) {
+        const submit = function*(creder: SerderACDC, wrongSource = false, wrongPredecessor = false) {
           const issued = issueCredential(creder.said!, registry.registry!);
           const predecessor = wrongPredecessor ? bob.kever!.said : local.hab.kever!.said;
           const anchor = interactEvent(local.hab.pre, predecessor, local.hab.kever!.sn + 1, [{
@@ -1245,7 +1245,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
             local: true,
           });
           return { wrapper, anchor };
-        }
+        };
         const pending = yield* submit(valid);
         assertEquals(
           yield* approvePendingMultisigProposal(left, runtime, { said: pending.wrapper.said!, callbacks }),
