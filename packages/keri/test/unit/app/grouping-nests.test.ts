@@ -1193,7 +1193,7 @@ for (const kind of ["apply", "grant"] as const) {
               ) => [keys, siger.qb64]);
               yield* call(() =>
                 assertRejects(
-                  () => run(() => approveMultisigIpex(left, { ...runtime, vdr: null }, wrapper)),
+                  () => run(() => approveMultisigIpex(left, runtime.protocol, runtime.postman, null, wrapper)),
                   Error,
                   "did not open Reger",
                 )
@@ -1205,7 +1205,7 @@ for (const kind of ["apply", "grant"] as const) {
               assertEquals(runtime.exc.complete(embedded.said!), false);
               assertEquals(outgoing, undefined);
             }
-            const result = yield* approveMultisigIpex(left, { ...runtime, vdr: null }, wrapper, {
+            const result = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, wrapper, {
               publish: true,
               sendLead: false,
             });
@@ -1213,10 +1213,17 @@ for (const kind of ["apply", "grant"] as const) {
             assertEquals(runtime.exc.complete(embedded.said!), true);
             assertExists(outgoing);
             yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
-            const peerResult = yield* approveMultisigIpex(right, peerRuntime, outgoing.serder, {
-              publish: false,
-              sendLead: false,
-            });
+            const peerResult = yield* approveMultisigIpex(
+              right,
+              peerRuntime.protocol,
+              peerRuntime.postman,
+              null,
+              outgoing.serder,
+              {
+                publish: false,
+                sendLead: false,
+              },
+            );
             assertEquals(peerResult.accepted, true);
             assertEquals(peerRuntime.protocol.exc.complete(embedded.said!), true);
           } finally {
