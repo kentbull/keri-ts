@@ -122,7 +122,11 @@ Result collections are `messages`; each reporting identity has `recipient`,
 `exnSaid` (outer coordination EXN) and `payloadSaid` (the existing Multiplexor key:
 v1 embedded-bundle SAID or supported v2 signed-child SAID). `deliveries` lists
 completed transport destinations, not participant approval or group acceptance.
-`join --said` still selects the outer EXN. Other protocol/result SAIDs retain
+`join --said` still selects the outer EXN. Explicit joins can select accepted
+coordination evidence after notification consumption and reuse recorded KEL,
+reply, VCP and ISS approvals without another prompt or group-event signature.
+Resend reuses recorded recipient wrappers; transport completion still does not
+prove group acceptance. Other protocol/result SAIDs retain
 their existing names; this is not a global rename of proposal concepts.
 
 Shared helpers live in `multisig-messaging.ts`. Tufa owns the affected JSON

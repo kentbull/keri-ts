@@ -3,6 +3,7 @@ import {
   b,
   type CesrFrame,
   Cigar,
+  Counter,
   Dater,
   DeserializeError,
   Diger,
@@ -593,7 +594,12 @@ export class Exchanger {
         || verified.cigars.some((cigar) => cigar.verfer?.qb64 === serder.pre)
         || verified.sourceSeals.some((seal) => seal.i.qb64 === serder.pre))
     ) throw new ValidationError("Invalid stored exchange authentication or evidence.");
-    const evidence = { ...verified, pathed: args.ptds.map((group) => group.raw) };
+    // epath retains complete groups; serialization supplies the destination
+    // genus's counter and therefore consumes only the path-and-proof payload.
+    const evidence = {
+      ...verified,
+      pathed: args.ptds.map(group => group.raw.slice(new Counter({ qb64b: group.raw, version: gvrsn }).fullSize)),
+    };
     const nested = hasNests(this.hby.db, said);
     {
       const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];

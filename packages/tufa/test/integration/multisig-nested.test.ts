@@ -163,6 +163,42 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           assertStoredMessageIdentities(alice, [inceptStatus, interactStatus, rpyStatus], [bob.pre, carol.pre]),
         );
 
+        // Each original joiner process has exited and consumed its notification.
+        // Resume exact historical EXNs through fresh public CLI invocations.
+        for (
+          const [proposed, joined] of [
+            [inceptStatus, parseLastJson(incept.joiner.stdout)],
+            [interactStatus, parseLastJson(interact.joiner.stdout)],
+            [rpyStatus, parseLastJson(rpy.joiner.stdout)],
+          ]
+        ) {
+          const messages = proposed.messages;
+          if (!Array.isArray(messages)) throw new Error("Missing proposal messages");
+          const selected = messages.find(message => message.recipient === bob.pre);
+          assertExists(selected);
+          const resumed = yield* waitForPromise(runTufa([
+            "multisig",
+            "join",
+            "--name",
+            bob.name,
+            "--head-dir",
+            bob.headDirPath,
+            "--group",
+            "team",
+            "--said",
+            selected.exnSaid,
+            "--auto",
+            "--approval-timeout",
+            "5",
+          ]));
+          assertCommandOk(resumed, "resume stored multisig approval");
+          const report = parseLastJson(resumed.stdout);
+          assertEquals(report.accepted, true);
+          assertEquals(report.said, selected.exnSaid);
+          assertEquals(report.embedded, joined.embedded);
+          assertEquals(report.messages, joined.messages);
+        }
+
         const dwsPort = reserveTcpPort();
         const did = `did:webs:127.0.0.1%3A${dwsPort}:dws:${groupPre}`;
         const webRoot = `${headRoot}/web-root`;

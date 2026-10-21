@@ -95,6 +95,12 @@ only proposal selection and immediate UI decisions. Explicit selection reads acc
 EXNs and their Multiplexor indexes independently of notification presence. Group
 filters resolve local aliases and bind the actual KEL child identity (inception
 need not carry gid); notices discover candidates but do not authorize their route.
+Resume reuses the recorded member contribution and membership choices. Existing
+recipient wrappers replay their retained authentication; incomplete fanout may add
+an outer wrapper around the same approved child. Never reset membership from an
+accepted historical inception/rotation or infer acceptance from a resend. Stored
+epath values include their counter; serialize only their path/proof payload so
+reconstruction does not double the counter.
 Timed waits and delegated-group
 completion are private CLI orchestration, not exported workflow scheduling APIs.
 IPEX group coordination likewise exposes direct approval, publication and pending

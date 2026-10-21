@@ -183,6 +183,22 @@ Deno.test("multisig publication records its actual local proposal before deliver
         }]);
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, 0);
+        yield* left.db.reopen();
+        const resumed = yield* approvePendingMultisigProposal(left, runtime, {
+          said: delivered.said!,
+          callbacks: {
+            approveProposal: () => {
+              throw new Error("Pending recorded approval must not prompt again.");
+            },
+            chooseGroupAlias: () => {
+              throw new Error("Pending group already has an alias.");
+            },
+            chooseRegistryName: () => "unused",
+          },
+        });
+        assertEquals(resumed?.accepted, false);
+        assertEquals(resumed?.messages, publication.messages);
+        assertEquals(left.db.getKever(local.hab.pre), null);
         const [peer, paths] = yield* multisigInceptExn(
           bob,
           mids,
@@ -399,6 +415,45 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         assertEquals(issueResult?.accepted, true);
         assertEquals(runtime.vdr!.reger.tels.getOn(creder.said!, 0)?.qb64, issuance.said);
         assertExists(runtime.vdr!.reger.saved.get([creder.said!]));
+        // Reopen the actual evidence store; all four selections have consumed their notices.
+        yield* left.db.reopen();
+        const sign = alice.mgr.sign;
+        alice.mgr.sign = () => {
+          throw new Error("Resume must reuse the recorded member contribution and outer signatures.");
+        };
+        try {
+          const callbacks = {
+            approveProposal: () => {
+              throw new Error("Recorded approval must not prompt again.");
+            },
+            chooseGroupAlias: () => {
+              throw new Error("Recorded group must not be renamed.");
+            },
+            chooseRegistryName: () => {
+              throw new Error("Recorded registry must not be renamed.");
+            },
+          };
+          for (
+            const [wrapper, prior] of [
+              [peer, result],
+              [rpyWrapper, replyResult],
+              [vcpWrapper, registryResult],
+              [issWrapper, issueResult],
+            ] as const
+          ) {
+            const resumed = yield* approvePendingMultisigProposal(left, runtime, {
+              said: wrapper.said!,
+              group: "group",
+              callbacks,
+            });
+            assertEquals(resumed?.accepted, true);
+            assertEquals(resumed?.messages, prior?.messages);
+            assertEquals(resumed?.embedded, prior?.embedded);
+          }
+        } finally {
+          alice.mgr.sign = sign;
+        }
+        assertEquals(left.db.getKever(local.hab.pre)?.said, issueAnchor.serder.said);
       } finally {
         yield* runtime.close();
       }
