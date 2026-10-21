@@ -312,6 +312,20 @@ function rawMessage(message: Uint8Array | RawMessage): Uint8Array {
   return message instanceof Uint8Array ? message : message.raw;
 }
 
+/**
+ * Resolve signed recipient data, or the sender of an accepted linked predecessor.
+ * Legacy admit/agree/spurn builders omit an explicit recipient. Callers loading
+ * a predecessor must supply it from accepted storage; this helper does not admit it.
+ */
+export function ipexRecipient(exn: SerderKERI, prior?: SerderKERI): string | null {
+  const rp = exn.ked?.rp;
+  if (typeof rp === "string" && rp.length > 0) return rp;
+  const attrs = exn.ked?.a;
+  if (isRecord(attrs) && typeof attrs.i === "string" && attrs.i.length > 0) return attrs.i;
+  if (prior?.said && priorSaid(exn) === prior.said) return prior.pre || null;
+  return null;
+}
+
 function priorSaid(serder: SerderKERI): string {
   const prior = serder.ked?.p;
   return typeof prior === "string" ? prior : "";

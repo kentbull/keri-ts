@@ -41,8 +41,9 @@ import {
   credentialPresentationArtifacts,
   credentialPresentationSupportMessages,
   credentialSaidFromGrant,
+  validateAdmitGrant,
 } from "./ipex-credentialing.ts";
-import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
+import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexRecipient } from "./ipexing.ts";
 import {
   type GroupDelivery,
   type GroupSendResult,
@@ -75,7 +76,7 @@ export interface MultisigIpexApprovalResult extends GroupSendResult {
  * @param hby Borrowed local identities and accepted-state stores.
  * @param protocol Borrowed semantic owner; this approval creates its own byte-input context.
  * @param postman Borrowed delivery owner; the caller runs and joins its worker.
- * @param reger Explicit legacy evidence store, required only when sending a completed grant.
+ * @param reger Explicit legacy store, required for completed grant delivery and fresh admit approval.
  * @param wrapper Accepted multisig exchange carrying the proposed IPEX child.
  * @param options Approval/genus policy used for the existing group workflow.
  * @returns Approval and current group/protocol completion information.
@@ -105,7 +106,7 @@ export function* approveMultisigIpex(
       throw new ValidationError("Selected IPEX wrapper was not indexed by ordinary intake.");
     }
   }
-  const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper);
+  const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
   const publication = options.publish
     ? yield* publishGroupIpexProposal(hby, protocol, postman, groupHab, approved, genus)
     : { messages: [], deliveries: [] };
@@ -158,6 +159,7 @@ function* approveIpexChild(
   groupHab: Hab,
   { event: embedded, attachment: peerAttachment, genus }: ReturnType<typeof loadIpexProposal>["child"],
   wrapper: SerderKERI,
+  reger: Reger | null,
 ): Operation<Uint8Array> {
   const input = new Reactor(protocol);
   if (peerAttachment.length > 0) {
@@ -179,7 +181,23 @@ function* approveIpexChild(
     const proof = localIpexContribution(hby.db, member.pre, embedded, envelopeFromFrame(frames[0]).tsgs);
     if (!proof) throw new ValidationError("Recorded IPEX approval lacks a valid member contribution.");
     approved = concatBytes(serializeMessage(embedded, { tsgs: [proof], gvrsn: genus }), peerAttachment);
-  } else approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
+  } else {
+    if (embedded.route === IPEX_ADMIT_ROUTE) {
+      if (!reger) throw new ValidationError("Admit approval requires the local credential wallet.");
+      const prior = embedded.ked?.p;
+      const grant = typeof prior === "string" && prior.length > 0 ? hby.db.exns.get([prior]) : null;
+      if (!grant) throw new ValidationError("Admit approval requires its accepted grant.");
+      validateAdmitGrant(grant, groupHab.pre, reger);
+      if (ipexRecipient(embedded, grant) !== grant.pre) {
+        throw new ValidationError("Admit recipient does not match its grant sender.");
+      }
+      const response = hby.db.erpy.get([grant.said!]);
+      if (response && response.qb64 !== embedded.said) {
+        throw new ValidationError("Grant already has another accepted response.");
+      }
+    }
+    approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
+  }
   yield* input.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
   yield* protocol.processEscrowsOnce();
   return approved;
@@ -353,6 +371,7 @@ export function* approveStoredMultisigIpexWrappers(
   hby: Habery,
   protocol: ProtocolProcessor,
   embeddedSaid: string,
+  reger: Reger | null,
 ): Operation<void> {
   for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
@@ -363,7 +382,7 @@ export function* approveStoredMultisigIpexWrappers(
       continue;
     }
     const { child, groupHab } = loadIpexProposal(hby, wrapper);
-    yield* approveIpexChild(hby, protocol, groupHab, child, wrapper);
+    yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
   }
 }
 
@@ -413,7 +432,9 @@ export function* sendCompletedGroupIpex(
   if (!embedded.said) {
     throw new ValidationError("Completed group IPEX message is missing a SAID.");
   }
-  const recipient = ipexRecipient(embedded);
+  const priorSaid = embedded.ked?.p;
+  const prior = typeof priorSaid === "string" && priorSaid.length > 0 ? hby.db.exns.get([priorSaid]) : null;
+  const recipient = ipexRecipient(embedded, prior ?? undefined);
   if (!recipient) {
     throw new ValidationError(`Unable to find recipient for ${embedded.route ?? "<unknown>"} ${embedded.said}.`);
   }
@@ -551,18 +572,6 @@ export function* sendCredentialStream(
   return outcome.deliveries;
 }
 
-function ipexRecipient(exn: SerderKERI): string | null {
-  const rp = exn.ked?.rp;
-  if (typeof rp === "string" && rp.length > 0) {
-    return rp;
-  }
-  const attrs = exn.ked?.a;
-  if (isRecord(attrs) && typeof attrs.i === "string" && attrs.i.length > 0) {
-    return attrs.i;
-  }
-  return null;
-}
-
 function grantPathedMaterials(
   artifacts: ReturnType<typeof credentialPresentationArtifacts>,
 ): Uint8Array[] {
@@ -640,8 +649,4 @@ function hexToFixedBytes(hex: string, size: number): Uint8Array {
     raw[index] = Number.parseInt(padded.slice(index * 2, (index * 2) + 2), 16);
   }
   return raw;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

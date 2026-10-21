@@ -25,7 +25,7 @@ import type { Reger } from "../db/reger.ts";
 import { CredentialWallet, serializeCredential } from "../vdr/credentialing.ts";
 import { chunkBytes } from "./byte-source.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "./habbing.ts";
-import { IPEX_GRANT_ROUTE, ipexAdmitExn, type IpexBuilderOptions, ipexGrantExn } from "./ipexing.ts";
+import { IPEX_GRANT_ROUTE, ipexAdmitExn, type IpexBuilderOptions, ipexGrantExn, ipexRecipient } from "./ipexing.ts";
 import { processMessages } from "./message-source.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 
@@ -60,6 +60,7 @@ export interface CredentialGrantMessage {
 export interface CredentialAdmitMessage {
   admit: SerderKERI;
   attachments: Uint8Array;
+  /** Empty when group orchestration defers signing. */
   wire: Uint8Array;
 }
 
@@ -257,30 +258,41 @@ export function ipexCredentialGrant(args: {
   };
 }
 
-/** Build a signed `/ipex/admit` response for an accepted grant. */
+/**
+ * Validate a supplied accepted grant's recipient and wallet obligation before signing.
+ * Explicit no-wait authoring may skip the saved marker; it does not establish
+ * wallet acceptance. Peer approval always checks its own wallet independently.
+ */
+export function validateAdmitGrant(grant: SerderKERI, recipient: string, reger: Reger, requireSaved = true): string {
+  if (grant.route !== IPEX_GRANT_ROUTE) {
+    throw new ValidationError(`Expected ${IPEX_GRANT_ROUTE} grant, got ${grant.route ?? "<none>"}.`);
+  }
+  if (ipexRecipient(grant) !== recipient) {
+    throw new ValidationError("Grant recipient does not match the admitting identifier.");
+  }
+  const said = credentialSaidFromGrant(grant);
+  if (!said) throw new ValidationError("Grant is missing embedded ACDC SAID.");
+  if (requireSaved && !reger.saved.get([said])) throw new ValidationError(`Credential ${said} is not saved locally.`);
+  return said;
+}
+
+/** Build an admit after validating its grant; group callers defer the endorsement. */
 export function ipexCredentialAdmit(args: {
   hab: Hab;
   reger: Reger;
   grant: SerderKERI;
   message?: string;
   options?: IpexCredentialAdmitOptions;
+  /** Leave wire empty so group orchestration can select/reuse the member contribution. */
+  sign?: boolean;
 }): CredentialAdmitMessage {
-  if (args.grant.route !== IPEX_GRANT_ROUTE) {
-    throw new ValidationError(`Expected ${IPEX_GRANT_ROUTE} grant, got ${args.grant.route ?? "<none>"}.`);
-  }
-  const credentialSaidValue = credentialSaidFromGrant(args.grant);
-  if (!credentialSaidValue) {
-    throw new ValidationError("Grant is missing embedded ACDC SAID.");
-  }
-  if ((args.options?.requireSaved ?? true) && !args.reger.saved.get([credentialSaidValue])) {
-    throw new ValidationError(`Credential ${credentialSaidValue} is not saved locally.`);
-  }
+  validateAdmitGrant(args.grant, args.hab.pre, args.reger, args.options?.requireSaved ?? true);
 
   const [admit, attachments] = ipexAdmitExn(args.hab, args.message ?? "", args.grant, args.options ?? {});
   return {
     admit,
     attachments,
-    wire: concatBytes(
+    wire: args.sign === false ? new Uint8Array() : concatBytes(
       args.hab.endorse(admit, { pipelined: false, gvrsn: args.options?.gvrsn ?? undefined }),
       attachments,
     ),

@@ -133,6 +133,13 @@ group grants do not write a completed export. Delivery snapshots cover completed
 transport destinations, including elected external grant delivery.
 Explicit join collects stored peer child proofs before its completion decision.
 Response preflight shares the v1 predecessor map and checks known signed parties.
+Admit authenticates the entire supplied file before importing artifacts, then
+observes the wallet saved marker before signing unless no-wait was explicit.
+One host owns wallet and approval progress. Each fresh peer admit contribution
+checks its own accepted grant, recipient and saved marker; original verified
+approvals remain reusable. Legacy admit destination derives from the accepted
+linked grant's sender. Wallet pending, child acceptance and transport are distinct
+facts; no admit/export exists when the wallet deadline expires before authoring.
 
 Normalization and Exchanger share supportsNestedExchange for the structural v2
 route gate. Handler opt-in, route-local child validation and independent proofs

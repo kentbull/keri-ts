@@ -1,4 +1,4 @@
-import { type Operation, race, run, sleep } from "effection";
+import { call, type Operation, race, run, sleep } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import {
   concatBytes,
@@ -136,6 +136,11 @@ Deno.test("CLI - IPEX elapsed deadlines validate before runtime startup", async 
   for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
     await assertOperationThrows(
       ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: value }),
+      "approval timeout seconds must be",
+    );
+    await assertOperationThrows(ipexAdmitCommand({ timeout: value }), "credential timeout seconds must be");
+    await assertOperationThrows(
+      ipexAdmitCommand({ approvalTimeoutSeconds: value }),
       "approval timeout seconds must be",
     );
     await assertOperationThrows(
@@ -830,6 +835,7 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
   const grantFile = `${headDirPath}/grant.cesr`;
   const out = `${headDirPath}/admit.cesr`;
   let wire: Uint8Array = new Uint8Array();
+  let unsigned: Uint8Array = new Uint8Array();
   let said = "";
   try {
     await run(function*() {
@@ -843,6 +849,7 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
         });
         const [grant] = ipexGrantExn(hab, hab.pre, "file grant", acdc);
         said = grant.said!;
+        unsigned = grant.raw;
         wire = concatBytes(
           hab.endorse(grant, { pipelined: false }),
           new Counter({ code: CtrDexV1.ESSRPayloadGroup, count: 1, version: Vrsn_1_0 }).qb64b,
@@ -858,13 +865,58 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
     const error = await assertRejects(() => run(() => ipexAdmitCommand(args)), WireParseError);
     assertEquals(error.cause instanceof ShortageError, true);
     await assertRejects(() => Deno.stat(out), Deno.errors.NotFound);
+    await Deno.writeFile(grantFile, unsigned);
+    await assertRejects(() => run(() => ipexAdmitCommand(args)), ValidationError, "not stored as accepted");
+    await assertRejects(() => Deno.stat(out), Deno.errors.NotFound);
     await Deno.writeFile(grantFile, wire);
     const result = await run(() => ipexAdmitCommand(args));
     const admit = new SerderKERI({ raw: await Deno.readFile(out) });
     assertEquals(admit.route, "/ipex/admit");
     assertEquals(admit.ked?.p, said);
     assertEquals(result.grant.said, said);
+    assertExists(result.admit);
     assertEquals(result.admit.said, admit.said);
+    assertEquals(result.saved, false);
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
+      try {
+        const hab = hby.habByName("holder")!;
+        const acdc = new SerderACDC({
+          sad: { v: "ACDC10JSON000000_", d: "", i: hab.pre, s: hab.pre, a: { i: hab.pre } },
+          makify: true,
+        });
+        const [grant] = ipexGrantExn(hab, hab.pre, "CLI no-wait", acdc);
+        yield* call(() => Deno.writeFile(grantFile, hab.endorse(grant, { pipelined: false })));
+      } finally {
+        yield* hby.close();
+      }
+    });
+    const output = await new Deno.Command(Deno.execPath(), {
+      cwd: new URL("../../../../../", import.meta.url).pathname,
+      args: [
+        "run",
+        "-A",
+        "packages/tufa/mod.ts",
+        "ipex",
+        "admit",
+        "--name",
+        name,
+        "--head-dir",
+        headDirPath,
+        "--alias",
+        "holder",
+        "--grant-file",
+        grantFile,
+        "--out",
+        out,
+        "--no-wait",
+      ],
+      stdout: "piped",
+      stderr: "piped",
+    }).output();
+    assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
+    const facts = JSON.parse(new TextDecoder().decode(output.stdout).trim().split("\n").at(-1)!) as { saved: boolean };
+    assertEquals(facts.saved, false);
   } finally {
     await Deno.remove(headDirPath, { recursive: true });
   }

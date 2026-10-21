@@ -262,19 +262,26 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
   );
 
   registerDispatchedCommand(
-    addHabOption(
+    addGvrsnOption(addHabOption(
       addStoreOptions(
         ipex.command("admit")
-          .description("Send or write an IPEX admit")
+          .description("Send or write an IPEX admit after local credential acceptance")
           .option("--said <said>", "Accepted grant EXN SAID")
-          .option("--grant-file <file>", "Grant wire file")
+          .option("--grant-file <file>", "Authenticated grant/support wire file")
+          .option("--timeout <seconds>", "Wait for local credential acceptance (default: 60; 0 returns pending)")
+          .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")
           .option("-m, --message <text>", "Human-readable message")
-          .option("--out <file>", "Write admit wire")
-          .option("--no-wait", "Do not require the embedded credential to be saved"),
+          .option("--out <file>", "Write completed admit wire")
+          .option("--no-wait", "Skip the saved-credential requirement; grant authentication remains required"),
       ),
-    ),
+    )),
     dispatch,
-    { name: "ipex.admit", load: () => import("../ipex.ts"), exportName: "ipexAdmitCommand", args: dispatchArgs },
+    {
+      name: "ipex.admit",
+      load: () => import("../ipex.ts"),
+      exportName: "ipexAdmitCommand",
+      args: options => ({ ...dispatchArgs(options), noWait: options.wait === false }),
+    },
   );
 
   registerDispatchedCommand(
