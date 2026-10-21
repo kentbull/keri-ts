@@ -11,12 +11,19 @@ import { revokeCredential } from "../../../src/app/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
+import {
+  approveMultisigIpex,
+  publishInitialGroupIpex,
+  sendCompletedGroupIpex,
+} from "../../../src/app/ipex-grouping.ts";
+import { approvePendingMultisigProposal } from "../../../src/app/multisig-workflows.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createInteropContext, randomPort, spawnChild, withStartedChild } from "./interop-test-helpers.ts";
 import { selectedKeripyProfile } from "./keripy-runtime.ts";
 
-Deno.test("selected Python public APIs approve a TypeScript group's legacy registry, credential and revocation", async () => {
+Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy group credential handoffs", async () => {
   const ctx = await createInteropContext();
   const port = randomPort(), origin = `http://127.0.0.1:${port}`;
   const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
@@ -111,6 +118,72 @@ Deno.test("selected Python public APIs approve a TypeScript group's legacy regis
             const pyIssued = yield* call(() => control("snapshot", { registry: registry.registry, credential: said }));
             assertEquals(pyIssued.state, "iss");
             assertEquals(pyIssued.saved, true);
+            const pythonIssue = yield* call(() =>
+              control("issue", {
+                registry: registry.registry,
+                schema: schema.said,
+                recipient: member.pre,
+              })
+            );
+            const pythonSaid = String(pythonIssue.credential);
+            const approved = yield* approvePendingMultisigProposal(hby, runtime, {
+              said: String(pythonIssue.exnSaid),
+              callbacks: {
+                approveProposal: () => true,
+                chooseGroupAlias: () => "group",
+                chooseRegistryName: () => "registry",
+              },
+            });
+            assertEquals(approved?.accepted, true);
+            assertEquals(yield* waitForTelPublication(rgy.publication, pythonSaid, 0, Date.now() + 10_000), true);
+            yield* runtime.protocol.processEscrowsOnce();
+            assertExists(rgy.reger.saved.get(pythonSaid));
+            const pyAuthored = yield* call(() =>
+              control("snapshot", { registry: registry.registry, credential: pythonSaid })
+            );
+            assertEquals(pyAuthored.state, "iss");
+            assertEquals(pyAuthored.saved, true);
+            // The Python member is also this credential's recipient. This checks
+            // mixed group approval/business handoff; independent-holder wallet
+            // settlement remains covered by the separate maintained CLI workflow.
+            const grant = ipexCredentialGrant({
+              hby,
+              hab: made.hab,
+              reger: rgy.reger,
+              recipient: pyPre,
+              credentialSaid: said,
+            });
+            const publication = yield* publishInitialGroupIpex(
+              hby,
+              runtime.protocol,
+              runtime.postman,
+              made.hab,
+              grant.wire,
+            );
+            assertEquals(runtime.exc.complete(grant.grant.said!), false);
+            const approval = yield* call(() => control("approve-exchange", { said: publication.messages[0].exnSaid }));
+            assertEquals(approval.accepted, grant.grant.said);
+            const completed = yield* approveMultisigIpex(
+              hby,
+              runtime.protocol,
+              runtime.postman,
+              rgy.reger,
+              hby.db.exns.get([String(approval.exnSaid)])!,
+              { sendLead: false },
+            );
+            assertEquals(completed.accepted, true);
+            assertEquals(runtime.exc.complete(grant.grant.said!), true);
+            assertEquals(runtime.exc.lead(made.hab, grant.grant.said!), true);
+            const destinations = yield* sendCompletedGroupIpex(hby, runtime.postman, rgy.reger, made.hab, grant.grant);
+            assertEquals(destinations.length > 0, true);
+            const pyGrant = yield* call(() =>
+              control("snapshot", { registry: registry.registry, credential: said, exchange: grant.grant.said })
+            );
+            assertEquals(pyGrant.accepted, true);
+            const admission = yield* call(() => control("admit", { said: grant.grant.said }));
+            const receivedAdmit = hby.db.exns.get([String(admission.said)]);
+            assertEquals(receivedAdmit?.route, "/ipex/admit");
+            assertEquals(receivedAdmit?.ked?.p, grant.grant.said);
             const revoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
               registryName: "registry",
               credentialSaid: said,
