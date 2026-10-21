@@ -23,6 +23,7 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
+import { resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { Kever } from "../core/kever.ts";
@@ -208,21 +209,14 @@ export function groupIpexPartial(
     : null;
   if (prior) return concatBytes(serializeMessage(embedded, { tsgs: [prior], gvrsn }), attachments);
   const groupKever = groupHab.kever;
-  const memberKey = memberHab?.kever?.verfers[0]?.qb64;
-  if (!group || !groupKever || !memberHab || !memberKey) {
+  if (!group || !groupKever || !memberHab) {
     throw new ValidationError(`Local group ${group || "<missing>"} is missing member signing state.`);
   }
 
-  const groupIndex = groupKever.verfers.findIndex((verfer) => verfer.qb64 === memberKey);
-  if (groupIndex < 0) {
-    throw new ValidationError(`Local member ${memberHab.pre} is not a current signer for group ${group}.`);
-  }
-
-  const sigers = memberHab.mgr.sign(embedded.raw, {
-    pubs: [memberKey],
-    indexed: true,
-    indices: [groupIndex],
-  });
+  // Hab owns contribution selection, including a member that rotated ahead of
+  // the group's accepted key list. A fresh endorsement needs current authority
+  // only; recorded contributions above retain their original proof bytes.
+  const sigers = groupHab.sign(embedded.raw, true);
   const estSaid = groupKever.lastEst.d || groupKever.said;
   const estEvent = estSaid ? hby.db.getEvtSerder(group, estSaid) : null;
   const seqner = estEvent?.sner;
@@ -476,7 +470,12 @@ export function requireStoredExchange(hby: Habery, said: string): SerderKERI {
   return stored;
 }
 
-/** Rebuild a stored EXN wire message with signatures and pathed material. */
+/**
+ * Rebuild an accepted EXN with its signatures and path/proof payloads.
+ * epath stores complete counted groups; remove each source counter before the
+ * serializer supplies the selected output genus's counter. Overrides already
+ * contain uncounted payloads, as returned by the credential artifact builder.
+ */
 export function storedExchangeMessage(
   hby: Habery,
   serder: SerderKERI,
@@ -487,10 +486,15 @@ export function storedExchangeMessage(
     throw new ValidationError("Exchange message is missing a SAID.");
   }
   const cigars = hby.db.ecigs.get([serder.said]).map(([, cigar]) => cigar) as Cigar[];
+  const sourceGenus = resolveAttachmentGvrsn(serder, hby.db.exchangeMeta.get([serder.said])?.gvrsn);
+  const pathed = pathedOverride ?? hby.db.epath.get([serder.said]).map((text) => {
+    const raw = new TextEncoder().encode(text);
+    return raw.slice(new Counter({ qb64b: raw, version: sourceGenus }).fullSize);
+  });
   return serializeMessage(serder, {
     tsgs: rebuildStoredExchangeGroups(hby.db, serder.said),
     cigars,
-    pathed: pathedOverride ?? hby.db.epath.get([serder.said]),
+    pathed,
     pipelined: false,
     gvrsn,
   });

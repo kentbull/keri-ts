@@ -43,6 +43,12 @@ An incomplete duplicate remains pending without replacing accepted rows or rerun
 handling; `complete(said)` reports durable acceptance, not the current attempt.
 Canonical 32-digit signature ordinals prevent Number/Seqner retry duplicates.
 Keep ests/eidx and cigar verifier context; recheck proof factors on replay.
+Stored epath rows contain complete counted groups; serializers take only their
+path/proof payloads and supply output counters. Decode the source counter with
+retained attachment genus, independently of signed body version and output genus.
+Group IPEX first endorsements use Hab.sign's accepted member contribution lookup;
+a member can rotate ahead of the group. Reuse verified stored partials before
+fresh signing, preserving the original proof after later rotations.
 
 Retry captures an initial horizon, reads one key and closes the LMDB cursor before
 awaiting/removing rows. Mutating a suspended range can skip the next escrow.
