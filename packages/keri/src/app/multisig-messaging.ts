@@ -10,6 +10,10 @@
  */
 import { concatBytes, type SerderKERI } from "cesr-ts";
 import type { Operation } from "effection";
+import type { Baser } from "../db/basing.ts";
+import { abortable } from "./abortable.ts";
+import { collectBytes } from "./byte-source.ts";
+import type { Exchanger } from "./exchanging.ts";
 import type { Poster } from "./forwarding.ts";
 import { uniqueMembers } from "./group-members.ts";
 import type { MultisigMessage } from "./grouping.ts";
@@ -85,6 +89,57 @@ function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
 /** Restrict SAD section access to ordinary records. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Find an accepted local contribution in the ordinary Multiplexor index.
+ * An optional destination selects its original recipient-specific wrapper.
+ * The index locates evidence; accepted sender, route and payload must all agree.
+ */
+export function storedGroupMessage(
+  db: Baser,
+  member: string,
+  proposal: SerderKERI,
+  recipient?: string,
+): SerderKERI | null {
+  const payloadSaid = multisigPayloadSaid(proposal);
+  if (!payloadSaid) return null;
+  for (const indexed of db.meids.get([payloadSaid])) {
+    const stored = db.exns.get([indexed.qb64]);
+    if (
+      !stored || stored.pre !== member || stored.route !== proposal.route
+      || multisigPayloadSaid(stored) !== payloadSaid
+    ) continue;
+    const destination = stored.pvrsn.major === 1 ? stored.ked?.rp : stored.ked?.ri;
+    if (recipient !== undefined && destination !== recipient) continue;
+    return stored;
+  }
+  return null;
+}
+
+/**
+ * Reconstruct an existing recipient wrapper, or sign its first publication.
+ * Replay validates retained authentication and preserves the original EXN SAID;
+ * a retry never replaces an already recorded wrapper with a new timestamp/nonce.
+ * Missing fanout destinations can still receive the same approved child in a
+ * newly signed outer wrapper. No group-event signature is made here.
+ */
+export function* prepareGroupMessage(
+  exchanger: Exchanger,
+  member: Hab,
+  recipient: string,
+  prepared: MultisigMessage,
+): Operation<SignedGroupMessage> {
+  const stored = storedGroupMessage(exchanger.hby.db, member.pre, prepared[0], recipient);
+  if (!stored) return signGroupMessage(member, recipient, prepared);
+  const message = yield* abortable(signal => collectBytes(exchanger.replay(stored.said!, signal)));
+  return {
+    src: member.pre,
+    recipient,
+    exnSaid: stored.said!,
+    payloadSaid: multisigPayloadSaid(stored)!,
+    message,
+  };
 }
 
 /**
