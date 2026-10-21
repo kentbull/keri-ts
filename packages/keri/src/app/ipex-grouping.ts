@@ -65,6 +65,7 @@ export interface MultisigIpexApprovalOptions {
 
 export interface MultisigIpexApprovalResult extends GroupSendResult {
   accepted: boolean;
+  /** Null while this member lacks required evidence, even if other members completed the child. */
   approved: Uint8Array | null;
 }
 

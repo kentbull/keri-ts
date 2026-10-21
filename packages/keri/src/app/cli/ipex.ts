@@ -118,6 +118,7 @@ export interface IpexJoinResult {
   group?: GroupSendResult & {
     embedded: SerderKERI;
     accepted: boolean | null;
+    /** Local member approval; null in preview and independent of group acceptance. */
     approved: boolean | null;
     lead: boolean | null;
     /** Present for admit approval; each member checks its own wallet before a fresh signature. */
