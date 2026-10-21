@@ -1,6 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
-import { b, Diger, Prefixer, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import { b, Diger, Prefixer, Siger, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
@@ -242,6 +242,72 @@ Deno.test("Exchanger replays partial-signature escrows once the missing signatur
       assertEquals(
         hby.db.reps.get([sender.pre]).some((diger) => diger.qb64 === said),
         true,
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Exchanger retains the authenticated group lead after member and group rotation", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `exchange-lead-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    try {
+      const alice = hby.makeHab("alice");
+      const bob = hby.makeHab("bob");
+      const members = [alice.pre, bob.pre];
+      const group = hby.makeGroupHab("group", bob, members, members, undefined, { isith: "1", nsith: "1" });
+      assertEquals(group.hab.accepted, true);
+      const exchanger = new Exchanger(hby);
+      const serder = makeExchangeSerder("/test/lead", {}, { sender: group.hab.pre, recipient: alice.pre });
+      const signature = bob.sign(serder.raw, true)[0];
+      const proof = (index: number) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: group.hab.pre }),
+          group.serder.sner!,
+          new Diger({ qb64: group.serder.said! }),
+          [new Siger({ code: signature.code, raw: signature.raw, index })],
+        );
+      // Bob's signature cannot authenticate Alice's lower index, but ordinary partial escrow retains it.
+      assertEquals((yield* exchanger.processEvent({ serder, tsgs: [proof(0)] })).kind, "escrow");
+      assertEquals(exchanger.lead(group.hab, serder.said!), false, "Incomplete evidence must not elect a sender");
+      assertEquals((yield* exchanger.processEvent({ serder, tsgs: [proof(1)] })).kind, "accept");
+      assertEquals(exchanger.complete(serder.said!), true);
+      assertEquals(exchanger.lead(group.hab, serder.said!), true, "Only the valid contribution selects the lead");
+      const pending = hby.makeGroupHab("pending", bob, members, members, undefined, { isith: "2", nsith: "2" });
+      const incomplete = makeExchangeSerder("/test/lead", {}, { sender: pending.hab.pre, recipient: alice.pre });
+      const partial = bob.sign(incomplete.raw, true)[0];
+      assertEquals(
+        (yield* exchanger.processEvent({
+          serder: incomplete,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: pending.hab.pre }),
+              pending.serder.sner!,
+              new Diger({ qb64: pending.serder.said! }),
+              [new Siger({ code: partial.code, raw: partial.raw, index: 1 })],
+            ),
+          ],
+        })).kind,
+        "escrow",
+      );
+      assertEquals(
+        exchanger.lead(pending.hab, incomplete.said!),
+        false,
+        "A valid partial signer is not an elected sender",
+      );
+      bob.rotate();
+      assertEquals(
+        exchanger.lead(group.hab, serder.said!),
+        true,
+        "Historical approval belongs to the same member after rotation",
+      );
+      const rotation = hby.rotateGroupHab("group", [bob.pre, alice.pre], members, { isith: "1", nsith: "1" });
+      assertEquals(rotation.hab.kever!.said, rotation.serder.said);
+      assertEquals(
+        exchanger.lead(group.hab, serder.said!),
+        true,
+        "Current group index order cannot reinterpret an older proof",
       );
     } finally {
       yield* hby.close(true);

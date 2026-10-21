@@ -274,6 +274,9 @@ Group IPEX approval derives its child, stored proof and genus from the wrapper.
 It receives protocol, Poster and optional Reger explicitly, owning only its local
 byte-input context. Stored approval has no transport dependency; pending discovery
 reads accepted Baser exchanges. Command composition owns workers and stores.
+Group EXN lead election requires acceptance and the first authenticated historical
+sender proof; map its winning key through the member's accepted KEL history,
+not current member keys or the current group index order.
 Partial signing receives proof bytes directly; it does not look them up through
 a wrapper ID. Prefix parser input with the resolved genus, serialize local
 signatures in that genus, and publish its signed replay hint. CLI group grants
