@@ -61,7 +61,7 @@ import { messageAttachmentGroups, messagize, serializeMessage } from "../../../s
 import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { Reger } from "../../../src/db/reger.ts";
-import { credential, serializeCredential } from "../../../src/vdr/credentialing.ts";
+import { credential, Regery, serializeCredential } from "../../../src/vdr/credentialing.ts";
 import framing714 from "../../fixtures/multisig-framing-714.json" with { type: "json" };
 
 // @ts-expect-error Event publication cannot accept a registry proposal.
@@ -1126,6 +1126,53 @@ for (const kind of ["apply", "grant"] as const) {
     });
   }
 }
+
+Deno.test("group TEL publication retains the original pending anchor across reopen", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
+          local: true,
+        });
+        yield* call(() => learn(right, local.hab));
+        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        const result = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+          registryName: "pending",
+        });
+        const regk = result.registry!;
+        const reger = runtime.vdr!.reger;
+        assertEquals(result.group?.accepted, false);
+        assertEquals(runtime.vdr!.publication.complete(regk), false);
+        const [[keys, seal]] = [...reger.tmse.getTopItemIter()];
+        assertEquals([keys[0], keys[2]], [regk, regk]);
+        yield* reger.close();
+        yield* reger.reopen();
+        const resumed = new Regery(left, { reger });
+        resumed.processEscrows();
+        assertEquals(resumed.publication.complete(regk), false);
+        const approval = right.interactGroupHab("group", mids, { data: [{ i: regk, s: "0", d: regk }] });
+        assertEquals(approval.serder.said, seal[2].qb64);
+        yield* runtime.reactor.processBytes(messagize(approval.serder, { sigers: approval.sigers }), { local: true });
+        yield* runtime.protocol.processEscrowsOnce();
+        assertEquals(left.db.kels.getLast(local.hab.pre, 1), approval.serder.said);
+        resumed.processEscrows();
+        assertEquals(resumed.publication.complete(regk), true);
+        assertEquals(reger.regs.get("pending")?.registryKey, regk);
+        assertEquals(reger.tels.getOn(regk, 0)?.qb64, regk);
+        assertEquals([...reger.ctel.getTopItemIter()][0][1].qb64, approval.serder.said);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
 
 Deno.test("group establishment-only registry inception and issuance use rotation anchors", async () => {
   await participants(async (left, right, alice, bob, notifier) => {

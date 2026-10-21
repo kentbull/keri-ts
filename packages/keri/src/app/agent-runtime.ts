@@ -50,7 +50,9 @@ import { Respondant } from "./respondant.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 import { Signaler } from "./signaling.ts";
+import { publishPendingTel } from "./tel-publishing.ts";
 import { WitnessInquisitor } from "./witness-inquisitor.ts";
+import { Receiptor } from "./witnessing.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 
@@ -747,10 +749,21 @@ export function* runAgentRuntime(
   } = {},
 ): Operation<void> {
   runtime.querying.configure({ hab: options.hab });
+  const telReceiptor = runtime.vdr ? new Receiptor(runtime.hby, runtime.protocol, runtime.http, runtime.clock) : null;
   const tasks = [
     yield* spawn(() => runtime.querying.deliverDo()),
     yield* spawn(() => runtime.postman.deliverDo()),
     ...(runtime.backerService ? [yield* spawn(() => runtime.backerService!.run())] : []),
+    ...(runtime.vdr && telReceiptor
+      ? [
+        yield* spawn(function*() {
+          while (true) {
+            yield* publishPendingTel(runtime.hby, runtime.vdr!.publication, telReceiptor, runtime.http, runtime.clock);
+            yield* runtimeTurn();
+          }
+        }),
+      ]
+      : []),
     yield* spawn(function*() {
       yield* cueDo(runtime, options);
     }),

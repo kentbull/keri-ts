@@ -24,6 +24,11 @@ responsibilities into one vague "VC" layer.
   revalidates accumulated signatures before admission and retries partial backer
   escrows. Exact accepted replays may add valid receipts without reapplying state.
 - `vdr/credentialing.ts` owns issuer-side registry and credential orchestration.
+- `vdr/tel-publication.ts` owns legacy TEL completion through `tmse`, `tpwe`,
+  `tede` and `ctel`. Accepted anchors precede full witness receipt collection and
+  local TEL publication. `app/tel-publishing.ts` performs finite receipt/fanout
+  and witness transmissions; the ordinary host runs it. `ctel` stores the issuer
+  anchor SAID and proves completed local publication, not remote TEL acceptance.
 - `app/verifying.ts` owns verifier acceptance, schema/registry/chain escrows,
   wallet indexes, and chain policy.
 - `app/ipexing.ts` registers version-specific IPEX policy; `ipex-v2.ts` owns
