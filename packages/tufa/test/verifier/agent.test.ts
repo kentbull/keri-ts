@@ -1,19 +1,24 @@
+import { concatBytes, Counter, Dater, type SerderACDC, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { action, call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
-import { concatBytes, Counter, Dater, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "../../../../cesr/mod.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
-import { VerifierAgent } from "../../../src/app/verifier-agent.ts";
-import { Verifier } from "../../../src/app/verifying.ts";
-import type { AgentCue } from "../../../src/core/cues.ts";
-import { Schemer } from "../../../src/core/scheming.ts";
-import { createReger, type Reger } from "../../../src/db/reger.ts";
-import { createVerifierCueBaser, type VerifierCueBaser } from "../../../src/db/verifier-cueing.ts";
-import { Credentialer, Regery, type Registry } from "../../../src/vdr/credentialing.ts";
-import { Tevery } from "../../../src/vdr/eventing.ts";
-import { httpClient } from "../../support/http-client.ts";
-import { ManualRuntimeClock } from "../../support/runtime-fakes.ts";
+import { createReger, type Reger } from "keri-ts/db";
+import {
+  type AgentCue,
+  type AgentRuntime,
+  createAgentRuntime,
+  createHabery,
+  Credentialer,
+  type Hab,
+  type Habery,
+  ipexCredentialGrant,
+  Regery,
+  type Registry,
+  Schemer,
+  Tevery,
+  Verifier,
+} from "keri-ts/runtime";
+import { createVerifierCueBaser, VerifierAgent, type VerifierCueBaser } from "../../runtime.ts";
+import { httpClient, manualClock } from "./fixtures.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -44,7 +49,7 @@ interface IssuedFixture {
   issuer: Hab;
   verifier: Hab;
   registry: Registry;
-  creder: import("../../../../cesr/mod.ts").SerderACDC;
+  creder: SerderACDC;
   grant: ReturnType<typeof ipexCredentialGrant>;
 }
 
@@ -160,6 +165,25 @@ async function assertIssuanceWebhook(gvrsn: Versionage): Promise<void> {
         {},
         { hook: "http://example.test/hook", gvrsn },
       );
+      if (gvrsn.major === 1) {
+        const schema = fixture.creder.schema;
+        if (typeof schema !== "string") throw new Error("Fixture requires a schema SAID");
+        const refused = new VerifierAgent(
+          verifierHby,
+          verifierReger,
+          cdb,
+          runtime.protocol,
+          runtime.cues,
+          runtime.http,
+          () => runtime.clock.now(),
+          { [schema]: () => false },
+          { hook: "http://example.test/hook", gvrsn },
+        );
+        const denied = yield* refused.processOnce();
+        assertEquals(denied.webhooksSent, 0);
+        assertEquals(requests.length, 0);
+        assertEquals(verifierReger.saved.get(fixture.creder.said!)?.qb64, fixture.creder.said);
+      }
       const result = yield* agent.processOnce();
 
       assertEquals(result.grantsQueued, 1);
@@ -212,7 +236,7 @@ Deno.test("VerifierAgent queues revocation cues and sends revocation webhook", a
       temp: true,
     });
     const requests: Array<Record<string, unknown>> = [];
-    const clock = new ManualRuntimeClock(Date.UTC(2034, 0, 1));
+    const clock = manualClock(Date.UTC(2034, 0, 1));
     let acceptRevocation = false;
     const runtime = yield* createAgentRuntime(
       verifierHby,
@@ -330,7 +354,7 @@ Deno.test("VerifierAgent rescans persisted revoked credentials after cue loss", 
       temp: true,
     });
     const requests: Array<Record<string, unknown>> = [];
-    const clock = new ManualRuntimeClock(Date.UTC(2034, 0, 1));
+    const clock = manualClock(Date.UTC(2034, 0, 1));
     let acceptRevocation = false;
     const runtime = yield* createAgentRuntime(
       verifierHby,
@@ -415,7 +439,7 @@ Deno.test("VerifierAgent uses one wall clock for webhook admission, headers and 
     const verifierReger = yield* createReger({ name: "clock-verifier", temp: true });
     const cdb = yield* createVerifierCueBaser({ name: "clock-cues", temp: true });
     // Deliberately differ from the real clock so accidental Date.now() calls cannot pass.
-    const clock = new ManualRuntimeClock(Date.UTC(2034, 0, 1));
+    const clock = manualClock(Date.UTC(2034, 0, 1));
     const requests: Array<{ headers: Headers; data: Record<string, unknown> }> = [];
     const http = httpClient((_url, init) => {
       requests.push({ headers: new Headers(init?.headers), data: JSON.parse(String(init?.body)).data });

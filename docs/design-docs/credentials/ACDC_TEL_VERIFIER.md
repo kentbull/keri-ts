@@ -45,7 +45,7 @@ responsibilities into one vague "VC" layer.
   RegistryStore and retains a presentation with an unresolved referenced update.
 - `app/ipex-credentialing.ts` owns KERIpy-shaped grant/admit credential
   artifacts.
-- `app/verifier-agent.ts` owns Sally-like webhook sending and durable ack/retry
+- `packages/tufa/src/verifier/` owns Sally-inspired webhook policy and local delivery
   state.
 
 ## Boundary Rules

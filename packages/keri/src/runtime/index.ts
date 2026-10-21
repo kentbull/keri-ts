@@ -296,14 +296,7 @@ export {
   Signal,
   Signaler,
 } from "../app/signaling.ts";
-export {
-  VerifierAgent,
-  type VerifierAgentOptions,
-  type VerifierAgentProcessResult,
-  type VerifierBusinessValidator,
-  type VerifierBusinessValidatorContext,
-  type VerifierWebhookBody,
-} from "../app/verifier-agent.ts";
+
 export {
   type CredentialStateProvider,
   Verifier,

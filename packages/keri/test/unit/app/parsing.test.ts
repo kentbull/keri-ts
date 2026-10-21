@@ -28,7 +28,6 @@ import {
   vcRegistryInceptCommand,
   vcSchemaImportCommand,
 } from "../../../src/app/cli/vc.ts";
-import { verifierRunCommand } from "../../../src/app/cli/verifier.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 
 Deno.test("parseExnDataItems matches KERIpy-style coercion and merge order", () => {
@@ -273,7 +272,6 @@ Deno.test("credential command inputs reject malformed supplied values before sto
       { command: ipexApplyCommand, args: { schema: "schema", attrs: "[]" }, field: "attrs" },
       { command: ipexApplyCommand, args: { schema: 7 }, field: "schema" },
       { command: ipexJoinCommand, args: { auto: "false" }, field: "auto" },
-      { command: verifierRunCommand, args: { once: "false" }, field: "once" },
     ];
     for (const { command, args, field } of cases) {
       const error = await assertRejects(() =>
@@ -290,11 +288,6 @@ Deno.test("credential command inputs reject malformed supplied values before sto
           { command: vcImportCommand, args: { settlementTimeoutMs: value }, field: "settlement-timeout-ms" },
           { command: ipexPollCommand, args: { timeout: value }, field: "poll timeout seconds" },
           { command: ipexJoinCommand, args: { approvalTimeoutSeconds: value }, field: "approval timeout seconds" },
-          {
-            command: verifierRunCommand,
-            args: { intervalMs: value },
-            field: "intervalMs",
-          },
         ]
       ) {
         const error = await assertRejects(() =>

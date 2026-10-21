@@ -339,7 +339,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
 function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void {
   const verifier = program.command("verifier").description("Verifier agent operations");
 
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addGvrsnOption(addStoreOptions(
       verifier.command("run")
         .description("Process verifier grants, revocations, and webhook delivery")
@@ -350,8 +350,12 @@ function registerVerifierCmds(program: Command, dispatch: CommandDispatch): void
         .option("--timeout-ms <ms>", "Escrow timeout in milliseconds"),
     )),
     dispatch,
-    "verifier.run",
-    "verifierRunCommand",
+    {
+      name: "verifier.run",
+      load: () => import("../verifier.ts"),
+      exportName: "verifierRunCommand",
+      args: dispatchArgs,
+    },
   );
 }
 

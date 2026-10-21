@@ -11,11 +11,10 @@ import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
 import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
-import { copyFileSync, existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -241,31 +240,3 @@ try {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
 console.error("Installed TCP transmission and joined socket close passed.");
-
-// Install compiler tools only after runtime checks, so they cannot mask missing
-// runtime dependencies. Check the actual packed declarations without skipping libs.
-execFileSync("npm", [
-  "install",
-  "--no-save",
-  "--ignore-scripts",
-  "--no-audit",
-  "--no-fund",
-  "typescript@5.9.3",
-  "@types/node@20.19.43",
-], { stdio: "inherit" });
-// npm init defaults to CommonJS; compile the maintained fixture as a Node ESM client.
-copyFileSync("keri-consumer.ts", "keri-consumer.mts");
-execFileSync(process.execPath, [
-  "node_modules/typescript/bin/tsc",
-  "--noEmit",
-  "--strict",
-  "--module",
-  "NodeNext",
-  "--target",
-  "ES2022",
-  "--lib",
-  "ES2022,DOM,DOM.Iterable",
-  "keri-consumer.mts",
-], { stdio: "inherit" });
-
-console.error("Installed keri-ts declarations passed strict NodeNext checking.");

@@ -86,5 +86,4 @@ export {
   vcRevokeCommand,
   vcSchemaImportCommand,
 } from "./vc.ts";
-export { verifierRunCommand } from "./verifier.ts";
 export { verifyCommand } from "./verify.ts";
