@@ -162,6 +162,27 @@ class GroupPeer:
         self.post(approval.raw + atc)
         return dict(accepted=child.said, exnSaid=approval.said)
 
+    def request(self, schema, message):
+        """Open an actual legacy application to the group, before offer or refusal."""
+        application, atc = protocoling.ipexApplyExn(self.member, recp=self.group.pre,
+            message=message, schema=schema, attrs=dict(role='member'), **self.versions)
+        wire = bytearray(application.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=application.said)
+        self.post(wire)
+        return dict(said=application.said)
+
+    def agree(self, said):
+        """Respond to the exact accepted group offer through the reference factory."""
+        offer = self.hby.db.exns.get(keys=(said,))
+        assert offer is not None and offer.ked['r'] == '/ipex/offer'
+        agreement, atc = protocoling.ipexAgreeExn(self.member, message='agreed', offer=offer, **self.versions)
+        wire = bytearray(agreement.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=agreement.said)
+        self.post(wire)
+        return dict(said=agreement.said)
+
     def admit(self, said):
         """Send a genuine recipient admission linked to the accepted group grant."""
         grant = self.hby.db.exns.get(keys=(said,))
@@ -209,6 +230,10 @@ class Control:
                 rep.media = self.peer.issue(**command)
             elif action == 'approve-exchange':
                 rep.media = self.peer.approve_exchange(**command)
+            elif action == 'request':
+                rep.media = self.peer.request(**command)
+            elif action == 'agree':
+                rep.media = self.peer.agree(**command)
             elif action == 'admit':
                 rep.media = self.peer.admit(**command)
             elif action == 'snapshot':

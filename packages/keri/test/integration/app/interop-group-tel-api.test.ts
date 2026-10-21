@@ -1,7 +1,7 @@
 /** Mixed-member legacy credential evidence over real HTTP; Python uses public APIs, not KLI join. */
 import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { concatBytes, parseBytes } from "../../../../cesr/mod.ts";
+import { concatBytes, parseBytes, type SerderKERI } from "../../../../cesr/mod.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { collectBytes } from "../../../src/app/byte-source.ts";
@@ -11,12 +11,13 @@ import { revokeCredential } from "../../../src/app/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
+import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex-credentialing.ts";
 import {
   approveMultisigIpex,
   publishInitialGroupIpex,
   sendCompletedGroupIpex,
 } from "../../../src/app/ipex-grouping.ts";
+import { ipexOfferExn, ipexSpurnExn } from "../../../src/app/ipexing.ts";
 import { approvePendingMultisigProposal } from "../../../src/app/multisig-workflows.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -143,6 +144,53 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
             );
             assertEquals(pyAuthored.state, "iss");
             assertEquals(pyAuthored.saved, true);
+            /** Reuse the production approval/lead-delivery flow for offer, grant and spurn. */
+            const completeGroupExchange = function*(event: SerderKERI, wire: Uint8Array) {
+              const publication = yield* publishInitialGroupIpex(
+                hby,
+                runtime.protocol,
+                runtime.postman,
+                made.hab,
+                wire,
+              );
+              assertEquals(runtime.exc.complete(event.said!), false);
+              const approval = yield* call(() =>
+                control("approve-exchange", { said: publication.messages[0].exnSaid })
+              );
+              assertEquals(approval.accepted, event.said);
+              const completed = yield* approveMultisigIpex(
+                hby,
+                runtime.protocol,
+                runtime.postman,
+                rgy.reger,
+                hby.db.exns.get([String(approval.exnSaid)])!,
+                { sendLead: false },
+              );
+              assertEquals(completed.accepted, true);
+              assertEquals(runtime.exc.complete(event.said!), true);
+              assertEquals(runtime.exc.lead(made.hab, event.said!), true);
+              const destinations = yield* sendCompletedGroupIpex(hby, runtime.postman, rgy.reger, made.hab, event);
+              assertEquals(destinations.length > 0, true);
+              const peerAccepted = yield* call(() =>
+                control("snapshot", { registry: registry.registry, credential: said, exchange: event.said })
+              );
+              assertEquals(peerAccepted.accepted, true);
+            };
+            const request = yield* call(() =>
+              control("request", { schema: schema.said, message: "credential please" })
+            );
+            const application = hby.db.exns.get([String(request.said)])!;
+            assertEquals(application.route, "/ipex/apply");
+            const artifacts = credentialPresentationArtifacts(hby, rgy.reger, said);
+            const [offer, offerAttachments] = ipexOfferExn(made.hab, "offered", artifacts.acdc.wire, application);
+            yield* completeGroupExchange(
+              offer,
+              concatBytes(made.hab.endorse(offer, { pipelined: false }), offerAttachments),
+            );
+            const agreement = yield* call(() => control("agree", { said: offer.said }));
+            const agreed = hby.db.exns.get([String(agreement.said)])!;
+            assertEquals(agreed.route, "/ipex/agree");
+            assertEquals(agreed.ked?.p, offer.said);
             // The Python member is also this credential's recipient. This checks
             // mixed group approval/business handoff; independent-holder wallet
             // settlement remains covered by the separate maintained CLI workflow.
@@ -152,38 +200,23 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
               reger: rgy.reger,
               recipient: pyPre,
               credentialSaid: said,
+              options: { agree: agreed },
             });
-            const publication = yield* publishInitialGroupIpex(
-              hby,
-              runtime.protocol,
-              runtime.postman,
-              made.hab,
-              grant.wire,
-            );
-            assertEquals(runtime.exc.complete(grant.grant.said!), false);
-            const approval = yield* call(() => control("approve-exchange", { said: publication.messages[0].exnSaid }));
-            assertEquals(approval.accepted, grant.grant.said);
-            const completed = yield* approveMultisigIpex(
-              hby,
-              runtime.protocol,
-              runtime.postman,
-              rgy.reger,
-              hby.db.exns.get([String(approval.exnSaid)])!,
-              { sendLead: false },
-            );
-            assertEquals(completed.accepted, true);
-            assertEquals(runtime.exc.complete(grant.grant.said!), true);
-            assertEquals(runtime.exc.lead(made.hab, grant.grant.said!), true);
-            const destinations = yield* sendCompletedGroupIpex(hby, runtime.postman, rgy.reger, made.hab, grant.grant);
-            assertEquals(destinations.length > 0, true);
-            const pyGrant = yield* call(() =>
-              control("snapshot", { registry: registry.registry, credential: said, exchange: grant.grant.said })
-            );
-            assertEquals(pyGrant.accepted, true);
+            yield* completeGroupExchange(grant.grant, grant.wire);
             const admission = yield* call(() => control("admit", { said: grant.grant.said }));
             const receivedAdmit = hby.db.exns.get([String(admission.said)]);
             assertEquals(receivedAdmit?.route, "/ipex/admit");
             assertEquals(receivedAdmit?.ked?.p, grant.grant.said);
+            const refusedRequest = yield* call(() =>
+              control("request", { schema: schema.said, message: "second request" })
+            );
+            const refused = hby.db.exns.get([String(refusedRequest.said)])!;
+            const [spurn, spurnAttachments] = ipexSpurnExn(made.hab, "declined", refused);
+            yield* completeGroupExchange(
+              spurn,
+              concatBytes(made.hab.endorse(spurn, { pipelined: false }), spurnAttachments),
+            );
+            assertEquals(hby.db.exns.get([spurn.said!])?.ked?.p, refused.said);
             const revoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
               registryName: "registry",
               credentialSaid: said,
