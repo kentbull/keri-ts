@@ -248,7 +248,6 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const [peer, paths] = exchange("/multisig/icp", {
-          gid: local.hab.pre,
           smids: mids,
           rmids: mids,
           cgvrsn: [2, 0],
@@ -260,13 +259,50 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
           local: true,
         });
-        const result = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "registry",
+        const callbacks = {
+          approveProposal: () => {
+            prompts++;
+            return true;
           },
+          chooseGroupAlias: () => "group",
+          chooseRegistryName: () => "registry",
+        };
+        let prompts = 0;
+        // The wrong group must not prompt, sign or consume the pending notice.
+        const pending = notifier.list();
+        assertEquals(
+          yield* approvePendingMultisigProposal(left, runtime, {
+            group: bob.pre,
+            callbacks,
+          }),
+          null,
+        );
+        assertEquals(prompts, 0);
+        assertEquals(notifier.list(), pending);
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() =>
+                approvePendingMultisigProposal(left, runtime, {
+                  group: bob.pre,
+                  said: peer.said!,
+                  callbacks,
+                })
+              ),
+            Error,
+            "belongs to group",
+          )
+        );
+        assertEquals(prompts, 0);
+        // Explicit selection uses durable evidence even after every notice is consumed.
+        for (const notice of pending) notifier.remove(notice.rid);
+        const result = yield* approvePendingMultisigProposal(left, { ...runtime, notifier: null }, {
+          group: "group",
+          said: peer.said!,
+          callbacks,
         });
+        assertEquals(result?.said, peer.said);
+        assertEquals(prompts, 1);
         assertEquals(result?.accepted, true);
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         yield* call(() => learn(right, local.hab));

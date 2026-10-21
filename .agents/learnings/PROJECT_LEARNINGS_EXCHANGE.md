@@ -91,7 +91,11 @@ initiation likewise records each recipient-specific wrapper before delivery and
 returns those actual proposal identities. Preserve first-notice behavior or retries
 can republish approval unnecessarily.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
-only proposal selection and immediate UI decisions. Timed waits and delegated-group
+only proposal selection and immediate UI decisions. Explicit selection reads accepted
+EXNs and their Multiplexor indexes independently of notification presence. Group
+filters resolve local aliases and bind the actual KEL child identity (inception
+need not carry gid); notices discover candidates but do not authorize their route.
+Timed waits and delegated-group
 completion are private CLI orchestration, not exported workflow scheduling APIs.
 IPEX group coordination likewise exposes direct approval, publication and pending
 lookup; timed completion and proposal waits belong to the CLI.

@@ -60,6 +60,7 @@ import {
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
+  multisigPayloadSaid,
   remoteGroupMembers,
   signGroupMessage,
 } from "./multisig-messaging.ts";
@@ -196,41 +197,54 @@ export function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
   }
 }
 
-/** Approve the first matching stored proposal; host progress and deadlines belong to the caller. */
+/**
+ * Select accepted, indexed coordination evidence before any approval effects.
+ * An explicit SAID names the outer EXN and survives notification consumption.
+ * Notices discover candidates; their attributes do not authorize a route or group.
+ */
+function pendingMultisigProposals(
+  hby: Habery,
+  notices: readonly NoticeLike[],
+  options: MultisigApprovalOptions,
+): { exn: SerderKERI; route: MultisigProposalRoute }[] {
+  const candidates = options.said ? [options.said] : notices.map(note => note.attrs.d);
+  const group = options.group && (hby.habByName(options.group)?.pre ?? options.group);
+  const selected: { exn: SerderKERI; route: MultisigProposalRoute }[] = [];
+  for (const said of new Set(candidates)) {
+    if (typeof said !== "string") continue;
+    const exn = hby.db.exns.get([said]);
+    if (!exn?.ked) continue;
+    const route = exn.route ?? "";
+    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE) continue;
+    const payloadSaid = multisigPayloadSaid(exn);
+    if (!payloadSaid || !hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) continue;
+    const proposalGroup = isKelRoute(route)
+      ? kelApproval(hby, exn, route)?.group
+      : stringField(payloadSection(exn.ked), "gid");
+    if (!proposalGroup) continue;
+    if (group && group !== proposalGroup) {
+      if (options.said) {
+        throw new ValidationError(`Multisig exchange ${said} belongs to group ${proposalGroup}, not ${group}.`);
+      }
+      continue;
+    }
+    selected.push({ exn, route });
+  }
+  return selected;
+}
+
+/** Approve matching stored evidence; host progress and deadlines belong to the caller. */
 export function* approvePendingMultisigProposal(
   hby: Habery,
   runtime: AgentRuntime,
   options: MultisigApprovalOptions,
 ): Operation<ApprovalResult | null> {
   const notifier = runtime.notifier;
-  if (!notifier) {
-    throw new ValidationError("Multisig join requires notification storage.");
+  if (!notifier && !options.said) {
+    throw new ValidationError("Multisig join requires notification storage or an explicit exchange SAID.");
   }
-  const notices = notifier.list(0, 100) as NoticeLike[];
-  for (const note of notices) {
-    const route = note.attrs.r;
-    const said = note.attrs.d;
-    if (typeof route !== "string" || typeof said !== "string") {
-      continue;
-    }
-    if (options.said && options.said !== said) {
-      continue;
-    }
-    if (
-      route !== MULTISIG_ICP_ROUTE
-      && route !== MULTISIG_ROT_ROUTE
-      && route !== MULTISIG_IXN_ROUTE
-      && route !== MULTISIG_VCP_ROUTE
-      && route !== MULTISIG_ISS_ROUTE
-      && route !== MULTISIG_RPY_ROUTE
-    ) {
-      continue;
-    }
-
-    const exn = hby.db.exns.get([said]);
-    if (!exn?.ked) {
-      continue;
-    }
+  const notices = (notifier?.list(0, 100) ?? []) as NoticeLike[];
+  for (const { exn, route } of pendingMultisigProposals(hby, notices, options)) {
     const rgy = isVdrRoute(route) ? runtime.vdr : null;
     let result: ApprovalResult | null;
     if (isKelRoute(route)) {
@@ -241,7 +255,9 @@ export function* approvePendingMultisigProposal(
       result = yield* approveRpyProposal(hby, runtime, exn, route, options);
     }
     if (result) {
-      notifier.remove(note.rid);
+      for (const note of notices) {
+        if (note.attrs.d === exn.said) notifier?.remove(note.rid);
+      }
       return result;
     }
   }
