@@ -1,13 +1,14 @@
 # Complete the coordinated 2.0.0 release
 
-Status: active; checked against merged master `3217da6f` (#628), 2026-10-20.
+Status: active; checked against merged master `b66ffecd` (#629), 2026-10-20.
 Approved goal: publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 
 ## Current state
 
-**About 55% complete by estimated effort, not PR count.** Foundational refactors
-and operator fixes are merged. Most credential lifecycle expansion and final
-qualification remain. This estimate is not a release-readiness claim.
+The previous **55% estimate is superseded by the native-v2 scope deferral**;
+remaining effort must be re-estimated against this reduced scope. Foundational
+refactors and operator fixes are merged. Legacy/group credential completion,
+organization and final qualification remain; no release-readiness claim is made.
 
 | Work                                                                       | Current disposition                                                                                                                                                               |
 | -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -19,7 +20,7 @@ qualification remain. This estimate is not a release-readiness claim.
 | Query composition, legacy mailbox media and docs (19, 13e–13h2)            | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                                              |
 | CLI ownership and finite bootstrap (13i–13j)                               | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.                                      |
 | CLI validation (13k)                                                       | In progress: lifecycle #621, multisig #622, credential/IPEX/verifier #623 and host/mailbox/challenge #624 merged. Endpoint/DID/query and remaining signed-event utilities remain. |
-| Credential lifecycle, backers, native-v2, verifier separation              | Not complete; acceptance criteria and order below.                                                                                                                                |
+| Legacy credential lifecycle, backers, verifier separation                  | Not complete; acceptance criteria and order below.                                                                                                                                |
 | ProtocolProcessor assessment, package organization, qualification, release | Pending all implementation and feature interop.                                                                                                                                   |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
@@ -31,12 +32,19 @@ Git/PRs own detailed history; this file owns current scope, order and gates.
 
 ## Scope and design decisions
 
-- Preserve KERI/ACDC/CESR v1/v2 interoperability. **Old keri-ts APIs and private
+- Preserve supported KERI/ACDC/CESR protocol interoperability within the
+  explicit release profiles; native-v2 ACDC/registry expansion is deferred. **Old keri-ts APIs and private
   storage formats need no compatibility**: remove obsolete abstractions and
   document breaks rather than adding aliases, shims or migration readers.
 - Required: complete multisig approval/fanout throughout CLI credential workflows,
-  legacy TEL replay, actual group backer registries, native-v2 CLI authoring,
-  disclosure/presentation, verifier separation and package organization.
+  legacy TEL replay, actual legacy group backer registries, verifier separation
+  and package organization. KERI/CESR v2 work independent of native ACDC stays required.
+- Deferred native scope: all remaining work depending on native-v2 ACDC/registry
+  `rip`/`bup`/`upd`, including CLI authoring, disclosure custody, native IPEX/wallet
+  completion and presentation. The [native roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md)
+  retains the design and peer-test requirements pending completed KERIpy support.
+  Keep merged partial capabilities and useful regressions; do not advertise them
+  as a complete native lifecycle or silently count unsupported lanes as passed.
 - Deferred: generic delivery retries, durable outboxes, delivery acknowledgements,
   generic database providers and broad Python porting. Ordinary protocol escrows
   and recovery remain required. Direct legacy ESSR LMDB interchange is deferred;
@@ -80,14 +88,15 @@ The authoritative pins/dependencies are
 
 | Lane                  | Repository               | Commit                                     |
 | --------------------- | ------------------------ | ------------------------------------------ |
-| Native/main           | WebOfTrust/keripy        | `c7e74adc3129ba36302db32e58056560b0927424` |
+| Main reference        | WebOfTrust/keripy        | `c7e74adc3129ba36302db32e58056560b0927424` |
 | Legacy 1.2.17         | GLEIF-IT/keripy          | `b8626e1d58770a4a480ea72a01acc5580278a9f2` |
 | Legacy 1.3.x          | WebOfTrust/keripy        | `4ce4cc79e06653f77342be1bf604086b89b1f090` |
 | Separate mailbox fork | Existing mailbox harness | `331f32e4de13cc5cb699587c5b1f1e5bc4468035` |
 
 GLEIF 1.2.17 replaces the failing upstream 1.2.14 release gate; do not claim
 1.2.14 passed. Verify actual interpreters/imports and freeze pins per run.
-Native-v2 uses implemented main capabilities; legacy peers use their legacy lane.
+Main remains the reference for independent implemented capabilities; legacy peers
+use their legacy lane. Native ACDC/registry completion is deferred to the roadmap.
 Distinguish public CLI, real protocol/API intake, fixtures and full database
 interchange. Missing environments and upstream defects are not passing evidence.
 
@@ -101,33 +110,27 @@ own responsibilities. Historical unchecked boxes are not new implementation scop
 Cut labels are stable planning IDs, **not GitHub PR numbers**. Finish one cohesive
 implementation PR before the next; split only for independent human review.
 
-| Cut          | Remaining result                                                                                                     | Depends on                       |
-| ------------ | -------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
-| R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation              |
-| R2           | Native registry API proof/intake merged #627; backer service proof and signing/custody contracts remain.             | R1                               |
-| 13k          | Finish endpoint/DID/query and signed-event utility validation; preserve explicit values and field-specific defaults. | #621–624; after R1               |
-| 13 remainder | Durable exact-event group selection/resume after notification consumption.                                           | Reporting already merged         |
-| 14           | Route or guard every group-capable command before effects.                                                           | 13k, 13 remainder                |
-| 15           | Complete group registry inception/issuance, approval and witness/TEL obligations.                                    | 14                               |
-| 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                               |
-| 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged |
-| 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                           |
-| 21           | Complete in #628: accepted historical backer cohorts, accumulated partial proofs and retry/reopen.                   | R1                               |
-| 22           | Complete real TEL backer signing/collection through public hosting.                                                  | 21, R2 backer slice              |
-| 23           | Explicit backer roster/threshold and group registry inception/rotation.                                              | 14, 22                           |
-| 24           | BIS/BRV, rotated cohorts and fresh-observer replay.                                                                  | 18, 20, 23                       |
-| 25           | Native-v2 public intake, dependency recovery and replay.                                                             | R2 native proof                  |
-| 26           | Explicit native CLI composition and durable disclosure custody.                                                      | 14, 25                           |
-| 27           | Single-identifier native authoring/state changes.                                                                    | 26                               |
-| 28           | Exact native anchors through group approval/fanout.                                                                  | 15, 27                           |
-| 29           | Native IPEX and wallet acceptance.                                                                                   | 16, 28                           |
-| 30           | Presentation and vacuous updates.                                                                                    | 28–29                            |
-| 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                          | 30                               |
-| 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                   | All feature work                 |
-| 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                             | 31                               |
-| 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                   | 31a                              |
-| 32           | Exact 2.0.0 versions, changesets/changelogs, breaking guide and final qualification.                                 | 31d                              |
-| Release      | Publish/verify CESR → KERI → Tufa 2.0.0; preserve 1.0.0 history.                                                     | All gates                        |
+| Cut          | Remaining result                                                                                                     | Depends on                                            |
+| ------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation                                   |
+| R2           | Native partial proof #627 retained; hosted backer proof #629 complete. Native remainder deferred.                    | R1                                                    |
+| 13k          | Finish endpoint/DID/query and signed-event utility validation; preserve explicit values and field-specific defaults. | #621–624; after R1                                    |
+| 13 remainder | Durable exact-event group selection/resume after notification consumption.                                           | Reporting already merged                              |
+| 14           | Route or guard every group-capable command before effects.                                                           | 13k, 13 remainder                                     |
+| 15           | Complete group registry inception/issuance, approval and witness/TEL obligations.                                    | 14                                                    |
+| 16           | All six IPEX verbs: group initiation, approval, fanout and correct completion.                                       | 15                                                    |
+| 17–18        | Carry query wire context; legacy TEL replay and explicit unsupported downgrade.                                      | Query composition already merged                      |
+| 20           | Group revocation and independently observed revoked state.                                                           | 15, 18                                                |
+| 21           | Complete in #628: accepted historical backer cohorts, accumulated partial proofs and retry/reopen.                   | R1                                                    |
+| 22           | Hosted signing/collection merged #629; full group lifecycle evidence continues in 23–24.                             | 21, R2 backer slice                                   |
+| 23           | Explicit backer roster/threshold and group registry inception/rotation.                                              | 14, 22                                                |
+| 24           | BIS/BRV, rotated cohorts and fresh-observer replay.                                                                  | 18, 20, 23                                            |
+| 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                          | Legacy lifecycle; independent of deferred native cuts |
+| 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                   | All feature work                                      |
+| 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                             | 31                                                    |
+| 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                   | 31a                                                   |
+| 32           | Exact 2.0.0 versions, changesets/changelogs, breaking guide and final qualification.                                 | 31d                                                   |
+| Release      | Publish/verify CESR → KERI → Tufa 2.0.0; preserve 1.0.0 history.                                                     | All gates                                             |
 
 [CLI bootstrap supplement](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md) owns 13k
 input details; 13i/13j are complete. The messenger, query, result-contract and
@@ -170,44 +173,13 @@ retry must be reliable before the service uses them. Then settle a small concret
   same event. Include one conflict case for the chosen signing contract. This
   starts B1/B2 using existing helpers; it is not an additional harness or an outbox.
 
-**R2 native proof: freeze claims before broad CLI authoring.** #627 proves the
-first two registry-evidence directions below against main through ordinary TS HTTP
-intake, reopened TS state and Python vet/vetBinds. Native IPEX/wallet and CLI custody
-claims still require their separate gates. Use the maintained
-registry/disclosure/IPEX helpers against unmodified main. The minimum contract is:
-
-| Direction                   | Concrete entrypoint and observable result                                                                    | Release claim                                                                                                                |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------- |
-| Python native evidence → TS | Python `acdc.messaging.regcept/blindate` and `Blinder.blind`; TS ordinary intake/import and RegistryObserver | Accepted native registry/disclosure state survives TS reopen. No custom `/_registry` endpoint or accepted-row seeding.       |
-| TS native evidence → Python | Python `acdc.regeventing.vet` and `vetBinds`, using independently accepted KEL anchors                       | Independent chain/disclosure/binding verification; not a Python wallet or durable registry acceptance claim.                 |
-| Python IPEX → TS            | Python `acdc.ipexing.grant/admit` builders; TS public IPEX intake/commands                                   | Accepted EXN plus the separately asserted TS credential/disclosure state and reopen.                                         |
-| TS IPEX → Python            | Python parser/Exchanger with native IPEX handlers; inspect accepted `exns` and the handler's actual result   | Accepted exchange/proof verification only; application wallet receipt/reopen/use requires separate demonstrated entrypoints. |
-
-Inspect the exact API signatures at the execution pin and run the smallest live
-round-trip before calling these rows proven. Record missing capability as a narrow
-claim boundary, not an optional silent pass. R2 may supply the minimal production
-intake needed for its proof; broaden it in cut 25. PR 31 reuses these first proofs.
-Ordinary native CLI examples/interoperability use the common I2I/NI2I/E1E and AND/OR
-subset. Existing DI2I and bounded NOT semantics remain explicitly TS-only until
-independent Python support is demonstrated; no negotiation framework or deletion.
-
-**Signing and disclosure contract gate, before cuts 23/26/28.** Associate separate
-VRT/native evidence with the exact outer proposal EXN and anchored payload SAIDs
-before local approval. Persist evidence and that association; notification presence
-is not authority. Members fetch/receive the exact evidence, validate the business
-relationship and anchor, then sign; missing evidence remains pending. Send openings
-only to authorized recipients. Python standard ixn/rot approval proves mixed-language
-KEL approval, not credential-aware review absent actual Python business checks.
-
-For native preparation, retain original event bytes/SAID, registry/prior/ordinal,
-credential identity, disclosure opening and authorized recipient association in a
-narrow typed LMDB record. Persist this preparation **before** `processEvent` stages
-it, or atomically with staging in the same environment. Refactor `blindTarget`'s
-current stage-then-return order accordingly. Recovery looks up the original SAID
-and resumes staging/anchoring without generating another nonce. No cross-store
-atomicity claim: KEL anchoring follows durable preparation. One interruption/reopen
-case at this boundary must prove identical event/opening recovery. No archive or
-generic workflow framework. Finish these concrete contracts before broad features.
+**Legacy VRT approval contract, before cut 23.** Bind the separate VRT evidence
+to the exact outer proposal EXN and issuer anchor payload before local approval.
+Persist evidence and its association; notification presence is not authority.
+Members obtain the original evidence, validate the management policy and anchor,
+then sign. Missing evidence stays pending. Python ixn/rot approval alone proves
+KEL approval, not credential-aware business review. Native signing/disclosure
+custody contracts and proofs are retained in the deferred native roadmap.
 
 ## Remaining feature acceptance criteria
 
@@ -273,8 +245,7 @@ PR 20 extends VDR proposal approval with REV and uses the completed owner:
 This phase completes the legacy no-backer baseline, including ordinary and
 establishment-only anchors, single/group counterparties and witnessed operation.
 The required backer phase extends that same lifecycle with separate TEL backer
-evidence; the required native-v2 phase supplies genuine-v2 CLI authoring.
-Do not treat success in this baseline as completion of either expansion.
+evidence. Native-v2 CLI authoring is deferred; do not claim it from legacy success.
 
 Required adversarial/lifetime cases:
 
@@ -390,91 +361,18 @@ real Python observer intake. A helper invoking the unmodified Python signer
 can independently produce proof bytes, but must be labeled a Python API driver,
 not a native autonomous backer service.
 
-### Phase G: native-v2 credential CLI — PRs 25–30
+### Native-v2 ACDC/registry — deferred cuts 25–30
 
-**PR 25: production intake and recovery.** Compose the existing RegistryObserver
-into ordinary parsed runtime ingress for `rip`/`bup`, sharing the correct public
-KEL and native registry store. Keep its validation separate from legacy Tevery.
-Give missing inception/anchor/order dependencies explicit progression on relevant
-input and after reopen, discovering foreign registry work from durable escrows
-without requiring local aliases. Preserve source-seal hints and verify them
-against accepted, witnessed KEL evidence. Preserve injected/owned/readonly store
-lifetimes. Provide native registry replay/export through existing input/output
-paths. Remove the need for a custom `/_registry` HTTP branch or direct
-accepted-row writes in feature tests.
-
-**PR 26: explicit composition and persisted disclosure state.** At command
-composition, select legacy or native-v2 owners explicitly. Proposed input is
-`--protocol v1|v2` for registry/credential authoring and any ambiguous store
-selection; do not infer body version from package version or `--gvrsn`.
-Keep `vdr.rgy` and `acdc.rgy` concrete. No generic registry adapter or service bag.
-
-Retain the exact credential, event and authorized disclosure opening needed
-after restart; the blinded event alone cannot recreate an opening.
-Reuse evidence stores where their contracts fit; keep local disclosure custody
-separate from public registry rows, using a narrow typed owner for missing
-records. Do not expose openings in routine logs or broadcast undisclosed
-credential content.
-
-Distinguish prepared/staged, anchored and accepted state in command output.
-Persist preparation before anchor coordination and recover deterministically
-across separate KEL/registry environments; do not claim a cross-database atomic
-transaction. Never generate a new nonce/event on a resumed operation.
-
-**PR 27: single-identifier native authoring.** Expose native registry inception,
-credential construction/issuance, revocation/state changes, list and status using
-existing `regcept`, credential builders and `Registry.blind`. `vc create --protocol v2` constructs and issues; `vc revoke --protocol v2` commits the native
-`revoked` state. Validate schema, issuer, registry and disclosure inputs before
-local signatures or durable creation. Complete real KEL anchoring, witness
-obligations and evidence publication.
-
-Export/import genuine-v2 credentials, accepted registry chains, necessary KEL
-evidence and authorized disclosure material through ordinary CLI/runtime intake.
-A staged body or local alias is not an accepted chain. Preserve ordering and
-original signed bytes. Use explicit export/replay to a fresh receiver; this does
-not add subscriptions, automatic freshness guarantees or a synchronization service.
-
-**PR 28: group authoring.** Reuse standard `/multisig/ixn` or `/multisig/rot`
-approval for the exact `rip`/`bup` anchor seal. Distribute the corresponding
-native event and authorized support separately; members validate its identity,
-schema/state relationship and anchor before signing. Reuse group KEL authority,
-threshold and witness completion; keep native registry acceptance with its
-existing engine. Do not invent `/multisig/rip` or overload legacy VCP/ISS/REV.
-Resumption selects the original proposal and retained opening after a member
-has already consumed its notification.
-
-**PR 29: native IPEX.** Select the native proof-building and verification owners
-for all six CLI IPEX verbs. Openers select their protocol explicitly; responses
-derive it from the accepted predecessor and reject a contradictory flag.
-Grant/admit must use native accepted-chain
-and disclosure evidence, not legacy `iss`/`anc` assumptions. Distinguish EXN
-acceptance from credential wallet acceptance and prove both. Persist received
-native credential/disclosure selection for later list/export/presentation;
-accepting an EXN does not imply possession of an undisclosed full credential.
-Keep recipient and group fanout behavior consistent with PR 16.
-
-For native group IPEX, verify the existing v1 `/multisig/exn` coordination
-envelope carrying a genuinely v2 child with its original nested evidence.
-The inspected v2 nested-multisig contract permits only KEL/endpoint routes;
-do not silently enable a v2 `/multisig/exn` wrapper. Body and attachment versions
-remain independent and their admissible combinations require exact tests.
-
-**PR 30: presentation and state changes.** Expose domain-named native operations
-such as `vc registry blind --protocol v2 --said ... --state ...`,
-`present --grant ...` and `vacate`, composing existing methods. Provide
-presentation-registry creation and integrate presentation preparation into grant
-orchestration. Complete holder/group presentation through its registry and anchor,
-retaining the issuer's independent state-change semantics. Validate the referenced grant and
-authorized holder before a CLI presentation commitment; library syntax checking
-alone is insufficient. Presentations bind the grant and its receiver cutoff.
-A vacuous update preserves the prior binding; it is not credential revocation.
-Reuse supported disclosure/Mapper forms without adding new operators or porting
-reference stubs. Cover supported command forms with focused owner tests.
+See the [native roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
+These cuts and N1–N3 are not 2.0.0 release prerequisites. Existing merged native
+behavior still requires honest capability documentation and applicable regression
+checks; this is no authorization to hide failures or advertise unsupported features.
 
 ### Verifier application ownership — PRs 30a–30b
 
 Implement the accepted [Tufa verifier separation supplement](credentials/TUFA_VERIFIER_SEPARATION_PLAN.md)
-after credential features, before the actual-peer matrix, final ProtocolProcessor
+after the legacy credential features, independently of deferred native work,
+before the actual-peer matrix, final ProtocolProcessor
 assessment, package organization and qualification. Recheck its inspected paths
 and exports against the completed feature work; skip an empty export PR if those
 operations are already public. The supplement's original planning-only status is
@@ -529,20 +427,16 @@ existing tests; do not multiply every feature by every transport, threshold,
 runtime and Python version. Use HTTP for the new end-to-end cases; retain the
 existing transport suite for TCP/lifetime coverage.
 
-The additions have five scenario families, not a Cartesian product:
+The release additions have two backer scenario families. Native N1–N3 and
+their completion gates are deferred to the roadmap, not silently skipped passes:
 
-| Case                                        | Focused happy path                                                                                                                                                                                                                                        | Independent interoperability evidence                                                                                                                                                                                                                                                                                                                   |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| N1: native CLI lifecycle                    | Independent Tufa group issuer/holder/protocol-observer stores complete registry inception, issue, IPEX delivery/admit, presentation, vacate and issuer revocation. Use one ordinary and one establishment-only anchor, with a reopen before presentation. | Real Python witnesses/mailbox where those roles are implemented; Tufa public commands and ordinary ingress, without the custom registry endpoint or direct row seeding. Use native vc import/list/status and protocol observer state after reopen; this excludes legacy-only tufa verifier run and proves CLI composition, not Python recipient parity. |
-| N2: native evidence in both directions      | Python authors native registry/credential evidence for ordinary Tufa import/intake; Tufa CLI authors genuine-v2 evidence for Python's implemented registry/disclosure vetting APIs.                                                                       | Unmodified pinned main, live Python construction/verification and independently owned state; assert body identity, authentic anchors, disclosed state and the exact R2 vet/vetBinds verification result; no Python wallet acceptance claim. No historical fixture-only pass.                                                                            |
-| N3: native IPEX in both directions          | One representative grant/admit conversation in each direction using real Python v2 APIs, including a disclosed subset and presentation proof. Reuse N1's group CLI orchestration and existing verb tests.                                                 | Python-produced proofs are verified by Tufa; Tufa-produced nested proofs and grants are verified by Python. Assert recipient/credential state as well as transport/EXN completion, using the frozen R2 distinction between Python EXN/proof acceptance and TS wallet persistence.                                                                       |
-| B1: group-backed lifecycle to Python        | Tufa group issuer uses separate real backer processes with a nonempty roster and meaningful threshold: VCP -> BIS -> VRT -> BRV. Rotate the roster between issuance and revocation, then replay to a fresh Python observer.                               | Run the same compact verifier case against main, 1.2.x and 1.3.x; each parses original TEL plus real backer/source proofs and reaches issued then revoked state. Assert the historic management tuple as well as the final status.                                                                                                                      |
-| B2: Python-produced backed evidence to Tufa | Python's real constructors/signers produce a short VCP/BIS/VRT/BRV chain; ordinary Tufa CLI/runtime ingestion reaches matching accepted/revoked state.                                                                                                    | Reuse the three pinned profiles and their genuine crypto/parser APIs, with no TS-built fixture substituted for Python output. A minimal API driver is allowed; it must not patch reference code, preaccept rows, or claim to be an autonomous KERIpy backer service.                                                                                    |
+| Case                                        | Focused happy path                                                                                                                                                                                                          | Independent interoperability evidence                                                                                                                                                                                                                                |
+| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| B1: group-backed lifecycle to Python        | Tufa group issuer uses separate real backer processes with a nonempty roster and meaningful threshold: VCP -> BIS -> VRT -> BRV. Rotate the roster between issuance and revocation, then replay to a fresh Python observer. | Run the same compact verifier case against main, 1.2.x and 1.3.x; each parses original TEL plus real backer/source proofs and reaches issued then revoked state. Assert the historic management tuple as well as the final status.                                   |
+| B2: Python-produced backed evidence to Tufa | Python's real constructors/signers produce a short VCP/BIS/VRT/BRV chain; ordinary Tufa CLI/runtime ingestion reaches matching accepted/revoked state.                                                                      | Reuse the three pinned profiles and their genuine crypto/parser APIs, with no TS-built fixture substituted for Python output. A minimal API driver is allowed; it must not patch reference code, preaccept rows, or claim to be an autonomous KERIpy backer service. |
 
 Use only a few targeted failure checks for this expansion:
 
-- One altered child/anchor proof must not become an accepted native credential.
-  Reuse an existing real-verifier regression if it already exercises the new path.
 - Withhold one required backer contribution, observe honest pending state, reopen
   and deliver it; the same event must complete. This also checks the concrete
   partial-proof recovery bug without a separate broad failure matrix.
@@ -553,32 +447,25 @@ Existing threshold, duplicate-index, wrong-signer, cancellation and ordering
 tests remain relevant; do not reproduce all of them as new multi-process interop
 scenarios. Add another negative only for a newly demonstrated defect.
 
-Native-v2 evidence uses main. The old peer profiles are tested on their legacy
-lane, without attempting to downgrade native credentials. At the inspected main
-pin, Python's production parser still rejects nonempty ACDC ilks and its native
-KLI path is incomplete. Use actual supported APIs for N2/N3 and report exactly
-which operations are proof verification versus full receiver acceptance.
-Recheck that limitation at the execution pin. Do not patch Python or seed its
-accepted registry rows to make a nonexistent foreign-intake path appear complete.
-TS public intake and CLI composition must pass regardless of that upstream gap.
-This is a documented interoperability boundary, not permission to skip an
-implemented Python capability or count an unexecuted assertion as passed.
+Retain existing useful native regression coverage and report partial API capabilities
+honestly. New native lifecycle and reciprocal acceptance claims belong to the roadmap.
+No reference patching or accepted-row seeding may stand in for real peer acceptance.
 
 PR 31 closes the actual-peer matrix, using public CLI/protocol intake and
 independent stores rather than seeding accepted rows:
 
-| Scenario               | Required evidence                                                                                                                                                                                                                                         |
-| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Native peer identities | Unmodified main, GLEIF 1.2.17 and selected 1.3.x execute with verified imports; the mailbox fork remains separate.                                                                                                                                        |
-| TEL both directions    | TS-generated v1 evidence accepted by each peer; peer-generated issuance/revocation accepted and replayable by TS.                                                                                                                                         |
-| Late observer          | Fresh state obtains issuer KEL, registry and credential TEL, reaches issued then revoked, reopens and remains revoked.                                                                                                                                    |
-| Wire combinations      | All three peer families accept supported v1 body/v1 genus. Main/TS exercise supported v1 body/v2 genus and genuine v2; 1.2/1.3 unsupported-v2 rejection is a negative test, not an expected acceptance cell. Unsupported downgrade is explicitly refused. |
-| Transport              | Actual HTTP and supported TCP paths; old witness-mailbox polling, not only standalone fork-mailbox APIs.                                                                                                                                                  |
-| Multisig roles         | TS proposer/Python approver and Python proposer/TS approver where actual reference commands exist; independent member stores.                                                                                                                             |
-| Complete lifecycle     | Registry -> issue -> apply/offer/agree/grant/admit -> revoke -> holder/observer revoked state; separate spurn path.                                                                                                                                       |
-| Threshold/topology     | Existing single/group directions, witnessed/delegated setups and a weighted threshold with a non-required absent member.                                                                                                                                  |
-| Negative/recovery      | Tampered or missing child proof, wrong issuer/anchor, duplicate indices, partial signatures, hostile ordering, restart and stale replay.                                                                                                                  |
-| Operator/store         | Config no-write failures, cleanup Python reopen, encrypted-store compatibility and initialization intent.                                                                                                                                                 |
+| Scenario            | Required evidence                                                                                                                                                                                                                                                       |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Peer identities     | Unmodified main, GLEIF 1.2.17 and selected 1.3.x execute with verified imports; the mailbox fork remains separate.                                                                                                                                                      |
+| TEL both directions | TS-generated v1 evidence accepted by each peer; peer-generated issuance/revocation accepted and replayable by TS.                                                                                                                                                       |
+| Late observer       | Fresh state obtains issuer KEL, registry and credential TEL, reaches issued then revoked, reopens and remains revoked.                                                                                                                                                  |
+| Wire combinations   | All three peer families accept supported v1 body/v1 genus. Main/TS exercise supported v1 body/v2 genus and independent KERI/CESR v2; 1.2/1.3 unsupported-v2 rejection is a negative test, not an expected acceptance cell. Unsupported downgrade is explicitly refused. |
+| Transport           | Actual HTTP and supported TCP paths; old witness-mailbox polling, not only standalone fork-mailbox APIs.                                                                                                                                                                |
+| Multisig roles      | TS proposer/Python approver and Python proposer/TS approver where actual reference commands exist; independent member stores.                                                                                                                                           |
+| Complete lifecycle  | Registry -> issue -> apply/offer/agree/grant/admit -> revoke -> holder/observer revoked state; separate spurn path.                                                                                                                                                     |
+| Threshold/topology  | Existing single/group directions, witnessed/delegated setups and a weighted threshold with a non-required absent member.                                                                                                                                                |
+| Negative/recovery   | Tampered or missing child proof, wrong issuer/anchor, duplicate indices, partial signatures, hostile ordering, restart and stale replay.                                                                                                                                |
+| Operator/store      | Config no-write failures, cleanup Python reopen, encrypted-store compatibility and initialization intent.                                                                                                                                                               |
 
 Python-main apply/offer/agree CLI files and some group-join recipient handlers
 are stubs at inspected references. Test real Python protocol ingestion for
@@ -588,7 +475,7 @@ command parity from TS-only tests, or make a TS feature imitate an upstream stub
 Any required lane blocked by a genuine reference defect must be reported with
 its exact source and reproducer; do not count it as passing.
 The broad negative/recovery row above is an existing regression boundary, not a
-request to multiply the five added interop families. Preserve its current useful
+request to multiply the two added backer interop families. Preserve its current useful
 coverage and add only the limited cases justified here.
 
 ## Final ownership assessment and organization — cuts 31a–31d
@@ -639,7 +526,9 @@ rerun peer paths when their composition changes. Full qualification comes afterw
    **Breaking changes** prominently in each changelog and GitHub release, linking
    the version-pinned guide. Don't invent breaks merely for coordinated versioning.
 3. **Qualify the final clean source.** Run the complete maintained CESR/KERI/Tufa
-   and actual-peer matrix after all features, ownership and organization changes.
+   and in-scope actual-peer matrix after all required features, ownership and organization changes.
+   Record native ACDC/registry completion as deferred, with explicit supported
+   API limits in release notes; do not advertise native CLI lifecycle parity.
    Include required manual delegation/witness endurance; prior qualification's
    exclusions do not silently carry forward. Maintainer-only hosted dispatch still
    follows its explicit authorization rule.
