@@ -83,10 +83,16 @@ root/runtime/db entrypoints and the separate Tufa cli helper boundary replace
 app/core/db/vdr deep imports. Source smoke or native addon loading alone does not
 qualify installed packages, strict declarations or real LMDB large-row behavior.
 
-Recorded KERIpy reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
+Recorded frozen table/vector reference: `7143832813cac6a394ab1faf9be83bb3372be87c`.
 Keep historical fixtures, current upstream and mailbox-fork results labeled by
 actual source. Protocol parity and qualification outrank optional additions.
 Green narrow tests do not establish final composed interoperability.
+
+The [2.0.0 preparation report](../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
+owns the later completed implementation/organization and unpublished qualification.
+Publication waits for separate native-registry/wallet completion and affected
+requalification. ProtocolProcessor remains a shared dispatch/reply-capture/escrow
+owner without a mutex; ESSR uses pinned-main LMDB sets and authenticated owned bytes.
 
 ## Maintenance and handoff
 

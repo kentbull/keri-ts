@@ -24,19 +24,19 @@ references; one result must not be attributed to another.
 
 ## Explicit 2.0.0 release peer profiles
 
-`setup-essr-storage-peer` prepares a separate main checkout/venv for the storage
-owner in PR, extended and macOS workflows. The suite runner scopes it to that
-owner; it does not change other suites' mailbox-fork or explicitly selected wire
+`setup-keripy-main-peer` prepares a separate main checkout/venv for native
+protocol and ESSR storage owners in PR, extended and macOS workflows. The suite
+runner scopes it to those owners; it does not change other suites' mailbox-fork or explicitly selected wire
 peer. Local direct storage runs require the explicit `main` profile/root/Python;
-suite runs may instead supply `KERIPY_ESSR_STORAGE_ROOT` and
-`KERIPY_ESSR_STORAGE_PYTHON`. No legacy Baser qualification is implied.
+suite runs may instead supply `KERIPY_MAIN_ROOT` and
+`KERIPY_MAIN_PYTHON`. No legacy Baser qualification is implied.
 
 `scripts/ci/keripy-reference.json` freezes independent release profiles selected
-on 2026-10-20. These supplement the mailbox-fork default; they do not relabel it.
+on 2026-10-20; main advanced to c7e74ad before final qualification. These supplement the mailbox-fork default; they do not relabel it.
 
 | Profile | Source                                                   | Python | HIO    | LMDB  | Falcon |
 | ------- | -------------------------------------------------------- | ------ | ------ | ----- | ------ |
-| `main`  | `424a50c03421165c5f289e07a341bd57b8d8ab78`               | 3.14   | 0.7.20 | 2.3.0 | 4.3.1  |
+| `main`  | `c7e74adc3129ba36302db32e58056560b0927424`               | 3.14   | 0.7.20 | 2.3.0 | 4.3.1  |
 | `1.2`   | GLEIF 1.2.17, `b8626e1d58770a4a480ea72a01acc5580278a9f2` | 3.13   | 0.6.21 | 1.7.5 | 4.3.1  |
 | `1.3`   | tag 1.3.6, `4ce4cc79e06653f77342be1bf604086b89b1f090`    | 3.13   | 0.6.19 | 1.7.5 | 4.3.1  |
 

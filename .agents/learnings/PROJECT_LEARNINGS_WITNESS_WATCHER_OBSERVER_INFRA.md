@@ -68,6 +68,11 @@ still includes the maintained manual/endurance gates.
 
 ## Packaging and release
 
+The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
+owns the current source/artifact evidence and deliberate limits. Native lifecycle
+completion and publication remain deferred. Later notes must be reconciled into
+the still-unpublished major, not mechanically versioned as 3.0.0.
+
 Use dprint and deterministic version generation in checks; opt into build metadata
 only for artifacts. Package manifests are authoritative for both Deno version
 mirrors and npm workspace-lock entries; manifest:check must reject either drift.

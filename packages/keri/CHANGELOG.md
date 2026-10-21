@@ -1,5 +1,82 @@
 # keri-ts
 
+## 2.0.0
+
+### Breaking changes
+
+- Require explicit HTTP and clock dependencies in `createAgentRuntime` and
+  concrete components. Remove `RuntimeServices` and the mailbox polling transport
+  abstraction. Separate input-owned Reactor from shared ProtocolProcessor;
+  remove queued input and dispatch/escrow proxy methods. EXN validation and
+  commits are synchronous without a whole-protocol mutex.
+- Replace immediate Poster sends and conversation/prepared-target wrappers with
+  queued signed messages, concrete HTTP/TCP messengers and explicit ordinary or
+  finite-stream delivery. Rename `runtime.poster` to `postman`, replay `messages`
+  to `msgs`, and remove `CueEmission`. A sent outcome describes transport only.
+- Replace native HTTP Response/response-handle contracts with explicit finite
+  `HttpResponse` bytes or scoped `HttpStreamResponse`. TCP sends take a clock and
+  return completion. Remove CESR body-mode configuration; choose message or stream
+  construction explicitly. Local provider mailbox rows are no longer automatically
+  consumed as incoming recipient messages.
+- Move query command composition and final CLI result formatting to Tufa.
+  KERI command helpers return typed credential, multisig, endpoint and IPEX data.
+  Use `GroupSendResult`, `GroupMessageRef`, `GroupRoleResult`, `RegistryResult`
+  and `IssueResult`; `exnSaid` identifies the outer coordination message and
+  `payloadSaid` the existing aggregation key. `join --said` selects the outer EXN.
+- Move the verifier webhook application and its public types to
+  `@keri-ts/tufa/runtime`. Protocol Verifier and accepted evidence remain in KERI.
+- Store ESSR evidence in pinned-main Baser's `essrs.` LMDB Texter ordered set.
+  Remove PayloadArchive/PayloadStore/FilePayload/FilePayloadSink, file references,
+  recovery/staging machinery and durable plaintext APIs. `getEssrs` and
+  `EssrRecipient(hab).decrypt(said)` are synchronous; decrypted bodies are
+  caller-owned bytes. Preserve authenticated reconstruction and document the
+  reference's repeated/alternate-fragment limitation.
+- Propagate observable close failures, prevent uncertain handle reuse/reopen/delete,
+  expose a read-only usable `LMDBer.env`, and preserve operation plus cleanup
+  failures. Final command success follows shutdown; mutations are not rolled back
+  by a later close failure. Old private storage formats have no migration reader.
+- Local registry applications author NoBackers TELs. Remove registry backer
+  authoring options and `Registry.rotate`; retain external backed-TEL observer
+  verification, historical quorum checks, escrow/retry and replay. Issuer multisig
+  and KEL witnessing remain separate supported features.
+- Credential operations take explicit Regery/Reactor/Poster owners, distinguish
+  acceptance from TEL publication and saved evidence, and return typed results.
+  Revocation requires verified credential/issuance authority; explicit business
+  delivery is a separate operation. Finite import returns saved/complete/unaccepted.
+- Query workflows wait for accepted state using a command-owned cue Deck;
+  `keyStateSaved` means an actual persisted remote KSN. Exact-version TEL replay
+  can throw `UnsupportedTelReplayError` instead of silently upgrading output.
+
+See the [migration guide](../../docs/reference/compatibility/MIGRATING_TO_2_0.md) for signatures, replacements, CLI/configuration changes and
+storage/protocol boundaries. Supported npm entrypoint names remain available;
+private source directories are reorganized without path shims.
+
+### Features and fixes
+
+- Complete group legacy VCP/ISS/REV and six-verb IPEX approval/fanout, exact-event
+  resume after notification consumption/restart, business-evidence preflight and
+  historical signer election. Preserve establishment-only anchoring and pending
+  threshold/credential states without exporting incomplete evidence.
+- Progress TEL publication through durable protocol stores and the historical
+  witness cohort before reporting completion. Reciprocal mixed-language replay,
+  fresh wallet intake, revocation/reopen and stale replay retain distinct checks.
+- Validate options and strict OOBI configuration before effects; preserve omitted
+  file values and explicit false/zero/empty overrides. Init/incept bootstrap owns
+  selected finite attempts, authentication and joined cleanup.
+- Add exact pending-OOBI preview/apply through ordinary Baser loading. Missing
+  databases fail; preview accepts normal startup effects. Preserve partial deletion
+  reporting and report final completion only after closure.
+- Keep query sending separate from response intake and semantic completion;
+  correct endpoint selection, mailbox cursor advancement and fractional polling
+  timeout handling. Preserve transport causes and useful owner-level escrow
+  diagnostics instead of treating infrastructure faults as peer rejection.
+- Commit secret reencryption and AEID changes atomically. Update Ajv to 8.18.0
+  (GHSA-2g4f-4pwh-qvx6 fix); neither schema owner enables the affected `$data` feature.
+- Qualify frozen main c7e74ad, GLEIF-IT 1.2.17 and WOT 1.3.x profiles separately
+  from the mailbox fork. Independent public-API evidence is distinct from blocked
+  Python CLI lanes. Native rip/bup/upd lifecycle completion and publication remain
+  deferred; retained partial APIs are not a complete native credential workflow.
+
 ## 1.0.0
 
 ### Breaking API and architecture changes
