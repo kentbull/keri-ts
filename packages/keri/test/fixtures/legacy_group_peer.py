@@ -16,6 +16,9 @@ from hio.base import doing
 from hio.core import http
 from keri import kering
 from keri.app import grouping, habbing, notifying
+from keri.app.signing import serialize
+from keri.vc import proving, protocoling
+from keri.vdr import eventing as teling
 from keri.app.indirecting import HttpEnd, createHttpServer
 from keri.core import coring, eventing, parsing, scheming, serdering
 from keri.peer import exchanging
@@ -35,6 +38,7 @@ class GroupPeer:
         self.exc = exchanging.Exchanger(hby=hby, handlers=[])
         self.mux = grouping.Multiplexor(hby=hby, notifier=self.notifier)
         grouping.loadHandlers(self.exc, self.mux)
+        protocoling.loadHandlers(hby, self.exc, self.notifier)
         self.psr = parsing.Parser(kvy=hby.kvy, tvy=self.rgy.tvy, vry=self.vry,
                                   exc=self.exc, **self.versions)
         self.group = None
@@ -112,12 +116,91 @@ class GroupPeer:
         self.post(wire)
         return dict(said=response.said, tel=tel.said)
 
-    def snapshot(self, registry, credential=None):
+    def issue(self, registry, schema, recipient):
+        """Propose a new credential with Python factories; ordinary escrows wait for the peer signature."""
+        creder = proving.credential(schema=schema, issuer=self.group.pre,
+            recipient=recipient, status=registry, data=dict(role='python-proposer'), **self.versions)
+        tel = teling.issue(creder.said, registry, **self.versions)
+        anchor_wire = self.group.interact(data=[dict(i=tel.pre, s=tel.snh, d=tel.said)],
+                                         **self.framing, **self.versions)
+        anchor = serdering.SerderKERI(raw=anchor_wire)
+        try:
+            self.rgy.tvy.processEvent(serder=tel, seqner=coring.Seqner(sn=anchor.sn),
+                                      saider=coring.Saider(qb64=anchor.said))
+        except kering.MissingAnchorError:
+            pass  # Expected ordinary TEL escrow while the group anchor is partial.
+        prefixer, seqner, saider = (coring.Prefixer(qb64=tel.pre),
+            coring.Seqner(sn=tel.sn), coring.Saider(qb64=tel.said))
+        # Main signing.serialize selects library-default v2; this legacy
+        # pathed child instead uses its public messagize API with explicit v1.
+        acdc = (serialize(creder, prefixer, seqner, saider) if self.legacy else
+                eventing.messagize(creder,
+                    bonds=[eventing.SealEvent(i=prefixer, s=seqner, d=saider)], **self.framing))
+        self.psr.parseOne(ims=bytearray(acdc), local=True)
+        wrapper, atc = grouping.multisigIssueExn(self.group, acdc=acdc,
+            iss=tel.raw, anc=anchor_wire, **self.versions)
+        wire = bytearray(wrapper.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        self.post(wire)
+        return dict(credential=creder.said, exnSaid=wrapper.said)
+
+    def approve_exchange(self, said):
+        """Contribute a group EXN signature while preserving its independently proved children."""
+        wrapper, paths = exchanging.cloneMessage(self.hby, said=said)
+        assert wrapper.ked['r'] == '/multisig/exn'
+        assert wrapper.ked['a']['gid'] == self.group.pre
+        child = serdering.SerderKERI(sad=wrapper.ked['e']['exn'])
+        self.psr.parseOne(ims=bytearray(child.raw + paths['exn']), local=True)
+        endorsement = dict(pipelined=False) if self.legacy else self.framing
+        wire = self.group.endorse(serder=child, last=False, **endorsement)
+        wire.extend(paths['exn'])
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        self.exc.processEscrow()
+        assert self.exc.complete(said=child.said)
+        approval, atc = grouping.multisigExn(self.group, exn=wire, **self.versions)
+        self.psr.parseOne(ims=bytearray(approval.raw + atc), local=True)
+        self.post(approval.raw + atc)
+        return dict(accepted=child.said, exnSaid=approval.said)
+
+    def request(self, schema, message):
+        """Open an actual legacy application to the group, before offer or refusal."""
+        application, atc = protocoling.ipexApplyExn(self.member, recp=self.group.pre,
+            message=message, schema=schema, attrs=dict(role='member'), **self.versions)
+        wire = bytearray(application.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=application.said)
+        self.post(wire)
+        return dict(said=application.said)
+
+    def agree(self, said):
+        """Respond to the exact accepted group offer through the reference factory."""
+        offer = self.hby.db.exns.get(keys=(said,))
+        assert offer is not None and offer.ked['r'] == '/ipex/offer'
+        agreement, atc = protocoling.ipexAgreeExn(self.member, message='agreed', offer=offer, **self.versions)
+        wire = bytearray(agreement.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=agreement.said)
+        self.post(wire)
+        return dict(said=agreement.said)
+
+    def admit(self, said):
+        """Send a genuine recipient admission linked to the accepted group grant."""
+        grant = self.hby.db.exns.get(keys=(said,))
+        assert grant is not None and grant.ked['r'] == '/ipex/grant'
+        admission, atc = protocoling.ipexAdmitExn(self.member, message='accepted', grant=grant, **self.versions)
+        wire = bytearray(admission.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=admission.said)
+        self.post(wire)
+        return dict(said=admission.said)
+
+    def snapshot(self, registry, credential=None, exchange=None):
         tever = self.rgy.tevers.get(registry)
         state = tever.vcState(credential) if tever and credential else None
         return dict(registry=tever.pre if tever else None,
                     state=state.et if state else None,
-                    saved=bool(credential and self.rgy.reger.saved.get(keys=(credential,))))
+                    saved=bool(credential and self.rgy.reger.saved.get(keys=(credential,))),
+                    accepted=bool(exchange and self.hby.db.exns.get(keys=(exchange,))))
 
 
 class Control:
@@ -143,6 +226,16 @@ class Control:
                 rep.media = self.peer.make_group(**command)
             elif action == 'endorse':
                 rep.media = self.peer.endorse(**command)
+            elif action == 'issue':
+                rep.media = self.peer.issue(**command)
+            elif action == 'approve-exchange':
+                rep.media = self.peer.approve_exchange(**command)
+            elif action == 'request':
+                rep.media = self.peer.request(**command)
+            elif action == 'agree':
+                rep.media = self.peer.agree(**command)
+            elif action == 'admit':
+                rep.media = self.peer.admit(**command)
             elif action == 'snapshot':
                 rep.media = self.peer.snapshot(**command)
             else:
