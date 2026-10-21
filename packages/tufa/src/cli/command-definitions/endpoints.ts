@@ -39,7 +39,7 @@ function registerEndsCmds(program: Command, dispatch: CommandDispatch): void {
     dispatch,
     {
       name: "ends.add",
-      load: () => import("../endpoints.ts"),
+      load: () => import("../commands/endpoints.ts"),
       exportName: "endsAddCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,

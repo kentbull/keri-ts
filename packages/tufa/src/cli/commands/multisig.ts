@@ -15,8 +15,8 @@ import {
   multisigRotateCommand as rotate,
   multisigRpyCommand as rpy,
 } from "keri-ts/cli";
+import { writeJsonLine } from "../support/rendering.ts";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
-import { writeJsonLine } from "./support/rendering.ts";
 
 /** Display the captured key state, then the exact coordination-message send result. */
 function printEvent(result: GroupEventResult): void {

@@ -1,10 +1,10 @@
 import { type Operation } from "effection";
 import { AppError, LOG_LEVELS, type LogLevel, setLogLevel } from "keri-ts/runtime";
 import { Command, Option } from "npm:commander@^10.0.1";
-import { tufaCliVersionLine } from "../version-display.ts";
 import { registerCmds } from "./command-definitions.ts";
 import { type CommandHandler, type CommandSelection } from "./command-types.ts";
 import { createCmdHandlers } from "./handlers.ts";
+import { tufaCliVersionLine } from "./version-display.ts";
 
 /** Structured handled CLI exit used to suppress fatal-stack reporting. */
 export class CliExitError extends Error {

@@ -45,7 +45,7 @@ function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch)
     dispatch,
     {
       name: "multisig.incept",
-      load: () => import("../multisig.ts"),
+      load: () => import("../commands/multisig.ts"),
       exportName: "multisigInceptCommand",
       args: (options) => ({
         name: options.name,
@@ -86,7 +86,7 @@ function registerMultisigInteractCmd(multisig: Command, dispatch: CommandDispatc
     dispatch,
     {
       name: "multisig.interact",
-      load: () => import("../multisig.ts"),
+      load: () => import("../commands/multisig.ts"),
       exportName: "multisigInteractCommand",
       args: (options) => ({
         name: options.name,
@@ -130,7 +130,7 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
     dispatch,
     {
       name: "multisig.join",
-      load: () => import("../multisig.ts"),
+      load: () => import("../commands/multisig.ts"),
       exportName: "multisigJoinCommand",
       args: (options) => ({
         name: options.name,
@@ -200,7 +200,7 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
     dispatch,
     {
       name: "multisig.rotate",
-      load: () => import("../multisig.ts"),
+      load: () => import("../commands/multisig.ts"),
       exportName: "multisigRotateCommand",
       args: (options) => ({
         name: options.name,
@@ -248,7 +248,7 @@ function registerMultisigRpyCmd(multisig: Command, dispatch: CommandDispatch): v
     dispatch,
     {
       name: "multisig.rpy",
-      load: () => import("../multisig.ts"),
+      load: () => import("../commands/multisig.ts"),
       exportName: "multisigRpyCommand",
       args: (options) => ({
         name: options.name,

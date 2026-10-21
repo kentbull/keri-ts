@@ -7,7 +7,7 @@ import {
   mailboxListCommand,
   mailboxRemoveCommand,
   mailboxUpdateCommand,
-} from "../../../../../tufa/src/cli/mailbox.ts";
+} from "../../../../../tufa/src/cli/commands/mailbox.ts";
 import { startServer } from "../../../../../tufa/src/host/http-server.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../../src/app/mailbox/mailbox-sse.ts";

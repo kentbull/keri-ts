@@ -31,18 +31,18 @@ import {
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
-import { runIndirectHost } from "../host/indirect-host.ts";
-import { canonicalOrigin, configFileCandidates, mailboxAdminUrl } from "../operator/host-planning.ts";
+import { runIndirectHost } from "../../host/indirect-host.ts";
+import { canonicalOrigin, configFileCandidates, mailboxAdminUrl } from "../../operator/host-planning.ts";
 import {
   collectConfiguredMailboxes,
   collectMailboxDebugReport,
   type MailboxDebugReport,
   normalizeMailboxTopic,
-} from "../operator/mailbox-debug.ts";
-import { reconcileMailboxHostStartup, resolveMailboxHostStartup } from "../operator/mailbox-startup.ts";
-import { type CommandHaberyOptions, withExistingHab, withHabAndAgentRuntime } from "./support/context.ts";
-import { ensureHby } from "./support/existing.ts";
-import { writeJsonLine, writeTextLines } from "./support/rendering.ts";
+} from "../../operator/mailbox-debug.ts";
+import { reconcileMailboxHostStartup, resolveMailboxHostStartup } from "../../operator/mailbox-startup.ts";
+import { type CommandHaberyOptions, withExistingHab, withHabAndAgentRuntime } from "../support/context.ts";
+import { ensureHby } from "../support/existing.ts";
+import { writeJsonLine, writeTextLines } from "../support/rendering.ts";
 
 type MultisigMailboxMode = "propose" | "complete";
 

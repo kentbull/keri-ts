@@ -10,8 +10,8 @@ import {
   Schemes,
   ValidationError,
 } from "keri-ts/runtime";
-import { runIndirectHost } from "../host/indirect-host.ts";
-import { setupHby } from "./support/existing.ts";
+import { runIndirectHost } from "../../host/indirect-host.ts";
+import { setupHby } from "../support/existing.ts";
 
 /** Parsed arguments for the long-lived `tufa agent` host command. */
 interface AgentArgs {

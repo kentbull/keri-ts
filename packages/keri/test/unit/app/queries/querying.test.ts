@@ -1,7 +1,7 @@
 import { call, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { parseBytes, ParserError, SerderKERI } from "../../../../../cesr/mod.ts";
-import { queryCommand } from "../../../../../tufa/src/cli/query.ts";
+import { queryCommand } from "../../../../../tufa/src/cli/commands/query.ts";
 import {
   acceptedEventReplayMessage,
   createHabery,

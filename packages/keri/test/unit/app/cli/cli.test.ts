@@ -14,7 +14,7 @@ import {
   WireParseError,
 } from "../../../../../cesr/mod.ts";
 import { tufa } from "../../../../../tufa/src/cli/cli.ts";
-import { multisigJoinCommand } from "../../../../../tufa/src/cli/multisig.ts";
+import { multisigJoinCommand } from "../../../../../tufa/src/cli/commands/multisig.ts";
 import { parseGvrsn } from "../../../../cli.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";

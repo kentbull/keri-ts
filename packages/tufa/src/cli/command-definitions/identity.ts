@@ -139,7 +139,7 @@ function registerQueryCmd(program: Command, dispatch: CommandDispatch): void {
     dispatch,
     {
       name: "query",
-      load: () => import("../query.ts"),
+      load: () => import("../commands/query.ts"),
       exportName: "queryCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,

@@ -33,7 +33,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.start",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxStartCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -75,7 +75,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.add",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxAddCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -110,7 +110,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.remove",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxRemoveCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -140,7 +140,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.list",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxListCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -172,7 +172,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.update",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxUpdateCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
@@ -206,7 +206,7 @@ export function registerMailboxCmds(
     dispatch,
     {
       name: "mailbox.debug",
-      load: () => import("../mailbox.ts"),
+      load: () => import("../commands/mailbox.ts"),
       exportName: "mailboxDebugCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,

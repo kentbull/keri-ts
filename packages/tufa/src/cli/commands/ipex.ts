@@ -11,7 +11,7 @@ import {
   type IpexSendResult,
   ipexSpurnCommand as spurn,
 } from "keri-ts/cli";
-import { writeJsonLine } from "./support/rendering.ts";
+import { writeJsonLine } from "../support/rendering.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
 function printSend({ exn, deliveries, group }: IpexSendResult): void {

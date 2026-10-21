@@ -19,14 +19,14 @@ import {
 
 const ENTRYPOINT = "./src/npm/index.ts";
 const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
-const NODE_CLI_ENTRYPOINT = "./src/app/cli-node.ts";
+const NODE_CLI_ENTRYPOINT = "./src/cli/node.ts";
 const OUT_DIR = "./npm";
 const DENO_CONFIG_PATH = new URL("../deno.json", import.meta.url).href;
 const NPM_MAIN_PATH = "./esm/tufa/npm/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/npm/index.d.ts";
 const NPM_RUNTIME_PATH = "./esm/tufa/npm/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/npm/runtime.d.ts";
-const NPM_BIN_PATH = "./esm/tufa/npm/src/app/cli-node.js";
+const NPM_BIN_PATH = "./esm/tufa/npm/src/cli/node.js";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
 interface BuiltNpmPackageManifest {
@@ -142,7 +142,7 @@ function resolveGeneratedTargets(): TufaNpmTargets {
       ),
     },
     bin: findGeneratedEntrypoint(
-      { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "cli-node.js", marker: BIN_ENTRYPOINT_MARKER },
+      { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "node.js", marker: BIN_ENTRYPOINT_MARKER },
     ),
   };
 

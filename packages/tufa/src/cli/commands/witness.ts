@@ -18,13 +18,13 @@ import {
   ValidationError,
   WitnessReceiptor,
 } from "keri-ts/runtime";
-import { configFileCandidates, validateIsoDatetime } from "../operator/host-planning.ts";
-import { reconcileWitnessHostStartup, resolveWitnessHostStartup } from "../operator/witness-startup.ts";
-import { runWitnessHost } from "../roles/witness.ts";
-import { withExistingHab } from "./support/context.ts";
-import { ensureHby } from "./support/existing.ts";
-import { writeTextLines } from "./support/rendering.ts";
-import { resolveWitnessAuths } from "./support/witness-auth.ts";
+import { configFileCandidates, validateIsoDatetime } from "../../operator/host-planning.ts";
+import { reconcileWitnessHostStartup, resolveWitnessHostStartup } from "../../operator/witness-startup.ts";
+import { runWitnessHost } from "../../roles/witness.ts";
+import { withExistingHab } from "../support/context.ts";
+import { ensureHby } from "../support/existing.ts";
+import { writeTextLines } from "../support/rendering.ts";
+import { resolveWitnessAuths } from "../support/witness-auth.ts";
 
 interface WitnessBaseArgs {
   name?: string;
