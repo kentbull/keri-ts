@@ -10,6 +10,7 @@
  */
 import { SealEvent } from "cesr-ts";
 import { call, type Operation, race, sleep, spawn, type Task } from "effection";
+import { parseBooleanOption, parseStringOption } from "keri-ts/cli";
 import { dgKey } from "keri-ts/db";
 import {
   type AgentCue,
@@ -89,23 +90,29 @@ function externalStateLines(hby: Habery, pre: string): string[] {
  * propagate to the CLI's normal nonzero-exit handling.
  */
 export function* queryCommand(args: Record<string, unknown>): Operation<void> {
-  const name = args.name as string | undefined;
-  const alias = args.alias as string | undefined;
-  const prefix = args.prefix as string | undefined;
+  const name = parseStringOption(args.name, "name");
+  const alias = parseStringOption(args.alias, "alias");
+  const prefix = parseStringOption(args.prefix, "prefix");
   if (!name) throw new ValidationError("Name is required and cannot be empty");
   if (!alias) throw new ValidationError("Alias is required and cannot be empty");
   if (!prefix) throw new ValidationError("Prefix is required and cannot be empty");
-  const anchor = args.anchor ? loadAnchor(args.anchor as string) : undefined;
+  const anchorPath = parseStringOption(args.anchor, "anchor");
+  const compat = parseBooleanOption(args.compat, "compat");
+  const base = parseStringOption(args.base, "base");
+  const headDirPath = parseStringOption(args.headDirPath, "headDirPath");
+  const passcode = parseStringOption(args.passcode, "passcode");
+  if (anchorPath === "") throw new ValidationError("Anchor path cannot be empty");
+  const anchor = anchorPath === undefined ? undefined : loadAnchor(anchorPath);
   const lines = yield* withHabAndAgentRuntime(
     {
       name,
-      base: args.base as string | undefined,
-      headDirPath: args.headDirPath as string | undefined,
-      passcode: args.passcode as string | undefined,
-      compat: args.compat as boolean | undefined,
+      base,
+      headDirPath,
+      passcode,
+      compat,
     },
     alias,
-    { compat: args.compat as boolean ?? false, readonly: false, skipConfig: true, skipSignator: true },
+    { compat: compat ?? false, readonly: false, skipConfig: true, skipSignator: true },
     function*({ hby, runtime, hab }) {
       let queryCues: Deck<AgentCue> | undefined;
       let workflow: AnchorQuerier | KeyStateNoticer;

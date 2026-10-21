@@ -1,5 +1,6 @@
 /** Long-lived `tufa dws resolver` service command. */
 import type { Operation } from "effection";
+import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
 import { FetchHttpClient } from "keri-ts/runtime";
 import {
@@ -32,18 +33,18 @@ interface DwsResolverArgs {
  */
 export function* dwsResolverCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsResolverArgs = {
-    port: args.port ? Number(args.port) : 7723,
-    listenHost: args.listenHost as string | undefined,
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
-    staticFilesDir: args.staticFilesDir as string | undefined,
-    didPath: args.didPath as string | undefined,
-    dynamic: args.dynamic as boolean | undefined,
-    hostedPrefixes: asStringList(args.hostedPrefix),
-    insecureHttp: args.insecureHttp as boolean | undefined,
+    port: parseIntegerOption(args.port, "port") ?? 7723,
+    listenHost: parseStringOption(args.listenHost, "listenHost"),
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    staticFilesDir: parseStringOption(args.staticFilesDir, "staticFilesDir"),
+    didPath: parseStringOption(args.didPath, "didPath"),
+    dynamic: parseBooleanOption(args.dynamic, "dynamic"),
+    hostedPrefixes: asStringList(args.hostedPrefix, "hostedPrefix"),
+    insecureHttp: parseBooleanOption(args.insecureHttp, "insecureHttp"),
   };
   const port = commandArgs.port ?? 7723;
   if (!Number.isFinite(port) || port < 1 || port > 65535) {
@@ -87,9 +88,8 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
   }
 }
 
-function asStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
-  return typeof value === "string" ? [value] : [];
+/** Accept a scalar occurrence or the complete repeated-option list without dropping invalid entries. */
+function asStringList(value: unknown, flag: string): string[] {
+  if (typeof value === "string") return [value];
+  return parseStringListOption(value, flag) ?? [];
 }

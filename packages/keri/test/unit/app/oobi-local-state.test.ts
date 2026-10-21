@@ -520,11 +520,11 @@ Deno.test("OOBI multi-parent publication validates all URLs and publishes ordina
       assertEquals(hby.db.woobi.get(children[1])?.oobialias, "source");
       assertEquals(cues.toArray(), children.map((url) => ({ kin: "oobiQueued", url, alias: "source" })));
       cues.clear();
-      for (const child of children) {
-        hby.db.oobis.rem(child);
-        hby.db.woobi.rem(child);
-        hby.db.roobi.pin(child, { state: "resolved" });
-      }
+      hby.db.oobis.rem(children[0]);
+      hby.db.roobi.pin(children[0], { state: "resolved" });
+      // The well-known child completes through Authenticator's terminal table.
+      hby.db.woobi.rem(children[1]);
+      hby.db.rmfa.pin(children[1], { state: "resolved" });
       const pending = hby.db.moobi.get(parent)!;
       yield* oobi.processOnce();
       assertEquals(hby.db.moobi.get(parent), null);

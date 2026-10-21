@@ -90,7 +90,7 @@ function registerDwsCmds(program: Command, dispatch: CommandDispatch): void {
     addStoreOptions(
       dws.command("resolver")
         .description("Run Universal Resolver compatible DID service")
-        .option("--port <port>", "HTTP port", (value: string) => Number(value), 7723)
+        .option("--port <port>", "HTTP port", "7723")
         .option("--listen-host <host>", "Listen host", "127.0.0.1")
         .option("--static-files-dir <dir>", "Static artifact root directory")
         .option("--did-path <path>", "DID artifact path prefix")

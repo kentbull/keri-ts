@@ -88,6 +88,12 @@ are errors, while omission retains each command's default. IPEX zero/fractional
 waits and positive fractional import settlement windows remain supported.
 Credential JSON sections and IPEX attribute objects validate before stores open.
 
+Endpoint, signing, query, DID and witness command adapters now reject malformed option
+types before opening stores. Repeated signature/DID/OOBI/hosted-prefix lists must
+contain only strings. DID resolver ports accept decimal integers, not coercible
+booleans, fractional values or hexadecimal text. An explicitly empty query anchor
+path is invalid rather than an instruction to query key state.
+
 ## Lifecycle option validation
 
 Inception and rotation preserve file values when flags are omitted. Explicit

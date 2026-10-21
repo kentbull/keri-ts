@@ -9,6 +9,7 @@ import {
   proposeGroupEndpointRole,
 } from "../endpoint-roleing.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 type MultisigEndpointRoleMode = "propose" | "complete";
 
@@ -46,15 +47,15 @@ export function* endsAddCommand(
   args: Record<string, unknown>,
 ): Operation<EndRoleResult> {
   const commandArgs: EndsAddArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    role: args.role as string | undefined,
-    eid: args.eid as string | undefined,
-    multisigMode: parseMultisigMode(args.multisigMode as string | undefined),
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "--name"),
+    base: parseStringOption(args.base, "--base"),
+    headDirPath: parseStringOption(args.headDirPath, "--head-dir"),
+    passcode: parseStringOption(args.passcode, "--passcode"),
+    alias: parseStringOption(args.alias, "--alias"),
+    role: parseStringOption(args.role, "--role"),
+    eid: parseStringOption(args.eid, "--eid"),
+    multisigMode: parseMultisigMode(parseStringOption(args.multisigMode, "--multisig-mode")),
+    compat: parseBooleanOption(args.compat, "--compat"),
   };
 
   if (!commandArgs.name) {

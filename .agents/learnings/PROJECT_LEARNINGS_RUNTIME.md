@@ -77,6 +77,9 @@ and apply defaults afterward. Explicit false/zero/empty arrays override file
 values; malformed list members are rejected rather than filtered. Tholder owns
 threshold syntax and configurable caps. Multisig validates complete member lists,
 booleans and supplied timeouts before stores; never silently filter participants.
+Endpoint/signing/query/DID/witness adapters validate primitive shapes before resource
+access. Query anchor omission differs from an invalid explicit empty path; resolver
+ports are decimal integers, and repeated lists reject invalid members as a whole.
 Approval waits allow fractional seconds and default only on omission. Inception's
 finite command scope owns acquisition/cleanup without a completion queue.
 

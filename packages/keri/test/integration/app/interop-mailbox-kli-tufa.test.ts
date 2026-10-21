@@ -407,10 +407,8 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     await withStartedChild(bobAgent, bobPort, async () => {
       const providerFetch = await fetch(providerMailboxOobi);
       assertEquals(providerFetch.status, 200);
-      assertStringIncludes(
-        providerFetch.headers.get("content-type") ?? "",
-        "application/cesr",
-      );
+      // OOBI uses the label accepted by pinned KERIpy Oobiery, distinct from POST media.
+      assertEquals(providerFetch.headers.get("content-type"), "application/json+cesr");
       assertStringIncludes(
         await providerFetch.text(),
         "\"r\":\"/loc/scheme\"",
