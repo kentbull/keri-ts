@@ -4,7 +4,8 @@
  * This module owns multisig coordination around embedded `/ipex/*` messages.
  * CLI adapters supply parsed options and output/file handling; this service
  * signs, publishes and sends completed group IPEX messages. CLI orchestration
- * owns timed waits and worker lifetimes.
+ * owns timed waits and worker lifetimes. Approval borrows explicit semantic,
+ * delivery and credential owners; its byte-input context belongs to the operation.
  */
 import {
   type Cigar,
@@ -25,8 +26,8 @@ import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { serializeMessage } from "../core/protocol-exchanging.ts";
+import type { Baser } from "../db/basing.ts";
 import type { Reger } from "../db/reger.ts";
-import { type AgentRuntime } from "./agent-runtime.ts";
 import { createExchangeMessage } from "./exchange-messaging.ts";
 import type { Poster, PosterMsg } from "./forwarding.ts";
 import { groupSigningMembers, localGroupMember } from "./group-members.ts";
@@ -38,6 +39,8 @@ import {
   credentialSaidFromGrant,
 } from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
+import type { ProtocolProcessor } from "./protocol-processing.ts";
+import { Reactor } from "./reactor.ts";
 
 export interface MultisigIpexApprovalOptions {
   publish?: boolean;
@@ -55,59 +58,40 @@ export interface MultisigIpexApprovalResult {
  * Approve one pending multisig wrapper around an embedded IPEX message.
  *
  * @param hby Borrowed local identities and accepted-state stores.
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param protocol Borrowed semantic owner; this approval creates its own byte-input context.
+ * @param postman Borrowed delivery owner; the caller runs and joins its worker.
+ * @param reger Explicit legacy evidence store, required only when sending a completed grant.
  * @param wrapper Accepted multisig exchange carrying the proposed IPEX child.
  * @param options Approval/genus policy used for the existing group workflow.
  * @returns Approval and current group/protocol completion information.
  */
 export function* approveMultisigIpex(
   hby: Habery,
-  runtime: AgentRuntime,
+  protocol: ProtocolProcessor,
+  postman: Poster,
+  reger: Reger | null,
   wrapper: SerderKERI,
   options: MultisigIpexApprovalOptions = {},
 ): Operation<MultisigIpexApprovalResult> {
-  const child = multisigChild(hby, wrapper, "exn");
-  if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
-  const { event: embedded, attachment: peerAttachment, genus } = child;
-  const group = embedded.pre;
-  const embeddedSaid = embedded.said;
-  const wrapperSaid = wrapper.said;
-  if (!group || !embeddedSaid || !wrapperSaid) {
-    throw new ValidationError("Multisig IPEX approval requires wrapper, group, and embedded SAIDs.");
-  }
-
-  const groupHab = hby.habs.get(group);
-  if (!groupHab) {
-    throw new ValidationError(`Local group ${group} is missing member signing state.`);
-  }
-  const reger = embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true)
-    ? runtime.vdr?.reger ?? null
-    : null;
+  const { child, groupHab } = loadIpexProposal(hby, wrapper);
+  const { event: embedded, genus } = child;
+  const embeddedSaid = embedded.said!;
   if (embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true) && !reger) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
-  if (peerAttachment.length > 0) {
-    yield* runtime.reactor.processBytes(
-      concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment),
-      { local: true },
-    );
-    yield* runtime.protocol.processEscrowsOnce();
-  }
-  const approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
-  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
-  yield* runtime.protocol.processEscrowsOnce();
+  const approved = yield* approveIpexChild(hby, protocol, groupHab, child);
   const deliveries = options.publish
-    ? yield* publishGroupIpexProposal(runtime, groupHab, approved, genus)
+    ? yield* publishGroupIpexProposal(hby, postman, groupHab, approved, genus)
     : [];
   if (
     (options.sendLead ?? true)
     && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
-    && runtime.exc.lead(groupHab, embeddedSaid)
+    && protocol.exc.lead(groupHab, embeddedSaid)
   ) {
     deliveries.push(
       ...(yield* sendCompletedGroupIpex(
         hby,
-        runtime.postman,
+        postman,
         reger,
         groupHab,
         embedded,
@@ -120,6 +104,41 @@ export function* approveMultisigIpex(
     deliveries,
     approved,
   };
+}
+
+/** Decode one accepted coordination wrapper and select its actual local group signing state. */
+function loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
+  const child = multisigChild(hby, wrapper, "exn");
+  if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
+  const group = child.event.pre;
+  if (!group || !child.event.said || !wrapper.said) {
+    throw new ValidationError("Multisig IPEX approval requires wrapper, group, and embedded SAIDs.");
+  }
+  const groupHab = hby.habs.get(group);
+  if (!groupHab) throw new ValidationError(`Local group ${group} is missing member signing state.`);
+  return { child, groupHab };
+}
+
+/**
+ * Admit peer evidence, sign the local contribution and advance ordinary escrows in that order.
+ * The operation owns its byte-input context, borrowing only semantic owners and identities.
+ * It neither publishes member wrappers nor sends the completed business exchange.
+ */
+function* approveIpexChild(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  groupHab: Hab,
+  { event: embedded, attachment: peerAttachment, genus }: ReturnType<typeof loadIpexProposal>["child"],
+): Operation<Uint8Array> {
+  const input = new Reactor(protocol);
+  if (peerAttachment.length > 0) {
+    yield* input.processBytes(concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment), { local: true });
+    yield* protocol.processEscrowsOnce();
+  }
+  const approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
+  yield* input.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
+  yield* protocol.processEscrowsOnce();
+  return approved;
 }
 
 /** Sign a group IPEX body and append the supplied proof bytes in the selected attachment genus. */
@@ -171,22 +190,24 @@ export function groupIpexPartial(
 /**
  * Publish one group IPEX proposal to remote signing members.
  *
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param hby Borrowed group/member identities and accepted state.
+ * @param postman Borrowed delivery owner; the caller runs and joins its worker.
  * @param groupHab Group habitat whose signing members receive the proposal.
  * @param embedded IPEX exchange body/attachments to wrap.
  * @param childGvrsn Attachment genus of the embedded child, independent of outer EXN framing.
  * @returns Proposal delivery results after matching Poster outcomes.
  */
 export function* publishGroupIpexProposal(
-  runtime: AgentRuntime,
+  hby: Habery,
+  postman: Poster,
   groupHab: Hab,
   embedded: Uint8Array,
   childGvrsn?: Versionage,
 ): Operation<string[]> {
   const deliveries: string[] = [];
-  for (const msg of groupIpexProposals(runtime.hby, groupHab, embedded, childGvrsn)) {
-    const evt = runtime.postman.send(msg, { notify: true });
-    const outcome = yield* runtime.postman.wait(evt);
+  for (const msg of groupIpexProposals(hby, groupHab, embedded, childGvrsn)) {
+    const evt = postman.send(msg, { notify: true });
+    const outcome = yield* postman.wait(evt);
     if (outcome.kin === "failed") throw outcome.error;
     deliveries.push(...outcome.deliveries);
   }
@@ -227,10 +248,10 @@ export function groupIpexProposals(
   return msgs;
 }
 
-/** Approve all stored multisig wrappers for one embedded IPEX SAID. */
+/** Approve stored wrappers for one IPEX child without external lead sending or acquiring stores/workers. */
 export function* approveStoredMultisigIpexWrappers(
   hby: Habery,
-  runtime: AgentRuntime,
+  protocol: ProtocolProcessor,
   embeddedSaid: string,
 ): Operation<void> {
   for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
@@ -241,22 +262,19 @@ export function* approveStoredMultisigIpexWrappers(
     if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
       continue;
     }
-    yield* approveMultisigIpex(hby, runtime, wrapper, {
-      publish: false,
-      sendLead: false,
-    });
+    const { child, groupHab } = loadIpexProposal(hby, wrapper);
+    yield* approveIpexChild(hby, protocol, groupHab, child);
   }
 }
 
 /**
  * Return the first incomplete stored `/multisig/exn` wrapping `/ipex/*`.
  *
- * @param hby Borrowed local identities and accepted-state stores.
- * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param db Borrowed accepted exchanges; discovery does not mutate notices or approval state.
  * @returns First incomplete stored IPEX proposal, or no result when none exists.
  */
-export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): SerderKERI | null {
-  for (const [, wrapper] of hby.db.exns.getTopItemIter()) {
+export function findPendingMultisigIpex(db: Baser): SerderKERI | null {
+  for (const [, wrapper] of db.exns.getTopItemIter()) {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
@@ -265,7 +283,7 @@ export function findPendingMultisigIpex(hby: Habery, runtime: AgentRuntime): Ser
       continue;
     }
     const embeddedSaid = embeddedSad.d;
-    if (typeof embeddedSaid !== "string" || runtime.exc.complete(embeddedSaid)) {
+    if (typeof embeddedSaid !== "string" || db.exns.get([embeddedSaid])?.said === embeddedSaid) {
       continue;
     }
     return wrapper;

@@ -514,7 +514,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
       const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
-        return yield* approveMultisigIpex(hby, runtime, exn, {
+        return yield* approveMultisigIpex(hby, runtime.protocol, postman, runtime.vdr?.reger ?? null, exn, {
           publish: true,
           gvrsn: ipexArgs.gvrsn,
         });
@@ -770,7 +770,7 @@ function* waitForMultisigIpexCompletion(
   const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member }));
   try {
     while (true) {
-      yield* approveStoredMultisigIpexWrappers(hby, runtime, embeddedSaid);
+      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embeddedSaid);
       if (runtime.exc.complete(embeddedSaid)) return true;
       if (Date.now() >= deadline) return false;
       yield* sleep(Math.min(250, deadline - Date.now()));
@@ -786,14 +786,14 @@ function* nextPendingMultisigIpex(
   runtime: AgentRuntime,
   { hab, timeoutMs }: { hab?: Hab; timeoutMs: number },
 ): Operation<SerderKERI | null> {
-  const found = findPendingMultisigIpex(hby, runtime);
+  const found = findPendingMultisigIpex(hby.db);
   if (found || timeoutMs === 0) return found;
   const signer = hab && isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
   const deadline = Date.now() + timeoutMs;
   const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer }));
   try {
     while (true) {
-      const pending = findPendingMultisigIpex(hby, runtime);
+      const pending = findPendingMultisigIpex(hby.db);
       if (pending) return pending;
       if (Date.now() >= deadline) return null;
       yield* sleep(Math.min(250, deadline - Date.now()));
