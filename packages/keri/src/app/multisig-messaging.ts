@@ -31,7 +31,7 @@ export interface GroupMessageRef {
 }
 
 /** Complete signed proposal ready for local admission or concrete transmission. */
-interface SignedGroupMessage extends GroupMessageRef {
+export interface SignedGroupMessage extends GroupMessageRef {
   src: string;
   message: Uint8Array;
 }

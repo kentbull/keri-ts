@@ -47,7 +47,7 @@ import {
 } from "../../../src/app/grouping.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { approveMultisigIpex, groupIpexPartial } from "../../../src/app/ipex-grouping.ts";
+import { approveMultisigIpex, groupIpexPartial, publishInitialGroupIpex } from "../../../src/app/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../src/app/ipexing.ts";
 import { signGroupMessage } from "../../../src/app/multisig-messaging.ts";
 import { approvePendingMultisigProposal, publishProposal } from "../../../src/app/multisig-workflows.ts";
@@ -1169,18 +1169,75 @@ for (const kind of ["apply", "grant"] as const) {
               );
             const partial = groupIpexPartial(right, remote.hab, embedded, new Uint8Array(), genus);
             const hint = genus.major === 2 ? { cgvrsn: [2, 0] } : {};
-            const [wrapper, paths] = exchange("/multisig/exn", { gid: local.hab.pre, ...hint }, {
-              sender: bob.pre,
-              embeds: { exn: partial },
-            });
-            yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
-              local: true,
-            });
+            let initial: { serder: SerderKERI; message: Uint8Array } | undefined;
+            peerRuntime.postman.sendStream = function(evt) {
+              const message = concatBytes(...evt.msgs), serder = new SerderKERI({ raw: message });
+              assertEquals(
+                right.db.exns.get([serder.said!])?.raw,
+                serder.raw,
+                "Initial proposal must precede transmission",
+              );
+              initial = { serder, message };
+              return { ...evt, msg: message, kin: "stream" };
+            };
+            let refuse = kind === "apply" && genus.major === 1;
+            const refusal = new Error("initial IPEX delivery failed");
+            peerRuntime.postman.wait = function*(evt) {
+              if (refuse) {
+                refuse = false;
+                return { kin: "failed", evt, error: refusal, deliveries: [] };
+              }
+              return { kin: "sent", evt, deliveries: ["initial-transmission"] };
+            };
+            let failedSaid: string | undefined;
+            if (refuse) {
+              yield* call(() =>
+                assertRejects(
+                  () =>
+                    run(() =>
+                      publishInitialGroupIpex(
+                        right,
+                        peerRuntime.protocol,
+                        peerRuntime.postman,
+                        remote.hab,
+                        partial,
+                        genus,
+                      )
+                    ),
+                  Error,
+                  refusal.message,
+                )
+              );
+              assertExists(initial);
+              failedSaid = initial.serder.said!;
+              yield* right.db.reopen();
+            }
+            const publication = yield* publishInitialGroupIpex(
+              right,
+              peerRuntime.protocol,
+              peerRuntime.postman,
+              remote.hab,
+              partial,
+              genus,
+            );
+            assertExists(initial);
+            assertEquals(publication.messages.length, 1);
+            assertEquals(publication.messages[0].exnSaid, initial.serder.said);
+            if (failedSaid) {
+              assertEquals(initial.serder.said, failedSaid, "Delivery failure must retain the original wrapper");
+            }
+            const wrapper = initial.serder;
+            yield* runtime.reactor.processBytes(initial.message, { local: true });
             let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
             // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
             runtime.postman.send = function(evt) {
               const serder = new SerderKERI({ raw: evt.msg });
               assertEquals(serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
+              assertEquals(
+                left.db.exns.get([serder.said!])?.raw,
+                serder.raw,
+                "Local approval must precede transmission",
+              );
               outgoing = { serder: serder, message: evt.msg };
               return { ...evt, kin: "msg" };
             };
@@ -1205,13 +1262,50 @@ for (const kind of ["apply", "grant"] as const) {
               assertEquals(runtime.exc.complete(embedded.said!), false);
               assertEquals(outgoing, undefined);
             }
-            const result = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, wrapper, {
+            let selected = wrapper;
+            if (kind === "apply" && genus.major === 2) {
+              const handler = runtime.exc.routes.get("/multisig/exn")!, handle = handler.handle;
+              const fault = new Error("interrupted before IPEX approval indexing");
+              let interrupted: SerderKERI | undefined;
+              handler.handle = function*(args) {
+                if (args.serder.pre === alice.pre) {
+                  interrupted = args.serder;
+                  throw fault;
+                }
+                yield* call(() => handle.call(handler, args));
+              };
+              try {
+                yield* call(() =>
+                  assertRejects(
+                    () =>
+                      run(() =>
+                        approveMultisigIpex(left, runtime.protocol, runtime.postman, null, wrapper, {
+                          publish: true,
+                          sendLead: false,
+                        })
+                      ),
+                    Error,
+                    fault.message,
+                  )
+                );
+              } finally {
+                handler.handle = handle;
+              }
+              assertExists(interrupted);
+              assertEquals(runtime.exc.complete(interrupted.said!), true);
+              yield* left.db.reopen();
+              selected = interrupted;
+            }
+            const result = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, selected, {
               publish: true,
               sendLead: false,
             });
             assertEquals(result.accepted, true);
             assertEquals(runtime.exc.complete(embedded.said!), true);
             assertExists(outgoing);
+            if (selected !== wrapper) {
+              assertEquals(outgoing.serder.said, selected.said, "Explicit resume must recover its unindexed wrapper");
+            }
             yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
             const peerResult = yield* approveMultisigIpex(
               right,
@@ -1226,6 +1320,31 @@ for (const kind of ["apply", "grant"] as const) {
             );
             assertEquals(peerResult.accepted, true);
             assertEquals(peerRuntime.protocol.exc.complete(embedded.said!), true);
+            const original = outgoing.serder;
+            yield* left.db.reopen();
+            alice.rotate();
+            const sign = alice.mgr.sign;
+            alice.mgr.sign = ((ser: Uint8Array, args: string[] | Parameters<typeof sign>[1], indexed?: boolean) => {
+              // Ordinary Notifier records still use detached signatory signatures.
+              if ((Array.isArray(args) ? indexed : args?.indexed) !== false) {
+                throw new Error("IPEX resume must reuse the member contribution and original wrapper signatures");
+              }
+              return Reflect.apply(sign, alice.mgr, [ser, args, indexed]);
+            }) as typeof sign;
+            try {
+              const resumed = yield* approveMultisigIpex(left, runtime.protocol, runtime.postman, null, selected, {
+                publish: true,
+                sendLead: false,
+              });
+              assertEquals(resumed.accepted, true);
+              assertEquals(resumed.approved, result.approved);
+              assertEquals(resumed.messages, result.messages);
+              assertEquals(outgoing.serder.said, original.said);
+              yield* peerRuntime.reactor.processBytes(outgoing.message, { local: true });
+              assertEquals(peerRuntime.exc.complete(embedded.said!), true);
+            } finally {
+              alice.mgr.sign = sign;
+            }
           } finally {
             yield* peerRuntime.close();
             yield* runtime.close();
@@ -1235,6 +1354,55 @@ for (const kind of ["apply", "grant"] as const) {
     });
   }
 }
+
+Deno.test("group IPEX reuses a verified pending contribution after reopen instead of trusting a claimed local index", async () => {
+  await participants(async (left, right, alice, bob) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+      try {
+        yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
+          local: true,
+        });
+        yield* call(() => learn(right, local.hab));
+        const [embedded] = ipexApplyExn(local.hab, bob.pre, "apply", alice.pre, {});
+        const forged = bob.sign(embedded.raw, true)[0];
+        const invalid = new TransIdxSigGroup(
+          new Prefixer({ qb64: local.hab.pre }),
+          local.serder.sner!,
+          new Diger({ qb64: local.serder.said! }),
+          [new Siger({ code: forged.code, raw: forged.raw, index: 0 })],
+        );
+        yield* runtime.reactor.processBytes(serializeMessage(embedded, { tsgs: [invalid] }), { local: true });
+        const approved = groupIpexPartial(left, local.hab, embedded);
+        const proof = envelopeFromFrame(parseBytes(approved)[0]).tsgs[0].sigers[0];
+        assertEquals(alice.kever!.verfers[0].verify(proof.raw, embedded.raw), true);
+        yield* runtime.reactor.processBytes(approved, { local: true });
+        assertEquals(runtime.exc.complete(embedded.said!), false);
+        assertExists(left.db.epse.get([embedded.said!]));
+        yield* left.db.reopen();
+        alice.rotate();
+        const sign = alice.mgr.sign;
+        alice.mgr.sign = () => {
+          throw new Error("Pending approval must survive without new signing");
+        };
+        try {
+          assertEquals(groupIpexPartial(left, local.hab, embedded), approved);
+        } finally {
+          alice.mgr.sign = sign;
+        }
+        const peer = groupIpexPartial(right, remote.hab, embedded);
+        yield* runtime.reactor.processBytes(peer, { local: true });
+        yield* runtime.protocol.processEscrowsOnce();
+        assertEquals(runtime.exc.complete(embedded.said!), true);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
 
 Deno.test("group TEL publication retains the original pending anchor across reopen", async () => {
   await participants(async (left, right, alice, bob, notifier) => {

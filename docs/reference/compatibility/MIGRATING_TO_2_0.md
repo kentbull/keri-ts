@@ -256,6 +256,13 @@ sender establishment proof. The elected key belongs to that historical cohort,
 not the current group index order. The member retains that identity through
 rotation via its accepted KEL history. Pending group evidence returns false.
 
+Group IPEX grant/join results now include `messages` with `recipient`, `exnSaid`
+and `payloadSaid`. Select the original outer `exnSaid` with `ipex join --said`;
+the embedded business SAID and completed transport destinations are separate facts.
+Wrappers are registered locally before transmission. Resume reuses verified
+member contributions and original wrappers, including partial evidence after
+reopen/rotation; explicit selection repairs interrupted indexing by normal replay.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

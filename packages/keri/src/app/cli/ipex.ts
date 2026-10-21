@@ -23,7 +23,7 @@ import {
   approveStoredMultisigIpexWrappers,
   findPendingMultisigIpex,
   groupIpexPartial,
-  groupIpexProposals,
+  publishInitialGroupIpex,
   requireStoredExchange,
   sendCredentialStream,
   storedExchangeMessage,
@@ -35,6 +35,7 @@ import {
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
 } from "../ipexing.ts";
+import type { GroupSendResult } from "../multisig-messaging.ts";
 import { Organizer } from "../organizing.ts";
 import { withAgentRuntime } from "./common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "./common/parsing.ts";
@@ -81,7 +82,7 @@ export interface IpexGrantResult {
   grant: SerderKERI;
   credential: string;
   support: number;
-  group?: { complete: boolean; lead: boolean | null; deliveries: string[] };
+  group?: GroupSendResult & { complete: boolean; lead: boolean | null };
 }
 
 /** Authored admit and the actual accepted grant it answers. */
@@ -101,11 +102,10 @@ export interface IpexPollResult {
 /** One selected exchange; null group approval/lead facts mean approval was not requested. */
 export interface IpexJoinResult {
   exn: SerderKERI;
-  group?: {
+  group?: GroupSendResult & {
     embedded: SerderKERI;
     accepted: boolean | null;
     lead: boolean | null;
-    deliveries: string[];
   };
 }
 
@@ -269,18 +269,11 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
       yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), partialGrant), { local: true });
       yield* runtime.protocol.processEscrowsOnce();
 
-      const deliveries = yield* call(function*() {
+      const publication = yield* call(function*() {
         const postman = runtime.postman;
         const worker = yield* spawn(() => postman.deliverDo());
         try {
-          const deliveries: string[] = [];
-          for (const { msg, ...evt } of groupIpexProposals(hby, hab, partialGrant, genus)) {
-            const admitted = postman.sendStream({ ...evt, msgs: [msg] }, { notify: true });
-            const outcome = yield* postman.wait(admitted);
-            if (outcome.kin === "failed") throw outcome.error;
-            deliveries.push(...outcome.deliveries);
-          }
-          return deliveries;
+          return yield* publishInitialGroupIpex(hby, runtime.protocol, postman, hab, partialGrant, genus);
         } finally {
           yield* worker.halt();
         }
@@ -294,7 +287,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
           grant: grant.grant,
           credential: ipexArgs.said!,
           support: grant.support.length,
-          group: { complete: false, lead: null, deliveries },
+          group: { complete: false, lead: null, ...publication },
         };
       }
 
@@ -323,7 +316,7 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<Ipex
         grant: completedGrant,
         credential: ipexArgs.said!,
         support: grant.support.length,
-        group: { complete: true, lead: runtime.exc.lead(hab, completedGrant.said!), deliveries },
+        group: { complete: true, lead: runtime.exc.lead(hab, completedGrant.said!), ...publication },
       };
     }
 
@@ -507,7 +500,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
     }
 
     if (!ipexArgs.auto) {
-      return { exn, group: { embedded, accepted: null, lead: null, deliveries: [] } };
+      return { exn, group: { embedded, accepted: null, lead: null, messages: [], deliveries: [] } };
     }
 
     const approval = yield* call(function*() {
@@ -528,6 +521,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
         embedded,
         accepted: approval.accepted,
         lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
+        messages: approval.messages,
         deliveries: approval.deliveries,
       },
     };

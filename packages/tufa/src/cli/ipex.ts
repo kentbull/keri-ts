@@ -45,9 +45,15 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
   if (!group) {
     writeJsonLine(identity);
   } else if (!group.complete) {
-    writeJsonLine({ ...identity, status: "multisig-pending", deliveries: group.deliveries });
+    writeJsonLine({ ...identity, status: "multisig-pending", messages: group.messages, deliveries: group.deliveries });
   } else {
-    writeJsonLine({ ...identity, status: "multisig-complete", lead: group.lead, deliveries: group.deliveries });
+    writeJsonLine({
+      ...identity,
+      status: "multisig-complete",
+      lead: group.lead,
+      messages: group.messages,
+      deliveries: group.deliveries,
+    });
   }
 }
 
@@ -89,6 +95,7 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void>
       ...identity,
       status: group.accepted ? "multisig-approved" : "multisig-escrowed",
       lead: group.lead,
+      messages: group.messages,
       deliveries: group.deliveries,
     });
   }
