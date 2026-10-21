@@ -12,7 +12,7 @@ import {
   type EscrowProcessDecision,
   keepEscrow,
   logEscrowDecision,
-} from "./kever-decisions.ts";
+} from "./kel/kever-decisions.ts";
 import { EndpointRecord, LocationRecord } from "./records.ts";
 import { isRole } from "./roles.ts";
 

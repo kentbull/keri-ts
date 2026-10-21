@@ -3,7 +3,7 @@ import { Organizer } from "../identity/organizing.ts";
 import { concatBytes, type SerderKERI } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { exchange } from "../../core/protocol-exchanging.ts";
+import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { mailboxTopicForRoute, Poster } from "../delivery/forwarding.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";

@@ -12,7 +12,7 @@ import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../../src/cli/endpoints/oobi.ts";
 import { exchangeSendCommand } from "../../../../src/cli/messaging/exchange.ts";
-import { OOBI_MAILBOX_TOPIC } from "../../../../src/core/mailbox-topics.ts";
+import { OOBI_MAILBOX_TOPIC } from "../../../../src/core/mailbox/mailbox-topics.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 import { controllerOobiResponse, startStaticHttpHost } from "../../../http-test-support.ts";

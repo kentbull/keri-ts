@@ -35,9 +35,9 @@ import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runti
 import { requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
-import { loadNests } from "../../../../src/db/exchange-nests.ts";
+import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
   type InteropContext,

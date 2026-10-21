@@ -1,7 +1,7 @@
 /** TCP attempt ownership: source transmission, optional signed replies and joined cleanup. */
 import { parse } from "cesr-ts";
 import { call, ensure, on, type Operation, race, spawn } from "npm:effection@^3.6.0";
-import type { Kevery } from "../../core/eventing.ts";
+import type { Kevery } from "../../core/kel/eventing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { rethrowCleanupFailure } from "../runtime/abortable.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";

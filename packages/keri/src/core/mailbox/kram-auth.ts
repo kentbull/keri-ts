@@ -1,7 +1,7 @@
 /** Internal KRAM source authentication; orchestration owns missing-state queries. */
 import type { SealSource } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import type { KeriDispatchEnvelope } from "./dispatch.ts";
+import type { Baser } from "../../db/basing.ts";
+import type { KeriDispatchEnvelope } from "../dispatch.ts";
 
 /** Known invalid sources may permit signature fallback; missing state must block it. */
 export type KramSourceDecision =

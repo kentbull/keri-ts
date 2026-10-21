@@ -1,5 +1,5 @@
 import type { Versionage } from "cesr-ts";
-import { RawRecord } from "../core/records.ts";
+import { RawRecord } from "../../core/records.ts";
 
 /** Constant-size provenance and reconstruction metadata for one exchange. */
 export interface ExchangeRecordShape {

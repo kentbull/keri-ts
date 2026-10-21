@@ -1,5 +1,5 @@
 /** Inspectable KEL replay metadata; event bytes and read cursors remain consumption-owned. */
-import type { Baser } from "./basing.ts";
+import type { Baser } from "../basing.ts";
 
 /** Captured prefix and inclusive first-seen ordinal range, in wire replay order. */
 export type KelReplayRange = readonly [pre: string, from: number, end: number];

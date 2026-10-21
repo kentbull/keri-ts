@@ -10,10 +10,10 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { Kevery, type QueryEnvelope } from "../../../../src/core/eventing.ts";
-import { type KramConfig } from "../../../../src/core/kraming.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { Kevery, type QueryEnvelope } from "../../../../src/core/kel/eventing.ts";
+import { type KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { query, reply } from "../../../../src/core/protocol-eventing.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
 import { messagize, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 import { Revery } from "../../../../src/core/routing.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";

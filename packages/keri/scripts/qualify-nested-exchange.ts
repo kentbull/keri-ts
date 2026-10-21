@@ -3,7 +3,7 @@ import { b, parseBytes, SerderKERI } from "cesr-ts";
 import { call, run } from "npm:effection@^3.6.0";
 import vectors from "../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
 import { createHabery } from "../src/app/identity/habbing.ts";
-import { prepareNests, publishNests } from "../src/db/exchange-nests.ts";
+import { prepareNests, publishNests } from "../src/db/exchange/exchange-nests.ts";
 
 /** Explicit executable keeps the frozen source environment independent of PATH. */
 const python = Deno.args[0];

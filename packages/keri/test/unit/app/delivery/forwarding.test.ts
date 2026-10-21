@@ -46,11 +46,11 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TCPMessenger } from "../../../../src/app/transport/tcp-messenger.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
-import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../../src/core/mailbox-topics.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../../src/core/mailbox/mailbox-topics.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
-import type { Mailboxer } from "../../../../src/db/mailboxing.ts";
+import type { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
 
 /** Run the real queue worker for a finite send-only forwarding fixture. */
 function* deliverMessage(postman: Poster, hab: Hab, args: {

@@ -18,8 +18,8 @@ import {
 } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
+import { exchange as exchangeMessage } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { receipt as receiptEvent } from "../../../src/core/protocol-eventing.ts";
-import { exchange as exchangeMessage } from "../../../src/core/protocol-exchanging.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
 type AidProfile =

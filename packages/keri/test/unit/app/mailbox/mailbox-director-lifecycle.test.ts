@@ -3,7 +3,7 @@ import type { Habery } from "../../../../src/app/identity/habbing.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import type { StreamCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
-import type { Mailboxer } from "../../../../src/db/mailboxing.ts";
+import type { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
 
 Deno.test("mailbox director stops active stream polling before its store closes", async () => {
   let open = true;

@@ -21,7 +21,7 @@ import { action, call, ensure, type Operation, resource, scoped, spawn } from "n
 import type { AgentCue } from "../../core/cues.ts";
 import { type Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
-import type { Kevery } from "../../core/eventing.ts";
+import type { Kevery } from "../../core/kel/eventing.ts";
 import { receipt as receiptEvent, reply as replyEvent } from "../../core/protocol-eventing.ts";
 import { type Scheme, Schemes } from "../../core/schemes.ts";
 import { Baser } from "../../db/basing.ts";

@@ -40,8 +40,8 @@ import {
 import { setupHby } from "../../../../src/cli/common/existing.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../../src/cli/endpoints/oobi.ts";
 import { challengeRespondCommand, challengeVerifyCommand } from "../../../../src/cli/identity/challenge.ts";
-import { Kevery } from "../../../../src/core/eventing.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../../effection-http.ts";

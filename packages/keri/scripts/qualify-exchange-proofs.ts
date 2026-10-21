@@ -18,7 +18,7 @@ import { type ExchangeInput, Exchanger } from "../src/app/exchanges/exchanging.t
 import { createHabery, type Hab } from "../src/app/identity/habbing.ts";
 import { envelopeFromFrame } from "../src/app/protocol/parsering.ts";
 import { TransIdxSigGroup } from "../src/core/dispatch.ts";
-import { exchange } from "../src/core/protocol-exchanging.ts";
+import { exchange } from "../src/core/exchange/protocol-exchanging.ts";
 
 /** Require the explicit frozen interpreter/PYTHONPATH chosen by the qualification caller. */
 const python = Deno.args[0];

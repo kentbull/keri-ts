@@ -39,10 +39,10 @@ import {
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
 } from "../../core/dispatch.ts";
-import { Kevery, type QueryEnvelope } from "../../core/eventing.ts";
-import type { KeverDecision, QueryProcessDecision } from "../../core/kever-decisions.ts";
-import { type KramRefusal } from "../../core/kraming.ts";
-import { supportsNestedExchange } from "../../core/protocol-exchanging.ts";
+import { supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
+import { Kevery, type QueryEnvelope } from "../../core/kel/eventing.ts";
+import type { KeverDecision, QueryProcessDecision } from "../../core/kel/kever-decisions.ts";
+import { type KramRefusal } from "../../core/mailbox/kraming.ts";
 import { type ReplyProcessDecision, Revery } from "../../core/routing.ts";
 import type { TelProcessDecision, Tevery } from "../../vdr/eventing.ts";
 import type { Verifier, VerifierDecision } from "../credentials/verifying.ts";

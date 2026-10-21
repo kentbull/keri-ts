@@ -26,7 +26,7 @@ import { processMessages } from "../../../../src/app/transport/message-source.ts
 import { messengerFrom, streamMessengerFrom } from "../../../../src/app/transport/messengering.ts";
 import { TCPMessenger } from "../../../../src/app/transport/tcp-messenger.ts";
 import { TCPStreamMessenger } from "../../../../src/app/transport/tcp-stream-messenger.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 import { sendCesrTcpFrame } from "../../../../src/app/transport/tcp-egress.ts";
 import { TransportError } from "../../../../src/app/transport/transport-error.ts";

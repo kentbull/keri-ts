@@ -7,21 +7,21 @@ import {
   Prefixer,
   SerderKERI,
   type Siger,
-} from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
-import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import type { AgentCue } from "../../../src/core/cues.ts";
-import { Deck } from "../../../src/core/deck.ts";
-import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { ValidationError } from "../../../src/core/errors.ts";
-import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../src/core/eventing.ts";
-import { query as makeQuerySerder, reply as makeReplySerder } from "../../../src/core/protocol-eventing.ts";
-import { Roles } from "../../../src/core/roles.ts";
-import { Revery } from "../../../src/core/routing.ts";
-import { dgKey } from "../../../src/db/core/keys.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../../../src/time/mod.ts";
-import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
-import { protocolFixture } from "../../protocol-fixture.ts";
+} from "../../../../../cesr/mod.ts";
+import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { Reactor } from "../../../../src/app/protocol/reactor.ts";
+import type { AgentCue } from "../../../../src/core/cues.ts";
+import { Deck } from "../../../../src/core/deck.ts";
+import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
+import { type KeverEventEnvelope, Kevery, type QueryEnvelope } from "../../../../src/core/kel/eventing.ts";
+import { query as makeQuerySerder, reply as makeReplySerder } from "../../../../src/core/protocol-eventing.ts";
+import { Roles } from "../../../../src/core/roles.ts";
+import { Revery } from "../../../../src/core/routing.ts";
+import { dgKey } from "../../../../src/db/core/keys.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../../../src/time/mod.ts";
+import { eventingTestApi, expectKind, withPatchedMethod } from "../../../private-access.ts";
+import { protocolFixture } from "../../../protocol-fixture.ts";
 
 function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
   let total = 0;

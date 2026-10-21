@@ -1,6 +1,6 @@
 /** Input-owned buffered parsing; shared protocol work belongs to ProtocolProcessor. */
 import { type Operation } from "npm:effection@^3.6.0";
-import type { Kevery } from "../../core/eventing.ts";
+import type { Kevery } from "../../core/kel/eventing.ts";
 import { chunkBytes } from "../transport/byte-source.ts";
 import { type IngressOptions, processMessages } from "../transport/message-source.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";

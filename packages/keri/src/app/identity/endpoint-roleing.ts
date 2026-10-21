@@ -1,8 +1,8 @@
 import { Diger, Ilks, SerderKERI, Siger, type Versionage } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { reply as replyEvent } from "../../core/protocol-eventing.ts";
-import { exchange } from "../../core/protocol-exchanging.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Poster } from "../delivery/forwarding.ts";

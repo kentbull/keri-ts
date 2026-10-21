@@ -1,7 +1,7 @@
 import type { Dater, Diger, FirstSeen, SealEvent, SealSource, SerderKERI, Siger } from "cesr-ts";
-import type { AgentCue } from "./cues.ts";
-import { consoleLogger, type Logger } from "./logger.ts";
-import type { KeyStateRecord } from "./records.ts";
+import type { AgentCue } from "../cues.ts";
+import { consoleLogger, type Logger } from "../logger.ts";
+import type { KeyStateRecord } from "../records.ts";
 
 /** Escrow bucket names used by typed KEL validation decisions. */
 export type EscrowKind =

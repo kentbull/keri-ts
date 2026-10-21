@@ -61,8 +61,8 @@ import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { interact as interactEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 import {
   incept as inceptRegistry,

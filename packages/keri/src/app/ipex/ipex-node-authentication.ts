@@ -4,7 +4,7 @@ import { type RegistryState, validateRip, validateUpdate, vetBinds } from "../..
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
-import { verifyExchangeProofs } from "../../core/exchange-proofing.ts";
+import { verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import type { Baser } from "../../db/basing.ts";
 
 /** Borrow only normalized issuer proof families; routing and frame projection belong to intake. */

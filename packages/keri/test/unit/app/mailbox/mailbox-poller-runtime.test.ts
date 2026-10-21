@@ -16,7 +16,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 import { httpClient } from "../../../support/http-client.ts";

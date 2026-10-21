@@ -16,7 +16,7 @@ import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/runti
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { buildCesrStreamRequest } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
-import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox-topics.ts";
+import { DELEGATE_MAILBOX_TOPIC } from "../../../src/core/mailbox/mailbox-topics.ts";
 import {
   addKliMailbox,
   addTufaMailbox,

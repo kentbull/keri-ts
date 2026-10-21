@@ -11,18 +11,24 @@ import {
   Verfer,
   type Versionage,
 } from "cesr-ts";
-import { Baser } from "../db/basing.ts";
-import { dgKey, snKey } from "../db/core/keys.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import type { AgentCue } from "./cues.ts";
-import { Deck } from "./deck.ts";
+import { Baser } from "../../db/basing.ts";
+import { dgKey, snKey } from "../../db/core/keys.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../time/mod.ts";
+import type { AgentCue } from "../cues.ts";
+import { Deck } from "../deck.ts";
 import {
   type DispatchOrdinal,
   type KeriDispatchEnvelope,
   type TransIdxSigGroup,
   type TransReceiptQuadruple,
-} from "./dispatch.ts";
-import { ValidationError } from "./errors.ts";
+} from "../dispatch.ts";
+import { ValidationError } from "../errors.ts";
+import { consoleLogger } from "../logger.ts";
+import type { Kramer } from "../mailbox/kraming.ts";
+import { normalizeMbxTopicCursor } from "../mailbox/mailbox-topics.ts";
+import { reply as replyEvent } from "../protocol-eventing.ts";
+import { KeyStateRecord, ObservedRecord } from "../records.ts";
+import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "../routing.ts";
 import {
   acceptEscrow,
   acceptQuery,
@@ -52,12 +58,6 @@ import {
   type ReceiptProcessDecision,
 } from "./kever-decisions.ts";
 import { Kever, type KeverEventInit } from "./kever.ts";
-import type { Kramer } from "./kraming.ts";
-import { consoleLogger } from "./logger.ts";
-import { normalizeMbxTopicCursor } from "./mailbox-topics.ts";
-import { reply as replyEvent } from "./protocol-eventing.ts";
-import { KeyStateRecord, ObservedRecord } from "./records.ts";
-import { acceptReplyDecision, type ReplyProcessDecision, Revery, Router, unverifiedReplyDecision } from "./routing.ts";
 import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
 /** Normalize one dispatch ordinal into the number primitive expected by DB seal tuples. */

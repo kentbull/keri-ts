@@ -16,8 +16,8 @@ import {
   PathedMaterialGroup,
   TransIdxSigGroup,
   TransReceiptQuadruple,
-} from "../core/dispatch.ts";
-import type { Baser } from "./basing.ts";
+} from "../../core/dispatch.ts";
+import type { Baser } from "../basing.ts";
 
 /** Normalize historical ordinals before durable tuple identity is compared. */
 function number(value: TransIdxSigGroup["seqner"]): NumberPrimitive {

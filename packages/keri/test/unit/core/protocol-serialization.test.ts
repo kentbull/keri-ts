@@ -18,7 +18,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 
 const SENDER = "EDmvqjn9t8x9zkPHCgn_QxTHlP-1v-qqJh-zdg7CrXVe";

@@ -5,7 +5,7 @@ import { fromFileUrl } from "jsr:@std/path";
 import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab } from "../../../src/app/identity/habbing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { createScenarioContext, runCmd } from "./interop-keystore-helpers.ts";
 
 /** Produce a signed commitment using the real sender's accepted establishment state. */

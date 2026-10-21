@@ -1,8 +1,8 @@
 /** Independently verify EXN or disclosed-node proofs against already accepted KEL state. */
 import { type Cigar, type SealEvent, type SerderACDC, type SerderKERI } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { TransIdxSigGroup } from "./dispatch.ts";
-import { Kever } from "./kever.ts";
+import type { Baser } from "../../db/basing.ts";
+import { TransIdxSigGroup } from "../dispatch.ts";
+import { Kever } from "../kel/kever.ts";
 
 /** Explicit proof factors; no parent or neighboring node can supply implicit evidence here. */
 export interface ExchangeFactors {

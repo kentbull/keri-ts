@@ -14,7 +14,7 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { acceptEscrow, dropEscrow, keepEscrow } from "../../../src/core/kever-decisions.ts";
+import { acceptEscrow, dropEscrow, keepEscrow } from "../../../src/core/kel/kever-decisions.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
 import { reply } from "../../../src/core/protocol-eventing.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";

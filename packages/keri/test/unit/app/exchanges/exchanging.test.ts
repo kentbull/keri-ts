@@ -12,8 +12,8 @@ import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/ru
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 
 function makeExchangeSerder(

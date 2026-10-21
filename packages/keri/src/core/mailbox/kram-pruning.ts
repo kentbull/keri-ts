@@ -1,11 +1,11 @@
 /** Internal finite cache maintenance; each batch releases read cursors before writes. */
 import { b } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { removeKramFactors } from "../db/kram-factors.ts";
-import { timestampMicros } from "../time/mod.ts";
+import type { Baser } from "../../db/basing.ts";
+import { removeKramFactors } from "../../db/mailbox/kram-factors.ts";
+import { timestampMicros } from "../../time/mod.ts";
+import { TxnMsgCacheRecord } from "../records.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 import { kramCacheValues } from "./kram-time.ts";
-import { TxnMsgCacheRecord } from "./records.ts";
 
 /** Counts scan steps across all families; tail/empty family probes use constant additional work. */
 export interface KramPruneResult {

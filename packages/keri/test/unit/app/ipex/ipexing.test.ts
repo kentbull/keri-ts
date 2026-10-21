@@ -23,7 +23,7 @@ import {
 } from "../../../../src/app/ipex/ipexing.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 Deno.test("IPEX builders produce KERIpy v1 route payload shapes", async () => {
   await run(function*() {

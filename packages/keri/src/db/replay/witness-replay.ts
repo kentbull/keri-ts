@@ -1,8 +1,8 @@
 /** Witness sequence replay borrows its Baser without retaining event bytes or read cursors. */
 import { b, bytesEqual, t } from "cesr-ts";
-import { DatabaseOperationError } from "../core/errors.ts";
-import type { Baser } from "./basing.ts";
-import { onKey, splitOnKey } from "./core/keys.ts";
+import { DatabaseOperationError } from "../../core/errors.ts";
+import type { Baser } from "../basing.ts";
+import { onKey, splitOnKey } from "../core/keys.ts";
 
 /** Captured KEL/FEL horizons; duplicate order and current proofs are read only during consumption. */
 export class CapturedWitnessReplay implements Iterable<Uint8Array> {

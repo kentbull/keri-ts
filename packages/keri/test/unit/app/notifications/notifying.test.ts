@@ -8,7 +8,7 @@ import { Signal, Signaler } from "../../../../src/app/notifications/signaling.ts
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 function makeExchangeSerder(
   route: string,

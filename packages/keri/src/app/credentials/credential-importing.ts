@@ -1,7 +1,7 @@
 /** Finite credential-bundle intake; protocol owners retain and recover their own pending evidence. */
 import { Ilks, parse, SerderACDC, SerderKERI } from "cesr-ts";
 import { action, call, ensure, type Operation, race } from "npm:effection@^3.6.0";
-import type { Kevery } from "../../core/eventing.ts";
+import type { Kevery } from "../../core/kel/eventing.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import type { Reger } from "../../db/reger.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";

@@ -5,7 +5,7 @@ import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
-import { createMailboxer, Mailboxer } from "../../../src/db/mailboxing.ts";
+import { createMailboxer, Mailboxer } from "../../../src/db/mailbox/mailboxing.ts";
 
 Deno.test("db/mailboxing - body and ordered topic publication commit together across failure and reopen", async () => {
   await run(function*() {

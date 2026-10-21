@@ -1,4 +1,9 @@
-import { IPEX_V2_PREDECESSORS, type IpexVerb, isIpexVerb, nestedIpexRoute } from "../../core/protocol-exchanging.ts";
+import {
+  IPEX_V2_PREDECESSORS,
+  type IpexVerb,
+  isIpexVerb,
+  nestedIpexRoute,
+} from "../../core/exchange/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
 import {
   type CesrFrame,
@@ -13,7 +18,7 @@ import { type RegistryState, validateUpdate, verifyRegistryAnchor, vetBinds } fr
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
-import { type ExchangeFactors, verifyExchangeProofs } from "../../core/exchange-proofing.ts";
+import { type ExchangeFactors, verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import type { ExchangeRouteHandler, ExchangeRouteVerification } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";

@@ -12,12 +12,13 @@ import {
   Tholder,
   Verfer,
 } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { dgKey } from "../db/core/keys.ts";
-import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import type { AgentCue } from "./cues.ts";
-import { DispatchOrdinal } from "./dispatch.ts";
-import { ValidationError } from "./errors.ts";
+import type { Baser } from "../../db/basing.ts";
+import { dgKey } from "../../db/core/keys.ts";
+import { encodeDateTimeToDater, makeNowIso8601 } from "../../time/mod.ts";
+import type { AgentCue } from "../cues.ts";
+import { DispatchOrdinal } from "../dispatch.ts";
+import { ValidationError } from "../errors.ts";
+import { KeyStateRecord } from "../records.ts";
 import type {
   AttachmentDecision,
   AttachmentEscrow,
@@ -31,7 +32,6 @@ import type {
   KeverTransition,
   RejectKind,
 } from "./kever-decisions.ts";
-import { KeyStateRecord } from "./records.ts";
 import { deriveRotatedWitnessSet } from "./witnesses.ts";
 
 /**

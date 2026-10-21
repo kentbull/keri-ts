@@ -2,7 +2,7 @@
 import { Diger, Ilks, type SerderACDC, SerderKERI, TraitDex, type Verfer } from "cesr-ts";
 import type { Operation } from "effection";
 import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import type { Regery } from "../../vdr/credentialing.ts";

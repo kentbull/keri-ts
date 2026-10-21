@@ -18,8 +18,8 @@
 import type { AgentCue, StreamCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
-import type { MbxTopicCursor } from "../../core/mailbox-topics.ts";
-import type { Mailboxer } from "../../db/mailboxing.ts";
+import type { MbxTopicCursor } from "../../core/mailbox/mailbox-topics.ts";
+import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { mailboxQueryTopics, mailboxTopicKey, updateMailboxRemoteCursor } from "./mailboxing.ts";
 

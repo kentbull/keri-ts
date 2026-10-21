@@ -39,8 +39,8 @@ import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../.
 import { chunkBytes, collectBytes, fileBytes } from "../../app/transport/byte-source.ts";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
-import { exchange } from "../../core/protocol-exchanging.ts";
+import { exchange } from "../../core/exchange/protocol-exchanging.ts";
+import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { withAgentRuntime } from "../common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";

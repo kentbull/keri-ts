@@ -25,8 +25,8 @@ import {
 } from "cesr-ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { ValidationError } from "./errors.ts";
+import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./kel/witnesses.ts";
 import { KeyStateRecord, type KeyStateRecordShape, StateEERecord, type StateEERecordShape } from "./records.ts";
-import { deriveRotatedWitnessSet, hasUniqueWitnesses } from "./witnesses.ts";
 
 const MAX_INTIVE_THRESHOLD = 0xffff;
 

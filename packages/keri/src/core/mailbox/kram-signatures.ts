@@ -1,8 +1,8 @@
 /** Internal KRAM sender-factor normalization and signature verification. */
 import { Diger, NumberPrimitive, Siger, type Verfer } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { KeriDispatchEnvelope, TransIdxSigGroup } from "./dispatch.ts";
-import type { Kever } from "./kever.ts";
+import type { Baser } from "../../db/basing.ts";
+import { KeriDispatchEnvelope, TransIdxSigGroup } from "../dispatch.ts";
+import type { Kever } from "../kel/kever.ts";
 
 /** Verified means at least one signature, never threshold satisfaction or acceptance. */
 export type KramSignatureDecision = {

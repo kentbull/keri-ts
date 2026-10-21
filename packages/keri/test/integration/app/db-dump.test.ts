@@ -14,7 +14,7 @@ import { Notifier, openNoterForHabery } from "../../../src/app/notifications/not
 import { dumpDatabase } from "../../../src/cli/tools/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
-import { createMailboxer } from "../../../src/db/mailboxing.ts";
+import { createMailboxer } from "../../../src/db/mailbox/mailboxing.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 /** Capture stdout/stderr from one `db dump` invocation for assertion. */

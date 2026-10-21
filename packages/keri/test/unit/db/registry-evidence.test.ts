@@ -11,7 +11,7 @@ import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {

@@ -6,16 +6,16 @@ import {
   type Prefixer,
   type Siger,
 } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { rehydrateKramFactors, removeKramFactors, storeKramFactors } from "../db/kram-factors.ts";
-import { encodeDateTimeToDater } from "../time/mod.ts";
-import { KeriDispatchEnvelope, TransIdxSigGroup } from "./dispatch.ts";
-import type { Kever } from "./kever.ts";
+import type { Baser } from "../../db/basing.ts";
+import { rehydrateKramFactors, removeKramFactors, storeKramFactors } from "../../db/mailbox/kram-factors.ts";
+import { encodeDateTimeToDater } from "../../time/mod.ts";
+import { KeriDispatchEnvelope, TransIdxSigGroup } from "../dispatch.ts";
+import type { Kever } from "../kel/kever.ts";
+import { TxnMsgCacheRecord } from "../records.ts";
 import { authenticateKramSource } from "./kram-auth.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 import { normalizeKramSenderFactors, verifyKramSignatures } from "./kram-signatures.ts";
 import { evaluateKramTime, inspectKramReplay, type KramTimePlan, type KramTimeRefusal } from "./kram-time.ts";
-import { TxnMsgCacheRecord } from "./records.ts";
 
 /** Normal refusals retain their cause; infrastructure and corruption errors propagate. */
 export type KramStageRefusal =

@@ -19,7 +19,7 @@ import {
   TypeMedia as TypeMediaValue,
   type Verfer,
 } from "cesr-ts";
-import type { MbxTopicCursor } from "./mailbox-topics.ts";
+import type { MbxTopicCursor } from "./mailbox/mailbox-topics.ts";
 
 const textEncoder = new TextEncoder();
 

@@ -16,7 +16,7 @@ import { Diger, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { DELEGATE_MAILBOX_TOPIC, REPLAY_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { Schemes } from "../../core/schemes.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { type Poster } from "../delivery/forwarding.ts";

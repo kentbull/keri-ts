@@ -15,9 +15,9 @@
  */
 import { Diger, MtrDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
-import { DatabaseNotOpenError } from "../core/errors.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { CesrOnSuber, Suber } from "./subing.ts";
+import { DatabaseNotOpenError } from "../../core/errors.ts";
+import { LMDBer, type LMDBerOptions } from "../core/lmdber.ts";
+import { CesrOnSuber, Suber } from "../subing.ts";
 
 /** Accepted topic key shapes for the mailbox ordering store. */
 type MailboxKeys = string | Uint8Array | Iterable<string | Uint8Array>;

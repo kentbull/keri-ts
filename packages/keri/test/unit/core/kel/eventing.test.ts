@@ -11,19 +11,19 @@ import {
   Siger,
   type Tier,
   Tiers,
-} from "../../../../cesr/mod.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
-import { saltySigner } from "../../../src/app/identity/keeping.ts";
-import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import type { AgentCue } from "../../../src/core/cues.ts";
-import { Deck } from "../../../src/core/deck.ts";
-import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../src/core/dispatch.ts";
-import { Kevery } from "../../../src/core/eventing.ts";
-import { consoleLogger } from "../../../src/core/logger.ts";
-import { receipt as makeReceiptSerder } from "../../../src/core/protocol-eventing.ts";
-import { dgKey, snKey } from "../../../src/db/core/keys.ts";
-import { eventingTestApi, expectKind, withPatchedMethod } from "../../private-access.ts";
-import { protocolFixture } from "../../protocol-fixture.ts";
+} from "../../../../../cesr/mod.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { saltySigner } from "../../../../src/app/identity/keeping.ts";
+import { Reactor } from "../../../../src/app/protocol/reactor.ts";
+import type { AgentCue } from "../../../../src/core/cues.ts";
+import { Deck } from "../../../../src/core/deck.ts";
+import { TransIdxSigGroup, TransReceiptQuadruple } from "../../../../src/core/dispatch.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
+import { consoleLogger } from "../../../../src/core/logger.ts";
+import { receipt as makeReceiptSerder } from "../../../../src/core/protocol-eventing.ts";
+import { dgKey, snKey } from "../../../../src/db/core/keys.ts";
+import { eventingTestApi, expectKind, withPatchedMethod } from "../../../private-access.ts";
+import { protocolFixture } from "../../../protocol-fixture.ts";
 
 const textEncoder = new TextEncoder();
 

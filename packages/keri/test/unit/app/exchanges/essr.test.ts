@@ -5,7 +5,7 @@ import { type EssrDecision, type EssrMessage, EssrRecipient } from "../../../../
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 /** Acceptance exposes data; refusal and rejection never expose unauthenticated bytes. */
 function accepted(decision: EssrDecision): EssrMessage {

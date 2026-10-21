@@ -11,7 +11,7 @@
   - `docs/adr/adr-0010-signed-keri-http-ingress.md`
   - `docs/design-docs/mailbox/MAILBOX.md`
   - `docs/design-docs/runtime/CUES.md`
-  - `packages/keri/src/db/mailboxing.ts`
+  - `packages/keri/src/db/mailbox/mailboxing.ts`
   - `packages/keri/src/app/delivery/forwarding.ts`
   - `packages/keri/src/app/mailbox/mailbox-director.ts`
   - `packages/tufa/src/host/kernel.ts`
