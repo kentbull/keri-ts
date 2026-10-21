@@ -209,6 +209,20 @@ jobs:
           [[ "${V1}" == "${V2}" ]]
           OUT="$("${TUFA_BIN}" annotate --in "${SAMPLE}" | awk 'NR==1{print; exit}')"
           echo "${OUT}" | grep -q 'SERDER KERI JSON'
+          # Resolve imports from this fresh install, never workspace dependencies.
+          cp "${GITHUB_WORKSPACE}/scripts/npm/package-targets.mjs" .
+          cp "${GITHUB_WORKSPACE}/scripts/npm/smoke-keri-installed.mjs" .
+          cp "${GITHUB_WORKSPACE}/scripts/npm/smoke-tufa-authoring.mjs" .
+          node ./smoke-keri-installed.mjs
+          node ./smoke-tufa-authoring.mjs
+          node "${GITHUB_WORKSPACE}/scripts/npm/smoke-tufa-runtime.mjs" \
+            "${TMP_DIR}/node_modules/@keri-ts/tufa"
+          "${TMP_DIR}/node_modules/.bin/tephra" validate --in "${SAMPLE}"
+          # Compiler tools are installed only after native/runtime probes pass.
+          cp "${GITHUB_WORKSPACE}/scripts/npm/keri-consumer.ts" .
+          cp "${GITHUB_WORKSPACE}/scripts/npm/tufa-consumer.ts" .
+          node "${GITHUB_WORKSPACE}/scripts/npm/smoke-installed-declarations.mjs" \
+            ./keri-consumer.ts ./tufa-consumer.ts
 
       - name: upload npm tarballs
         # Keep the macOS-built artifacts for later comparison with Linux builds.
