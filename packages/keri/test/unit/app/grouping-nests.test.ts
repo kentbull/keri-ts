@@ -1143,7 +1143,7 @@ Deno.test("group TEL publication retains the original pending anchor across reop
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
-        const result = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+        const result = yield* inceptCredentialRegistry(runtime.vdr!, runtime.reactor, runtime.postman, local.hab, {
           registryName: "pending",
         });
         const regk = result.registry!;
@@ -1190,7 +1190,7 @@ Deno.test("group establishment-only registry inception and issuance use rotation
         alice.rotate();
         bob.rotate();
         yield* call(() => learn(left, bob));
-        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.reactor, runtime.postman, local.hab, {
           registryName: "establishment",
           estOnly: true,
         });
@@ -1202,7 +1202,7 @@ Deno.test("group establishment-only registry inception and issuance use rotation
         yield* call(() => learn(left, bob));
         const schemer = new Schemer({ sed: { $id: "", type: "object" } });
         left.db.schema.pin(schemer.said, schemer);
-        const issued = yield* createCredential(runtime.vdr!, runtime.postman, {
+        const issued = yield* createCredential(runtime.vdr!, runtime.reactor, runtime.postman, {
           registryName: "establishment",
           schema: schemer.said,
           recipient: bob.pre,
@@ -1231,11 +1231,16 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const rgy = runtime.vdr!;
-        const registry = yield* inceptCredentialRegistry(rgy, runtime.postman, local.hab, { registryName: "registry" });
+        const registry = yield* inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, local.hab, {
+          registryName: "registry",
+        });
         const state = left.db.getState(local.hab.pre);
         yield* call(() =>
           assertRejects(
-            () => run(() => inceptCredentialRegistry(rgy, runtime.postman, local.hab, { registryName: "registry" })),
+            () =>
+              run(() =>
+                inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, local.hab, { registryName: "registry" })
+              ),
             Error,
             "already identifies",
           )
@@ -1447,7 +1452,7 @@ Deno.test("group credential producers publish typed evidence and usable proposal
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["peer"] };
         };
-        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.reactor, runtime.postman, local.hab, {
           registryName: "typed",
         });
         const vcp = new SerderKERI({ raw: wires[0] });
@@ -1465,7 +1470,7 @@ Deno.test("group credential producers publish typed evidence and usable proposal
         }]);
         const schema = new Schemer({ sed: { type: "object" } });
         left.db.schema.pin(schema.said, schema);
-        const issued = yield* createCredential(runtime.vdr!, runtime.postman, {
+        const issued = yield* createCredential(runtime.vdr!, runtime.reactor, runtime.postman, {
           registryName: "typed",
           schema: schema.said,
           recipient: bob.pre,

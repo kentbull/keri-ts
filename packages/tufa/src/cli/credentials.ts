@@ -11,8 +11,8 @@ import { writeJsonLine } from "./support/rendering.ts";
 
 /** Display the created registry or group proposal, after its owned resources close. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
-  const { name, registry, issuer, group } = yield* incept(args);
-  const identity = { name, registry, issuer };
+  const { name, registry, issuer, group, publicationComplete } = yield* incept(args);
+  const identity = { name, registry, issuer, publicationComplete };
   if (group) {
     writeJsonLine({
       ...identity,
@@ -29,7 +29,7 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
 
 /** Project credential identity and typed issuance outcomes into the CLI JSON record. */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
-  const { creder, tel, status, group } = yield* create(args);
+  const { creder, tel, status, group, publicationComplete } = yield* create(args);
   const issued = {
     said: creder.said,
     registry: creder.regid,
@@ -38,6 +38,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     schema: creder.schema,
     tel,
     status,
+    publicationComplete,
   };
   if (group) {
     writeJsonLine({

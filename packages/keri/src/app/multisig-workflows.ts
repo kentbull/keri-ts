@@ -89,6 +89,8 @@ type KelApproval = MultisigChild & {
 };
 
 export interface ApprovalResult extends GroupSendResult {
+  /** Present for VCP/ISS: exact TEL coordinates and local publication, separate from business acceptance and member delivery. */
+  tel?: { pre: string; sn: number; publicationComplete: boolean };
   route: MultisigProposalRoute;
   said: string;
   embedded: string;
@@ -393,9 +395,11 @@ function* approveKelProposal(
     const sigers = signLocalGroupEvent(hby, serder, smids, keys);
     localMessage = messagize(serder, { sigers, pipelined: false, gvrsn: approval.genus });
   }
-  // Keep the attachment set open until the peer signatures are appended.
+  // Each contribution may already own a counted attachment enclosure. Admit
+  // complete messages separately and let the ordinary KEL owner union proofs.
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(approval.genus), localMessage), { local: true });
   yield* runtime.reactor.processBytes(
-    concatBytes(Counter.makeGVC(approval.genus), localMessage, approval.attachment),
+    concatBytes(Counter.makeGVC(approval.genus), serder.raw, approval.attachment),
     { local: true },
   );
   yield* runtime.protocol.processEscrowsOnce();
@@ -505,7 +509,10 @@ function* approveVdrProposal(
     const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
     localAnchor = messagize(anchorSerder, { sigers, pipelined: false, gvrsn: genus });
   }
-  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor, attachment), { local: true });
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor), { local: true });
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), anchorSerder.raw, attachment), {
+    local: true,
+  });
   yield* runtime.protocol.processEscrowsOnce();
 
   let accepted = false;
@@ -534,7 +541,19 @@ function* approveVdrProposal(
   }
 
   const published = yield* publishVdrProposal(hby, runtime.protocol, runtime.postman, member, smids, publication);
-  return { route, said: wrapperSaid, embedded: embeddedSaid, group: groupPre, accepted, ...published };
+  return {
+    route,
+    said: wrapperSaid,
+    embedded: embeddedSaid,
+    group: groupPre,
+    accepted,
+    tel: {
+      pre: embeddedSerder.pre!,
+      sn: embeddedSerder.sn!,
+      publicationComplete: rgy.publication.complete(embeddedSerder.pre!, embeddedSerder.sn!),
+    },
+    ...published,
+  };
 }
 
 /** Preserve the recorded signing/rotation participant order during approval and resume. */

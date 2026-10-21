@@ -28,6 +28,7 @@ import {
   MULTISIG_IXN_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
+  MULTISIG_VCP_ROUTE,
 } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
 import type { GroupSendResult } from "../multisig-messaging.ts";
@@ -57,6 +58,7 @@ import {
   parseThresholdOption,
   type RotateFileOptions,
 } from "./common/parsing.ts";
+import { waitForIssuedCredential, waitForTelPublication } from "./common/tel-completion.ts";
 import { resolveWitnessAuths } from "./common/witness-auth.ts";
 
 const MULTISIG_TOPIC = "multisig";
@@ -292,6 +294,19 @@ export function* multisigJoinCommand(
         }
       }
       return local;
+    }
+    if (result.tel) {
+      const { publication, reger } = runtime.vdr!;
+      const tel = result.tel;
+      if (result.route === MULTISIG_VCP_ROUTE) {
+        yield* waitForTelPublication(publication, tel.pre, tel.sn, approval.deadline);
+        result.accepted = reger.tels.getOn(tel.pre, tel.sn)?.qb64 === result.embedded;
+      } else {
+        yield* waitForIssuedCredential(publication, tel.pre, approval.deadline);
+        result.accepted = reger.saved.get(tel.pre) !== null;
+      }
+      tel.publicationComplete = publication.complete(tel.pre, tel.sn);
+      return result;
     }
     if (result.accepted) {
       yield* receiptAcceptedEvent(hby, result.group, commandArgs, runtime);

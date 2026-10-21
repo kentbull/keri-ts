@@ -34,14 +34,15 @@ import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE, type MultisigVdrProposal, prepareMultisigVdrExn } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import { credentialStreamMessages } from "./ipex-credentialing.ts";
+import type { Reactor } from "./reactor.ts";
 import type { VerifierDecision } from "./verifying.ts";
 
 import {
+  admitAndSendGroupMessage,
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
   remoteGroupMembers,
-  sendGroupMessage,
   signGroupMessage,
 } from "./multisig-messaging.ts";
 
@@ -82,6 +83,8 @@ export interface CredentialListItem {
  * successful member delivery from accepted registry state.
  */
 export interface RegistryResult {
+  /** Completed local witness collection and TEL publication; never remote acknowledgement. */
+  publicationComplete: boolean;
   name: string;
   /** Registry identifier when constructed; null if this operation has none to report. */
   registry: string | null;
@@ -101,6 +104,8 @@ export interface RegistryResult {
  * saved verifier state. Those results are reported independently below.
  */
 export interface IssueResult {
+  /** TEL publication is independent of credential saving and member transport outcomes. */
+  publicationComplete: boolean;
   /** Constructed credential; ordinary Serder data remains usable after store closure. */
   creder: SerderACDC;
   /** Resolved issuee retained for later export/delivery, not a transport endpoint. */
@@ -150,6 +155,7 @@ export function pinSchemaBytes(hby: Habery, raw: Uint8Array): string {
  * Create a single-sig registry or propose a group registry inception.
  *
  * @param rgy Borrowed legacy registry/credential owner.
+ * @param input Borrowed byte intake; commits each exact local wrapper before peer delivery.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param options Registry name/configuration and optional group proposal usage.
@@ -157,19 +163,22 @@ export function pinSchemaBytes(hby: Habery, raw: Uint8Array): string {
  */
 export function* inceptCredentialRegistry(
   rgy: Regery,
+  input: Reactor,
   postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
 ): Operation<RegistryResult> {
   const { hby } = rgy;
+  validateRegistryName(rgy.reger, options.registryName);
   if (isLocalGroupHab(hby, hab)) {
-    return yield* proposeGroupRegistryIncept(rgy, postman, hab, options);
+    return yield* proposeGroupRegistryIncept(rgy, input, postman, hab, options);
   }
   const registry = rgy.makeRegistry(options.registryName, hab, {
     noBackers: options.noBackers ?? true,
     estOnly: options.estOnly ?? false,
   });
   return {
+    publicationComplete: rgy.publication.complete(registry.regk!),
     name: options.registryName,
     registry: registry.regk,
     issuer: hab.pre,
@@ -210,12 +219,14 @@ export function credentialRegistryStatus(rgy: Regery, registryName: string) {
  * Create and issue one registry-backed credential.
  *
  * @param rgy Borrowed registry/TEL/credential owner.
+ * @param input Borrowed byte intake; commits each exact local wrapper before peer delivery.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param options Issuer registry, credential data/schema, and optional delivery/export choices.
  * @returns Credential/TEL result with saved/accepted state distinct from delivered URLs.
  */
 export function* createCredential(
   rgy: Regery,
+  input: Reactor,
   postman: Poster,
   options: CredentialCreateOptions,
 ): Operation<IssueResult> {
@@ -236,7 +247,7 @@ export function* createCredential(
   const recipient = options.recipient ?? creder.issuee ?? "";
 
   if (isLocalGroupHab(hby, registry.hab)) {
-    return yield* proposeGroupCredentialIssue(rgy, postman, registry, creder, recipient);
+    return yield* proposeGroupCredentialIssue(rgy, input, postman, registry, creder, recipient);
   }
 
   const result = credentialer.issue(registry, creder);
@@ -244,6 +255,7 @@ export function* createCredential(
     creder,
     recipient,
     tel: result.tel.said,
+    publicationComplete: rgy.publication.complete(creder.said!),
     status: result.verifierDecision.kind,
   };
 }
@@ -381,6 +393,7 @@ export function anchorGroupCredentialEvent(hby: Habery, hab: Hab, event: SerderK
  * Local TEL acceptance is reported separately from successful proposal transmission.
  *
  * @param rgy Borrowed registry owner and accepted state.
+ * @param input Borrowed byte intake; commits each exact local wrapper before peer delivery.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param hab Group issuer habitat.
  * @param options Registry name and no-backers/establishment policy; group backer registries are unsupported.
@@ -388,6 +401,7 @@ export function anchorGroupCredentialEvent(hby: Habery, hab: Hab, event: SerderK
  */
 function* proposeGroupRegistryIncept(
   rgy: Regery,
+  input: Reactor,
   postman: Poster,
   hab: Hab,
   options: CredentialRegistryInceptOptions,
@@ -402,7 +416,6 @@ function* proposeGroupRegistryIncept(
     ...(noBackers ? [TraitDex.NoBackers] : []),
     ...(estOnly ? [TraitDex.EstOnly] : []),
   ];
-  validateRegistryName(reger, options.registryName);
   const vcp = inceptRegistryEvent(hab.pre, { cnfg });
   validateRegistryInception(vcp);
   const anchor = anchorGroupCredentialEvent(hby, hab, vcp, estOnly);
@@ -418,13 +431,14 @@ function* proposeGroupRegistryIncept(
   registerRegistry(rgy, options.registryName, hab, regk, { noBackers, estOnly });
   rgy.publication.track(vcp, anchor.serder);
 
-  const publication = yield* publishGroupVcProposal(hby, postman, hab, {
+  const publication = yield* publishGroupVcProposal(hby, input, postman, hab, {
     route: MULTISIG_VCP_ROUTE,
     attrs: { gid: hab.pre, usage: options.usage ?? options.registryName },
     embeds: { vcp: vcp.raw, anc: anchor.message },
   });
 
   return {
+    publicationComplete: rgy.publication.complete(regk),
     name: options.registryName,
     registry: regk,
     issuer: hab.pre,
@@ -443,6 +457,7 @@ function* proposeGroupRegistryIncept(
  * collection may still be incomplete.
  *
  * @param rgy Borrowed registry and credential verification owner.
+ * @param input Borrowed byte intake; commits each exact local wrapper before peer delivery.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param registry Group issuer registry to anchor issuance.
  * @param creder Constructed credential to validate and bind to the TEL issue event.
@@ -451,6 +466,7 @@ function* proposeGroupRegistryIncept(
  */
 function* proposeGroupCredentialIssue(
   rgy: Regery,
+  input: Reactor,
   postman: Poster,
   registry: Registry,
   creder: SerderACDC,
@@ -484,7 +500,7 @@ function* proposeGroupCredentialIssue(
   rgy.vry.processEscrows();
   rgy.publication.track(iss, anchor.serder);
 
-  const publication = yield* publishGroupVcProposal(hby, postman, registry.hab, {
+  const publication = yield* publishGroupVcProposal(hby, input, postman, registry.hab, {
     route: MULTISIG_ISS_ROUTE,
     attrs: { gid: registry.hab.pre },
     embeds: {
@@ -503,6 +519,7 @@ function* proposeGroupCredentialIssue(
     creder,
     recipient,
     tel: iss.said,
+    publicationComplete: rgy.publication.complete(creder.said!),
     status: verifierDecision.kind,
     group: {
       route: MULTISIG_ISS_ROUTE,
@@ -525,6 +542,7 @@ function* proposeGroupCredentialIssue(
  */
 function* publishGroupVcProposal(
   hby: Habery,
+  input: Reactor,
   postman: Poster,
   groupHab: Hab,
   proposal: MultisigVdrProposal,
@@ -533,7 +551,7 @@ function* publishGroupVcProposal(
   const outcomes: GroupDelivery[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient });
-    outcomes.push(yield* sendGroupMessage(postman, signGroupMessage(member, recipient, prepared)));
+    outcomes.push(yield* admitAndSendGroupMessage(input, postman, signGroupMessage(member, recipient, prepared)));
   }
   return groupSendResult(outcomes);
 }

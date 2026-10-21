@@ -10,6 +10,7 @@ import {
   EndpointRoles,
   generateDidWebsArtifacts,
   runAgentRuntime,
+  Schemer,
   settleRuntimeIngress,
 } from "keri-ts/runtime";
 import { startServer } from "../../src/host/http-server.ts";
@@ -200,6 +201,8 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
           assertEquals(report.messages, joined.messages);
         }
 
+        yield* waitForPromise(assertGroupCredentialCommands(alice, bob, groupPre, headRoot));
+
         const dwsPort = reserveTcpPort();
         const did = `did:webs:127.0.0.1%3A${dwsPort}:dws:${groupPre}`;
         const webRoot = `${headRoot}/web-root`;
@@ -242,6 +245,108 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
     await Deno.remove(headRoot, { recursive: true }).catch(() => undefined);
   }
 });
+
+/** Exercise weighted VCP/ISS approval through fresh CLI processes, keeping the third member absent. */
+async function assertGroupCredentialCommands(
+  alice: StoreSpec,
+  bob: StoreSpec,
+  group: string,
+  headRoot: string,
+): Promise<void> {
+  const location = (store: StoreSpec) => ["--name", store.name, "--head-dir", store.headDirPath];
+  const schema = new Schemer({ sed: { $id: "", type: "object" } });
+  const schemaFile = `${headRoot}/credential-schema.json`;
+  await Deno.writeFile(schemaFile, schema.raw);
+  for (const member of [alice, bob]) {
+    assertCommandOk(
+      await runTufa(["vc", "schema", "import", ...location(member), "--schema", schemaFile]),
+      "import group schema",
+    );
+  }
+  const registry = await runProposalWithJoin(
+    [
+      "vc",
+      "registry",
+      "incept",
+      ...location(alice),
+      "--alias",
+      "team",
+      "--registry-name",
+      "credentials",
+      "--timeout",
+      "12",
+    ],
+    bob,
+    "team",
+  );
+  const registryStatus = parseLastJson(registry.proposer.stdout);
+  const joinedRegistry = parseLastJson(registry.joiner.stdout);
+  const regk = stringField(registryStatus, "registry");
+  assertEquals(registryStatus.accepted, true, JSON.stringify({ registryStatus, joinedRegistry }));
+  assertEquals(registryStatus.publicationComplete, true);
+  assertEquals(registryStatus.status, "accept");
+  assertEquals(joinedRegistry.accepted, true);
+  assertEquals(joinedRegistry.tel, { pre: regk, sn: 0, publicationComplete: true });
+
+  const issue = await runTufa([
+    "vc",
+    "create",
+    ...location(alice),
+    "--alias",
+    "team",
+    "--registry-name",
+    "credentials",
+    "--schema",
+    schema.said,
+    "--recipient",
+    bob.pre,
+    "--data",
+    "{\"role\":\"holder\"}",
+    "--timeout",
+    "0",
+  ]);
+  assertCommandOk(issue, "propose group issuance without waiting");
+  const issued = parseLastJson(issue.stdout);
+  const credential = stringField(issued, "said");
+  assertEquals(issued.publicationComplete, false);
+  assertEquals(issued.saved, false);
+  const messages = issued.messages;
+  if (!Array.isArray(messages)) throw new Error("Missing credential coordination messages");
+  const selected = messages.find(message => message.recipient === bob.pre);
+  assertExists(selected);
+  // Bob approves the original EXN, then Alice resumes it after her proposing process exited.
+  for (const member of [bob, alice]) {
+    const joined = await runTufa([
+      "multisig",
+      "join",
+      ...location(member),
+      "--group",
+      "team",
+      "--said",
+      selected.exnSaid,
+      "--auto",
+      "--approval-timeout",
+      "8",
+    ]);
+    assertCommandOk(joined, "complete group issuance");
+    const report = parseLastJson(joined.stdout);
+    assertEquals(report.accepted, true);
+    assertEquals(report.embedded, issued.tel);
+    assertEquals(report.tel, { pre: credential, sn: 0, publicationComplete: true });
+    await run(function*() {
+      const hby = yield* createHabery({ name: member.name, headDirPath: member.headDirPath, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        assertEquals(runtime.vdr!.reger.saved.get(credential)?.qb64, credential);
+        assertEquals(runtime.vdr!.reger.tels.getOn(credential, 0)?.qb64, issued.tel);
+        assertEquals(runtime.vdr!.reger.states.get(regk)?.ii, group);
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+  }
+}
 
 /** Compare CLI send identities with actual persisted wrappers and Multiplexor indexes. */
 /** Public commands must refuse uncoordinated group work before business-state writes. */

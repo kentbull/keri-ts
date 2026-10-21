@@ -51,6 +51,7 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
           .description("Create a local credential registry")
           .requiredOption("--registry-name <name>", "Registry name")
           .option("--usage <text>", "Human-readable registry usage for multisig proposals")
+          .option("--timeout <seconds>", "Wait for local TEL publication (default: 60; 0 returns pending state)")
           .option(
             "--backers",
             "Enable legacy/v1-style TEL backing by a configured backer quorum (not native ACDC v2)",
@@ -98,6 +99,10 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
         vc.command("create")
           .description("Create and issue a registry-backed credential")
           .requiredOption("--registry-name <name>", "Registry name")
+          .option(
+            "--timeout <seconds>",
+            "Wait for saved credential and local TEL publication (default: 60; 0 returns pending state)",
+          )
           .option("--schema <said>", "Schema SAID")
           .option("--schema-file <file>", "Import schema JSON and use its SAID")
           .option("-r, --recipient <aid>", "Recipient AID or local alias")
