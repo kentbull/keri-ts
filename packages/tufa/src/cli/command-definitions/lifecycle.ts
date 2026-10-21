@@ -400,6 +400,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         "Directory override for configuration data",
       )
       .option("--config-file <file>", "Configuration filename override")
+      .option("--backer-alias <alias>", "Endorse TEL events as this explicitly selected nontransferable identifier")
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
         "--head-dir <dir>",
@@ -430,6 +431,7 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
       exportName: "agentCommand",
       args: (options: Record<string, unknown>) => ({
         name: options.name,
+        backerAlias: options.backerAlias,
         base: options.base,
         configDir: options.configDir,
         configFile: options.configFile,

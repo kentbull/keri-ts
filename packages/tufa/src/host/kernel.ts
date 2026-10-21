@@ -33,6 +33,8 @@ export interface HostKernelSpec {
   /** Whether this host constructs provider mailbox storage. */
   enableMailboxStore: boolean;
   serviceHab: Hab;
+  /** Explicit optional TEL backer identity; independent of ordinary hosted prefixes. */
+  backerHab?: Hab;
   hostedPrefixes?: readonly string[];
   http: HostKernelHttpSpec;
   protocolPolicy: Omit<ProtocolHostPolicy, "serviceHab" | "hostedPrefixes">;
@@ -53,6 +55,7 @@ export function* runHostKernel(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
+    backerHab: spec.backerHab,
   });
   const hostedPrefixes = spec.hostedPrefixes ?? [spec.serviceHab.pre];
   const protocolPolicy: ProtocolHostPolicy = {

@@ -69,6 +69,36 @@ responsibilities into one vague "VC" layer.
   occur in its concrete I/O operation. Verifier sidecars do not borrow Reactor's
   protocol serialization. Duplicate revocations produce no second webhook.
 
+## Hosted TEL Backers
+
+`tufa agent --backer-alias ALIAS` explicitly enables one local nontransferable
+single-key signer. Tevery publishes eligible coordinates only after committing
+accepted or partial-quorum evidence. `vdr/backing.ts` rechecks the stored event,
+issuer anchor and roster before signing; quorum remains the observer's separate
+acceptance obligation. `app/backer-service.ts` consumes the private Deck and
+hands committed receipt wire to Poster. No protocol role is invented.
+
+The issuer supplies ordinary KEL/TEL evidence and signed controller/agent endpoint
+records. The return destination is the issuer in validated registry state, never
+an HTTP caller URL. Poster uses its first available controller/agent role. Missing
+routing is reported locally; the caller must supply the signed endpoint and
+re-deliver. Transport completion is not remote acceptance.
+
+`Reger.bens` (`bens.`) records one event digest per local backer AID, TEL prefix
+and ordinal. KERIpy's receipt tables alone cannot enforce this local signing
+choice across competing digests. The choice and indexed signature in ordinary
+`tibs` commit together before network admission. Conflicts are refused; this
+prevents this signer from endorsing both candidates, not issuer duplicity.
+Duplicate input without the receipt reuses it after restart. Escrow retries
+already carrying the receipt do not echo it. A crash after endorsement but before
+transmission requires explicit re-delivery; there is no durable delivery outbox.
+
+The bounded interop case launches the public agent, withholds one required proof,
+restarts the host, completes the same event and verifies the resulting evidence
+with pinned-main Python Parser/Kevery/Tevery. Python supplies the observer, not an
+autonomous backer service. Group policy/rotation and full BIS/BRV workflow coverage
+remain separate release cuts.
+
 ## V2 Registry Evidence
 
 `vet` and `vetBinds` accept parsed Serders and node-local

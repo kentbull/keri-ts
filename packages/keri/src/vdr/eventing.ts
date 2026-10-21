@@ -49,9 +49,11 @@ import { dgKey } from "../db/core/keys.ts";
 import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
-import { resolveBackerState } from "./backer-state.ts";
+import { backerThreshold, resolveBackerState } from "./backer-state.ts";
+import type { BackerRequest } from "./backing.ts";
 import { credentialRecord } from "./credential-tsn-record.ts";
 import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
+import { verifyTelAnchor } from "./tel-anchor.ts";
 import { prepareTsnQuery } from "./tsn-query.ts";
 
 type TelIlk =
@@ -129,9 +131,11 @@ export interface TeveryOptions {
   local?: boolean;
   lax?: boolean;
   cues?: Deck<AgentCue>;
+  /** Explicit hosted backer work; absent for ordinary observers and issuers. */
+  backerRequests?: Deck<BackerRequest>;
 }
 
-export interface TeverOptions extends Omit<TeveryOptions, "rvy" | "cues"> {
+export interface TeverOptions extends Omit<TeveryOptions, "rvy" | "cues" | "backerRequests"> {
   rsr?: RegStateRecord | null;
   serder?: SerderKERI | null;
   seqner?: NumberPrimitive | null;
@@ -369,7 +373,9 @@ export class Tever {
     this.prefixer = new Prefixer({ qb64: regk });
     this.sn = parseInt(rsr.s ?? "0", 16);
     this.ilk = (rsr.et ?? Ilks.vcp) as TelIlk;
-    this.toad = parseInt(rsr.bt ?? "0", 16);
+    const toad = backerThreshold(rsr.bt);
+    if (toad === null) throw new DatabaseOperationError("Stored registry backer threshold is invalid.");
+    this.toad = toad;
     this.baks = [...(rsr.b ?? [])];
     this.noBackers = (rsr.c ?? []).includes(TraitDex.NoBackers);
     this.estOnly = (rsr.c ?? []).includes(TraitDex.EstOnly);
@@ -487,7 +493,8 @@ export class Tever {
       throw new ValidationError(`Invalid duplicate baks=${baks}.`);
     }
     this.baks = baks;
-    const toad = parseInt(stringField(ked, "bt") ?? "0", 16);
+    const toad = backerThreshold(ked.bt);
+    if (toad === null) throw new ValidationError("Invalid registry backer threshold.");
     this.validateToad(toad, baks);
     this.toad = toad;
     this.ilk = Ilks.vcp;
@@ -588,7 +595,8 @@ export class Tever {
     }
     const next = this.baks.filter((bak) => !cuts.includes(bak));
     next.push(...adds);
-    const toad = parseInt(stringField(ked, "bt") ?? "0", 16);
+    const toad = backerThreshold(ked.bt);
+    if (toad === null) return reject("Invalid registry backer threshold.", serder, this.regk);
     try {
       this.validateToad(toad, next);
     } catch (error) {
@@ -730,6 +738,7 @@ export class Tever {
   }
 
   private validateToad(toad: number, baks: readonly string[]): void {
+    if (!Number.isSafeInteger(toad) || toad < 0) throw new ValidationError("Invalid registry backer threshold.");
     if (baks.length === 0) {
       if (toad !== 0) {
         throw new ValidationError(`Invalid toad=${toad} for empty backer set.`);
@@ -774,7 +783,7 @@ export class Tever {
     if (!args.local && args.baks.length > 0) {
       this.validateToad(args.toad, args.baks);
       if (verified.length < args.toad) {
-        this.escrowPWEvent(args.serder, args.seqner, args.saider, verified);
+        this.escrowPWEvent(args.serder, args.seqner, args.saider, verified, args.baks);
         const decision = escrow(
           "partialWitness",
           `TEL event does not satisfy backer threshold ${args.toad}.`,
@@ -792,26 +801,7 @@ export class Tever {
     seqner?: NumberPrimitive | null,
     saider?: Diger | null,
   ): boolean {
-    if (!seqner || !saider) {
-      return false;
-    }
-    const anchorSaid = this.db.kels.getLast(this.pre, Number(seqner.num));
-    if (!anchorSaid || anchorSaid !== saider.qb64) {
-      return false;
-    }
-    const anchor = this.db.getEvtSerder(this.pre, anchorSaid);
-    if (!anchor || anchor.said !== saider.qb64) {
-      return false;
-    }
-    const anchorKed = okKed(anchor);
-    const seals = Array.isArray(anchorKed.a) ? anchorKed.a : [];
-    if (seals.length !== 1) {
-      return false;
-    }
-    const seal = sealRecord(seals[0]);
-    return !!seal && "i" in seal && seal.i === serder.pre
-      && "s" in seal && seal.s === serder.snh
-      && "d" in seal && seal.d === serder.said;
+    return verifyTelAnchor(this.db, this.pre, serder, seqner, saider);
   }
 
   /** Retain partial-witness evidence with its qualified source ordinal. */
@@ -820,6 +810,7 @@ export class Tever {
     seqner?: NumberPrimitive | null,
     saider?: Diger | null,
     bigers: readonly Siger[] = [],
+    baks: readonly string[] = [],
   ): void {
     const pre = okPre(serder);
     const said = okSaid(serder);
@@ -828,6 +819,8 @@ export class Tever {
       this.reger.ancs.put(key, [seqner, new Diger({ qb64: saider.qb64 })]);
     }
     this.reger.tibs.pin(key, [...bigers]);
+    this.reger.baks.rem(key);
+    this.reger.baks.put(key, [...baks]);
     this.reger.tvts.put(key, serder.raw);
     this.reger.twes.put(pre, okSn(serder), said);
   }
@@ -906,6 +899,7 @@ export class Tevery {
   readonly local: boolean;
   readonly lax: boolean;
   readonly cues: Deck<AgentCue>;
+  private readonly backerRequests?: Deck<BackerRequest>;
 
   constructor(options: TeveryOptions) {
     this.rvy = options.rvy;
@@ -914,6 +908,7 @@ export class Tevery {
     this.local = options.local ?? false;
     this.lax = options.lax ?? true;
     this.cues = options.cues ?? new Deck<AgentCue>();
+    this.backerRequests = options.backerRequests;
     this.reloadRegistryStates();
   }
 
@@ -1027,6 +1022,19 @@ export class Tevery {
     if (decision.kind === "accept" && (decision.ilk === Ilks.rev || decision.ilk === Ilks.brv)) {
       // Keep publication outside semantic error conversion and after the writer has committed.
       this.cues.push({ kin: "revoked", serder: args.serder });
+    }
+    if (
+      this.backerRequests && [Ilks.vcp, Ilks.vrt, Ilks.bis, Ilks.brv].some((ilk) => ilk === args.serder.ilk)
+      && (decision.kind === "accept" || decision.kind === "duplicate"
+        || (decision.kind === "escrow" && decision.escrow === "partialWitness"))
+    ) {
+      // Durable acceptance or partial quorum proves semantic/anchor eligibility.
+      // Keep received proofs distinct from the durable union so retries do not echo our own receipt.
+      this.backerRequests.push({
+        pre: okPre(args.serder),
+        said: okSaid(args.serder),
+        received: [...(args.wigers ?? [])],
+      });
     }
     return decision;
   }

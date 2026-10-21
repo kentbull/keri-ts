@@ -10,6 +10,13 @@ export type BackerState =
   | { kind: "missing"; reason: string }
   | { kind: "reject"; reason: string };
 
+/** Decode the entire wire threshold; a partial parse or inexact count cannot authorize a quorum. */
+export function backerThreshold(value: unknown): number | null {
+  if (typeof value !== "string" || !/^[0-9a-f]+$/i.test(value)) return null;
+  const count = Number(BigInt(`0x${value}`));
+  return Number.isSafeInteger(count) ? count : null;
+}
+
 /**
  * Resolve the complete ra.i/ra.s/ra.d tuple before reading its ordered roster.
  * Raw/escrowed management bodies confer no authority. KERIpy's digest-only raw
@@ -41,11 +48,11 @@ export function resolveBackerState(reger: Reger, regk: string, seal: unknown): B
     !event.verify() || event.pre !== regk || event.sn !== Number(ordinal) || event.said !== accepted.qb64
     || (event.ilk !== Ilks.vcp && event.ilk !== Ilks.vrt)
   ) throw new DatabaseOperationError("Accepted backer management coordinate is inconsistent.");
-  const threshold = event.ked?.bt;
-  if (typeof threshold !== "string" || !/^[0-9a-f]+$/.test(threshold)) {
+  const toad = backerThreshold(event.ked?.bt);
+  if (toad === null) {
     throw new DatabaseOperationError("Accepted backer threshold is invalid.");
   }
-  const baks = reger.baks.get(key), toad = Number(BigInt(`0x${threshold}`));
+  const baks = reger.baks.get(key);
   if (
     !Number.isSafeInteger(toad) || toad > baks.length || (baks.length > 0 && toad < 1)
     || new Set(baks).size !== baks.length
