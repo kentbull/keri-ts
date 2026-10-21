@@ -47,19 +47,18 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
 
 /** Project grant facts, retaining the distinction between pending group evidence and completed business EXNs. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
-  const { grant: exn, credential, support, group } = yield* grant(args);
-  const identity = { said: exn.said, credential, support };
+  const { grant: exn, credential, support, deliveries, group } = yield* grant(args);
+  const identity = { said: exn.said, credential, support, deliveries };
   if (!group) {
     writeJsonLine(identity);
   } else if (!group.complete) {
-    writeJsonLine({ ...identity, status: "multisig-pending", messages: group.messages, deliveries: group.deliveries });
+    writeJsonLine({ ...identity, status: "multisig-pending", messages: group.messages });
   } else {
     writeJsonLine({
       ...identity,
       status: "multisig-complete",
       lead: group.lead,
       messages: group.messages,
-      deliveries: group.deliveries,
     });
   }
 }

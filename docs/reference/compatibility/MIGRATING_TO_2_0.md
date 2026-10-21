@@ -268,7 +268,12 @@ returns pending state and wrapper identities; resume with `ipex join --said`.
 Their typed results and JSON distinguish group completion, elected lead and actual
 deliveries. Single-sig authors retain local conversation history before sending;
 responses require an accepted predecessor with matching known parties. A transport
-failure leaves that history intact. Grant/admit settlement remains separate.
+failure leaves that history intact. Grants now retain local EXN history before
+export/delivery as well, and selected `--agree` predecessors must have the correct
+route and known parties. Grant results and JSON add `deliveries`, covering actual
+member fanout and elected external transport; offline exports report no external
+delivery. Pending group grants do not write a completed export. Admit settlement
+remains separate.
 
 ## Native-v2 interoperability boundary
 
