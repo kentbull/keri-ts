@@ -49,7 +49,7 @@ import { dgKey } from "../db/core/keys.ts";
 import type { BrokerProcessReplyArgs } from "../db/escrowing.ts";
 import type { Reger } from "../db/reger.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../time/mod.ts";
-import { resolveBackerState } from "./backer-state.ts";
+import { backerThreshold, resolveBackerState } from "./backer-state.ts";
 import type { BackerRequest } from "./backing.ts";
 import { credentialRecord } from "./credential-tsn-record.ts";
 import { qualifiedPrefix, registryRecord } from "./registry-tsn-record.ts";
@@ -373,7 +373,9 @@ export class Tever {
     this.prefixer = new Prefixer({ qb64: regk });
     this.sn = parseInt(rsr.s ?? "0", 16);
     this.ilk = (rsr.et ?? Ilks.vcp) as TelIlk;
-    this.toad = parseInt(rsr.bt ?? "0", 16);
+    const toad = backerThreshold(rsr.bt);
+    if (toad === null) throw new DatabaseOperationError("Stored registry backer threshold is invalid.");
+    this.toad = toad;
     this.baks = [...(rsr.b ?? [])];
     this.noBackers = (rsr.c ?? []).includes(TraitDex.NoBackers);
     this.estOnly = (rsr.c ?? []).includes(TraitDex.EstOnly);
@@ -491,7 +493,8 @@ export class Tever {
       throw new ValidationError(`Invalid duplicate baks=${baks}.`);
     }
     this.baks = baks;
-    const toad = parseInt(stringField(ked, "bt") ?? "0", 16);
+    const toad = backerThreshold(ked.bt);
+    if (toad === null) throw new ValidationError("Invalid registry backer threshold.");
     this.validateToad(toad, baks);
     this.toad = toad;
     this.ilk = Ilks.vcp;
@@ -592,7 +595,8 @@ export class Tever {
     }
     const next = this.baks.filter((bak) => !cuts.includes(bak));
     next.push(...adds);
-    const toad = parseInt(stringField(ked, "bt") ?? "0", 16);
+    const toad = backerThreshold(ked.bt);
+    if (toad === null) return reject("Invalid registry backer threshold.", serder, this.regk);
     try {
       this.validateToad(toad, next);
     } catch (error) {
@@ -734,6 +738,7 @@ export class Tever {
   }
 
   private validateToad(toad: number, baks: readonly string[]): void {
+    if (!Number.isSafeInteger(toad) || toad < 0) throw new ValidationError("Invalid registry backer threshold.");
     if (baks.length === 0) {
       if (toad !== 0) {
         throw new ValidationError(`Invalid toad=${toad} for empty backer set.`);

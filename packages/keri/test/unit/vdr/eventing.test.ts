@@ -1705,3 +1705,27 @@ Deno.test("backer refuses a second anchored digest at its endorsed coordinate af
     }
   });
 });
+
+Deno.test("backer eligibility rejects malformed thresholds instead of truncating or bypassing quorum", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: crypto.randomUUID(), temp: true });
+    try {
+      const issuer = hby.makeHab("issuer");
+      const backer = hby.makeHab("backer", undefined, { transferable: false });
+      const requests = new Deck<BackerRequest>();
+      const tvy = new Tevery({ db: hby.db, reger, backerRequests: requests });
+      const valid = inceptRegistry(issuer.pre, { baks: [backer.pre], toad: 1 });
+      for (const bt of ["not-hex", "1trailing"]) {
+        const malformed = new SerderKERI({ sad: { ...valid.ked, bt }, makify: true });
+        assertEquals(malformed.verify(), true);
+        assertEquals(tvy.processEvent({ serder: malformed, ...anchorTel(issuer, malformed) }).kind, "reject");
+        assertEquals(reger.tels.getOn(malformed.pre!, 0), null);
+        assertEquals(requests.length, 0);
+      }
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
