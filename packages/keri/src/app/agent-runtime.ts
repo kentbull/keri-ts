@@ -159,7 +159,11 @@ export interface AgentRuntimeOptions {
   messagePolicy?: MessagePolicy;
   /** Optional KRAM uses the trusted runtime receiver clock. */
   kram?: KramConfig;
-  /** Explicit nontransferable backer from this Habery; never inferred from hosted identities. */
+  /**
+   * Explicit nontransferable signer for optional legacy/v1-style TEL backing.
+   * Independent of issuer multisig/KEL witnessing; native ACDC v2 does not require it.
+   * Borrowed from this Habery, never inferred from hosted identities.
+   */
   backerHab?: Hab;
 }
 

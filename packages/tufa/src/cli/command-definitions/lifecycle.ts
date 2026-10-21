@@ -400,7 +400,10 @@ function registerAgentCmd(program: Command, dispatch: CommandDispatch): void {
         "Directory override for configuration data",
       )
       .option("--config-file <file>", "Configuration filename override")
-      .option("--backer-alias <alias>", "Endorse TEL events as this explicitly selected nontransferable identifier")
+      .option(
+        "--backer-alias <alias>",
+        "Enable optional legacy/v1-style TEL backing as this nontransferable identifier (not native ACDC v2)",
+      )
       .option("--compat", "Use KERIpy compatibility-mode path layout")
       .option(
         "--head-dir <dir>",

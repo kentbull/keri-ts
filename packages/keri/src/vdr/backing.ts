@@ -1,4 +1,7 @@
-/** Local TEL backer endorsement; transport and observer acceptance remain separate owners. */
+/**
+ * Optional legacy/v1-style TEL backing; issuer multisig approval, KEL witnessing,
+ * transport and observer acceptance remain separate responsibilities.
+ */
 import { Diger, Ilks, SerderKERI, Siger, Verfer } from "cesr-ts";
 import type { Hab } from "../app/habbing.ts";
 import { DatabaseOperationError, ValidationError } from "../core/errors.ts";
@@ -21,10 +24,14 @@ export type BackerResult =
   | { kind: "contribution"; issuer: string; signature: Siger; message: Uint8Array };
 
 /**
- * Endorse validated TEL evidence as one explicitly selected nontransferable identifier.
+ * Produce indexed endorsements for the configured backer quorum of legacy,
+ * v1-style credential TELs (vcp, vrt, bis, brv). Native ACDC v2 registries
+ * (rip, bup, upd) do not use or require this mechanism. TEL backing is separate
+ * from issuer multisig approval and KEL witnessing.
  *
- * KERIpy defines the receipt wire but has no autonomous backer service. This owner
- * adds only a durable one-digest choice per local signer/event coordinate. It does
+ * KERIpy supplies the receipt format and observer validation; this autonomous
+ * signing service is an additional implementation. This owner adds a durable
+ * one-digest choice per local signer/event coordinate. It does
  * not accept the TEL, transmit, promise delivery, or persist a delivery queue.
  */
 export class Backer {

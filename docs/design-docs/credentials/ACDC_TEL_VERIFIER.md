@@ -71,6 +71,17 @@ responsibilities into one vague "VC" layer.
 
 ## Hosted TEL Backers
 
+Implements optional backing for legacy, v1-style credential TELs (`vcp`, `vrt`,
+`bis`, `brv`). It produces indexed endorsements required by the registry's
+configured backer quorum. Native ACDC v2 registries (`rip`, `bup`, `upd`) do not
+use or require this mechanism. TEL backing is separate from issuer multisig
+approval and KEL witnessing.
+
+“Legacy/v1-style TEL backing” identifies the registry event model, independently
+of the KERIpy release, message version, CESR attachment genus or keri-ts package
+version. KERIpy supplies the receipt format and observer validation; our
+autonomous signing service is an additional implementation.
+
 `tufa agent --backer-alias ALIAS` explicitly enables one local nontransferable
 single-key signer. Tevery publishes eligible coordinates only after committing
 accepted or partial-quorum evidence. `vdr/backing.ts` rechecks the stored event,

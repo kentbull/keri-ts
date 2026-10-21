@@ -7,7 +7,10 @@ export interface IndirectHostOptions {
   port: number;
   listenHost?: string;
   serviceHab: Hab;
-  /** Explicit optional TEL backer identity; independent of ordinary hosted prefixes. */
+  /**
+   * Explicit optional legacy/v1-style TEL backer, independent of hosted prefixes,
+   * issuer multisig approval and KEL witnessing. Native ACDC v2 does not require it.
+   */
   backerHab?: Hab;
   hostedPrefixes?: readonly string[];
   onListen?: (address: { port: number; hostname: string }) => void;

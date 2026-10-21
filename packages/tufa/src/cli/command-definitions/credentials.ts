@@ -51,7 +51,11 @@ function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
           .description("Create a local credential registry")
           .requiredOption("--registry-name <name>", "Registry name")
           .option("--usage <text>", "Human-readable registry usage for multisig proposals")
-          .option("--backers", "Create a backer-enabled registry", false)
+          .option(
+            "--backers",
+            "Enable legacy/v1-style TEL backing by a configured backer quorum (not native ACDC v2)",
+            false,
+          )
           .option("--est-only", "Anchor TEL events only in establishment events", false),
       ),
     ),
