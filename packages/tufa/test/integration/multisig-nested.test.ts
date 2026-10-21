@@ -14,6 +14,7 @@ import {
   settleRuntimeIngress,
 } from "keri-ts/runtime";
 import { startServer } from "../../src/host/http-server.ts";
+import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
 import {
   reserveTcpPort,
   runTufa,
@@ -246,6 +247,170 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
   }
 });
 
+Deno.test("tufa/multisig - witnessed group credential publication resumes the original VCP after receipt failure", async () => {
+  const headRoot = await Deno.makeTempDir({ prefix: "tufa-witnessed-credentials-" });
+  try {
+    const port = reserveTcpPort();
+    const provider = await seedMailboxProvider(headRoot, `http://127.0.0.1:${port}`);
+    const alice = await initAndInceptMember(headRoot, "alice");
+    const bob = await initAndInceptMember(headRoot, "bob");
+    const carol = await initAndInceptMember(headRoot, "carol");
+    const stores = [alice, bob, carol];
+    await seedMailboxAndPeerState(stores, provider);
+    await run(function*() {
+      const hby = yield* createHabery({ name: provider.name, headDirPath: provider.headDirPath, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
+      const witness = hby.habByName(provider.alias)!;
+      const handler = createProtocolHandler(runtime, {
+        hostedPrefixes: [witness.pre],
+        serviceHab: witness,
+        witnessHab: witness,
+      });
+      let withhold = false;
+      const server = Deno.serve({ hostname: "127.0.0.1", port, onListen() {} }, request => {
+        if (withhold && new URL(request.url).pathname === "/receipts") {
+          return new Response("withheld receipt", { status: 403 });
+        }
+        return handler(request);
+      });
+      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: witness }));
+      try {
+        const config = `${headRoot}/group.json`;
+        yield* waitForPromise(writeJson(config, {
+          aids: stores.map(store => store.pre),
+          rmids: stores.map(store => store.pre),
+          isith: [{ "1": ["1/2", "1/2"] }, "1"],
+          nsith: [{ "1": ["1/2", "1/2"] }, "1"],
+          wits: [witness.pre],
+          toad: 1,
+        }));
+        const incept = yield* waitForPromise(runProposalWithJoin(
+          [
+            "multisig",
+            "incept",
+            "--name",
+            alice.name,
+            "--head-dir",
+            alice.headDirPath,
+            "--alias",
+            alice.alias,
+            "--group",
+            "team",
+            "--file",
+            config,
+            "--approval-timeout",
+            "12",
+          ],
+          bob,
+          "team",
+        ));
+        const group = stringField(parseLastJson(incept.proposer.stdout), "group");
+        assertEquals(hby.db.getKever(group)?.sn, 0);
+        const proposed = yield* waitForPromise(runTufa([
+          "vc",
+          "registry",
+          "incept",
+          "--name",
+          alice.name,
+          "--head-dir",
+          alice.headDirPath,
+          "--alias",
+          "team",
+          "--registry-name",
+          "credentials",
+          "--timeout",
+          "0",
+        ]));
+        assertCommandOk(proposed, "propose witnessed group registry");
+        const report = parseLastJson(proposed.stdout);
+        const regk = stringField(report, "registry");
+        assertEquals(report.publicationComplete, false);
+        const messages = report.messages;
+        if (!Array.isArray(messages)) throw new Error("Missing registry proposal messages");
+        const selected = messages.find(message => message.recipient === bob.pre);
+        assertExists(selected);
+        const join = (member: StoreSpec) => [
+          "multisig",
+          "join",
+          "--name",
+          member.name,
+          "--head-dir",
+          member.headDirPath,
+          "--group",
+          "team",
+          "--said",
+          selected.exnSaid,
+          "--auto",
+          "--approval-timeout",
+          "8",
+        ];
+        withhold = true;
+        const failed = yield* waitForPromise(runTufa(join(bob)));
+        assertEquals(failed.code === 0, false);
+        assertStringIncludes(failed.stderr, "failed to receipt");
+        assertEquals(runtime.vdr!.tvy.tevers.has(regk), false);
+        let anchor = "";
+        yield* waitForPromise(run(function*() {
+          const memberHby = yield* createHabery({ name: bob.name, headDirPath: bob.headDirPath, skipConfig: true });
+          const memberRuntime = yield* createAgentRuntime(memberHby, new FetchHttpClient(), systemClock);
+          try {
+            anchor = memberHby.db.kels.getLast(group, 1)!;
+            assertExists(anchor);
+            assertEquals(memberRuntime.vdr!.publication.complete(regk), false);
+            assertEquals(
+              memberRuntime.vdr!.publication.pendingReceipts().some(target =>
+                target.pre === regk && target.anchorSaid === anchor
+              ),
+              true,
+            );
+          } finally {
+            yield* memberRuntime.close();
+            yield* memberHby.close();
+          }
+        }));
+        withhold = false;
+        for (const member of [bob, alice]) {
+          const resumed = yield* waitForPromise(runTufa(join(member)));
+          assertCommandOk(resumed, "resume original witnessed VCP");
+          const completed = parseLastJson(resumed.stdout);
+          assertEquals(completed.accepted, true);
+          assertEquals(completed.tel, { pre: regk, sn: 0, publicationComplete: true });
+          yield* waitForPromise(run(function*() {
+            const memberHby = yield* createHabery({
+              name: member.name,
+              headDirPath: member.headDirPath,
+              skipConfig: true,
+            });
+            const memberRuntime = yield* createAgentRuntime(memberHby, new FetchHttpClient(), systemClock);
+            try {
+              assertEquals(memberHby.db.kels.getLast(group, 1), anchor);
+              assertEquals(memberRuntime.vdr!.reger.ancs.get([regk, regk])?.[1].qb64, anchor);
+              assertEquals(memberRuntime.vdr!.publication.complete(regk), true);
+            } finally {
+              yield* memberRuntime.close();
+              yield* memberHby.close();
+            }
+          }));
+        }
+        assertEquals(runtime.vdr!.tvy.tevers.get(regk)?.serder.said, regk);
+        const schema = yield* waitForPromise(importCredentialSchema([alice, bob], headRoot));
+        const issued = yield* waitForPromise(assertGroupIssuanceCommands(alice, bob, group, regk, schema));
+        assertEquals(runtime.vdr!.tvy.tevers.get(regk)?.vcState(issued.credential)?.et, "iss");
+        assertEquals(runtime.vdr!.reger.tels.getOn(issued.credential, 0)?.qb64, issued.tel);
+        assertEquals(hby.db.getKever(group)?.sn, 2);
+      } finally {
+        yield* waitForTaskHalt(worker, 100);
+        yield* waitForPromise(server.shutdown());
+        handler.close?.();
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await Deno.remove(headRoot, { recursive: true });
+  }
+});
+
 /** Exercise weighted VCP/ISS approval through fresh CLI processes, keeping the third member absent. */
 async function assertGroupCredentialCommands(
   alice: StoreSpec,
@@ -254,15 +419,7 @@ async function assertGroupCredentialCommands(
   headRoot: string,
 ): Promise<void> {
   const location = (store: StoreSpec) => ["--name", store.name, "--head-dir", store.headDirPath];
-  const schema = new Schemer({ sed: { $id: "", type: "object" } });
-  const schemaFile = `${headRoot}/credential-schema.json`;
-  await Deno.writeFile(schemaFile, schema.raw);
-  for (const member of [alice, bob]) {
-    assertCommandOk(
-      await runTufa(["vc", "schema", "import", ...location(member), "--schema", schemaFile]),
-      "import group schema",
-    );
-  }
+  const schema = await importCredentialSchema([alice, bob], headRoot);
   const registry = await runProposalWithJoin(
     [
       "vc",
@@ -288,6 +445,42 @@ async function assertGroupCredentialCommands(
   assertEquals(joinedRegistry.accepted, true);
   assertEquals(joinedRegistry.tel, { pre: regk, sn: 0, publicationComplete: true });
 
+  await assertGroupIssuanceCommands(alice, bob, group, regk, schema);
+}
+
+/** Import the same real schema into each independent member store through the public CLI. */
+async function importCredentialSchema(stores: readonly StoreSpec[], headRoot: string): Promise<string> {
+  const schema = new Schemer({ sed: { $id: "", type: "object" } });
+  const schemaFile = `${headRoot}/credential-schema.json`;
+  await Deno.writeFile(schemaFile, schema.raw);
+  for (const member of stores) {
+    assertCommandOk(
+      await runTufa([
+        "vc",
+        "schema",
+        "import",
+        "--name",
+        member.name,
+        "--head-dir",
+        member.headDirPath,
+        "--schema",
+        schemaFile,
+      ]),
+      "import group schema",
+    );
+  }
+  return schema.said;
+}
+
+/** Resume the original ISS through independent member processes and verify both saved states. */
+async function assertGroupIssuanceCommands(
+  alice: StoreSpec,
+  bob: StoreSpec,
+  group: string,
+  regk: string,
+  schema: string,
+): Promise<{ credential: string; tel: string }> {
+  const location = (store: StoreSpec) => ["--name", store.name, "--head-dir", store.headDirPath];
   const issue = await runTufa([
     "vc",
     "create",
@@ -297,7 +490,7 @@ async function assertGroupCredentialCommands(
     "--registry-name",
     "credentials",
     "--schema",
-    schema.said,
+    schema,
     "--recipient",
     bob.pre,
     "--data",
@@ -346,6 +539,7 @@ async function assertGroupCredentialCommands(
       }
     });
   }
+  return { credential, tel: stringField(issued, "tel") };
 }
 
 /** Compare CLI send identities with actual persisted wrappers and Multiplexor indexes. */
