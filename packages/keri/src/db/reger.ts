@@ -141,7 +141,7 @@ export class Reger extends LMDBer {
   public tpwe!: CatCesrIoSetSuber<TelSealTuple>; // TEL partial witness escrow.
   public tmse!: CatCesrIoSetSuber<TelSealTuple>; // TEL multisig anchor escrow.
   public tede!: CatCesrIoSetSuber<TelCompletionTuple>; // TEL dissemination escrow.
-  public ctel!: CesrSuber<Saider>; // Completed TEL event marker.
+  public ctel!: CesrSuber<Saider>; // Completed local TEL publication, valued by issuer anchor SAID.
   public cmse!: SerderSuber<SerderACDC>; // Credential missing-signature escrow.
   public ccrd!: SerderSuber<SerderACDC>; // Completed credentials.
 

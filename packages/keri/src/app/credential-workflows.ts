@@ -12,8 +12,6 @@ import {
   NumberPrimitive,
   NumDex,
   Prefixer,
-  Saider,
-  Seqner,
   SerderACDC,
   type SerderKERI,
   TraitDex,
@@ -418,9 +416,7 @@ function* proposeGroupRegistryIncept(
 
   const regk = requireSerderPrefix(vcp, "registry inception");
   registerRegistry(rgy, options.registryName, hab, regk, { noBackers, estOnly });
-  if (telAccepted(reger, regk, 0, requireSerderSaid(vcp, "registry inception"))) {
-    markTelComplete(reger, regk, 0, requireSerderSaid(vcp, "registry inception"));
-  }
+  rgy.publication.track(vcp, anchor.serder);
 
   const publication = yield* publishGroupVcProposal(hby, postman, hab, {
     route: MULTISIG_VCP_ROUTE,
@@ -486,16 +482,7 @@ function* proposeGroupCredentialIssue(
     reger.ccrd.pin(requireCredentialSaid(creder), creder);
   }
   rgy.vry.processEscrows();
-  if (
-    telAccepted(
-      reger,
-      requireSerderPrefix(iss, "credential issue"),
-      iss.sn ?? 0,
-      requireSerderSaid(iss, "credential issue"),
-    )
-  ) {
-    markTelComplete(reger, requireCredentialSaid(creder), iss.sn ?? 0, requireSerderSaid(iss, "credential issue"));
-  }
+  rgy.publication.track(iss, anchor.serder);
 
   const publication = yield* publishGroupVcProposal(hby, postman, registry.hab, {
     route: MULTISIG_ISS_ROUTE,
@@ -570,6 +557,7 @@ function registerRegistry(
     rgy.registries.set(
       name,
       new Registry({
+        publication: rgy.publication,
         name,
         hab,
         reger: rgy.reger,
@@ -607,16 +595,6 @@ function ordinal(num: number | bigint): NumberPrimitive {
     value >>= 8n;
   }
   return new NumberPrimitive({ code: NumDex.Huge, raw });
-}
-
-function seqner(num: number | bigint): Seqner {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new Seqner({ code: NumDex.Huge, raw });
 }
 
 function requireRegistry(rgy: Regery, name: string): Registry {
@@ -673,13 +651,4 @@ function telAccepted(
   eventSaid: string,
 ): boolean {
   return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
-}
-
-function markTelComplete(
-  reger: Reger,
-  pre: string,
-  sn: number,
-  eventSaid: string,
-): void {
-  reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }

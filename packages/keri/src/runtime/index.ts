@@ -372,6 +372,7 @@ export {
   vet,
   vetBinds,
 } from "../acdc/regeventing.ts";
+export { publishPendingTel } from "../app/tel-publishing.ts";
 export {
   type AgentCue,
   type CredentialRevokedCue,
@@ -545,6 +546,7 @@ export {
   Tevery,
   type TeveryOptions,
 } from "../vdr/eventing.ts";
+export { TelPublication, type TelPublicationTarget } from "../vdr/tel-publication.ts";
 // Accepted-state DID projection and artifact operations.
 export {
   resolveDidKeri,

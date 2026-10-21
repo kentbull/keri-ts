@@ -7,8 +7,8 @@
  * - keeps credential validation/save ownership in `Verifier`
  *
  * Current boundary:
- * - multisig/counselor and network dissemination escrows are represented by
- *   KERIpy-shaped stores, but only the local single-sig path completes here.
+ * - TelPublication owns durable anchor/receipt/publication progression; the
+ *   application host owns actual receipt collection and network dissemination.
  */
 import {
   concatBytes,
@@ -47,6 +47,7 @@ import { RegistryRecord } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type TelProcessDecision, Tevery } from "./eventing.ts";
+import { TelPublication } from "./tel-publication.ts";
 
 export interface RegeryOptions {
   reger: Reger;
@@ -56,6 +57,7 @@ export interface RegeryOptions {
 }
 
 export interface RegistryOptions {
+  publication: TelPublication;
   name: string;
   hab: Hab;
   reger: Reger;
@@ -307,10 +309,12 @@ export class Regery {
   readonly vry: Verifier;
   readonly cues: Deck<AgentCue>;
   readonly registries = new Map<string, Registry>();
+  readonly publication: TelPublication;
 
   constructor(hby: Habery, options: RegeryOptions) {
     this.hby = hby;
     this.reger = options.reger;
+    this.publication = new TelPublication(hby.db, this.reger);
     this.cues = options.cues ?? new Deck<AgentCue>();
     this.tvy = options.tvy ?? new Tevery({ db: hby.db, reger: this.reger, cues: this.cues });
     this.vry = options.vry ?? new Verifier(hby, { reger: this.reger, cues: this.cues });
@@ -330,6 +334,7 @@ export class Regery {
       this.registries.set(
         name,
         new Registry({
+          publication: this.publication,
           name,
           hab,
           reger: this.reger,
@@ -347,6 +352,7 @@ export class Regery {
     options: RegistryInceptOptions = {},
   ): Registry {
     const registry = new Registry({
+      publication: this.publication,
       name,
       hab,
       reger: this.reger,
@@ -365,11 +371,13 @@ export class Regery {
   processEscrows(): void {
     this.tvy.processEscrows();
     this.vry.processEscrows();
+    this.publication.advance();
   }
 }
 
 /** One credential registry controlled by one issuer habitat. */
 export class Registry {
+  readonly publication: TelPublication;
   readonly name: string;
   readonly hab: Hab;
   readonly reger: Reger;
@@ -380,6 +388,10 @@ export class Registry {
   estOnly: boolean;
 
   constructor(options: RegistryOptions) {
+    if (options.publication.db !== options.hab.db || options.publication.reger !== options.reger) {
+      throw new TypeError("Registry publication must use its issuer KEL and TEL stores.");
+    }
+    this.publication = options.publication;
     this.name = options.name;
     this.hab = options.hab;
     this.reger = options.reger;
@@ -417,7 +429,7 @@ export class Registry {
         prefix: requireHabPrefix(this.hab),
       }),
     );
-    this.markComplete(this.regk, 0, said(serder));
+    this.trackPublication(serder, seal);
     return decision;
   }
 
@@ -436,9 +448,7 @@ export class Registry {
     });
     const seal = anchorTelEvent(this.hab, serder);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
-    if (decision.kind === "accept") {
-      this.markComplete(this.requireRegk(), serder.sn ?? tever.sn + 1, said(serder));
-    }
+    this.trackPublication(serder, seal);
     return decision;
   }
 
@@ -450,9 +460,7 @@ export class Registry {
       : backerIssue(said(creder), regk, tever.sn, said(tever.serder));
     const seal = anchorTelEvent(this.hab, serder);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
-    if (decision.kind === "accept") {
-      this.markComplete(said(creder), serder.sn ?? 0, said(serder));
-    }
+    this.trackPublication(serder, seal);
     return { serder, decision, seal };
   }
 
@@ -470,18 +478,19 @@ export class Registry {
       : backerRevoke(credentialSaid, regk, tever.sn, said(tever.serder), prior.qb64);
     const seal = anchorTelEvent(this.hab, serder);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
-    if (decision.kind === "accept") {
-      this.markComplete(credentialSaid, serder.sn ?? 1, said(serder));
-    }
+    this.trackPublication(serder, seal);
     return { serder, decision, seal };
   }
 
   complete(pre: string, sn = 0): boolean {
-    return this.reger.ctel.get([pre, seqner(sn).qb64]) !== null;
+    return this.publication.complete(pre, sn);
   }
 
-  private markComplete(pre: string, sn: number, eventSaid: string): void {
-    this.reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
+  /** Keep publication progress with the original accepted issuer anchor. */
+  private trackPublication(event: SerderKERI, seal: AnchorSeal): void {
+    const anchor = this.hab.db.getEvtSerder(requireHabPrefix(this.hab), seal.saider.qb64);
+    if (!anchor) throw new ValidationError("Missing locally authored TEL anchor.");
+    this.publication.track(event, anchor);
   }
 
   private requireRegk(): string {

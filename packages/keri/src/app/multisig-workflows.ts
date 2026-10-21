@@ -14,8 +14,6 @@ import {
   NumberPrimitive,
   NumDex,
   Prefixer,
-  Saider,
-  Seqner,
   SerderACDC,
   SerderKERI,
   TraitDex,
@@ -616,9 +614,7 @@ function approveRegistryIncept(
   }
 
   const eventSaid = requireSerderSaid(vserder, "registry inception");
-  if (telAccepted(rgy.reger, regk, 0, eventSaid)) {
-    markTelComplete(rgy.reger, regk, 0, eventSaid);
-  }
+  rgy.publication.track(vserder, anchorSerder);
   return telAccepted(rgy.reger, regk, 0, eventSaid);
 }
 
@@ -648,12 +644,7 @@ function approveCredentialIssue(
   }
   vry.processEscrows();
 
-  const telPre = requireSerderPrefix(iserder, "credential issue");
-  const eventSaid = requireSerderSaid(iserder, "credential issue");
-  const sn = iserder.sn ?? 0;
-  if (telAccepted(rgy.reger, telPre, sn, eventSaid)) {
-    markTelComplete(rgy.reger, requireCredentialSaid(creder), sn, eventSaid);
-  }
+  rgy.publication.track(iserder, anchorSerder);
   return credentialer.complete(requireCredentialSaid(creder))
     || reger.saved.get([requireCredentialSaid(creder)]) !== null;
 }
@@ -671,6 +662,7 @@ function registerRegistry(
     rgy.registries.set(
       name,
       new Registry({
+        publication: rgy.publication,
         name,
         hab,
         reger: rgy.reger,
@@ -706,16 +698,6 @@ function ordinal(num: number | bigint): NumberPrimitive {
   return new NumberPrimitive({ code: NumDex.Huge, raw });
 }
 
-function seqner(num: number | bigint): Seqner {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new Seqner({ code: NumDex.Huge, raw });
-}
-
 function requireSerderPrefix(serder: SerderKERI, label: string): string {
   if (!serder.pre) {
     throw new ValidationError(`${label} is missing prefix.`);
@@ -739,10 +721,6 @@ function requireCredentialSaid(creder: SerderACDC): string {
 
 function telAccepted(reger: Reger, pre: string, sn: number, eventSaid: string): boolean {
   return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
-}
-
-function markTelComplete(reger: Reger, pre: string, sn: number, eventSaid: string): void {
-  reger.ctel.pin([pre, seqner(sn).qb64], new Saider({ qb64: eventSaid }));
 }
 
 function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {

@@ -220,6 +220,13 @@ conflicting registry names fail before authoring another anchor. Establishment-o
 group credential operations use rotation anchors, requiring participant KELs and
 keys to be prepared for the group's next establishment event.
 
+`Registry.complete` now requires completed local TEL publication, including the
+anchor's full historical witness cohort; local TEL acceptance alone is insufficient.
+`Regery.publication` owns durable progression, and `RegistryOptions` requires that
+owner. Ordinary host workers collect receipts and publish accepted evidence;
+`ctel` values now identify the issuer anchor, matching KERIpy. Transport completion
+still does not establish a remote observer's accepted state.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

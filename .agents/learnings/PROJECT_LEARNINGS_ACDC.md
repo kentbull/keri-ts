@@ -92,8 +92,13 @@ before prompts/signatures. Missing registry/schema/predecessor evidence stays
 pending; malformed evidence and conflicting aliases produce no local anchor.
 Reuse read-only registry-inception and exact TEL-seal checks from the TEL owners,
 without processor construction or escrow writes for validation. Establishment-only
-group anchors rotate using participants' prepared next keys. Accepted local TEL
-admission still does not prove witnessed completion or external publication.
+group anchors rotate using participants' prepared next keys. TelPublication owns
+tmse/tpwe/tede/ctel progression. Accepted local TEL admission alone never marks
+completion: the exact anchor's full historical witness cohort must be receipted
+and local TEL publication must finish. The host runs finite receipt/fanout and
+dissemination operations without a writer across I/O; interrupted work remains
+in ordinary protocol escrow. ctel stores the anchor SAID, not the TEL SAID.
+Remote observer acceptance is a separate fact.
 
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
 RegistryObserver intake owns per-event engine publication. Normal dispatch routes RIP/BUP
