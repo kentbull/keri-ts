@@ -15,6 +15,7 @@ import {
 } from "../../../../cesr/mod.ts";
 import { tufa } from "../../../../tufa/src/cli/cli.ts";
 import { multisigJoinCommand } from "../../../../tufa/src/cli/multisig.ts";
+import { parseGvrsn } from "../../../cli.ts";
 import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { aidCommand } from "../../../src/app/cli/aid.ts";
@@ -50,7 +51,6 @@ import { vcRevokeCommand } from "../../../src/app/cli/vc.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ipexGrantExn } from "../../../src/app/ipexing.ts";
-import { parseGvrsn } from "../../../src/core/attachment-countering.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { delcept } from "../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
