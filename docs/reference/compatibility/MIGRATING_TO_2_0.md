@@ -113,6 +113,15 @@ omission retains the command default, and zero/fractional seconds remain valid.
 Group rotation preserves file data and witness changes when flags are omitted;
 explicit empty arrays override those file fields.
 
+## CLI group command selection
+
+Ordinary `interact` and `rotate` refuse group aliases; use `multisig interact`
+and `multisig rotate`. Inception requires an unused alias. Generic EXN sends,
+challenge responses, location publication, query requesters and DID binding
+reject group aliases where they cannot coordinate approval; select the indicated
+member/endpoint alias or supported group workflow. Raw `sign` output now labels
+a group's signature as a partial member contribution.
+
 ## Multisig publication
 
 Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`

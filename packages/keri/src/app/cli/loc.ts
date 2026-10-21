@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { settleRuntimeIngress } from "../agent-runtime.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
 import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
@@ -71,6 +72,11 @@ export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
       skipSignator: false,
     },
     function*({ hby, hab, runtime }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Location replies require an endpoint-owner alias. Use multisig endpoint-role approval to authorize that endpoint for a group.",
+        );
+      }
       const eid = commandArgs.eid ?? hab.pre;
       yield* settleRuntimeIngress(runtime, [hab.makeLocScheme(url, eid, scheme, commandArgs.time)]);
       if (

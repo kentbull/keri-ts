@@ -24,6 +24,7 @@ import {
 } from "../agent-runtime.ts";
 
 import { resolveDelegationCommunicationHab } from "../delegating.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import { Receiptor, WitnessReceiptor } from "../witnessing.ts";
 import { withExistingHab } from "./common/context.ts";
 import {
@@ -162,6 +163,11 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
       skipSignator: true,
     },
     function*({ hby, hab }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Group aliases require tufa multisig rotate so member approval and fanout are coordinated.",
+        );
+      }
       const kever = hab.kever;
       if (!kever) {
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);

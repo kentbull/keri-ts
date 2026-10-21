@@ -144,6 +144,9 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     );
     let failure: { error: unknown } | undefined;
     try {
+      if (hby.habByName(inceptArgs.alias!)) {
+        throw new ValidationError(`Alias ${inceptArgs.alias} already exists; inception requires an unused alias.`);
+      }
       assertBootstrapComplete(yield* resolveBootstrap(hby, http));
 
       const hab = hby.makeHab(inceptArgs.alias!, undefined, {

@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { sendExchangeMessage } from "../exchange-messaging.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import { FetchHttpClient } from "../http-client.ts";
 import { systemClock } from "../runtime-clock.ts";
 
@@ -24,7 +25,7 @@ interface ExnSendArgs {
  * Implement `tufa exchange send` / `tufa exn send` with KERIpy-shaped EXN behavior.
  *
  * Public contract:
- * - sender is a local alias
+ * - sender is a local single-controller alias; group business workflows own approval
  * - recipient is an AID or exact contact alias
  * - payload comes from repeatable `--data`
  * - topic defaults to the first route segment
@@ -73,6 +74,11 @@ export function* exchangeSendCommand(
       skipSignator: false,
     },
     function*({ hby, hab }) {
+      if (isLocalGroupHab(hby, hab)) {
+        throw new ValidationError(
+          "Generic exchange send does not coordinate group approval. Use a member alias or the matching group IPEX workflow.",
+        );
+      }
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,

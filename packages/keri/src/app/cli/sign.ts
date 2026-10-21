@@ -13,6 +13,7 @@
  */
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
+import { isLocalGroupHab } from "../group-members.ts";
 import { withExistingHab } from "./common/context.ts";
 import { loadTextArgument, parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
@@ -34,6 +35,8 @@ interface SignArgs {
  * - prints numbered indexed signatures as `1. <qb64>`
  * - the numbering is presentation only; `tufa verify` still expects raw
  *   signature qb64 values, matching KLI
+ * - group output labels its partial member contribution; it does not collect
+ *   approval or establish that the group's threshold has been satisfied
  */
 export function* signCommand(args: Record<string, unknown>): Operation<void> {
   const signArgs: SignArgs = {
@@ -66,8 +69,11 @@ export function* signCommand(args: Record<string, unknown>): Operation<void> {
       skipConfig: true,
       skipSignator: true,
     },
-    function*({ hab }) {
+    function*({ hby, hab }) {
       const sigers = hab.sign(loadTextArgument(text), true);
+      if (isLocalGroupHab(hby, hab)) {
+        console.log(`Partial multisig signature contribution for ${hab.pre}; group approval is not collected by sign.`);
+      }
       for (const [idx, siger] of sigers.entries()) {
         console.log(`${idx + 1}. ${siger.qb64}`);
       }
