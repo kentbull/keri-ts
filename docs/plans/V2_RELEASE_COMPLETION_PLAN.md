@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged baseline `bf7e797f` (#667), 2026-10-21.
+Status: active; merged baseline `f0a73668` (#670), 2026-10-21.
 Complete implementation, release preparation and fresh qualification for
 **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded** pending the side-chat native ACDC/registry work.
@@ -19,7 +19,7 @@ with an offline non-required member and native-v2 KEL acceptance/refusal boundar
 The independent-holder main KLI audit found separately documented upstream URL
 and framing-context limits. Fresh independent Python wallet grant/admit/revocation
 evidence uses unmodified public APIs, separately from the maintained mailbox-fork
-CLI workflow. Package organization is complete in this change. These checks do not replace
+CLI workflow. Package organization is complete. These checks do not replace
 fresh final qualification of the coordinated 2.0.0 source and artifacts.
 The last broad checkpoint is #650; Git/PRs own detailed delivery history.
 
@@ -32,7 +32,7 @@ The last broad checkpoint is #650; Git/PRs own detailed delivery history.
 | 30a–30c       | Public dependencies, Tufa verifier ownership and refusal counts #655–657.                                                                                  |
 | 31            | Reciprocal TEL, mixed CLI roles and legacy group credential/IPEX API evidence #658–661; profile boundaries #662 and independent Python recipient evidence. |
 | 31a           | Ownership review: retain ProtocolProcessor's cohesive dispatch/publication boundary; see below.                                                            |
-| 31b–31d       | Complete: CESR primitive families, KERI application/CLI/core/storage and concrete witness/mailbox modules; Tufa command organization in this change.       |
+| 31b–31d       | Complete: CESR primitive families, KERI application/CLI/core/storage and concrete witness/mailbox modules; Tufa command organization through #668.         |
 | 32            | Exact 2.0.0 metadata/changelogs/breaking guide, dependency review and fresh full qualification.                                                            |
 | Preparation   | Qualify and retain unpublished artifacts; no npm/tag/GitHub publication.                                                                                   |
 
@@ -195,10 +195,10 @@ all implementation and the remaining dependency/version preparation.
 
 ## Final qualification and release preparation — cut 32
 
-1. **Review runtime advisories.** Inspect pinned Ajv 8.17.1 /
-   GHSA-2g4f-4pwh-qvx6 (`$data` ReDoS), configured options and the actual dependency
-   graph. Update to a verified patched pin with focused schema/package checks.
-   Transitive npm counts do not establish distinct vulnerabilities or exposure.
+1. **Runtime advisory review complete (#669).** Ajv is pinned to patched 8.18.0
+   for GHSA-2g4f-4pwh-qvx6; neither schema owner enables `$data`. Focused schema,
+   native and package checks passed. Final artifact graphs still require review;
+   transitive npm counts do not establish distinct vulnerabilities or exposure.
 2. **Prepare exactly 2.0.0 for all three packages.** Consume accumulated changesets
    into changelogs before clearing notes. Reconcile manifests, Deno mirrors, npm
    lock entries, generated versions and internal dependencies with existing checks.
@@ -212,7 +212,8 @@ all implementation and the remaining dependency/version preparation.
    verifier relocation and actual public changes; invent none merely for coordinated
    versioning. Put concrete **Breaking changes** prominently in changelogs and
    prepared release notes, linked to the version-pinned guide.
-4. **Qualify the final clean source.** Run the complete maintained CESR/KERI/Tufa
+4. **Qualify the final clean source.** The shared runner now expands the frozen
+   three-peer owner in local and CI qualification (#670). Run the complete maintained CESR/KERI/Tufa
    suites and in-scope actual-peer matrix after every feature/ownership/organization
    change. Include required manual delegation/witness endurance. Prior qualification
    exclusions do not carry forward. Document native ACDC/registry partial API limits

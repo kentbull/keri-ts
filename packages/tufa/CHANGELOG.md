@@ -1,5 +1,44 @@
 # @keri-ts/tufa
 
+## 2.0.0
+
+### Breaking changes
+
+- Upgrade the coordinated keri-ts/cesr-ts dependencies to 2.0.0. KERI command
+  helpers return typed results; Tufa owns final JSON/presentation after cleanup.
+  Output distinguishes approval, acceptance, publication, saved credential evidence
+  and completed transport destinations. Pending credential/group work does not
+  write completed exports. See the [migration guide](../../docs/reference/compatibility/MIGRATING_TO_2_0.md).
+- Reject malformed option/configuration types before opening stores instead of
+  coercing/filtering them. Preserve omitted file values and explicit false/zero/
+  empty-list overrides. Ports require decimal integers in 1–65535; documented
+  zero/fractional waits remain supported. Init validates encryption intent and
+  no longer silently falls back to temporary storage.
+- Ordinary event and other uncoordinated commands reject group aliases; use the
+  supported multisig workflows. Raw group signing identifies a partial contribution.
+- Query waits for actual accepted recovery under one deadline; it no longer
+  implicitly bootstraps missing OOBIs or reports stale state as completion.
+- Remove `--cesr-body-mode` and backed-registry application authoring. Observer
+  verification/replay of externally backed legacy TELs remains in KERI.
+
+### Features and fixes
+
+- Complete group legacy registry/issuance/revocation and IPEX approval/fanout with
+  explicit outer-EXN selection, exact-event resume, business-evidence validation
+  and honest pending results. Keep issuer approval, TEL publication, witness
+  receipts and transport completion distinct.
+- Add `tufa oobi clean` for exact pending keys with preview/apply and partial-failure
+  reporting through normal Baser loading. Preview accepts ordinary startup effects;
+  missing databases fail. Shutdown failure never prints final command success.
+- Own the verifier webhook application and cue store at `@keri-ts/tufa/runtime`,
+  with the existing `verifier run` CLI and once-mode cleanup contract. Count actual
+  business-policy refusals without invalidating protocol evidence.
+- Share finite init/incept OOBI/authentication bootstrap, retain failed mailbox
+  batches for retry and use explicit transport ownership with joined cancellation.
+- Organize CLI adapters/registrations by subject while preserving all four existing
+  npm embedding entrypoints. Installed runtime/declaration checks cover the package
+  boundaries; native ACDC/registry CLI completion and publication remain deferred.
+
 ## 1.0.0
 
 ### Breaking CLI and host changes

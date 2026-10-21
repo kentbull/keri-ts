@@ -1,5 +1,21 @@
 # cesr-ts
 
+## 2.0.0
+
+### Breaking changes
+
+- Remove `OwnedPayload`, `PayloadSink`, `MemoryPayloadSink`, `essrRaw` and
+  `essrWire`. Consume ordinary Texter raw/qualified bytes instead of ESSR
+  staging/ownership adapters. Shared buffered parsing and real transport sources
+  remain. See the [migration guide](../../docs/reference/compatibility/MIGRATING_TO_2_0.md).
+
+### Maintenance
+
+- Group primitive implementation and tests by encoding, crypto, values and
+  structuring responsibilities while preserving the supported root export.
+- Coordinate version 2.0.0 with keri-ts and Tufa. This entry is unpublished
+  release preparation; native ACDC/registry completion and publication are deferred.
+
 ## 1.0.0
 
 ### Breaking API and parsing changes

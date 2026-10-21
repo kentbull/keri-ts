@@ -1,372 +1,288 @@
 # Breaking changes for 2.0.0
 
-The release changes library APIs and private storage formats. KERI/ACDC/CESR
-protocol interoperability remains required. Older keri-ts API and private-store
-compatibility is not provided. This inventory will be completed and checked
-against published 1.0.0 before final release qualification.
+This guide compares the supported npm exports and declarations of published
+**cesr-ts 1.0.0, keri-ts 1.0.0 and @keri-ts/tufa 1.0.0** with the coordinated
+2.0.0 preparation. Publication is deferred. Upgrade all three packages together.
+No aliases, migration readers or compatibility with old keri-ts private storage
+formats are provided. KERI/ACDC/CESR protocol interoperability is a separate
+requirement; a package major version does not select a wire version.
 
-## ESSR evidence
+## Package entrypoints
 
-- `PayloadArchive` and `PreparedPayload` are removed from the database exports.
-  Exchange evidence is stored directly in pinned-main Baser's `essrs.` table.
-- `Baser.openPayloads`, archive recovery/lifecycle integration, `savePlaintext`
-  and `getPlaintext` are removed. There is no automatic durable plaintext store.
-- `Baser.essrs` is `CesrIoSetSuber<Texter>`; use ordinary typed `add/get/rem`.
-  `pinEssrs` is removed. Synchronous `getEssrs(said)` reads accepted/escrow-owned
-  evidence. Qualified values deduplicate in first-insertion order, matching main
-  `424a50c03421165c5f289e07a341bd57b8d8ab78`. Identical redelivery is idempotent;
-  valid alternate fragmentations append distinct members. Repeated fragments can
-  lose committed bytes, and alternate representations can add bytes: incoming
-  digest validity does not guarantee valid stored reconstruction. Digest and
-  recipient authentication checks remain; no archive or normalization masks this
-  [reference limitation](../../reports/essr/KERIPY_REPEATED_FRAGMENTS_2026-10-20.md).
-- Main binds `essrs.`; pinned 1.2.14/1.3.6 Baser binds `.essrs`. Direct legacy
-  LMDB compatibility is [deferred](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility),
-  with no fallback reader, migration or dual write. Legacy **wire** interoperability
-  remains required. Main ESSR parity does not prove full Habery/Keeper interchangeability.
-- Exchange metadata retains `gvrsn` directly, without an archive ownership record.
-  Private file-reference, ownership, plaintext and nested-staging tables are gone.
-- `PayloadStore`, `FilePayload`, `FilePayloadSink` and file-range views are removed.
-  `EssrRecipient` takes only a hosted habitat. `decrypt(said)` synchronously reads
-  accepted evidence from LMDB and returns authenticated inner `body` bytes, with
-  no plaintext file or disposal API. Callers own those bytes' memory lifetime.
-- CESR's unused `OwnedPayload`, `PayloadSink`, `MemoryPayloadSink`, `essrRaw` and
-  `essrWire` are removed. Read ordinary Texter raw/qualified bytes directly.
-  Shared frame serializers, counters, parsing and actual transport sources remain.
+| Package       | Supported npm imports                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------ |
+| cesr-ts       | `cesr-ts`                                                                                                    |
+| keri-ts       | `keri-ts`, `keri-ts/runtime`, `keri-ts/db`, `keri-ts/cli`                                                    |
+| @keri-ts/tufa | `@keri-ts/tufa`, `@keri-ts/tufa/runtime`, `@keri-ts/tufa/host/kernel`, `@keri-ts/tufa/http/protocol-handler` |
 
-## Database shutdown
+These entrypoint names remain available. Internal source directories have been
+reorganized by responsibility; update checkout-local imports to their new owners
+or use supported package imports. Do not deep-import generated npm implementation
+paths. Install on Node **20.3 or newer**. The runtime graph is Tufa → KERI → CESR;
+strict NodeNext consumers do not need `skipLibCheck`.
 
-- Every observable LMDB close failure now propagates, including ordinary handles.
-  A failed close leaves the wrapper unavailable: create a new owner after
-  resolving the shutdown fault; do not reuse it or clear its storage.
-- `LMDBer.env` is now a getter exposing only a usable handle. Native shutdown
-  starts before asynchronous completion; retained raw handles must not be used.
-- Repeated close after confirmed closure is harmless. `openExisting` still
-  refuses missing storage, new tables and whole-environment clearing.
-- Affected acquisition and command owners preserve operation plus cleanup errors
-  in `AggregateError`; Habery attempts all owned closures before returning.
+## cesr-ts: ordinary ESSR bytes
 
-## OOBI cleanup ownership
+The root exports `OwnedPayload`, `PayloadSink`, `MemoryPayloadSink`, `essrRaw` and
+`essrWire` are removed. Read Texter raw/qualified bytes and use ordinary resident
+byte values. Shared frame serialization, counters, buffered CESR parsing and real
+transport sources remain; this release does not require every transport to buffer
+an entire conversation.
 
-`openOobiStore`, `OobiStore`, `OpenOobiStoreOptions` and
-`PathManager.existingDirectoryPath` are removed. Use normal Baser ownership and
-`Baser.oobis`; generic LMDBer `openExisting` remains available for non-creating
-storage access. `tufa oobi clean` preview deletes no selected pending rows but
-runs ordinary writable Baser startup, including table initialization and habitat
-reload/cleanup. Missing databases fail; normal path preparation may create empty
-directories. Results include `status: "complete"` only after closure, or
-`status: "failed"` with completed deletions preserved.
+Weighted-threshold `Tholder.maxWeights` and `Tholder.maxSithLength` are configurable
+deployment caps. Set them before concurrent processing; they are not protocol
+wire maxima or application memory budgets.
 
-Initialization and inception now complete selected introduction/authentication
-work, including resumed records and multi-OOBI children, without waiting for whole
-agent quiescence. Historical failures do not fail new work; a fresh authentication
-refusal is not hidden by old authorization. Ordinary OOBI resolution means the
-response was processed, not that every contained proof was accepted. Protocol
-escrows remain available for their owners to retry; later operations must check
-their required accepted evidence. Authentication retains its controller-state and
-authorization requirements, with unfinished attempts reaching the finite deadline. Both commands print final success only after owned stores close.
+## keri-ts: compose explicit protocol and I/O owners
 
-## Host, mailbox and challenge inputs
+`createAgentRuntime` now requires the HTTP client and clock explicitly:
 
-Agent/mailbox ports must be decimal integers in 1–65535; zero no longer silently
-selects the agent default. Malformed schema path list members are rejected.
-Mailbox update takes the **last consumed** index: `-1` restarts from the first
-message, `0` resumes after index zero. Fractions, values below -1 and values whose
-next index cannot be represented safely are rejected.
+```typescript
+import { createAgentRuntime, FetchHttpClient, systemClock } from "keri-ts/runtime";
 
-Challenge strength must be a positive whole bit count. Verification accepts
-nonnegative decimal seconds, including fractional waits; zero checks already
-accepted evidence without waiting. Poll delay must be positive. Supplied blank,
-null or boolean numeric values are errors; omission retains command defaults.
+// Within an Effection Operation; hby is an already acquired Habery.
+const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+```
 
-## Credential command validation
+`RuntimeServices`, `defaultRuntimeServices` and `RuntimeHttpClient` are removed,
+as are `AgentRuntimeOptions.services`, `mailboxPollTransport`, and the exported
+`MailboxPollTransport`/`MailboxPollTransportRequest` contracts. Supply `HttpClient`
+and `RuntimeClock` to the concrete owners that need them. Mailbox polling uses
+its ordinary HTTP/SSE implementation rather than an injected polling callback.
 
-Credential, IPEX and verifier commands reject supplied non-string/non-boolean
-options and malformed schema or recipient lists instead of casting or filtering
-them. Supply decimal timeout values; blank, null, boolean and nonfinite values
-are errors, while omission retains each command's default. IPEX zero/fractional
-waits and positive fractional import settlement windows remain supported.
-Credential JSON sections and IPEX attribute objects validate before stores open.
+`Reactor` now takes a `ProtocolProcessor`, owns input parsing and exposes awaited
+`process`/`processBytes`. Its dispatch/escrow proxies, `ingest`, `clearIngress`,
+`processOnce`, `hasIngress` and background input worker are removed. Use
+`runtime.protocol` for shared semantic dispatch/escrows, `runtime.exc` for exchange
+work, and an input-owned `new Reactor(runtime.protocol)` when another input is
+needed. `ReactorDispatchResult` becomes `ProtocolDispatchResult`. There is no global
+protocol mutex. Exchange route `reconcile` and `verify` must now return synchronous
+decisions; asynchronous preparation/handling must not split validation from commit.
+The processor borrows a native `RegistryObserver`, not a registry-authoring manager.
 
-Endpoint, signing, query, DID and witness command adapters now reject malformed option
-types before opening stores. Repeated signature/DID/OOBI/hosted-prefix lists must
-contain only strings. DID resolver ports accept decimal integers, not coercible
-booleans, fractional values or hexadecimal text. An explicitly empty query anchor
-path is invalid rather than an instruction to query key state. Operator and
-publication commands apply the same type validation: malformed entries cannot be
-dropped from exchange data, cleanup flags must be booleans, and notification
-counts/database dump limits must be valid decimal integers.
+`runtime.poster` is now `runtime.postman`. `Hab.processCuesIter` yields
+`Uint8Array`, `Hab.interpretCue` and root/runtime `CueEmission`/`CueEmissionKind`
+are removed, and `ReplayCue.messages` becomes `msgs`. Respondant takes
+`(hby, postman)` and publishes via `enqueueCue`/`enqueueMsgs`; it no longer owns
+reply streams, independent workers or `openReply`/`enqueueReply`. Witness ingress
+and `drainWitnessCues` return completion rather than emission arrays; the input
+source helper no longer takes an emission callback.
 
-## Lifecycle option validation
+Update concrete constructors with their actual dependencies: Oobiery takes
+Habery, protocol, Revery, HTTP and cues; Anchorer/Receiptor/WitnessReceiptor take
+protocol/transport/time owners. Notifier takes Signator instead of Habery;
+Organizer takes Baser and nullable Signator. Credential and DID helpers take
+Regery directly rather than discovering it through AgentRuntime. `requireRegery`
+is removed. These are borrowed collaborators, not permission to close their
+stores from a subordinate operation.
 
-Inception and rotation preserve file values when flags are omitted. Explicit
-false, zero and empty arrays remain overrides for programmatic command callers;
-rotation applies next-key defaults only after file/CLI precedence. This deliberately
-differs from KERIpy main's rotation CLI default override. Malformed supplied
-booleans, lists, counts and thresholds now fail before opening stores. Counts use
-decimal integer syntax; thresholds retain CESR hexadecimal/weighted syntax and
-Tholder's configurable limits. Null or empty thresholds are invalid supplied values.
+## Delivery, HTTP and TCP
 
-Multisig configuration now rejects malformed member or witness entries instead
-of silently removing them. Supplied null/blank/nonfinite approval timeouts fail;
-omission retains the command default, and zero/fractional seconds remain valid.
-Group rotation preserves file data and witness changes when flags are omitted;
-explicit empty arrays override those file fields.
+Poster is the queued output owner. Build signed EXNs with `createExchangeMessage`
+and enqueue signed bytes with `postman.send({ src, dest, topic, msg })` or a finite
+`sendStream({ src, dest, topic, msgs })`. Run/join `deliverDo` independently, normally
+through `runAgentRuntime`. To observe one admission, request `{ notify: true }`
+and await `wait(evt)`. Its sent/failed outcome includes actual partial deliveries;
+it does not mean participant approval, group acceptance or a delivery ack.
+Unobserved failures are diagnosed without retaining a retry backlog.
 
-## CLI group command selection
+`Poster.sendBytes`, `sendExchange`, `sendPreparedExchange` and their route/prepared
+helpers are removed, as are `ExchangeSendResult`, `RawCesrSendResult`,
+`ExchangeDeliveryPreference`, `ExchangeTransport`, `sendSignedExchangeMessage`,
+`directDeliveryEndpoints` and `mailboxDeliveryEndpoints`. The standalone
+`sendExchangeMessage(hby, hab, http, clock, args)` returns `{ serder, deliveries }`;
+its addressing field is `dest`, not `recipient`.
 
-Ordinary `interact` and `rotate` refuse group aliases; use `multisig interact`
-and `multisig rotate`. Inception requires an unused alias. Generic EXN sends,
-challenge responses, location publication, query requesters and DID binding
-reject group aliases where they cannot coordinate approval; select the indicated
-member/endpoint alias or supported group workflow. Raw `sign` output now labels
-a group's signature as a partial member contribution.
+`HTTPMessenger(url, http, { destination, headers })` sends ordinary messages.
+`TCPMessenger(url, clock, protocol?)` needs protocol only for duplex replies.
+Use `messengerFrom` for ordinary delivery, or `streamMessengerFrom` for a prepared
+finite stream. Ordinary `sendSource` sends constituent messages; HTTP stream
+`send()` sends one opaque PUT. The peer must support that PUT contract.
 
-## Multisig publication
+The `CesrBodyMode`/`DEFAULT_CESR_BODY_MODE`/`normalizeCesrBodyMode` APIs,
+`Habery.cesrBodyMode`, its construction/open options, `EgressOptions.bodyMode`
+and `--cesr-body-mode` are removed. Select ordinary or stream construction
+explicitly. Query/mailbox requests remain ordinary signed POSTs.
 
-Public multisig send reporting uses `GroupSendResult` and `GroupMessageRef`
-in place of `ProposalPublication` and `ProposalIdentity`. Signed transport inputs
-and per-message delivery records are internal helpers, not package exports.
-Result collections are `messages`; each reporting identity has `recipient`,
-`exnSaid` (outer coordination EXN) and `payloadSaid` (the existing Multiplexor key:
-v1 embedded-bundle SAID or supported v2 signed-child SAID). `deliveries` lists
-completed transport destinations, not participant approval or group acceptance.
-`join --said` still selects the outer EXN. Explicit joins can select accepted
-coordination evidence after notification consumption and reuse recorded KEL,
-reply, VCP and ISS approvals without another prompt or group-event signature.
-An explicit join replays accepted evidence through normal authenticated intake
-when an interruption left its Multiplexor index unpublished.
-Resend reuses recorded recipient wrappers; transport completion still does not
-prove group acceptance. Other protocol/result SAIDs retain
-their existing names; this is not a global rename of proposal concepts.
+`HttpClient.request` returns `HttpResponse` with complete owned `body` bytes
+after cleanup. `HttpClient.open` lends an `HttpStreamResponse.body(signal)` source
+inside its Effection scope; finish or return the reader before leaving that scope.
+Native Response and `HttpResponseHandle`/`fetchResponseHandle` are removed from
+these contracts. `requestFrame` now requires HTTP and returns that scoped response;
+`postCesr` requires HTTP and has no response-consumer callback. `postCesrMessage`
+and `streamBytes` are removed. Transport failures retain `TransportError.cause`;
+request-validation, consumer, cancellation and cleanup failures stay distinguishable.
 
-Shared helpers live in `multisig-messaging.ts`. Tufa owns the affected JSON
-projection and identifier display. The KERI CLI helpers for multisig, endpoint
-add, registry inception and credential creation now return typed results instead
-of printing their final results. Registry inception returns `RegistryResult`;
-credential creation returns `IssueResult` with `creder`, `recipient`, `tel` and
-`status`, replacing `CredentialCreateResult.output`. Each operation has one
-optional `group` block for coordination messages, deliveries and its existing
-acceptance/saved facts, even when no remote member was contacted. Tufa explicitly
-projects those facts into the existing flat CLI JSON. Endpoint-role workflows
-return `GroupRoleResult`; CLI helper types use `GroupEventResult` and
-`EndRoleResult`. No old-name aliases are provided.
+`TcpConversation`, its option/receiver types, `TcpTransmission`, `converseCesrTcp`
+and `streamCesrTcpConversation` are removed. TCP send/write operations now take
+an explicit clock and return completion; use TCPMessenger for reply processing.
+SSE helpers take `HttpStreamResponse` and an explicit clock. `MailboxPollBatch`
+requires provider `eid` and no longer has `source`: local provider storage is not
+a recipient-consumption loop. Use direct intake or ordinary remote HTTP/SSE
+polling. `mailboxPollEndpoints` takes Hab alone.
 
-## Native registry intake
+## Query completion
 
-`ProtocolProcessor.registry` and its constructor dependency are now a borrowed
-`RegistryObserver`, replacing the local `Regery` manager. AgentRuntime composes
-it over the same accepted KEL and registry store, while retaining the manager's
-lifecycle. RIP/BUP messages now reach native validation through ordinary ingress;
-foreign pending registries recover from durable escrows without local aliases.
-This does not create a credential wallet or persist disclosure openings.
+`queryCommand` moves out of `keri-ts/cli` into Tufa. Compose WitnessInquisitor
+with `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier` or `AnchorQuerier` and await
+`queryDo()` for accepted-state completion. A successful send or HTTP 204 only
+acknowledges intake; actual replies arrive through direct/mailbox/TCP processing.
+`ProtocolHostPolicy.directQueryResponses` is removed.
 
-## Messenger ownership
+Give KeyStateNoticer one command-owned `Deck<AgentCue>` and pass the same Deck as
+`queryCues` to `runAgentRuntime` before I/O starts. `keyStateSaved` now denotes a
+validated, persisted remote KSN, not ordinary KEL acceptance. The first usable
+notice fixes the catch-up target; the operation then waits for accepted local
+state. Tufa query uses one ten-second deadline, does not bootstrap missing OOBIs
+implicitly, and fails rather than displaying stale state as completed recovery.
 
-`HTTPMessenger` is send-only and takes `(url, http, { destination, headers })`;
-`send(bytes, options)` uses that endpoint. Query sending belongs to
-`WitnessInquisitor`, using ordinary HTTP transmission and independent reception. Send-only HTTP no
-longer requires protocol state or a clock. `TCPMessenger` takes
-`(url, clock, protocol?)`; the optional protocol owner is needed only for duplex
-replies. Its `send(bytes, options)` and `sendSource(source, options)` share the
-existing socket implementation. Ordinary HTTP source iteration is named
-`sendSource`; it splits messages into POSTs and does not mean whole-stream PUT.
+## Credential and multisig result contracts
 
-Use `messengerFrom(destination, urls, http, clock, headers?)` for ordinary delivery
-or `streamMessengerFrom(destination, urls, bytes, http, clock, headers?)` for a
-prepared stream. `HTTPStreamMessenger.send()` sends one opaque PUT and returns an
-owned `HttpResponse`; `TCPStreamMessenger.send()` uses the shared raw writer.
-Construction opens no connection or storage and accepts no framing preference.
+KERI workflows return typed data; Tufa owns final JSON/display. Multisig/endpoint,
+registry/credential and IPEX `keri-ts/cli` helpers now return results after owned
+cleanup instead of printing their final success. Applications calling them must
+render the result themselves.
 
-The `--cesr-body-mode` CLI option, `Habery.cesrBodyMode` and its construction/open
-options, `CesrBodyMode`, its default/normalizers, and `EgressOptions.bodyMode` are
-removed. Init/setup no longer persist or read that preference. Choose ordinary or
-stream construction explicitly: ordered signed POSTs versus one opaque PUT. Peers
-receiving stream HTTP must support PUT. Queries and mailbox polling always use
-ordinary signed POSTs; specialized admin/receipt endpoints keep their contracts.
+`GroupEndpointRoleProposalResult` is replaced by `GroupRoleResult`, and
+`CredentialCreateResult` by `IssueResult` (`creder`, `recipient`, `tel`, `status`
+and optional group facts). Registry inception returns `RegistryResult`.
+`createCredential` takes `(Regery, Reactor, Poster, options)`;
+`inceptCredentialRegistry` takes `(Regery, Reactor, Poster, hab, options)`.
+The local signed coordination wrapper is admitted before peer sends.
 
-## Query workflow ownership
+Group reporting uses `GroupSendResult` and `GroupMessageRef`. `messages` contain
+`recipient`, `exnSaid` (outer coordination EXN) and `payloadSaid` (the Multiplexor
+aggregation key: v1 embedded-bundle or supported v2 signed-child SAID).
+`deliveries` are completed destinations, not approvals. `join --said` and
+`ipex join --said` select the **outer EXN SAID**. Explicit resume works after
+notification consumption and reuses the original event, anchor, contributions
+and recipient wrappers; new business evidence still requires human approval.
 
-The query command now belongs to Tufa; `keri-ts/cli` no longer exports
-`queryCommand`, and `HTTPQuery` is no longer a public runtime API. Compose a
-`WitnessInquisitor` sender with `KeyStateNoticer`, `LogQuerier`, `SeqNoQuerier` or
-`AnchorQuerier` operations. Await `queryDo()` for accepted-state completion;
-transport completion is separate. `AgentRuntime.keyStateUpdates` is removed.
-Give `KeyStateNoticer` a command-owned `Deck<AgentCue>` and pass that same Deck as
-`queryCues` to `runAgentRuntime`. The application cue worker transfers saved
-notices once; one noticer pulls/matches/requeues them. Wire this destination before
-sender/receiver startup. The first usable notice fixes the catch-up target;
-queued notices are not request-correlated or freshness-filtered. Runtime pending
-state covers sending, while each invoking operation owns its semantic wait.
-`keyStateSaved` now means a validated, persisted remote KSN. Consumers needing
-ordinary KEL acceptance must inspect accepted database state rather than treating
-that remote-notice cue as a generic state-change event. A query waiting for a KSN
-cannot complete from ordinary KEL ingestion alone.
+`RegistryOptions` requires its shared `TelPublication` owner. `Registry.complete`
+requires completed local TEL publication to the historical witness cohort;
+local acceptance alone is insufficient. The host progresses durable publication,
+and `ctel` identifies the issuer anchor. Registry/issuance results separate
+acceptance, publication and credential saved state. `vc registry incept`/`vc create`
+use a finite command host (`--timeout` default 60 seconds; zero reports pending).
+Establishment-only operations use rotation anchors and participants' prepared keys.
 
-Ordinary HTTP queries acknowledge intake with 204; replies arrive through normal
-Respondant/Poster delivery, mailbox polling or TCP. `directQueryResponses`, the
-custom HTTP query-response wait, Respondant's `openReply`/`enqueueReply`,
-`Poster.canDeliver`, and
-WitnessInquisitor's `processPending`/`msgDo` are removed. Run `deliverDo` for the
-sender or await `deliverOnce` for a finite pass. Requests are signed for one
-attempt; a failed or cancelled attempt is consumed rather than retained for retry.
-The query CLI uses one ten-second deadline and fails if accepted evidence never
-satisfies its workflow. It no longer performs implicit OOBI catch-up or displays
-stale state as successful query completion.
+`revokeCredential(Regery, Reactor, Poster, options)` requires the verified local
+credential, selected registry and original issuance, reusing the original REV and
+anchor on resume. Call `deliverCredentialRevocation` separately after completion
+for business recipients. Results distinguish `accepted`, `publicationComplete`,
+coordination `memberDeliveries` and external `deliveries`; pending work does not
+write a completed export. Historical authenticated signers elect the external
+sender, including after member rotation.
 
-## Group credential approval
+IPEX apply/offer/agree/grant/admit/spurn support group approval/fanout. Their typed
+results separate completion, local approval, elected lead and transport. Grant
+approval checks local verified credential/issuance/anchor evidence; responses
+check the accepted predecessor and parties. Admit authenticates and settles grant
+artifacts before signing. Zero settlement/approval timeouts report honest pending
+state; `--no-wait` never bypasses authentication. `IpexAdmitResult.admit` is nullable.
+No completed export is written while required credential or group evidence is pending.
 
-VCP/ISS approval validates issuer, registry, credential/schema, source triple and
-exact anchor before signing or changing aliases. Missing dependencies stay pending;
-conflicting registry names fail before authoring another anchor. Establishment-only
-group credential operations use rotation anchors, requiring participant KELs and
-keys to be prepared for the group's next establishment event.
+`importCredentialStream(protocol, reger, bytes, clock, timeoutMs?)` returns
+`{ saved, complete, unaccepted }`. Dispatch happens once; ordinary escrows settle
+local dependencies after EOF. CLI `--settlement-timeout-ms` defaults to 5000.
+Transport receipt alone does not mean a credential was saved.
 
-`Registry.complete` now requires completed local TEL publication, including the
-anchor's full historical witness cohort; local TEL acceptance alone is insufficient.
-`Regery.publication` owns durable progression, and `RegistryOptions` requires that
-owner. Ordinary host workers collect receipts and publish accepted evidence;
-`ctel` values now identify the issuer anchor, matching KERIpy. Transport completion
-still does not establish a remote observer's accepted state.
+## ESSR and private storage
 
-`inceptCredentialRegistry` and `createCredential` now take the shared `Reactor`
-after `Regery`, before `Poster`, to admit the exact signed local coordination
-wrapper before sending it. Registry/issuance results add `publicationComplete`;
-VCP/ISS join results carry `tel: { pre, sn, publicationComplete }` separately from
-business `accepted`. `vc registry incept` and `vc create` run one command host and
-wait up to `--timeout` seconds (default 60; zero reports current pending state).
-Issuance also waits for saved credential evidence. Registry names cannot overwrite
-another registry, and the create alias must control the selected registry.
-Ordinary establishment-only registries use rotation anchors and retain their
-stored policy on reopen, as group workflows do.
+`keri-ts/db` removes `PayloadArchive`, `PayloadStore`, `FilePayload` and
+`FilePayloadSink`. Baser no longer has `openPayloads`, `savePlaintext`, `getPlaintext`
+or `enstStaging`. `getEssrs(said)` is synchronous. No automatic durable decrypted
+plaintext, file references, archive recovery or nested file staging remains.
 
-`revokeCredential` now takes `(Regery, Reactor, Poster, options)` and returns
-accepted/publication/group facts. Its options select the registry and credential;
-use `deliverCredentialRevocation` separately after completion for explicit business
-recipients. `vcRevokeCommand` returns typed data; Tufa prints JSON after closure.
-`vc revoke --timeout` shares the finite command host and reports pending approval
-without writing `--out` or sending incomplete evidence. Resume with the same
-credential/registry after `multisig join --said <outer EXN SAID>`; the original
-REV, anchor and recorded recipient wrapper are reused. Group external delivery
-uses the lowest verified historical anchor signer. `deliveries` reports business
-transport; `memberDeliveries` reports coordination transport, not acceptance.
+Use `new EssrRecipient(hab).decrypt(said)` on accepted LMDB evidence. It returns
+a synchronous decision; accepted `EssrMessage.body` is an authenticated,
+caller-owned `Uint8Array`, without `plaintext`, a file view or disposal API.
 
-## IPEX command results and presentation
+Baser's `essrs.` is the ordinary `CesrIoSetSuber<Texter>` used by pinned KERIpy
+main `c7e74ad`. Qualified values deduplicate in insertion order. Repeated fragments
+can lose committed bytes and alternate representations can append bytes; incoming
+digest validity does not ensure valid reconstruction. Reconstruction digest and
+recipient authentication still reject damaged evidence. The
+[reference limitation report](../../reports/essr/KERIPY_REPEATED_FRAGMENTS_2026-10-20.md)
+explains the upstream issue. Legacy peers use a different ESSR table binding;
+direct legacy LMDB interchange is deferred, while legacy wire interoperability
+remains supported. ESSR table parity is not whole-Habery/Keeper interchangeability.
 
-The eight IPEX send, grant, admit, poll and join helpers under `keri-ts/cli` now
-return typed snapshots after owned cleanup. `IpexSendResult` carries an EXN and
-transport destinations; grant/admit results carry their actual Serders, poll
-returns settled Serders, and join separates selection from optional approval
-facts. Tufa projects final JSON after these operations return. A shutdown failure
-cannot print command success and does not undo a completed transmission. File
-output stays with the existing command owner. Join display includes the selected
-outer EXN SAID even when discovered by polling.
+Old keri-ts private-store reuse is unsupported: preserve/export required protocol
+material before moving to fresh stores. Manager encryption changes are now atomic
+across stored secrets and AEID before live state is published; do not emulate
+reencryption with separate low-level writes.
 
-`Exchanger.lead` requires an accepted group EXN and uses its first authenticated
-sender establishment proof. The elected key belongs to that historical cohort,
-not the current group index order. The member retains that identity through
-rotation via its accepted KEL history. Pending group evidence returns false.
+Observable database close failures now propagate for every handle. `LMDBer.env`
+is a read-only getter exposing only a usable handle. After a failed close the
+wrapper cannot reopen, clear storage or be reused; resolve the fault and acquire
+a new owner. Confirmed repeated close is harmless. `AggregateError` can preserve
+both operation and independent cleanup failures. Commands report final success
+only after owned shutdown; close failure does not roll back completed mutations.
+Generic `LMDBer.openExisting` remains non-creating and refuses whole-store clearing.
+Baser path defaults are no longer declared on the class; pass explicit Baser
+options. Tever validates state; Tevery owns input policy, cues and reply routes.
 
-Group IPEX grant/join results now include `messages` with `recipient`, `exnSaid`
-and `payloadSaid`. Select the original outer `exnSaid` with `ipex join --said`;
-the embedded business SAID and completed transport destinations are separate facts.
-Wrappers are registered locally before transmission. Resume reuses verified
-member contributions and original wrappers, including partial evidence after
-reopen/rotation; explicit selection repairs interrupted indexing by normal replay.
+## Tufa and operator behavior
 
-IPEX apply/offer/agree/spurn now coordinate group approval. `--approval-timeout 0`
-returns pending state and wrapper identities; resume with `ipex join --said`.
-Their typed results and JSON distinguish group completion, elected lead and actual
-deliveries. Single-sig authors retain local conversation history before sending;
-responses require an accepted predecessor with matching known parties. A transport
-failure leaves that history intact. Grants now retain local EXN history before
-export/delivery as well, and selected `--agree` predecessors must have the correct
-route and known parties. Grant results and JSON add `deliveries`, covering actual
-member fanout and elected external transport; offline exports report no external
-delivery. Pending group grants do not write a completed export.
+Import `VerifierAgent`, its options/result/business-validator types and
+`createVerifierCueBaser`/`VerifierCueBaser` from `@keri-ts/tufa/runtime`, replacing
+the keri-ts runtime application exports. `verifierRunCommand` is removed from
+`keri-ts/cli`. Protocol Verifier, IPEX and accepted evidence remain in KERI.
+The application owns webhook policy and workflow storage; `verifier run --once`
+reports success after cue-store/runtime/Habery closure. Business refusal counts
+reflect policy decisions, not protocol invalidity. Local ack/rack records mean
+successful HTTP delivery after cleanup, not protocol acks or exactly-once receipts.
+Tufa's existing root/runtime/host-kernel/protocol-handler imports remain available.
 
-Admit now authenticates grant files and settles their credential artifacts before
-signing by default. `--timeout 0` returns `credential-pending` without creating an
-admit when wallet evidence is missing; `--approval-timeout 0` returns partial group
-state. Neither pending path writes a completed admit export. `--gvrsn` selects the
-credential proof context. `--no-wait` skips the saved marker, never authentication,
-and reports actual `saved` state. `IpexAdmitResult.admit` is nullable and results add
-`credential`, `saved`, `deliveries` and optional group facts. Join independently
-checks the member wallet before fresh admit approval and reports `credential-pending`
-until it saves the credential; the original wrapper remains the resume selector.
+CLI option/configuration validation is stricter **before storage effects**:
 
-Fresh group approvals also preflight the conversation graph and known parties.
-Grants require a verified local credential, with any supplied source proofs bound
-to its accepted issuance and issuer anchor. Missing local evidence returns
-`approval-pending` without a new contribution or fanout. Join snapshots/JSON add
-`approved` separately from `accepted`; completion by other members is not a local
-approval. Delivery retains the stored grant's actual child proofs instead of
-substituting reconstructed ones. The lower protocol builders still allow valid
-minimal legacy grants, and a group holder can present another issuer's credential.
+- Bootstrap URL lists reject malformed members rather than filtering them; exact
+  accepted strings and explicit empty lists retain their meaning.
+- Omitted inception/rotation flags preserve file values; explicit false, zero and
+  empty arrays override them. Malformed thresholds, booleans, lists, JSON sections
+  and counts fail rather than being coerced. Decimal option syntax is distinct
+  from CESR's hexadecimal/weighted threshold syntax.
+- Agent/mailbox/resolver ports must be decimal integers in 1–65535. Timeouts reject
+  blank, null, boolean and nonfinite inputs; documented zero/fractional waits remain
+  valid. Challenge strength is a positive whole bit count; polling delay is positive.
+- Mailbox update takes the **last consumed index**: -1 starts at the beginning,
+  zero resumes after index zero. Unsafe next indices and fractions are rejected.
+- Ordinary interact/rotate refuse group aliases; use multisig commands. Other
+  uncoordinated signing workflows refuse groups or label raw output as a partial
+  member contribution. Inception requires an unused alias.
+- Init validates encryption intent, hides passcode input and does not silently
+  fall back to temporary storage. Init/incept bootstrap waits for selected current
+  OOBI/authentication attempts, including resumed children, and joins cleanup.
+  Ordinary OOBI resolution means response processing, not acceptance of every proof.
 
-## Native-v2 interoperability boundary
+`tufa oobi clean` selects exact pending `Baser.oobis` keys, previews and applies
+through ordinary writable Baser loading. Preview deletes no selected rows but may
+initialize tables and reload/clean habitat records. Missing databases fail; path
+preparation may create empty directories. Complete/failed output follows close,
+retaining actual completed deletions on failure. Other OOBI tables are not targets.
 
-Native-v2 registry and credential CLI/wallet completion is deferred to the
-[separate roadmap](../../plans/credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
-Retained library capabilities do not establish a complete native workflow.
-Python exchange/proof acceptance does not imply a persistent Python native wallet
-or credential-aware multisig approval. Mixed-language ixn/rot signatures
-prove KEL approval only unless business validation is independently demonstrated.
-The relocated `tufa verifier run` application remains legacy-Reger based; native
-protocol observers are separate from that webhook application.
+## Supported credential profile and deferred work
 
-Ordinary native examples and Python interop use the shared I2I/NI2I/E1E and AND/OR
-operator subset. DI2I and the bounded NOT interpretation remain TypeScript-only
-capabilities, not Python compatibility claims. The release plan's early live
-proofs and final qualification must establish these claims before publication.
+Local applications author legacy **NoBackers vcp/iss/rev** TELs. Registry
+`noBackers`/`baks`/`toad` options, `Registry.noBackers` and `Registry.rotate()` are
+removed. External backed vcp/vrt/bis/brv observer verification, historical quorum
+checks, escrows/retry, replay and presentation remain. Autonomous backing was
+rejected in [ADR-0014](../../adr/adr-0014-legacy-tel-backer-retirement.md);
+issuer multisig and KEL witnessing are separate supported responsibilities.
 
-## Explicit TEL replay versions
+TEL replay honors selected attachment versions exactly. QueryEnvelope retains
+`gvrsn`; Reger replay APIs throw `UnsupportedTelReplayError` rather than silently
+raising the output version. An iterator may emit a compatible prefix before
+refusal. Whole-cue responders send nothing from an incompatible cue; TCP records
+`unsupported-replay` locally and closes that connection. Signed bodies are not
+rewritten and no remote refusal protocol is added.
 
-`QueryEnvelope.gvrsn` retains parsed attachment context independently of body
-version. Legacy TEL queries receive v1 replay without a v2 selector; explicit v2
-contexts retain v2 framing. `Reger.cloneTvt`, `cloneTvtAt`, `clonePreIter` and
-captured replay honor the selected version exactly rather than treating it as a
-floor. `UnsupportedTelReplayError` (available from `keri-ts/db` and
-`keri-ts/runtime`) identifies stored evidence requiring a newer version; signed
-bodies and proof meaning are never rewritten to disguise compatibility.
-An iterator can already have emitted earlier compatible events before refusal.
-Respondant and TCP responders construct a whole cue before sending it; TCP reports
-`unsupported-replay` locally and closes that connection without a semantic refusal
-message. `WitnessTcpOptions.onRefusal` therefore has that additional reason.
-
-## Retired autonomous legacy TEL backing
-
-Local registry/credential applications now author NoBackers `vcp`/`iss`/`rev` TELs.
-The autonomous signer/service, its runtime worker/flow and private `Reger.bens`
-choice table are removed. `tufa agent --backer-alias` and registry `--backers`
-are removed, as are `AgentRuntime.backerService`, runtime/host `backerHab` options
-and `TeveryOptions.backerRequests`. Registry application options no longer take
-`noBackers`, `baks` or `toad`; `Registry.noBackers` and backer-management
-`Registry.rotate()` are removed. `CredentialRegistryInceptOptions.noBackers`
-is removed. Establishment-only issuer anchoring and KEL rotation remain supported.
-
-External legacy backed evidence still uses normal decoding, exact historical
-quorum verification, escrow/retry and replay. Imported credentials can still be
-presented with their proofs; a loaded backed registry does not authorize fresh
-local TEL authoring. No old API or private-table migration path is provided.
-[ADR-0014](../../adr/adr-0014-legacy-tel-backer-retirement.md) records the decision;
-the [reference report](../../reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md)
-preserves the former design and source references.
-
-## Verifier application ownership
-
-Import `VerifierAgent`, its options/result and business-validator types, and
-`createVerifierCueBaser`/`VerifierCueBaser` from `@keri-ts/tufa/runtime`.
-The application agent and `verifierRunCommand` are removed from keri-ts runtime
-and CLI exports; no forwarding aliases remain. Protocol `Verifier`, IPEX artifact
-operations and accepted KEL/TEL/ACDC evidence stay in `keri-ts/runtime` and
-`keri-ts/db`. Tufa owns webhook policy and its separate workflow database, using
-the same paths and table encodings. Local `ack`/`rack` mean HTTP success after
-cleanup, not a KERI acknowledgement or exactly-once business receipt. The moved
-application still uses legacy Reger state; this does not add native-v2 application
-verification or change Sally-inspired workflow behavior.
-
-`verifier run --once` now prints its final JSON only after its cue store, runtime
-and Habery close. Close failures remain command failures; simultaneous operation
-and cue-store cleanup failures are preserved in AggregateError. Per-pass output
-from the long-running loop remains progress rather than final command success.
+Native-v2 rip/bup/upd CLI, wallet and lifecycle completion is
+[deferred](../../plans/credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
+Retained partial library/native validation tests do not establish a complete
+native credential workflow. The Tufa verifier application uses legacy Reger.
+Independent KERI/CESR v2 remains supported; main and legacy peer capabilities differ.
+The current peer matrix and separately blocked Python CLI lanes are documented in
+[protocol compatibility](KERI_V1_V2_COMPATIBILITY.md) and the
+[CLI limitation report](../../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md).
