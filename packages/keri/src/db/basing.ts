@@ -34,8 +34,8 @@ import {
 } from "../core/attachment-countering.ts";
 import type { DispatchOrdinal } from "../core/dispatch.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
-import type { KELEventState } from "../core/kever-decisions.ts";
-import { Kever } from "../core/kever.ts";
+import type { KELEventState } from "../core/kel/kever-decisions.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import {
   BlindedImageTuple,
@@ -80,9 +80,10 @@ import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { baserDefaults } from "./baser-defaults.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
-import { ExchangeRecord } from "./exchange-records.ts";
-import { CapturedKelReplay, type KelReplayRange } from "./kel-replay.ts";
+import { ExchangeRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
+import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
+import { CapturedWitnessReplay } from "./replay/witness-replay.ts";
 import {
   B64OnIoDupSuber,
   BytesIoSetSuber,
@@ -99,7 +100,6 @@ import {
   SerderSuber,
   Suber,
 } from "./subing.ts";
-import { CapturedWitnessReplay } from "./witness-replay.ts";
 
 function isMissingReloadEventError(error: unknown): boolean {
   return error instanceof Error

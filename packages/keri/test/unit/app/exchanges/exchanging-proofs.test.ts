@@ -20,8 +20,8 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup, TransLastIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
 import { serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 
 /** Scope real stores and independently controlled transferable/nontransferable signers. */

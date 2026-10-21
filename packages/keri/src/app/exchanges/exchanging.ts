@@ -28,12 +28,16 @@ import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import { PathedMaterialGroup, TransIdxSigGroup, type TransLastIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { type ExchangeFactors, type MissingExchangeState, verifyExchangeProofs } from "../../core/exchange-proofing.ts";
-import { Kever } from "../../core/kever.ts";
+import {
+  type ExchangeFactors,
+  type MissingExchangeState,
+  verifyExchangeProofs,
+} from "../../core/exchange/exchange-proofing.ts";
+import { supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
+import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
-import { supportsNestedExchange } from "../../core/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
-import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange-nests.ts";
+import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupMemberHasKey } from "../multisig/group-members.ts";

@@ -1,10 +1,10 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { IdrDex, SerderKERI } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
-import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import { type KeverEventEnvelope, Kevery } from "../../../src/core/eventing.ts";
-import { protocolFixture } from "../../protocol-fixture.ts";
+import { IdrDex, SerderKERI } from "../../../../../cesr/mod.ts";
+import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { Reactor } from "../../../../src/app/protocol/reactor.ts";
+import { type KeverEventEnvelope, Kevery } from "../../../../src/core/kel/eventing.ts";
+import { protocolFixture } from "../../../protocol-fixture.ts";
 
 function eventEnvelope(args: {
   serder: SerderKERI;

@@ -1,7 +1,7 @@
 /** Captured TEL metadata is retained; the runtime-owned Reger and its readers remain borrowed. */
 import type { Versionage } from "cesr-ts";
-import { ValidationError } from "../core/errors.ts";
-import type { Reger } from "./reger.ts";
+import { ValidationError } from "../../core/errors.ts";
+import type { Reger } from "../reger.ts";
 
 /** Requested replay cannot represent this stored body/proof; its signed bytes are never rewritten. */
 export class UnsupportedTelReplayError extends ValidationError {

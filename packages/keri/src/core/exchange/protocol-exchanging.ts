@@ -15,10 +15,10 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { type Cigar } from "cesr-ts";
-import { makeNowIso8601 } from "../time/mod.ts";
-import { pathedMaterialCounterQb64b } from "./attachment-countering.ts";
-import { type TransIdxSigGroup } from "./dispatch.ts";
-import { serializeMessage as serializeExchangeMessage } from "./protocol-serialization.ts";
+import { makeNowIso8601 } from "../../time/mod.ts";
+import { pathedMaterialCounterQb64b } from "../attachment-countering.ts";
+import { type TransIdxSigGroup } from "../dispatch.ts";
+import { serializeMessage as serializeExchangeMessage } from "../protocol-serialization.ts";
 
 /** Closed IPEX verb vocabulary shared by protocol versions. */
 export type IpexVerb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";

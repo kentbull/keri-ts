@@ -1,6 +1,6 @@
 import type { Dater, SealEvent, SerderACDC, SerderKERI, Siger } from "cesr-ts";
 import type { DispatchOrdinal } from "./dispatch.ts";
-import type { MbxTopicCursor } from "./mailbox-topics.ts";
+import type { MbxTopicCursor } from "./mailbox/mailbox-topics.ts";
 import type { KeyStateRecord, RegStateRecord, VcStateRecord } from "./records.ts";
 
 /** Shared `kin` discriminator carried by all cue payloads. */

@@ -50,3 +50,10 @@ with identity, endpoint, credential, messaging and tool categories; Tufa still
 owns the executable command tree and its host adapters. Package version metadata
 lives in `src/version.ts`. Public root, runtime, database and CLI entrypoints keep
 their existing roles.
+
+Core KEL validators live in `src/core/kel`; exchange-proof and KRAM units live in
+`src/core/exchange` and `src/core/mailbox`. General event factories, reply routing,
+shared records and serialization remain shared core modules. Database replay
+helpers live in `src/db/replay`, with exchange evidence and mailbox storage in
+`src/db/exchange` and `src/db/mailbox`; Baser, Keeper, Reger and typed LMDB tables
+remain recognizable store owners.

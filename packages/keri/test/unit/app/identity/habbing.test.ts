@@ -35,8 +35,8 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 
 import type { QueryRequest } from "../../../../src/core/cues.ts";
-import { Kevery } from "../../../../src/core/eventing.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
 import { fetchStoredTsgs } from "../../../../src/core/routing.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 

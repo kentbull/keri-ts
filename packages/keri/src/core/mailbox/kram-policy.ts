@@ -1,7 +1,7 @@
 /** KRAM cache selection and safe, receiver-clocked configuration transitions. */
 import { intToB64, SerderKERI } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { CacheTypeRecord, type CacheTypeRecordShape } from "./records.ts";
+import type { Baser } from "../../db/basing.ts";
+import { CacheTypeRecord, type CacheTypeRecordShape } from "../records.ts";
 
 /** Millisecond drift, acceptance and pruning windows in frozen-reference order. */
 export type KramWindows = readonly [number, number, number, number, number, number, number];

@@ -410,20 +410,20 @@ export {
   PathError,
   ValidationError,
 } from "../core/errors.ts";
+export { exchange } from "../core/exchange/protocol-exchanging.ts";
 export {
   type KeverEventEnvelope,
   Kevery,
   type MessagePolicy,
   type QueryEnvelope,
   type ReceiptEnvelope,
-} from "../core/eventing.ts";
+} from "../core/kel/eventing.ts";
 export {
   Kever,
   type KeverEventInit,
   type KeverStateInit,
   type LastEstLoc,
-} from "../core/kever.ts";
-export { type KramConfig, Kramer, type KramRefusal } from "../core/kraming.ts";
+} from "../core/kel/kever.ts";
 export {
   consoleLogger,
   getLogLevel,
@@ -433,6 +433,7 @@ export {
   noopLogger,
   setLogLevel,
 } from "../core/logger.ts";
+export { type KramConfig, Kramer, type KramRefusal } from "../core/mailbox/kraming.ts";
 export {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -444,9 +445,8 @@ export {
   RECEIPT_MAILBOX_TOPIC,
   REPLAY_MAILBOX_TOPIC,
   REPLY_MAILBOX_TOPIC,
-} from "../core/mailbox-topics.ts";
+} from "../core/mailbox/mailbox-topics.ts";
 export { incept, interact, query, reply, rotate } from "../core/protocol-eventing.ts";
-export { exchange } from "../core/protocol-exchanging.ts";
 export { messagize } from "../core/protocol-serialization.ts";
 export { incept as inceptRegistry, issue, revoke } from "../core/protocol-vdr-eventing.ts";
 export {
@@ -521,7 +521,7 @@ export {
   Schemer,
   type SchemerInit,
 } from "../core/scheming.ts";
-export { UnsupportedTelReplayError } from "../db/tel-replay.ts";
+export { UnsupportedTelReplayError } from "../db/replay/tel-replay.ts";
 export {
   type AnchorSeal,
   credential,

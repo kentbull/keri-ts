@@ -9,7 +9,7 @@ import { Deck } from "../../../../src/core/deck.ts";
 import { DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { interact } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey, onKey } from "../../../../src/db/core/keys.ts";
-import { CapturedKelReplay } from "../../../../src/db/kel-replay.ts";
+import { CapturedKelReplay } from "../../../../src/db/replay/kel-replay.ts";
 
 Deno.test("witness GET captures target FEL or KEL duplicate order without retaining cursors", async () => {
   await run(function*() {

@@ -2,15 +2,19 @@
 import { b, Dater, Diger, NumberPrimitive, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { type KramExemption, KramPolicy, type KramWindows } from "../../../src/core/kram-policy.ts";
-import { KramPruner } from "../../../src/core/kram-pruning.ts";
-import { evaluateKramTime, inspectKramReplay, type KramTimeAuthentication } from "../../../src/core/kram-time.ts";
-import { reply } from "../../../src/core/protocol-eventing.ts";
-import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../src/core/records.ts";
-import { createBaser } from "../../../src/db/basing.ts";
-import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
-import sourceReference from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
-import timeReference from "../../fixtures/kram-time-927.json" with { type: "json" };
+import { type KramExemption, KramPolicy, type KramWindows } from "../../../../src/core/mailbox/kram-policy.ts";
+import { KramPruner } from "../../../../src/core/mailbox/kram-pruning.ts";
+import {
+  evaluateKramTime,
+  inspectKramReplay,
+  type KramTimeAuthentication,
+} from "../../../../src/core/mailbox/kram-time.ts";
+import { reply } from "../../../../src/core/protocol-eventing.ts";
+import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../../src/core/records.ts";
+import { createBaser } from "../../../../src/db/basing.ts";
+import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
+import sourceReference from "../../../fixtures/kram-source-auth-927.json" with { type: "json" };
+import timeReference from "../../../fixtures/kram-time-927.json" with { type: "json" };
 
 const initial: KramWindows = [1000, 5000, 60000, 300000, 5000, 60000, 300000];
 const expanded: KramWindows = [2000, 7000, 62000, 302000, 7000, 62000, 302000];

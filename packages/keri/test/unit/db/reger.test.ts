@@ -24,7 +24,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { createReger, Reger } from "../../../src/db/reger.ts";
-import { CapturedTelReplay, UnsupportedTelReplayError } from "../../../src/db/tel-replay.ts";
+import { CapturedTelReplay, UnsupportedTelReplayError } from "../../../src/db/replay/tel-replay.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 const SCHEMA_SAID = "Eaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

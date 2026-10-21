@@ -20,7 +20,7 @@ import {
   readCesrRequestBytes,
   readRequiredCesrRequestBytes,
 } from "../../../../src/app/transport/cesr-http.ts";
-import { exchange as exchangeMessage } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 function makeEmbeddedExchangeMessage(
   route: string,

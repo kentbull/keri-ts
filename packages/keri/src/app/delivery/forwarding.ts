@@ -28,12 +28,16 @@ import {
 import { action, call, type Operation, resource, scoped, spawn, type Task } from "npm:effection@^3.6.0";
 import { Deck } from "../../core/deck.ts";
 import { ValidationError } from "../../core/errors.ts";
-import type { Kever } from "../../core/kever.ts";
-import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC, OOBI_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
-import { exchange } from "../../core/protocol-exchanging.ts";
+import { exchange } from "../../core/exchange/protocol-exchanging.ts";
+import type { Kever } from "../../core/kel/kever.ts";
+import {
+  CREDENTIAL_MAILBOX_TOPIC,
+  DELEGATE_MAILBOX_TOPIC,
+  OOBI_MAILBOX_TOPIC,
+} from "../../core/mailbox/mailbox-topics.ts";
 import { Roles } from "../../core/roles.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import type { Mailboxer } from "../../db/mailboxing.ts";
+import type { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import type { ExchangeAttachment, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { MailboxDirector } from "../mailbox/mailbox-director.ts";

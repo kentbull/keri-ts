@@ -8,8 +8,8 @@ import { ProtocolProcessor } from "../src/app/protocol/protocol-processing.ts";
 import { QueryReplies } from "../src/app/queries/query-replies.ts";
 import type { AgentCue } from "../src/core/cues.ts";
 import { Deck } from "../src/core/deck.ts";
-import { Kevery, type MessagePolicy } from "../src/core/eventing.ts";
-import { type KramConfig, Kramer } from "../src/core/kraming.ts";
+import { Kevery, type MessagePolicy } from "../src/core/kel/eventing.ts";
+import { type KramConfig, Kramer } from "../src/core/mailbox/kraming.ts";
 import { Revery } from "../src/core/routing.ts";
 import type { Tevery } from "../src/vdr/eventing.ts";
 

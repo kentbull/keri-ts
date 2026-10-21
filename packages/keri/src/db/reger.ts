@@ -42,6 +42,12 @@ import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
 import {
+  CapturedTelReplay,
+  type TelReplayRange,
+  type TelReplaySettings,
+  UnsupportedTelReplayError,
+} from "./replay/tel-replay.ts";
+import {
   BytesSuber,
   CatCesrIoSetSuber,
   CatCesrSuber,
@@ -53,12 +59,6 @@ import {
   OnIoDupSuber,
   SerderSuber,
 } from "./subing.ts";
-import {
-  CapturedTelReplay,
-  type TelReplayRange,
-  type TelReplaySettings,
-  UnsupportedTelReplayError,
-} from "./tel-replay.ts";
 
 type KeyPart = string | Uint8Array;
 type TelAnchorTuple = [NumberPrimitive, Diger];

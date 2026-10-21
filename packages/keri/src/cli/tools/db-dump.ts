@@ -12,7 +12,7 @@ import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { RawRecord } from "../../core/records.ts";
 import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
 import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
-import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailboxing.ts";
+import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
 import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
 import { parseBooleanOption, parseIntegerOption, parseStringOption } from "../common/parsing.ts";
 

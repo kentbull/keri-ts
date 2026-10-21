@@ -24,7 +24,7 @@ import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { KeriDispatchEnvelope } from "../../../../src/core/dispatch.ts";
-import { Kevery } from "../../../../src/core/eventing.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
 import { incept } from "../../../../src/core/protocol-vdr-eventing.ts";
 import { Revery } from "../../../../src/core/routing.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";

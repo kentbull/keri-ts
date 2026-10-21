@@ -1,7 +1,7 @@
 /** Pure v2 IPEX body construction and finite, cancellable byte-input preparation. */
 import { collectPayload, nestedPayload, parseBytes, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "effection";
-import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../../core/protocol-exchanging.ts";
+import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { type DisclosurePlan, validDisclosurePlan } from "./ipex-graph.ts";
 import type { IpexBuilderOptions, IpexMessage, IpexRoute } from "./ipexing.ts";

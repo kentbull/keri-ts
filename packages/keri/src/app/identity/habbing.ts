@@ -35,9 +35,9 @@ import type { AgentCue, QueryInstruction } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { Kevery } from "../../core/eventing.ts";
-import { Kever } from "../../core/kever.ts";
-import type { MbxTopicCursor } from "../../core/mailbox-topics.ts";
+import { Kevery } from "../../core/kel/eventing.ts";
+import { Kever } from "../../core/kel/kever.ts";
+import type { MbxTopicCursor } from "../../core/mailbox/mailbox-topics.ts";
 import {
   incept as inceptEvent,
   interact as interactEvent,

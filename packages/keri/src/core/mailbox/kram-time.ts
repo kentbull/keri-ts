@@ -1,9 +1,9 @@
 /** Read-only KRAM replay inspection and receiver-clocked cache planning. */
 import type { SerderKERI } from "cesr-ts";
-import type { Baser } from "../db/basing.ts";
-import { timestampMicros } from "../time/mod.ts";
+import type { Baser } from "../../db/basing.ts";
+import { timestampMicros } from "../../time/mod.ts";
+import { MsgCacheRecord, type MsgCacheRecordShape, TxnMsgCacheRecord } from "../records.ts";
 import type { KramPolicy } from "./kram-policy.ts";
-import { MsgCacheRecord, type MsgCacheRecordShape, TxnMsgCacheRecord } from "./records.ts";
 
 /** At least one authenticator has verified; multi-key threshold completion is separate. */
 export type KramTimeAuthentication = { kind: "seal" | "single" } | { kind: "multi"; complete: boolean };

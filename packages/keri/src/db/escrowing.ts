@@ -1,7 +1,7 @@
 import { Cigar, Dater, Diger, Prefixer, Seqner, SerderKERI, Siger, Verfer } from "cesr-ts";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
-import { dropEscrow, type EscrowProcessDecision } from "../core/kever-decisions.ts";
+import { dropEscrow, type EscrowProcessDecision } from "../core/kel/kever-decisions.ts";
 import { consoleLogger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";

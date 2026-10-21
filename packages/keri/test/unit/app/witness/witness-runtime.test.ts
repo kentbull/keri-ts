@@ -35,7 +35,7 @@ import { Receiptor } from "../../../../src/app/witness/witnessing.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { Schemes } from "../../../../src/core/schemes.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
-import { UnsupportedTelReplayError } from "../../../../src/db/tel-replay.ts";
+import { UnsupportedTelReplayError } from "../../../../src/db/replay/tel-replay.ts";
 import { fetchOp, sleepOp, textOp, waitForServer, waitForTaskHalt } from "../../../effection-http.ts";
 
 function randomPort(): number {

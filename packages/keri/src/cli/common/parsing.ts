@@ -1,5 +1,5 @@
 import { Tholder, type ThresholdSith } from "cesr-ts";
-import { ValidationError } from "../../core/index.ts";
+import { ValidationError } from "../../core/errors.ts";
 
 /** Keep omission and explicit empty strings distinct; command policy handles emptiness. */
 export function parseStringOption(value: unknown, flag: string): string | undefined {

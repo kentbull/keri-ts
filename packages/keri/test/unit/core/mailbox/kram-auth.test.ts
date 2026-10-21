@@ -2,16 +2,16 @@
 import { b, Diger, NumberPrimitive, parseBytes, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
-import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
-import { KeriDispatchEnvelope, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { authenticateKramSource } from "../../../src/core/kram-auth.ts";
-import { KramPolicy } from "../../../src/core/kram-policy.ts";
-import { verifyKramSignatures } from "../../../src/core/kram-signatures.ts";
-import { stageKram } from "../../../src/core/kram-staging.ts";
-import { dgKey } from "../../../src/db/core/keys.ts";
-import signatureFixture from "../../fixtures/kram-signatures-927.json" with { type: "json" };
-import fixture from "../../fixtures/kram-source-auth-927.json" with { type: "json" };
+import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
+import { KeriDispatchEnvelope, TransLastIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { authenticateKramSource } from "../../../../src/core/mailbox/kram-auth.ts";
+import { KramPolicy } from "../../../../src/core/mailbox/kram-policy.ts";
+import { verifyKramSignatures } from "../../../../src/core/mailbox/kram-signatures.ts";
+import { stageKram } from "../../../../src/core/mailbox/kram-staging.ts";
+import { dgKey } from "../../../../src/db/core/keys.ts";
+import signatureFixture from "../../../fixtures/kram-signatures-927.json" with { type: "json" };
+import fixture from "../../../fixtures/kram-source-auth-927.json" with { type: "json" };
 Deno.test("KRAM source decisions match frozen last-candidate and exact missing-state observations", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

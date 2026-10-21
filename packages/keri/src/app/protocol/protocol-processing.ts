@@ -4,7 +4,7 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
-import { Kevery } from "../../core/eventing.ts";
+import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery } from "../../core/routing.ts";
 import type { Tevery } from "../../vdr/eventing.ts";
 import type { Verifier } from "../credentials/verifying.ts";

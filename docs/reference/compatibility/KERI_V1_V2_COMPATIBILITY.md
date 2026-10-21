@@ -190,7 +190,7 @@ and [disclosure interop](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.
 
 ### COMP-10 — Version-specific IPEX and nested-route gates
 
-**Coexistence and guard.** [Exchange construction](../../../packages/keri/src/core/protocol-exchanging.ts),
+**Coexistence and guard.** [Exchange construction](../../../packages/keri/src/core/exchange/protocol-exchanging.ts),
 [legacy IPEX](../../../packages/keri/src/app/ipex/ipexing.ts) and
 [v2 IPEX](../../../packages/keri/src/app/ipex/ipex-v2.ts) retain different shapes and
 predecessor rules. In particular, v2 grant can follow apply or agree; v1's
@@ -202,14 +202,14 @@ and [disclosure interop limitations](../../plans/qualification/GRADUATED_DISCLOS
 
 ### COMP-11 — Explicit KRAM adoption without a downgrade escape
 
-**Adoption boundary.** [KRAM policy](../../../packages/keri/src/core/kram-policy.ts)
+**Adoption boundary.** [KRAM policy](../../../packages/keri/src/core/mailbox/kram-policy.ts)
 defaults to disabled and supports version/type/route exemptions. The
 [v2 admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md) keeps
 KRAM separate from sender filtering and independent protocol proof checks.
 Disabled/exempt intake is not authenticated merely because it bypasses KRAM;
 failed KRAM must not trigger an automatic legacy retry. Evidence:
-[policy](../../../packages/keri/test/unit/core/kram-policy.test.ts),
-[authentication](../../../packages/keri/test/unit/core/kram-auth.test.ts)
+[policy](../../../packages/keri/test/unit/core/mailbox/kram-policy.test.ts),
+[authentication](../../../packages/keri/test/unit/core/mailbox/kram-auth.test.ts)
 and [mailbox interop](../../../packages/keri/test/integration/app/interop-kram-mailbox.test.ts).
 
 ### COMP-12 — Stable TSN proof identity across ordinal encodings

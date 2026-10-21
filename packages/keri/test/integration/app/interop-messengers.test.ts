@@ -10,7 +10,7 @@ import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../../src/app/transport/http-stream-messenger.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../src/app/transport/messengering.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
 import { createInteropContext, startKeriPyWitnessHarness } from "./interop-test-helpers.ts";

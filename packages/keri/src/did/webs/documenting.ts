@@ -8,7 +8,7 @@
 import type { ThresholdClause, ThresholdClauseEntry, ThresholdSith } from "cesr-ts";
 import type { Habery } from "../../app/identity/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
-import type { Kever } from "../../core/kever.ts";
+import type { Kever } from "../../core/kel/kever.ts";
 import { Roles } from "../../core/roles.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { listActiveDesignatedAliasCredentials } from "./designated-aliases.ts";

@@ -10,9 +10,9 @@ import {
   t,
   Vrsn_2_0,
 } from "cesr-ts";
-import type { Baser } from "./basing.ts";
-import { suffix, unsuffix } from "./core/keys.ts";
-import type { IoSetSuber } from "./subing.ts";
+import type { Baser } from "../basing.ts";
+import { suffix, unsuffix } from "../core/keys.ts";
+import type { IoSetSuber } from "../subing.ts";
 
 /** Read one physical row and close the LMDB key cursor before any caller suspension. */
 function nextRow(

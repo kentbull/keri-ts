@@ -1,9 +1,9 @@
 /** Optional receiver-owned KRAM intake composed from policy, atomic staging and pruning. */
-import type { Baser } from "../db/basing.ts";
-import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
-import type { AgentCue } from "./cues.ts";
-import { Deck } from "./deck.ts";
-import type { KeriDispatchEnvelope } from "./dispatch.ts";
+import type { Baser } from "../../db/basing.ts";
+import { makeNowIso8601, timestampMicros } from "../../time/mod.ts";
+import type { AgentCue } from "../cues.ts";
+import { Deck } from "../deck.ts";
+import type { KeriDispatchEnvelope } from "../dispatch.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
 import { type KramStageRefusal, stageKram } from "./kram-staging.ts";

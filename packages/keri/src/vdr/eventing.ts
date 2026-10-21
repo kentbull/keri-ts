@@ -26,9 +26,9 @@ import {
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { DatabaseOperationError, ValidationError } from "../core/errors.ts";
-import type { QueryEnvelope } from "../core/eventing.ts";
-import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kever-decisions.ts";
-import { Kever } from "../core/kever.ts";
+import type { QueryEnvelope } from "../core/kel/eventing.ts";
+import { acceptEscrow, dropEscrow, keepEscrow } from "../core/kel/kever-decisions.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { consoleLogger } from "../core/logger.ts";
 import {
   projectRegistrySeal,

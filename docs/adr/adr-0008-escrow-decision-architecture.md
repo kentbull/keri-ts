@@ -7,7 +7,7 @@
   - `docs/adr/adr-0003-agent-runtime-composition-root.md`
   - `docs/adr/adr-0004-cue-runtime-portability.md`
   - `docs/adr/adr-0005-kel-decision-control-flow.md`
-  - `packages/keri/src/core/eventing.ts`
+  - `packages/keri/src/core/kel/eventing.ts`
   - `packages/keri/src/core/routing.ts`
 
 ## Context

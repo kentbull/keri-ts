@@ -10,7 +10,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { Roles } from "../../../../src/core/roles.ts";
-import { UnsupportedTelReplayError } from "../../../../src/db/tel-replay.ts";
+import { UnsupportedTelReplayError } from "../../../../src/db/replay/tel-replay.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
 Deno.test("Respondant finishes local replay construction before publishing or removing its source", async () => {

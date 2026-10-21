@@ -23,7 +23,7 @@ import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { encodeDateTimeToDater } from "../../../../src/time/mod.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 

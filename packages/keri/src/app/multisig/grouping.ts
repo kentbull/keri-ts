@@ -25,8 +25,8 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, type Operation } from "effection";
-import { Kevery } from "../../core/eventing.ts";
-import { exchange, nestedMultisigIlks } from "../../core/protocol-exchanging.ts";
+import { exchange, nestedMultisigIlks } from "../../core/exchange/protocol-exchanging.ts";
+import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
 import { Exchanger, type ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";

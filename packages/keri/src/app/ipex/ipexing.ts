@@ -12,7 +12,7 @@
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { exchange, type IpexVerb, isIpexVerb } from "../../core/protocol-exchanging.ts";
+import { exchange, type IpexVerb, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
 import type { Baser } from "../../db/basing.ts";
 import type { Exchanger, ExchangeRouteHandler } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -38,7 +38,7 @@ export const IPEX_ROUTES = [
 ] as const;
 
 export type IpexRoute = typeof IPEX_ROUTES[number];
-export type { IpexVerb } from "../../core/protocol-exchanging.ts";
+export type { IpexVerb } from "../../core/exchange/protocol-exchanging.ts";
 
 /** Previous-route policy from KERIpy `PreviousRoutes`. */
 export const PREVIOUS_IPEX_ROUTES: ReadonlyMap<IpexVerb, readonly IpexVerb[]> = new Map([

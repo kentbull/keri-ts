@@ -1,7 +1,7 @@
 /** Buffered input iteration and joined parser/source cleanup shared by concrete input owners. */
 import { parse } from "cesr-ts";
 import { call, ensure, on, type Operation, race } from "npm:effection@^3.6.0";
-import type { Kevery } from "../../core/eventing.ts";
+import type { Kevery } from "../../core/kel/eventing.ts";
 import type { DispatchOptions, ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { rethrowCleanupFailure } from "../runtime/abortable.ts";
 

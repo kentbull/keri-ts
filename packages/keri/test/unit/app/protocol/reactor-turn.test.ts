@@ -28,7 +28,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { AgentCue, ReplayCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups } from "../../../../src/core/protocol-serialization.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 import { httpClient } from "../../../support/http-client.ts";

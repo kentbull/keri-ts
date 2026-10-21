@@ -2,7 +2,7 @@
 import { DatabaseOperationError } from "../../core/errors.ts";
 import { Roles } from "../../core/roles.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import type { KelReplayRange } from "../../db/kel-replay.ts";
+import type { KelReplayRange } from "../../db/replay/kel-replay.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
 import type { Hab } from "../identity/habbing.ts";
 

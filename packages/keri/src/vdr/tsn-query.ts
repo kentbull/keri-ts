@@ -1,5 +1,5 @@
 import type { ReplyCue } from "../core/cues.ts";
-import type { QueryEnvelope } from "../core/eventing.ts";
+import type { QueryEnvelope } from "../core/kel/eventing.ts";
 import type { Tever } from "./eventing.ts";
 
 type RegistryReply = Extract<ReplyCue, { route: "/tsn/registry" }>;

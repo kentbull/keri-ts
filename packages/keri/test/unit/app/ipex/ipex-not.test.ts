@@ -32,7 +32,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
-import { loadNests } from "../../../../src/db/exchange-nests.ts";
+import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 
 /** Introduce public evidence through the ordinary remote verifier, never accepted-row writes. */
 function* learn(receiver: Habery, wire: Uint8Array): Operation<void> {

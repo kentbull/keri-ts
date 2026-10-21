@@ -5,17 +5,17 @@ import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
-import { Kevery, type MessagePolicy } from "../../core/eventing.ts";
-import { type KramConfig, Kramer } from "../../core/kraming.ts";
+import { Kevery, type MessagePolicy } from "../../core/kel/eventing.ts";
+import { type KramConfig, Kramer } from "../../core/mailbox/kraming.ts";
 import {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
   RECEIPT_MAILBOX_TOPIC,
   REPLAY_MAILBOX_TOPIC,
   REPLY_MAILBOX_TOPIC,
-} from "../../core/mailbox-topics.ts";
+} from "../../core/mailbox/mailbox-topics.ts";
 import { Revery } from "../../core/routing.ts";
-import { Mailboxer } from "../../db/mailboxing.ts";
+import { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import { Noter } from "../../db/noting.ts";
 import { createReger, Reger } from "../../db/reger.ts";
 import { Regery as VdrRegery } from "../../vdr/credentialing.ts";

@@ -21,7 +21,7 @@ import { EssrRecipient } from "../../../src/app/exchanges/essr.ts";
 import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import { exchange } from "../../../src/core/protocol-exchanging.ts";
+import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { protocolFixture } from "../../protocol-fixture.ts";
 import { createScenarioContext, runCmd } from "./interop-keystore-helpers.ts";
 import { selectedKeripyProfile } from "./keripy-runtime.ts";

@@ -1,5 +1,5 @@
 import { assertEquals } from "jsr:@std/assert";
-import type { Kevery } from "../src/core/eventing.ts";
+import type { Kevery } from "../src/core/kel/eventing.ts";
 import type { Revery } from "../src/core/routing.ts";
 
 export type EventingTestApi = Pick<
