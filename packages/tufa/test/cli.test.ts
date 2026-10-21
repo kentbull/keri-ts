@@ -918,11 +918,13 @@ Deno.test({
         "index",
       );
     }
-    await assertRejects(
-      () => run(() => agentCommand({ name: "unopened", backerAlias: ["backer"] })),
-      ValidationError,
-      "backerAlias",
-    );
+    for (const backerAlias of [["backer"], "", " "]) {
+      await assertRejects(
+        () => run(() => agentCommand({ name: "unopened", backerAlias })),
+        ValidationError,
+        "backerAlias",
+      );
+    }
     for (const field of ["schema", "schemaDir"]) {
       await assertRejects(
         () => run(() => agentCommand({ name: "unopened", [field]: ["schema.json", 7] })),

@@ -143,6 +143,9 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
     backerAlias: parseStringOption(args.backerAlias, "backerAlias"),
   };
   const port = agentArgs.port ?? 8000;
+  if (agentArgs.backerAlias !== undefined && !agentArgs.backerAlias.trim()) {
+    throw new ValidationError("backerAlias must name a local nontransferable identifier.");
+  }
 
   // Validate port number
   if (isNaN(port) || port < 1 || port > 65535) {
