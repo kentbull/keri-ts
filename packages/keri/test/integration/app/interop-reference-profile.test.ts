@@ -1,15 +1,19 @@
 import { call, run, spawn } from "effection";
-import { assert, assertEquals, assertExists } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import {
   concatBytes,
   Counter,
   Diger,
+  Kinds,
   NumberPrimitive,
   NumDex,
   parseBytes,
   SerderKERI,
   Siger,
+  Signer,
   t,
+  Vrsn_1_0,
+  Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
@@ -20,6 +24,8 @@ import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { incept as inceptKel } from "../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -567,6 +573,56 @@ Deno.test("selected Python observer accepts indexed legacy TEL evidence", async 
         yield* hby.close(true);
       }
     });
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
+Deno.test("selected Python profile accepts v1 KEL and enforces its independent native-v2 boundary", async () => {
+  const ctx = await createInteropContext();
+  try {
+    const signer = new Signer({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "A", transferable: true });
+    const evidence = [Vrsn_1_0, Vrsn_2_0].map(version => {
+      const event = inceptKel([signer.verfer.qb64], {
+        isith: "1",
+        ndigs: [],
+        nsith: "0",
+        toad: 0,
+        wits: [],
+        pvrsn: version,
+        kind: version.major === 1 ? Kinds.json : Kinds.cesr,
+        code: "E",
+      });
+      const signature = signer.sign(event.raw, { index: 0 });
+      assertInstanceOf(signature, Siger);
+      return {
+        major: version.major,
+        pre: event.pre,
+        said: event.said,
+        wire: t(messagize(event, {
+          sigers: [signature],
+          gvrsn: version,
+          pipelined: false,
+          genusify: version.major === 2,
+        })),
+      };
+    });
+    const path = `${ctx.home}/kel-versions.json`;
+    await Deno.writeTextFile(path, JSON.stringify(evidence));
+    const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+    const output = await requireSuccess(
+      "observe real KEL version acceptance",
+      runCmdWithTimeout(
+        ctx.pythonCommand,
+        ["packages/keri/test/fixtures/kel_version_peer.py", path, ...(legacy ? ["--legacy"] : [])],
+        ctx.env,
+        20_000,
+        ctx.repoRoot,
+      ),
+    );
+    const observed = JSON.parse(output.stdout.trim().split("\n").at(-1)!);
+    assertEquals(observed["1"], { sn: 0, said: evidence[0].said });
+    assertEquals(observed["2"], legacy ? null : { sn: 0, said: evidence[1].said });
   } finally {
     await Deno.remove(ctx.home, { recursive: true });
   }
