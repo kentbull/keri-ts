@@ -155,8 +155,9 @@ Deno.test("CLI - initialization and inception report success only after database
     Habery.prototype.makeHab = () => {
       throw operationFailure;
     };
+    // The earlier close failure did not roll back Alice; reach makeHab with an unused alias.
     const combined = await assertRejects(
-      () => run(() => inceptCommand({ name, headDirPath, alias: "alice" })),
+      () => run(() => inceptCommand({ name, headDirPath, alias: "bob" })),
       AggregateError,
     );
     assertEquals(combined.errors, [operationFailure, failure]);
