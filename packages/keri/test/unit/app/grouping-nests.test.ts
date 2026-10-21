@@ -55,7 +55,7 @@ import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
+import { interact as interactEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
@@ -1126,6 +1126,214 @@ for (const kind of ["apply", "grant"] as const) {
     });
   }
 }
+
+Deno.test("group establishment-only registry inception and issuance use rotation anchors", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        // Participants advance their own KELs before a group establishment adopts those keys.
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.postman, local.hab, {
+          registryName: "establishment",
+          estOnly: true,
+        });
+        assertEquals(registry.group?.accepted, true);
+        assertEquals(local.hab.kever!.ilk, "rot");
+        const registryAnchor = local.hab.kever!.said;
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        const schemer = new Schemer({ sed: { $id: "", type: "object" } });
+        left.db.schema.pin(schemer.said, schemer);
+        const issued = yield* createCredential(runtime.vdr!, runtime.postman, {
+          registryName: "establishment",
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+        assertEquals(issued.group?.saved, true);
+        assertEquals(local.hab.kever!.ilk, "rot");
+        assertNotEquals(local.hab.kever!.said, registryAnchor);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("VDR proposal preflight refuses mismatched evidence and waits for schema before signing", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        const rgy = runtime.vdr!;
+        const registry = yield* inceptCredentialRegistry(rgy, runtime.postman, local.hab, { registryName: "registry" });
+        const state = left.db.getState(local.hab.pre);
+        yield* call(() =>
+          assertRejects(
+            () => run(() => inceptCredentialRegistry(rgy, runtime.postman, local.hab, { registryName: "registry" })),
+            Error,
+            "already identifies",
+          )
+        );
+        assertEquals(left.db.getState(local.hab.pre), state);
+        let prompts = 0;
+        const callbacks = {
+          approveProposal: () => {
+            prompts++;
+            return true;
+          },
+          chooseGroupAlias: () => "unused",
+          chooseRegistryName: () => "untrusted-registry",
+        };
+        const schemer = new Schemer({
+          sed: {
+            $id: "",
+            type: "object",
+            properties: { a: { type: "object", properties: { role: { type: "string" } } } },
+          },
+        });
+        const valid = credential({
+          issuer: local.hab.pre,
+          registry: registry.registry!,
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+
+        /** Store an authenticated peer wrapper without lending its signature to the group anchor. */
+        const submit = function*(creder: SerderACDC, wrongSource = false, wrongPredecessor = false) {
+          const issued = issueCredential(creder.said!, registry.registry!);
+          const predecessor = wrongPredecessor ? bob.kever!.said : local.hab.kever!.said;
+          const anchor = interactEvent(local.hab.pre, predecessor, local.hab.kever!.sn + 1, [{
+            i: issued.pre,
+            s: "0",
+            d: issued.said,
+          }]);
+          const [wrapper, paths] = exchange("/multisig/iss", { gid: local.hab.pre, cgvrsn: [2, 0] }, {
+            sender: bob.pre,
+            embeds: {
+              acdc: serializeCredential(
+                creder,
+                new Prefixer({ qb64: issued.pre! }),
+                NumberPrimitive.fromNum(0n),
+                new Diger({ qb64: wrongSource ? registry.registry! : issued.said! }),
+                Vrsn_2_0,
+              ),
+              iss: issued.raw,
+              anc: messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_2_0 }),
+            },
+          });
+          yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), paths), {
+            local: true,
+          });
+          return { wrapper, anchor };
+        };
+        const pending = yield* submit(valid);
+        assertEquals(
+          yield* approvePendingMultisigProposal(left, runtime, { said: pending.wrapper.said!, callbacks }),
+          null,
+        );
+        assertEquals(prompts, 0);
+        assertEquals(left.db.getSigs(local.hab.pre, pending.anchor.said!), []);
+        assertEquals(left.db.getState(local.hab.pre), state);
+        left.db.schema.pin(schemer.said, schemer);
+
+        const badSource = yield* submit(valid, true);
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() => approvePendingMultisigProposal(left, runtime, { said: badSource.wrapper.said!, callbacks })),
+            Error,
+            "source seal",
+          )
+        );
+        const badPredecessor = yield* submit(valid, false, true);
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() =>
+                approvePendingMultisigProposal(left, runtime, { said: badPredecessor.wrapper.said!, callbacks })
+              ),
+            Error,
+            "anchor predecessor",
+          )
+        );
+        const invalid = credential({
+          issuer: local.hab.pre,
+          registry: registry.registry!,
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: 5 },
+        });
+        const badSchema = yield* submit(invalid);
+        yield* call(() =>
+          assertRejects(
+            () =>
+              run(() => approvePendingMultisigProposal(left, runtime, { said: badSchema.wrapper.said!, callbacks })),
+            Error,
+            "schema validation",
+          )
+        );
+        const foreignVcp = inceptRegistry(bob.pre, { cnfg: ["NB"] });
+        const foreignAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, local.hab.kever!.sn + 1, [{
+          i: foreignVcp.pre,
+          s: "0",
+          d: foreignVcp.said,
+        }]);
+        const [foreign, paths] = exchange("/multisig/vcp", { gid: local.hab.pre, cgvrsn: [2, 0] }, {
+          sender: bob.pre,
+          embeds: {
+            vcp: foreignVcp.raw,
+            anc: messagize(foreignAnchor, { sigers: remote.hab.sign(foreignAnchor.raw, true), gvrsn: Vrsn_2_0 }),
+          },
+        });
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(foreign, { pipelined: false }), paths), {
+          local: true,
+        });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approvePendingMultisigProposal(left, runtime, { said: foreign.said!, callbacks })),
+            Error,
+            "issuer does not match",
+          )
+        );
+        assertEquals(prompts, 0);
+        assertEquals(left.db.getState(local.hab.pre), state);
+        for (const anchor of [badSource.anchor, badPredecessor.anchor, badSchema.anchor, foreignAnchor]) {
+          assertEquals(left.db.getSigs(local.hab.pre, anchor.said!), []);
+        }
+        assertEquals(rgy.reger.regs.get("untrusted-registry"), null);
+        const completed = yield* approvePendingMultisigProposal(left, runtime, {
+          said: pending.wrapper.said!,
+          callbacks,
+        });
+        assertEquals(completed?.accepted, true);
+        assertEquals(prompts, 1);
+        assertExists(rgy.reger.saved.get([valid.said!]));
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
 
 Deno.test("VDR approval without a registry preserves decline and fails before accepting the anchor", async () => {
   await participants(async (left, right, alice, bob, notifier) => {

@@ -87,6 +87,14 @@ new work beyond that horizon waits for a later sweep.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 
+Group VCP/ISS approval checks business bindings and actual credential source proof
+before prompts/signatures. Missing registry/schema/predecessor evidence stays
+pending; malformed evidence and conflicting aliases produce no local anchor.
+Reuse read-only registry-inception and exact TEL-seal checks from the TEL owners,
+without processor construction or escrow writes for validation. Establishment-only
+group anchors rotate using participants' prepared next keys. Accepted local TEL
+admission still does not prove witnessed completion or external publication.
+
 V2 `regeventing.vet/vetBinds` observer verification is read-only; explicit
 RegistryObserver intake owns per-event engine publication. Normal dispatch routes RIP/BUP
 to this owner; runtime retries snapshot both durable escrow tables before writes,

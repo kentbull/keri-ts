@@ -1,5 +1,5 @@
 /** Exact issuer KEL authority for legacy TEL events. */
-import type { Diger, NumberPrimitive, SerderKERI } from "cesr-ts";
+import { type Diger, Ilks, type NumberPrimitive, type SerderKERI } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 
 /** Verify the complete TEL seal in the accepted issuer event at the supplied source coordinate. */
@@ -15,6 +15,12 @@ export function verifyTelAnchor(
   if (accepted !== digest.qb64) return false;
   const anchor = db.getEvtSerder(issuer, accepted);
   if (!anchor || anchor.said !== accepted) return false;
+  return telAnchorMatches(issuer, event, anchor);
+}
+
+/** Match the complete TEL seal in an issuer KEL body before that anchor is signed or accepted. */
+export function telAnchorMatches(issuer: string, event: SerderKERI, anchor: SerderKERI): boolean {
+  if (anchor.pre !== issuer || (!anchor.estive && anchor.ilk !== Ilks.ixn)) return false;
   const seals = anchor.ked?.a;
   if (!Array.isArray(seals) || seals.length !== 1) return false;
   const seal: unknown = seals[0];

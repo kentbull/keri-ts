@@ -30,6 +30,13 @@ import { type AgentRuntime } from "./agent-runtime.ts";
 
 import type { Reger } from "../db/reger.ts";
 import {
+  groupCredentialAnchorReady,
+  validateCredentialIssueProposal,
+  validateCredentialSource,
+  validateRegistryName,
+  validateRegistryProposal,
+} from "./credential-proposals.ts";
+import {
   endpointRoleAccepted,
   groupEndorseReply,
   groupEventKeys,
@@ -48,6 +55,7 @@ import {
   MULTISIG_VCP_ROUTE,
   type MultisigChild,
   multisigChild,
+  multisigChildEvidence,
   multisigChildGenusAttrs,
   type MultisigEventProposal,
   type MultisigVdrProposal,
@@ -467,7 +475,17 @@ function* approveVdrProposal(
   }
   const { event: anchorSerder, attachment, genus } = anchor;
   const embeddedSaid = embeddedSerder.said ?? "";
+  if (proposal.route === MULTISIG_VCP_ROUTE) {
+    validateRegistryProposal(groupPre, embeddedSerder, anchorSerder);
+  } else {
+    if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+    const evidence = multisigChildEvidence(hby, exn, "acdc", proposal.credential);
+    if (!evidence.attachment.length) return null;
+    validateCredentialSource(proposal.credential, embeddedSerder, evidence.attachment, evidence.genus);
+    if (!validateCredentialIssueProposal(rgy, groupPre, proposal.credential, embeddedSerder, anchorSerder)) return null;
+  }
   const prior = storedGroupMessage(hby.db, member.pre, exn);
+  if (!prior && !groupCredentialAnchorReady(hby, groupPre, anchorSerder)) return null;
   if (!prior && !options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
     return null;
   }
@@ -475,6 +493,11 @@ function* approveVdrProposal(
   // Declined or malformed proposals remain inert; require VDR before signing or intake.
   if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
 
+  let registryName: string | undefined;
+  if (proposal.route === MULTISIG_VCP_ROUTE && !prior) {
+    registryName = options.callbacks.chooseRegistryName(embeddedSerder.pre!);
+    validateRegistryName(rgy.reger, registryName, embeddedSerder.pre!);
+  }
   const smids = groupSigningMembers(hby, groupPre);
   let localAnchor: Uint8Array;
   if (prior) {
@@ -491,7 +514,6 @@ function* approveVdrProposal(
   let publication: MultisigVdrProposal;
   const attrs = { gid: groupPre, ...multisigChildGenusAttrs(anchorSerder, genus) };
   if (proposal.route === MULTISIG_VCP_ROUTE) {
-    const registryName = prior ? undefined : options.callbacks.chooseRegistryName(embeddedSerder.pre!);
     accepted = approveRegistryIncept(rgy, groupHab, embeddedSerder, anchorSerder, registryName);
     publication = {
       route: proposal.route,
@@ -614,7 +636,6 @@ function approveCredentialIssue(
   const reger = rgy.reger;
   const vry = rgy.vry;
   const credentialer = new Credentialer(hby, { reger, vry });
-  credentialer.validate(creder);
   const credentialSeal = telCredentialSeal(iserder);
   const verifierDecision = vry.processCredential({
     creder,

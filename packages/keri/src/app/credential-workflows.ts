@@ -6,7 +6,18 @@ import { Organizer } from "./organizing.ts";
  * credential issue/revoke/import/export,
  * and multisig VC proposal coordination.
  */
-import { concatBytes, Diger, NumberPrimitive, NumDex, Prefixer, Saider, Seqner, SerderACDC, TraitDex } from "cesr-ts";
+import {
+  concatBytes,
+  Diger,
+  NumberPrimitive,
+  NumDex,
+  Prefixer,
+  Saider,
+  Seqner,
+  SerderACDC,
+  type SerderKERI,
+  TraitDex,
+} from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
@@ -15,7 +26,11 @@ import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
 import { Reger } from "../db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, Registry, serializeCredential } from "../vdr/credentialing.ts";
-import type { TelProcessDecision } from "../vdr/eventing.ts";
+import { type TelProcessDecision, validateRegistryInception } from "../vdr/eventing.ts";
+import {
+  validateCredentialIssueProposal,
+  validateRegistryName,
+} from "./credential-proposals.ts";
 import type { Poster } from "./forwarding.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 import { MULTISIG_ISS_ROUTE, MULTISIG_VCP_ROUTE, type MultisigVdrProposal, prepareMultisigVdrExn } from "./grouping.ts";
@@ -356,6 +371,13 @@ function revocationStreamMessages(
   ];
 }
 
+/** Author the required group anchor after all available business evidence has been validated. */
+export function anchorGroupCredentialEvent(hby: Habery, hab: Hab, event: SerderKERI, estOnly: boolean) {
+  const data = [{ i: event.pre!, s: event.snh!, d: event.said! }];
+  if (estOnly || hab.kever?.estOnly) return hby.rotateGroupHab(hab.name, undefined, undefined, { data });
+  return hby.interactGroupHab(hab.name, undefined, { data });
+}
+
 /**
  * Construct a group registry inception and anchored proposal, then await member delivery.
  * Local TEL acceptance is reported separately from successful proposal transmission.
@@ -382,10 +404,10 @@ function* proposeGroupRegistryIncept(
     ...(noBackers ? [TraitDex.NoBackers] : []),
     ...(estOnly ? [TraitDex.EstOnly] : []),
   ];
+  validateRegistryName(reger, options.registryName);
   const vcp = inceptRegistryEvent(hab.pre, { cnfg });
-  const anchor = hby.interactGroupHab(hab.name, undefined, {
-    data: [eventSeal(vcp)],
-  });
+  validateRegistryInception(vcp);
+  const anchor = anchorGroupCredentialEvent(hby, hab, vcp, estOnly);
   const seal = sourceSeal(anchor.serder);
   const decision = rgy.tvy.processEvent({
     serder: vcp,
@@ -441,9 +463,11 @@ function* proposeGroupCredentialIssue(
   const { hby, reger } = rgy;
   const regk = requireRegistryKey(registry);
   const iss = issueEvent(requireCredentialSaid(creder), regk);
-  const anchor = hby.interactGroupHab(registry.hab.name, undefined, {
-    data: [eventSeal(iss)],
-  });
+  if (!validateCredentialIssueProposal(rgy, registry.hab.pre, creder, iss)) {
+    throw new ValidationError("Credential issuance is missing accepted registry or schema evidence.");
+  }
+  const estOnly = registry.estOnly || (reger.states.get(regk)?.c ?? []).includes(TraitDex.EstOnly);
+  const anchor = anchorGroupCredentialEvent(hby, registry.hab, iss, estOnly);
   const seal = sourceSeal(anchor.serder);
   const telDecision = rgy.tvy.processEvent({
     serder: iss,
@@ -451,11 +475,6 @@ function* proposeGroupCredentialIssue(
     saider: seal.saider,
   });
   rgy.processEscrows();
-  const credentialer = new Credentialer(hby, {
-    reger,
-    vry: rgy.vry,
-  });
-  credentialer.validate(creder);
   const credentialSeal = telCredentialSeal(iss);
   const verifierDecision = rgy.vry.processCredential({
     creder,
@@ -562,15 +581,6 @@ function registerRegistry(
       }),
     );
   }
-}
-
-function eventSeal(
-  serder: { pre: string | null; snh?: string | null; sn: number | null; said: string | null },
-): Record<string, string> {
-  const pre = requireSerderPrefix(serder, "TEL event");
-  const sn = serder.snh ?? (serder.sn ?? 0).toString(16);
-  const dig = requireSerderSaid(serder, "TEL event");
-  return { i: pre, s: sn, d: dig };
 }
 
 function sourceSeal(serder: { pre: string | null; sn: number | null; said: string | null }) {
