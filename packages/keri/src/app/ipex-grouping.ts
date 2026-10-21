@@ -13,6 +13,7 @@ import {
   Counter,
   Diger,
   makePather,
+  parseBytes,
   Prefixer,
   Seqner,
   SerderKERI,
@@ -24,13 +25,15 @@ import {
 import { type Operation } from "npm:effection@^3.6.0";
 import { TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
+import { Kever } from "../core/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
-import { serializeMessage } from "../core/protocol-exchanging.ts";
+import { exchange, serializeMessage } from "../core/protocol-exchanging.ts";
 import type { Baser } from "../db/basing.ts";
 import type { Reger } from "../db/reger.ts";
-import { createExchangeMessage } from "./exchange-messaging.ts";
-import type { Poster, PosterMsg } from "./forwarding.ts";
-import { groupSigningMembers, localGroupMember } from "./group-members.ts";
+import { abortable } from "./abortable.ts";
+import { collectBytes } from "./byte-source.ts";
+import type { Poster } from "./forwarding.ts";
+import { groupMemberHasKey, groupSigningMembers, localGroupMember } from "./group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE, multisigChild, multisigChildGenusAttrs } from "./grouping.ts";
 import type { Hab, Habery } from "./habbing.ts";
 import {
@@ -39,6 +42,18 @@ import {
   credentialSaidFromGrant,
 } from "./ipex-credentialing.ts";
 import { IPEX_GRANT_ROUTE } from "./ipexing.ts";
+import {
+  type GroupDelivery,
+  type GroupSendResult,
+  groupSendResult,
+  multisigPayloadSaid,
+  prepareGroupMessage,
+  remoteGroupMembers,
+  sendGroupMessage,
+  type SignedGroupMessage,
+  storedGroupMessage,
+} from "./multisig-messaging.ts";
+import { envelopeFromFrame } from "./parsering.ts";
 import type { ProtocolProcessor } from "./protocol-processing.ts";
 import { Reactor } from "./reactor.ts";
 
@@ -48,9 +63,8 @@ export interface MultisigIpexApprovalOptions {
   gvrsn?: Versionage;
 }
 
-export interface MultisigIpexApprovalResult {
+export interface MultisigIpexApprovalResult extends GroupSendResult {
   accepted: boolean;
-  deliveries: string[];
   approved: Uint8Array;
 }
 
@@ -79,10 +93,22 @@ export function* approveMultisigIpex(
   if (embedded.route === IPEX_GRANT_ROUTE && (options.sendLead ?? true) && !reger) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
-  const approved = yield* approveIpexChild(hby, protocol, groupHab, child);
-  const deliveries = options.publish
-    ? yield* publishGroupIpexProposal(hby, postman, groupHab, approved, genus)
-    : [];
+  const payloadSaid = multisigPayloadSaid(wrapper);
+  if (!payloadSaid) throw new ValidationError("Multisig IPEX approval requires its coordination identity.");
+  if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
+    // Recover only this explicitly selected accepted wrapper after an interrupted
+    // handler. Ordinary intake owns the index; do not synthesize it or sweep history.
+    const message = yield* abortable(signal => collectBytes(protocol.exc.replay(wrapper.said!, signal)));
+    yield* new Reactor(protocol).processBytes(message, { local: true });
+    if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === wrapper.said)) {
+      throw new ValidationError("Selected IPEX wrapper was not indexed by ordinary intake.");
+    }
+  }
+  const approved = yield* approveIpexChild(hby, protocol, groupHab, child, wrapper);
+  const publication = options.publish
+    ? yield* publishGroupIpexProposal(hby, protocol, postman, groupHab, approved, genus)
+    : { messages: [], deliveries: [] };
+  const deliveries = publication.deliveries;
   if (
     (options.sendLead ?? true)
     && hby.db.exns.get([embeddedSaid])?.said === embeddedSaid
@@ -101,6 +127,7 @@ export function* approveMultisigIpex(
   }
   return {
     accepted: hby.db.exns.get([embeddedSaid])?.said === embeddedSaid,
+    messages: publication.messages,
     deliveries,
     approved,
   };
@@ -120,7 +147,7 @@ function loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
 }
 
 /**
- * Admit peer evidence, sign the local contribution and advance ordinary escrows in that order.
+ * Admit peer evidence, reuse or sign the local contribution, then advance ordinary escrows.
  * The operation owns its byte-input context, borrowing only semantic owners and identities.
  * It neither publishes member wrappers nor sends the completed business exchange.
  */
@@ -129,19 +156,39 @@ function* approveIpexChild(
   protocol: ProtocolProcessor,
   groupHab: Hab,
   { event: embedded, attachment: peerAttachment, genus }: ReturnType<typeof loadIpexProposal>["child"],
+  wrapper: SerderKERI,
 ): Operation<Uint8Array> {
   const input = new Reactor(protocol);
   if (peerAttachment.length > 0) {
     yield* input.processBytes(concatBytes(Counter.makeGVC(genus), embedded.raw, peerAttachment), { local: true });
     yield* protocol.processEscrowsOnce();
   }
-  const approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
+  const member = localGroupMember(hby, groupHab.pre);
+  const prior = storedGroupMessage(hby.db, member.pre, wrapper);
+  let approved: Uint8Array;
+  if (prior) {
+    // Accepted child proofs can replace provisional sets. The recipient wrapper
+    // retains this member's actual contribution independently of that merged row.
+    const retained = multisigChild(hby, prior, "exn");
+    if (!retained || retained.event.said !== embedded.said) {
+      throw new ValidationError("Recorded IPEX approval has a different child.");
+    }
+    const frames = parseBytes(concatBytes(Counter.makeGVC(retained.genus), retained.event.raw, retained.attachment));
+    if (frames.length !== 1) throw new ValidationError("Recorded IPEX approval must retain one child message.");
+    const proof = localIpexContribution(hby.db, member.pre, embedded, envelopeFromFrame(frames[0]).tsgs);
+    if (!proof) throw new ValidationError("Recorded IPEX approval lacks a valid member contribution.");
+    approved = concatBytes(serializeMessage(embedded, { tsgs: [proof], gvrsn: genus }), peerAttachment);
+  } else approved = groupIpexPartial(hby, groupHab, embedded, peerAttachment, genus);
   yield* input.processBytes(concatBytes(Counter.makeGVC(genus), approved), { local: true });
   yield* protocol.processEscrowsOnce();
   return approved;
 }
 
-/** Sign a group IPEX body and append the supplied proof bytes in the selected attachment genus. */
+/**
+ * Reuse this member's verified stored contribution, or sign its first partial.
+ * Group and member rotation cannot replace a recorded signature. Peer proof
+ * bytes remain distinct input; only a genuine local signature permits reuse.
+ */
 export function groupIpexPartial(
   hby: Habery,
   groupHab: Hab,
@@ -153,6 +200,13 @@ export function groupIpexPartial(
   const groupRecord = hby.db.getHab(group);
   const memberPre = groupRecord?.mid;
   const memberHab = memberPre ? hby.habs.get(memberPre) : null;
+  if (embedded.pre !== group || !embedded.said) {
+    throw new ValidationError("IPEX sender must match the selected group and have a SAID.");
+  }
+  const prior = memberHab
+    ? localIpexContribution(hby.db, memberHab.pre, embedded, rebuildStoredExchangeGroups(hby.db, embedded.said))
+    : null;
+  if (prior) return concatBytes(serializeMessage(embedded, { tsgs: [prior], gvrsn }), attachments);
   const groupKever = groupHab.kever;
   const memberKey = memberHab?.kever?.verfers[0]?.qb64;
   if (!group || !groupKever || !memberHab || !memberKey) {
@@ -188,64 +242,116 @@ export function groupIpexPartial(
 }
 
 /**
- * Publish one group IPEX proposal to remote signing members.
- *
- * @param hby Borrowed group/member identities and accepted state.
- * @param postman Borrowed delivery owner; the caller runs and joins its worker.
- * @param groupHab Group habitat whose signing members receive the proposal.
- * @param embedded IPEX exchange body/attachments to wrap.
- * @param childGvrsn Attachment genus of the embedded child, independent of outer EXN framing.
- * @returns Proposal delivery results after matching Poster outcomes.
+ * Select only a cryptographically valid local partial at an accepted group establishment.
+ * The shared esigs table can hold unverified escrow candidates, so a matching
+ * index or an authenticated parent wrapper alone is not recorded child approval.
  */
-export function* publishGroupIpexProposal(
-  hby: Habery,
-  postman: Poster,
-  groupHab: Hab,
-  embedded: Uint8Array,
-  childGvrsn?: Versionage,
-): Operation<string[]> {
-  const deliveries: string[] = [];
-  for (const msg of groupIpexProposals(hby, groupHab, embedded, childGvrsn)) {
-    const evt = postman.send(msg, { notify: true });
-    const outcome = yield* postman.wait(evt);
-    if (outcome.kin === "failed") throw outcome.error;
-    deliveries.push(...outcome.deliveries);
+function localIpexContribution(
+  db: Baser,
+  member: string,
+  embedded: SerderKERI,
+  proofs: readonly TransIdxSigGroup[],
+): TransIdxSigGroup | null {
+  for (const proof of proofs) {
+    if (proof.pre !== embedded.pre || proof.sn > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+    const said = db.kels.getLast(proof.pre, Number(proof.sn));
+    const event = said === proof.said ? db.getEvtSerder(proof.pre, said) : null;
+    if (!event?.estive) continue;
+    const verified = Kever.verifyIndexedSignatures(embedded.raw, proof.sigers, event.verfers);
+    for (const siger of verified.sigers) {
+      if (groupMemberHasKey(db, member, event.verfers[siger.index].qb64)) {
+        return new TransIdxSigGroup(proof.prefixer, event.sner!, proof.diger, [siger]);
+      }
+    }
   }
-  return deliveries;
+  return null;
 }
 
 /**
- * Construct member proposals before their caller chooses its real Poster operation.
- * Initial IPEX commands use stream admission; join completion uses ordinary sends.
- *
- * @param hby Borrowed group/member identities and accepted state.
- * @param groupHab Local group whose remote signing members receive proposals.
- * @param embedded Independently signed IPEX message to embed.
- * @param childGvrsn Optional child attachment genus, independent of outer framing.
- * @returns Prepared source records; construction publishes no delivery work.
+ * Prepare recipient-specific wrappers, replaying recorded ones, and admit each
+ * exact packet locally before returning any transmission work. Composition owns
+ * the delivery worker. Ordinary Baser/Multiplexor evidence is the recovery record;
+ * there is no new queue or cross-store/network transaction.
  */
-export function groupIpexProposals(
+function* prepareGroupIpexMessages(
   hby: Habery,
+  protocol: ProtocolProcessor,
   groupHab: Hab,
   embedded: Uint8Array,
   childGvrsn?: Versionage,
-): PosterMsg[] {
+): Operation<SignedGroupMessage[]> {
   const member = localGroupMember(hby, groupHab.pre);
   const child = new SerderKERI({ raw: embedded });
   const genus = child.gvrsn ?? childGvrsn ?? child.pvrsn;
   const payload = { gid: groupHab.pre, ...multisigChildGenusAttrs(child, genus) };
-  const msgs: PosterMsg[] = [];
-  for (const recipient of groupSigningMembers(hby, groupHab.pre)) {
-    if (recipient === member.pre || hby.habs.has(recipient)) continue;
-    const { msg } = createExchangeMessage(member, {
-      dest: recipient,
-      route: MULTISIG_EXN_ROUTE,
-      payload,
+  const input = new Reactor(protocol);
+  const messages: SignedGroupMessage[] = [];
+  for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
+    const prepared = exchange(MULTISIG_EXN_ROUTE, payload, {
+      sender: member.pre,
+      recipient,
       embeds: { exn: embedded },
     });
-    msgs.push({ src: member.pre, dest: recipient, topic: "multisig", msg });
+    const signed = yield* prepareGroupMessage(protocol.exc, member, recipient, prepared);
+    yield* input.processBytes(signed.message, { local: true });
+    if (
+      !protocol.exc.complete(signed.exnSaid)
+      || !hby.db.meids.get([signed.payloadSaid]).some(index => index.qb64 === signed.exnSaid)
+    ) {
+      throw new ValidationError("Group IPEX wrapper was not accepted and indexed locally.");
+    }
+    messages.push(signed);
   }
-  return msgs;
+  return messages;
+}
+
+/** Publish approval wrappers through ordinary Poster sends; never acquire workers or stores here. */
+export function* publishGroupIpexProposal(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
+  groupHab: Hab,
+  embedded: Uint8Array,
+  childGvrsn?: Versionage,
+): Operation<GroupSendResult> {
+  const outcomes: GroupDelivery[] = [];
+  for (const message of yield* prepareGroupIpexMessages(hby, protocol, groupHab, embedded, childGvrsn)) {
+    outcomes.push(yield* sendGroupMessage(postman, message));
+  }
+  return groupSendResult(outcomes);
+}
+
+/**
+ * Publish an initial command's member wrappers with StreamPoster's original
+ * first-present-role routing. Shared preparation signs/replays and admits locally;
+ * this concrete operation retains its existing finite-stream transport contract.
+ */
+export function* publishInitialGroupIpex(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  postman: Poster,
+  groupHab: Hab,
+  embedded: Uint8Array,
+  childGvrsn?: Versionage,
+): Operation<GroupSendResult> {
+  const outcomes: GroupDelivery[] = [];
+  for (const message of yield* prepareGroupIpexMessages(hby, protocol, groupHab, embedded, childGvrsn)) {
+    const evt = postman.sendStream({
+      src: message.src,
+      dest: message.recipient,
+      msgs: [message.message],
+      topic: "multisig",
+    }, { notify: true });
+    const outcome = yield* postman.wait(evt);
+    if (outcome.kin === "failed") throw outcome.error;
+    outcomes.push({
+      recipient: message.recipient,
+      exnSaid: message.exnSaid,
+      payloadSaid: message.payloadSaid,
+      deliveries: outcome.deliveries,
+    });
+  }
+  return groupSendResult(outcomes);
 }
 
 /** Approve stored wrappers for one IPEX child without external lead sending or acquiring stores/workers. */
@@ -263,7 +369,7 @@ export function* approveStoredMultisigIpexWrappers(
       continue;
     }
     const { child, groupHab } = loadIpexProposal(hby, wrapper);
-    yield* approveIpexChild(hby, protocol, groupHab, child);
+    yield* approveIpexChild(hby, protocol, groupHab, child, wrapper);
   }
 }
 
@@ -382,7 +488,7 @@ export function storedExchangeMessage(
   }
   const cigars = hby.db.ecigs.get([serder.said]).map(([, cigar]) => cigar) as Cigar[];
   return serializeMessage(serder, {
-    tsgs: rebuildStoredExchangeGroups(hby, serder.said),
+    tsgs: rebuildStoredExchangeGroups(hby.db, serder.said),
     cigars,
     pathed: pathedOverride ?? hby.db.epath.get([serder.said]),
     pipelined: false,
@@ -472,7 +578,7 @@ function pathedMaterial(label: string, message: Uint8Array): Uint8Array {
   return concatBytes(makePather(["e", label]).qb64b, atc);
 }
 
-function rebuildStoredExchangeGroups(hby: Habery, said: string): TransIdxSigGroup[] {
+function rebuildStoredExchangeGroups(db: Baser, said: string): TransIdxSigGroup[] {
   const groups: TransIdxSigGroup[] = [];
   let currentKey: string[] | null = null;
   let currentSigers: Siger[] = [];
@@ -492,7 +598,7 @@ function rebuildStoredExchangeGroups(hby: Habery, said: string): TransIdxSigGrou
     currentSigers = [];
   };
 
-  for (const [keys, siger] of hby.db.esigs.getTopItemIter([said, ""])) {
+  for (const [keys, siger] of db.esigs.getTopItemIter([said, ""])) {
     const groupKey = keys.slice(1);
     if (!groupKey[0] || !groupKey[1] || !groupKey[2]) {
       continue;

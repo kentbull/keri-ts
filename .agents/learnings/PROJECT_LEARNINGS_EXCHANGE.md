@@ -274,6 +274,12 @@ Group IPEX approval derives its child, stored proof and genus from the wrapper.
 It receives protocol, Poster and optional Reger explicitly, owning only its local
 byte-input context. Stored approval has no transport dependency; pending discovery
 reads accepted Baser exchanges. Command composition owns workers and stores.
+Both initial stream publication and ordinary approval sends register exact local
+wrappers first and reuse shared recipient-specific replay. Group grant/join facts
+include messages/exnSaid/payloadSaid for exact selection. Reverify a stored partial
+signature against accepted group/member key history before reusing it; a raw index
+or parent endorsement is insufficient. Explicitly selected unindexed wrappers
+recover through normal replay, never synthetic index writes or a history sweep.
 Group EXN lead election requires acceptance and the first authenticated historical
 sender proof; map its winning key through the member's accepted KEL history,
 not current member keys or the current group index order.
