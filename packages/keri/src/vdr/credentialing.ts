@@ -34,16 +34,18 @@ import { Verifier, type VerifierDecision } from "../app/verifying.ts";
 import { attachmentCounterPayloadQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
-import { ValidationError } from "../core/errors.ts";
+import { DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import {
   incept as inceptRegistryEvent,
   issue as issueEvent,
-  revoke as revokeEvent,
 } from "../core/protocol-vdr-eventing.ts";
 import { RegistryRecord } from "../core/records.ts";
+import { dgKey } from "../db/core/keys.ts";
 import type { Reger } from "../db/reger.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type TelProcessDecision, Tevery } from "./eventing.ts";
+import { prepareCredentialRevocation } from "./revoking.ts";
+import { telAnchorMatches } from "./tel-anchor.ts";
 import { TelPublication } from "./tel-publication.ts";
 
 export interface RegeryOptions {
@@ -433,17 +435,28 @@ export class Registry {
     return { serder, decision, seal };
   }
 
+  /** Select the original REV or prepare one after read-only credential/registry authority checks. */
+  prepareRevocation(credentialSaid: string): SerderKERI {
+    this.authoringState();
+    return prepareCredentialRevocation(this.reger, requireHabPrefix(this.hab), this.requireRegk(), credentialSaid);
+  }
+
+  /** Revoke once; explicit retries reuse the retained TEL body and original issuer anchor. */
   revoke(
     credentialSaid: string,
   ): { serder: SerderKERI; decision: TelProcessDecision; seal: AnchorSeal } {
-    const tever = this.authoringState();
-    const prior = this.reger.tels.getOn(credentialSaid, tever.vcSn(credentialSaid) ?? 0);
-    if (!prior) {
-      throw new ValidationError(`Cannot revoke unknown credential ${credentialSaid}.`);
+    const serder = this.prepareRevocation(credentialSaid);
+    const couple = this.reger.ancs.get(dgKey(credentialSaid, serder.said!));
+    let seal: AnchorSeal;
+    if (couple) {
+      const anchor = this.hab.db.getEvtSerder(requireHabPrefix(this.hab), couple[1].qb64);
+      if (!anchor || anchor.sner?.num !== couple[0].num || !telAnchorMatches(this.hab.pre, serder, anchor)) {
+        throw new DatabaseOperationError("Stored revocation issuer anchor is missing or inconsistent.");
+      }
+      seal = { prefixer: new Prefixer({ qb64: this.hab.pre }), seqner: couple[0], saider: couple[1] };
+    } else {
+      seal = anchorTelEvent(this.hab, serder, this.estOnly);
     }
-    const regk = this.requireRegk();
-    const serder = revokeEvent(credentialSaid, regk, prior.qb64);
-    const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
     return { serder, decision, seal };

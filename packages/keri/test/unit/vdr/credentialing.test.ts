@@ -1,5 +1,5 @@
 import { call, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { decodeHex } from "jsr:@std/encoding/hex";
 import {
   concatBytes,
@@ -25,6 +25,7 @@ import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
 import { systemClock } from "../../../src/app/runtime-clock.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";
 import {
@@ -209,10 +210,23 @@ Deno.test("vdr/credentialing - creates, issues, saves, exports, and revokes a cr
         }).qb64b,
       );
 
+      const other = rgy.makeRegistry("other-registry", hab);
+      const beforeRefusal = hab.kever!.said;
+      assertThrows(() => other.revoke(creder.said!), ValidationError, "selected issuer and registry");
+      assertEquals(hab.kever!.said, beforeRefusal, "Wrong registry must refuse before signing an anchor");
       const revoked = registry.revoke(creder.said!);
       assertEquals(revoked.decision.kind, "accept");
       assertEquals(tvy.tevers.get(registry.regk!)?.vcState(creder.said!)?.et, "rev");
       assertEquals(reger.tels.getOn(creder.said!, 1)?.qb64, revoked.serder.said);
+      const originalAnchor = hab.kever!.said;
+      yield* reger.reopen();
+      const resumed = new Regery(hby, { reger });
+      const repeated = resumed.registryByName("issuer-reg")!.revoke(creder.said!);
+      assertEquals(repeated.serder.raw, revoked.serder.raw);
+      assertEquals(repeated.seal.saider.qb64, revoked.seal.saider.qb64);
+      assertEquals(repeated.decision.kind, "duplicate");
+      assertEquals(hab.kever!.said, originalAnchor);
+      assertEquals(resumed.publication.complete(creder.said!, 1), true);
     } finally {
       yield* reger.close(true);
       yield* hby.close(true);
