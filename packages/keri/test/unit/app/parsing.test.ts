@@ -297,7 +297,11 @@ Deno.test("credential command inputs reject malformed supplied values before sto
           },
         ]
       ) {
-        const error = await assertRejects(() => run(() => command({ ...store, ...args })));
+        const error = await assertRejects(() =>
+          run(function*() {
+            yield* command({ ...store, ...args });
+          })
+        );
         assertInstanceOf(error, Error);
         assertStringIncludes(error.message, field);
       }
