@@ -7,7 +7,7 @@ import { createAgentRuntime, runAgentRuntime } from "../../../src/app/agent-runt
 import { collectBytes } from "../../../src/app/byte-source.ts";
 import { requestFrame } from "../../../src/app/cesr-egress.ts";
 import { waitForTelPublication } from "../../../src/app/cli/common/tel-completion.ts";
-import { revokeCredential } from "../../../src/app/credential-revoking.ts";
+import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -59,10 +59,10 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
         const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
         const url = `http://127.0.0.1:${server.addr.port}/`;
         /** Use the production detached-attachment sender for every TypeScript frame. */
-        function* post(wire: Uint8Array) {
+        function* post(wire: Uint8Array, destination = origin) {
           for (const frame of parseBytes(wire)) {
             yield* scoped(function*() {
-              const response = yield* requestFrame(origin, frame, runtime.http);
+              const response = yield* requestFrame(destination, frame, runtime.http);
               yield* call(() => collectBytes(response.body()));
               assertEquals(response.status, 204);
             });
@@ -72,6 +72,7 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
           yield* post(concatBytes(...hby.db.clonePreIter(member.pre)));
           const peer = yield* call(() => control("connect", { url }));
           const pyPre = String(peer.member);
+          const holderPre = String(peer.holder);
           for (
             const wire of [
               member.makeEndRole(member.pre, "controller", true),
@@ -217,6 +218,56 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
               concatBytes(made.hab.endorse(spurn, { pipelined: false }), spurnAttachments),
             );
             assertEquals(hby.db.exns.get([spurn.said!])?.ked?.p, refused.said);
+            // A third identity/store proves grant acceptance is independent
+            // of co-issuance: it has no group member role or credential rows.
+            const holderUrl = `${origin}/holder`;
+            yield* post(concatBytes(...hby.db.clonePreIter(made.hab.pre)), holderUrl);
+            const held = yield* createCredential(rgy, runtime.reactor, runtime.postman, {
+              registryName: "registry",
+              schema: schema.said,
+              recipient: holderPre,
+              data: { role: "independent-holder" },
+            });
+            yield* call(() => control("endorse", { said: held.group!.messages[0].exnSaid }));
+            const heldSaid = held.creder.said!;
+            assertEquals(yield* waitForTelPublication(rgy.publication, heldSaid, 0, Date.now() + 10_000), true);
+            yield* runtime.protocol.processEscrowsOnce();
+            const beforeGrant = yield* call(() =>
+              control("wallet-snapshot", { registry: registry.registry, credential: heldSaid })
+            );
+            assertEquals(beforeGrant.saved, false);
+            const holderGrant = ipexCredentialGrant({
+              hby,
+              hab: made.hab,
+              reger: rgy.reger,
+              recipient: holderPre,
+              credentialSaid: heldSaid,
+            });
+            yield* completeGroupExchange(holderGrant.grant, holderGrant.wire);
+            const holderAdmit = yield* call(() => control("wallet-admit", { said: holderGrant.grant.said }));
+            assertEquals(hby.db.exns.get([String(holderAdmit.said)])?.ked?.p, holderGrant.grant.said);
+            const heldState = yield* call(() =>
+              control("wallet-snapshot", {
+                registry: registry.registry,
+                credential: heldSaid,
+                exchange: holderGrant.grant.said,
+              })
+            );
+            assertEquals(heldState.saved, true);
+            assertEquals(heldState.state, "iss");
+            assertEquals(heldState.accepted, true);
+            const heldRevoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
+              registryName: "registry",
+              credentialSaid: heldSaid,
+            });
+            yield* call(() => control("endorse", { said: heldRevoked.group!.messages[0].exnSaid }));
+            assertEquals(yield* waitForTelPublication(rgy.publication, heldSaid, 1, Date.now() + 10_000), true);
+            yield* deliverCredentialRevocation(rgy, runtime.postman, heldSaid, [holderPre]);
+            const heldRevocation = yield* call(() =>
+              control("wallet-snapshot", { registry: registry.registry, credential: heldSaid })
+            );
+            assertEquals(heldRevocation.state, "rev");
+            assertEquals(heldRevocation.digest, heldRevoked.tel);
             const revoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
               registryName: "registry",
               credentialSaid: said,

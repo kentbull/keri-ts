@@ -1,7 +1,8 @@
 """A real legacy TEL group member behind ordinary Python HTTP/parser intake.
 
 Fixture commands choose public signing/verification operations. They never seed
-accepted rows. Every peer delivery crosses / and the unmodified HttpEnd/Parser.
+accepted rows. Member and independent-wallet deliveries use the unmodified
+HttpEnd/Parser, with separate Habery/Reger environments and private keys.
 Explicit v1 child framing avoids the separately recorded pinned-main KLI defect;
 this fixture demonstrates protocol/API capability, not corrected CLI behavior.
 """
@@ -174,10 +175,29 @@ class GroupPeer:
 
 class IpexRecipient:
     """Recipient application operations borrow explicit identity and protocol owners."""
-    def __init__(self, hby, hab, exc, psr, legacy):
-        self.hby, self.hab, self.exc, self.psr = hby, hab, exc, psr
+    def __init__(self, hby, hab, rgy, vry, exc, psr, legacy):
+        self.hby, self.hab, self.rgy, self.vry = hby, hab, rgy, vry
+        self.exc, self.psr = exc, psr
         self.versions = {} if legacy else dict(version=kering.Vrsn_1_0)
         self.remote = None
+
+    def receive(self):
+        """Advance this recipient's ordinary parser and dependency escrows."""
+        if self.psr.ims:
+            self.psr.parse()
+        self.hby.kvy.processEscrows()
+        self.rgy.processEscrows()
+        self.vry.processEscrows()
+        self.exc.processEscrow()
+
+    def snapshot(self, registry, credential=None, exchange=None):
+        """Report independently accepted wallet state, never another member's rows."""
+        tever = self.rgy.tevers.get(registry)
+        state = tever.vcState(credential) if tever and credential else None
+        return dict(state=state.et if state else None,
+                    digest=state.d if state else None,
+                    saved=bool(credential and self.rgy.reger.saved.get(keys=(credential,))),
+                    accepted=bool(exchange and self.hby.db.exns.get(keys=(exchange,))))
 
     def request(self, group, schema, message):
         """Open an actual legacy application to the group, before offer or refusal."""
@@ -202,8 +222,16 @@ class IpexRecipient:
 
     def admit(self, said):
         """Send a genuine recipient admission linked to the accepted group grant."""
-        grant = self.hby.db.exns.get(keys=(said,))
+        grant, paths = exchanging.cloneMessage(self.hby, said=said)
         assert grant is not None and grant.ked['r'] == '/ipex/grant'
+        # Match KLI's grant reconstruction with an explicitly selected legacy
+        # Parser context. Public API framing is not patched CLI evidence.
+        for label in ('anc', 'iss', 'acdc'):
+            factory = serdering.SerderACDC if label == 'acdc' else serdering.SerderKERI
+            body = factory(sad=grant.ked['e'][label])
+            self.psr.parseOne(ims=bytearray(body.raw + paths[label]))
+        self.receive()
+        assert self.rgy.reger.saved.get(keys=(grant.ked['e']['acdc']['d'],))
         admission, atc = protocoling.ipexAdmitExn(self.hab, message='accepted', grant=grant, **self.versions)
         wire = bytearray(admission.raw + atc)
         self.psr.parseOne(ims=bytearray(wire), local=True)
@@ -213,8 +241,8 @@ class IpexRecipient:
 
 class Control:
     """Scenario controls are separate from authenticated protocol input."""
-    def __init__(self, peer, recipient):
-        self.peer, self.recipient = peer, recipient
+    def __init__(self, peer, recipient, wallet):
+        self.peer, self.recipient, self.wallet = peer, recipient, wallet
 
     def on_get(self, req, rep):
         rep.media = dict(ready=True)
@@ -222,15 +250,25 @@ class Control:
     def on_post(self, req, rep):
         try:
             self.peer.receive()
+            self.wallet.receive()
             command = req.media
             action = command.pop('action')
             if action == 'schema':
                 schema = scheming.Schemer(sed=command['schema'])
                 self.peer.hby.db.schema.pin(keys=(schema.said,), val=schema)
+                self.wallet.hby.db.schema.pin(keys=(schema.said,), val=schema)
                 rep.media = dict(schema=schema.said)
             elif action == 'connect':
                 self.recipient.remote = command['url']
                 rep.media = self.peer.connect(**command)
+                self.wallet.remote = command['url']
+                framing = {} if self.peer.legacy else self.peer.framing
+                post(self.wallet.remote, self.peer.own_event(self.wallet.hab, 0))
+                post(self.wallet.remote, self.wallet.hab.makeEndRole(eid=self.wallet.hab.pre,
+                    role=kering.Roles.controller, **framing, **self.wallet.versions))
+                post(self.wallet.remote, self.wallet.hab.makeLocScheme(url=self.peer.origin + 'holder',
+                    eid=self.wallet.hab.pre, scheme='http', **framing, **self.wallet.versions))
+                rep.media['holder'] = self.wallet.hab.pre
             elif action == 'group':
                 rep.media = self.peer.make_group(**command)
             elif action == 'endorse':
@@ -245,6 +283,10 @@ class Control:
                 rep.media = self.recipient.agree(**command)
             elif action == 'admit':
                 rep.media = self.recipient.admit(**command)
+            elif action == 'wallet-admit':
+                rep.media = self.wallet.admit(**command)
+            elif action == 'wallet-snapshot':
+                rep.media = self.wallet.snapshot(**command)
             elif action == 'snapshot':
                 rep.media = self.peer.snapshot(**command)
             else:
@@ -260,14 +302,25 @@ def main():
     args.add_argument('--legacy', action='store_true')
     args = args.parse_args()
     versions = {} if args.legacy else dict(version=kering.Vrsn_1_0)
-    with habbing.openHby(name='legacy-group-peer', temp=True, **versions) as hby:
+    with habbing.openHby(name='legacy-group-peer', temp=True, **versions) as hby, \
+         habbing.openHby(name='independent-holder', temp=True, **versions) as holder_hby:
         peer = GroupPeer(hby, args.legacy)
         peer.origin = f"http://127.0.0.1:{args.port}/"
-        recipient = IpexRecipient(hby, peer.member, peer.exc, peer.psr, args.legacy)
+        recipient = IpexRecipient(hby, peer.member, peer.rgy, peer.vry, peer.exc, peer.psr, args.legacy)
+        holder = holder_hby.makeHab('holder', **versions)
+        holder_rgy = credentialing.Regery(hby=holder_hby, name=holder_hby.name, temp=True)
+        holder_vry = verifying.Verifier(hby=holder_hby, reger=holder_rgy.reger)
+        holder_notifier = notifying.Notifier(hby=holder_hby)
+        holder_exc = exchanging.Exchanger(hby=holder_hby, handlers=[])
+        protocoling.loadHandlers(holder_hby, holder_exc, holder_notifier)
+        holder_psr = parsing.Parser(kvy=holder_hby.kvy, tvy=holder_rgy.tvy,
+                                   vry=holder_vry, exc=holder_exc, **versions)
+        wallet = IpexRecipient(holder_hby, holder, holder_rgy, holder_vry, holder_exc, holder_psr, args.legacy)
         app = falcon.App()
         app.add_route('/', HttpEnd(rxbs=peer.psr.ims))
-        app.add_route('/_fixture', Control(peer, recipient))
-        app.add_route('/health', Control(peer, recipient))
+        app.add_route('/holder', HttpEnd(rxbs=holder_psr.ims))
+        app.add_route('/_fixture', Control(peer, recipient, wallet))
+        app.add_route('/health', Control(peer, recipient, wallet))
         server = createHttpServer('127.0.0.1', args.port, app)
         doist = doing.Doist(tock=.005, real=True, doers=[http.ServerDoer(server=server)])
         running = True
@@ -280,11 +333,13 @@ def main():
             while running:
                 doist.recur()
                 peer.receive()
+                wallet.receive()
                 time.sleep(.005)
         finally:
             doist.exit()
             server.close()
             peer.rgy.close()
+            holder_rgy.close()
 
 
 if __name__ == '__main__':

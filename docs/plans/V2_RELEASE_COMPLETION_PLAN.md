@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged baseline `bbeda977` (#661), 2026-10-21.
+Status: active; merged baseline `a816f5ee` (#662), 2026-10-21.
 Complete implementation, release preparation and fresh qualification for
 **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded** pending the side-chat native ACDC/registry work.
@@ -14,25 +14,26 @@ CLI multisig approval/fanout, legacy NoBackers VCP/ISS/REV and six-verb IPEX,
 legacy TEL replay and Tufa verifier separation. Autonomous legacy TEL backing
 is retired; external observer verification remains supported.
 
-Bounded peer evidence is implemented through #658–661. The last profile gaps—
-weighted CLI quorum with an offline non-required member and explicit native-v2
-KEL acceptance/refusal boundaries—are covered in this change. Recheck the existing
-independent-holder KLI wallet workflow against main before closing cut 31. These scoped
-checks do not replace fresh final qualification after package organization.
+Bounded peer evidence is implemented through #662, including weighted CLI quorum
+with an offline non-required member and native-v2 KEL acceptance/refusal boundaries.
+The independent-holder main KLI audit found separately documented upstream URL
+and framing-context limits. Fresh independent Python wallet grant/admit/revocation
+evidence uses unmodified public APIs, separately from the maintained mailbox-fork
+CLI workflow. These checks do not replace fresh final qualification after organization.
 The last broad checkpoint is #650; Git/PRs own detailed delivery history.
 
-| Review cut    | Disposition                                                                                                                          |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 01–12         | Design, protocol/transport ownership and operator fixes merged #576–596.                                                             |
-| 12a–12e       | ESSR/database lifecycle merged #598–601 and #608.                                                                                    |
-| 13–16, 19     | Reporting, selection/resume, query/bootstrap, CLI validation, group VCP/ISS and six-verb IPEX merged through #649.                   |
-| 17–18, R3, 20 | TEL replay #651; autonomous backing retired #652; group revocation #653–654.                                                         |
-| 30a–30c       | Public dependencies, Tufa verifier ownership and refusal counts #655–657.                                                            |
-| 31            | Reciprocal TEL, mixed CLI roles and legacy group credential/IPEX API evidence #658–661; final profile boundary cases in this change. |
-| 31a           | Ownership review: retain ProtocolProcessor's cohesive dispatch/publication boundary; see below.                                      |
-| 31b–31d       | **Next:** organize CESR, KERI and Tufa, separate human-reviewable package cuts.                                                      |
-| 32            | Exact 2.0.0 metadata/changelogs/breaking guide, dependency review and fresh full qualification.                                      |
-| Preparation   | Qualify and retain unpublished artifacts; no npm/tag/GitHub publication.                                                             |
+| Review cut    | Disposition                                                                                                                                                |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01–12         | Design, protocol/transport ownership and operator fixes merged #576–596.                                                                                   |
+| 12a–12e       | ESSR/database lifecycle merged #598–601 and #608.                                                                                                          |
+| 13–16, 19     | Reporting, selection/resume, query/bootstrap, CLI validation, group VCP/ISS and six-verb IPEX merged through #649.                                         |
+| 17–18, R3, 20 | TEL replay #651; autonomous backing retired #652; group revocation #653–654.                                                                               |
+| 30a–30c       | Public dependencies, Tufa verifier ownership and refusal counts #655–657.                                                                                  |
+| 31            | Reciprocal TEL, mixed CLI roles and legacy group credential/IPEX API evidence #658–661; profile boundaries #662 and independent Python recipient evidence. |
+| 31a           | Ownership review: retain ProtocolProcessor's cohesive dispatch/publication boundary; see below.                                                            |
+| 31b–31d       | **Next:** organize CESR, KERI and Tufa, separate human-reviewable package cuts.                                                                            |
+| 32            | Exact 2.0.0 metadata/changelogs/breaking guide, dependency review and fresh full qualification.                                                            |
+| Preparation   | Qualify and retain unpublished artifacts; no npm/tag/GitHub publication.                                                                                   |
 
 ## Scope and architectural constraints
 
@@ -127,16 +128,16 @@ interchange; missing environments/reference defects are not passing evidence.
 The maintained scenario set supplies the following evidence, to be rerun from the
 final source after organization. Preserve its topology and assertions:
 
-| Boundary            | Maintained evidence                                                                                                                                                                                                                                        |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Wire/profile        | Verified CLI/KEL/OOBI intake on all three pins; v1 control accepted everywhere, native-v2 KEL accepted on main and unaccepted on legacy. Actual TCP TEL replay covers v1/v1 and main v1-body/v2-genus. Unsupported downgrade is explicitly refused.        |
-| Replay/restart      | TS-to-Python and Python-to-TS issuance/revocation; fresh observer intake, reopen and stale issuance cannot revive revocation. External indexed backed-TEL observer validation remains.                                                                     |
-| Mixed CLI roles     | Tufa proposes witnessed inception/Python approves; Python proposes interaction/Tufa approves. Independent stores reopen at the same coordinate. Preserve 2-of-2 and weighted three-half quorum with a non-signing offline member.                          |
-| Mixed legacy APIs   | VCP/ISS/REV, reciprocal issuance, apply/offer/agree/grant/admit and separate spurn cross actual HTTP between independent TS/Python member stores, with actual signatures and verifier/TEL acceptance. Reopen retains revocation.                           |
-| Holder/observer     | Existing CLI group workflow retains independent member, holder and verifier stores; grant/admit wallet settlement, actual revocation delivery and verifier reopen/stale replay. The mixed Python member/recipient API case does not replace this topology. |
-| Transport/ownership | Real HTTP/TCP and old witness-mailbox polling, separate mailbox/KRAM cases, scoped cancellation/cleanup, witnessed/delegated setups and ordinary/establishment-only anchors.                                                                               |
-| Negative/recovery   | Existing wrong signer/issuer/anchor, duplicate indices, missing/tampered proof, partial signatures, hostile ordering, consumed-notification restart and exact-event resume. Add negatives only for a demonstrated uncovered risk.                          |
-| Operator/storage    | Strict no-write input refusal, initialization/encryption intent, canonical OOBI cleanup and Python reopen, database shutdown and simultaneous operation/cleanup failures.                                                                                  |
+| Boundary            | Maintained evidence                                                                                                                                                                                                                                                                                  |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Wire/profile        | Verified CLI/KEL/OOBI intake on all three pins; v1 control accepted everywhere, native-v2 KEL accepted on main and unaccepted on legacy. Actual TCP TEL replay covers v1/v1 and main v1-body/v2-genus. Unsupported downgrade is explicitly refused.                                                  |
+| Replay/restart      | TS-to-Python and Python-to-TS issuance/revocation; fresh observer intake, reopen and stale issuance cannot revive revocation. External indexed backed-TEL observer validation remains.                                                                                                               |
+| Mixed CLI roles     | Tufa proposes witnessed inception/Python approves; Python proposes interaction/Tufa approves. Independent stores reopen at the same coordinate. Preserve 2-of-2 and weighted three-half quorum with a non-signing offline member.                                                                    |
+| Mixed legacy APIs   | VCP/ISS/REV, reciprocal issuance, apply/offer/agree/grant/admit and separate spurn cross actual HTTP between independent TS/Python member stores; a fresh third Python wallet accepts grant/admit and later revocation. Actual signatures and verifier/TEL acceptance; TS reopen retains revocation. |
+| Holder/observer     | Existing CLI group workflow retains independent member, holder and verifier stores; grant/admit wallet settlement, actual revocation delivery and verifier reopen/stale replay. The mixed API scenario does not replace this topology; main CLI wallet URL/context limits are recorded separately.   |
+| Transport/ownership | Real HTTP/TCP and old witness-mailbox polling, separate mailbox/KRAM cases, scoped cancellation/cleanup, witnessed/delegated setups and ordinary/establishment-only anchors.                                                                                                                         |
+| Negative/recovery   | Existing wrong signer/issuer/anchor, duplicate indices, missing/tampered proof, partial signatures, hostile ordering, consumed-notification restart and exact-event resume. Add negatives only for a demonstrated uncovered risk.                                                                    |
+| Operator/storage    | Strict no-write input refusal, initialization/encryption intent, canonical OOBI cleanup and Python reopen, database shutdown and simultaneous operation/cleanup failures.                                                                                                                            |
 
 Python apply/offer/agree CLI files and wrapped-IPEX join paths are stubs at the
 inspected references. Registry/credential join also has the separately reproduced

@@ -125,3 +125,36 @@ The isolated 1.3 result establishes the source-policy behavior, not an unexecute
 1.3 CLI timeout. Upstream should review the credential join approval sites along
 with their local Multiplexor registration, then qualify the full witnessed CLI
 path. No patched CLI success is claimed here.
+
+## Independent-holder main CLI audit
+
+The existing independent KLI holder/Tufa issuer/Tufa verifier/mailbox-provider
+workflow was also attempted against the same main pin, adapting only CLI argument
+selection to its actual help. Current `vc`, `ipex` and `mailbox` commands do not
+accept the older fork's `--version 1.0` option. The topology and ordinary CLI
+operations were preserved; no peer source or accepted database rows were changed.
+
+With a root provider URL, `mailbox add` fails before transmission:
+`Already open connection attempt to change hostname ... to 'mailboxes'`.
+Its [request path](https://github.com/WebOfTrust/keripy/blob/c7e74adc3129ba36302db32e58056560b0927424/src/keri/cli/commands/mailbox/add.py#L113)
+appends `/mailboxes` to requester path `/`, producing `//mailboxes`. Hio treats
+that as a network-path reference to a different host. Normalize the path join;
+this is separate from protocol authentication.
+
+A valid Tufa identity-scoped provider URL gets past that failure. Authorization
+then receives HTTP 400, `Invalid mailbox authorization reply: Unknown matter hard selector -`. Main's `Hab.replay()` and `Hab.reply()` default to attachment genus
+v2 even for established v1 bodies; `reply()` defaults `genusify=False`. The CLI
+passes neither an explicit legacy genus nor an explicit selector to these calls,
+and the multipart mailbox boundary does not select that alternate context. The
+same evidence may be valid in an explicitly selected v2 context; this observation
+does not justify guessing alternate counter tables or weakening authorization.
+The intended default context at this cross-implementation multipart boundary
+merits upstream agreement. This main CLI wallet lane remains **unqualified**.
+
+The mixed credential scenario separately uses a fresh Python Habery/Reger and
+private identity as recipient. A group-issued credential reaches that wallet via
+actual HTTP support and grant messages, then public Parser/Verifier operations
+reconstruct the grant's authenticated children before an actual admission is
+sent. Later real revocation replay reaches the same independent store. Explicit
+legacy framing and Serder factories are public API choices, not patched CLI
+success. The separate maintained mailbox-fork CLI workflow remains required.
