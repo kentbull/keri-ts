@@ -57,11 +57,10 @@ reverifies the union by unique index against that historical roster; accepted an
 anchorless/partial evidence retains only verified contributions. Exact accepted
 duplicates can add valid late receipts without reapplying state. Ordinary sweeps
 retry partial backer evidence and remove completed family indexes after commit.
-Explicit hosted backers consume Tevery's committed eligible coordinates separately
-from observer acceptance. `bens.` persists each local signer's one-digest choice
-per TEL coordinate atomically with its ordinary `tibs` signature; it is not an
-outbox. Received proofs distinguish explicit re-delivery from escrow retries,
-which already include the stored receipt. Never enable signing for every local Hab.
+[ADR-0014](../../docs/adr/adr-0014-legacy-tel-backer-retirement.md) rejects
+autonomous legacy TEL signing/hosting and backed-registry application authoring.
+Keep externally received backed TEL verification, canonical proof tables, historical
+cohorts and observer escrows; do not restore an active producer to support them.
 Tevery owns the synchronous Reger writer, using a private admission candidate from
 accepted storage. Tever retains no input policy/cue Deck; Tevery supplies policy
 and publishes cache changes/revocation cues after commit. Caller-owned writers

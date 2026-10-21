@@ -74,46 +74,15 @@ responsibilities into one vague "VC" layer.
   occur in its concrete I/O operation. Verifier sidecars do not borrow Reactor's
   protocol serialization. Duplicate revocations produce no second webhook.
 
-## Hosted TEL Backers
+## Legacy TEL backing boundary
 
-Implements optional backing for legacy, v1-style credential TELs (`vcp`, `vrt`,
-`bis`, `brv`). It produces indexed endorsements required by the registry's
-configured backer quorum. Native ACDC v2 registries (`rip`, `bup`, `upd`) do not
-use or require this mechanism. TEL backing is separate from issuer multisig
-approval and KEL witnessing.
-
-“Legacy/v1-style TEL backing” identifies the registry event model, independently
-of the KERIpy release, message version, CESR attachment genus or keri-ts package
-version. KERIpy supplies the receipt format and observer validation; our
-autonomous signing service is an additional implementation.
-
-`tufa agent --backer-alias ALIAS` explicitly enables one local nontransferable
-single-key signer. Tevery publishes eligible coordinates only after committing
-accepted or partial-quorum evidence. `vdr/backing.ts` rechecks the stored event,
-issuer anchor and roster before signing; quorum remains the observer's separate
-acceptance obligation. `app/backer-service.ts` consumes the private Deck and
-hands committed receipt wire to Poster. No protocol role is invented.
-
-The issuer supplies ordinary KEL/TEL evidence and signed controller/agent endpoint
-records. The return destination is the issuer in validated registry state, never
-an HTTP caller URL. Poster uses its first available controller/agent role. Missing
-routing is reported locally; the caller must supply the signed endpoint and
-re-deliver. Transport completion is not remote acceptance.
-
-`Reger.bens` (`bens.`) records one event digest per local backer AID, TEL prefix
-and ordinal. KERIpy's receipt tables alone cannot enforce this local signing
-choice across competing digests. The choice and indexed signature in ordinary
-`tibs` commit together before network admission. Conflicts are refused; this
-prevents this signer from endorsing both candidates, not issuer duplicity.
-Duplicate input without the receipt reuses it after restart. Escrow retries
-already carrying the receipt do not echo it. A crash after endorsement but before
-transmission requires explicit re-delivery; there is no durable delivery outbox.
-
-The bounded interop case launches the public agent, withholds one required proof,
-restarts the host, completes the same event and verifies the resulting evidence
-with pinned-main Python Parser/Kevery/Tevery. Python supplies the observer, not an
-autonomous backer service. Group policy/rotation and full BIS/BRV workflow coverage
-remain separate release cuts.
+The application authors NoBackers registries and `iss`/`rev` TELs. Autonomous
+legacy TEL signing, hosting and backed-registry authoring are retired under
+[ADR-0014](../../adr/adr-0014-legacy-tel-backer-retirement.md); the
+[reference report](../../reports/credentials/LEGACY_TEL_BACKER_RETIREMENT.md)
+preserves the former design. External `vcp`/`vrt`/`bis`/`brv` evidence still uses
+ordinary observer validation and replay, including its exact historical backer
+quorum. Issuer multisig approval and KEL witnessing remain separate obligations.
 
 ## V2 Registry Evidence
 

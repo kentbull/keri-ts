@@ -640,7 +640,6 @@ function approveRegistryIncept(
   if (registryName !== undefined) {
     const cnfg = stringArrayField(vserder.ked ?? {}, "c");
     registerRegistry(rgy, registryName, groupHab, regk, {
-      noBackers: cnfg.includes(TraitDex.NoBackers),
       estOnly: cnfg.includes(TraitDex.EstOnly),
     });
   }
@@ -686,7 +685,7 @@ function registerRegistry(
   name: string,
   hab: Hab,
   regk: string,
-  options: { noBackers: boolean; estOnly: boolean },
+  options: { estOnly: boolean },
 ): void {
   rgy.reger.registries.add(regk);
   rgy.reger.regs.pin(name, new RegistryRecord({ registryKey: regk, prefix: hab.pre }));
@@ -701,7 +700,6 @@ function registerRegistry(
         tvy: rgy.tvy,
         cues: rgy.cues,
         regk,
-        noBackers: options.noBackers,
         estOnly: options.estOnly,
       }),
     );

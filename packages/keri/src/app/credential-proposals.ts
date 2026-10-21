@@ -11,7 +11,6 @@ import {
 } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import type { Reger } from "../db/reger.ts";
-import { resolveBackerState } from "../vdr/backer-state.ts";
 import { Credentialer, type Regery } from "../vdr/credentialing.ts";
 import { validateRegistryInception } from "../vdr/eventing.ts";
 import { telAnchorMatches } from "../vdr/tel-anchor.ts";
@@ -58,6 +57,7 @@ export function groupCredentialAnchorReady(hby: Habery, issuer: string, anchor: 
 /** Validate the signed VCP policy and its exact issuer anchor without accepting either event. */
 export function validateRegistryProposal(issuer: string, event: SerderKERI, anchor: SerderKERI): void {
   const inception = validateRegistryInception(event);
+  if (!inception.noBackers) throw new ValidationError("Local registry authoring requires NoBackers policy.");
   if (inception.issuer !== issuer) throw new ValidationError("Registry inception issuer does not match its group.");
   validateProposalAnchor(issuer, event, anchor, inception.estOnly);
 }
@@ -74,8 +74,8 @@ export function validateCredentialIssueProposal(
   event: SerderKERI,
   anchor?: SerderKERI,
 ): boolean {
-  if (event.ilk !== Ilks.iss && event.ilk !== Ilks.bis) {
-    throw new ValidationError("Credential issuance proposal requires iss or bis evidence.");
+  if (event.ilk !== Ilks.iss) {
+    throw new ValidationError("Local credential issuance requires iss evidence in a NoBackers registry.");
   }
   if (!creder.verify() || !event.verify() || event.pre !== creder.said || event.sn !== 0 || creder.issuer !== issuer) {
     throw new ValidationError("Credential issuance does not match its credential and group issuer.");
@@ -85,16 +85,8 @@ export function validateCredentialIssueProposal(
   const state = rgy.reger.states.get(regk);
   if (!state) return false;
   if (state.ii !== issuer) throw new ValidationError("Credential registry is controlled by another issuer.");
-  const noBackers = (state.c ?? []).includes(TraitDex.NoBackers);
-  if (event.ilk === Ilks.iss) {
-    if (!noBackers || event.ked?.ri !== regk) {
-      throw new ValidationError("Credential issuance registry or backer policy mismatch.");
-    }
-  } else {
-    if (noBackers) throw new ValidationError("Backer issuance cannot use a NoBackers registry.");
-    const cohort = resolveBackerState(rgy.reger, regk, event.ked?.ra);
-    if (cohort.kind === "missing") return false;
-    if (cohort.kind === "reject") throw new ValidationError(cohort.reason);
+  if (!(state.c ?? []).includes(TraitDex.NoBackers) || event.ked?.ri !== regk) {
+    throw new ValidationError("Local credential issuance registry or NoBackers policy mismatch.");
   }
   if (anchor) validateProposalAnchor(issuer, event, anchor, (state.c ?? []).includes(TraitDex.EstOnly));
   const prior = rgy.reger.tels.getOn(creder.said!, 0);

@@ -109,9 +109,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * VDR/TEL credential database owner.
  *
- * Protocol evidence uses literal KERIpy `Reger` subkeys. The local `bens.`
- * endorsement-choice table additionally prevents a hosted signer from endorsing
- * competing digests; it is not reference protocol evidence or a delivery queue.
+ * Protocol evidence uses literal KERIpy `Reger` subkeys; observer receipt
+ * evidence remains separate from local issuer publication state.
  */
 export class Reger extends LMDBer {
   public readonly registries = new Set<string>();
@@ -123,8 +122,6 @@ export class Reger extends LMDBer {
   public baks!: IoDupSuber<string>; // Backer AIDs at one TEL management state.
   /** Indexed backer proofs; out-of-order candidates are reverified against accepted cohorts before admission. */
   public tibs!: CesrDupSuber<Siger>;
-  /** Local backer choice at (backer AID, TEL prefix, ordinal); signatures remain in tibs. Not an outbox. */
-  public bens!: CesrOnSuber<Diger>;
   public oots!: OnIoDupSuber<string>; // Out-of-order TEL event escrows.
   public twes!: OnIoDupSuber<string>; // Partially witnessed TEL event escrows.
   public taes!: OnIoDupSuber<string>; // Anchorless TEL event escrows.
@@ -192,7 +189,6 @@ export class Reger extends LMDBer {
         subkey: "tibs.",
         ctor: Siger,
       });
-      this.bens = new CesrOnSuber<Diger>(this, { subkey: "bens.", ctor: Diger });
       this.oots = new OnIoDupSuber<string>(this, { subkey: "oots" });
       this.twes = new OnIoDupSuber<string>(this, { subkey: "twes" });
       this.taes = new OnIoDupSuber<string>(this, { subkey: "taes" });

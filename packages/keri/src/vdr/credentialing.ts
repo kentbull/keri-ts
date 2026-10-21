@@ -36,12 +36,9 @@ import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { ValidationError } from "../core/errors.ts";
 import {
-  backerIssue,
-  backerRevoke,
   incept as inceptRegistryEvent,
   issue as issueEvent,
   revoke as revokeEvent,
-  rotate as rotateRegistryEvent,
 } from "../core/protocol-vdr-eventing.ts";
 import { RegistryRecord } from "../core/records.ts";
 import type { Reger } from "../db/reger.ts";
@@ -64,16 +61,12 @@ export interface RegistryOptions {
   tvy: Tevery;
   cues?: Deck<AgentCue>;
   regk?: string;
-  noBackers?: boolean;
   estOnly?: boolean;
 }
 
 export interface RegistryInceptOptions {
-  noBackers?: boolean;
   estOnly?: boolean;
   nonce?: string;
-  baks?: string[];
-  toad?: number | string;
 }
 
 export interface CredentialBuildOptions {
@@ -376,7 +369,7 @@ export class Regery {
   }
 }
 
-/** One credential registry controlled by one issuer habitat. */
+/** Local NoBackers registry authoring; externally backed state remains available for observation. */
 export class Registry {
   readonly publication: TelPublication;
   readonly name: string;
@@ -385,7 +378,6 @@ export class Registry {
   readonly tvy: Tevery;
   readonly cues: Deck<AgentCue>;
   regk: string | null;
-  noBackers: boolean;
   estOnly: boolean;
 
   constructor(options: RegistryOptions) {
@@ -400,19 +392,16 @@ export class Registry {
     this.cues = options.cues ?? new Deck<AgentCue>();
     this.regk = options.regk ?? null;
     const config = this.regk ? this.reger.states.get(this.regk)?.c ?? [] : [];
-    this.noBackers = options.noBackers ?? (this.regk === null || config.includes(TraitDex.NoBackers));
     this.estOnly = options.estOnly ?? config.includes(TraitDex.EstOnly);
   }
 
   incept(options: RegistryInceptOptions = {}): TelProcessDecision {
     const cnfg = [
-      ...((options.noBackers ?? true) ? [TraitDex.NoBackers] : []),
+      TraitDex.NoBackers,
       ...(options.estOnly ? [TraitDex.EstOnly] : []),
     ];
     const serder = inceptRegistryEvent(requireHabPrefix(this.hab), {
       cnfg,
-      baks: options.baks,
-      toad: options.toad,
       nonce: options.nonce,
     });
     const seal = anchorTelEvent(this.hab, serder, options.estOnly ?? this.estOnly);
@@ -421,7 +410,6 @@ export class Registry {
       throw new ValidationError(`Registry inception failed: ${decision.kind}`);
     }
     this.regk = said(serder);
-    this.noBackers = cnfg.includes(TraitDex.NoBackers);
     this.estOnly = cnfg.includes(TraitDex.EstOnly);
     this.reger.registries.add(this.regk);
     this.reger.regs.pin(
@@ -435,31 +423,10 @@ export class Registry {
     return decision;
   }
 
-  rotate(options: {
-    toad?: number | string;
-    cuts?: string[];
-    adds?: string[];
-  } = {}): TelProcessDecision {
-    const tever = this.currentTever();
-    const serder = rotateRegistryEvent(this.requireRegk(), said(tever.serder), {
-      sn: tever.sn + 1,
-      toad: options.toad,
-      baks: [...tever.baks],
-      cuts: options.cuts,
-      adds: options.adds,
-    });
-    const seal = anchorTelEvent(this.hab, serder, this.estOnly);
-    const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
-    this.trackPublication(serder, seal);
-    return decision;
-  }
-
   issue(creder: SerderACDC): { serder: SerderKERI; decision: TelProcessDecision; seal: AnchorSeal } {
-    const tever = this.currentTever();
+    this.authoringState();
     const regk = this.requireRegk();
-    const serder = tever.noBackers
-      ? issueEvent(said(creder), regk)
-      : backerIssue(said(creder), regk, tever.sn, said(tever.serder));
+    const serder = issueEvent(said(creder), regk);
     const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
@@ -469,15 +436,13 @@ export class Registry {
   revoke(
     credentialSaid: string,
   ): { serder: SerderKERI; decision: TelProcessDecision; seal: AnchorSeal } {
-    const tever = this.currentTever();
+    const tever = this.authoringState();
     const prior = this.reger.tels.getOn(credentialSaid, tever.vcSn(credentialSaid) ?? 0);
     if (!prior) {
       throw new ValidationError(`Cannot revoke unknown credential ${credentialSaid}.`);
     }
     const regk = this.requireRegk();
-    const serder = tever.noBackers
-      ? revokeEvent(credentialSaid, regk, prior.qb64)
-      : backerRevoke(credentialSaid, regk, tever.sn, said(tever.serder), prior.qb64);
+    const serder = revokeEvent(credentialSaid, regk, prior.qb64);
     const seal = anchorTelEvent(this.hab, serder, this.estOnly);
     const decision = this.tvy.processEvent({ serder, seqner: seal.seqner, saider: seal.saider });
     this.trackPublication(serder, seal);
@@ -502,12 +467,16 @@ export class Registry {
     return this.regk;
   }
 
-  private currentTever() {
-    const tever = this.reger.tevers.get(this.requireRegk());
-    if (!(tever instanceof Object) || !("serder" in tever)) {
+  /** Foreign backed registries remain readable, but cannot authorize local TEL authoring. */
+  private authoringState() {
+    const tever = this.tvy.tevers.get(this.requireRegk());
+    if (!tever) {
       throw new ValidationError(`Missing TEL state for registry ${this.requireRegk()}.`);
     }
-    return tever as import("./eventing.ts").Tever;
+    if (!tever.noBackers) {
+      throw new ValidationError("Local credential authoring requires a NoBackers registry.");
+    }
+    return tever;
   }
 }
 

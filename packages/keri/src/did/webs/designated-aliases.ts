@@ -265,7 +265,7 @@ function designatedAliasRegistry(
   if (!createRegistry) {
     throw new ValidationError(`Registry ${registryName} not found.`);
   }
-  return rgy.makeRegistry(registryName, hab, { noBackers: true });
+  return rgy.makeRegistry(registryName, hab);
 }
 
 function credentialSaid(creder: SerderACDC): string {

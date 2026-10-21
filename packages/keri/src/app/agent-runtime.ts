@@ -18,11 +18,9 @@ import { Revery } from "../core/routing.ts";
 import { Mailboxer } from "../db/mailboxing.ts";
 import { Noter } from "../db/noting.ts";
 import { createReger, Reger } from "../db/reger.ts";
-import { Backer, type BackerRequest } from "../vdr/backing.ts";
 import { Regery as VdrRegery } from "../vdr/credentialing.ts";
 import { Tevery } from "../vdr/eventing.ts";
 import { Authenticator } from "./authenticating.ts";
-import { BackerService } from "./backer-service.ts";
 import { loadChallengeHandlers } from "./challenging.ts";
 import { cueDo } from "./cue-runtime.ts";
 import { Anchorer, loadDelegationHandlers } from "./delegating.ts";
@@ -104,8 +102,6 @@ export interface AgentRuntime {
   mailboxPoller: MailboxPoller;
   /** Single FIFO outgoing delivery queue and retained failure owner. */
   postman: Poster;
-  /** Explicitly enabled TEL signer and receipt producer, absent on ordinary hosts. */
-  backerService: BackerService | null;
   /** Delegation workflow state and delivery/accepted-state gates. */
   delegating: Anchorer;
   /**
@@ -161,12 +157,6 @@ export interface AgentRuntimeOptions {
   messagePolicy?: MessagePolicy;
   /** Optional KRAM uses the trusted runtime receiver clock. */
   kram?: KramConfig;
-  /**
-   * Explicit nontransferable signer for optional legacy/v1-style TEL backing.
-   * Independent of issuer multisig/KEL witnessing; native ACDC v2 does not require it.
-   * Borrowed from this Habery, never inferred from hosted identities.
-   */
-  backerHab?: Hab;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -231,11 +221,6 @@ export function* createAgentRuntime(
   clock: RuntimeClock,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
-  if (
-    options.backerHab && (options.backerHab.db !== hby.db || hby.habs.get(options.backerHab.pre) !== options.backerHab)
-  ) {
-    throw new RangeError("AgentRuntime backer must be an explicitly selected habitat in this Habery");
-  }
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
     (options.notifier && options.notifier.signator !== hby.signator)
@@ -280,12 +265,9 @@ export function* createAgentRuntime(
       owned.clear();
     }
   });
-  const backerRequests = options.backerHab ? new Deck<BackerRequest>() : undefined;
-  if (options.backerHab && !reger) throw new Error("Hosted TEL backer requires a writable registry store");
-  const backer = options.backerHab && reger ? new Backer(options.backerHab, reger) : null;
   const protocolCues = new Deck<AgentCue>();
   const revery = new Revery(hby.db, { cues: protocolCues });
-  const tvy = reger ? new Tevery({ db: hby.db, reger, cues: protocolCues, rvy: revery, backerRequests }) : undefined;
+  const tvy = reger ? new Tevery({ db: hby.db, reger, cues: protocolCues, rvy: revery }) : undefined;
   const vdr = reger ? new VdrRegery(hby, { reger, cues: protocolCues, tvy }) : null;
   // Reverse scope teardown joins borrowed output evidence before its backing stores close.
   const replyStreams = yield* resource<ReplyStreams>(function*(provide) {
@@ -380,7 +362,6 @@ export function* createAgentRuntime(
       yield* inquisitor.close();
     }
   });
-  const backerService = backer && backerRequests ? new BackerService(backer, backerRequests, postman) : null;
   const delegating = new Anchorer(hby, postman, querying, protocol, http, clock);
   const oobiery = new Oobiery(hby, protocol, revery, http, cues);
   oobiery.registerReplyRoutes(revery.rtr);
@@ -402,7 +383,6 @@ export function* createAgentRuntime(
     respondant,
     mailboxPoller,
     postman,
-    backerService,
     delegating,
     querying,
     replyStreams,
@@ -435,7 +415,6 @@ export function* createAgentRuntime(
           yield* call(() => mailboxDirector.close());
         },
         function*() {
-          backerRequests?.clear();
           cues.clear();
         },
         function*() {
@@ -632,7 +611,7 @@ export function runtimePendingState(
   runtime: AgentRuntime,
 ): RuntimePendingState {
   return {
-    cues: !runtime.cues.empty || !!runtime.backerService?.requests.length,
+    cues: !runtime.cues.empty,
     replyEscrow: runtime.hby.db.rpes.cnt() > 0,
     oobiQueued: runtime.hby.db.oobis.cnt() > 0,
     oobiInFlight: runtime.hby.db.coobi.cnt() > 0,
@@ -753,7 +732,6 @@ export function* runAgentRuntime(
   const tasks = [
     yield* spawn(() => runtime.querying.deliverDo()),
     yield* spawn(() => runtime.postman.deliverDo()),
-    ...(runtime.backerService ? [yield* spawn(() => runtime.backerService!.run())] : []),
     ...(runtime.vdr && telReceiptor
       ? [
         yield* spawn(function*() {
