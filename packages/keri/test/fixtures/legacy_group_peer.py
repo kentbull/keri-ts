@@ -25,6 +25,15 @@ from keri.peer import exchanging
 from keri.vdr import credentialing, verifying
 
 
+def post(url, wire):
+    """Join a real HTTP delivery; protocol acceptance is checked separately."""
+    request = Request(url, data=bytes(wire), method='POST',
+                      headers={'Content-Type': 'application/cesr'})
+    with urlopen(request, timeout=15) as response:
+        assert response.status == 204
+        response.read()
+
+
 class GroupPeer:
     """Own one member, normal processors and the group's independently accepted evidence."""
     def __init__(self, hby, legacy):
@@ -52,14 +61,6 @@ class GroupPeer:
         self.vry.processEscrows()
         self.exc.processEscrow()
 
-    def post(self, wire):
-        """Wait for the other implementation's real HTTP intake; acceptance is checked separately."""
-        request = Request(self.remote, data=bytes(wire), method='POST',
-                          headers={'Content-Type': 'application/cesr'})
-        with urlopen(request, timeout=15) as response:
-            assert response.status == 204
-            response.read()
-
     def own_event(self, hab, sn):
         if self.legacy:
             return hab.makeOwnEvent(sn=sn, allowPartiallySigned=True)
@@ -67,16 +68,16 @@ class GroupPeer:
 
     def connect(self, url):
         self.remote = url
-        self.post(self.own_event(self.member, 0))
-        self.post(self.member.makeEndRole(eid=self.member.pre, role=kering.Roles.controller, **self.framing, **self.versions))
-        self.post(self.member.makeLocScheme(url=self.origin, eid=self.member.pre, scheme="http", **self.framing, **self.versions))
+        post(self.remote, self.own_event(self.member, 0))
+        post(self.remote, self.member.makeEndRole(eid=self.member.pre, role=kering.Roles.controller, **self.framing, **self.versions))
+        post(self.remote, self.member.makeLocScheme(url=self.origin, eid=self.member.pre, scheme="http", **self.framing, **self.versions))
         return dict(member=self.member.pre)
 
     def make_group(self, member):
         self.group = self.hby.makeGroupHab(group='group', mhab=self.member,
             smids=[member, self.member.pre], rmids=[member, self.member.pre],
             isith='2', nsith='2', **self.versions)
-        self.post(self.own_event(self.group, 0))
+        post(self.remote, self.own_event(self.group, 0))
         return dict(group=self.group.pre)
 
     def endorse(self, said):
@@ -113,7 +114,7 @@ class GroupPeer:
                 rev=tel.raw, anc=own_anchor, **self.versions)
         wire = bytearray(response.raw + atc)
         self.psr.parseOne(ims=bytearray(wire), local=True)
-        self.post(wire)
+        post(self.remote, wire)
         return dict(said=response.said, tel=tel.said)
 
     def issue(self, registry, schema, recipient):
@@ -141,7 +142,7 @@ class GroupPeer:
             iss=tel.raw, anc=anchor_wire, **self.versions)
         wire = bytearray(wrapper.raw + atc)
         self.psr.parseOne(ims=bytearray(wire), local=True)
-        self.post(wire)
+        post(self.remote, wire)
         return dict(credential=creder.said, exnSaid=wrapper.said)
 
     def approve_exchange(self, said):
@@ -159,40 +160,8 @@ class GroupPeer:
         assert self.exc.complete(said=child.said)
         approval, atc = grouping.multisigExn(self.group, exn=wire, **self.versions)
         self.psr.parseOne(ims=bytearray(approval.raw + atc), local=True)
-        self.post(approval.raw + atc)
+        post(self.remote, approval.raw + atc)
         return dict(accepted=child.said, exnSaid=approval.said)
-
-    def request(self, schema, message):
-        """Open an actual legacy application to the group, before offer or refusal."""
-        application, atc = protocoling.ipexApplyExn(self.member, recp=self.group.pre,
-            message=message, schema=schema, attrs=dict(role='member'), **self.versions)
-        wire = bytearray(application.raw + atc)
-        self.psr.parseOne(ims=bytearray(wire), local=True)
-        assert self.exc.complete(said=application.said)
-        self.post(wire)
-        return dict(said=application.said)
-
-    def agree(self, said):
-        """Respond to the exact accepted group offer through the reference factory."""
-        offer = self.hby.db.exns.get(keys=(said,))
-        assert offer is not None and offer.ked['r'] == '/ipex/offer'
-        agreement, atc = protocoling.ipexAgreeExn(self.member, message='agreed', offer=offer, **self.versions)
-        wire = bytearray(agreement.raw + atc)
-        self.psr.parseOne(ims=bytearray(wire), local=True)
-        assert self.exc.complete(said=agreement.said)
-        self.post(wire)
-        return dict(said=agreement.said)
-
-    def admit(self, said):
-        """Send a genuine recipient admission linked to the accepted group grant."""
-        grant = self.hby.db.exns.get(keys=(said,))
-        assert grant is not None and grant.ked['r'] == '/ipex/grant'
-        admission, atc = protocoling.ipexAdmitExn(self.member, message='accepted', grant=grant, **self.versions)
-        wire = bytearray(admission.raw + atc)
-        self.psr.parseOne(ims=bytearray(wire), local=True)
-        assert self.exc.complete(said=admission.said)
-        self.post(wire)
-        return dict(said=admission.said)
 
     def snapshot(self, registry, credential=None, exchange=None):
         tever = self.rgy.tevers.get(registry)
@@ -203,10 +172,49 @@ class GroupPeer:
                     accepted=bool(exchange and self.hby.db.exns.get(keys=(exchange,))))
 
 
+class IpexRecipient:
+    """Recipient application operations borrow explicit identity and protocol owners."""
+    def __init__(self, hby, hab, exc, psr, legacy):
+        self.hby, self.hab, self.exc, self.psr = hby, hab, exc, psr
+        self.versions = {} if legacy else dict(version=kering.Vrsn_1_0)
+        self.remote = None
+
+    def request(self, group, schema, message):
+        """Open an actual legacy application to the group, before offer or refusal."""
+        application, atc = protocoling.ipexApplyExn(self.hab, recp=group,
+            message=message, schema=schema, attrs=dict(role='member'), **self.versions)
+        wire = bytearray(application.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=application.said)
+        post(self.remote, wire)
+        return dict(said=application.said)
+
+    def agree(self, said):
+        """Respond to the exact accepted group offer through the reference factory."""
+        offer = self.hby.db.exns.get(keys=(said,))
+        assert offer is not None and offer.ked['r'] == '/ipex/offer'
+        agreement, atc = protocoling.ipexAgreeExn(self.hab, message='agreed', offer=offer, **self.versions)
+        wire = bytearray(agreement.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=agreement.said)
+        post(self.remote, wire)
+        return dict(said=agreement.said)
+
+    def admit(self, said):
+        """Send a genuine recipient admission linked to the accepted group grant."""
+        grant = self.hby.db.exns.get(keys=(said,))
+        assert grant is not None and grant.ked['r'] == '/ipex/grant'
+        admission, atc = protocoling.ipexAdmitExn(self.hab, message='accepted', grant=grant, **self.versions)
+        wire = bytearray(admission.raw + atc)
+        self.psr.parseOne(ims=bytearray(wire), local=True)
+        assert self.exc.complete(said=admission.said)
+        post(self.remote, wire)
+        return dict(said=admission.said)
+
 class Control:
     """Scenario controls are separate from authenticated protocol input."""
-    def __init__(self, peer):
-        self.peer = peer
+    def __init__(self, peer, recipient):
+        self.peer, self.recipient = peer, recipient
 
     def on_get(self, req, rep):
         rep.media = dict(ready=True)
@@ -221,6 +229,7 @@ class Control:
                 self.peer.hby.db.schema.pin(keys=(schema.said,), val=schema)
                 rep.media = dict(schema=schema.said)
             elif action == 'connect':
+                self.recipient.remote = command['url']
                 rep.media = self.peer.connect(**command)
             elif action == 'group':
                 rep.media = self.peer.make_group(**command)
@@ -231,11 +240,11 @@ class Control:
             elif action == 'approve-exchange':
                 rep.media = self.peer.approve_exchange(**command)
             elif action == 'request':
-                rep.media = self.peer.request(**command)
+                rep.media = self.recipient.request(group=self.peer.group.pre, **command)
             elif action == 'agree':
-                rep.media = self.peer.agree(**command)
+                rep.media = self.recipient.agree(**command)
             elif action == 'admit':
-                rep.media = self.peer.admit(**command)
+                rep.media = self.recipient.admit(**command)
             elif action == 'snapshot':
                 rep.media = self.peer.snapshot(**command)
             else:
@@ -254,10 +263,11 @@ def main():
     with habbing.openHby(name='legacy-group-peer', temp=True, **versions) as hby:
         peer = GroupPeer(hby, args.legacy)
         peer.origin = f"http://127.0.0.1:{args.port}/"
+        recipient = IpexRecipient(hby, peer.member, peer.exc, peer.psr, args.legacy)
         app = falcon.App()
         app.add_route('/', HttpEnd(rxbs=peer.psr.ims))
-        app.add_route('/_fixture', Control(peer))
-        app.add_route('/health', Control(peer))
+        app.add_route('/_fixture', Control(peer, recipient))
+        app.add_route('/health', Control(peer, recipient))
         server = createHttpServer('127.0.0.1', args.port, app)
         doist = doing.Doist(tock=.005, real=True, doers=[http.ServerDoer(server=server)])
         running = True
