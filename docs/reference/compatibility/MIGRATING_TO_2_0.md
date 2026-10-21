@@ -263,6 +263,13 @@ Wrappers are registered locally before transmission. Resume reuses verified
 member contributions and original wrappers, including partial evidence after
 reopen/rotation; explicit selection repairs interrupted indexing by normal replay.
 
+IPEX apply/offer/agree/spurn now coordinate group approval. `--approval-timeout 0`
+returns pending state and wrapper identities; resume with `ipex join --said`.
+Their typed results and JSON distinguish group completion, elected lead and actual
+deliveries. Single-sig authors retain local conversation history before sending;
+responses require an accepted predecessor with matching known parties. A transport
+failure leaves that history intact. Grant/admit settlement remains separate.
+
 ## Native-v2 interoperability boundary
 
 Native-v2 registry and credential CLI/wallet completion is deferred to the

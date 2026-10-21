@@ -14,8 +14,15 @@ import {
 import { writeJsonLine } from "./support/rendering.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
-function printSend({ exn, deliveries }: IpexSendResult): void {
-  writeJsonLine({ said: exn.said, deliveries });
+function printSend({ exn, deliveries, group }: IpexSendResult): void {
+  if (!group) writeJsonLine({ said: exn.said, deliveries });
+  else {writeJsonLine({
+      said: exn.said,
+      status: group.complete ? "multisig-complete" : "multisig-pending",
+      lead: group.lead,
+      messages: group.messages,
+      deliveries,
+    });}
 }
 
 /** Display a completed apply attempt after resource cleanup. */

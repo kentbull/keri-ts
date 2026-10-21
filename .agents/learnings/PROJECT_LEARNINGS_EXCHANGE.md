@@ -119,6 +119,10 @@ Timed waits and delegated-group
 completion are private CLI orchestration, not exported workflow scheduling APIs.
 IPEX group coordination likewise exposes direct approval, publication and pending
 lookup; timed completion and proposal waits belong to the CLI.
+Apply/offer/agree/spurn authoring uses one command host, persists local conversation
+state before delivery, and separates pending approval from elected external sending.
+Explicit join collects stored peer child proofs before its completion decision.
+Response preflight shares the v1 predecessor map and checks known signed parties.
 
 Normalization and Exchanger share supportsNestedExchange for the structural v2
 route gate. Handler opt-in, route-local child validation and independent proofs

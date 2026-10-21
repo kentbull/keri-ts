@@ -186,6 +186,7 @@ export const suites: Record<string, TestSuite> = {
   },
   "app-stateful-a": {
     files: [
+      "test/integration/app/ipex-group-cli.test.ts",
       "test/unit/app/cli.test.ts",
       "test/unit/app/group-signing.test.ts",
       "test/unit/app/habbing.test.ts",
