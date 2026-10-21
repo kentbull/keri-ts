@@ -27,6 +27,8 @@ import { Credentialer, Regery, Registry, serializeCredential } from "../vdr/cred
 import { type AgentRuntime } from "./agent-runtime.ts";
 
 import type { Reger } from "../db/reger.ts";
+import { abortable } from "./abortable.ts";
+import { collectBytes } from "./byte-source.ts";
 import {
   groupCredentialAnchorReady,
   validateCredentialIssueProposal,
@@ -205,18 +207,19 @@ export function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
 }
 
 /**
- * Select accepted, indexed coordination evidence before any approval effects.
+ * Select accepted coordination evidence before any approval effects.
  * An explicit SAID names the outer EXN and survives notification consumption.
  * Notices discover candidates; their attributes do not authorize a route or group.
+ * An explicit accepted wrapper missing its handler index is replayed by the caller.
  */
 function pendingMultisigProposals(
   hby: Habery,
   notices: readonly NoticeLike[],
   options: MultisigApprovalOptions,
-): { exn: SerderKERI; route: MultisigProposalRoute }[] {
+): { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] {
   const candidates = options.said ? [options.said] : notices.map(note => note.attrs.d);
   const group = options.group && (hby.habByName(options.group)?.pre ?? options.group);
-  const selected: { exn: SerderKERI; route: MultisigProposalRoute }[] = [];
+  const selected: { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] = [];
   for (const said of new Set(candidates)) {
     if (typeof said !== "string") continue;
     const exn = hby.db.exns.get([said]);
@@ -224,7 +227,9 @@ function pendingMultisigProposals(
     const route = exn.route ?? "";
     if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE) continue;
     const payloadSaid = multisigPayloadSaid(exn);
-    if (!payloadSaid || !hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) continue;
+    if (!payloadSaid) continue;
+    const indexed = hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said);
+    if (!indexed && !options.said) continue;
     const proposalGroup = isKelRoute(route)
       ? kelApproval(hby, exn, route)?.group
       : stringField(payloadSection(exn.ked), "gid");
@@ -235,7 +240,7 @@ function pendingMultisigProposals(
       }
       continue;
     }
-    selected.push({ exn, route });
+    selected.push({ exn, route, indexed });
   }
   return selected;
 }
@@ -251,7 +256,15 @@ export function* approvePendingMultisigProposal(
     throw new ValidationError("Multisig join requires notification storage or an explicit exchange SAID.");
   }
   const notices = (notifier?.list(0, 100) ?? []) as NoticeLike[];
-  for (const { exn, route } of pendingMultisigProposals(hby, notices, options)) {
+  for (const { exn, route, indexed } of pendingMultisigProposals(hby, notices, options)) {
+    if (!indexed) {
+      // Acceptance commits before the asynchronous handler. Resume that ordinary
+      // authenticated intake after interruption; never synthesize approval indexes.
+      const message = yield* abortable(signal => collectBytes(runtime.exc.replay(exn.said!, signal)));
+      yield* runtime.reactor.processBytes(message, { local: true });
+      const payloadSaid = multisigPayloadSaid(exn)!;
+      if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === exn.said)) continue;
+    }
     const rgy = isVdrRoute(route) ? runtime.vdr : null;
     let result: ApprovalResult | null;
     if (isKelRoute(route)) {
