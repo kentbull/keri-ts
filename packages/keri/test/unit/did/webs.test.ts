@@ -1,12 +1,12 @@
 import { ShortageError, WireParseError } from "cesr-ts";
 import { run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
-import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/agent-runtime.ts";
-import { dwsGenerateCommand } from "../../../src/app/cli/did.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
-import { TransportError } from "../../../src/app/transport-error.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createAgentRuntime, settleRuntimeIngress } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
+import { TransportError } from "../../../src/app/transport/transport-error.ts";
+import { dwsGenerateCommand } from "../../../src/cli/endpoints/did.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import type { Reger } from "../../../src/db/reger.ts";

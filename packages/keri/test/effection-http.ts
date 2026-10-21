@@ -1,6 +1,6 @@
 import { action, type Operation, type Task } from "effection";
-import { collectBytes } from "../src/app/byte-source.ts";
-import type { HttpStreamResponse } from "../src/app/http-client.ts";
+import { collectBytes } from "../src/app/transport/byte-source.ts";
+import type { HttpStreamResponse } from "../src/app/transport/http-client.ts";
 
 /** Wrap `fetch()` as an Effection operation with cancellation-aware cleanup. */
 export function* fetchOp(url: string, init?: RequestInit): Operation<Response> {

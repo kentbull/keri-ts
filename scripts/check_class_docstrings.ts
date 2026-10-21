@@ -10,11 +10,11 @@ const CLASS_RE = /^\s*(?:export\s+)?(?:default\s+)?(?:abstract\s+)?class\s+([A-Z
 const EXPORT_RE = /^\s*export\s+(?:async\s+)?(?:function\*?|class|interface|type|const|let|var)\s+([A-Za-z_$][\w$]*)\b/;
 
 const EXPORT_DOC_FILES = new Set([
-  "packages/keri/src/app/cli/ipex.ts",
-  "packages/keri/src/app/cli/multisig.ts",
-  "packages/keri/src/app/cli/vc.ts",
-  "packages/keri/src/app/endpoint-roleing.ts",
-  "packages/keri/src/app/ipex-credentialing.ts",
+  "packages/keri/src/cli/credentials/ipex.ts",
+  "packages/keri/src/cli/messaging/multisig.ts",
+  "packages/keri/src/cli/credentials/vc.ts",
+  "packages/keri/src/app/identity/endpoint-roleing.ts",
+  "packages/keri/src/app/ipex/ipex-credentialing.ts",
   "packages/keri/src/core/attachment-countering.ts",
   "packages/keri/src/core/protocol-serialization.ts",
 ]);

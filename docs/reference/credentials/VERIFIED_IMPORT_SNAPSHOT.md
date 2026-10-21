@@ -191,5 +191,5 @@ export function* createRegistryEvidenceStore(
 ```
 
 [storage]: https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/test/unit/db/registry-evidence.test.ts
-[ipex]: https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/test/unit/app/ipex-v2.test.ts
-[ownership]: https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/test/unit/app/runtime-store-ownership.test.ts
+[ipex]: https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/test/unit/app/ipex/ipex-v2.test.ts
+[ownership]: https://github.com/kentbull/keri-ts/blob/58770ad02b166bfb4c1e551b91ee4f071051f382/packages/keri/test/unit/app/runtime/runtime-store-ownership.test.ts

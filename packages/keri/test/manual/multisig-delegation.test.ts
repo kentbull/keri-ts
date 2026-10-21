@@ -18,8 +18,8 @@ import {
   type ThresholdSith,
   Verfer,
 } from "../../../cesr/mod.ts";
-import { createHabery, type Hab, type Habery } from "../../src/app/habbing.ts";
-import { encodeHugeNumber } from "../../src/app/keeping.ts";
+import { createHabery, type Hab, type Habery } from "../../src/app/identity/habbing.ts";
+import { encodeHugeNumber } from "../../src/app/identity/keeping.ts";
 import { rotate as rotateEvent } from "../../src/core/protocol-eventing.ts";
 import { interact as interactEvent } from "../../src/core/protocol-eventing.ts";
 import { messagize } from "../../src/core/protocol-serialization.ts";

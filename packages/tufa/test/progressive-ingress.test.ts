@@ -1,5 +1,5 @@
-import { FetchHttpClient } from "../../keri/src/app/http-client.ts";
-import { systemClock } from "../../keri/src/app/runtime-clock.ts";
+import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../keri/src/app/transport/http-client.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 import {
@@ -39,8 +39,8 @@ import {
   queryEnvelopeFromDispatch,
   readCesrRequestBytes,
 } from "keri-ts/runtime";
-import { abortable } from "../../keri/src/app/abortable.ts";
-import { acceptedEventReplayMessage } from "../../keri/src/app/habbing.ts";
+import { acceptedEventReplayMessage } from "../../keri/src/app/identity/habbing.ts";
+import { abortable } from "../../keri/src/app/runtime/abortable.ts";
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messagize, serializeMessage } from "../../keri/src/core/protocol-serialization.ts";
 import { incept as inceptRegistry, issue } from "../../keri/src/core/protocol-vdr-eventing.ts";

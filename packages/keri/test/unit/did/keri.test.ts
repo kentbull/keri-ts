@@ -1,10 +1,10 @@
 import { call, run } from "effection";
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { dkrResolveCommand } from "../../../src/app/cli/did.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
+import { dkrResolveCommand } from "../../../src/cli/endpoints/did.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { resolveDidKeri } from "../../../src/did/keri/resolving.ts";

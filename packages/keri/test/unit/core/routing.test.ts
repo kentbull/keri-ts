@@ -7,9 +7,9 @@ import {
   Prefixer,
   SerderKERI,
 } from "../../../../cesr/mod.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
-import { createProtocolProcessor } from "../../../src/app/protocol-processing.ts";
-import { Reactor } from "../../../src/app/reactor.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
+import { createProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
+import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";

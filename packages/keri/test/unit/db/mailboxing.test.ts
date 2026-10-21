@@ -1,7 +1,7 @@
 import { Diger, MtrDex } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";

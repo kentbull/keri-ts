@@ -12,18 +12,18 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import issueeVectors from "../../../../cesr/test/fixtures/issuee-vectors.json" with { type: "json" };
-import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
-import { revocationRecipients, revokeCredential } from "../../../src/app/credential-revoking.ts";
+import { revocationRecipients, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import {
   createCredential,
   credentialRegistryStatus,
   inceptCredentialRegistry,
   listCredentials,
-} from "../../../src/app/credential-workflows.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
-import { Verifier } from "../../../src/app/verifying.ts";
+} from "../../../src/app/credentials/credential-workflows.ts";
+import { Verifier } from "../../../src/app/credentials/verifying.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createAgentRuntime, enqueueOobi } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { createReger } from "../../../src/db/reger.ts";

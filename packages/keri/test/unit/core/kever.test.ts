@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { b, DigDex, Diger, SerderKERI, Verfer } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { Kever } from "../../../src/core/kever.ts";
 import { KeyStateRecord } from "../../../src/core/records.ts";
 import { createBaser } from "../../../src/db/basing.ts";

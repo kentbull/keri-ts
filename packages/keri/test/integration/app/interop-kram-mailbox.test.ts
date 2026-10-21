@@ -1,6 +1,6 @@
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { oobiTerminalState } from "../../../src/app/oobiery.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { oobiTerminalState } from "../../../src/app/bootstrap/oobiery.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
 
 import { Diger, NumberPrimitive, parseBytes, Prefixer, Siger, t, Vrsn_2_0 } from "cesr-ts";
@@ -8,15 +8,15 @@ import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
+import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-} from "../../../src/app/agent-runtime.ts";
-import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
-import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
+} from "../../../src/app/runtime/agent-runtime.ts";
+import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { query } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";

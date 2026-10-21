@@ -1,6 +1,6 @@
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { oobiTerminalState } from "../../../src/app/oobiery.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { oobiTerminalState } from "../../../src/app/bootstrap/oobiery.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 
 import {
@@ -20,17 +20,17 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
+import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
+import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
+import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
   runAgentRuntimeUntil,
-} from "../../../src/app/agent-runtime.ts";
-import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { ipexExnBody } from "../../../src/app/ipex-building.ts";
-import { consumeMailboxSse } from "../../../src/app/mailbox-sse.ts";
-import { envelopeFromFrame } from "../../../src/app/parsering.ts";
-import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
+} from "../../../src/app/runtime/agent-runtime.ts";
+import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange-nests.ts";

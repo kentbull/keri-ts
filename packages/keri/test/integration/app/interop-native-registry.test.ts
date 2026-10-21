@@ -6,10 +6,10 @@ import { fromFileUrl } from "jsr:@std/path";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
-import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
+import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { createInteropContext, runCmd } from "./interop-test-helpers.ts";
 import { post } from "./ipex-witness-helpers.ts";
 

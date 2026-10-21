@@ -1,11 +1,11 @@
 /** Explicit protocol composition for tests that select real optional handlers or receiver policy. */
 import { RegistryObserver } from "../src/acdc/observing.ts";
 import type { Regery } from "../src/acdc/registraring.ts";
-import { Exchanger } from "../src/app/exchanging.ts";
-import type { Habery } from "../src/app/habbing.ts";
-import { ProtocolProcessor } from "../src/app/protocol-processing.ts";
-import { QueryReplies } from "../src/app/query-replies.ts";
-import type { Verifier } from "../src/app/verifying.ts";
+import type { Verifier } from "../src/app/credentials/verifying.ts";
+import { Exchanger } from "../src/app/exchanges/exchanging.ts";
+import type { Habery } from "../src/app/identity/habbing.ts";
+import { ProtocolProcessor } from "../src/app/protocol/protocol-processing.ts";
+import { QueryReplies } from "../src/app/queries/query-replies.ts";
 import type { AgentCue } from "../src/core/cues.ts";
 import { Deck } from "../src/core/deck.ts";
 import { Kevery, type MessagePolicy } from "../src/core/eventing.ts";

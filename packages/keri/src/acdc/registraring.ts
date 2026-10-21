@@ -9,7 +9,7 @@ import {
   SerderACDC,
 } from "cesr-ts";
 import type { Operation } from "effection";
-import type { Hab, Habery } from "../app/habbing.ts";
+import type { Hab, Habery } from "../app/identity/habbing.ts";
 import { DatabaseNotOpenError, ValidationError } from "../core/errors.ts";
 import { blindate, type BlindateOptions, regcept, type RegceptOptions } from "./messaging.ts";
 import type { RegBaser } from "./regbasing.ts";

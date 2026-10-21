@@ -4,4 +4,4 @@
  * This subpath is separated from `keri-ts/runtime` so host/runtime consumers
  * can avoid pulling Commander-backed command modules into their import graph.
  */
-export * from "./src/app/cli/index.ts";
+export * from "./src/cli/index.ts";

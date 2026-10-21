@@ -6,9 +6,9 @@
 - Related:
   - `docs/adr/adr-0009-mailbox-architecture.md`
   - `docs/design-docs/mailbox/MAILBOX.md`
-  - `packages/keri/src/app/cesr-http.ts`
+  - `packages/keri/src/app/transport/cesr-http.ts`
   - `packages/keri/src/app/server.ts`
-  - `packages/keri/src/app/cli/mailbox.ts`
+  - `packages/keri/src/cli/mailbox.ts`
 
 ## Context
 
@@ -46,7 +46,7 @@ existing signed KERI material.
 Rules:
 
 - keep the request body in KERI-native wire form
-- use helpers in `packages/keri/src/app/cesr-http.ts`
+- use helpers in `packages/keri/src/app/transport/cesr-http.ts`
 - do not wrap existing KERI messages in JSON or multipart form data just to get
   them through HTTP
 
@@ -113,7 +113,7 @@ The authority remains:
 
 ## `keri-ts` Enforcement Seam
 
-`packages/keri/src/app/cesr-http.ts` is the shared seam for this pattern.
+`packages/keri/src/app/transport/cesr-http.ts` is the shared seam for this pattern.
 
 Server-side direct signed-KERI ingress should use helpers from that module for:
 

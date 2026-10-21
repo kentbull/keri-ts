@@ -1,8 +1,8 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
-import { branToSeedAeid } from "../../../src/app/habbing.ts";
-import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/keeping.ts";
+import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
+import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/identity/keeping.ts";
 import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 

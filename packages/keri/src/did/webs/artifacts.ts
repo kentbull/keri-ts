@@ -5,7 +5,7 @@
  * resolver needs to rebuild the same DID document from KERI/VDR state.
  */
 import { concatBytes, Diger, Prefixer } from "cesr-ts";
-import type { Hab, Habery } from "../../app/habbing.ts";
+import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { type Role, Roles } from "../../core/roles.ts";
 import { type Regery, serializeCredential } from "../../vdr/credentialing.ts";

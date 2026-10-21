@@ -4,7 +4,7 @@
 - Date: 2026-04-02
 - Scope: `packages/keri` keeper/manager signing behavior
 - Related:
-  - `packages/keri/src/app/keeping.ts`
+  - `packages/keri/src/app/identity/keeping.ts`
   - `packages/keri/test/unit/db/keeping.test.ts`
   - `docs/ARCHITECTURE_MAP.md`
   - `keripy/src/keri/app/keeping.py`

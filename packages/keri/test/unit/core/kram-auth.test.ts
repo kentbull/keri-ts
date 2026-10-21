@@ -2,8 +2,8 @@
 import { b, Diger, NumberPrimitive, parseBytes, Prefixer, SerderKERI, Siger } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/parsering.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { KeriDispatchEnvelope, TransLastIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { authenticateKramSource } from "../../../src/core/kram-auth.ts";
 import { KramPolicy } from "../../../src/core/kram-policy.ts";

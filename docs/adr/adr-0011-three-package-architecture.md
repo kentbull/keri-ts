@@ -121,7 +121,7 @@ Negative:
 
 - more explicit coordination across package boundaries
 - some reusable command-operation bodies may still physically live under
-  `packages/keri/src/app/cli/*` even though ownership is split by package
+  `packages/keri/src/cli/*` even though ownership is split by package
   surface rather than source-folder location
 - maintainers must resist importing internal `packages/tufa/src/**` modules as
   though they were stable public APIs

@@ -6,7 +6,7 @@
  */
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { createHabery, type Habery } from "../../../src/app/habbing.ts";
+import { createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import {
   createInteropContext,

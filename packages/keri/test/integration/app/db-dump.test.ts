@@ -9,9 +9,9 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";
-import { dumpDatabase } from "../../../src/app/cli/db-dump.ts";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { Notifier, openNoterForHabery } from "../../../src/app/notifying.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { Notifier, openNoterForHabery } from "../../../src/app/notifications/notifying.ts";
+import { dumpDatabase } from "../../../src/cli/tools/db-dump.ts";
 import { createBaser } from "../../../src/db/basing.ts";
 import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
 import { createMailboxer } from "../../../src/db/mailboxing.ts";

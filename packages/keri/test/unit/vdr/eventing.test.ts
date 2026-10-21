@@ -16,12 +16,12 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/agent-runtime.ts";
-import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
-import { createHabery, type Hab } from "../../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
-import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/parsering.ts";
-import { systemClock } from "../../../src/app/runtime-clock.ts";
+import { createHabery, type Hab } from "../../../src/app/identity/habbing.ts";
+import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/protocol/parsering.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";

@@ -8,9 +8,30 @@
  */
 // Host lifecycle, direct ingress and concrete I/O boundaries.
 export {
+  Respondant,
+} from "../app/delivery/respondant.ts";
+export {
+  type DispatchResult,
+  envelopeFromFrame,
+  queryEnvelopeFromDispatch,
+} from "../app/protocol/parsering.ts";
+export {
+  type ProtocolHostPolicy,
+} from "../app/protocol/protocol-host-policy.ts";
+export {
+  createProtocolProcessor,
+  type DispatchOptions,
+  type ProtocolDispatchResult,
+  ProtocolProcessor,
+} from "../app/protocol/protocol-processing.ts";
+export {
+  Reactor,
+} from "../app/protocol/reactor.ts";
+export type { QueryReply } from "../app/queries/query-replies.ts";
+export {
   abortable,
   rethrowCleanupFailure,
-} from "../app/abortable.ts";
+} from "../app/runtime/abortable.ts";
 export {
   type AgentRuntime,
   type AgentRuntimeOptions,
@@ -20,20 +41,24 @@ export {
   runtimeOobiConverged,
   settleMailboxPollBatch,
   settleRuntimeIngress,
-} from "../app/agent-runtime.ts";
+} from "../app/runtime/agent-runtime.ts";
+export {
+  cueDo,
+  processCuesOnce,
+} from "../app/runtime/cue-runtime.ts";
 export {
   chunkBytes,
   collectBytes,
   fileBytes,
   type SourceOptions,
-} from "../app/byte-source.ts";
+} from "../app/transport/byte-source.ts";
 export {
   CesrHttpRefusal,
   type CesrPostResult,
   type EgressOptions,
   postCesr,
   requestFrame,
-} from "../app/cesr-egress.ts";
+} from "../app/transport/cesr-egress.ts";
 export {
   buildCesrRequest,
   buildCesrStreamRequest,
@@ -50,48 +75,23 @@ export {
   readMailboxAdminRequest,
   readRequiredCesrRequestBytes,
   requestBytes,
-} from "../app/cesr-http.ts";
-export {
-  cueDo,
-  processCuesOnce,
-} from "../app/cue-runtime.ts";
+} from "../app/transport/cesr-http.ts";
 export {
   FetchHttpClient,
   type HttpClient,
   type HttpRequestInit,
   type HttpResponse,
   type HttpStreamResponse,
-} from "../app/http-client.ts";
-export {
-  type DispatchResult,
-  envelopeFromFrame,
-  queryEnvelopeFromDispatch,
-} from "../app/parsering.ts";
-export {
-  type ProtocolHostPolicy,
-} from "../app/protocol-host-policy.ts";
-export {
-  createProtocolProcessor,
-  type DispatchOptions,
-  type ProtocolDispatchResult,
-  ProtocolProcessor,
-} from "../app/protocol-processing.ts";
-export type { QueryReply } from "../app/query-replies.ts";
-export {
-  Reactor,
-} from "../app/reactor.ts";
-export {
-  Respondant,
-} from "../app/respondant.ts";
+} from "../app/transport/http-client.ts";
 
 export {
   socketBytes,
   type SocketSourceOptions,
-} from "../app/socket-source.ts";
+} from "../app/transport/socket-source.ts";
 export {
   TCPMessenger,
   type TCPMessengerOptions,
-} from "../app/tcp-messenger.ts";
+} from "../app/transport/tcp-messenger.ts";
 
 export {
   openTcpConnection,
@@ -104,31 +104,23 @@ export {
   type TcpSocketWriteOptions,
   type TcpSourceFactory,
   writeCesrTcpSocket,
-} from "../app/tcp-egress.ts";
-export { TransportError } from "../app/transport-error.ts";
+} from "../app/transport/tcp-egress.ts";
+export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
 export {
-  type ChallengeResponsePayload,
-  findVerifiedChallengeResponse,
-  generateChallengeWords,
-  markChallengeVerified,
-  parseChallengeWords,
-} from "../app/challenging.ts";
-export {
-  Configer,
-  type ConfigerOptions,
-  createConfiger,
-} from "../app/configing.ts";
+  Oobiery,
+  oobiRequestExn,
+} from "../app/bootstrap/oobiery.ts";
 export {
   type CredentialImportResult,
   importCredentialStream,
-} from "../app/credential-importing.ts";
+} from "../app/credentials/credential-importing.ts";
 export {
   type CredentialRevokeOptions,
   type CredentialRevokeResult,
   deliverCredentialRevocation,
   revokeCredential,
-} from "../app/credential-revoking.ts";
+} from "../app/credentials/credential-revoking.ts";
 export {
   createCredential,
   type CredentialCreateOptions,
@@ -144,37 +136,7 @@ export {
   listCredentials,
   pinSchemaBytes,
   type RegistryResult,
-} from "../app/credential-workflows.ts";
-export {
-  Anchorer,
-  type DelegationPhase,
-  type DelegationWorkflowResult,
-  type DelegationWorkflowStatus,
-} from "../app/delegating.ts";
-export {
-  endpointRoleAccepted,
-  type GroupRoleResult,
-  loadAcceptedEndpointRole,
-  proposeGroupEndpointRole,
-} from "../app/endpoint-roleing.ts";
-export {
-  type EssrDecision,
-  type EssrMessage,
-  EssrRecipient,
-} from "../app/essr.ts";
-export {
-  createExchangeMessage,
-  type ExchangeMessageArgs,
-  sendExchangeMessage,
-} from "../app/exchange-messaging.ts";
-export {
-  type ExchangeAttachment,
-  type ExchangeDecision,
-  type ExchangeInput,
-  Exchanger,
-  type ExchangeRouteHandler,
-  type ExchangeRouteVerification,
-} from "../app/exchanging.ts";
+} from "../app/credentials/credential-workflows.ts";
 export {
   type MailboxFetchTimeoutPolicy,
   type MailboxPollBatch,
@@ -185,8 +147,128 @@ export {
   type PosterMsg,
   type PosterOutcome,
   type PosterStream,
-} from "../app/forwarding.ts";
-export { isLocalGroupHab } from "../app/group-members.ts";
+} from "../app/delivery/forwarding.ts";
+export {
+  type EssrDecision,
+  type EssrMessage,
+  EssrRecipient,
+} from "../app/exchanges/essr.ts";
+export {
+  createExchangeMessage,
+  type ExchangeMessageArgs,
+  sendExchangeMessage,
+} from "../app/exchanges/exchange-messaging.ts";
+export {
+  type ExchangeAttachment,
+  type ExchangeDecision,
+  type ExchangeInput,
+  Exchanger,
+  type ExchangeRouteHandler,
+  type ExchangeRouteVerification,
+} from "../app/exchanges/exchanging.ts";
+export {
+  type ChallengeResponsePayload,
+  findVerifiedChallengeResponse,
+  generateChallengeWords,
+  markChallengeVerified,
+  parseChallengeWords,
+} from "../app/identity/challenging.ts";
+export {
+  Configer,
+  type ConfigerOptions,
+  createConfiger,
+} from "../app/identity/configing.ts";
+export {
+  Anchorer,
+  type DelegationPhase,
+  type DelegationWorkflowResult,
+  type DelegationWorkflowStatus,
+} from "../app/identity/delegating.ts";
+export {
+  endpointRoleAccepted,
+  type GroupRoleResult,
+  loadAcceptedEndpointRole,
+  proposeGroupEndpointRole,
+} from "../app/identity/endpoint-roleing.ts";
+export {
+  createHabery,
+  type GroupHabCreation,
+  type GroupHabInteraction,
+  type GroupHabRotation,
+  Hab,
+  Habery,
+  type HaberyArgs,
+  type MakeGroupHabArgs,
+  type MakeHabArgs,
+} from "../app/identity/habbing.ts";
+export {
+  Algos,
+  Manager,
+  type ManagerArgs,
+  type ManagerDecryptArgs,
+  type ManagerInceptArgs,
+  type ManagerIngestArgs,
+  type ManagerReplayArgs,
+  type ManagerRotateArgs,
+  type ManagerSignArgs,
+  type SigningPath,
+} from "../app/identity/keeping.ts";
+export {
+  type ContactRecord,
+  Organizer,
+} from "../app/identity/organizing.ts";
+export {
+  type CredentialAdmitMessage,
+  type CredentialArtifact,
+  type CredentialGrantMessage,
+  type CredentialPresentationArtifacts,
+  credentialPresentationArtifacts,
+  credentialSaidFromGrant,
+  ipexCredentialAdmit,
+  type IpexCredentialAdmitOptions,
+  ipexCredentialGrant,
+  type IpexCredentialGrantOptions,
+  processCredentialPresentationArtifacts,
+  storedGrantArtifacts,
+} from "../app/ipex/ipex-credentialing.ts";
+export type { DisclosurePlan } from "../app/ipex/ipex-graph.ts";
+export {
+  IPEX_GRANT_ROUTE,
+  IPEX_ROUTES,
+  ipexAdmitExn,
+  ipexAgreeExn,
+  ipexApplyExn,
+  type IpexBuilderOptions,
+  ipexGrantExn,
+  type IpexGrantOptions,
+  type IpexMessage,
+  ipexOfferExn,
+  type IpexRoute,
+  ipexSpurnExn,
+} from "../app/ipex/ipexing.ts";
+export {
+  MailboxDirector,
+} from "../app/mailbox/mailbox-director.ts";
+export {
+  consumeMailboxSse,
+  type MailboxSseMessage,
+  type MailboxSseOptions,
+  parseMailboxSse,
+  readMailboxSseBody,
+} from "../app/mailbox/mailbox-sse.ts";
+export {
+  endpointBasePath,
+  fetchEndpointUrls,
+  type HostedEndpoint,
+  type HostedEndpointPathMatch,
+  type HostedRouteResolution,
+  mailboxPollEndpoints,
+  mailboxQueryTopics,
+  mailboxTopicKey,
+  preferredUrl,
+  resolveHostedEndpointPath,
+} from "../app/mailbox/mailboxing.ts";
+export { isLocalGroupHab } from "../app/multisig/group-members.ts";
 export {
   Multiplexor,
   MULTISIG_ROUTES,
@@ -202,100 +284,18 @@ export {
   multisigRotateExn,
   type MultisigRoute,
   multisigRpyExn,
-} from "../app/grouping.ts";
-export {
-  createHabery,
-  type GroupHabCreation,
-  type GroupHabInteraction,
-  type GroupHabRotation,
-  Hab,
-  Habery,
-  type HaberyArgs,
-  type MakeGroupHabArgs,
-  type MakeHabArgs,
-} from "../app/habbing.ts";
-export {
-  type CredentialAdmitMessage,
-  type CredentialArtifact,
-  type CredentialGrantMessage,
-  type CredentialPresentationArtifacts,
-  credentialPresentationArtifacts,
-  credentialSaidFromGrant,
-  ipexCredentialAdmit,
-  type IpexCredentialAdmitOptions,
-  ipexCredentialGrant,
-  type IpexCredentialGrantOptions,
-  processCredentialPresentationArtifacts,
-  storedGrantArtifacts,
-} from "../app/ipex-credentialing.ts";
-export type { DisclosurePlan } from "../app/ipex-graph.ts";
-export {
-  IPEX_GRANT_ROUTE,
-  IPEX_ROUTES,
-  ipexAdmitExn,
-  ipexAgreeExn,
-  ipexApplyExn,
-  type IpexBuilderOptions,
-  ipexGrantExn,
-  type IpexGrantOptions,
-  type IpexMessage,
-  ipexOfferExn,
-  type IpexRoute,
-  ipexSpurnExn,
-} from "../app/ipexing.ts";
-export {
-  Algos,
-  Manager,
-  type ManagerArgs,
-  type ManagerDecryptArgs,
-  type ManagerInceptArgs,
-  type ManagerIngestArgs,
-  type ManagerReplayArgs,
-  type ManagerRotateArgs,
-  type ManagerSignArgs,
-  type SigningPath,
-} from "../app/keeping.ts";
-export {
-  MailboxDirector,
-} from "../app/mailbox-director.ts";
-export {
-  consumeMailboxSse,
-  type MailboxSseMessage,
-  type MailboxSseOptions,
-  parseMailboxSse,
-  readMailboxSseBody,
-} from "../app/mailbox-sse.ts";
-export {
-  endpointBasePath,
-  fetchEndpointUrls,
-  type HostedEndpoint,
-  type HostedEndpointPathMatch,
-  type HostedRouteResolution,
-  mailboxPollEndpoints,
-  mailboxQueryTopics,
-  mailboxTopicKey,
-  preferredUrl,
-  resolveHostedEndpointPath,
-} from "../app/mailboxing.ts";
+} from "../app/multisig/grouping.ts";
 export type {
   GroupMessageRef,
   GroupSendResult,
-} from "../app/multisig-messaging.ts";
+} from "../app/multisig/multisig-messaging.ts";
 export {
   Notifier,
-} from "../app/notifying.ts";
-export {
-  Oobiery,
-  oobiRequestExn,
-} from "../app/oobiery.ts";
-export {
-  type ContactRecord,
-  Organizer,
-} from "../app/organizing.ts";
+} from "../app/notifications/notifying.ts";
 export {
   Signal,
   Signaler,
-} from "../app/signaling.ts";
+} from "../app/notifications/signaling.ts";
 
 export {
   type CredentialStateProvider,
@@ -305,12 +305,7 @@ export {
   type VerifierEscrowReason,
   type VerifierOptions,
   type VerifierRejectReason,
-} from "../app/verifying.ts";
-export {
-  BUILD_METADATA,
-  DISPLAY_VERSION,
-  PACKAGE_VERSION,
-} from "../app/version.ts";
+} from "../app/credentials/verifying.ts";
 export {
   drainWitnessCues,
   processWitnessIngress,
@@ -329,7 +324,12 @@ export {
   witnessReceiptPost,
   type WitnessReceiptPostResult,
   type WitnessReceiptRunResult,
-} from "../app/witnessing.ts";
+} from "../app/witness/witnessing.ts";
+export {
+  BUILD_METADATA,
+  DISPLAY_VERSION,
+  PACKAGE_VERSION,
+} from "../version.ts";
 // Pure protocol construction and typed evidence.
 export {
   acdcagg,
@@ -371,7 +371,7 @@ export {
   vet,
   vetBinds,
 } from "../acdc/regeventing.ts";
-export { publishPendingTel } from "../app/tel-publishing.ts";
+export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,
   type CredentialRevokedCue,
@@ -601,13 +601,13 @@ export {
   makeNowIso8601,
 } from "../time/mod.ts";
 
-export { HTTPMessenger, type HTTPMessengerOptions } from "../app/http-messenger.ts";
-export { HTTPStreamMessenger } from "../app/http-stream-messenger.ts";
-export type { IngressOptions } from "../app/message-source.ts";
-export { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../app/messengering.ts";
-export { TCPStreamMessenger } from "../app/tcp-stream-messenger.ts";
+export { HTTPMessenger, type HTTPMessengerOptions } from "../app/transport/http-messenger.ts";
+export { HTTPStreamMessenger } from "../app/transport/http-stream-messenger.ts";
+export type { IngressOptions } from "../app/transport/message-source.ts";
+export { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../app/transport/messengering.ts";
+export { TCPStreamMessenger } from "../app/transport/tcp-stream-messenger.ts";
 
-export { type RuntimeClock, systemClock } from "../app/runtime-clock.ts";
+export { type RuntimeClock, systemClock } from "../app/runtime/runtime-clock.ts";
 
-export { AnchorQuerier, KeyStateNoticer, LogQuerier, SeqNoQuerier } from "../app/querying.ts";
-export { WitnessInquisitor } from "../app/witness-inquisitor.ts";
+export { AnchorQuerier, KeyStateNoticer, LogQuerier, SeqNoQuerier } from "../app/queries/querying.ts";
+export { WitnessInquisitor } from "../app/queries/witness-inquisitor.ts";

@@ -39,3 +39,14 @@ runtime operations from `keri-ts/runtime` and storage from `keri-ts/db`.
 
 Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the top-level
 `LICENSE` file in this repository.
+
+## Source organization
+
+Application components in `src/app` are grouped by responsibility: identity,
+bootstrap, protocol input, transport, delivery, mailboxes, queries, multisig,
+exchanges, credentials, IPEX, notifications and witnesses. Matching application
+tests use the same categories. `src/cli` contains reusable command operations,
+with identity, endpoint, credential, messaging and tool categories; Tufa still
+owns the executable command tree and its host adapters. Package version metadata
+lives in `src/version.ts`. Public root, runtime, database and CLI entrypoints keep
+their existing roles.

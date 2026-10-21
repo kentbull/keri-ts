@@ -1,6 +1,6 @@
 /** Pairwise independent processors retain distinct graduated disclosures of the same signed chain. */
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import type { DisclosurePlan } from "../../../src/app/ipex-graph.ts";
+import type { DisclosurePlan } from "../../../src/app/ipex/ipex-graph.ts";
 import { type DisclosureDefect, type IpexPeer, type IpexPeers, observed, withIpexPeers } from "./ipex/peers.ts";
 
 /** A test chooses each conversation step and waits for actual accepted state. */

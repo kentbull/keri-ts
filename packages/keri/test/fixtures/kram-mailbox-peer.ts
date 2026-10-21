@@ -1,10 +1,10 @@
 /** Real Tufa mailbox provider in its own process; commands only seed payloads or inspect state. */
 import { call, ensure, run } from "effection";
 import { createProtocolHandler } from "../../../tufa/src/http/protocol-handler.ts";
-import { createAgentRuntime } from "../../src/app/agent-runtime.ts";
-import { createHabery } from "../../src/app/habbing.ts";
-import { FetchHttpClient } from "../../src/app/http-client.ts";
-import { systemClock } from "../../src/app/runtime-clock.ts";
+import { createHabery } from "../../src/app/identity/habbing.ts";
+import { createAgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../src/app/transport/http-client.ts";
 
 /** Closed commands for this test process, separate from protocol ingress. */
 type Command = { action: "store"; pre: string } | { action: "inspect"; pre: string; saids: string[] };

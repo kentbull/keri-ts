@@ -14,7 +14,7 @@ Recheck current source and pinned KERIpy before each implementation cut, because
 
 ## Current evidence
 
-- packages/keri/src/app/cli/init.ts and incept.ts duplicate the bootstrap runtime block, configuredWellKnownUrls, and assertConfiguredWellKnownAuth.
+- packages/keri/src/cli/identity/init.ts and incept.ts duplicate the bootstrap runtime block, configuredWellKnownUrls, and assertConfiguredWellKnownAuth.
 - init.ts validates unknown options with private stringOption/booleanOption helpers. incept.ts largely casts unknown values and repeats numeric conversion.
 - app/cli/common/parsing.ts already owns shared CLI parsing.
 - packages/tufa/src/cli/command-definitions/options.ts owns Commander option groups and argument mapping; lifecycle.ts declares init/incept flags.
@@ -109,9 +109,9 @@ Retain all #595 credential guarantees: hidden input, confirmation, cancellation,
 
 Reuse and adapt existing coverage, especially:
 
-- packages/keri/test/unit/app/oobi-runtime.test.ts
-- packages/keri/test/unit/app/init-credentials.test.ts
-- packages/keri/test/unit/app/incept.test.ts
+- packages/keri/test/unit/app/bootstrap/oobi-runtime.test.ts
+- packages/keri/test/unit/app/cli/init-credentials.test.ts
+- packages/keri/test/unit/app/cli/incept.test.ts
 - existing CLI parsing, configuration and installed-package checks.
 
 Add focused behavioral coverage for:

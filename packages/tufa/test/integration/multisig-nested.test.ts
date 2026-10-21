@@ -1,5 +1,5 @@
-import { FetchHttpClient } from "../../../keri/src/app/http-client.ts";
-import { systemClock } from "../../../keri/src/app/runtime-clock.ts";
+import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
 // @file-test-lane app-stateful-a
 
 import { action, type Operation, run, spawn } from "effection";

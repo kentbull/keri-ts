@@ -1,0 +1,2214 @@
+/**
+ * Habitat and shared-environment primitives for local KERI operation.
+ *
+ * KERIpy correspondence:
+ * - this module is the closest analogue to `keri.app.habbing`
+ * - `Hab` owns local identifier behavior while `Habery` owns the shared
+ *   keeper/database/router/parser environment
+ *
+ * `keri-ts` difference:
+ * - parser ingress uses the CESR frame/envelope pipeline instead of KERIpy's
+ *   monolithic `Parser`
+ * - local bootstrap replies and events still flow through the same accepted
+ *   state machinery instead of being written directly to persistent state
+ */
+import {
+  Cigar,
+  concatBytes,
+  Diger,
+  Ilks,
+  NumberPrimitive,
+  Prefixer,
+  type SealEvent,
+  SealLast,
+  SerderKERI,
+  Siger,
+  type ThresholdSith,
+  type Tier,
+  Tiers,
+  Verfer,
+  type Versionage,
+  Vrsn_1_0,
+} from "cesr-ts";
+import { type Operation } from "npm:effection@^3.6.0";
+import type { AgentCue, QueryInstruction } from "../../core/cues.ts";
+import { Deck } from "../../core/deck.ts";
+import { TransIdxSigGroup } from "../../core/dispatch.ts";
+import { ValidationError } from "../../core/errors.ts";
+import { Kevery } from "../../core/eventing.ts";
+import { Kever } from "../../core/kever.ts";
+import type { MbxTopicCursor } from "../../core/mailbox-topics.ts";
+import {
+  incept as inceptEvent,
+  interact as interactEvent,
+  query as queryEvent,
+  receipt as receiptEvent,
+  reply as replyEvent,
+  rotate as rotateEvent,
+} from "../../core/protocol-eventing.ts";
+import { messagize } from "../../core/protocol-serialization.ts";
+import { HabitatRecord } from "../../core/records.ts";
+import { type Role, Roles } from "../../core/roles.ts";
+import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
+import { type Scheme, Schemes } from "../../core/schemes.ts";
+import { Baser, createBaser } from "../../db/basing.ts";
+import { dgKey } from "../../db/core/keys.ts";
+import { createKeeper, Keeper, PreSit } from "../../db/keeping.ts";
+import { makeNowIso8601 } from "../../time/mod.ts";
+import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
+import { loadStoredReply } from "../delivery/stored-replies.ts";
+import { Configer, createConfiger } from "./configing.ts";
+import {
+  Algos,
+  branToSaltQb64,
+  encodeHugeNumber,
+  ensureKeeperCryptoReady,
+  Manager,
+  normalizeSaltQb64,
+  saltySigner,
+} from "./keeping.ts";
+
+/** Reserved alias for the local signatory habitat record. */
+export const SIGNER = "__signatory__";
+
+/** Arguments for constructing and reopening a `Habery`. */
+export interface HaberyArgs {
+  name: string;
+  base?: string;
+  temp?: boolean;
+  headDirPath?: string;
+  compat?: boolean;
+  readonly?: boolean;
+  cf?: Configer;
+  skipConfig?: boolean;
+  skipSignator?: boolean;
+  bran?: string;
+  seed?: string;
+  aeid?: string;
+  salt?: string;
+  algo?: Algos;
+  tier?: Tier;
+}
+
+/** Habitat inception options consumed by the local bootstrap `Hab.make()` flow. */
+export interface MakeHabArgs {
+  code?: string;
+  transferable?: boolean;
+  isith?: ThresholdSith;
+  icount?: number;
+  icode?: string;
+  nsith?: ThresholdSith;
+  ncount?: number;
+  ncode?: string;
+  toad?: number;
+  wits?: string[];
+  delpre?: string;
+  estOnly?: boolean;
+  DnD?: boolean;
+  hidden?: boolean;
+  data?: unknown[];
+  algo?: Algos;
+  salt?: string;
+  tier?: Tier;
+}
+
+/** Group habitat inception options for local member-collected group creation. */
+export interface MakeGroupHabArgs {
+  isith?: ThresholdSith;
+  nsith?: ThresholdSith;
+  toad?: number;
+  wits?: string[];
+  delpre?: string;
+  data?: unknown[];
+  hidden?: boolean;
+}
+
+/** Result of creating one local group inception event. */
+export interface GroupHabCreation {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  /** Initial controller-signed creation bytes; use event replay for later cross-implementation publication. */
+  message: Uint8Array;
+}
+
+/** Result of rotating one locally membered group habitat. */
+export interface GroupHabRotation {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  message: Uint8Array;
+}
+
+/** Result of creating one locally signed group interaction event. */
+export interface GroupHabInteraction {
+  hab: Hab;
+  serder: SerderKERI;
+  sigers: Siger[];
+  message: Uint8Array;
+}
+
+/**
+ * Fixed KERI version tuple used when emitting bootstrap counters.
+ *
+ * Keeping this centralized avoids silently diverging counter headers across
+ * locally generated reply and inception messages.
+ */
+const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
+
+/**
+ * Produce the default simple numeric signing threshold for a key count.
+ *
+ * This intentionally stays in simple-numeric territory for the current
+ * bootstrap slice; weighted threshold expressions are deferred.
+ */
+function defaultThreshold(count: number, min: number): string {
+  return `${Math.max(min, Math.ceil(count / 2)).toString(16)}`;
+}
+
+/**
+ * Derive a KERI-style ample witness threshold.
+ *
+ * KERIpy correspondence:
+ * - mirrors the intent of KERIpy's `ample()` helper used when witness
+ *   membership changes and the operator did not pin an explicit `toad`
+ */
+function ample(count: number, faults?: number, weak = true): number {
+  const n = Math.max(0, count);
+  if (faults === undefined) {
+    const f1 = Math.max(1, Math.floor(Math.max(0, n - 1) / 3));
+    const f2 = Math.max(1, Math.ceil(Math.max(0, n - 1) / 3));
+    if (weak) {
+      return Math.min(
+        n,
+        Math.ceil((n + f1 + 1) / 2),
+        Math.ceil((n + f2 + 1) / 2),
+      );
+    }
+    return Math.min(
+      n,
+      Math.max(0, n - f1, Math.ceil((n + f1 + 1) / 2)),
+    );
+  }
+
+  const f = Math.max(0, faults);
+  const m1 = Math.ceil((n + f + 1) / 2);
+  const m2 = Math.max(0, n - f);
+  if (m2 < m1 && n > 0) {
+    throw new ValidationError(
+      `Invalid faults ${faults} for witness count ${count}.`,
+    );
+  }
+  return weak ? Math.min(n, m1, m2) : Math.min(n, Math.max(m1, m2));
+}
+
+/** Decode one bootstrap URL collection without normalizing its exact string keys. */
+function loadConfigUrls(value: unknown, field: "iurls" | "durls" | "wurls" | "curls"): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) throw new ValidationError(`Config ${field} must be an array of URL strings.`);
+  const urls: string[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (typeof entry !== "string" || entry.trim().length === 0) {
+      throw new ValidationError(`Config ${field}[${index}] must be a non-empty URL string.`);
+    }
+    urls.push(entry);
+  }
+  return urls;
+}
+
+function requireConfigDatetime(alias: string, value: unknown): string {
+  if (typeof value !== "string") {
+    throw new ValidationError(`Config section '${alias}' is missing dt.`);
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new ValidationError(
+      `Config section '${alias}' has invalid dt '${value}'.`,
+    );
+  }
+  const y = parsed.getUTCFullYear().toString().padStart(4, "0");
+  const m = (parsed.getUTCMonth() + 1).toString().padStart(2, "0");
+  const d = parsed.getUTCDate().toString().padStart(2, "0");
+  const hh = parsed.getUTCHours().toString().padStart(2, "0");
+  const mm = parsed.getUTCMinutes().toString().padStart(2, "0");
+  const ss = parsed.getUTCSeconds().toString().padStart(2, "0");
+  const micros = (parsed.getUTCMilliseconds() * 1000).toString().padStart(
+    6,
+    "0",
+  );
+  return `${y}-${m}-${d}T${hh}:${mm}:${ss}.${micros}+00:00`;
+}
+
+/** Shared zero-length message value used when a reply/resource has no payload. */
+function emptyMessage(): Uint8Array {
+  return new Uint8Array();
+}
+
+/** Concatenate a list of wire messages while preserving empty-list semantics. */
+function concatMessages(messages: readonly Uint8Array[]): Uint8Array {
+  return messages.length === 0 ? emptyMessage() : concatBytes(...messages);
+}
+
+/**
+ * Return KERIpy-shaped replay bytes for one accepted KEL event.
+ *
+ * The replay payload is event body plus durable attachments from first-seen
+ * storage: controller indexed signatures, witness indexed signatures,
+ * authorizing seals, and receipts in KERIpy `cloneEvtMsg` order.
+ */
+export function eventReplayMessage(
+  hby: Habery,
+  serder: SerderKERI,
+  gvrsn: Versionage = Vrsn_1_0,
+): Uint8Array {
+  const pre = serder.pre;
+  const said = serder.said;
+  if (!pre || !said) {
+    throw new ValidationError(
+      "Cannot replay accepted event without pre and said.",
+    );
+  }
+  const fn = hby.db.getFelFn(pre, said);
+  if (fn === null) {
+    throw new ValidationError(
+      `Missing first-seen ordinal for accepted event ${pre}:${said}.`,
+    );
+  }
+  return hby.db.cloneEvtMsg(pre, fn, said, gvrsn);
+}
+
+/**
+ * Return a stored KEL event payload with KERIpy `cloneEvtMsg` attachment order.
+ *
+ * Accepted events use their first-seen ordinal. Locally generated events that
+ * are still in delegated escrow do not have a first-seen ordinal yet, so they
+ * use their own event sequence number for the stored clone lookup.
+ */
+export function eventPayloadMessage(
+  hby: Habery,
+  serder: SerderKERI,
+): Uint8Array {
+  const pre = serder.pre;
+  const said = serder.said;
+  if (!pre || !said) {
+    throw new ValidationError(
+      "Cannot build event payload without pre and said.",
+    );
+  }
+  const fn = hby.db.getFelFn(pre, said);
+  const sn = serder.sn;
+  const ordinal = fn ?? sn;
+  if (ordinal === null) {
+    throw new ValidationError(
+      `Missing replay ordinal for stored event ${pre}:${said}.`,
+    );
+  }
+  return hby.db.cloneEvtMsg(pre, ordinal, said);
+}
+
+/** Return the exact accepted event replay message at `(pre, sn)`. */
+export function acceptedEventReplayMessage(
+  hby: Habery,
+  pre: string,
+  sn: number,
+  gvrsn: Versionage = Vrsn_1_0,
+): { serder: SerderKERI; message: Uint8Array } {
+  const said = hby.db.kels.getLast(pre, sn);
+  if (!said) {
+    throw new ValidationError(
+      `Missing accepted event at ${pre}:${sn.toString(16)}.`,
+    );
+  }
+  const serder = hby.db.getEvtSerder(pre, said);
+  if (!serder) {
+    throw new ValidationError(
+      `Missing accepted event body for ${pre}:${said}.`,
+    );
+  }
+  return { serder, message: eventReplayMessage(hby, serder, gvrsn) };
+}
+
+/**
+ * Build one inception/delgated-inception serder from generated keys and config.
+ *
+ * Current scope:
+ * - supports local `icp` and delegated `dip` bootstrap events
+ * - relies on simple numeric threshold defaults
+ * - keeps SAID code resolution centralized for prefix derivation consistency
+ */
+
+/** Represents a local identifier habitat and its current key state. */
+export class Hab {
+  readonly name: string;
+  readonly ns?: string;
+  readonly db: Baser;
+  readonly ks: Keeper;
+  readonly mgr: Manager;
+  readonly cf?: Configer;
+  readonly rtr: Router;
+  readonly rvy: Revery;
+  readonly kvy: Kevery;
+  pre = "";
+
+  /** Create one habitat wrapper over shared DB/keeper/manager infrastructure. */
+  constructor(
+    name: string,
+    db: Baser,
+    ks: Keeper,
+    mgr: Manager,
+    cf: Configer | undefined,
+    rtr: Router,
+    rvy: Revery,
+    kvy: Kevery,
+    ns?: string,
+    pre = "",
+  ) {
+    this.name = name;
+    this.db = db;
+    this.ks = ks;
+    this.mgr = mgr;
+    this.cf = cf;
+    this.rtr = rtr;
+    this.rvy = rvy;
+    this.kvy = kvy;
+    this.ns = ns;
+    this.pre = pre;
+  }
+
+  /** Backward-compatible alias for the injected local `Kevery`. */
+  get kevery(): Kevery {
+    return this.kvy;
+  }
+
+  /** Return true when this habitat has accepted local key state. */
+  get accepted(): boolean {
+    return !!this.pre && this.db.getKever(this.pre) !== null;
+  }
+
+  /** Return the live accepted-state `Kever` for this habitat when available. */
+  get kever(): Kever | null {
+    return this.pre ? this.db.getKever(this.pre) : null;
+  }
+
+  /**
+   * Accept one locally generated event through the same `Kevery`/`Kever` path
+   * used by remote processing.
+   *
+   * This keeps local habitat inception and later state transitions aligned with
+   * the main accepted-state machine instead of duplicating direct DB writes in
+   * the habitat layer.
+   */
+  private acceptLocally(
+    serder: SerderKERI,
+    sigers: readonly Siger[],
+  ): Kever {
+    const decision = this.kvy.processEvent({
+      serder,
+      sigers: [...sigers],
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind !== "accept") {
+      const detail = decision.kind === "duplicate" ? decision.duplicate : decision.message;
+      throw new ValidationError(`Local event ${serder.said ?? "<unknown>"} was not accepted: ${detail}`);
+    }
+    const kever = this.db.getKever(this.pre);
+    if (!kever) {
+      throw new Error(
+        `Local acceptance did not produce a Kever for ${this.pre}.`,
+      );
+    }
+    return kever;
+  }
+
+  /** Sign one local bootstrap reply and submit it to normal signature and BADA validation. */
+  private acceptReply(route: string, data: Record<string, unknown>, stamp: string): void {
+    const serder = replyEvent(route, data, { pre: this.pre, stamp });
+    const kever = this.kever;
+    if (!kever) throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    if (!kever.transferable) {
+      this.rvy.processReply({ serder, cigars: this.sign(serder.raw, false) });
+      return;
+    }
+    const seal = this.establishmentSeal(kever);
+    this.rvy.processReply({
+      serder,
+      tsgs: [new TransIdxSigGroup(seal.i, seal.s, seal.d, this.sign(serder.raw, true))],
+    });
+  }
+
+  /** Share the latest accepted establishment anchor between local admission and wire endorsement. */
+  private establishmentSeal(kever: Kever): SealEvent {
+    const said = kever.lastEst.d || kever.said;
+    if (!said) throw new Error(`Missing establishment event for ${this.pre}.`);
+    const seqner = this.db.getEvtSerder(this.pre, said)?.sner;
+    if (!seqner) throw new Error(`Missing establishment sequence number for ${this.pre}.`);
+    return { i: kever.prefixer, s: seqner, d: new Diger({ qb64: said }) };
+  }
+
+  /** Return the alias-scoped config section for this habitat when present. */
+  configuredSection(): Record<string, unknown> | null {
+    const conf = this.cf?.get<Record<string, unknown>>() ?? {};
+    const section = conf[this.name];
+    return section && typeof section === "object" && !Array.isArray(section)
+      ? section as Record<string, unknown>
+      : null;
+  }
+
+  /** Return true when this habitat has alias-scoped config preload material. */
+  hasConfigSection(): boolean {
+    return this.configuredSection() !== null;
+  }
+
+  /**
+   * Apply alias-scoped controller endpoint config through signed reply acceptance.
+   *
+   * KERIpy correspondence:
+   * - `Hab` owns per-alias config lookup and reply ingestion
+   * - config remains immutable bootstrap input, not mutable database state
+   */
+  reconfigure(): boolean {
+    const conf = this.configuredSection();
+    if (!conf || !this.pre || !this.accepted) {
+      return false;
+    }
+
+    const dt = requireConfigDatetime(this.name, conf.dt);
+    // Validate every configured URL before admitting any bootstrap reply.
+    const locations = loadConfigUrls(conf.curls, "curls").map((url) => {
+      const parsed = new URL(url);
+      const scheme = parsed.protocol.length > 0 ? parsed.protocol.slice(0, -1) : Schemes.http;
+      return { eid: this.pre, scheme, url };
+    });
+    this.acceptReply("/end/role/add", { cid: this.pre, role: Roles.controller, eid: this.pre }, dt);
+    for (const location of locations) this.acceptReply("/loc/scheme", location, dt);
+    return true;
+  }
+
+  /**
+   * Incept this habitat through the shared accepted-state path.
+   *
+   * KERIpy correspondence:
+   * - mirrors the pattern where local inception is signed in the habitat layer
+   *   and then fed through `Kevery.processEvent()` rather than hand-writing
+   *   `states.`/`kels.` directly
+   */
+  make(args: MakeHabArgs = {}): void {
+    const {
+      code = "E",
+      transferable = true,
+      isith = undefined,
+      icount = 1,
+      icode = undefined,
+      nsith = undefined,
+      ncount = undefined,
+      ncode = undefined,
+      toad = 0,
+      wits = [],
+      delpre = undefined,
+      estOnly = false,
+      DnD = false,
+      hidden = false,
+      data = [],
+      algo = undefined,
+      salt = undefined,
+      tier = undefined,
+    } = args;
+
+    let nextCount = ncount ?? icount;
+    let nextSith = nsith ?? isith;
+    let prefixCode = code;
+    if (!transferable) {
+      nextCount = 0;
+      nextSith = "0";
+    }
+
+    const [verfers, digers] = this.mgr.incept({
+      icount,
+      ncount: nextCount,
+      icode,
+      ncode,
+      stem: this.ns ? `${this.ns}${this.name}` : this.name,
+      transferable,
+      algo,
+      salt,
+      tier,
+      temp: this.ks.temp,
+    });
+
+    if (!transferable && verfers.length === 1) {
+      prefixCode = verfers[0].code;
+    }
+
+    const keys = verfers.map((v) => v.qb64);
+    const ndigs = digers.map((d) => d.qb64);
+    const cnfg = [...(estOnly ? ["EO"] : []), ...(DnD ? ["DND"] : [])];
+
+    const currentSith = isith ?? defaultThreshold(keys.length, 1);
+    const nextThreshold = nextSith ?? defaultThreshold(ndigs.length, 0);
+    const serder = inceptEvent(keys, {
+      code: prefixCode,
+      isith: currentSith,
+      ndigs,
+      nsith: nextThreshold,
+      toad,
+      wits,
+      cnfg,
+      data,
+      delpre,
+    });
+    const pre = serder.pre;
+    if (!pre || !serder.said) {
+      throw new Error(
+        "Expected inception serder to provide string pre and said.",
+      );
+    }
+
+    const opre = verfers[0].qb64;
+    this.mgr.move(opre, pre);
+    this.pre = pre;
+
+    if (!hidden) {
+      const habord = new HabitatRecord({
+        hid: pre,
+        name: this.name,
+        domain: this.ns,
+      });
+      this.db.pinHab(pre, habord);
+      this.db.pinName(this.ns ?? "", this.name, pre);
+      this.db.prefixes.add(pre);
+    }
+
+    const sigs = this.mgr.sign(serder.raw, keys, true);
+    try {
+      this.acceptLocally(serder, sigs);
+    } catch (error) {
+      if (!hidden) {
+        this.db.prefixes.delete(pre);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Rotate this habitat through the shared accepted-state path.
+   *
+   * KERIpy correspondence:
+   * - advances keeper state first via `Manager.replay()` or `Manager.rotate()`
+   * - rolls keeper state back if local `Kevery` acceptance rejects the event
+   * - erases stale old private keys only after successful acceptance
+   */
+  rotate(args: {
+    isith?: ThresholdSith;
+    nsith?: ThresholdSith;
+    ncount?: number;
+    toad?: number;
+    cuts?: string[];
+    adds?: string[];
+    data?: unknown[];
+  } = {}): Uint8Array {
+    if (!this.pre) {
+      throw new ValidationError("Rotation requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const priorSit = this.ks.getSits(this.pre);
+    if (!priorSit) {
+      throw new ValidationError(`Missing keeper state for ${this.pre}.`);
+    }
+
+    const defaultCount = args.ncount ?? kever.ndigers.length;
+    let verfers: Verfer[];
+    let digers: Diger[];
+    try {
+      // Prefer replayed pre-rotated material when keeper state already has it,
+      // matching the operator expectation that an earlier pre-rotation is
+      // consumed before brand-new next keys are generated.
+      [verfers, digers] = this.mgr.replay({
+        pre: this.pre,
+        erase: false,
+      });
+    } catch (error) {
+      if (!(error instanceof RangeError)) {
+        throw error;
+      }
+      [verfers, digers] = this.mgr.rotate({
+        pre: this.pre,
+        ncount: defaultCount,
+        temp: this.ks.temp,
+        erase: false,
+      });
+    }
+
+    const currentSith = args.isith ?? kever.ntholder?.sith;
+    const nextSith = args.nsith ?? currentSith;
+    const preservedToad = args.toad
+      ?? ((args.cuts?.length ?? 0) === 0 && (args.adds?.length ?? 0) === 0 ? Number(kever.toader.num) : undefined);
+    const keys = verfers.map((verfer) => verfer.qb64);
+    const ndigs = digers.map((diger) => diger.qb64);
+
+    try {
+      const serder = rotateEvent(
+        this.pre,
+        keys,
+        kever.serder.said ?? kever.said,
+        {
+          ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
+          sn: kever.sn + 1,
+          isith: currentSith,
+          ndigs,
+          nsith: nextSith,
+          toad: preservedToad,
+          wits: [...kever.wits],
+          cuts: args.cuts,
+          adds: args.adds,
+          data: args.data,
+        },
+      );
+      const sigers = this.mgr.sign(serder.raw, keys, true) as Siger[];
+      this.acceptLocally(serder, sigers);
+
+      // Old private keys become stale only after local accepted state advances.
+      // That ordering is what makes the interop "verify fails before query,
+      // succeeds after query" story honest instead of a local-storage trick.
+      for (const pub of new PreSit(priorSit).old.pubs) {
+        this.ks.pris.rem(pub);
+      }
+
+      return messagize(serder, { sigers, pipelined: true });
+    } catch (error) {
+      // Roll keeper state back if the event was not accepted locally. The
+      // accepted-state machine, not keeper progression alone, defines success.
+      this.ks.pinSits(this.pre, new PreSit(priorSit));
+      throw error;
+    }
+  }
+
+  /**
+   * Create and locally accept one interaction event for this habitat.
+   *
+   * KERIpy correspondence:
+   * - author one `ixn` from current accepted state
+   * - sign with the current controller keys
+   * - feed the event back through local `Kevery` acceptance
+   *
+   * `keri-ts` difference:
+   * - local acceptance still flows through the explicit decision architecture,
+   *   and non-accept outcomes surface as local validation failures
+   */
+  interact(
+    args: {
+      data?: unknown[];
+    } = {},
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new ValidationError("Interaction requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const serder = interactEvent(
+      this.pre,
+      kever.serder.said ?? kever.said,
+      kever.sn + 1,
+      args.data ?? [],
+    );
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    this.acceptLocally(serder, sigers);
+    return messagize(serder, { sigers, pipelined: true });
+  }
+
+  /**
+   * Sign with accepted current keys. Group habitats use only their designated
+   * member's latest single-key contribution, located in its accepted KEL.
+   * No caller-selected key/index overrides are exposed here; rotation's
+   * independent prior-next authority remains in Habery.rotateGroupHab().
+   */
+  sign(ser: Uint8Array, indexed: true): Siger[];
+  sign(ser: Uint8Array, indexed?: false): Cigar[];
+  sign(ser: Uint8Array, indexed = false): Siger[] | Cigar[] {
+    if (!this.pre) {
+      throw new ValidationError("Signing requires a local habitat prefix.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+    const pubs = kever.verfers.map((verfer) => verfer.qb64);
+    const member = this.db.getHab(this.pre)?.mid;
+    if (member) {
+      const state = this.db.getKever(member);
+      if (!state) throw new ValidationError(`Missing accepted member key state for ${member}.`);
+      // KERIpy GroupHab.sign/fetchLatestContribTo: a member may have rotated
+      // ahead of its contribution to the group's currently accepted key list.
+      for (const [, sn, said] of this.db.kels.getOnItemBackIter(member, state.sn)) {
+        if (this.db.kels.getLast(member, sn) !== said) continue;
+        const event = this.db.getEvtSerder(member, said);
+        if (!event) throw new ValidationError(`Missing accepted member event ${member}:${said}.`);
+        if (!event.estive) continue;
+        const keys = event.verfers ?? [];
+        if (keys.length !== 1) {
+          throw new ValidationError(`Group signing requires single-key member events for ${member}.`);
+        }
+        const index = pubs.indexOf(keys[0].qb64);
+        if (index < 0) continue;
+        if (indexed) {
+          // Endorsement proves current authority only. Rotation signatures have
+          // a separate prior-next commitment path in rotateGroupHab().
+          return this.mgr.sign(ser, {
+            pubs: [keys[0].qb64],
+            indexed: true,
+            indices: [index],
+            ondices: [null],
+          });
+        }
+        return this.mgr.sign(ser, [keys[0].qb64], false);
+      }
+      throw new ValidationError(`Member ${member} has no contribution to group ${this.pre}.`);
+    }
+    if (indexed) {
+      return this.mgr.sign(ser, pubs, true);
+    }
+    return this.mgr.sign(ser, pubs, false);
+  }
+
+  /**
+   * Endorse one already-built KERI message body with this habitat's current
+   * establishment keys.
+   *
+   * Current supported endorsement shapes:
+   * - transferable indexed signature groups anchored to the latest accepted
+   *   establishment event
+   * - non-transferable detached signature cigars with attached verifier
+   *   context for local replay/reload flows
+   */
+  endorse(
+    serder: SerderKERI,
+    options: {
+      pipelined?: boolean;
+      gvrsn?: Versionage;
+      nested?: boolean;
+      genusify?: boolean;
+    } = {},
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new Error("Cannot endorse a message before habitat inception.");
+    }
+    const kever = this.kever;
+    if (!kever) {
+      throw new Error(`Missing accepted key state for ${this.pre}.`);
+    }
+    const prefixer = kever.prefixer;
+    const pipelined = options.pipelined ?? true;
+    const gvrsn = options.gvrsn ?? Vrsn_1_0;
+    if (!kever.transferable) {
+      return messagize(serder, {
+        cigars: this.sign(serder.raw, false) as Cigar[],
+        pipelined,
+        gvrsn,
+        nested: options.nested,
+        genusify: options.genusify,
+      });
+    }
+
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    if (serder.ilk === Ilks.qry) {
+      return messagize(serder, {
+        sigers,
+        seal: SealLast.fromTuple([prefixer]),
+        pipelined,
+        gvrsn,
+        nested: options.nested,
+        genusify: options.genusify,
+      });
+    }
+
+    return messagize(serder, {
+      sigers,
+      seal: this.establishmentSeal(kever),
+      pipelined,
+      gvrsn,
+      nested: options.nested,
+      genusify: options.genusify,
+    });
+  }
+
+  /**
+   * Create and sign one reply event with this habitat's current establishment keys.
+   *
+   * The returned bytes are a complete wire message. Transferable reply
+   * attachments are anchored to the habitat's latest accepted establishment
+   * event, matching the KERI reply-endorsement model.
+   */
+  reply(
+    route: string,
+    data: Record<string, unknown>,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    if (!this.pre) {
+      throw new Error("Cannot build a reply before habitat inception.");
+    }
+    return this.endorse(replyEvent(route, data, { pre: this.pre, stamp }));
+  }
+
+  /**
+   * Create and sign one query message from this habitat.
+   *
+   * Unlike KERIpy GroupHab.query(), which endorses as the individual member,
+   * a TypeScript group Hab retains the group prefix as query authority. Its
+   * local contribution may be only a partial signature; the receiver must still
+   * enforce the group's current threshold. This is not a member-query fallback.
+   */
+  query(
+    pre: string,
+    src: string,
+    instruction: QueryInstruction | { route: "mbx"; q: { topics: MbxTopicCursor } },
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.endorse(
+      queryEvent(instruction.route, {
+        ...instruction.q,
+        i: instruction.route === "tels" || instruction.route === "tsn" ? instruction.q.i : pre,
+        src,
+      }, {
+        pre: this.pre,
+        stamp,
+      }),
+    );
+  }
+
+  /**
+   * Create and locally accept one controller receipt for `serder`.
+   *
+   * KERI semantics:
+   * - receipt signatures cover the receipted event bytes, not the `rct`
+   *   message body
+   * - transferable receiptors emit transferable indexed-signature groups
+   * - non-transferable receiptors emit receipt couples
+   */
+  receipt(serder: SerderKERI): Uint8Array {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    const kever = this.kever;
+    if (!pre || sn === null || !said) {
+      throw new ValidationError(
+        "Receipted event must expose pre, sn, and said.",
+      );
+    }
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+
+    const reserder = receiptEvent(pre, sn, said);
+
+    if (!kever.transferable) {
+      const cigars = this.sign(serder.raw, false) as Cigar[];
+      this.kvy.processReceipt({
+        serder: reserder,
+        cigars,
+        wigers: [],
+        tsgs: [],
+        local: true,
+      });
+      return messagize(reserder, { cigars, pipelined: true });
+    }
+
+    const estSaid = kever.lastEst.d || kever.said;
+    const estEvent = estSaid ? this.db.getEvtSerder(this.pre, estSaid) : null;
+    const seqner = estEvent?.sner;
+    if (!estSaid || !seqner) {
+      throw new ValidationError(
+        `Missing establishment event material for transferable receiptor ${this.pre}.`,
+      );
+    }
+    const sigers = this.sign(serder.raw, true) as Siger[];
+    const tsg = new TransIdxSigGroup(
+      kever.prefixer,
+      seqner,
+      new Diger({ qb64: estSaid }),
+      sigers,
+    );
+    this.kvy.processReceipt({
+      serder: reserder,
+      cigars: [],
+      wigers: [],
+      tsgs: [tsg],
+      local: true,
+    });
+    return messagize(reserder, {
+      sigers: tsg.sigers,
+      seal: { i: tsg.prefixer, s: tsg.seqner, d: tsg.diger },
+      pipelined: true,
+    });
+  }
+
+  /**
+   * Create and locally accept one witness receipt for `serder`.
+   *
+   * The current habitat must be a non-transferable witness listed on the
+   * receipted event's witness state.
+   */
+  witness(serder: SerderKERI): Uint8Array {
+    const pre = serder.pre;
+    const sn = serder.sn;
+    const said = serder.said;
+    const kever = this.kever;
+    if (!pre || sn === null || !said) {
+      throw new ValidationError(
+        "Receipted event must expose pre, sn, and said.",
+      );
+    }
+    if (!kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+    if (kever.transferable) {
+      throw new ValidationError(
+        `Witness receipts require a non-transferable witness habitat, got ${this.pre}.`,
+      );
+    }
+
+    const wits = this.db.acceptedEventWitnesses(serder) ?? [];
+    const index = wits.indexOf(this.pre);
+    if (index < 0) {
+      throw new ValidationError(
+        `${this.pre} is not an authorized witness for ${pre}:${said}.`,
+      );
+    }
+
+    const reserder = receiptEvent(pre, sn, said);
+    const wigers = this.mgr.sign(serder.raw, {
+      pubs: [this.pre],
+      indexed: true,
+      indices: [index],
+    }) as Siger[];
+    this.kvy.processReceipt({
+      serder: reserder,
+      cigars: [],
+      wigers,
+      tsgs: [],
+      local: true,
+    });
+    return messagize(reserder, { wigers, pipelined: true });
+  }
+
+  /**
+   * Create one signed endpoint-role authorization reply for this habitat.
+   *
+   * This is the local helper behind `tufa ends add` and endpoint-role OOBI
+   * dissemination.
+   */
+  makeEndRole(
+    eid: string,
+    role: Role | string = Roles.controller,
+    allow = true,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.reply(
+      allow ? "/end/role/add" : "/end/role/cut",
+      { cid: this.pre, role, eid },
+      stamp,
+    );
+  }
+
+  /**
+   * Create one signed endpoint-location reply for this habitat.
+   *
+   * The endpoint AID defaults to the habitat's own prefix because the most
+   * common bootstrap case is self-advertised controller/agent/mailbox hosting.
+   */
+  makeLocScheme(
+    url: string,
+    eid = this.pre,
+    scheme: Scheme | string = Schemes.http,
+    stamp = makeNowIso8601(),
+  ): Uint8Array {
+    return this.reply("/loc/scheme", { eid, scheme, url }, stamp);
+  }
+
+  /**
+   * Return stored non-empty location URLs keyed by scheme for one endpoint AID.
+   *
+   * This is a pure projection over `locs.`; it does not synthesize default
+   * schemes or perform any lookup beyond local state.
+   */
+  fetchUrls(eid: string, scheme = ""): Record<string, string> {
+    const urls: Record<string, string> = {};
+    const keys = scheme ? [eid, scheme] : [eid];
+    for (
+      const [path, loc] of this.db.locs.getTopItemIter(keys, {
+        topive: !scheme,
+      })
+    ) {
+      const currentScheme = path[1];
+      if (!currentScheme || !loc.url) {
+        continue;
+      }
+      urls[currentScheme] = loc.url;
+    }
+    return urls;
+  }
+
+  /**
+   * Project authorized endpoint URLs for one controller AID.
+   *
+   * Output shape:
+   * - role -> endpoint AID -> scheme-keyed URL map
+   *
+   * Witnesses are derived from current key state as well as stored location
+   * replies because witness membership is partly a KEL concern, not just an
+   * endpoint-authorization concern. Empty location maps retain endpoint identity
+   * so routing can report missing locations rather than select a lower role.
+   * Unlike KERIpy 71438328, stored roles without allowed or enabled approval are excluded.
+   *
+   * @param pre Controller AID whose accepted roles and current witnesses are projected.
+   * @returns Role to endpoint AID to scheme/URL map, including empty location maps.
+   */
+  endsFor(pre: string): Record<string, Record<string, Record<string, string>>> {
+    const ends: Record<string, Record<string, Record<string, string>>> = {};
+
+    for (
+      const [keys, end] of this.db.ends.getTopItemIter([pre], { topive: true })
+    ) {
+      const role = keys[1];
+      const eid = keys[2];
+      if (!role || !eid || !(end.allowed || end.enabled)) {
+        continue;
+      }
+      const urls = this.fetchUrls(eid);
+      ends[role] ??= {};
+      ends[role][eid] = urls;
+    }
+
+    const kever = this.db.getKever(pre);
+    if (kever?.wits && kever.wits.length > 0) {
+      const witnessUrls: Record<string, Record<string, string>> = {};
+      for (const eid of kever.wits) {
+        const urls = this.fetchUrls(eid);
+        witnessUrls[eid] = urls;
+      }
+      if (Object.keys(witnessUrls).length > 0) {
+        ends[Roles.witness] = witnessUrls;
+      }
+    }
+
+    return ends;
+  }
+
+  /**
+   * Reload one stored `/end/role/*` reply message from reply-state DBs.
+   *
+   * Returns an empty message when the requested authorization is not presently
+   * enabled or allowed.
+   */
+  loadEndRole(
+    cid: string,
+    eid: string,
+    role: Role | string = Roles.controller,
+  ): Uint8Array {
+    const end = this.db.ends.get([cid, role, eid]);
+    if (!end || !(end.allowed || end.enabled)) {
+      return emptyMessage();
+    }
+    const said = this.db.eans.get([cid, role, eid]);
+    return said ? loadStoredReply(this.db, said.qb64) : emptyMessage();
+  }
+
+  /**
+   * Reload stored `/loc/scheme` reply messages for one endpoint and optional scheme.
+   *
+   * Without a scheme filter this may concatenate multiple stored scheme replies
+   * into one outbound byte stream.
+   */
+  loadLocScheme(eid: string, scheme?: string): Uint8Array {
+    const messages: Uint8Array[] = [];
+    const keys = scheme ? [eid, scheme] : [eid];
+    for (
+      const [, said] of this.db.lans.getTopItemIter(keys, { topive: !scheme })
+    ) {
+      messages.push(loadStoredReply(this.db, said.qb64));
+    }
+    return concatMessages(messages.filter((msg) => msg.length > 0));
+  }
+
+  /**
+   * Generate fresh `/loc/scheme` replies from local location state.
+   *
+   * This is used when the local habitat is the authoritative speaker for the
+   * endpoint, so a newly signed reply is preferred over replaying an older
+   * stored reply.
+   */
+  replyLocScheme(eid: string, scheme = ""): Uint8Array {
+    const messages: Uint8Array[] = [];
+    for (
+      const [currentScheme, url] of Object.entries(this.fetchUrls(eid, scheme))
+    ) {
+      messages.push(this.makeLocScheme(url, eid, currentScheme));
+    }
+    return concatMessages(messages);
+  }
+
+  /** Borrow this Hab/store through lazy role output; metadata capture starts only on iterator acquisition. */
+  replyEndRoleMessages(
+    cid: string,
+    role?: Role | string,
+    eids: readonly string[] = [],
+    scheme = "",
+  ): Iterable<Uint8Array> {
+    return oobiReplyMessages(this, cid, role, eids, scheme, false);
+  }
+
+  /** Collect finite role output; large callers use the lazy source. */
+  replyEndRole(cid: string, role?: Role | string, eids: string[] = [], scheme = ""): Uint8Array {
+    return concatMessages([...this.replyEndRoleMessages(cid, role, eids, scheme)]);
+  }
+
+  /** Lazy OOBI output preserves the top-level delegated readiness guard under the consuming owner. */
+  replyToOobiMessages(
+    aid: string,
+    role?: Role | string,
+    eids: readonly string[] = [],
+  ): Iterable<Uint8Array> {
+    return oobiReplyMessages(this, aid, role, eids, "", true);
+  }
+
+  /** Collect explicitly finite OOBI output; incomplete delegated state still returns empty bytes. */
+  replyToOobi(aid: string, role?: Role | string, eids: string[] = []): Uint8Array {
+    return concatMessages([...this.replyToOobiMessages(aid, role, eids)]);
+  }
+
+  /**
+   * Yield signed wire messages for one finite cue pass, like KERIpy's BaseHab.
+   *
+   * A Deck is consumed through its initial extent. Other iterables are copied to
+   * a local Deck, so callers can borrow an array while retaining their source.
+   * Query, stream, and notification ownership stays with the caller; only
+   * complete query instructions produce wire output here.
+   *
+   * @param cues Deck to consume through its initial extent, or borrowed iterable copied into a local Deck.
+   * @returns A synchronous generator of signed wire messages, not delivery outcomes.
+   * @throws Signing/replay construction failures propagate; a supplied Deck head is already pulled when construction begins.
+   */
+  *processCuesIter(
+    cues: Deck<AgentCue> | Iterable<AgentCue>,
+  ): Generator<Uint8Array> {
+    const queue = cues instanceof Deck ? cues : new Deck(cues);
+    const count = queue.length;
+    for (let index = 0; index < count; index++) {
+      const cue = queue.pull();
+      if (!cue) continue;
+      switch (cue.kin) {
+        case "receipt":
+          yield this.receipt(cue.serder);
+          break;
+        case "witness":
+          yield this.witness(cue.serder);
+          break;
+        case "replay":
+          yield* cue.msgs;
+          break;
+        case "reply":
+          yield cue.serder ? this.endorse(cue.serder) : this.reply(
+            `${cue.route}/${this.pre}`,
+            cue.data.asDict(),
+          );
+          break;
+        case "query":
+          if (cue.route && cue.pre && cue.src && (cue.signer === undefined || cue.signer === this.pre)) {
+            yield this.query(cue.pre, cue.src, cue);
+          }
+          break;
+      }
+    }
+  }
+}
+
+/**
+ * Internal signatory habitat wrapper used for habery-scoped signatures.
+ *
+ * KERIpy correspondence:
+ * - mirrors the idea of a persisted `__signatory__` habitat owned by the
+ *   enclosing habery
+ * - verifies through the live signatory habitat verifier instead of
+ *   reconstructing one ad hoc from the prefix
+ *
+ * Current `keri-ts` differences:
+ * - signing/verification are deterministic local-hab wrappers, not a full
+ *   parity implementation of KERIpy signatory lifecycle and reopen logic
+ */
+export class Signator {
+  readonly db: Baser;
+  readonly hab: Hab;
+  pre: string;
+
+  /** Reopen or create the habery-owned `__signatory__` habitat wrapper. */
+  constructor(args: {
+    db: Baser;
+    ks: Keeper;
+    mgr: Manager;
+    cf?: Configer;
+    rtr: Router;
+    rvy: Revery;
+    kvy: Kevery;
+  }) {
+    const { db, ks, mgr, cf, rtr, rvy, kvy } = args;
+    this.db = db;
+    const spre = this.db.getHby(SIGNER);
+    if (!spre) {
+      const hab = new Hab(
+        SIGNER,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
+      );
+      hab.make({ transferable: false, hidden: true });
+      this.hab = hab;
+      this.pre = hab.pre;
+      this.db.pinHby(SIGNER, this.pre);
+    } else {
+      const hab = new Hab(
+        SIGNER,
+        db,
+        ks,
+        mgr,
+        cf,
+        rtr,
+        rvy,
+        kvy,
+        undefined,
+        spre,
+      );
+      this.hab = hab;
+      this.pre = spre;
+    }
+  }
+
+  /**
+   * Sign arbitrary serialized bytes with the habery-owned signatory habitat.
+   *
+   * KERIpy parity:
+   * - delegates to the underlying hab with `indexed=false`
+   * - returns the first hydrated detached `Cigar`
+   */
+  sign(ser: Uint8Array): Cigar {
+    const sig = this.hab.sign(ser, false)[0];
+    if (!sig) throw new Error("Unable to sign");
+    return sig;
+  }
+
+  /** Return the current verifier from the signatory habitat's accepted key state. */
+  get verfer(): Verfer {
+    const verfer = this.hab.kever?.verfers[0];
+    if (!verfer) {
+      throw new Error("Signator has no accepted verifier.");
+    }
+    return verfer;
+  }
+
+  /** Verify one detached `Cigar` through the signatory habitat's live verifier. */
+  verify(ser: Uint8Array, cigar: Cigar): boolean {
+    return this.verfer.verify(cigar.raw, ser);
+  }
+}
+
+/**
+ * Top-level controller container for databases, key manager, config, and local
+ * habitats.
+ *
+ * Responsibilities:
+ * - compose `Baser`, `Keeper`, `Manager`, optional config, and loaded habitats
+ * - own the habery-local `Kevery` used by `Hab` for local KEL/receipt
+ *   acceptance outside the runtime host
+ * - eagerly reconstruct persisted habitat visibility on open
+ * - provide app-layer alias lookup and habitat creation boundaries
+ *
+ * State model:
+ * - `habs` is an in-memory cache of reconstructed `Hab` instances
+ * - durable habitat metadata lives in `habs.`
+ * - durable current key state lives in `states.` with supporting `evts.`,
+ *   `kels.`, `fels.`, and `dtss.` data in `Baser`
+ * - accepted current key state is owned by live `Kever` instances reloaded into
+ *   `Baser.kevers`
+ * - `Hab.kever` resolves that accepted-state cache instead of reconstructing a
+ *   thin projection ad hoc
+ * - `Habery.kevery` owns a separate local cue deck from the runtime-owned cue
+ *   deck created by `createAgentRuntime()`
+ *
+ * Current `keri-ts` differences:
+ * - readonly compatibility opens may intentionally skip config processing and
+ *   signator creation for visibility-only commands
+ * - config-driven OOBI processing and broader KEL/state orchestration are not
+ *   yet at KERIpy parity
+ */
+export class Habery {
+  readonly name: string;
+  readonly base: string;
+  readonly temp: boolean;
+  readonly headDirPath?: string;
+  readonly compat: boolean;
+  readonly readonly: boolean;
+  readonly db: Baser;
+  readonly ks: Keeper;
+  readonly mgr: Manager;
+  readonly cf?: Configer;
+  readonly habs = new Map<string, Hab>();
+  readonly rtr: Router;
+  readonly rvy: Revery;
+  readonly kevery: Kevery;
+  readonly replyRoutes: BasicReplyRouteHandler;
+  readonly signator: Signator | null;
+
+  /** Compose one habery from already-opened storage, manager, and config surfaces. */
+  constructor(
+    name: string,
+    base: string,
+    temp: boolean,
+    headDirPath: string | undefined,
+    compat: boolean,
+    readonly: boolean,
+    db: Baser,
+    ks: Keeper,
+    mgr: Manager,
+    cf?: Configer,
+    skipSignator = false,
+  ) {
+    this.name = name;
+    this.base = base;
+    this.temp = temp;
+    this.headDirPath = headDirPath;
+    this.compat = compat;
+    this.readonly = readonly;
+    this.db = db;
+    this.ks = ks;
+    this.mgr = mgr;
+    this.cf = cf;
+    this.rtr = new Router();
+    const localCues = new Deck<AgentCue>();
+    this.rvy = new Revery(this.db, {
+      rtr: this.rtr,
+      cues: localCues,
+      lax: false,
+      local: true,
+    });
+    this.replyRoutes = new BasicReplyRouteHandler(this.rvy);
+    this.replyRoutes.registerReplyRoutes(this.rtr);
+    this.kevery = new Kevery(this.db, {
+      cues: localCues,
+      lax: false,
+      local: true,
+      rvy: this.rvy,
+    });
+    this.kevery.registerReplyRoutes(this.rtr);
+    this.signator = skipSignator ? null : new Signator({
+      db: this.db,
+      ks: this.ks,
+      mgr: this.mgr,
+      cf: this.cf,
+      rtr: this.rtr,
+      rvy: this.rvy,
+      kvy: this.kevery,
+    });
+    this.loadHabs();
+  }
+
+  /** Live config snapshot from the optional config file surface. */
+  get config(): Record<string, unknown> {
+    return this.cf?.get<Record<string, unknown>>() ?? {};
+  }
+
+  /**
+   * Populate the in-memory habitat cache from durable `habs.` + `states.` data.
+   *
+   * Bare metadata records without corresponding accepted key state are skipped
+   * so `Habery.habs` only contains reopenable local habitats.
+   */
+  private loadHabs(): void {
+    this.reconfigure();
+    this.habs.clear();
+
+    for (const [pre, habord] of this.db.getHabItemIter()) {
+      const hid = habord.hid || pre;
+      if (!habord.name || this.habs.has(hid)) {
+        continue;
+      }
+      const hab = new Hab(
+        habord.name,
+        this.db,
+        this.ks,
+        this.mgr,
+        this.cf,
+        this.rtr,
+        this.rvy,
+        this.kevery,
+        habord.domain,
+        hid,
+      );
+      if (!hab.accepted) {
+        if (habord.mid) {
+          continue;
+        }
+        throw new ValidationError(
+          `Problem loading Hab pre=${hid} name=${habord.name} from db.`,
+        );
+      }
+      this.habs.set(hab.pre, hab);
+    }
+    for (const hab of this.habs.values()) {
+      hab.reconfigure();
+    }
+  }
+
+  /** Local AID prefixes currently managed by this habery. */
+  get prefixes(): string[] {
+    return [...this.db.prefixes];
+  }
+
+  /**
+   * Seed OOBI queues from config-file preload material.
+   *
+   * Config is treated as immutable bootstrap input, matching KERIpy's
+   * "preload the database, do not use config as a mutable database" rule.
+   *
+   * Stores touched:
+   * - `oobis.` for controller/delegate bootstrap URLs
+   * - `woobi.` for witness bootstrap URLs
+   */
+  reconfigure(): void {
+    const conf = this.config;
+    // Validate every collection before the first pin, including when dt is absent.
+    const iurls = loadConfigUrls(conf.iurls, "iurls");
+    const durls = loadConfigUrls(conf.durls, "durls");
+    const wurls = loadConfigUrls(conf.wurls, "wurls");
+    if (typeof conf.dt === "string") {
+      const date = conf.dt;
+      for (const url of [...iurls, ...durls]) {
+        this.db.oobis.pin(url, { date, state: "queued" });
+      }
+      for (const url of wurls) {
+        this.db.woobi.pin(url, { date, state: "queued" });
+      }
+    }
+  }
+
+  /** Creates and caches a new habitat under this habery. */
+  makeHab(name: string, ns?: string, args: MakeHabArgs = {}): Hab {
+    const hab = new Hab(
+      name,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      "",
+    );
+    hab.make(args);
+    if (!hab.pre) throw new Error("Hab creation failed");
+    this.habs.set(hab.pre, hab);
+    hab.reconfigure();
+    return hab;
+  }
+
+  /**
+   * Create a locally signed group inception event from member habitat state.
+   *
+   * KERIpy correspondence:
+   * - mirrors the narrow `Habery.makeGroupHab()` inception path
+   * - extracts one current verifier per signing member and one next digest per
+   *   rotation member, matching KERIpy's `extractMerfersMigers()`
+   *
+   * Current scope:
+   * - at least one signing member must be local to this `Habery`
+   * - delegated groups may remain escrowed until the delegator anchor arrives
+   * - rotation/counselor orchestration is intentionally outside this method
+   */
+  makeGroupHab(
+    group: string,
+    mhab: Hab,
+    smids: string[],
+    rmids?: string[],
+    ns?: string,
+    args: MakeGroupHabArgs = {},
+  ): GroupHabCreation {
+    const signingMembers = [...smids];
+    const rotationMembers = rmids === undefined ? [...signingMembers] : [...rmids];
+    if (
+      !mhab.pre
+      || (!signingMembers.includes(mhab.pre)
+        && !rotationMembers.includes(mhab.pre))
+    ) {
+      throw new ValidationError(
+        `Local member identifier ${mhab.pre || "<empty>"} must be a group member.`,
+      );
+    }
+    if (signingMembers.length === 0) {
+      throw new ValidationError(
+        "Group inception requires at least one signing member.",
+      );
+    }
+
+    const keys = this.extractGroupMemberKeys(signingMembers);
+    const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
+    const serder = inceptEvent(keys, {
+      isith: args.isith,
+      ndigs,
+      nsith: args.nsith,
+      toad: args.toad ?? 0,
+      wits: args.wits ?? [],
+      delpre: args.delpre,
+      data: args.data ?? [],
+    });
+    const pre = serder.pre;
+    if (!pre || !serder.said) {
+      throw new Error(
+        "Expected group inception serder to provide pre and said.",
+      );
+    }
+
+    const hab = new Hab(
+      group,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+    );
+
+    if (!args.hidden) {
+      this.persistGroupHabRecord(
+        pre,
+        group,
+        mhab.pre,
+        signingMembers,
+        rotationMembers,
+        ns,
+      );
+    }
+
+    this.habs.set(pre, hab);
+    // Membership is local intent, needed to accept before collecting witness receipts.
+    this.db.groups.add(pre);
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      if (!args.hidden) {
+        this.removeGroupHabRecord(pre, group, ns);
+      } else this.db.groups.delete(pre);
+      this.habs.delete(pre);
+      throw new ValidationError(decision.message);
+    }
+
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(pre);
+      this.habs.set(pre, hab);
+    }
+
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /**
+   * Bind local metadata for a remotely proposed group event.
+   *
+   * KERIpy correspondence:
+   * - this is the TypeScript analogue of `Habery.joinGroupHab()`
+   * - it does not fabricate key state; accepted KEL state must still arrive
+   *   through `Kevery.processEvent()`
+   */
+  joinGroupHab(
+    pre: string,
+    group: string,
+    mhab: Hab,
+    smids: readonly string[],
+    rmids?: readonly string[],
+    ns?: string,
+  ): Hab {
+    if (!pre) {
+      throw new ValidationError("Group prefix is required.");
+    }
+    if (!group) {
+      throw new ValidationError("Group alias is required.");
+    }
+    if (!mhab.pre) {
+      throw new ValidationError("Local member habitat is missing a prefix.");
+    }
+
+    const signingMembers = [...smids];
+    const rotationMembers = rmids === undefined ? [...signingMembers] : [...rmids];
+    if (
+      !signingMembers.includes(mhab.pre)
+      && !rotationMembers.includes(mhab.pre)
+    ) {
+      throw new ValidationError(
+        `Local member identifier ${mhab.pre} must be a group member.`,
+      );
+    }
+
+    const existingName = this.db.getName(ns ?? "", group);
+    if (existingName && existingName !== pre) {
+      throw new ValidationError(
+        `Group alias ${group} is already bound to ${existingName}.`,
+      );
+    }
+    const existingRecord = this.db.getHab(pre);
+    if (existingRecord?.mid && existingRecord.mid !== mhab.pre) {
+      throw new ValidationError(
+        `Group prefix ${pre} is already joined as ${existingRecord.name}.`,
+      );
+    }
+
+    const hab = this.habs.get(pre) ?? new Hab(
+      group,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    this.persistGroupHabRecord(
+      pre,
+      group,
+      mhab.pre,
+      signingMembers,
+      rotationMembers,
+      ns,
+    );
+    this.db.groups.add(pre);
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(pre);
+    }
+    this.habs.set(pre, hab);
+    return hab;
+  }
+
+  /** Commit accepted group member metadata after the corresponding group event is accepted. */
+  commitGroupHabMembers(
+    pre: string,
+    smids: readonly string[],
+    rmids: readonly string[] = smids,
+  ): void {
+    const record = this.db.getHab(pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Group prefix ${pre} is missing local member metadata.`);
+    }
+    this.db.pinHab(
+      pre,
+      new HabitatRecord({
+        hid: pre,
+        name: record.name,
+        domain: record.domain,
+        mid: record.mid,
+        sid: record.sid,
+        watchers: record.watchers ? [...record.watchers] : undefined,
+        smids: [...smids],
+        rmids: [...rmids],
+      }),
+    );
+    this.ks.pinSmids(pre, this.groupMemberTuples(smids));
+    this.ks.pinRmids(pre, this.groupMemberTuples(rmids));
+    this.markAcceptedGroupHab(pre);
+  }
+
+  /**
+   * Rotate a locally membered group identifier from member habitat state.
+   *
+   * Current scope:
+   * - all signing members must be local habitats in this `Habery`
+   * - member AIDs should already be in the key state intended for the new
+   *   group key list, matching KLI's operator workflow of rotating members
+   *   before rotating the group
+   */
+  rotateGroupHab(
+    group: string,
+    smids?: string[],
+    rmids?: string[],
+    args: {
+      isith?: ThresholdSith;
+      nsith?: ThresholdSith;
+      toad?: number;
+      cuts?: string[];
+      adds?: string[];
+      data?: unknown[];
+    } = {},
+  ): GroupHabRotation {
+    const hab = this.habByName(group);
+    if (!hab?.pre || !hab.kever) {
+      throw new ValidationError(`Group alias ${group} is invalid.`);
+    }
+    const record = this.db.getHab(hab.pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Alias ${group} is not a local group habitat.`);
+    }
+
+    const signingMembers = smids?.length ? [...smids] : this.ks.getSmids(hab.pre).map((tuple) => tuple[0].qb64);
+    const rotationMembers = rmids?.length ? [...rmids] : this.ks.getRmids(hab.pre).map((tuple) => tuple[0].qb64);
+    if (!signingMembers.includes(record.mid)) {
+      throw new ValidationError(
+        `Local member identifier ${record.mid} must be a group signing member.`,
+      );
+    }
+
+    const keys = this.extractGroupMemberKeys(signingMembers);
+    const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
+    const kever = hab.kever;
+    const serder = rotateEvent(
+      hab.pre,
+      keys,
+      kever.serder.said ?? kever.said,
+      {
+        ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
+        sn: kever.sn + 1,
+        isith: args.isith,
+        ndigs,
+        nsith: args.nsith,
+        toad: args.toad,
+        wits: [...kever.wits],
+        cuts: args.cuts,
+        adds: args.adds,
+        data: args.data,
+      },
+    );
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+      kever.ndigers,
+    );
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      throw new ValidationError(decision.message);
+    }
+
+    if (serder.sn !== null && serder.said && this.db.kels.getLast(hab.pre, serder.sn) === serder.said) {
+      this.commitGroupHabMembers(hab.pre, signingMembers, rotationMembers);
+    }
+
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /** Create a locally signed group interaction event. */
+  interactGroupHab(
+    group: string,
+    smids?: string[],
+    args: { data?: unknown[] } = {},
+  ): GroupHabInteraction {
+    const hab = this.habByName(group);
+    if (!hab?.pre || !hab.kever) {
+      throw new ValidationError(`Group alias ${group} is invalid.`);
+    }
+    const record = this.db.getHab(hab.pre);
+    if (!record?.mid) {
+      throw new ValidationError(`Alias ${group} is not a local group habitat.`);
+    }
+
+    const signingMembers = smids?.length ? [...smids] : this.ks.getSmids(hab.pre).map((tuple) => tuple[0].qb64);
+    if (!signingMembers.includes(record.mid)) {
+      throw new ValidationError(
+        `Local member identifier ${record.mid} must be a group signing member.`,
+      );
+    }
+
+    const kever = hab.kever;
+    const serder = interactEvent(
+      hab.pre,
+      kever.serder.said ?? kever.said,
+      kever.sn + 1,
+      args.data ?? [],
+    );
+    const keys = kever.verfers.map((verfer) => verfer.qb64);
+    const sigers = this.signGroupEventWithLocalMembers(
+      serder,
+      signingMembers,
+      keys,
+    );
+    const decision = this.kevery.processEvent({
+      serder,
+      sigers,
+      wigers: [],
+      frcs: [],
+      sscs: [],
+      ssts: [],
+      local: true,
+    });
+    if (decision.kind === "reject") {
+      throw new ValidationError(decision.message);
+    }
+
+    if (hab.accepted) {
+      this.markAcceptedGroupHab(hab.pre);
+    }
+    return {
+      hab,
+      serder,
+      sigers,
+      message: messagize(serder, { sigers, pipelined: true }),
+    };
+  }
+
+  /** Extract the single current verifier from each group signing member. */
+  private extractGroupMemberKeys(smids: readonly string[]): string[] {
+    return smids.map((mid) => {
+      const kever = this.db.getKever(mid);
+      if (!kever) {
+        throw new ValidationError(`KEL missing for signing member ${mid}.`);
+      }
+      if (kever.verfers.length !== 1) {
+        throw new ValidationError(
+          `Signing member ${mid} must have exactly one current key, got ${kever.verfers.length}.`,
+        );
+      }
+      const key = kever.verfers[0]?.qb64;
+      if (!key) {
+        throw new ValidationError(
+          `Signing member ${mid} is missing its current key.`,
+        );
+      }
+      return key;
+    });
+  }
+
+  /** Extract one next-key digest from each transferable rotation member. */
+  private extractGroupMemberNextDigests(rmids: readonly string[]): string[] {
+    const ndigs: string[] = [];
+    for (const mid of rmids) {
+      const kever = this.db.getKever(mid);
+      if (!kever) {
+        throw new ValidationError(`KEL missing for rotation member ${mid}.`);
+      }
+      if (kever.ndigers.length > 1) {
+        throw new ValidationError(
+          `Rotation member ${mid} must have at most one next-key digest, got ${kever.ndigers.length}.`,
+        );
+      }
+      const ndig = kever.ndigers[0]?.qb64;
+      if (ndig) {
+        ndigs.push(ndig);
+      }
+    }
+    return ndigs;
+  }
+
+  /**
+   * Sign with local contributors using independent current and prior-next indices.
+   *
+   * Rotation callers supply the accepted group's prior commitments. Match each
+   * current public key against those digests using their own digest algorithm;
+   * first-match semantics do not count one signature toward duplicate slots.
+   * Uncommitted keys and non-rotation events use current-only signatures, as in
+   * KERIpy GroupHab.sign(). This convenience path uses cryptographic commitment
+   * matching rather than walking the member's historical contribution events.
+   */
+  private signGroupEventWithLocalMembers(
+    serder: SerderKERI,
+    smids: readonly string[],
+    keys: readonly string[],
+    priorNext: readonly Diger[] = [],
+  ): Siger[] {
+    const sigers: Siger[] = [];
+    for (const [index, mid] of smids.entries()) {
+      const member = this.habs.get(mid);
+      if (!member) {
+        continue;
+      }
+      const verfer = new Verfer({ qb64: keys[index] });
+      const priorIndex = priorNext.findIndex((diger) => diger.verify(verfer.qb64b));
+      sigers.push(
+        ...(member.mgr.sign(serder.raw, {
+          pubs: [keys[index]],
+          indexed: true,
+          indices: [index],
+          ondices: [priorIndex < 0 ? null : priorIndex],
+        }) as Siger[]),
+      );
+    }
+    if (sigers.length === 0) {
+      throw new ValidationError(
+        "Group event requires at least one local signing member.",
+      );
+    }
+    return sigers;
+  }
+
+  /** Persist group habitat metadata and member ordinals. */
+  private persistGroupHabRecord(
+    pre: string,
+    group: string,
+    mid: string,
+    smids: readonly string[],
+    rmids: readonly string[],
+    ns?: string,
+  ): void {
+    this.db.pinHab(
+      pre,
+      new HabitatRecord({
+        hid: pre,
+        name: group,
+        domain: ns,
+        mid,
+        smids: [...smids],
+        rmids: [...rmids],
+      }),
+    );
+    this.db.pinName(ns ?? "", group, pre);
+    this.ks.pinSmids(pre, this.groupMemberTuples(smids));
+    this.ks.pinRmids(pre, this.groupMemberTuples(rmids));
+  }
+
+  /** Mark an accepted group habitat as locally managed/membered. */
+  private markAcceptedGroupHab(pre: string): void {
+    this.db.prefixes.add(pre);
+    this.db.groups.add(pre);
+  }
+
+  /** Remove group metadata when local event validation rejects the inception. */
+  private removeGroupHabRecord(pre: string, group: string, ns?: string): void {
+    this.db.habs.rem(pre);
+    this.db.names.rem([ns ?? "", group]);
+    this.db.prefixes.delete(pre);
+    this.db.groups.delete(pre);
+    this.ks.smids.rem(pre);
+    this.ks.rmids.rem(pre);
+  }
+
+  /** Encode group member prefixes with durable ordinal metadata. */
+  private groupMemberTuples(mids: readonly string[]) {
+    return mids.map((mid, index) =>
+      [
+        new Prefixer({ qb64: mid }),
+        new NumberPrimitive({ qb64: encodeHugeNumber(index) }),
+      ] as [Prefixer, NumberPrimitive]
+    );
+  }
+
+  /**
+   * Resolve a habitat by alias (and optional namespace) using DB-backed state.
+   *
+   * This uses `names.` for alias lookup, `habs.` for metadata, and accepted
+   * `Kever` state for reopenable current state before materializing a cached
+   * `Hab`.
+   */
+  habByName(name: string, ns?: string): Hab | null {
+    const pre = this.db.getName(ns ?? "", name);
+    if (!pre) return null;
+    if (this.habs.has(pre)) return this.habs.get(pre)!;
+    const rec = this.db.getHab(pre);
+    if (!rec || !this.db.getKever(pre)) return null;
+    const hab = new Hab(
+      name,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      pre,
+    );
+    hab.reconfigure();
+    this.habs.set(pre, hab);
+    return hab;
+  }
+
+  /** Closes backing databases and optionally clears temp storage. */
+  *close(clear = false): Operation<void> {
+    const failures: unknown[] = [];
+    const closing = [this.db.close(clear), this.ks.close(clear)];
+    if (this.cf) closing.push(this.cf.close(clear && this.temp));
+    for (const operation of closing) {
+      try {
+        yield* operation;
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+    if (failures.length === 1) throw failures[0];
+    if (failures.length > 1) throw new AggregateError(failures, "Habery resource close failed", { cause: failures[0] });
+  }
+}
+
+/**
+ * Derive deterministic seed/AEID material from one passcode string.
+ *
+ * KERIpy correspondence:
+ * - mirrors the `bran` -> `seed`/`aeid` derivation used for encrypted habery
+ *   reopen flows
+ */
+export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
+  const branSalt = branToSaltQb64(bran);
+  const signer = saltySigner(branSalt, "", false, Tiers.low, false);
+  return { seed: signer.signer.qb64, aeid: signer.verfer.qb64 };
+}
+
+/**
+ * Create a `Habery` with reopened database/keystore surfaces and manager state.
+ *
+ * The returned `Habery` immediately reconstructs its local habitat cache from
+ * durable DB state rather than depending on process-local creation history.
+ */
+export function* createHabery(args: HaberyArgs): Operation<Habery> {
+  const {
+    name,
+    base = "",
+    temp = false,
+    headDirPath,
+    compat = false,
+    readonly = false,
+    cf: providedCf,
+    skipConfig = false,
+    skipSignator = false,
+    bran,
+    seed,
+    aeid,
+    salt,
+    algo,
+  } = args;
+
+  let db: Baser | undefined;
+  let ks: Keeper | undefined;
+  let cf: Configer | undefined;
+  let delivered = false;
+  let failure: { error: unknown } | undefined;
+  try {
+    db = yield* createBaser({
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      reopen: true,
+      readonly,
+    });
+    ks = yield* createKeeper({
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      reopen: true,
+      readonly,
+    });
+
+    cf = providedCf
+      ?? (skipConfig ? undefined : (yield* createConfiger({
+        name,
+        base,
+        temp,
+        headDirPath,
+        reopen: true,
+        clear: false,
+      })));
+
+    let usedSeed = seed ?? "";
+    let usedAeid = aeid ?? "";
+    if (bran && !seed) {
+      const derived = branToSeedAeid(bran);
+      usedSeed = derived.seed;
+      if (!usedAeid) usedAeid = derived.aeid;
+    }
+
+    // Keep the old startup seam for callers that were explicit about encrypted
+    // keeper readiness, even though CESR primitives now own sodium readiness.
+    ensureKeeperCryptoReady();
+    const mgr = new Manager({
+      ks,
+      seed: usedSeed,
+      aeid: usedAeid,
+      algo,
+      salt: normalizeSaltQb64(salt),
+    });
+
+    const hby = new Habery(
+      name,
+      base,
+      temp,
+      headDirPath,
+      compat,
+      readonly,
+      db,
+      ks,
+      mgr,
+      cf,
+      skipSignator,
+    );
+    delivered = true;
+    return hby;
+  } catch (error) {
+    failure = { error };
+    throw error;
+  } finally {
+    if (!delivered) {
+      // Failed acquisition still owns these resources; attempt every close.
+      const failures: unknown[] = [];
+      if (failure) failures.push(failure.error);
+      const closing: Operation<unknown>[] = [];
+      if (cf && cf !== providedCf) closing.push(cf.close());
+      if (ks) closing.push(ks.close());
+      if (db) closing.push(db.close());
+      for (const operation of closing) {
+        try {
+          yield* operation;
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length > (failure ? 1 : 0)) {
+        // deno-lint-ignore no-unsafe-finally -- Cancellation must also report cleanup failure.
+        if (failures.length === 1) throw failures[0];
+        // deno-lint-ignore no-unsafe-finally -- Preserve acquisition and every failed cleanup.
+        throw new AggregateError(failures, "Habery acquisition and close failed", { cause: failures[0] });
+      }
+    }
+  }
+}

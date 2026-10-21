@@ -53,7 +53,7 @@ const SURFACES: SurfaceCheck[] = [
     entrypoint: new URL("../mod.ts", import.meta.url),
     forbidden: [
       "/packages/tufa/",
-      "/src/app/cli/",
+      "/src/cli/",
       "npm:commander",
       "npm:/commander@",
       "npm:hono",
@@ -66,7 +66,7 @@ const SURFACES: SurfaceCheck[] = [
     entrypoint: new URL("../runtime.ts", import.meta.url),
     forbidden: [
       "/packages/tufa/",
-      "/src/app/cli/",
+      "/src/cli/",
       "npm:commander",
       "npm:/commander@",
       "npm:hono",
@@ -78,7 +78,7 @@ const SURFACES: SurfaceCheck[] = [
     entrypoint: new URL("../db.ts", import.meta.url),
     forbidden: [
       "/packages/tufa/",
-      "/src/app/cli/",
+      "/src/cli/",
       "npm:commander",
       "npm:/commander@",
       "npm:hono",

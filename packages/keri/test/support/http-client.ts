@@ -1,8 +1,8 @@
 /** Test HTTP peers implementing the scoped client contract without classifying arbitrary injected failures. */
 import { call, resource, scoped } from "effection";
-import { abortable } from "../../src/app/abortable.ts";
-import { collectBytes, streamBytes } from "../../src/app/byte-source.ts";
-import type { HttpClient, HttpResponse, HttpStreamResponse } from "../../src/app/http-client.ts";
+import { abortable } from "../../src/app/runtime/abortable.ts";
+import { collectBytes, streamBytes } from "../../src/app/transport/byte-source.ts";
+import type { HttpClient, HttpResponse, HttpStreamResponse } from "../../src/app/transport/http-client.ts";
 
 /** Existing test peers describe HTTP response bytes and exact exceptional outcomes. */
 export type TestHttpResponder = (url: string, init?: RequestInit) => Response | Promise<Response>;

@@ -11,8 +11,8 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { createHabery } from "../../../src/app/habbing.ts";
-import { mailboxTopicKey, openMailboxerForHabery } from "../../../src/app/mailboxing.ts";
+import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { mailboxTopicKey, openMailboxerForHabery } from "../../../src/app/mailbox/mailboxing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { assertExportParity } from "./interop-export-helpers.ts";
 import {

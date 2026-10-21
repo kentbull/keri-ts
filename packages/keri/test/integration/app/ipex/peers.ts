@@ -1,7 +1,7 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
-import { collectBytes } from "../../../../src/app/byte-source.ts";
-import { FetchHttpClient } from "../../../../src/app/http-client.ts";
-import { systemClock } from "../../../../src/app/runtime-clock.ts";
+import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { collectBytes } from "../../../../src/app/transport/byte-source.ts";
+import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 
 import {
   type CesrFrame,
@@ -23,12 +23,17 @@ import { call, run, scoped } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/agent-runtime.ts";
-import { requestFrame } from "../../../../src/app/cesr-egress.ts";
-import { readCesrRequestBytes } from "../../../../src/app/cesr-http.ts";
-import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../../src/app/habbing.ts";
-import { ipexExnBody } from "../../../../src/app/ipex-building.ts";
-import type { DisclosurePlan } from "../../../../src/app/ipex-graph.ts";
+import {
+  acceptedEventReplayMessage,
+  createHabery,
+  type Hab,
+  type Habery,
+} from "../../../../src/app/identity/habbing.ts";
+import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
+import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
+import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
+import { requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
+import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";

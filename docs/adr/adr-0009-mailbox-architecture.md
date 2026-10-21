@@ -12,8 +12,8 @@
   - `docs/design-docs/mailbox/MAILBOX.md`
   - `docs/design-docs/runtime/CUES.md`
   - `packages/keri/src/db/mailboxing.ts`
-  - `packages/keri/src/app/forwarding.ts`
-  - `packages/keri/src/app/mailbox-director.ts`
+  - `packages/keri/src/app/delivery/forwarding.ts`
+  - `packages/keri/src/app/mailbox/mailbox-director.ts`
   - `packages/tufa/src/host/kernel.ts`
   - `packages/tufa/src/http/protocol-handler.ts`
 

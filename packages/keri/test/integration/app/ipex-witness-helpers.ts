@@ -1,6 +1,6 @@
 /** Real witnessed KEL/registry preparation and signed IPEX wire for composed interop cases. */
-import { collectBytes } from "../../../src/app/byte-source.ts";
-import { FetchHttpClient } from "../../../src/app/http-client.ts";
+import { collectBytes } from "../../../src/app/transport/byte-source.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 
 import {
   type CesrFrame,
@@ -19,10 +19,10 @@ import {
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import type { Registry } from "../../../src/acdc/registraring.ts";
-import type { AgentRuntime } from "../../../src/app/agent-runtime.ts";
-import { requestFrame } from "../../../src/app/cesr-egress.ts";
-import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/habbing.ts";
-import { WitnessReceiptor } from "../../../src/app/witnessing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import type { AgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
+import { WitnessReceiptor } from "../../../src/app/witness/witnessing.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 
