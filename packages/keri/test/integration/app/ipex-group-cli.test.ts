@@ -1,7 +1,7 @@
 /** Public CLI group conversation authoring and exact approval resume over real HTTP intake. */
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { concatBytes } from "../../../../cesr/mod.ts";
+import { concatBytes, parseBytes, SerderKERI } from "../../../../cesr/mod.ts";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
@@ -16,11 +16,17 @@ Deno.test("IPEX group CLI authors apply, offer, agree and spurn through independ
   const headDirPath = await Deno.makeTempDir({ prefix: "ipex-group-cli-" });
   const stores = ["left", "right", "peer"];
   let transmissions = 0;
+  let businessDeliveries = 0;
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
     const name = new URL(request.url).pathname.slice(1);
     if (!stores.includes(name)) return new Response(null, { status: 404 });
     transmissions++;
     const bytes = await readCesrRequestBytes(request);
+    if (name === "peer") {
+      businessDeliveries += parseBytes(bytes).filter(frame =>
+        frame.body instanceof SerderKERI && frame.body.route?.startsWith("/ipex/")
+      ).length;
+    }
     await run(function*() {
       const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
@@ -138,11 +144,15 @@ Deno.test("IPEX group CLI authors apply, offer, agree and spurn through independ
       assertEquals(authored.status, "multisig-pending");
       assertEquals(authored.messages.length, 1);
       const selected = authored.messages[0].exnSaid;
+      const beforeDelivery = businessDeliveries;
       const joined = await command("right", ["join", "--said", selected, "--auto"]);
       assertEquals(joined.status, "multisig-approved");
+      assertEquals(joined.lead, false);
+      assertEquals(businessDeliveries, beforeDelivery, "The other member must only fan out approval");
       const completed = await command("left", ["join", "--said", selected, "--auto"]);
       assertEquals(completed.status, "multisig-approved");
       assertEquals(completed.lead, true);
+      assertEquals(businessDeliveries, beforeDelivery + 1, "The elected member sends the business EXN once");
       await run(function*() {
         const hby = yield* createHabery({ name: "peer", headDirPath, skipConfig: true });
         try {
