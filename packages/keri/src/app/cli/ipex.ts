@@ -3,11 +3,11 @@ import { action, call, type Operation, spawn } from "npm:effection@^3.6.0";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox-topics.ts";
+import { exchange } from "../../core/protocol-exchanging.ts";
 import { Reger } from "../../db/reger.ts";
 import { abortable } from "../abortable.ts";
 import { type AgentRuntime, runAgentRuntime, settleMailboxPollBatch } from "../agent-runtime.ts";
 import { fileBytes } from "../byte-source.ts";
-import { createExchangeMessage } from "../exchange-messaging.ts";
 import { isLocalGroupHab, localGroupMember } from "../group-members.ts";
 import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../grouping.ts";
 import type { Hab, Habery } from "../habbing.ts";
@@ -25,6 +25,7 @@ import {
   groupIpexPartial,
   publishInitialGroupIpex,
   requireStoredExchange,
+  sendCompletedGroupIpex,
   sendCredentialStream,
   storedExchangeMessage,
 } from "../ipex-grouping.ts";
@@ -34,6 +35,7 @@ import {
   IPEX_GRANT_ROUTE,
   IPEX_OFFER_ROUTE,
   IPEX_SPURN_ROUTE,
+  PREVIOUS_IPEX_ROUTES,
 } from "../ipexing.ts";
 import type { GroupSendResult } from "../multisig-messaging.ts";
 import { Organizer } from "../organizing.ts";
@@ -75,6 +77,7 @@ interface IpexJoinArgs extends IpexBaseArgs {
 export interface IpexSendResult {
   exn: SerderKERI;
   deliveries: string[];
+  group?: GroupSendResult & { complete: boolean; lead: boolean | null };
 }
 
 /** Grant facts survive command cleanup. Group completion is distinct from completed member delivery. */
@@ -116,6 +119,7 @@ export interface IpexJoinResult {
  */
 export function* ipexApplyCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
+  const timeout = nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds");
   const schema = parseStringOption(args.schema, "schema");
   requireNonEmpty(schema, "Schema");
   const attrs = parseJsonArg(parseStringOption(args.attrs, "attrs")) ?? {};
@@ -124,31 +128,13 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<Ipex
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    const { serder, msg } = createExchangeMessage(hab, {
-      dest: recipient,
-      route: IPEX_APPLY_ROUTE,
-      payload: {
-        m: ipexArgs.message ?? "",
-        s: schema,
-        a: attrs,
-        i: recipient,
-      },
-    });
-    const postman = runtime.postman;
-    const worker = yield* spawn(() => postman.deliverDo());
-    try {
-      const evt = postman.send({
-        src: hab.pre,
-        dest: recipient,
-        msg,
-        topic: CREDENTIAL_MAILBOX_TOPIC,
-      }, { notify: true });
-      const result = yield* postman.wait(evt);
-      if (result.kin === "failed") throw result.error;
-      return { exn: serder, deliveries: result.deliveries };
-    } finally {
-      yield* worker.halt();
-    }
+    const prepared = exchange(IPEX_APPLY_ROUTE, {
+      m: ipexArgs.message ?? "",
+      s: schema,
+      a: attrs,
+      i: recipient,
+    }, { sender: hab.pre, recipient });
+    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
   });
 }
 
@@ -159,6 +145,7 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<Ipex
  */
 export function* ipexOfferCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
+  const timeout = nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds");
   const acdcFile = parseStringOption(args.acdc, "acdc");
   requireNonEmpty(acdcFile, "ACDC file");
   const apply = parseStringOption(args.apply, "apply");
@@ -167,28 +154,14 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<Ipex
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    const { serder, msg } = createExchangeMessage(hab, {
-      dest: recipient,
-      route: IPEX_OFFER_ROUTE,
-      payload: { m: ipexArgs.message ?? "" },
+    if (apply) requireConversationPrior(hby, hab, recipient, apply, "offer");
+    const prepared = exchange(IPEX_OFFER_ROUTE, { m: ipexArgs.message ?? "" }, {
+      sender: hab.pre,
+      recipient,
       dig: apply,
       embeds: { acdc: Deno.readFileSync(acdcFile!) },
     });
-    const postman = runtime.postman;
-    const worker = yield* spawn(() => postman.deliverDo());
-    try {
-      const evt = postman.send({
-        src: hab.pre,
-        dest: recipient,
-        msg,
-        topic: CREDENTIAL_MAILBOX_TOPIC,
-      }, { notify: true });
-      const result = yield* postman.wait(evt);
-      if (result.kin === "failed") throw result.error;
-      return { exn: serder, deliveries: result.deliveries };
-    } finally {
-      yield* worker.halt();
-    }
+    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
   });
 }
 
@@ -203,23 +176,18 @@ export function* ipexAgreeCommand(args: Record<string, unknown>): Operation<Ipex
  */
 export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
+  const timeout = nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds");
   const prior = requireString(parseStringOption(args.prior, "prior"), "Prior message");
   return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const dest = new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
-    const { serder, msg } = createExchangeMessage(hab, {
-      dest,
-      route: IPEX_SPURN_ROUTE,
-      payload: { m: ipexArgs.message ?? "" },
+    requireConversationPrior(hby, hab, dest, prior, "spurn");
+    const prepared = exchange(IPEX_SPURN_ROUTE, { m: ipexArgs.message ?? "" }, {
+      sender: hab.pre,
+      recipient: dest,
       dig: prior,
     });
-    const worker = yield* spawn(() => runtime.postman.deliverDo());
-    try {
-      const deliveries = yield* sendCredentialStream(runtime.postman, hab, dest, [msg]);
-      return { exn: serder, deliveries };
-    } finally {
-      yield* worker.halt();
-    }
+    return yield* sendConversation(hby, runtime, hab, dest, prepared, timeout);
   });
 }
 /**
@@ -507,6 +475,10 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
       const postman = runtime.postman;
       const worker = yield* spawn(() => postman.deliverDo());
       try {
+        // A fresh command may have received peer wrappers without a live IPEX
+        // input owner. Collect their independent child proofs before deciding
+        // completion or electing external delivery for this selected message.
+        yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embedded.said!);
         return yield* approveMultisigIpex(hby, runtime.protocol, postman, runtime.vdr?.reger ?? null, exn, {
           publish: true,
           gvrsn: ipexArgs.gvrsn,
@@ -529,9 +501,9 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
 }
 
 /**
- * Send a prior-correlated IPEX response with an explicit Poster worker.
- * Await this admission's outcome and return its EXN and delivered URLs after
- * joining the worker. The outer resource owner closes stores before returning.
+ * Send a prior-correlated IPEX response through the command's single host.
+ * Validate the accepted predecessor before signing, then return group/transport
+ * facts after joining workers. The outer resource owner closes stores afterward.
  *
  * @param args Parsed IPEX command flags, including recipient and prior-message SAID.
  * @param route Response exchange route to construct.
@@ -543,6 +515,7 @@ function* sendPriorResponse(
   priorLabel: string,
 ): Operation<IpexSendResult> {
   const ipexArgs = ipexBaseArgs(args);
+  const timeout = nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds");
   const prior = parseStringOption(args[priorLabel], priorLabel);
   requireNonEmpty(prior, priorLabel);
   return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
@@ -550,28 +523,90 @@ function* sendPriorResponse(
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    const { serder, msg } = createExchangeMessage(hab, {
-      dest: recipient,
-      route,
-      payload: { m: ipexArgs.message ?? "" },
-      dig: prior,
-    });
-    const postman = runtime.postman;
-    const worker = yield* spawn(() => postman.deliverDo());
-    try {
-      const evt = postman.send({
-        src: hab.pre,
-        dest: recipient,
-        msg,
-        topic: CREDENTIAL_MAILBOX_TOPIC,
-      }, { notify: true });
-      const result = yield* postman.wait(evt);
-      if (result.kin === "failed") throw result.error;
-      return { exn: serder, deliveries: result.deliveries };
-    } finally {
-      yield* worker.halt();
-    }
+    requireConversationPrior(hby, hab, recipient, prior!, "agree");
+    const prepared = exchange(route, { m: ipexArgs.message ?? "" }, { sender: hab.pre, recipient, dig: prior });
+    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
   });
+}
+
+/** Validate an accepted predecessor and its known parties before any local signing. */
+function requireConversationPrior(
+  hby: Habery,
+  hab: Hab,
+  recipient: string,
+  said: string,
+  verb: "offer" | "agree" | "spurn",
+): void {
+  const prior = hby.db.exns.get([said]);
+  if (!prior || !PREVIOUS_IPEX_ROUTES.get(verb)!.some(route => prior.route === `/ipex/${route}`)) {
+    throw new ValidationError("Prior IPEX exchange is missing or has the wrong route.");
+  }
+  const attrs = prior.ked?.a;
+  const intended = prior.ked?.rp
+    || (attrs && typeof attrs === "object" && !Array.isArray(attrs) && "i" in attrs ? attrs.i : undefined);
+  if (prior.pre !== recipient || (typeof intended === "string" && intended.length > 0 && intended !== hab.pre)) {
+    throw new ValidationError("IPEX response parties do not match the accepted prior exchange.");
+  }
+  if (hby.db.erpy.get([said])) {
+    throw new ValidationError("Prior IPEX exchange already has an accepted response; resume the existing exchange.");
+  }
+}
+
+/**
+ * Run one command host through local intake, member approval and concrete delivery.
+ * Local conversation state survives transport failure. Group publication and business
+ * acceptance are separate facts; only an accepted child's elected member sends it
+ * externally. The caller's resource scope closes stores after this host joins.
+ */
+function* sendConversation(
+  hby: Habery,
+  runtime: AgentRuntime,
+  hab: Hab,
+  recipient: string,
+  [exn, attachments]: readonly [SerderKERI, Uint8Array],
+  timeout: number,
+): Operation<IpexSendResult> {
+  const group = isLocalGroupHab(hby, hab);
+  const genus = exn.gvrsn ?? exn.pvrsn;
+  const wire = group
+    ? groupIpexPartial(hby, hab, exn, attachments, genus)
+    : concatBytes(hab.endorse(exn, { pipelined: false, gvrsn: genus }), attachments);
+  const signer = group ? localGroupMember(hby, hab.pre) : hab;
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
+  try {
+    yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), wire), { local: true });
+    yield* runtime.protocol.processEscrowsOnce();
+    if (!group) {
+      if (!runtime.exc.complete(exn.said!)) throw new ValidationError("Local IPEX exchange was not accepted.");
+      let deliveries: string[];
+      if (exn.route === IPEX_SPURN_ROUTE) {
+        deliveries = yield* sendCredentialStream(runtime.postman, hab, recipient, [wire]);
+      } else {
+        const evt = runtime.postman.send(
+          { src: hab.pre, dest: recipient, topic: CREDENTIAL_MAILBOX_TOPIC, msg: wire },
+          { notify: true },
+        );
+        const outcome = yield* runtime.postman.wait(evt);
+        if (outcome.kin === "failed") throw outcome.error;
+        deliveries = outcome.deliveries;
+      }
+      return { exn, deliveries };
+    }
+    const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
+    const deadline = Date.now() + timeout * 1000;
+    while (!runtime.exc.complete(exn.said!)) {
+      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, exn.said!);
+      if (runtime.exc.complete(exn.said!) || Date.now() >= deadline) break;
+      yield* sleep(Math.min(250, deadline - Date.now()));
+    }
+    const complete = runtime.exc.complete(exn.said!);
+    const lead = complete ? runtime.exc.lead(hab, exn.said!) : null;
+    const deliveries = [...publication.deliveries];
+    if (lead) deliveries.push(...yield* sendCompletedGroupIpex(hby, runtime.postman, null, hab, exn, genus));
+    return { exn, deliveries, group: { ...publication, complete, lead } };
+  } finally {
+    yield* host.halt();
+  }
 }
 
 function ipexBaseArgs(args: Record<string, unknown>): IpexBaseArgs {

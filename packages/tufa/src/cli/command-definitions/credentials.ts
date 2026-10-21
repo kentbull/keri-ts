@@ -200,6 +200,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
           .requiredOption("--schema <said>", "Requested schema SAID")
           .option("--attrs <json>", "Requested attributes JSON or @file")
+          .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")
           .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
@@ -215,6 +216,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
           .requiredOption("--acdc <file>", "Embedded ACDC stream file")
           .option("--apply <said>", "Prior apply EXN SAID")
+          .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")
           .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
@@ -229,6 +231,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .description("Send an IPEX agree")
           .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
           .requiredOption("--offer <said>", "Prior offer EXN SAID")
+          .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")
           .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
@@ -281,6 +284,7 @@ function registerIpexCmds(program: Command, dispatch: CommandDispatch): void {
           .description("Send an IPEX spurn")
           .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
           .requiredOption("--prior <said>", "Prior IPEX EXN SAID")
+          .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")
           .option("-m, --message <text>", "Human-readable message"),
       ),
     ),
