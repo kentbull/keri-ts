@@ -1,4 +1,4 @@
-/** Hosted TEL receipt production and handoff to the ordinary transport owner. */
+/** Hosted legacy/v1-style TEL backing and receipt handoff to the ordinary transport owner. */
 import type { Operation } from "effection";
 import type { Deck } from "../core/deck.ts";
 import { consoleLogger } from "../core/logger.ts";
@@ -8,7 +8,13 @@ import type { Backer, BackerRequest } from "../vdr/backing.ts";
 import type { Poster } from "./forwarding.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
-/** One selected signer consumes its own endorsement requests; Poster alone owns network execution. */
+/**
+ * Serve optional legacy/v1-style TEL backing for vcp/vrt/bis/brv with one selected
+ * signer. Indexed endorsements contribute to the registry's configured backer
+ * quorum; issuer multisig approval and KEL witnessing remain separate.
+ * Native ACDC v2 rip/bup/upd registries do not use or require this mechanism.
+ * Poster alone owns network execution.
+ */
 export class BackerService {
   /** Compose protocol endorsement, its private flow and the existing sender with explicit dependencies. */
   constructor(readonly backer: Backer, readonly requests: Deck<BackerRequest>, readonly postman: Poster) {}

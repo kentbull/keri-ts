@@ -42,6 +42,11 @@ Git/PRs own detailed history; this file owns current scope, order and gates.
 - Required: complete multisig approval/fanout throughout CLI credential workflows,
   legacy TEL replay, actual legacy group backer registries, verifier separation
   and package organization. KERI/CESR v2 work independent of native ACDC stays required.
+- Clarify hosted backer comments/help and the pending release note: optional
+  legacy/v1-style TEL backing (`vcp`/`vrt`/`bis`/`brv`) supplies indexed backer-quorum
+  endorsements, separate from issuer multisig approval and KEL witnessing.
+  Native ACDC v2 `rip`/`bup`/`upd` registries do not use or require this mechanism;
+  the event model does not identify a library, KERIpy or wire/genus version.
 - Deferred native scope: all remaining work depending on native-v2 ACDC/registry
   `rip`/`bup`/`upd`, including CLI authoring, disclosure custody, native IPEX/wallet
   completion and presentation. The [native roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md)
