@@ -2,6 +2,7 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createHabery } from "../../../src/app/habbing.ts";
+import { dgKey } from "../../../src/db/core/keys.ts";
 import {
   createInteropContext,
   extractPrefix,
@@ -17,7 +18,8 @@ function result(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim().split("\n").at(-1)!);
 }
 
-Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed group approval", async () => {
+/** Keep the same real command topology; the optional third member goes offline after inception. */
+async function reciprocalApproval(weighted: boolean): Promise<void> {
   const ctx = await createInteropContext();
   ctx.env.PYTHONUNBUFFERED = "1";
   const witnesses = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"] });
@@ -32,8 +34,8 @@ Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed gr
         label,
         runTufaWithTimeout([...args, "--name", name, "--head-dir", head], ctx.env, ctx.repoRoot, 90_000),
       );
-    const kli = (label: string, args: string[]) =>
-      requireSuccess(label, runCmdWithTimeout(ctx.kliCommand, [...args, "--name", pyName], ctx.env, 90_000));
+    const kli = (label: string, args: string[], store = pyName) =>
+      requireSuccess(label, runCmdWithTimeout(ctx.kliCommand, [...args, "--name", store], ctx.env, 90_000));
     await tufa("initialize Tufa member", ["init", "--nopasscode"]);
     await kli("initialize Python member", ["init", ...versions, "--nopasscode"]);
     await tufa("resolve witness for Tufa member", ["oobi", "resolve", "--url", witness.controllerOobi]);
@@ -96,14 +98,50 @@ Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed gr
       "--oobi-alias",
       "tufa",
     ]);
+    const mids = [tsPre, pyPre];
+    if (weighted) {
+      // The witness retains this member's public KEL/mailbox. Its controller
+      // exits here and supplies no group contribution in either subsequent turn.
+      const inactive = `offline-${crypto.randomUUID()}`;
+      await kli("initialize offline member", ["init", ...versions, "--nopasscode"], inactive);
+      await kli(
+        "resolve offline member witness",
+        ["oobi", "resolve", ...versions, "--oobi", witness.controllerOobi],
+        inactive,
+      );
+      const offline = extractPrefix(
+        (await kli("incept offline member", [
+          "incept",
+          ...versions,
+          "--alias",
+          "member",
+          "--file",
+          config,
+          "--receipt-endpoint",
+        ], inactive)).stdout,
+      );
+      const oobi = `${witness.httpOrigin}/oobi/${offline}/witness/${witness.pre}`;
+      await tufa("introduce offline member to Tufa", ["oobi", "resolve", "--url", oobi, "--oobi-alias", "offline"]);
+      await kli("introduce offline member to Python", [
+        "oobi",
+        "resolve",
+        ...versions,
+        "--oobi",
+        oobi,
+        "--oobi-alias",
+        "offline",
+      ]);
+      mids.push(offline);
+    }
+    const threshold = weighted ? ["1/2", "1/2", "1/2"] : "2";
     const groupConfig = `${ctx.home}/group.json`;
     await Deno.writeTextFile(
       groupConfig,
       JSON.stringify({
-        aids: [tsPre, pyPre],
-        rmids: [tsPre, pyPre],
-        isith: "2",
-        nsith: "2",
+        aids: mids,
+        rmids: mids,
+        isith: threshold,
+        nsith: threshold,
         toad: 1,
         wits: [witness.pre],
       }),
@@ -171,6 +209,10 @@ Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed gr
       const hby = yield* createHabery({ name, headDirPath: head, skipConfig: true, skipSignator: true });
       try {
         const kever = hby.db.getKever(String(group.group))!;
+        if (weighted) {
+          const indices = hby.db.sigs.get(dgKey(kever.pre, kever.said)).map(signature => signature.index).sort();
+          assertEquals(indices, [0, 1], "two active half-weight contributions satisfy the three-member group");
+        }
         return { sn: kever.sn, said: kever.said };
       } finally {
         yield* hby.close();
@@ -199,4 +241,9 @@ Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed gr
     await witnesses.close();
     await Deno.remove(ctx.home, { recursive: true });
   }
-});
+}
+
+Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed group approval", () =>
+  reciprocalApproval(false));
+Deno.test("selected Python and Tufa weighted CLI group completes while a non-required member stays offline", () =>
+  reciprocalApproval(true));
