@@ -32,6 +32,7 @@ import { collectBytes } from "./byte-source.ts";
 import {
   groupCredentialAnchorReady,
   validateCredentialIssueProposal,
+  validateCredentialRevocationProposal,
   validateCredentialSource,
   validateRegistryName,
   validateRegistryProposal,
@@ -50,6 +51,7 @@ import {
   MULTISIG_ICP_ROUTE,
   MULTISIG_ISS_ROUTE,
   MULTISIG_IXN_ROUTE,
+  MULTISIG_REV_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
@@ -80,7 +82,7 @@ export type MultisigKelRoute =
   | typeof MULTISIG_ICP_ROUTE
   | typeof MULTISIG_ROT_ROUTE
   | typeof MULTISIG_IXN_ROUTE;
-export type MultisigVdrRoute = typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE;
+export type MultisigVdrRoute = typeof MULTISIG_VCP_ROUTE | typeof MULTISIG_ISS_ROUTE | typeof MULTISIG_REV_ROUTE;
 export type MultisigRpyRoute = typeof MULTISIG_RPY_ROUTE;
 export type MultisigProposalRoute = MultisigKelRoute | MultisigVdrRoute | MultisigRpyRoute;
 
@@ -91,7 +93,7 @@ type KelApproval = MultisigChild & {
 };
 
 export interface ApprovalResult extends GroupSendResult {
-  /** Present for VCP/ISS: exact TEL coordinates and local publication, separate from business acceptance and member delivery. */
+  /** Present for VCP/ISS/REV: exact TEL coordinates and local publication, separate from business acceptance and member delivery. */
   tel?: { pre: string; sn: number; publicationComplete: boolean };
   route: MultisigProposalRoute;
   said: string;
@@ -470,7 +472,7 @@ function* approveVdrProposal(
   }
   const member = localGroupMember(hby, groupPre);
   const embed = embeddedSection(exn.ked ?? {});
-  const label = route === MULTISIG_VCP_ROUTE ? "vcp" : "iss";
+  const label = vdrProposalLabel(route);
   const embeddedSad = embed?.[label];
   const anchor = multisigChild(hby, exn, "anc");
   if (!isRecord(embeddedSad) || !anchor) {
@@ -481,8 +483,11 @@ function* approveVdrProposal(
   const embeddedSerder = new SerderKERI({ sad: embeddedSad });
   // Required children must be decoded before approval can sign or accept the anchor.
   const acdcSad = embed?.acdc;
-  let proposal: { route: typeof MULTISIG_VCP_ROUTE } | { route: typeof MULTISIG_ISS_ROUTE; credential: SerderACDC };
-  if (route === MULTISIG_VCP_ROUTE) {
+  let proposal:
+    | { route: typeof MULTISIG_VCP_ROUTE }
+    | { route: typeof MULTISIG_REV_ROUTE }
+    | { route: typeof MULTISIG_ISS_ROUTE; credential: SerderACDC };
+  if (route !== MULTISIG_ISS_ROUTE) {
     proposal = { route };
   } else {
     if (!isRecord(acdcSad)) return null;
@@ -492,6 +497,10 @@ function* approveVdrProposal(
   const embeddedSaid = embeddedSerder.said ?? "";
   if (proposal.route === MULTISIG_VCP_ROUTE) {
     validateRegistryProposal(groupPre, embeddedSerder, anchorSerder);
+  } else if (proposal.route === MULTISIG_REV_ROUTE) {
+    if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
+    const said = requireText(stringField(payload, "said") || undefined, "Credential SAID");
+    if (!validateCredentialRevocationProposal(rgy, groupPre, said, embeddedSerder, anchorSerder)) return null;
   } else {
     if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
     const evidence = multisigChildEvidence(hby, exn, "acdc", proposal.credential);
@@ -538,6 +547,17 @@ function* approveVdrProposal(
       attrs: { ...attrs, ...(typeof payload.usage === "string" ? { usage: payload.usage } : {}) },
       embeds: { vcp: embeddedSerder.raw, anc: localAnchor },
     };
+  } else if (proposal.route === MULTISIG_REV_ROUTE) {
+    const seal = sourceSeal(anchorSerder);
+    rgy.tvy.processEvent({ serder: embeddedSerder, seqner: seal.seqner, saider: seal.saider });
+    rgy.processEscrows();
+    rgy.publication.track(embeddedSerder, anchorSerder);
+    accepted = telAccepted(rgy.reger, embeddedSerder.pre!, embeddedSerder.sn!, embeddedSerder.said!);
+    publication = {
+      route: proposal.route,
+      attrs: { ...attrs, said: embeddedSerder.pre! },
+      embeds: { rev: embeddedSerder.raw, anc: localAnchor },
+    };
   } else {
     const creder = proposal.credential;
     accepted = approveCredentialIssue(rgy, creder, embeddedSerder, anchorSerder);
@@ -582,6 +602,18 @@ function storedContribution(hby: Habery, wrapper: SerderKERI, label: string, sai
     throw new ValidationError(`Stored multisig approval ${wrapper.said} lacks its ${label} contribution.`);
   }
   return concatBytes(child.event.raw, child.attachment);
+}
+
+/** VDR coordination keeps KERIpy's named child for each legacy route. */
+function vdrProposalLabel(route: MultisigVdrRoute): "vcp" | "iss" | "rev" {
+  switch (route) {
+    case MULTISIG_VCP_ROUTE:
+      return "vcp";
+    case MULTISIG_ISS_ROUTE:
+      return "iss";
+    case MULTISIG_REV_ROUTE:
+      return "rev";
+  }
 }
 
 /** The supported route determines its one named KEL child. */
@@ -797,7 +829,7 @@ function isKelRoute(route: string): route is MultisigKelRoute {
 }
 
 function isVdrRoute(route: string): route is MultisigVdrRoute {
-  return route === MULTISIG_VCP_ROUTE || route === MULTISIG_ISS_ROUTE;
+  return route === MULTISIG_VCP_ROUTE || route === MULTISIG_ISS_ROUTE || route === MULTISIG_REV_ROUTE;
 }
 
 function requireText(value: string | undefined, label: string): string {

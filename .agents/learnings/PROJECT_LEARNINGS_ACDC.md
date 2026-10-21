@@ -91,8 +91,13 @@ evidence fails instead of authoring a replacement anchor.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 
-Group VCP/ISS approval checks business bindings and actual credential source proof
-before prompts/signatures. Missing registry/schema/predecessor evidence stays
+Group VCP/ISS/REV approval checks business bindings and actual credential source proof
+before prompts/signatures. REV additionally binds the saved credential and
+original accepted issuance. Its command resumes retained publication evidence,
+waits for ordinal-one completion and gates external delivery/export on acceptance
+and completed publication. Group delivery elects the lowest verified historical
+anchor signer; member rotation does not move that authority. Explicit resend is
+allowed without a delivery ledger. Missing registry/schema/predecessor evidence stays
 pending; malformed evidence and conflicting aliases produce no local anchor.
 Proposers admit each exact signed local wrapper before member delivery so returning
 proofs can join an approved payload. Independently counted local/peer contributions

@@ -1,6 +1,6 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: active; merged implementation baseline `dda5a9d4` (#651), 2026-10-20.
+Status: active; merged implementation baseline `f1ae0dd4` (#653), 2026-10-21.
 Approved goal: complete the in-scope implementation, release preparation and final
 qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
 **Publication is excluded from this goal** pending completion of the side-chat
@@ -11,9 +11,9 @@ plan. This goal may finish when all other required work and qualification pass.
 Foundational refactors, operator fixes and legacy VCP/ISS preflight/publication
 are implemented, including weighted and witnessed CLI restart evidence. Six-verb
 IPEX authoring/approval and wallet settlement are implemented, with grant preflight merged in #650; peer/witnessed lifecycle qualification remains.
-Legacy TEL replay is merged in #651. Retirement of the autonomous legacy TEL
-backer feature is the current cut, then revocation, verifier separation,
-organization and final qualification. Selected feature checks are not a release-readiness claim.
+Legacy TEL replay is merged in #651; autonomous legacy TEL backing is retired
+in #652 with observer verification retained. Revocation is the current implementation
+cut, followed by verifier separation, bounded peer evidence, organization and final qualification. Selected feature checks are not a release-readiness claim.
 
 | Work                                                                                   | Current disposition                                                                                                                                       |
 | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -122,25 +122,25 @@ own responsibilities. Historical unchecked boxes are not new implementation scop
 Cut labels are stable planning IDs, **not GitHub PR numbers**. Finish one cohesive
 implementation PR before the next; split only for independent human review.
 
-| Cut          | Remaining result                                                                                                     | Depends on                                            |
-| ------------ | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
-| R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                    | This reconciliation                                   |
-| R2           | Native partial proof #627 retained; native remainder deferred. Backer implementation superseded by R3.               | R1                                                    |
-| 13k          | Complete in #621–624 and #631–632: strict command input validation.                                                  | R1                                                    |
-| 13 remainder | Complete in #633–634 and #641: durable selection, proof reuse and interrupted-index replay.                          | Reporting already merged                              |
-| 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                | 13k, 13 remainder                                     |
-| 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31. | 14                                                    |
-| 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.  | 15                                                    |
-| 17–18        | Complete in #651: query wire context, legacy TEL replay and explicit unsupported downgrade.                          | Query composition already merged                      |
-| R3           | Retire the autonomous legacy TEL backer feature, archive the design and record its rejection ADR.                    | 17–18 (#651)                                          |
-| 20           | Group revocation and independently observed revoked state.                                                           | 15, 18, R3                                            |
-| 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                  | R3                                                    |
-| 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                          | Legacy lifecycle; independent of deferred native cuts |
-| 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                   | All feature work                                      |
-| 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                             | 31                                                    |
-| 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                   | 31a                                                   |
-| 32           | Exact 2.0.0 versions, changesets/changelogs, breaking guide and final qualification.                                 | 31d                                                   |
-| Preparation  | Prepare and qualify unpublished 2.0.0 artifacts; preserve 1.0.0 history.                                             | All gates                                             |
+| Cut          | Remaining result                                                                                                       | Depends on                                            |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| R1           | Complete in #626: historical IPEX seals and selected advanced-main qualification.                                      | This reconciliation                                   |
+| R2           | Native partial proof #627 retained; native remainder deferred. Backer implementation superseded by R3.                 | R1                                                    |
+| 13k          | Complete in #621–624 and #631–632: strict command input validation.                                                    | R1                                                    |
+| 13 remainder | Complete in #633–634 and #641: durable selection, proof reuse and interrupted-index replay.                            | Reporting already merged                              |
+| 14           | Ordinary group guards/inventory merged #635; business workflows continue in 15/16/20.                                  | 13k, 13 remainder                                     |
+| 15           | VCP/ISS preflight, publication and CLI merged #637–639; witnessed restart proof #640. Final peer gates remain in 31.   | 14                                                    |
+| 16           | Six-verb CLI, approval/resume and wallet gates implemented; actual peer/witnessed lifecycle evidence remains in 31.    | 15                                                    |
+| 17–18        | Complete in #651: query wire context, legacy TEL replay and explicit unsupported downgrade.                            | Query composition already merged                      |
+| R3           | Complete in #652: autonomous backing retired; design archived, rejection ADR recorded, observer verification retained. | 17–18 (#651)                                          |
+| 20           | Group revocation and independently observed revoked state.                                                             | 15, 18, R3                                            |
+| 21–24        | Backer authoring/hosting expansion cancelled; remove the implemented feature in R3.                                    | R3                                                    |
+| 30a–30b      | Narrow public protocol APIs if needed, then Tufa verifier application move.                                            | Legacy lifecycle; independent of deferred native cuts |
+| 31           | Close bounded actual-peer lifecycle evidence gaps.                                                                     | All feature work                                      |
+| 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                               | 31                                                    |
+| 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                     | 31a                                                   |
+| 32           | Exact 2.0.0 versions, changesets/changelogs, breaking guide and final qualification.                                   | 31d                                                   |
+| Preparation  | Prepare and qualify unpublished 2.0.0 artifacts; preserve 1.0.0 history.                                               | All gates                                             |
 
 [CLI bootstrap supplement](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md) owns 13k
 input details; 13i/13j are complete. The messenger, query, result-contract and

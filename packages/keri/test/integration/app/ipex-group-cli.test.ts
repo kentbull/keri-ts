@@ -4,6 +4,7 @@ import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { concatBytes, Diger, parseBytes, Prefixer, Seqner, SerderKERI, Vrsn_1_0 } from "../../../../cesr/mod.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../src/app/agent-runtime.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
+import { credentialStreamBytes } from "../../../src/app/credential-workflows.ts";
 import { createExchangeMessage } from "../../../src/app/exchange-messaging.ts";
 import { createHabery, type Habery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -12,6 +13,7 @@ import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-coun
 import { reply as endpointReply } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { incept as registryIncept, issue as credentialIssue } from "../../../src/core/protocol-vdr-eventing.ts";
+import { RegistryRecord } from "../../../src/core/records.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { credential, serializeCredential } from "../../../src/vdr/credentialing.ts";
 
@@ -44,7 +46,7 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
     return new Response(null, { status: 204 });
   });
   const root = new URL("../../../../../", import.meta.url).pathname;
-  async function execute(name: string, args: string[], family: "ipex" | "vc" = "ipex") {
+  async function execute(name: string, args: string[], family: "ipex" | "vc" | "multisig" = "ipex") {
     return await new Deno.Command(Deno.execPath(), {
       cwd: root,
       args: ["run", "-A", "packages/tufa/mod.ts", family, ...args, "--name", name, "--head-dir", headDirPath],
@@ -70,9 +72,9 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
   }
   try {
     const fixture = await run(function*() {
-      const hbys = [];
+      const hbys: Habery[] = [];
       for (const name of stores) hbys.push(yield* createHabery({ name, headDirPath, skipConfig: true }));
-      const runtimes = [];
+      const runtimes: AgentRuntime[] = [];
       for (const hby of hbys) runtimes.push(yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock));
       try {
         const members = hbys.map(hby => hby.makeHab("member"));
@@ -149,6 +151,21 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
           yield* runtime.protocol.processEscrowsOnce();
           assertEquals(runtime.vdr!.reger.saved.get([issued.said!])?.qb64, issued.said);
         }
+        // Local naming metadata selects an already protocol-accepted registry;
+        // it supplies no TEL acceptance or signature evidence.
+        for (const runtime of runtimes.slice(0, 2)) {
+          runtime.vdr!.reger.regs.pin("registry", new RegistryRecord({ registryKey: registry.pre!, prefix: group }));
+        }
+        const issuedPath = `${headDirPath}/original-issuance.cesr`;
+        yield* call(() =>
+          Deno.writeFile(issuedPath, credentialStreamBytes(hbys[0], runtimes[0].vdr!.reger, issued, peer.pre))
+        );
+        const observer = yield* createHabery({ name: "verifier", headDirPath, skipConfig: true });
+        try {
+          observer.db.schema.pin(schema.said, schema);
+        } finally {
+          yield* observer.close();
+        }
         const peerRegistry = registryIncept(peer.pre, { cnfg: ["NB"] });
         const groupCredential = credential({
           issuer: peer.pre,
@@ -201,6 +218,7 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
         }
         return {
           credential: issued.said!,
+          issuedPath,
           groupCredential: groupCredential.said!,
           group,
           schema: schema.said,
@@ -301,6 +319,8 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
             assertExists(received);
             assertEquals(received.route, `/ipex/${verb}`);
           }
+          const observedIssuance = await execute("verifier", ["import", "--in", fixture.issuedPath], "vc");
+          assertEquals(observedIssuance.code, 0, new TextDecoder().decode(observedIssuance.stderr));
           const settled = await command("peer", ["admit", "--alias", "member", "--said", groupGrant, "--timeout", "0"]);
           assertEquals(settled.saved, true);
           assertEquals(settled.credential, fixture.credential);
@@ -406,6 +426,78 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
             assertEquals(received.route, "/ipex/admit");
             assertEquals(received.ked?.p, incoming.said);
             assertEquals(runtime.vdr!.reger.saved.get([fixture.groupCredential])?.qb64, fixture.groupCredential);
+          }
+          // Each command is a fresh subprocess. Approval resumes durable
+          // notification/EXN evidence rather than keeping an initiating CLI alive.
+          async function revoke(name: string, extra: string[] = []) {
+            const output = await execute(name, [
+              "revoke",
+              "--alias",
+              "group",
+              "--registry-name",
+              "registry",
+              "--said",
+              fixture.credential,
+              "--timeout",
+              "0",
+              ...extra,
+            ], "vc");
+            assertEquals(output.code, 0, new TextDecoder().decode(output.stderr));
+            return JSON.parse(new TextDecoder().decode(output.stdout).trim().split("\n").at(-1)!) as {
+              tel: string;
+              accepted: boolean;
+              publicationComplete: boolean;
+              messages: { exnSaid: string }[];
+              deliveries: string[];
+            };
+          }
+          const revocationPath = `${headDirPath}/revocation.cesr`;
+          const pendingRev = await revoke("left", ["--out", revocationPath]);
+          assertEquals(pendingRev.accepted, false);
+          assertEquals(pendingRev.publicationComplete, false);
+          assertEquals(pendingRev.deliveries, []);
+          await assertRejects(() => Deno.stat(revocationPath), Deno.errors.NotFound);
+          const joinRev = await execute("right", [
+            "join",
+            "--said",
+            pendingRev.messages[0].exnSaid,
+            "--auto",
+            "--approval-timeout",
+            "0",
+          ], "multisig");
+          assertEquals(joinRev.code, 0, new TextDecoder().decode(joinRev.stderr));
+          const joinedRev = JSON.parse(new TextDecoder().decode(joinRev.stdout).trim().split("\n").at(-1)!);
+          assertEquals(joinedRev.route, "/multisig/rev");
+          assertEquals(joinedRev.accepted, true);
+          const beforeRevDelivery = transmissions;
+          const nonLeadRev = await revoke("right");
+          assertEquals(nonLeadRev.accepted, true);
+          assertEquals(nonLeadRev.deliveries, []);
+          const completedRev = await revoke("left", ["--out", revocationPath]);
+          assertEquals(completedRev.tel, pendingRev.tel);
+          assertEquals(completedRev.accepted, true);
+          assertEquals(completedRev.publicationComplete, true);
+          assertEquals(completedRev.messages, pendingRev.messages);
+          assertEquals(completedRev.deliveries.length > 0, true);
+          assertEquals(transmissions > beforeRevDelivery, true);
+          const holder = receivers.get("peer")!.runtime.vdr!;
+          assertEquals(
+            holder.tvy.tevers.get(holder.reger.creds.get(fixture.credential)!.regid!)!.vcState(fixture.credential)!.et,
+            "rev",
+          );
+          const issuer = receivers.get("left")!.hby;
+          const anchorSaid = issuer.db.getKever(fixture.group)!.said;
+          const repeatedRev = await revoke("left");
+          assertEquals(repeatedRev.tel, completedRev.tel);
+          assertEquals(issuer.db.getKever(fixture.group)!.said, anchorSaid);
+          for (const path of [revocationPath, fixture.issuedPath]) {
+            const imported = await execute("verifier", ["import", "--in", path], "vc");
+            assertEquals(imported.code, 0, new TextDecoder().decode(imported.stderr));
+            const listed = await execute("verifier", ["list"], "vc");
+            assertEquals(listed.code, 0, new TextDecoder().decode(listed.stderr));
+            const row = new TextDecoder().decode(listed.stdout).trim().split("\n").map(line => JSON.parse(line))
+              .find(row => row.said === fixture.credential);
+            assertEquals(row.status, "rev", "Reopen and stale issuance replay must not revive a revoked credential");
           }
         });
       } finally {

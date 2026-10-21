@@ -26,6 +26,7 @@ import { uniqueMembers } from "../group-members.ts";
 import {
   MULTISIG_ICP_ROUTE,
   MULTISIG_IXN_ROUTE,
+  MULTISIG_REV_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
@@ -298,7 +299,7 @@ export function* multisigJoinCommand(
     if (result.tel) {
       const { publication, reger } = runtime.vdr!;
       const tel = result.tel;
-      if (result.route === MULTISIG_VCP_ROUTE) {
+      if (result.route === MULTISIG_VCP_ROUTE || result.route === MULTISIG_REV_ROUTE) {
         yield* waitForTelPublication(publication, tel.pre, tel.sn, approval.deadline);
         result.accepted = reger.tels.getOn(tel.pre, tel.sn)?.qb64 === result.embedded;
       } else {

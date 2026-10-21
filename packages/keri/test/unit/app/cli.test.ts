@@ -46,6 +46,7 @@ import { oobiGenerateCommand, oobiRequestCommand, oobiResolveCommand } from "../
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { saidifyCommand } from "../../../src/app/cli/saidify.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
+import { vcRevokeCommand } from "../../../src/app/cli/vc.ts";
 import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ipexGrantExn } from "../../../src/app/ipexing.ts";
@@ -966,6 +967,7 @@ Deno.test({
   async fn() {
     const base = { name: "validation", alias: "alice" };
     const cases: [() => Operation<unknown>, string][] = [
+      [() => vcRevokeCommand({ ...base, timeout: "NaN" }), "timeout must be a decimal number"],
       [() => annotateCommand({ pretty: "false" }), "pretty must be a boolean"],
       [() => benchmarkCommand({ iterations: "1.5" }), "iterations must be a decimal integer"],
       [() => benchmarkCommand({ chunkSize: 0 }), "iterations and chunkSize must be positive"],

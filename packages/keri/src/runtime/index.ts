@@ -124,6 +124,12 @@ export {
   importCredentialStream,
 } from "../app/credential-importing.ts";
 export {
+  type CredentialRevokeOptions,
+  type CredentialRevokeResult,
+  deliverCredentialRevocation,
+  revokeCredential,
+} from "../app/credential-revoking.ts";
+export {
   createCredential,
   type CredentialCreateOptions,
   type CredentialExportResult,
@@ -132,15 +138,12 @@ export {
   type CredentialRegistryInceptOptions,
   credentialRegistryRecords,
   credentialRegistryStatus,
-  type CredentialRevokeOptions,
-  type CredentialRevokeResult,
   exportCredentialStream,
   inceptCredentialRegistry,
   type IssueResult,
   listCredentials,
   pinSchemaBytes,
   type RegistryResult,
-  revokeCredential,
 } from "../app/credential-workflows.ts";
 export {
   Anchorer,

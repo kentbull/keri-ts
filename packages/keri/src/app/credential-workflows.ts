@@ -1,9 +1,8 @@
-import { Organizer } from "./organizing.ts";
 /**
  * Credential registry and lifecycle workflow orchestration.
  *
  * CLI adapters parse inputs and render outputs. This module owns registry state,
- * credential issue/revoke/import/export,
+ * credential issuance/import/export,
  * and multisig VC proposal coordination.
  */
 import {
@@ -18,7 +17,6 @@ import {
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../core/errors.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../core/mailbox-topics.ts";
 import { incept as inceptRegistryEvent, issue as issueEvent } from "../core/protocol-vdr-eventing.ts";
 import { RegistryRecord } from "../core/records.ts";
 import { Schemer } from "../core/scheming.ts";
@@ -42,8 +40,8 @@ import {
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
+  prepareGroupMessage,
   remoteGroupMembers,
-  signGroupMessage,
 } from "./multisig-messaging.ts";
 
 export interface CredentialRegistryInceptOptions {
@@ -126,21 +124,6 @@ export interface CredentialExportResult {
   creder: SerderACDC;
   recipient: string;
   bytes: Uint8Array;
-}
-
-export interface CredentialRevokeOptions {
-  registryName: string;
-  credentialSaid: string;
-  sendRecipients?: readonly string[];
-  senderHab?: Hab;
-}
-
-export interface CredentialRevokeResult {
-  creder: SerderACDC;
-  said: string;
-  tel: string | null;
-  status: string;
-  deliveries: string[];
 }
 
 /** Pin a JSON schema body into the local schema table. */
@@ -295,55 +278,6 @@ export function exportCredentialStream(
   };
 }
 
-/**
- * Revoke one credential and optionally deliver revocation stream bytes.
- *
- * @param rgy Borrowed registry/TEL owner.
- * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
- * @param options Credential/registry selection and optional recipient/export choices.
- * @returns Revocation state and requested publication results.
- */
-export function* revokeCredential(
-  rgy: Regery,
-  postman: Poster,
-  options: CredentialRevokeOptions,
-): Operation<CredentialRevokeResult> {
-  const { hby, reger } = rgy;
-  const registry = requireRegistry(rgy, options.registryName);
-  const result = registry.revoke(options.credentialSaid);
-  const [creder] = reger.cloneCred(options.credentialSaid);
-  const deliveries: string[] = [];
-
-  if ((options.sendRecipients?.length ?? 0) > 0) {
-    if (!options.senderHab) {
-      throw new ValidationError("Revocation sender habitat is required when sending revocation events.");
-    }
-    const messages = revocationStreamMessages(hby, reger, creder);
-    for (const recipient of options.sendRecipients ?? []) {
-      const dest = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
-      for (const message of messages) {
-        const evt = postman.send({
-          src: options.senderHab.pre,
-          dest,
-          msg: message,
-          topic: CREDENTIAL_MAILBOX_TOPIC,
-        }, { notify: true });
-        const outcome = yield* postman.wait(evt);
-        if (outcome.kin === "failed") throw outcome.error;
-        deliveries.push(...outcome.deliveries);
-      }
-    }
-  }
-
-  return {
-    creder,
-    said: options.credentialSaid,
-    tel: result.serder.said,
-    status: result.decision.kind,
-    deliveries,
-  };
-}
-
 /** Build a KERIpy-compatible credential stream for an already loaded credential. */
 export function credentialStreamBytes(
   hby: Habery,
@@ -352,31 +286,6 @@ export function credentialStreamBytes(
   recipient: string,
 ): Uint8Array {
   return concatBytes(...credentialStreamMessages(hby, reger, creder, recipient));
-}
-
-/** Resolve revoke delivery recipients from explicit recipients and issuee policy. */
-export function revocationRecipients(
-  creder: SerderACDC,
-  explicit: readonly string[],
-  includeIssuee: boolean,
-): string[] {
-  const recipients = includeIssuee && creder.issuee ? [creder.issuee, ...explicit] : [...explicit];
-  return [...new Set(recipients.filter((recipient) => recipient.length > 0))];
-}
-
-function revocationStreamMessages(
-  hby: Habery,
-  reger: Reger,
-  creder: SerderACDC,
-): Uint8Array[] {
-  const issuer = creder.issuer;
-  if (!issuer) {
-    throw new ValidationError("Credential is missing issuer AID.");
-  }
-  return [
-    ...hby.db.clonePreIter(issuer),
-    ...reger.clonePreIter(creder.said!),
-  ];
 }
 
 /** Author the required group anchor after all available business evidence has been validated. */
@@ -531,10 +440,10 @@ function* proposeGroupCredentialIssue(
  * @param hby Borrowed local identities and accepted-state stores.
  * @param postman Borrowed Poster; its delivery worker must run while this operation awaits outcomes.
  * @param groupHab Group issuer habitat whose remote signing members receive the proposal.
- * @param proposal Registry or issuance route with its required named evidence.
+ * @param proposal Registry, issuance or revocation route with its required named evidence.
  * @returns Stable proposal/wrapper identities and successful target URLs after concrete Poster completion.
  */
-function* publishGroupVcProposal(
+export function* publishGroupVcProposal(
   hby: Habery,
   input: Reactor,
   postman: Poster,
@@ -545,7 +454,8 @@ function* publishGroupVcProposal(
   const outcomes: GroupDelivery[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
     const prepared = prepareMultisigVdrExn(member.pre, proposal, { recipient });
-    outcomes.push(yield* admitAndSendGroupMessage(input, postman, signGroupMessage(member, recipient, prepared)));
+    const signed = yield* prepareGroupMessage(input.protocol.exc, member, recipient, prepared);
+    outcomes.push(yield* admitAndSendGroupMessage(input, postman, signed));
   }
   return groupSendResult(outcomes);
 }

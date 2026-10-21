@@ -28,6 +28,7 @@ import {
   assertThrows,
 } from "jsr:@std/assert";
 import { createAgentRuntime } from "../../../src/app/agent-runtime.ts";
+import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credential-workflows.ts";
 import { groupEndorseReply } from "../../../src/app/endpoint-roleing.ts";
 import { type ExchangeInput, Exchanger } from "../../../src/app/exchanging.ts";
@@ -59,7 +60,11 @@ import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { interact as interactEvent, reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { exchange } from "../../../src/core/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../src/core/protocol-serialization.ts";
-import { incept as inceptRegistry, issue as issueCredential } from "../../../src/core/protocol-vdr-eventing.ts";
+import {
+  incept as inceptRegistry,
+  issue as issueCredential,
+  revoke as revokeCredentialEvent,
+} from "../../../src/core/protocol-vdr-eventing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { Reger } from "../../../src/db/reger.ts";
 import { credential, Credentialer, Regery, serializeCredential } from "../../../src/vdr/credentialing.ts";
@@ -1602,7 +1607,7 @@ Deno.test("group TEL publication retains the original pending anchor across reop
   });
 });
 
-Deno.test("group establishment-only registry inception and issuance use rotation anchors", async () => {
+Deno.test("group establishment-only registry inception, issuance and revocation use rotation anchors", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
@@ -1639,6 +1644,29 @@ Deno.test("group establishment-only registry inception and issuance use rotation
         assertEquals(issued.group?.saved, true);
         assertEquals(local.hab.kever!.ilk, "rot");
         assertNotEquals(local.hab.kever!.said, registryAnchor);
+        const issuanceAnchor = local.hab.kever!.said;
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        const revoked = yield* revokeCredential(runtime.vdr!, runtime.reactor, runtime.postman, {
+          registryName: "establishment",
+          credentialSaid: issued.creder.said!,
+        });
+        assertEquals(revoked.accepted, true);
+        assertEquals(local.hab.kever!.ilk, "rot");
+        assertNotEquals(local.hab.kever!.said, issuanceAnchor);
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        left.rotateGroupHab("group");
+        const delivered = yield* deliverCredentialRevocation(runtime.vdr!, runtime.postman, issued.creder.said!, [
+          bob.pre,
+        ]);
+        assertEquals(
+          delivered.length > 0,
+          true,
+          "A later group/member rotation must retain the original anchor's lead",
+        );
       } finally {
         yield* runtime.close();
       }
@@ -1808,6 +1836,37 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         assertEquals(completed?.accepted, true);
         assertEquals(prompts, 1);
         assertExists(rgy.reger.saved.get([valid.said!]));
+        const issuedState = left.db.getState(local.hab.pre);
+        const wrongPrior = revokeCredentialEvent(valid.said!, registry.registry!, registry.registry!);
+        const revAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, local.hab.kever!.sn + 1, [{
+          i: wrongPrior.pre!,
+          s: "1",
+          d: wrongPrior.said!,
+        }]);
+        const [revWrapper, revPaths] = exchange("/multisig/rev", {
+          gid: local.hab.pre,
+          said: valid.said!,
+          cgvrsn: [2, 0],
+        }, {
+          sender: bob.pre,
+          embeds: {
+            rev: wrongPrior.raw,
+            anc: messagize(revAnchor, { sigers: remote.hab.sign(revAnchor.raw, true), gvrsn: Vrsn_2_0 }),
+          },
+        });
+        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(revWrapper, { pipelined: false }), revPaths), {
+          local: true,
+        });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approvePendingMultisigProposal(left, runtime, { said: revWrapper.said!, callbacks })),
+            Error,
+            "predecessor does not match",
+          )
+        );
+        assertEquals(prompts, 1);
+        assertEquals(left.db.getState(local.hab.pre), issuedState);
+        assertEquals(left.db.getSigs(local.hab.pre, revAnchor.said!), []);
       } finally {
         yield* runtime.close();
       }

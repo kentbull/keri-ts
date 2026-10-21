@@ -13,13 +13,12 @@ import {
 } from "../../../../cesr/mod.ts";
 import issueeVectors from "../../../../cesr/test/fixtures/issuee-vectors.json" with { type: "json" };
 import { createAgentRuntime, enqueueOobi } from "../../../src/app/agent-runtime.ts";
+import { revocationRecipients, revokeCredential } from "../../../src/app/credential-revoking.ts";
 import {
   createCredential,
   credentialRegistryStatus,
   inceptCredentialRegistry,
   listCredentials,
-  revocationRecipients,
-  revokeCredential,
 } from "../../../src/app/credential-workflows.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { FetchHttpClient } from "../../../src/app/http-client.ts";
@@ -409,7 +408,10 @@ Deno.test("credential workflows share the supplied registry store and processors
       assertEquals(rgy.reger.tels.getOn(creder.said!, 0)?.qb64, issued.tel);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre }).map((item) => item.said), [creder.said]);
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "iss");
-      yield* revokeCredential(rgy, runtime.postman, { registryName: "explicit", credentialSaid: creder.said! });
+      yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
+        registryName: "explicit",
+        credentialSaid: creder.said!,
+      });
       assertEquals(listCredentials(rgy, { issued: true, aid: hab.pre })[0].status, "rev");
     } finally {
       yield* runtime.close();
