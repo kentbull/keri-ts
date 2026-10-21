@@ -9,6 +9,7 @@ import { Signer } from "cesr-ts";
 import { run } from "effection";
 import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
+import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -55,6 +56,11 @@ assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
+assert(typeof runtime.credentialSaidFromGrant === "function", "runtime missing grant credential selection");
+assert(typeof runtime.storedGrantArtifacts === "function", "runtime missing stored grant reconstruction");
+assert(runtime.IPEX_GRANT_ROUTE === "/ipex/grant", "runtime grant route does not match the protocol");
+const selectedGenus = parseGvrsn("2.0");
+assert(selectedGenus.major === 2 && selectedGenus.minor === 0, "installed CLI genus parser changed selection");
 assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algorithm selection");
 
 

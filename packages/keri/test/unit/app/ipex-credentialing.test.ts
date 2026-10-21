@@ -12,6 +12,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
+import { credentialSaidFromGrant, IPEX_GRANT_ROUTE, storedGrantArtifacts } from "../../../runtime.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import {
   credentialGrantReady,
@@ -19,10 +20,9 @@ import {
   ipexCredentialAdmit,
   ipexCredentialGrant,
   processCredentialPresentationArtifacts,
-  storedGrantArtifacts,
 } from "../../../src/app/ipex-credentialing.ts";
 import { storedExchangeMessage } from "../../../src/app/ipex-grouping.ts";
-import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
+import { IPEX_ADMIT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../src/app/ipexing.ts";
 import { Reactor } from "../../../src/app/reactor.ts";
 import { Verifier } from "../../../src/app/verifying.ts";
 import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-countering.ts";
@@ -109,6 +109,7 @@ Deno.test("IPEX credential grant embeds ACDC, issue TEL, and anchor KEL artifact
 
       assertEquals(issued.verifierDecision.kind, "accept");
       assertEquals(grant.grant.route, IPEX_GRANT_ROUTE);
+      assertEquals(credentialSaidFromGrant(grant.grant), creder.said);
       assertEquals(grant.grant.ked?.p, "");
       assertEquals(grant.grant.ked?.a, { m: "grant", i: holder.pre });
       assertExists(grant.grant.ked?.e);

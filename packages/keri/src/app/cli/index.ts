@@ -4,6 +4,8 @@
  * This transitional module now exposes only the remaining non-host command
  * helpers that still live under `keri-ts`.
  */
+/** Transitional command consumers share the same strict attachment-genus parser. */
+export { parseGvrsn } from "../../core/attachment-countering.ts";
 export { aidCommand } from "./aid.ts";
 export { annotateCommand } from "./annotate.ts";
 export { benchmarkCommand } from "./benchmark.ts";

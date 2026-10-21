@@ -220,14 +220,17 @@ export {
   type CredentialGrantMessage,
   type CredentialPresentationArtifacts,
   credentialPresentationArtifacts,
+  credentialSaidFromGrant,
   ipexCredentialAdmit,
   type IpexCredentialAdmitOptions,
   ipexCredentialGrant,
   type IpexCredentialGrantOptions,
   processCredentialPresentationArtifacts,
+  storedGrantArtifacts,
 } from "../app/ipex-credentialing.ts";
 export type { DisclosurePlan } from "../app/ipex-graph.ts";
 export {
+  IPEX_GRANT_ROUTE,
   IPEX_ROUTES,
   ipexAdmitExn,
   ipexAgreeExn,
