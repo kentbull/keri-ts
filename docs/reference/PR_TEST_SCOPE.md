@@ -39,6 +39,8 @@ presentation and uses the manifest's main pin, as does ESSR storage. KRAM mailbo
 cases retain the separate fork: upstream main has no `keri.app.mailboxing` host.
 Direct and mailbox presentation share the same workflow and participant topology. Full mode includes all these owners.
 Empty arrays explicitly select no owners for that lane.
+The reference-profile owner expands through the same frozen-peer driver in local
+aggregate runs and CI. An explicit `KERIPY_INTEROP_PROFILE` selects one child run.
 
 For the periodic broad run, use:
 

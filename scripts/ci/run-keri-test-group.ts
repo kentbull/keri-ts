@@ -13,9 +13,11 @@ const repoDir = new URL("../../", import.meta.url);
 
 /** One actual child command, including failure status and wall-clock duration. */
 interface CommandTiming {
+  /** Actual launcher for these arguments, including the frozen-peer driver. */
+  executable: string;
   /** Concrete owner suite, before group expansion. */
   suite: string;
-  /** Exact Deno arguments, preserving the selected files. */
+  /** Exact arguments passed to the recorded executable. */
   args: string[];
   /** ISO wall-clock start for correlating raw logs. */
   startedAt: string;
@@ -97,13 +99,20 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
       KERIPY_INTEROP_EXPECTED_COMMIT: reference.profiles.main.commit,
     });
   }
-  const batches = suite.jobs ? [suite.files] : suite.files.map((file) => [file]);
+  // Explicit profile children execute files; the unselected owner expands the frozen matrix.
+  const expandProfiles = name === "interop-reference-profiles" && !Deno.env.get("KERIPY_INTEROP_PROFILE");
+  const executable = expandProfiles ? "python3" : Deno.execPath();
+  let batches = suite.jobs ? [suite.files] : suite.files.map((file) => [file]);
+  if (expandProfiles) batches = [suite.files];
   for (const files of batches) {
-    const args = ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
-    console.log(`==> ${name}: ${files.length} files, ${jobs(suite)} worker(s)`);
+    const args = expandProfiles
+      ? [fromFileUrl(new URL("./qualify-reference-profiles.py", import.meta.url))]
+      : ["test", "--allow-all", "--unstable-ffi", ...(suite.jobs ? ["--parallel"] : []), ...files];
+    if (expandProfiles) console.log(`==> ${name}: all frozen reference profiles`);
+    else console.log(`==> ${name}: ${files.length} files, ${jobs(suite)} worker(s)`);
     const start = performance.now();
     const startedAt = new Date().toISOString();
-    const child = new Deno.Command(Deno.execPath(), {
+    const child = new Deno.Command(executable, {
       args,
       cwd: packageDir,
       env: { DENO_JOBS: String(jobs(suite)), ...env },
@@ -113,7 +122,7 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
     }).spawn();
     const status = await child.status;
     const durationMs = Math.round(performance.now() - start);
-    timings.push({ suite: name, args, startedAt, durationMs, exitCode: status.code });
+    timings.push({ suite: name, executable, args, startedAt, durationMs, exitCode: status.code });
     console.log(`==> ${name}: exit ${status.code}, ${(durationMs / 1000).toFixed(1)}s`);
     // Finish independent files/suites so a full run reports all maintained failures.
   }
