@@ -434,6 +434,75 @@ Deno.test("selected Python profile accepts actual TCP TEL replay through issued 
   }
 });
 
+Deno.test("selected Python TEL issuance and revocation survive fresh TypeScript intake and restart", async () => {
+  const ctx = await createInteropContext();
+  try {
+    const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+    const generated = await requireSuccess(
+      "Python produces accepted TEL evidence",
+      runCmdWithTimeout(
+        ctx.pythonCommand,
+        ["packages/keri/test/fixtures/tel_issuer_peer.py", ...(legacy ? ["--legacy"] : [])],
+        ctx.env,
+        30_000,
+        ctx.repoRoot,
+      ),
+    );
+    const evidence: {
+      issuer: string;
+      registry: string;
+      credential: string;
+      revocation: string;
+      events: string[];
+      kel: string;
+    } = JSON.parse(generated.stdout.trim().split("\n").at(-1)!);
+    const encoder = new TextEncoder();
+    const store = { name: "tel-observer", headDirPath: ctx.home, skipConfig: true };
+    await run(function*() {
+      const hby = yield* createHabery(store);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        yield* runtime.reactor.processBytes(encoder.encode(evidence.kel));
+        assertExists(hby.db.getKever(evidence.issuer));
+        for (const [index, wire] of evidence.events.entries()) {
+          yield* runtime.reactor.processBytes(encoder.encode(wire));
+          yield* runtime.protocol.processEscrowsOnce();
+          if (index > 0) {
+            assertEquals(
+              runtime.vdr!.tvy.tevers.get(evidence.registry)?.vcState(evidence.credential)?.et,
+              index === 1 ? "iss" : "rev",
+            );
+          }
+        }
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+    // New owners load only durable state. Replaying stale issuance must not
+    // replace the accepted revocation or its source-seal evidence.
+    await run(function*() {
+      const hby = yield* createHabery(store);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        const rgy = runtime.vdr!;
+        assertEquals(rgy.tvy.tevers.get(evidence.registry)?.vcState(evidence.credential)?.et, "rev");
+        yield* runtime.reactor.processBytes(encoder.encode(evidence.events[1]));
+        yield* runtime.protocol.processEscrowsOnce();
+        assertEquals(rgy.tvy.tevers.get(evidence.registry)?.vcState(evidence.credential)?.d, evidence.revocation);
+        const replay = [...rgy.reger.clonePreIter(evidence.credential)].map(raw => new SerderKERI({ raw }));
+        assertEquals(replay.map(event => event.ilk), ["iss", "rev"]);
+        assertEquals(replay.at(-1)!.said, evidence.revocation);
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+  } finally {
+    await Deno.remove(ctx.home, { recursive: true });
+  }
+});
+
 Deno.test("selected Python observer accepts indexed legacy TEL evidence", async () => {
   const ctx = await createInteropContext();
   try {
