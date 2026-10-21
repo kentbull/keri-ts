@@ -325,17 +325,31 @@ export function storedGrantArtifacts(
   grant: SerderKERI,
   gvrsn: Versionage = Vrsn_1_0,
 ): CredentialPresentationArtifacts {
+  if (!grant.said) throw new ValidationError("Grant is missing its SAID.");
+  return grantPresentationArtifacts(grant, hby.db.epath.get([grant.said]).map(text => textEncoder.encode(text)), gvrsn);
+}
+
+/**
+ * Decode the supplied grant's bodies and counted path groups without storage or
+ * admission. Approval passes the selected proposal's own evidence; stored replay
+ * passes its retained LMDB groups. Neither source can substitute for the other.
+ */
+export function grantPresentationArtifacts(
+  grant: SerderKERI,
+  pathed: readonly Uint8Array[],
+  gvrsn: Versionage = Vrsn_1_0,
+): CredentialPresentationArtifacts {
   if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
-    throw new ValidationError(`Expected stored ${IPEX_GRANT_ROUTE} EXN.`);
+    throw new ValidationError(`Expected ${IPEX_GRANT_ROUTE} EXN.`);
   }
   const embeds = embeddedSection(grant);
   if (!embeds) {
     throw new ValidationError(`Grant ${grant.said} is missing embedded artifacts.`);
   }
   return {
-    anc: storedArtifact(keriBody(embeds.anc, "anc"), pathedAttachment(hby, grant.said, "anc"), gvrsn),
-    iss: storedArtifact(keriBody(embeds.iss, "iss"), pathedAttachment(hby, grant.said, "iss"), gvrsn),
-    acdc: storedArtifact(acdcBody(embeds.acdc, "acdc"), pathedAttachment(hby, grant.said, "acdc"), gvrsn),
+    anc: storedArtifact(keriBody(embeds.anc, "anc"), pathedAttachment(pathed, "anc"), gvrsn),
+    iss: storedArtifact(keriBody(embeds.iss, "iss"), pathedAttachment(pathed, "iss"), gvrsn),
+    acdc: storedArtifact(acdcBody(embeds.acdc, "acdc"), pathedAttachment(pathed, "acdc"), gvrsn),
   };
 }
 
@@ -401,10 +415,10 @@ function storedArtifact(body: Serder, attachment: Uint8Array, gvrsn: Versionage)
   return { wire: concatBytes(body.raw, attachment), genus: resolveAttachmentGvrsn(body, gvrsn) };
 }
 
-function pathedAttachment(hby: Habery, said: string, label: string): Uint8Array {
+function pathedAttachment(pathed: readonly Uint8Array[], label: string): Uint8Array {
   const path = `/e/${label}`;
-  for (const text of hby.db.epath.get([said])) {
-    const attachment = pathedAttachmentFromRaw(textEncoder.encode(text), path);
+  for (const raw of pathed) {
+    const attachment = pathedAttachmentFromRaw(raw, path);
     if (attachment) {
       return attachment;
     }
