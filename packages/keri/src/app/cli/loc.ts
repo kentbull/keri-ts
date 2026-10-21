@@ -2,6 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { settleRuntimeIngress } from "../agent-runtime.ts";
 import { withHabAndAgentRuntime } from "./common/context.ts";
+import { parseBooleanOption, parseStringOption } from "./common/parsing.ts";
 
 /** Parsed arguments for `tufa loc add`. */
 interface LocAddArgs {
@@ -27,15 +28,15 @@ interface LocAddArgs {
  */
 export function* locAddCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: LocAddArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    url: args.url as string | undefined,
-    eid: args.eid as string | undefined,
-    time: args.time as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "--name"),
+    base: parseStringOption(args.base, "--base"),
+    headDirPath: parseStringOption(args.headDirPath, "--head-dir"),
+    passcode: parseStringOption(args.passcode, "--passcode"),
+    alias: parseStringOption(args.alias, "--alias"),
+    url: parseStringOption(args.url, "--url"),
+    eid: parseStringOption(args.eid, "--eid"),
+    time: parseStringOption(args.time, "--time"),
+    compat: parseBooleanOption(args.compat, "--compat"),
   };
 
   if (!commandArgs.name) {

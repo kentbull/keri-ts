@@ -19,6 +19,7 @@ import { CesrHttpRefusal } from "../../../src/app/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../src/app/cesr-http.ts";
 import { setupHby } from "../../../src/app/cli/common/existing.ts";
 import { delegateConfirmCommand } from "../../../src/app/cli/delegate.ts";
+import { dkrResolveCommand, dwsBindCommand } from "../../../src/app/cli/did.ts";
 import { endsAddCommand } from "../../../src/app/cli/ends.ts";
 import { inceptCommand } from "../../../src/app/cli/incept.ts";
 import { initCommand } from "../../../src/app/cli/init.ts";
@@ -30,6 +31,7 @@ import {
   ipexJoinCommand,
   ipexPollCommand,
 } from "../../../src/app/cli/ipex.ts";
+import { locAddCommand } from "../../../src/app/cli/loc.ts";
 import { multisigInceptCommand, multisigRpyCommand } from "../../../src/app/cli/multisig.ts";
 import { rotateCommand } from "../../../src/app/cli/rotate.ts";
 import { signCommand } from "../../../src/app/cli/sign.ts";
@@ -37,6 +39,7 @@ import { verifyCommand } from "../../../src/app/cli/verify.ts";
 import { createHabery } from "../../../src/app/habbing.ts";
 import { ipexGrantExn } from "../../../src/app/ipexing.ts";
 import { parseGvrsn } from "../../../src/core/attachment-countering.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { delcept } from "../../../src/core/protocol-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { assertOperationThrows, CLITestHarness, createMockArgs } from "../../../test/utils.ts";
@@ -122,15 +125,15 @@ Deno.test("CLI - IPEX elapsed deadlines validate before runtime startup", async 
   for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
     await assertOperationThrows(
       ipexGrantCommand({ said: "Ecredential", approvalTimeoutSeconds: value }),
-      "approval timeout seconds must be a finite nonnegative number",
+      "approval timeout seconds must be",
     );
     await assertOperationThrows(
       ipexPollCommand({ timeout: value }),
-      "poll timeout seconds must be a finite nonnegative number",
+      "poll timeout seconds must be",
     );
     await assertOperationThrows(
       ipexJoinCommand({ approvalTimeoutSeconds: value }),
-      "approval timeout seconds must be a finite nonnegative number",
+      "approval timeout seconds must be",
     );
   }
   await assertOperationThrows(
@@ -256,11 +259,11 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
 Deno.test("CLI - multisig approval deadlines validate before runtime startup", async () => {
   await assertOperationThrows(
     multisigInceptCommand({ approvalTimeoutSeconds: -1 }),
-    "approval timeout seconds must be a finite nonnegative number",
+    "approval timeout seconds must be",
   );
   await assertOperationThrows(
     multisigInceptCommand({ approvalTimeoutSeconds: Number.NaN }),
-    "approval timeout seconds must be a finite nonnegative number",
+    "approval timeout seconds must be",
   );
   await assertOperationThrows(
     multisigRpyCommand({ approvalTimeoutSeconds: 0 }),
@@ -268,11 +271,11 @@ Deno.test("CLI - multisig approval deadlines validate before runtime startup", a
   );
   await assertOperationThrows(
     multisigJoinCommand({ name: "store", approvalTimeoutSeconds: -1 }),
-    "approval timeout seconds must be a finite nonnegative number",
+    "approval timeout seconds must be",
   );
   await assertOperationThrows(
     multisigJoinCommand({ name: "store", approvalTimeoutSeconds: Number.NaN }),
-    "approval timeout seconds must be a finite nonnegative number",
+    "approval timeout seconds must be",
   );
 });
 
@@ -859,4 +862,42 @@ Deno.test("CLI - grant-file admission requires valid EOF and keeps the selected 
   } finally {
     await Deno.remove(headDirPath, { recursive: true });
   }
+});
+
+Deno.test({
+  name: "CLI - endpoint and signing options reject malformed values before resource access",
+  permissions: { read: false, write: false, net: false },
+  async fn() {
+    const base = { name: "validation", alias: "alice" };
+    const cases: [() => Operation<unknown>, string][] = [
+      [() => dwsBindCommand({ ...base, did: ["did:webs:example.com", false] }), "did must be an array of strings"],
+      [
+        () => dkrResolveCommand({ ...base, did: "did:keri:aid", oobi: ["https://example.com", 1] }),
+        "oobi must be an array of strings",
+      ],
+      [() => signCommand({ ...base, text: 42 }), "--text must be a string"],
+      [() => signCommand({ ...base, text: "hello", compat: "false" }), "--compat must be a boolean"],
+      [
+        () => verifyCommand({ ...base, prefix: "aid", text: "hello", signature: "signature" }),
+        "--signature must be an array of strings",
+      ],
+      [
+        () => verifyCommand({ ...base, prefix: "aid", text: "hello", signature: ["signature", 1] }),
+        "--signature must be an array of strings",
+      ],
+      [() => endsAddCommand({ ...base, role: "agent", eid: 1 }), "--eid must be a string"],
+      [
+        () => endsAddCommand({ ...base, role: "agent", eid: "aid", multisigMode: true }),
+        "--multisig-mode must be a string",
+      ],
+      [() => locAddCommand({ ...base, url: "https://example.com", time: false }), "--time must be a string"],
+      [
+        () => locAddCommand({ ...base, url: "https://example.com", headDirPath: 1 }),
+        "--head-dir must be a string",
+      ],
+    ];
+    for (const [command, message] of cases) {
+      await assertRejects(() => run(command), ValidationError, message);
+    }
+  },
 });

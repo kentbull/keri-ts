@@ -16,7 +16,7 @@ import { type AgentRuntime, runAgentRuntimeUntil, runtimeOobiConverged } from ".
 import type { Habery } from "../habbing.ts";
 import { WitnessReceiptor } from "../witnessing.ts";
 import { withAgentRuntime } from "./common/context.ts";
-import { requireNonEmpty } from "./common/parsing.ts";
+import { parseBooleanOption, parseStringListOption, parseStringOption, requireNonEmpty } from "./common/parsing.ts";
 
 interface DidBaseArgs {
   name?: string;
@@ -57,11 +57,11 @@ interface DkrResolveArgs extends DidBaseArgs {
 export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsBindArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    dids: asStringList(args.did),
-    registryName: args.registryName as string | undefined,
-    createRegistry: args.createRegistry as boolean | undefined,
-    allowExternalDid: args.allowExternalDid as boolean | undefined,
+    alias: parseStringOption(args.alias, "alias"),
+    dids: asStringList(args.did, "did"),
+    registryName: parseStringOption(args.registryName, "registryName"),
+    createRegistry: parseBooleanOption(args.createRegistry, "createRegistry"),
+    allowExternalDid: parseBooleanOption(args.allowExternalDid, "allowExternalDid"),
   };
   requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.alias, "Alias");
@@ -93,10 +93,10 @@ export function* dwsBindCommand(args: Record<string, unknown>): Operation<void> 
 export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsGenerateArgs = {
     ...baseArgs(args),
-    alias: args.alias as string | undefined,
-    did: args.did as string | undefined,
-    outputDir: args.outputDir as string | undefined,
-    meta: args.meta as boolean | undefined,
+    alias: parseStringOption(args.alias, "alias"),
+    did: parseStringOption(args.did, "did"),
+    outputDir: parseStringOption(args.outputDir, "outputDir"),
+    meta: parseBooleanOption(args.meta, "meta"),
   };
   requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.alias, "Alias");
@@ -143,9 +143,9 @@ export function* dwsGenerateCommand(args: Record<string, unknown>): Operation<vo
 export function* dwsResolveCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DwsResolveArgs = {
     ...baseArgs(args),
-    did: args.did as string | undefined,
-    meta: args.meta as boolean | undefined,
-    insecureHttp: args.insecureHttp as boolean | undefined,
+    did: parseStringOption(args.did, "did"),
+    meta: parseBooleanOption(args.meta, "meta"),
+    insecureHttp: parseBooleanOption(args.insecureHttp, "insecureHttp"),
   };
   requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.did, "DID");
@@ -170,9 +170,9 @@ export function* dwsResolveCommand(args: Record<string, unknown>): Operation<voi
 export function* dkrResolveCommand(args: Record<string, unknown>): Operation<void> {
   const commandArgs: DkrResolveArgs = {
     ...baseArgs(args),
-    did: args.did as string | undefined,
-    oobis: asStringList(args.oobi),
-    meta: args.meta as boolean | undefined,
+    did: parseStringOption(args.did, "did"),
+    oobis: asStringList(args.oobi, "oobi"),
+    meta: parseBooleanOption(args.meta, "meta"),
   };
   requireNonEmpty(commandArgs.name, "Name");
   requireNonEmpty(commandArgs.did, "DID");
@@ -199,11 +199,11 @@ export function* dkrResolveCommand(args: Record<string, unknown>): Operation<voi
 
 function baseArgs(args: Record<string, unknown>): DidBaseArgs {
   return {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    compat: args.compat as boolean | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    compat: parseBooleanOption(args.compat, "compat"),
   };
 }
 
@@ -239,11 +239,10 @@ function* receiptNewWitnessEvents(
   }
 }
 
-function asStringList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === "string");
-  }
-  return typeof value === "string" ? [value] : [];
+/** Accept a scalar occurrence or the complete repeated-option list without dropping invalid entries. */
+function asStringList(value: unknown, flag: string): string[] {
+  if (typeof value === "string") return [value];
+  return parseStringListOption(value, flag) ?? [];
 }
 
 function artifactOutputDir(

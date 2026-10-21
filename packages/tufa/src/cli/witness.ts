@@ -7,6 +7,7 @@
  * rather than process-local defaults.
  */
 import type { Operation } from "effection";
+import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
 import { FetchHttpClient } from "keri-ts/runtime";
 import {
@@ -117,17 +118,17 @@ export function* witnessSubmitCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   const commandArgs: WitnessSubmitArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
-    force: args.force as boolean | undefined,
-    endpoint: args.endpoint as boolean | undefined,
-    authenticate: args.authenticate as boolean | undefined,
-    code: args.code as string[] | undefined,
-    codeTime: args.codeTime as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    force: parseBooleanOption(args.force, "force"),
+    endpoint: parseBooleanOption(args.endpoint, "endpoint"),
+    authenticate: parseBooleanOption(args.authenticate, "authenticate"),
+    code: parseStringListOption(args.code, "code"),
+    codeTime: parseStringOption(args.codeTime, "codeTime"),
   };
 
   yield* withExistingHab(
@@ -183,26 +184,31 @@ function parseWitnessStartArgs(
   args: Record<string, unknown>,
 ): WitnessStartArgs {
   const parsed: WitnessStartArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    alias: args.alias as string | undefined,
-    compat: args.compat as boolean | undefined,
-    configDir: args.configDir as string | undefined,
-    configFile: args.configFile as string | undefined,
-    url: args.url as string | undefined,
-    tcpUrl: args.tcpUrl as string | undefined,
-    datetime: args.datetime as string | undefined,
-    http: args.http !== undefined ? Number(args.http) : undefined,
-    tcp: args.tcp !== undefined ? Number(args.tcp) : undefined,
-    listenHost: args.listenHost as string | undefined,
+    name: parseStringOption(args.name, "name"),
+    base: parseStringOption(args.base, "base"),
+    headDirPath: parseStringOption(args.headDirPath, "headDirPath"),
+    passcode: parseStringOption(args.passcode, "passcode"),
+    alias: parseStringOption(args.alias, "alias"),
+    compat: parseBooleanOption(args.compat, "compat"),
+    configDir: parseStringOption(args.configDir, "configDir"),
+    configFile: parseStringOption(args.configFile, "configFile"),
+    url: parseStringOption(args.url, "url"),
+    tcpUrl: parseStringOption(args.tcpUrl, "tcpUrl"),
+    datetime: parseStringOption(args.datetime, "datetime"),
+    http: parseIntegerOption(args.http, "http"),
+    tcp: parseIntegerOption(args.tcp, "tcp"),
+    listenHost: parseStringOption(args.listenHost, "listenHost"),
   };
   if (!parsed.name) {
     throw new ValidationError("Name is required and cannot be empty");
   }
   if (!parsed.alias) {
     throw new ValidationError("Alias is required and cannot be empty");
+  }
+  for (const [flag, port] of [["http", parsed.http], ["tcp", parsed.tcp]] as const) {
+    if (port !== undefined && (port < 0 || port > 65535)) {
+      throw new ValidationError(`${flag} must be between 0 and 65535`);
+    }
   }
   return parsed;
 }

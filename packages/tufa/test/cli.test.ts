@@ -1,4 +1,7 @@
 import { agentCommand } from "../src/cli/agent.ts";
+import { dwsResolverCommand } from "../src/cli/dws.ts";
+import { queryCommand } from "../src/cli/query.ts";
+import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/witness.ts";
 // @file-test-lane app-fast-isolated
 
 import { run } from "effection";
@@ -409,7 +412,8 @@ Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers"
     "--insecure-http",
   ]);
   assertEquals(resolver.name, "dws.resolver");
-  assertEquals(resolver.args.port, 7676);
+  // Keep the original spelling for strict validation in the command adapter.
+  assertEquals(resolver.args.port, "7676");
   assertEquals(resolver.args.insecureHttp, true);
 
   const dkr = parseCommandSelection([
@@ -956,4 +960,62 @@ Deno.test("host, mailbox and challenge dispatch preserves supplied numeric synta
   assertEquals(mailbox.args.index, "0");
   const challenge = parseCommandSelection(["challenge", "generate", "--strength", "1.5"]);
   assertEquals(challenge.args.strength, "1.5");
+});
+
+Deno.test({
+  name: "query and DID resolver validate explicit options before resource access",
+  permissions: { read: false, write: false, net: false },
+  async fn() {
+    const query = { name: "validation", alias: "alice", prefix: "aid" };
+    await assertRejects(
+      () => run(() => queryCommand({ ...query, anchor: false })),
+      ValidationError,
+      "anchor must be a string",
+    );
+    await assertRejects(
+      () => run(() => queryCommand({ ...query, anchor: "" })),
+      ValidationError,
+      "Anchor path cannot be empty",
+    );
+    await assertRejects(
+      () => run(() => queryCommand({ ...query, compat: "false" })),
+      ValidationError,
+      "compat must be a boolean",
+    );
+    for (const port of [false, "", "1.5", "0x50", 1.5, 0]) {
+      await assertRejects(() => run(() => dwsResolverCommand({ name: "validation", port })), ValidationError);
+    }
+    await assertRejects(
+      () => run(() => dwsResolverCommand({ name: "validation", hostedPrefix: ["aid", 1] })),
+      ValidationError,
+      "hostedPrefix must be an array of strings",
+    );
+  },
+});
+
+Deno.test({
+  name: "witness options reject malformed values before resource access",
+  permissions: { read: false, write: false, net: false },
+  async fn() {
+    const base = { name: "validation", alias: "witness" };
+    for (const port of [false, "", "0x50", 1.5, -1, 65536]) {
+      await assertRejects(() => run(() => witnessStartCommand({ ...base, http: port })), ValidationError);
+      await assertRejects(() => run(() => witnessStartCommand({ ...base, tcp: port })), ValidationError);
+    }
+    await assertRejects(
+      () => run(() => witnessStartCommand({ ...base, url: 1 })),
+      ValidationError,
+      "url must be a string",
+    );
+    await assertRejects(
+      () => run(() => witnessSubmitCommand({ ...base, force: "false" })),
+      ValidationError,
+      "force must be a boolean",
+    );
+    await assertRejects(
+      () => run(() => witnessSubmitCommand({ ...base, code: ["code", false] })),
+      ValidationError,
+      "code must be an array of strings",
+    );
+  },
 });

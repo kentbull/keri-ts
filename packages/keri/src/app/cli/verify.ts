@@ -15,7 +15,7 @@ import { Siger } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHabery } from "./common/context.ts";
-import { loadTextArgument } from "./common/parsing.ts";
+import { loadTextArgument, parseBooleanOption, parseStringListOption, parseStringOption } from "./common/parsing.ts";
 
 /** Parsed command arguments for one `tufa verify` invocation. */
 interface VerifyArgs {
@@ -39,14 +39,14 @@ interface VerifyArgs {
  */
 export function* verifyCommand(args: Record<string, unknown>): Operation<void> {
   const verifyArgs: VerifyArgs = {
-    name: args.name as string | undefined,
-    base: args.base as string | undefined,
-    headDirPath: args.headDirPath as string | undefined,
-    passcode: args.passcode as string | undefined,
-    prefix: args.prefix as string | undefined,
-    compat: args.compat as boolean | undefined,
-    text: args.text as string | undefined,
-    signature: args.signature as string[] | undefined,
+    name: parseStringOption(args.name, "--name"),
+    base: parseStringOption(args.base, "--base"),
+    headDirPath: parseStringOption(args.headDirPath, "--head-dir"),
+    passcode: parseStringOption(args.passcode, "--passcode"),
+    prefix: parseStringOption(args.prefix, "--prefix"),
+    compat: parseBooleanOption(args.compat, "--compat"),
+    text: parseStringOption(args.text, "--text"),
+    signature: parseStringListOption(args.signature, "--signature"),
   };
 
   if (!verifyArgs.name) {
