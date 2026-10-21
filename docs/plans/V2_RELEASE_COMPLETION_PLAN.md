@@ -1,7 +1,10 @@
-# Complete the coordinated 2.0.0 release
+# Complete implementation and qualification for 2.0.0
 
-Status: active; checked against merged master `b66ffecd` (#629), 2026-10-20.
-Approved goal: publish **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
+Status: active; checked against merged master `57b39666` (#632), 2026-10-20.
+Approved goal: complete the in-scope implementation, release preparation and final
+qualification for **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
+**Publication is excluded from this goal** pending completion of the side-chat
+plan. This goal may finish when all other required work and qualification pass.
 
 ## Current state
 
@@ -10,23 +13,23 @@ remaining effort must be re-estimated against this reduced scope. Foundational
 refactors and operator fixes are merged. Legacy/group credential completion,
 organization and final qualification remain; no release-readiness claim is made.
 
-| Work                                                                       | Current disposition                                                                                                                                                               |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Design contracts and peer profiles (01–02)                                 | Merged #576–577; configurable Tholder caps accepted. Current pins below supersede original candidates.                                                                            |
-| Protocol/transport ownership (03–06)                                       | Merged #578, #580–588; synchronous admission boundaries and removal of whole-protocol exclusion. Later query cuts supersede the original HTTP design.                             |
-| Logging, strict URL config, init, AEID (07–12)                             | Merged #589–596.                                                                                                                                                                  |
-| ESSR and database lifecycle (12a–12e)                                      | Merged #598–601 and #608; LMDB evidence, archive/staging/plaintext removal, explicit close failures, ordinary Baser OOBI cleanup.                                                 |
-| Multisig reporting and messenger selection (13, 13a–13d)                   | Ownership/reporting merged #602, #604–605, #609, #611. Durable group selection/resume and lifecycle behavior remain below.                                                        |
-| Query composition, legacy mailbox media and docs (19, 13e–13h2)            | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                                              |
-| CLI ownership and finite bootstrap (13i–13j)                               | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.                                      |
-| CLI validation (13k)                                                       | In progress: lifecycle #621, multisig #622, credential/IPEX/verifier #623 and host/mailbox/challenge #624 merged. Endpoint/DID/query and remaining signed-event utilities remain. |
-| Legacy credential lifecycle, backers, verifier separation                  | Not complete; acceptance criteria and order below.                                                                                                                                |
-| ProtocolProcessor assessment, package organization, qualification, release | Pending all implementation and feature interop.                                                                                                                                   |
+| Work                                                                                   | Current disposition                                                                                                                                       |
+| -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Design contracts and peer profiles (01–02)                                             | Merged #576–577; configurable Tholder caps accepted. Current pins below supersede original candidates.                                                    |
+| Protocol/transport ownership (03–06)                                                   | Merged #578, #580–588; synchronous admission boundaries and removal of whole-protocol exclusion. Later query cuts supersede the original HTTP design.     |
+| Logging, strict URL config, init, AEID (07–12)                                         | Merged #589–596.                                                                                                                                          |
+| ESSR and database lifecycle (12a–12e)                                                  | Merged #598–601 and #608; LMDB evidence, archive/staging/plaintext removal, explicit close failures, ordinary Baser OOBI cleanup.                         |
+| Multisig reporting and messenger selection (13, 13a–13d)                               | Ownership/reporting merged #602, #604–605, #609, #611. Durable group selection/resume and lifecycle behavior remain below.                                |
+| Query composition, legacy mailbox media and docs (19, 13e–13h2)                        | Merged #612–618, including real bidirectional query evidence and command-owned cues.                                                                      |
+| CLI ownership and finite bootstrap (13i–13j)                                           | Merged #619–620. Oobiery/Authenticator terminal results own completion; no inferred query graph or requirement that unrelated escrows empty.              |
+| CLI validation (13k)                                                                   | Merged #621–624 and #631–632: lifecycle, multisig, credential/IPEX/verifier, host/mailbox/challenge, endpoint/DID/query and remaining operator utilities. |
+| Legacy credential lifecycle, backers, verifier separation                              | Not complete; acceptance criteria and order below.                                                                                                        |
+| ProtocolProcessor assessment, package organization, qualification, release preparation | Pending all implementation and feature interop.                                                                                                           |
 
 R1 is complete in #626: 33 exact-source Docker tests and selected static, ESSR,
 IPEX/disclosure and mailbox gates passed. Main-native owners used `c7e74ad`; the
 mailbox owner retained its separate fork. These checks do not qualify the whole release.
-The last broad checkpoint was #611; run another at roughly 20 implementation PRs,
+The last broad checkpoint was #631; run another at roughly 20 implementation PRs,
 and fresh full qualification after the final changes.
 Git/PRs own detailed history; this file owns current scope, order and gates.
 
@@ -130,7 +133,7 @@ implementation PR before the next; split only for independent human review.
 | 31a          | Remove ProtocolProcessor if it has no justified cohesive responsibility.                                             | 31                                                    |
 | 31b–31d      | Organize CESR, KERI and Tufa sources, separate review per package.                                                   | 31a                                                   |
 | 32           | Exact 2.0.0 versions, changesets/changelogs, breaking guide and final qualification.                                 | 31d                                                   |
-| Release      | Publish/verify CESR → KERI → Tufa 2.0.0; preserve 1.0.0 history.                                                     | All gates                                             |
+| Preparation  | Prepare and qualify unpublished 2.0.0 artifacts; preserve 1.0.0 history.                                             | All gates                                             |
 
 [CLI bootstrap supplement](runtime/CLI_BOOTSTRAP_COMPOSITION_PLAN.md) owns 13k
 input details; 13i/13j are complete. The messenger, query, result-contract and
@@ -511,7 +514,7 @@ rerun peer paths when their composition changes. Full qualification comes afterw
 - After final workspace mutations, run prescribed ENCTX maintenance and require
   healthy/no stale sources. Never silently alter index selection.
 
-## Final qualification and release — cut 32
+## Final qualification and release preparation — cut 32
 
 1. **Prepare exactly 2.0.0 for all three packages.** Consume accumulated changesets
    into changelogs before deleting notes. Reconcile manifests, Deno mirrors, npm
@@ -523,7 +526,7 @@ rerun peer paths when their composition changes. Full qualification comes afterw
    [MIGRATING_TO_2_0.md](../reference/compatibility/MIGRATING_TO_2_0.md) by package,
    with replacement/action and concise examples where useful. Include removed
    ESSR APIs, verifier move and any supported import changes. Put concrete
-   **Breaking changes** prominently in each changelog and GitHub release, linking
+   **Breaking changes** prominently in each changelog and prepared release notes, linking
    the version-pinned guide. Don't invent breaks merely for coordinated versioning.
 3. **Qualify the final clean source.** Run the complete maintained CESR/KERI/Tufa
    and in-scope actual-peer matrix after all required features, ownership and organization changes.
@@ -539,22 +542,32 @@ rerun peer paths when their composition changes. Full qualification comes afterw
    Install compiler tools after runtime smoke. Record tarball digests. Workflow
    rebuilds must be identical or qualified before publication. Repairs require
    relevant retesting; shared protocol/runtime changes may require the broad suite.
-5. **Inventory distributions at the release boundary.** Verify reviewed version
+5. **Inventory distributions for the handoff.** Verify reviewed version
    preparation, clean synchronized master, exact release commit, live npm versions,
    dist-tags/dependencies, GitHub release/tag/asset identities and other actual
-   publication surfaces. Keep bot release PR #527 gated until this work completes.
+   publication surfaces. Keep bot release PR #527 gated beyond this goal until
+   publication is separately resumed after the side-chat plan completes.
 6. **Preserve published 1.0.0 history.** Do not unpublish packages or delete
    releases, assets or tags as part of 2.0.0. The abandoned replacement-release
    withdrawal instructions are superseded. Any later deprecation or withdrawal
    is a separate explicit distribution decision after 2.0.0 is verified.
-7. **Publish CESR → KERI → Tufa.** Explicitly push each annotated package-v2.0.0
-   tag at the same qualified commit using existing workflows. Verify each registry
-   artifact and dependency availability before publishing the next package.
-8. **Verify actual publication.** Check npm metadata/dependencies/dist-tags,
-   qualified/workflow/npm/GitHub artifact equality, clean registry-only installs,
-   installed Tufa/native/runtime/declaration checks, GitHub notes/assets and
-   version-pinned migration links. Preserve prior release artifacts. Recover failed side effects narrowly, never by
-   replacing published bytes under an existing version.
-9. **Report completion with evidence.** One concise report: package links,
-   source/tag/artifact identities, peer pins, results/skips/limits, clean repository and healthy ENCTX. Do not claim completion while a
-   required lane or release step remains.
+7. **Report completion with evidence.** Identify the qualified source commit and
+   unpublished artifact digests, peer pins, results/skips/limits, prepared release
+   notes, clean repository and healthy ENCTX. Finish this goal only when all
+   remaining in-scope implementation, preparation and qualification are complete.
+   Explicitly state that publication and post-publication verification are deferred.
+
+## Deferred publication — outside this goal
+
+After the side-chat plan is complete and publication is separately resumed,
+reconcile its changes and rerun affected final qualification before publishing.
+Do not publish npm packages, push release tags, publish GitHub releases or ungate
+release PR #527 as part of the current goal.
+
+The later publication work must publish CESR → KERI → Tufa from the same qualified
+commit, verify each package's registry availability before its dependents, and
+check npm metadata, dependency versions, dist-tags, GitHub notes/assets and
+version-pinned migration links. Compare qualified/workflow/npm/GitHub artifact
+identities and run clean registry-only installed runtime/CLI/declaration checks.
+Preserve 1.0.0 history; never replace published bytes under an existing version.
+These publication-dependent checks are not completion gates for this goal.

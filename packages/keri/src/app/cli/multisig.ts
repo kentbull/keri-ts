@@ -283,7 +283,7 @@ export function* multisigJoinCommand(
     if (!result) {
       const local = yield* waitForLocalGroupCompletion(hby, runtime, approval);
       if (!local) {
-        throw new ValidationError("No matching multisig notification was available to join.");
+        throw new ValidationError("No matching stored multisig proposal was available to join.");
       }
       if (local.accepted) {
         yield* receiptAcceptedEvent(hby, local.group, commandArgs, runtime);
@@ -600,8 +600,10 @@ function multisigApprovalOptions(
   hby: Habery,
   args: MultisigJoinArgs,
 ) {
+  // An existing group constrains approval; a new alias only names the group
+  // after its inception proposal is selected and approved.
   return {
-    group: args.group,
+    group: args.group ? groupHabByAliasOrPrefix(hby, args.group)?.pre : undefined,
     said: args.said,
     deadline: Date.now() + args.approvalTimeoutSeconds * 1000,
     callbacks: multisigApprovalCallbacks(hby, args),
