@@ -1,3 +1,4 @@
+import { ParserError } from "cesr-ts";
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
@@ -590,7 +591,18 @@ export function* settleMailboxPollBatch(
   batch: MailboxPollBatch,
 ): Operation<void> {
   for (const message of batch.messages) {
-    yield* runtime.reactor.processBytes(message);
+    try {
+      yield* runtime.reactor.processBytes(message);
+    } catch (error) {
+      // A frame a mailbox returns that cannot be parsed must not stall the poll loop:
+      // skip it so the batch completes and the provider cursor advances past it.
+      // Non-parse errors (aborts, database errors) still propagate.
+      if (error instanceof ParserError) {
+        console.error("skipped an unparseable mailbox frame", error);
+        continue;
+      }
+      throw error;
+    }
   }
   yield* runtime.protocol.processEscrowsOnce();
 }

@@ -630,3 +630,23 @@ Deno.test("mailbox refusal close failure propagates before any alternate submiss
   assertStrictEquals(error, fault);
   assertEquals(attempts, 1);
 });
+
+Deno.test("settleMailboxPollBatch skips an unparseable frame and still settles the rest of the batch", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "bob");
+    const http = new FakeRuntimeHttpClient();
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    try {
+      const poison = new TextEncoder().encode("-ZZZbad");
+      const valid = hab.makeEndRole(hab.pre, Roles.mailbox, true);
+      // The unparseable frame is skipped so the valid message that follows is still processed,
+      // instead of the whole batch (and the poll loop) failing on the bad frame.
+      yield* settleMailboxPollBatch(runtime, { pre: hab.pre, eid: "provider", messages: [poison, valid] });
+      assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
