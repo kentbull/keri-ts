@@ -1,7 +1,13 @@
 import { call, type Operation, run, spawn, suspend } from "effection";
-import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { ParserError, WireParseError } from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import {
+  acceptedEventReplayMessage,
+  createHabery,
+  type Hab,
+  type Habery,
+} from "../../../../src/app/identity/habbing.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
@@ -629,4 +635,65 @@ Deno.test("mailbox refusal close failure propagates before any alternate submiss
   );
   assertStrictEquals(error, fault);
   assertEquals(attempts, 1);
+});
+
+Deno.test("settleMailboxPollBatch skips an unparseable frame and still settles the rest of the batch", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const hab = makeTransferableHab(hby, "bob");
+    const http = new FakeRuntimeHttpClient();
+    const runtime = yield* createAgentRuntime(hby, http, systemClock);
+    try {
+      const poison = new TextEncoder().encode("-ZZZbad");
+      const valid = hab.makeEndRole(hab.pre, Roles.mailbox, true);
+      // The unparseable frame is skipped so the valid message that follows is still processed,
+      // instead of the whole batch (and the poll loop) failing on the bad frame.
+      yield* settleMailboxPollBatch(runtime, { pre: hab.pre, eid: "provider", messages: [poison, valid] });
+      assertEquals(hby.db.ends.get([hab.pre, Roles.mailbox, hab.pre])?.allowed, true);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("settleMailboxPollBatch propagates a dispatch-side ParserError from corrupt stored state", async () => {
+  await run(function*() {
+    const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const provider = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const runtime = yield* createAgentRuntime(provider, new FakeRuntimeHttpClient(), systemClock);
+    try {
+      const controller = makeTransferableHab(source, "controller");
+      // The provider accepts the controller's inception through the mailbox path.
+      yield* settleMailboxPollBatch(runtime, {
+        pre: controller.pre,
+        eid: "provider",
+        messages: [acceptedEventReplayMessage(source, controller.pre, 0).message],
+      });
+      assertExists(provider.db.getState(controller.pre));
+      // Corrupt the provider's stored verifier, then feed a valid next event: dispatching it
+      // raises a non-WireParseError ParserError, which must propagate (the frame is valid, not
+      // garbage) rather than be skipped and advance the cursor past an unprocessed message.
+      const state = provider.db.getState(controller.pre)!;
+      provider.db.pinState(controller.pre, { ...state, k: ["!"] });
+      provider.db.kevers.delete(controller.pre);
+      controller.interact();
+      let caught: unknown;
+      try {
+        yield* settleMailboxPollBatch(runtime, {
+          pre: controller.pre,
+          eid: "provider",
+          messages: [acceptedEventReplayMessage(source, controller.pre, 1).message],
+        });
+      } catch (error) {
+        caught = error;
+      }
+      assert(caught instanceof ParserError);
+      assert(!(caught instanceof WireParseError));
+    } finally {
+      yield* runtime.close();
+      yield* source.close(true);
+      yield* provider.close(true);
+    }
+  });
 });

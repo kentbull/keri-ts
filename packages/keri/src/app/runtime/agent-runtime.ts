@@ -1,3 +1,4 @@
+import { WireParseError } from "cesr-ts";
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
@@ -590,7 +591,19 @@ export function* settleMailboxPollBatch(
   batch: MailboxPollBatch,
 ): Operation<void> {
   for (const message of batch.messages) {
-    yield* runtime.reactor.processBytes(message);
+    try {
+      yield* runtime.reactor.processBytes(message);
+    } catch (error) {
+      // A malformed wire frame a mailbox returns must not stall the poll loop: skip it so
+      // the batch completes and the provider cursor advances past it. Only WireParseError
+      // (malformed wire input) is skipped; a dispatch-side ParserError from processing a
+      // valid frame against corrupt stored state, and every non-parse error, still propagate.
+      if (error instanceof WireParseError) {
+        console.error("skipped an unparseable mailbox frame", error);
+        continue;
+      }
+      throw error;
+    }
   }
   yield* runtime.protocol.processEscrowsOnce();
 }
