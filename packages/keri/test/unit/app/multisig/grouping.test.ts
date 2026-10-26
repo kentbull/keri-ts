@@ -1,5 +1,5 @@
 import { call, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
 import { Diger, Prefixer } from "../../../../../cesr/mod.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
@@ -268,8 +268,9 @@ Deno.test("Exchanger lead elects the signer with the lowest group signature inde
         toad: 0,
       });
       const { hab: group } = hby.makeGroupHab("group", member, [member.pre], undefined, undefined, {
-        isith: "1",
-        nsith: "1",
+        // Weighted threshold keeps the 1-of-1 group distinct from its self-addressing member.
+        isith: ["1"],
+        nsith: ["1"],
         toad: 0,
       });
       const acdc = exchangeMessage("/dummy/acdc", { d: "data" }, { sender: group.pre })[0];
@@ -304,6 +305,36 @@ Deno.test("Exchanger lead elects the signer with the lowest group signature inde
       hby.db.esigs.trim([grant.said!, group.pre], { topive: false });
       hby.db.esigs.add([grant.said!, member.pre, member.kever!.sner.numh, member.kever!.said], sigers[0]);
       assertEquals(exchanger.lead(group, grant.said!), false);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a group identifier is self-addressing even with a single signing key", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `group-prefix-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    try {
+      const member = hby.makeHab("member", undefined, {
+        transferable: true,
+        icount: 1,
+        isith: "1",
+        ncount: 1,
+        nsith: "1",
+        toad: 0,
+      });
+      const { hab: group } = hby.makeGroupHab("group", member, [member.pre], undefined, undefined, {
+        isith: ["1"],
+        nsith: ["1"],
+        toad: 0,
+      });
+      // Self-addressing (Blake3-256) prefix, like KERIpy's GroupHab.make, not the member's key.
+      assertEquals(new Prefixer({ qb64: group.pre }).code, "E");
+      assertNotEquals(group.pre, member.pre);
     } finally {
       yield* hby.close(true);
     }

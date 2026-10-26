@@ -15,6 +15,7 @@
 import {
   Cigar,
   concatBytes,
+  DigDex,
   Diger,
   Ilks,
   NumberPrimitive,
@@ -1564,6 +1565,9 @@ export class Habery {
     const keys = this.extractGroupMemberKeys(signingMembers);
     const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
     const serder = inceptEvent(keys, {
+      // A group identifier is always self-addressing, even with a single signing
+      // key, matching KERIpy's GroupHab.make (code defaults to Blake3_256).
+      code: DigDex.Blake3_256,
       isith: args.isith,
       ndigs,
       nsith: args.nsith,
