@@ -1,5 +1,5 @@
 /** Controller-side witness transport: HTTP receipts, explicit media fallback and optional duplex TCP intake. */
-import { Cigar, type Siger } from "cesr-ts";
+import { Cigar, concatBytes, Counter, type Siger, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import { action, call, type Operation, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { Schemes } from "../../core/schemes.ts";
@@ -154,6 +154,7 @@ function isKeripyContentTypeRejection(
  * @param sn Event sequence number.
  * @param said Exact event SAID to verify against returned proof.
  * @param http Borrowed HTTP implementation selected by composition.
+ * @param gvrsn Configured endpoint's reply attachment genus, selected before its complete response body.
  * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
  */
 export function* pollWitnessReceipt(
@@ -163,6 +164,7 @@ export function* pollWitnessReceipt(
   sn: number,
   said: string,
   http: HttpClient,
+  gvrsn: Versionage = Vrsn_1_0,
 ): Operation<WitnessReceiptEndpointResponse> {
   const httpUrl = witnessHttpUrl(hab, witness);
   if (!httpUrl) {
@@ -175,11 +177,17 @@ export function* pollWitnessReceipt(
 
   for (let attempt = 0; attempt < WitnessReceiptPollAttempts; attempt += 1) {
     const response = yield* call(() =>
-      getWitnessReceiptEndpoint(hab, witness, {
-        pre,
-        sn,
-        said,
-      }, http)
+      getWitnessReceiptEndpoint(
+        hab,
+        witness,
+        {
+          pre,
+          sn,
+          said,
+        },
+        http,
+        gvrsn,
+      )
     );
     if (response.kind === "accepted") {
       return response;
@@ -205,6 +213,7 @@ export function* pollWitnessReceipt(
  * @param message Complete signed event wire requesting a witness receipt.
  * @param http Borrowed HTTP implementation selected by composition.
  * @param auth Optional witness HTTP Authorization value.
+ * @param gvrsn Reply attachment genus; the caller already encoded request proofs with this endpoint's selection.
  * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
  */
 export function* postWitnessReceiptEndpoint(
@@ -213,6 +222,7 @@ export function* postWitnessReceiptEndpoint(
   message: Uint8Array,
   http: HttpClient,
   auth?: string,
+  gvrsn: Versionage = Vrsn_1_0,
 ): Operation<WitnessReceiptEndpointResponse> {
   const url = witnessHttpUrl(hab, witness);
   if (!url) {
@@ -246,7 +256,7 @@ export function* postWitnessReceiptEndpoint(
       return { kind: "escrow", status: 202 };
     }
     if (response.status === 200) {
-      const body = response.body;
+      const body = gvrsn.major === 1 ? response.body : concatBytes(Counter.makeGVC(gvrsn), response.body);
       const inspected = inspectReceiptMessage(body);
       return {
         kind: "accepted",
@@ -278,6 +288,7 @@ export function* postWitnessReceiptEndpoint(
  * @param witness Witness AID whose HTTP receipt endpoint is selected.
  * @param query Receipt lookup subject, sequence and digest fields.
  * @param http Borrowed HTTP implementation selected by composition.
+ * @param gvrsn Explicit response attachment genus; preserve v1 by default.
  * @returns Receipt endpoint status and wire result for later verification; HTTP success alone is not accepted witness state.
  */
 export function* getWitnessReceiptEndpoint(
@@ -285,6 +296,7 @@ export function* getWitnessReceiptEndpoint(
   witness: string,
   query: { pre: string; sn?: number; said?: string },
   http: HttpClient,
+  gvrsn: Versionage = Vrsn_1_0,
 ): Operation<WitnessReceiptEndpointResponse> {
   const url = witnessHttpUrl(hab, witness);
   if (!url) {
@@ -315,7 +327,7 @@ export function* getWitnessReceiptEndpoint(
       message: new TextDecoder().decode(body),
     };
   }
-  const body = response.body;
+  const body = gvrsn.major === 1 ? response.body : concatBytes(Counter.makeGVC(gvrsn), response.body);
   const inspected = inspectReceiptMessage(body);
   return {
     kind: "accepted",

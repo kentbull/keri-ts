@@ -1,7 +1,11 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
+import { createWalletBaser, Wallet, WalletAuthor, type WalletBaser, WalletDiscloser } from "@keri-ts/wallet";
+import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
+import { runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { collectBytes } from "../../../../src/app/transport/byte-source.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { Receiptor } from "../../../../src/app/witness/receipting.ts";
 
 import {
   type CesrFrame,
@@ -13,6 +17,7 @@ import {
   Diger,
   framePayload,
   type MapperMap,
+  nestedPayload,
   NumberPrimitive,
   parseBytes,
   Prefixer,
@@ -44,8 +49,10 @@ import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
   type InteropContext,
+  type KeriPyWitnessNode,
   randomPort,
   spawnChild,
+  startKeriPyWitnessHarness,
   stopChild,
 } from "../interop-test-helpers.ts";
 import {
@@ -85,6 +92,7 @@ export interface PeerSnapshot {
     said: string;
     attributes: { status: { value: string }; private: unknown; contact: unknown; role: unknown };
     raw: string;
+    proof?: string;
     independentlyAccepted: boolean;
   }[];
 }
@@ -99,6 +107,9 @@ export interface IpexPeer {
   invalidReply(verb: "grant" | "spurn", prior: string, defect: ReplyDefect): Promise<{ said: string; sender: string }>;
   replay(said: string): Promise<void>;
   snapshot(inspect?: string): Promise<PeerSnapshot>;
+  enableWallet(witnesses: readonly KeriPyWitnessNode[]): Promise<void>;
+  present(grant: string): Promise<string>;
+  reopenWallet(): Promise<void>;
 }
 
 /** Poll actual state; a failed read fails immediately with its original diagnostic. */
@@ -123,6 +134,9 @@ class TypeScriptPeer implements IpexPeer {
   private remote?: PeerInfo;
   private plan?: DisclosurePlan;
   private intakeFailure?: unknown;
+  private wallet?: Wallet;
+  private walletDb?: WalletBaser;
+  private discloser?: WalletDiscloser;
 
   constructor(private hby: Habery, private runtime: AgentRuntime, private graphCase?: GraphCase) {
     this.hab = hby.makeHab("typescript");
@@ -170,6 +184,10 @@ class TypeScriptPeer implements IpexPeer {
     this.remote = remote;
     this.plan = plan;
     for (const issuer of this.graph.issuers) {
+      if (this.wallet) {
+        for (const frame of parseBytes(this.discloser!.kel(issuer))) await this.post(frame);
+        continue;
+      }
       const inception = issuer.kever!.serder;
       const kel = messagize(inception, {
         sigers: issuer.sign(inception.raw, true),
@@ -236,6 +254,7 @@ class TypeScriptPeer implements IpexPeer {
   async send(verb: Verb, prior?: string, invalid: boolean | DisclosureDefect = false): Promise<string> {
     assertExists(this.remote);
     assertExists(this.plan);
+    if (this.wallet && !invalid) return await this.walletSend(verb, prior);
     const previous = prior ? this.hby.db.exns.get(prior) : undefined;
     if (prior) assertExists(previous, `Missing prior exchange: ${prior}`);
     let carried: SerderACDC[] = [];
@@ -276,6 +295,105 @@ class TypeScriptPeer implements IpexPeer {
         "malformed-schema",
       ].includes(this.graphCase ?? "");
     return await this.deliver(frame, !invalid || semantic);
+  }
+
+  /** Optional application scenario, preserving every existing protocol-negative peer path. */
+  async enableWallet(witnesses: readonly KeriPyWitnessNode[]): Promise<void> {
+    await run(function*(this: TypeScriptPeer) {
+      const oobis = witnesses.map(node => node.controllerOobi);
+      for (const url of oobis) this.runtime.oobiery.resolve(url);
+      yield* runAgentRuntimeUntil(
+        this.runtime,
+        () => oobis.every(url => oobiTerminalState(this.hby.db, url).status === "resolved"),
+        { hab: this.hab, timeoutMs: 20_000, pollMailbox: false },
+      );
+      this.hab.rotate({ adds: witnesses.map(node => node.pre), toad: 2 });
+      const receipts = new Receiptor(this.hby, this.runtime.protocol, this.runtime.http, this.runtime.clock, {
+        gvrsn: Vrsn_2_0,
+      });
+      yield* receipts.receipt(this.hab.pre);
+      this.walletDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+      this.wallet = new Wallet({
+        hby: this.hby,
+        registry: this.runtime.acdc!.store,
+        exc: this.runtime.exc,
+        db: this.walletDb,
+      });
+      this.discloser = new WalletDiscloser(this.wallet, receipts);
+      const author = new WalletAuthor(this.wallet, this.runtime.acdc!, receipts);
+      yield* author.incept("wallet", this.hab.pre);
+      const old = this.graph.fullNodes[0], schema = structuredClone(old.schema) as MapperMap;
+      schema.$id = "";
+      (schema.properties as MapperMap).rd = { type: "string" };
+      const reg = author.registry("wallet", this.hab.pre);
+      const full = author.create(reg, { schema, uuid: old.sad!.u as string, attribute: old.attrib as MapperMap });
+      yield* author.issue(reg, full, { public: true });
+      this.graph.fullNodes = [full];
+      this.graph.nodes = [partialDisclosure(full, ["a/status/"])];
+      this.info.schemas = [(full.schema as { $id: string }).$id];
+      this.info.commitment = full.said!;
+    }.bind(this));
+  }
+  private async walletSend(verb: Verb, prior?: string, held?: string): Promise<string> {
+    const d = this.discloser!, wallet = this.wallet!;
+    return await run(function*(this: TypeScriptPeer) {
+      const selection = held ? { fromGrant: held } : { said: this.info.commitment, disclose: this.plan![0][2] };
+      const options = {
+        message: verb,
+        recipient: this.remote!.pre,
+        xid: prior ? undefined : this.info.commitment,
+        plan: prior ? undefined : this.plan,
+        priorSaid: prior,
+        anchor: true,
+      };
+      const prepared = verb === "apply"
+        ? yield* d.prepareApply(this.hab.pre, options)
+        : verb === "offer"
+        ? yield* d.prepareOffer(this.hab.pre, selection, options)
+        : verb === "grant"
+        ? yield* d.prepareGrant(this.hab.pre, selection, options)
+        : verb === "admit"
+        ? (() => undefined)()
+        : yield* d.prepareReply(this.hab.pre, verb, prior!);
+      let wire: Uint8Array, said: string;
+      if (verb === "admit") {
+        const response = yield* wallet.prepareAdmit(prior!, this.hab.pre, { consent: true, receiptor: d.receiptor });
+        wire = concatBytes(response.support, response.wire);
+        said = response.admit.said!;
+      } else {
+        wire = concatBytes(prepared!.support, prepared!.wire);
+        said = prepared!.exn.said!;
+      }
+      const evidence = concatBytes(
+        d.kel(this.hab),
+        ...[...wallet.registry.baser.heads.getTopItemIter()].map(([key]) => wallet.registry.cloneTel(String(key[0]))),
+      );
+      for (const frame of parseBytes(concatBytes(evidence, wire))) {
+        yield* this.runtime.protocol.dispatch(frame);
+        yield* call(() => this.post(frame));
+      }
+      assertEquals(this.runtime.exc.complete(said), true);
+      if (verb === "admit") yield* call(() => wallet.recordAdmission(prior!, said, { consent: true }));
+      return said;
+    }.bind(this));
+  }
+  present(grant: string): Promise<string> {
+    return this.walletSend("grant", undefined, grant);
+  }
+  async reopenWallet(): Promise<void> {
+    await run(function*(this: TypeScriptPeer) {
+      yield* this.walletDb!.close();
+      yield* this.runtime.acdc!.baser.close();
+      yield* this.hby.ks.close();
+      yield* this.hby.db.close();
+      yield* this.hby.ks.reopen();
+      yield* this.hby.db.reopen();
+      yield* this.runtime.acdc!.baser.reopen({ reuse: true });
+      yield* this.walletDb!.reopen();
+    }.bind(this));
+  }
+  async closeWallet(): Promise<void> {
+    if (this.walletDb) await run(() => this.walletDb!.close(true));
   }
 
   /** Deliver a fresh grant only after both peers know its anchorer's subsequent rotation. */
@@ -366,7 +484,7 @@ class TypeScriptPeer implements IpexPeer {
     for (const frame of parseBytes(concatBytes(...chunks))) await this.post(frame);
   }
 
-  snapshot(inspect?: string): Promise<PeerSnapshot> {
+  async snapshot(inspect?: string): Promise<PeerSnapshot> {
     if (this.intakeFailure) throw this.intakeFailure;
     const db = this.hby.db;
     const messages = [...db.exns.getItemIter()].map(([, body]) => body);
@@ -381,7 +499,7 @@ class TypeScriptPeer implements IpexPeer {
       // These fixture graphs are unregistered; use only their exact accepted child views.
       verdict = evaluateAcdcRelations(graph, db, new Map());
     }
-    return Promise.resolve({
+    return {
       verdict,
       messages: messages.map((body) => body.sad as unknown as PeerSnapshot["messages"][number]),
       received: this.received.map(({ said }) => said),
@@ -395,16 +513,18 @@ class TypeScriptPeer implements IpexPeer {
           reason: this.received.find(({ said }) => said === inspect)?.reason,
         }
         : null,
-      nodes: (grant ? loadNests(db, grant.said!) : []).map(({ body }) => {
+      nodes: await Promise.all((grant ? loadNests(db, grant.said!) : []).map(async frame => {
+        const { body } = frame;
         assertInstanceOf(body, SerderACDC);
         return {
           said: body.said!,
           attributes: body.sad!.a as PeerSnapshot["nodes"][number]["attributes"],
           raw: new TextDecoder().decode(body.raw),
+          proof: new TextDecoder().decode(await collectPayload(nestedPayload(frame, Vrsn_2_0))),
           independentlyAccepted: db.exns.get(body.said!) !== null,
         };
-      }),
-    });
+      })),
+    };
   }
 }
 
@@ -443,6 +563,15 @@ class PythonPeer implements IpexPeer {
   snapshot(inspect?: string): Promise<PeerSnapshot> {
     return this.command("snapshot", { inspect });
   }
+  async enableWallet(witnesses: readonly KeriPyWitnessNode[]): Promise<void> {
+    Object.assign(this.info, await this.command("wallet", { witnesses }));
+  }
+  present(grant: string): Promise<string> {
+    return this.command("present", { grant });
+  }
+  async reopenWallet(): Promise<void> {
+    await this.command("reopen_wallet", {});
+  }
 }
 
 /** Start the subprocess without scenario flags; preserve live output on failure. */
@@ -450,12 +579,13 @@ async function withPythonPeer(
   context: InteropContext,
   graph: GraphCase | undefined,
   body: (peer: IpexPeer) => Promise<void>,
+  wallet = false,
 ): Promise<void> {
   // HIO HTTP treats port=0 as port 80; select an available unprivileged port explicitly.
   const port = randomPort();
   const child = spawnChild(
     context.pythonCommand,
-    [PEER, context.home, graph ?? "-", String(port)],
+    [PEER, context.home, wallet ? "wallet" : graph ?? "-", String(port)],
     context.env,
     context.repoRoot,
   );
@@ -509,6 +639,7 @@ async function withTypeScriptPeer(
         try {
           yield* call(() => body(peer));
         } finally {
+          yield* call(() => peer.closeWallet());
           yield* call(() => peer.server.shutdown());
         }
       } finally {
@@ -522,16 +653,23 @@ async function withTypeScriptPeer(
 
 /** One fresh pair per test. KEL introduction also uses the public CESR endpoints. */
 export async function withIpexPeers(
-  options: { issuer: Implementation; graph?: GraphCase },
+  options: { issuer: Implementation; graph?: GraphCase; wallet?: boolean },
   scenario: (peers: IpexPeers) => Promise<void>,
 ): Promise<void> {
   const context = await createInteropContext();
   const tsIssuer = options.issuer === "TypeScript";
+  const witnesses = options.wallet
+    ? await startKeriPyWitnessHarness(context, { aliases: ["wan", "wil", "wes"], protocolVersion: 2 })
+    : undefined;
   try {
     await withTypeScriptPeer(
       tsIssuer ? options.graph : undefined,
       (ts) =>
         withPythonPeer(context, tsIssuer ? undefined : options.graph, async (py) => {
+          if (witnesses) {
+            await ts.enableWallet(witnesses.nodes);
+            await py.enableWallet(witnesses.nodes);
+          }
           const issuer = tsIssuer ? ts : py, holder = tsIssuer ? py : ts;
           const plan = disclosurePlan(issuer.info.schemas, options.graph);
           await ts.connect(py.info, plan);
@@ -543,9 +681,10 @@ export async function withIpexPeers(
             );
           }
           await scenario({ issuer, holder, plan });
-        }),
+        }, options.wallet),
     );
   } finally {
+    await witnesses?.close();
     await Deno.remove(context.home, { recursive: true });
   }
 }

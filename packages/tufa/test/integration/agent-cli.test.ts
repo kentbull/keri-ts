@@ -1,4 +1,6 @@
+import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { createHabery, type KramConfig } from "keri-ts/runtime";
 import {
   packageRoot,
   reserveTcpPort,
@@ -23,10 +25,12 @@ async function writeAgentControllerConfig(
     headDirPath,
     alias,
     port,
+    kram,
   }: {
     headDirPath: string;
     alias: string;
     port: number;
+    kram?: KramConfig;
   },
 ): Promise<void> {
   const configDir = `${headDirPath}/keri/cf/${AGENT_CONFIG_FILE}`;
@@ -36,6 +40,7 @@ async function writeAgentControllerConfig(
     `${
       JSON.stringify(
         {
+          kram,
           [alias]: {
             dt: "2026-06-08T00:00:00.000Z",
             curls: [`http://127.0.0.1:${port}/`],
@@ -150,7 +155,12 @@ Deno.test("tufa/agent-cli - starts unencrypted stores with -n before or after po
   await initAndInceptStore({ name, headDirPath, alias });
 
   const firstPort = reserveTcpPort();
-  await writeAgentControllerConfig({ headDirPath, alias, port: firstPort });
+  await writeAgentControllerConfig({
+    headDirPath,
+    alias,
+    port: firstPort,
+    kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+  });
   const firstChild = await startTufaAgent(
     [
       "agent",
@@ -174,6 +184,14 @@ Deno.test("tufa/agent-cli - starts unencrypted stores with -n before or after po
   } finally {
     await stopChild(firstChild);
   }
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath, readonly: true, skipConfig: true, skipSignator: true });
+    try {
+      assertEquals(hby.db.ctyp.get("~")?.sl, 5000, "agent selected config reaches the hosted KRAM owner");
+    } finally {
+      yield* hby.close();
+    }
+  });
 
   const secondPort = reserveTcpPort();
   await writeAgentControllerConfig({ headDirPath, alias, port: secondPort });

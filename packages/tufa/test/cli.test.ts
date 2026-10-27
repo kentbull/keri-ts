@@ -35,7 +35,7 @@ import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
 import { walletListCommand, walletReadCommand } from "../src/cli/commands/credentials.ts";
-import { ipexAdmitCommand, ipexApplyCommand } from "../src/cli/commands/ipex.ts";
+import { ipexAdmitCommand, ipexApplyCommand, ipexGrantCommand } from "../src/cli/commands/ipex.ts";
 import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/commands/mailbox.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
@@ -180,6 +180,7 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
   ["ipex", "agree", "-n", "store", "-a", "aid", "-r", "peer", "--offer", "Eoffer"],
   ["ipex", "grant", "-n", "store", "-a", "aid", "-r", "peer", "--said", "Ecredential"],
   ["ipex", "admit", "-n", "store", "-a", "aid"],
+  ["ipex", "unblind", "-n", "store", "-a", "aid", "--opening", "opening.cesr", "--said", "Ecredential"],
   ["ipex", "spurn", "-n", "store", "-a", "aid", "-r", "peer", "--prior", "Eprior"],
   ["ipex", "list", "-n", "store"],
   ["ipex", "poll", "-n", "store", "-a", "aid"],
@@ -398,7 +399,7 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
 });
 
 Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
-  const native = parseCommandSelection([
+  const acdcV2 = parseCommandSelection([
     "ipex",
     "admit",
     "-n",
@@ -407,15 +408,39 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
     "holder",
     "--said",
     "Egrant",
-    "--native",
+    "--acdc-v2",
     "--consent",
   ]);
-  assertEquals([native.name, native.args.native, native.args.consent, native.args.said], [
+  assertEquals([acdcV2.name, acdcV2.args.acdcV2, acdcV2.args.consent, acdcV2.args.said], [
     "ipex.admit",
     true,
     true,
     "Egrant",
   ]);
+  for (
+    const command of [
+      ["registry", "incept"],
+      ["create"],
+      ["update", "--said", "Ecredential", "--state", "issued"],
+      ["revoke", "--said", "Ecredential"],
+    ]
+  ) {
+    const selected = parseCommandSelection([
+      "vc",
+      ...command,
+      "-n",
+      "store",
+      "-a",
+      "issuer",
+      "--registry-name",
+      "registry",
+      ...(command[0] === "update" ? [] : ["--acdc-v2"]),
+      "--witness-gvrsn",
+      "2",
+    ]);
+    assertEquals(selected.args.witnessGvrsn, "2");
+    if (command[0] !== "update") assertEquals(selected.args.acdcV2, true);
+  }
   const read = parseCommandSelection(["vc", "wallet", "read", "-n", "store", "--grant", "Egrant"]);
   assertEquals([read.name, read.args.grant], ["vc.wallet.read", "Egrant"]);
   const grant = parseCommandSelection([
@@ -882,7 +907,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
   });
   const url = `http://127.0.0.1:${server.addr.port}/`;
   let sender = "", recipient = "";
-  const nativeGrants: string[] = [];
+  const acdcV2Grants: string[] = [];
   let disclosed: MapperMap;
   const close = Habery.prototype.close;
   const log = console.log;
@@ -950,7 +975,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
           }));
           yield* runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(frame))));
           assertEquals(runtime.exc.complete(grant.said!), true);
-          nativeGrants.push(grant.said!);
+          acdcV2Grants.push(grant.said!);
         }
       } finally {
         yield* runtime.close();
@@ -993,12 +1018,12 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
       return sign.apply(this, args);
     } as typeof sign;
     try {
-      const native = { name, headDirPath, alias: "sender", native: true, said: nativeGrants[0] };
-      await assertRejects(() => run(() => ipexAdmitCommand(native)), ValidationError, "consent");
-      for (const said of nativeGrants.slice(1, 3)) {
+      const acdcV2 = { name, headDirPath, alias: "sender", acdcV2: true, said: acdcV2Grants[0] };
+      await assertRejects(() => run(() => ipexAdmitCommand(acdcV2)), ValidationError, "consent");
+      for (const said of acdcV2Grants.slice(1, 3)) {
         closed = false;
         await assertRejects(
-          () => run(() => ipexAdmitCommand({ ...native, said, consent: true })),
+          () => run(() => ipexAdmitCommand({ ...acdcV2, said, consent: true })),
           ValidationError,
           "graph",
         );
@@ -1009,30 +1034,56 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
       assertEquals(JSON.parse(records.pop()!).held, []);
       assertEquals(transmissions, 2);
       closed = false;
-      await run(() => ipexAdmitCommand({ ...native, consent: true }));
+      await run(() => ipexAdmitCommand({ ...acdcV2, consent: true }));
       const admitted = JSON.parse(records.pop()!);
-      assertEquals([admitted.grant, admitted.holder, admitted.deliveries], [nativeGrants[0], sender, [url]]);
+      assertEquals([admitted.grant, admitted.holder, admitted.deliveries], [acdcV2Grants[0], sender, [url]]);
       assertEquals(transmissions, 3);
       closed = false;
-      await run(() => walletReadCommand({ name, headDirPath, grant: nativeGrants[0] }));
+      await run(() => walletReadCommand({ name, headDirPath, grant: acdcV2Grants[0] }));
       const held = JSON.parse(records.pop()!);
-      assertEquals([held.grant, held.admit, held.credential], [nativeGrants[0], admitted.admit, disclosed!]);
+      assertEquals([held.grant, held.admit, held.credential], [acdcV2Grants[0], admitted.admit, disclosed!]);
       assertEquals(typeof held.credential.a.private, "string");
+      const presentationPath = `${headDirPath}/native-presentation.cesr`;
+      closed = false;
+      await run(() =>
+        ipexGrantCommand({
+          name,
+          headDirPath,
+          alias: "sender",
+          acdcV2: true,
+          recipient,
+          fromGrant: acdcV2Grants[0],
+          xid: admitted.admit,
+          plan: JSON.stringify([[held.credential.s.$id, "/", []]]),
+          out: presentationPath,
+        })
+      );
+      const presented = JSON.parse(records.pop()!);
+      assertEquals(presented.accepted, true);
+      assertEquals(presented.deliveries, []);
+      const view = parseBytes(Deno.readFileSync(presentationPath)).at(-1)!;
+      assertEquals(view.body.said, presented.said);
+      assertEquals(
+        JSON.parse(new TextDecoder().decode(view.nests![0].body.raw)),
+        disclosed!,
+        "ACDC v2 CLI presents only the exact admitted view",
+      );
+      assertEquals(transmissions, 3, "explicit output file does not send implicitly");
       closed = false;
       injected = false;
       failClose = true;
       const failed = await assertRejects(() =>
-        run(() => ipexAdmitCommand({ ...native, said: nativeGrants[3], consent: true }))
+        run(() => ipexAdmitCommand({ ...acdcV2, said: acdcV2Grants[3], consent: true }))
       );
       assertEquals(failed, fault);
       assertEquals(transmissions, 4);
-      assertEquals(records, [], "Native admission success also follows owned shutdown");
+      assertEquals(records, [], "ACDC v2 admission success also follows owned shutdown");
       failClose = false;
       closed = false;
       await run(() => walletListCommand({ name, headDirPath }));
       assertEquals(
         JSON.parse(records.pop()!).held.map((row: { grant: string }) => row.grant).sort(),
-        [nativeGrants[0], nativeGrants[3]].sort(),
+        [acdcV2Grants[0], acdcV2Grants[3]].sort(),
         "actual accepted consent survives delivery and later close failure",
       );
     } finally {

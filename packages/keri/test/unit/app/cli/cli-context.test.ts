@@ -1,6 +1,8 @@
-import { type Operation, run } from "effection";
+import { parseBytes, Vrsn_2_0 } from "cesr-ts";
+import { call, type Operation, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { type Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery, type Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import {
   type CommandContextDependencies,
@@ -10,6 +12,7 @@ import {
   withHabAndAgentRuntime,
 } from "../../../../src/cli/common/context.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import { query } from "../../../../src/core/protocol-eventing.ts";
 
 function fakeHabery(events: string[], hab?: Hab): Habery {
   return {
@@ -194,6 +197,47 @@ Deno.test("cli context - withAgentRuntime closes runtime before hby", async () =
   );
 
   assertEquals(events, ["setup:store", "runtime", "use:runtime", "runtime.close", "hby.close"]);
+});
+
+Deno.test("cli context - runtime uses only loaded per-store KRAM config", async () => {
+  const kram = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } };
+  for (const mode of ["configured", "absent", "skipped"]) {
+    const headDirPath = await Deno.makeTempDir({ prefix: "cli-kram-" });
+    const name = `store-${mode}`;
+    try {
+      await run(function*() {
+        const hby = yield* createHabery({ name, headDirPath });
+        try {
+          hby.makeHab("alice");
+          hby.cf!.put(mode === "absent" ? {} : { kram });
+        } finally {
+          yield* hby.close();
+        }
+        yield* withAgentRuntime(
+          { name, headDirPath },
+          { skipConfig: mode === "skipped" },
+          function*({ hby, runtime }) {
+            const configured = mode === "configured";
+            assertEquals(!!runtime.reactor.kvy.kramer, configured);
+            assertStrictEquals(runtime.reactor.kvy.db, hby.db);
+            const hab = hby.habByName("alice")!;
+            const body = query("ksn", { i: hab.pre, src: hab.pre }, { pre: hab.pre, pvrsn: Vrsn_2_0 });
+            const [frame] = yield* call(() => parseBytes(hab.endorse(body, { gvrsn: Vrsn_2_0 })));
+            const before = Date.now();
+            const result = runtime.reactor.kvy.kramer?.intake(envelopeFromFrame(frame));
+            assertEquals(result?.kind, configured ? "ready" : undefined);
+            if (result?.kind === "ready") {
+              const receipt = Date.parse(result.receiverTime!);
+              assertEquals(receipt >= before && receipt <= Date.now(), true);
+            }
+            assertEquals(!!hby.db.msgc.get([hab.pre, body.said!]), configured);
+          },
+        );
+      });
+    } finally {
+      await Deno.remove(headDirPath, { recursive: true });
+    }
+  }
 });
 
 Deno.test("cli context - withHabAndAgentRuntime closes resources when callback throws", async () => {

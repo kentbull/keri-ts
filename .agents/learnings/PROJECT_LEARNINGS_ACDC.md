@@ -273,7 +273,15 @@ outer exchange authentication and the original Grant nests without reevaluating
 current standing or substituting a fuller cached disclosure. Inventory and consent
 never imply custody of a private opening.
 
-The registrar borrows the native processor/store and requires enabled, non-exempt
+Wallet disclosure selects an issued credential, an exact retained Grant, or an
+explicitly transferred view with separate presenter authorization. Refresh changes
+proof attachments only when requested; custody, consent and disclosed attributes
+remain independent. Freeze the Grant body before its presentation BUP or source
+anchor, then collect actual witness receipts before returning wire. Match the full
+registry seal when reusing a KEL anchor. The configured witness attachment genus
+is independent of the signed body version; ACDC v2 CLI selection does not choose it.
+
+The registrar borrows the ACDC v2 processor/store and requires enabled, non-exempt
 KRAM plus configured publisher/observer allowlists. It hosts accepted public
 evidence; a bulk response makes no fresh-observation claim. Composition owns HTTP
 and store lifetimes.

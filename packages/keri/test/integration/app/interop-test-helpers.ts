@@ -77,6 +77,8 @@ export interface TufaWitnessNode {
 
 /** Options for the explicit KERIpy witness harness. */
 export interface KeriPyWitnessHarnessOptions {
+  /** Actual witness endpoint/parser genus; historical interop matrices remain v1 by default. */
+  protocolVersion?: 1 | 2;
   aliases?: readonly string[];
   base?: string;
   /** Test-only observation/factory commands; normal protocol intake is unchanged. */
@@ -1468,6 +1470,7 @@ async function initializeKeriPyWitness(
   base: string,
   configRoot: string,
   alias: string,
+  protocolVersion: 1 | 2 = 1,
 ): Promise<string> {
   await requireSuccess(
     `${alias} init`,
@@ -1480,7 +1483,7 @@ async function initializeKeriPyWitness(
         "--cli-module",
         ctx.cliModule,
         "init",
-        ...keripyProtocolVersionArgs(env, "1.0"),
+        ...keripyProtocolVersionArgs(env, `${protocolVersion}.0`),
         "--name",
         alias,
         "--base",
@@ -1507,7 +1510,7 @@ async function initializeKeriPyWitness(
         "--cli-module",
         ctx.cliModule,
         "incept",
-        ...keripyProtocolVersionArgs(env, "1.0"),
+        ...keripyProtocolVersionArgs(env, `${protocolVersion}.0`),
         "--name",
         alias,
         "--base",
@@ -1559,6 +1562,7 @@ export async function startKeriPyWitnessHarness(
         base,
         configRoot,
         alias,
+        options.protocolVersion,
       );
       nodes.push({
         alias,
@@ -1583,6 +1587,8 @@ export async function startKeriPyWitnessHarness(
           "--test-root",
           home,
           ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
+          "--protocol-version",
+          String(options.protocolVersion ?? 1),
           ...(options.messengerProbe ? ["--messenger-probe"] : []),
           "--name",
           node.name,

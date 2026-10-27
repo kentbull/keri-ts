@@ -4,6 +4,7 @@ import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 
 import { createProtocolHandler } from "@keri-ts/hosting";
+import { createWalletBaser, Wallet, type WalletBaser, WalletDiscloser } from "@keri-ts/wallet";
 import {
   type CesrFrame,
   collectPayload,
@@ -18,7 +19,8 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, spawn } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { publicOpeningAttachment } from "keri-ts/db";
 import { acdcmap, acmSchemaDefault } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
@@ -30,7 +32,7 @@ import {
   runAgentRuntimeUntil,
 } from "../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
-import { WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
+import { Receiptor, WitnessReceiptor } from "../../../src/app/witness/receipting.ts";
 import { query, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
@@ -61,6 +63,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
     try {
       await run(function*() {
         const hbys: Habery[] = [], runtimes: AgentRuntime[] = [];
+        const walletDbs: WalletBaser[] = [];
         const listeners: {
           server: Deno.HttpServer<Deno.NetAddr>;
           handler: ReturnType<typeof createProtocolHandler>;
@@ -218,20 +221,44 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
               yield* call(() => post(url, { body, attachments: [], gvrsn: Vrsn_2_0 }));
             }
           }
-          const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], {
+          const offerOptions = {
             message: "status disclosure",
             recipient: receiver.pre,
             xid: credential.said!,
             stamp: sent,
-            plan: [[(credential.schema as { $id: string }).$id, "/", ["a/status/"]]],
+            plan: [[(credential.schema as { $id: string }).$id, "/", ["a/status/"]]] as [string, string, string[]][],
+          };
+          const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], offerOptions);
+          let discloser: WalletDiscloser | undefined;
+          const transferred = messagize(partial, publicOpeningAttachment(issuance), {
+            gvrsn: Vrsn_2_0,
+            genusify: true,
           });
+          if (count === 1) {
+            const db = yield* createWalletBaser({ name: holderHbys[0].name, temp: true });
+            walletDbs.push(db);
+            const wallet = new Wallet({
+              hby: holderHbys[0],
+              registry: holderRuntime.acdc!.store,
+              exc: holderRuntime.exc,
+              db,
+            });
+            discloser = new WalletDiscloser(
+              wallet,
+              new Receiptor(holderHbys[0], holderRuntime.protocol, holderRuntime.http, holderRuntime.clock),
+            );
+          }
+          const walletOffer = discloser
+            ? yield* discloser.prepareOffer(holder.pre, { transferred, presenterAuthorized: true }, offerOptions)
+            : undefined;
+          if (walletOffer) assertEquals(walletOffer.exn.raw, offer.raw, "wallet preserves the negotiated body bytes");
           const agree = ipexExnBody(receiver.pre, "/ipex/agree", [], {
             message: "agree",
             prior: offer,
             stamp: sent,
           });
           for (const body of [offer, agree]) {
-            const frame = signed(
+            const frame = body === offer && walletOffer ? parseBytes(walletOffer.wire)[0] : signed(
               body,
               body === offer ? holders : [receiver],
               body === offer ? [{ body: partial, attachments: [], gvrsn: Vrsn_2_0 }] : [],
@@ -246,8 +273,46 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
             prior: agree,
             stamp: sent,
           });
-          const [presentationProof, presented] = presentation.present(grant, "presented", { stamp: receipt });
-          const source = yield* anchor(presented, holders, holderRuntimes);
+          if (discloser) {
+            const before = holder.kever!.sn;
+            yield* call(() =>
+              assertRejects(
+                () =>
+                  run(() =>
+                    discloser!.prepareGrant(holder.pre, { transferred }, {
+                      message: "grant",
+                      priorSaid: agree.said!,
+                      stamp: sent,
+                      presentation,
+                    })
+                  ),
+                Error,
+                "presenter authorization",
+              )
+            );
+            assertEquals(holder.kever!.sn, before, "unapproved transfer authors no source anchor");
+          }
+          const walletGrant = discloser
+            ? yield* discloser.prepareGrant(holder.pre, { transferred, presenterAuthorized: true }, {
+              message: "grant",
+              priorSaid: agree.said!,
+              stamp: sent,
+              presentation,
+            })
+            : undefined;
+          if (walletGrant) {
+            assertEquals(walletGrant.exn.raw, grant.raw, "presentation proof never changes the frozen Grant");
+          }
+          const walletNode = walletGrant ? envelopeFromFrame(parseBytes(walletGrant.wire)[0].nests![0]) : undefined;
+          const [presentationProof, presented] = walletNode
+            ? [
+              walletNode.bsqs.find(proof => proof.td.nonce === grant.said)!,
+              presentation.store.headEvent(presentation.regk!)!,
+            ] as const
+            : presentation.present(grant, "presented", { stamp: receipt });
+          const source = walletNode
+            ? walletNode.ssts.find(seal => seal.i.qb64 === holder.pre)!
+            : yield* anchor(presented, holders, holderRuntimes);
           accepted(presentation, presented);
           yield* call(() => introduce(receiverUrl, holderHbys[0], holder.pre));
           let cursor = 0;
@@ -360,12 +425,12 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
               { gvrsn: Vrsn_2_0, genusify: true },
             ),
           );
-          const frame = signed(grant, holders, [node]);
+          const frame = walletGrant ? parseBytes(walletGrant.wire)[0] : signed(grant, holders, [node]);
           now += count - 1;
           yield* call(() => post(holderUrl, frame));
           assertExists(holderHbys[0].db.exns.get(grant.said!));
           for (const [index, signer] of holders.entries()) {
-            yield* receiveGrant(signed(grant, [signer], [node]));
+            yield* receiveGrant(walletGrant ? frame : signed(grant, [signer], [node]));
             if (index < holders.length - 1) {
               assertExists(receiverHby.db.pmkm.get([holder.pre, grant.said!]));
               assertEquals(receiverHby.db.exns.get(grant.said!), null);
@@ -433,6 +498,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
             yield* call(() => server.shutdown());
             yield* call(() => handler.close?.());
           }
+          for (const db of walletDbs.reverse()) yield* db.close(true);
           for (const runtime of runtimes.reverse()) yield* runtime.close();
           for (const hby of hbys.reverse()) yield* hby.close(true);
         }

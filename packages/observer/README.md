@@ -1,6 +1,6 @@
 # Configured-source observer
 
-The observer borrows its actual ProtocolProcessor, native RegistryStore and a
+The observer borrows its actual ProtocolProcessor, ACDC v2 RegistryStore and a
 separately owned ObservationBaser. Supply fixed HTTPS sources, allowed reader
 AIDs and an explicit observation age. Callers own store and host lifetime.
 

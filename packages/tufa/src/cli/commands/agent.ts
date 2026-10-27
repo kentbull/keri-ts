@@ -6,6 +6,7 @@ import {
   EndpointRoles,
   type Hab,
   type Habery,
+  type KramConfig,
   Schemer,
   Schemes,
   ValidationError,
@@ -196,6 +197,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       listenHost: "127.0.0.1",
       serviceHab: cueHab,
       hostedPrefixes: hostedHabs.map((hab) => hab.pre),
+      kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
       onListen: ({ hostname, port }) => {
         console.log(`Server listening on http://${hostname}:${port}`);
       },

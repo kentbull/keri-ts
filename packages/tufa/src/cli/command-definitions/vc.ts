@@ -12,7 +12,7 @@ import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
  */
 export function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   const vc = program.command("vc").description("Credential operations");
-  const wallet = vc.command("wallet").description("Native ACDC wallet inventory and exact admitted disclosures");
+  const wallet = vc.command("wallet").description("ACDC v2 wallet inventory and exact admitted disclosures");
   for (const operation of ["list", "read"] as const) {
     const command = addStoreOptions(wallet.command(operation));
     if (operation === "read") {
@@ -52,7 +52,8 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       addStoreOptions(
         registry.command("incept")
           .description("Create a local credential registry")
-          .option("--native", "Use native ACDC v2 registry acceptance")
+          .option("--acdc-v2", "Use ACDC v2 registry acceptance")
+          .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
           .option("--with-custody", "Provision encrypted derivation custody after accepted inception")
           .option("--discloser <aid>", "Explicit designated custody participant")
           .requiredOption("--registry-name <name>", "Registry name")
@@ -98,7 +99,8 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       addStoreOptions(
         vc.command("create")
           .description("Create and issue a registry-backed credential")
-          .option("--native", "Use native ACDC v2 issuance")
+          .option("--acdc-v2", "Use ACDC v2 issuance")
+          .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
           .option("--public", "Deliberately publish the BUP opening; otherwise derive from custody")
           .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
           .requiredOption("--registry-name <name>", "Registry name")
@@ -127,19 +129,20 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   registerDispatchedCommand(
     addHabOption(addStoreOptions(
       vc.command("update")
-        .description("Advance native BUP state; never authors historical upd")
-        .requiredOption("--registry-name <name>", "Native registry alias")
+        .description("Advance ACDC v2 BUP state; never authors historical upd")
+        .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
+        .requiredOption("--registry-name <name>", "ACDC v2 registry alias")
         .requiredOption("--said <said>", "Locally issued credential")
         .requiredOption("--state <state>", "New explicit state")
-        .option("--timeout <seconds>", "Wait for exact native acceptance (default: 60)")
+        .option("--timeout <seconds>", "Wait for exact ACDC v2 acceptance (default: 60)")
         .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
         .option("--public", "Deliberately publish the opening"),
     )),
     dispatch,
     {
       name: "vc.update",
-      load: () => import("../commands/native-authoring.ts"),
-      exportName: "nativeUpdateCommand",
+      load: () => import("../commands/acdc-v2-authoring.ts"),
+      exportName: "acdcV2UpdateCommand",
       args: dispatchArgs,
     },
   );
@@ -147,7 +150,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   for (const operation of ["import", "export"] as const) {
     const command = addHabOption(addStoreOptions(
       custody.command(operation)
-        .option("--registry-name <name>", "Native registry alias")
+        .option("--registry-name <name>", "ACDC v2 registry alias")
         .option("--registry <said>", "Accepted registry SAID for a designated remote discloser")
         .requiredOption("--file <path>", "Protected mode0600 plaintext handoff artifact"),
     ));
@@ -159,7 +162,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
     }
     registerDispatchedCommand(command, dispatch, {
       name: `vc.registry.custody.${operation}`,
-      load: () => import("../commands/native-authoring.ts"),
+      load: () => import("../commands/acdc-v2-authoring.ts"),
       exportName: operation === "import" ? "custodyImportCommand" : "custodyExportCommand",
       args: dispatchArgs,
     });
@@ -212,7 +215,8 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
     addStoreOptions(
       vc.command("revoke")
         .description("Revoke a local credential")
-        .option("--native", "Use a native ACDC v2 revoked BUP")
+        .option("--acdc-v2", "Use an ACDC v2 revoked BUP")
+        .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
         .option("--public", "Deliberately publish the BUP opening; otherwise derive from custody")
         .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
         .option("-a, --alias <alias>", "Human readable alias for the local identifier")

@@ -188,6 +188,7 @@ export {
   proposeGroupEndpointRole,
 } from "../app/identity/endpoint-roleing.ts";
 export {
+  acceptedEventReplayMessage,
   createHabery,
   type GroupHabCreation,
   type GroupHabInteraction,
@@ -214,7 +215,7 @@ export {
   type ContactRecord,
   Organizer,
 } from "../app/identity/organizing.ts";
-export { ipexExnBody } from "../app/ipex/ipex-building.ts";
+export { ipexExnBody, type IpexV2BodyOptions, prepareIpexExn } from "../app/ipex/ipex-building.ts";
 export {
   type CredentialAdmitMessage,
   type CredentialArtifact,
@@ -387,12 +388,13 @@ export {
   vet,
   vetBinds,
   vetBlind,
+  vetBound,
 } from "../acdc/regeventing.ts";
-/** Native ACDC services are distinct from the legacy VDR Regery/Registry exports. */
+/** ACDC v2 services are distinct from the legacy VDR Regery/Registry exports. */
 export {
-  createRegery as createNativeRegery,
-  Regery as NativeRegery,
-  Registry as NativeRegistry,
+  createRegery as createAcdcV2Regery,
+  Regery as AcdcV2Regery,
+  Registry as AcdcV2Registry,
 } from "../acdc/registraring.ts";
 export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";

@@ -6,6 +6,7 @@ export * from "../acdc/regbasing.ts";
 export {
   openRegistry,
   type OpenRegistryOptions,
+  publicOpeningAttachment,
   RegistryRecord as AcdcRegistryRecord,
   type RegistryRecordShape as AcdcRegistryRecordShape,
   RegistryStore,

@@ -1,9 +1,20 @@
 /** Collect accepted historical witness receipts and fan them out before reporting event completion. */
-import { concatBytes, Ilks, type Siger } from "cesr-ts";
+import {
+  collectPayload,
+  concatBytes,
+  Counter,
+  framePayload,
+  Ilks,
+  parseBytes,
+  type Siger,
+  type Versionage,
+  Vrsn_1_0,
+} from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import type { Kevery } from "../../core/kel/eventing.ts";
 import { receipt as receiptEvent } from "../../core/protocol-eventing.ts";
+import { messagize } from "../../core/protocol-serialization.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../identity/habbing.ts";
 import { type ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -31,14 +42,20 @@ export interface WitnessReceiptRunResult {
 }
 
 /** Build one `loc/scheme` replay bundle for witness introductions. */
-function witnessSchemeReplies(
+function* witnessSchemeReplies(
   hab: Hab,
   eids: readonly string[],
-): Uint8Array {
+  gvrsn: Versionage,
+): Operation<Uint8Array> {
   const replies = eids
     .map((eid) => hab.loadLocScheme(eid))
     .filter((msg) => msg.length > 0);
-  return replies.length === 0 ? new Uint8Array() : concatBytes(...replies);
+  const raw = concatBytes(...replies);
+  if (!raw.length || gvrsn.major === 1) return raw;
+  const messages = yield* call(() =>
+    Promise.all(parseBytes(raw).map(frame => collectPayload(framePayload(frame, { gvrsn }))))
+  );
+  return concatBytes(...messages);
 }
 
 /**
@@ -61,6 +78,8 @@ export class Receiptor {
   readonly http: HttpClient;
   /** Borrowed clock for this owner's actual network deadlines. */
   readonly clock: RuntimeClock;
+  /** Explicit attachment framing for the configured witness endpoints; independent of KEL body version. */
+  readonly gvrsn: Versionage;
 
   /**
    * Bind configured intake over the same Habery; acquire no stores or background workers.
@@ -69,8 +88,15 @@ export class Receiptor {
    * @param protocol Borrowed same-database protocol owner for receipt intake.
    * @param http Borrowed HTTP implementation selected by composition.
    * @param clock Borrowed clock with epoch-millisecond now and millisecond timer delays.
+   * @param options Explicit witness attachment genus; the historical v1 default is independent of KEL body version.
    */
-  constructor(hby: Habery, protocol: ProtocolProcessor, http: HttpClient, clock: RuntimeClock) {
+  constructor(
+    hby: Habery,
+    protocol: ProtocolProcessor,
+    http: HttpClient,
+    clock: RuntimeClock,
+    { gvrsn = Vrsn_1_0 }: { gvrsn?: Versionage } = {},
+  ) {
     const kvy = protocol.makeKevery();
     if (kvy.db !== hby.db) throw new RangeError("Receiptor protocol must use the same database");
     this.hby = hby;
@@ -78,6 +104,7 @@ export class Receiptor {
     this.kvy = kvy;
     this.http = http;
     this.clock = clock;
+    this.gvrsn = gvrsn;
   }
   /** Submit the latest or specified event to all witnesses and gather receipts. */
   *receipt(pre: string, { sn, auths = {}, allowTcp = false }: {
@@ -113,6 +140,7 @@ export class Receiptor {
       this.hby,
       pre,
       eventSn,
+      this.gvrsn,
     );
     const witnesses = this.hby.db.acceptedEventWitnesses(serder)!;
     if (witnesses.length === 0) {
@@ -135,13 +163,13 @@ export class Receiptor {
 
     for (const witness of witnesses) {
       if (kever.delegated) {
-        for (const dmsg of this.hby.db.cloneDelegation(kever)) {
-          yield* sendWitnessMessage(hab, witness, dmsg, this.http, this.clock, this.protocol);
+        for (const dmsg of this.hby.db.cloneDelegation(kever, this.gvrsn)) {
+          yield* sendWitnessMessage(hab, witness, this.selected(dmsg), this.http, this.clock, this.protocol);
         }
       }
 
       if (allowTcp && !witnessHttpUrl(hab, witness) && witnessTcpUrl(hab, witness)) {
-        yield* sendWitnessMessage(hab, witness, message, this.http, this.clock, this.protocol);
+        yield* sendWitnessMessage(hab, witness, this.selected(message), this.http, this.clock, this.protocol);
         statuses[witness] = 200;
       } else {
         // A single receipt attempt owns its response until parsing and collection finish.
@@ -152,6 +180,7 @@ export class Receiptor {
             message,
             this.http,
             auths[witness],
+            this.gvrsn,
           )
         );
         if (response.kind === "escrow") {
@@ -162,6 +191,7 @@ export class Receiptor {
             eventSn,
             said,
             this.http,
+            this.gvrsn,
           );
         }
         statuses[witness] = response.status;
@@ -200,16 +230,23 @@ export class Receiptor {
         || ((serder.ilk === Ilks.rot || serder.ilk === Ilks.drt)
           && serder.adds.includes(witness))
       ) {
-        const schemes = witnessSchemeReplies(hab, introWitnesses);
+        const schemes = yield* witnessSchemeReplies(hab, introWitnesses, this.gvrsn);
         if (schemes.length > 0) {
           parts.push(schemes);
         }
       }
       parts.push(
-        buildDetachedReceiptMessage(
-          receiptEvent(pre, eventSn, said),
-          { wigers: otherWigers },
-        ),
+        this.gvrsn.major === 1
+          ? buildDetachedReceiptMessage(
+            receiptEvent(pre, eventSn, said),
+            { wigers: otherWigers },
+          )
+          : messagize(receiptEvent(pre, eventSn, said), {
+            wigers: otherWigers,
+            gvrsn: this.gvrsn,
+            pipelined: true,
+            genusify: true,
+          }),
       );
       yield* sendWitnessMessage(hab, witness, concatBytes(...parts), this.http, this.clock, this.protocol);
     }
@@ -244,7 +281,9 @@ export class Receiptor {
       return false;
     }
 
-    const response = yield* call(() => getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }, this.http));
+    const response = yield* call(() =>
+      getWitnessReceiptEndpoint(hab, witness, { pre, sn: eventSn, said }, this.http, this.gvrsn)
+    );
     if (response.kind !== "accepted") {
       return false;
     }
@@ -273,13 +312,17 @@ export class Receiptor {
     }
     const kever = hab.kever;
     if (kever?.delegated) {
-      for (const msg of this.hby.db.cloneDelegation(kever)) {
-        yield* sendWitnessMessage(hab, witness, msg, this.http, this.clock, this.protocol);
+      for (const msg of this.hby.db.cloneDelegation(kever, this.gvrsn)) {
+        yield* sendWitnessMessage(hab, witness, this.selected(msg), this.http, this.clock, this.protocol);
       }
     }
-    for (const msg of this.hby.db.clonePreIter(pre)) {
-      yield* sendWitnessMessage(hab, witness, msg, this.http, this.clock, this.protocol);
+    for (const msg of this.hby.db.clonePreIter(pre, 0, this.gvrsn)) {
+      yield* sendWitnessMessage(hab, witness, this.selected(msg), this.http, this.clock, this.protocol);
     }
+  }
+  /** Complete streams select their framing before the body; detached receipt headers retain their existing enclosure. */
+  private selected(message: Uint8Array): Uint8Array {
+    return this.gvrsn.major === 1 ? message : concatBytes(Counter.makeGVC(this.gvrsn), message);
   }
 }
 

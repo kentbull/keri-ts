@@ -1,8 +1,8 @@
-/** Tufa parses/configures native authoring; wallet owns state transitions and acceptance. */
+/** Tufa parses/configures ACDC v2 authoring; wallet owns state transitions and acceptance. */
 import { RegistryCustody, WalletAuthor } from "@keri-ts/wallet";
 import { type MapperMap } from "cesr-ts";
 import { call, type Operation, race, scoped, sleep } from "effection";
-import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import { Receiptor, Schemer, ValidationError } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
@@ -26,7 +26,7 @@ function required(value: unknown, flag: string): string {
 }
 
 /** Compose one finite author operation and print acceptance only after all owned stores close. */
-export function* nativeAuthorCommand(
+export function* acdcV2AuthorCommand(
   args: Record<string, unknown>,
   operation: "incept" | "issue" | "update" | "revoke",
 ): Operation<void> {
@@ -34,21 +34,21 @@ export function* nativeAuthorCommand(
   const publicOpening = parseBooleanOption(args.public, "public") ?? false;
   const withCustody = parseBooleanOption(args.withCustody, "with-custody") ?? false;
   if ((Array.isArray(args.send) ? args.send.length : args.send) || args.out || args.estOnly) {
-    throw new ValidationError("Native authoring uses registrar replay and the controller's establishment-only trait.");
+    throw new ValidationError("ACDC v2 authoring uses registrar replay and the controller's establishment-only trait.");
   }
   const timeout = parseNumberOption(args.timeout, "timeout") ?? 60;
   if (!Number.isFinite(timeout) || timeout <= 0) {
-    throw new ValidationError("Native authoring --timeout must be positive.");
+    throw new ValidationError("ACDC v2 authoring --timeout must be positive.");
   }
   const result = yield* race([
     (function*() {
       return yield* withHabAndAgentRuntime(
         walletStoreArgs(args),
         alias,
-        { skipConfig: true },
+        { skipConfig: false },
         function*({ hby, runtime, hab }) {
           return yield* scoped(function*() {
-            if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+            if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
             const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
             const custody = withCustody || (operation !== "incept" && !publicOpening)
               ? new RegistryCustody({ hby, registry: wallet.registry, db: wallet.db })
@@ -56,7 +56,9 @@ export function* nativeAuthorCommand(
             const author = new WalletAuthor(
               wallet,
               runtime.acdc,
-              new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock),
+              new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock, {
+                gvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),
+              }),
               custody,
             );
             if (operation === "incept") {
@@ -113,15 +115,15 @@ export function* nativeAuthorCommand(
     })(),
     (function*() {
       yield* sleep(timeout * 1000);
-      throw new ValidationError("Native authoring timed out before authenticated acceptance.");
+      throw new ValidationError("ACDC v2 authoring timed out before authenticated acceptance.");
     })(),
   ]);
   writeJsonLine(result);
 }
 
-/** Native state advance shares the same finite operation, not the historical upd builder. */
-export function* nativeUpdateCommand(args: Record<string, unknown>): Operation<void> {
-  yield* nativeAuthorCommand(args, "update");
+/** ACDC v2 state advance shares the same finite operation, not the historical upd builder. */
+export function* acdcV2UpdateCommand(args: Record<string, unknown>): Operation<void> {
+  yield* acdcV2AuthorCommand(args, "update");
 }
 
 /** Operator-selected protected artifact I/O; no automatic salt distribution. */
@@ -134,9 +136,9 @@ function* handoff(args: Record<string, unknown>, importing: boolean): Operation<
     skipConfig: true,
   }, function*({ hby, runtime, hab }) {
     return yield* scoped(function*() {
-      if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+      if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
       const regid = registry ?? runtime.acdc.registryByName(name!)?.regk;
-      if (!regid) throw new ValidationError("Unknown native registry alias.");
+      if (!regid) throw new ValidationError("Unknown ACDC v2 registry alias.");
       const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
       const custody = new RegistryCustody({ hby, registry: wallet.registry, db: wallet.db });
       if (importing) {

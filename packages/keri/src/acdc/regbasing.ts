@@ -36,7 +36,10 @@ export class RegBaser extends LMDBer {
   /** Named databases are root entries; testing presence opens no additional handles. */
   hasTable(name: string): boolean {
     if (!this.env) throw new DatabaseNotOpenError("Registry environment is closed.");
-    return this.env.getBinary(b(name)) !== undefined;
+    // Native lmdb-js exposes its C-string terminator in root metadata keys;
+    // the Deno backend also supports the unterminated representation.
+    return this.env.getBinary(b(name)) !== undefined
+      || this.env.getBinary(b(`${name}\0`)) !== undefined;
   }
 
   constructor(options: RegBaserOptions = {}) {

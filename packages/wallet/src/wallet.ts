@@ -8,6 +8,7 @@ import {
   type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
+import { call, type Operation } from "effection";
 import { loadNests, type RegistryStore } from "keri-ts/db";
 import {
   acceptedRegistryEvidence,
@@ -18,6 +19,7 @@ import {
   type Habery,
   ipexExnBody,
   isLocalGroupHab,
+  type Receiptor,
   type RegistryDisclosure,
   type RegistryState,
   ValidationError,
@@ -25,6 +27,7 @@ import {
   walkIpexGraph,
 } from "keri-ts/runtime";
 import { Buffer } from "node:buffer";
+import { anchorExchange, exchangeWire, WalletDiscloser } from "./disclosing.ts";
 import { type AdmittedCredential, type IssuedCredential, WalletBaser } from "./storing.ts";
 
 /** Borrowed protocol owners and the application's separately owned inventory environment. */
@@ -46,6 +49,7 @@ export interface HeldCredential {
 export interface PreparedAdmit {
   admit: SerderKERI;
   wire: Uint8Array;
+  support: Uint8Array;
 }
 /** Compare durable application values, including exact originally issued raw bytes. */
 function identical(left: object, right: object): boolean {
@@ -167,22 +171,25 @@ export class Wallet {
   }
 
   /** Require explicit consent and current root truth before authoring any holder signature. */
-  async prepareAdmit(
+  *prepareAdmit(
     grant: string,
     holder: string,
-    { consent = false, message = "", gvrsn = Vrsn_2_0 }: { consent?: boolean; message?: string; gvrsn?: Versionage } =
-      {},
-  ): Promise<PreparedAdmit> {
+    { consent = false, message = "", gvrsn = Vrsn_2_0, receiptor }: {
+      consent?: boolean;
+      message?: string;
+      gvrsn?: Versionage;
+      receiptor?: Receiptor;
+    } = {},
+  ): Operation<PreparedAdmit> {
     if (consent !== true) throw new ValidationError("Explicit consent is required.");
-    if (gvrsn.major < 2) throw new ValidationError("Native Admit requires attachment genus 2 or later.");
-    const g = await this.accepted(grant, "/ipex/grant"), hab = this.hby.habs.get(holder);
+    if (gvrsn.major < 2) throw new ValidationError("ACDC v2 Admit requires attachment genus 2 or later.");
+    const g = yield* call(() => this.accepted(grant, "/ipex/grant")), hab = this.hby.habs.get(holder);
     if (!hab || g.sad!.ri !== holder) throw new ValidationError("Grant must address the intended local holder.");
     if (isLocalGroupHab(this.hby, hab)) {
-      throw new ValidationError("Native wallet admission requires a single-signature holder.");
+      throw new ValidationError("ACDC v2 wallet admission requires a single-signature holder.");
     }
-    if ((g.sad!.a as { ax?: boolean[] }).ax?.[0]) {
-      throw new ValidationError("Anchored Admit requires the source-anchor publication workflow.");
-    }
+    const anchored = (g.sad!.a as { ax?: boolean[] }).ax?.[0] === true;
+    if (anchored && !receiptor) throw new ValidationError("Anchored Admit requires its actual receipt owner.");
     const response = this.hby.db.erpy.get([grant]);
     if (response && this.exc.complete(response.qb64)) {
       throw new ValidationError("Grant already has an accepted response.");
@@ -191,7 +198,15 @@ export class Wallet {
       throw new ValidationError("Current authenticated graph acceptance is required before signing.");
     }
     const admit = ipexExnBody(holder, "/ipex/admit", [], { message, prior: g, gvrsn });
-    return { admit, wire: hab.endorse(admit, { pipelined: false, gvrsn, genusify: true }) };
+    const source = anchored ? yield* anchorExchange(this, receiptor!, hab, admit) : undefined;
+    if (!this.graphAccepted(grant, this.origin(g))) {
+      throw new ValidationError("Current authenticated graph acceptance is required after source receipts.");
+    }
+    return {
+      admit,
+      wire: exchangeWire(hab, admit, undefined, source, gvrsn),
+      support: source ? new WalletDiscloser(this, receiptor!).kel(hab) : new Uint8Array(),
+    };
   }
 
   /** Record explicit local consent to one accepted, linked Grant/Admit pair. */
@@ -229,13 +244,27 @@ export class Wallet {
   }
 
   /** Read the original admitted proof; later disclosures and current policy cannot expand it. */
-  async heldCredential(grant: string): Promise<HeldCredential> {
+  async heldCredential(
+    grant: string,
+    { presenterAuthorized = false }: { presenterAuthorized?: boolean } = {},
+  ): Promise<HeldCredential> {
     const record = this.db.admitted.get([grant]);
-    if (!record) throw new ValidationError("Grant has not been admitted.");
+    if (!record && presenterAuthorized !== true) {
+      throw new ValidationError(
+        "Grant has not been admitted; a transferred view requires explicit presenter authorization.",
+      );
+    }
     const body = await this.accepted(grant, "/ipex/grant");
-    await this.accepted(record.admit, "/ipex/admit");
+    const admit = record?.admit ?? this.hby.db.erpy.get([grant])?.qb64;
+    if (!admit) throw new ValidationError("Transferred Grant requires its exact accepted Admit.");
+    const response = await this.accepted(admit, "/ipex/admit");
+    if (response.sad!.p !== grant || response.pre !== body.sad!.ri) {
+      throw new ValidationError("Transferred Admit does not match the exact view.");
+    }
     const nests = loadNests(this.hby.db, grant);
-    const origin = nests.find((node) => node.body instanceof SerderACDC && node.body.said === record.credential);
+    const origin = nests.find((node) =>
+      node.body instanceof SerderACDC && node.body.said === (record?.credential ?? this.origin(body))
+    );
     if (!origin) throw new ValidationError("Admitted origin evidence is missing.");
     return {
       credential: origin.body as SerderACDC,
@@ -244,7 +273,7 @@ export class Wallet {
         nests.filter((node) => node !== origin).map((node) => collectPayload(nestedPayload(node, Vrsn_2_0))),
       ),
       grant: body,
-      admit: record.admit,
+      admit,
     };
   }
 

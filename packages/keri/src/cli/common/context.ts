@@ -4,6 +4,7 @@ import { type AgentRuntime, createAgentRuntime } from "../../app/runtime/agent-r
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../app/transport/http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
+import type { KramConfig } from "../../core/mailbox/kraming.ts";
 import { setupHby } from "./existing.ts";
 
 /** Common store-location and unlock arguments shared by existing-store CLI commands. */
@@ -132,6 +133,7 @@ export function* withAgentRuntime<TResult>(
       hby,
       new FetchHttpClient(),
       systemClock,
+      { kram: hby.cf?.get<{ kram?: KramConfig }>().kram },
     );
     let failure: { error: unknown } | undefined;
     try {
