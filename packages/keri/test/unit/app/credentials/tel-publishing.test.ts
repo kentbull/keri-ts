@@ -242,7 +242,7 @@ Deno.test("credential CLI waits for witnessed establishment-only registry and is
         assertEquals(witnessHby.db.getKever(issuer.pre)?.ilk, "rot");
         // The same real CLI/store/witness fixture also owns native BUP authoring.
         const native = yield* call(() =>
-          runTufa(["vc", "registry", "incept", ...location, "--registry-name", "native", "--native"])
+          runTufa(["vc", "registry", "incept", ...location, "--registry-name", "native", "--acdc-v2"])
         );
         assertEquals(native.code, 0, native.stdout + native.stderr);
         const rip = JSON.parse(native.stdout.trim().split(/\r?\n/).at(-1)!);
@@ -254,7 +254,7 @@ Deno.test("credential CLI waits for witnessed establishment-only registry and is
             ...location,
             "--registry-name",
             "native",
-            "--native",
+            "--acdc-v2",
             "--public",
             "--data",
             "{\"role\":\"holder\"}",
@@ -285,7 +285,7 @@ Deno.test("credential CLI waits for witnessed establishment-only registry and is
           "native",
           "--said",
           issuedNative.credential,
-          "--native",
+          "--acdc-v2",
           "--public",
         ];
         const revoked = yield* call(() => runTufa(nativeRevoke));
