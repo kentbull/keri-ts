@@ -3,6 +3,8 @@ import { createRequire } from "node:module";
 import * as verifier from "@keri-ts/verifier";
 import * as hosting from "@keri-ts/hosting";
 import * as wallet from "@keri-ts/wallet";
+import { Registrar } from "@keri-ts/registrar";
+import { createHabery, createAgentRuntime, FetchHttpClient, systemClock } from "keri-ts/runtime";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -18,7 +20,7 @@ for (const name of ["runHostKernel", "startServer", "createProtocolHandler", "cr
 const require = createRequire(join(packageRoot, "package.json"));
 if (typeof verifier.VerifierAgent !== "function") throw new Error("Verifier package missing application");
 if (typeof wallet.Wallet !== "function") throw new Error("Wallet package missing inventory owner");
-const { run } = await import(pathToFileURL(require.resolve("effection")).href);
+const { run, call } = await import(pathToFileURL(require.resolve("effection")).href);
 const root = await mkdtemp(join(tmpdir(), "tufa-verifier-runtime-"));
 try {
   await run(function*() {
@@ -29,6 +31,17 @@ try {
       if (!(yield* store.reopen())) throw new Error("Verifier cue store did not reopen");
       if (Object.values(store.getCounts()).some(count => count !== 0)) throw new Error("Verifier cue store changed on reopen");
     } finally { yield* store.close(true); }
+    const hby = yield* createHabery({ name: "installed-registrar", headDirPath: root, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    try {
+      const service = new Registrar(runtime.protocol, runtime.acdc.store);
+      const response = yield* call(() => service.handle(new Request("http://localhost/health")));
+      if (response.status !== 200) throw new Error("Installed registrar did not handle its public health operation");
+      yield* call(() => response.json());
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
     const inventory = yield* wallet.createWalletBaser({ name: "installed-wallet", headDirPath: root });
     try {
       if (inventory.issued.cntAll() !== 0 || inventory.admitted.cntAll() !== 0) throw new Error("Fresh wallet is not empty");
@@ -38,4 +51,4 @@ try {
     } finally { yield* inventory.close(true); }
   });
 } finally { await rm(root, { recursive: true, force: true }); }
-console.error("Installed verifier/wallet packages and owned store lifecycles passed.");
+console.error("Installed verifier/wallet/registrar packages and owned protocol/store lifecycles passed.");

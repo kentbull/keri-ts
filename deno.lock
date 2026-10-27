@@ -674,6 +674,13 @@
           "jsr:@std/assert@0.217",
           "npm:effection@^3.6.0"
         ]
+      },
+      "packages/registrar": {
+        "dependencies": [
+          "jsr:@deno/dnt@~0.42.3",
+          "jsr:@std/assert@0.217",
+          "npm:effection@^3.6.0"
+        ]
       }
     }
   }

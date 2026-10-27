@@ -13,7 +13,8 @@
     "packages/cesr",
     "packages/verifier",
     "packages/hosting",
-    "packages/wallet"
+    "packages/wallet",
+    "packages/registrar"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",

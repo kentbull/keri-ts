@@ -28,7 +28,7 @@ To run selected maintained owners in CI instead:
 
 Unit choices are the existing `required` owners in
 [suite inventory](../../scripts/ci/keri-test-suites.ts), plus `ci` (all KERI
-required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (the HTTP hosting tests), `wallet` (the wallet inventory tests), `cesr` and
+required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (the HTTP hosting tests), `wallet` (the wallet inventory tests), `registrar` (the publication/query service test), `cesr` and
 `ci-tools` (the scope contract tests). Interop choices are the concrete owners in
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.

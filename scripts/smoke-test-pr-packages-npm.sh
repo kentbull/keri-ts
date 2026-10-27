@@ -14,13 +14,14 @@ TUFA_TARBALL_PATH="${3:-}"
 VERIFIER_TARBALL_PATH="${4:-}"
 HOSTING_TARBALL_PATH="${5:-}"
 WALLET_TARBALL_PATH="${6:-}"
+REGISTRAR_TARBALL_PATH="${7:-}"
 
-if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" || -z "${WALLET_TARBALL_PATH}" ]]; then
-  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz>" >&2
+if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" || -z "${WALLET_TARBALL_PATH}" || -z "${REGISTRAR_TARBALL_PATH}" ]]; then
+  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz> <keri-ts-registrar.tgz>" >&2
   exit 1
 fi
 
-for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}" "${HOSTING_TARBALL_PATH}" "${WALLET_TARBALL_PATH}"; do
+for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}" "${HOSTING_TARBALL_PATH}" "${WALLET_TARBALL_PATH}" "${REGISTRAR_TARBALL_PATH}"; do
   if [[ ! -f "${tarball}" ]]; then
     echo "Tarball not found: ${tarball}" >&2
     exit 1
@@ -37,6 +38,7 @@ deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-ta
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${VERIFIER_TARBALL_PATH}"
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${HOSTING_TARBALL_PATH}"
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${WALLET_TARBALL_PATH}"
+deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${REGISTRAR_TARBALL_PATH}"
 
 KERI_TARBALL_DIR="$(cd "$(dirname "${KERI_TARBALL_PATH}")" && pwd)"
 KERI_TARBALL_NAME="$(basename "${KERI_TARBALL_PATH}")"
@@ -50,6 +52,8 @@ HOSTING_TARBALL_DIR="$(cd "$(dirname "${HOSTING_TARBALL_PATH}")" && pwd)"
 HOSTING_TARBALL_NAME="$(basename "${HOSTING_TARBALL_PATH}")"
 WALLET_TARBALL_DIR="$(cd "$(dirname "${WALLET_TARBALL_PATH}")" && pwd)"
 WALLET_TARBALL_NAME="$(basename "${WALLET_TARBALL_PATH}")"
+REGISTRAR_TARBALL_DIR="$(cd "$(dirname "${REGISTRAR_TARBALL_PATH}")" && pwd)"
+REGISTRAR_TARBALL_NAME="$(basename "${REGISTRAR_TARBALL_PATH}")"
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 
 echo "Running combined Docker smoke test on ${SMOKE_NODE_IMAGE}"
@@ -62,6 +66,7 @@ docker run --rm \
   -v "${VERIFIER_TARBALL_DIR}:/verifier-pkg" \
   -v "${HOSTING_TARBALL_DIR}:/hosting-pkg" \
   -v "${WALLET_TARBALL_DIR}:/wallet-pkg" \
+  -v "${REGISTRAR_TARBALL_DIR}:/registrar-pkg" \
   -v "${SAMPLES_DIR}:/samples" \
   -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro" \
   "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-pr-packages-container.sh \
@@ -70,4 +75,5 @@ docker run --rm \
     "/tufa-pkg/${TUFA_TARBALL_NAME}" \
     "/verifier-pkg/${VERIFIER_TARBALL_NAME}" \
     "/hosting-pkg/${HOSTING_TARBALL_NAME}" \
-    "/wallet-pkg/${WALLET_TARBALL_NAME}"
+    "/wallet-pkg/${WALLET_TARBALL_NAME}" \
+    "/registrar-pkg/${REGISTRAR_TARBALL_NAME}"
