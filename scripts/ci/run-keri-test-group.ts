@@ -83,14 +83,31 @@ function jobs(suite: TestSuite): number {
   return Math.min(requested, suite.jobs ?? 1);
 }
 
-/** Execute a suite; isolated files remain separate processes while safe files share a bounded pool. */
-async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
-  const suite = suites[name];
-  const env = { ...suite.env };
-  // Native protocol and storage owners use main; legacy/mailbox owners retain their selected peer.
-  const mainRoot = Deno.env.get("KERIPY_MAIN_ROOT");
-  if (["interop-essr-storage", "interop-ipex-disclosure"].includes(name) && mainRoot) {
-    const python = Deno.env.get("KERIPY_MAIN_PYTHON");
+/** Select the concrete owner's peer without allowing main setup to replace the candidate. */
+export function keripySuiteEnvironment(name: string, inherited: Record<string, string>): Record<string, string> {
+  const env = { ...inherited, ...suites[name]?.env };
+  if (name === "interop-native-registry") {
+    if (env.KERIPY_INTEROP_PROFILE !== "candidate") {
+      const root = env.KERIPY_CANDIDATE_ROOT?.trim();
+      const python = env.KERIPY_CANDIDATE_PYTHON?.trim();
+      if (!root || !python) throw new Error("Native registry requires a candidate root and Python interpreter.");
+      Object.assign(env, {
+        KERIPY_INTEROP_PROFILE: "candidate",
+        KERIPY_INTEROP_ROOT: root,
+        KERIPY_INTEROP_PYTHON: python,
+        KERIPY_INTEROP_EXPECTED_COMMIT: reference.profiles.candidate.commit,
+      });
+    }
+    if (!env.KERIPY_INTEROP_ROOT?.trim() || !env.KERIPY_INTEROP_PYTHON?.trim()) {
+      throw new Error("Native registry requires a candidate root and Python interpreter.");
+    }
+  }
+  const mainRoot = env.KERIPY_MAIN_ROOT;
+  if (
+    ["interop-essr-storage", "interop-ipex-disclosure"].includes(name) && mainRoot
+    && env.KERIPY_INTEROP_PROFILE !== "candidate"
+  ) {
+    const python = env.KERIPY_MAIN_PYTHON;
     if (!python) throw new Error("Main peer requires KERIPY_MAIN_PYTHON.");
     Object.assign(env, {
       KERIPY_INTEROP_PROFILE: "main",
@@ -99,6 +116,13 @@ async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
       KERIPY_INTEROP_EXPECTED_COMMIT: reference.profiles.main.commit,
     });
   }
+  return env;
+}
+
+/** Execute a suite; isolated files remain separate processes while safe files share a bounded pool. */
+async function runSuite(name: string, timings: CommandTiming[]): Promise<void> {
+  const suite = suites[name];
+  const env = keripySuiteEnvironment(name, Deno.env.toObject());
   // Explicit profile children execute files; the unselected owner expands the frozen matrix.
   const expandProfiles = name === "interop-reference-profiles" && !Deno.env.get("KERIPY_INTEROP_PROFILE");
   const executable = expandProfiles ? "python3" : Deno.execPath();

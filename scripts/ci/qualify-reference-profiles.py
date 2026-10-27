@@ -17,7 +17,9 @@ def main():
     profiles = json.loads((repo / "scripts/ci/keripy-reference.json").read_text())["profiles"]
     cache = repo / ".cache/keripy-release-profiles"
     cache.mkdir(parents=True, exist_ok=True)
-    for name, profile in profiles.items():
+    # The native-v2 candidate has its own owner, outside this frozen release matrix.
+    for name in ("main", "1.2", "1.3"):
+        profile = profiles[name]
         root = cache / profile["commit"]
         if not root.exists():
             run("git", "init", "--quiet", str(root))

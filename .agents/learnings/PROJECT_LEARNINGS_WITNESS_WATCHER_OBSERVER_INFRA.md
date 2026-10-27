@@ -44,6 +44,15 @@ checkouts through `KERIPY_INTEROP_PROFILE` and explicit root/interpreter paths.
 Their CLI/version and export-genus differences are test-launch data, not runtime
 compatibility shims. Keep actual-peer lifecycle qualification separate from bootstrap smoke.
 
+The native-v2 candidate is a separate manifest profile with the six source pins and
+existing R/W/spec references. `interop-native-registry` owns its existing reciprocal
+proof/reopen file; the five IPEX disclosure files remain main-selected until their
+wire-profile alignment. Candidate root/interpreter configuration fails closed and
+cannot be replaced by `KERIPY_MAIN_ROOT`. Reuse the setup action with its concrete
+profile input; retain the explicit main/1.2/1.3 frozen matrix. Native proof children
+already own temporary `openHby` stores; scope further isolation repairs to operations
+the candidate lane actually launches.
+
 LMDB V1 needs its own native rebuild/preflight and cache boundary. PR merge-ref
 caches are invisible to later PRs: the master cache-warming workflow publishes
 both existing dependency variants for reuse across branches. Native caches include

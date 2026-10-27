@@ -173,6 +173,12 @@ jobs:
         if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure"]'), matrix.target)
         uses: ./.github/actions/setup-keripy-main-peer
 
+      - name: Prepare pinned native candidate peer
+        if: matrix.target == 'interop-native-registry'
+        uses: ./.github/actions/setup-keripy-main-peer
+        with:
+          profile: candidate
+
       - name: run selected KERIpy interop owner
         shell: bash
         env:
