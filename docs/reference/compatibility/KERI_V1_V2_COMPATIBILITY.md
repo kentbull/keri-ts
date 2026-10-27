@@ -110,7 +110,9 @@ Evidence: [media recognition/framing](../../../packages/keri/test/unit/app/trans
 **Coexistence.** [CESR HTTP helpers](../../../packages/keri/src/app/transport/cesr-http.ts)
 default to one body plus detached `CESR-ATTACHMENT`, reconstruct inbound wire in
 order, and expose explicit full-body/stream requests. Header-mode sending prepares
-one complete frame per HTTP request. Full-body mode is a supported TS integration,
+one complete frame per HTTP request. `CESR-Genus` preserves the observed attachment
+context independently of the signed body's protocol version; intake restores that
+selector before the unchanged body and detached attachments. Full-body mode is a supported TS integration,
 not a universally portable replacement for the Python detached convention.
 Evidence: [CESR HTTP framing tests](../../../packages/keri/test/unit/app/transport/cesr-http.test.ts).
 
@@ -264,8 +266,9 @@ version does not test its native Baser binding or full Habery/Keeper interchange
 Direct legacy LMDB support has a [deferred canonical roadmap owner](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility)
 outside the 2.0 gate; legacy wire support remains required.
 
-Disclosure recovery has two bounded API differences from selected Python
-`c60da4bf`; [the CESR owner regressions](../../../packages/cesr/test/unit/primitives/structuring/disclosure.test.ts)
+Disclosure recovery has two bounded API differences from the selected Python
+[candidate `8f973432`](https://github.com/kentbull/keripy/blob/8f9734326314287a3dbd548b3e0cf4b8a6571add/src/keri/core/structing.py);
+[the CESR owner regressions](../../../packages/cesr/test/unit/primitives/structuring/disclosure.test.ts)
 cover the TypeScript behavior:
 
 - `unblindBlindState` and `unblindBoundState` accept deterministic `raw` salt
@@ -285,7 +288,7 @@ ACDC v2 reporting has an explicit application-policy difference. The TypeScript
 [verifier](../../../packages/verifier/src/acdc-v2.ts) requires an issued origin
 and the shared graph evaluator's true verdict over current authenticated node
 states. A known revoked far node can therefore satisfy NOR/NAND. Selected
-[Dolly `b0a172a6`](https://github.com/kentbull/dolly/blob/b0a172a6bab4c3a3c61985bee893b3395e78c351/src/dolly/serving.py)
+[Dolly `06a37fbb`](https://github.com/kentbull/dolly/blob/06a37fbb154aec83f09d46c162becac663d9f1e9/src/dolly/serving.py)
 additionally requires every disclosed node to remain issued. Both retain the
 same authenticated wire evidence; reporting decisions can differ. The existing
 [verifier workflow](../../../packages/tufa/test/integration/verifier-workflow.test.ts)
@@ -301,7 +304,7 @@ invalid evidence remains unresolved or refused under either policy.
 | GAP-02 | Legacy replay, forwarding and mailbox reachability   | Audit actual send paths and peer genera. TEL replay now selects actual request framing and refuses unsupported downward conversion; header-only mailbox polling does not inherit COMP-01 automatically. See the [admission contract](../../design-docs/exchange/MESSAGE_ADMISSION.md).                                                               |
 | GAP-03 | Database upgrade, rollback and pending-work recovery | ESSR targets main `essrs.`; legacy Baser binds `.essrs`. Direct legacy LMDB interchange/migration is deferred outside 2.0 to the [DB roadmap](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility). No discovery, dual writes or migration supplied. Legacy wire remains required; older keri-ts private formats remain unsupported. |
 | GAP-04 | Broad historical archive acceptance                  | COMP-04 covers named extensions, not every old large-counter encoding or removed Matter code. Audit actual archives; never reinterpret removed codes under a new meaning.                                                                                                                                                                            |
-| GAP-05 | New feature rollout to old peers                     | Native CESR bodies, ACDC v2 registry/disclosure workflows and KRAM need explicit adoption profiles. TS DI2I/NOT and RegistryObserver integration have separate Python reference gaps; they are not already qualified forward-compatibility bridges.                                                                                                  |
+| GAP-05 | New feature rollout to old peers                     | Native CESR bodies, ACDC v2 registry/disclosure workflows and KRAM need explicit adoption profiles. The selected candidate's operators and registrar/observer services do not establish those capabilities in other upstream or legacy profiles.                                                                                                     |
 | GAP-06 | Python application/API and operational parity        | Source, HTTP, CLI and Python API differences need independent checks. GLEIF completion/connection fixes are relevant donor evidence, not proof that WebOfTrust 2.x includes every 1.x fix. Preserve [transport boundaries](../../design-docs/runtime/INGRESS_AND_EGRESS.md).                                                                         |
 
 ## Maintenance rule

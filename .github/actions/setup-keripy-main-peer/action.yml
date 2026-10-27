@@ -66,6 +66,6 @@ runs:
       if: inputs.services == 'true'
       shell: bash
       run: |
-        # Install only the apps: their declared 7ea core pins remain unchanged.
-        # This explicit selected-candidate override is not family qualification.
+        # Keep the selected core editable while adding the selected service sources.
+        # Source-import interop is separate from installed declared-family qualification.
         "$RUNNER_TEMP/keripy-candidate-venv/bin/python" -m pip install --no-deps -e .cache/registrar -e .cache/observer

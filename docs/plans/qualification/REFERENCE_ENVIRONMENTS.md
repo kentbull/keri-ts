@@ -31,14 +31,15 @@ peer. Local direct storage runs require the explicit `main` profile/root/Python;
 suite runs may instead supply `KERIPY_MAIN_ROOT` and
 `KERIPY_MAIN_PYTHON`. No legacy Baser qualification is implied.
 
-The same action's `profile: candidate` input prepares the native-v2 candidate for
+The same action's `profile: candidate` input prepares the ACDC v2 candidate for
 `interop-native-registry` and `interop-ipex-disclosure` in PR and extended workflows. Local owner runs require
 `KERIPY_CANDIDATE_ROOT` and `KERIPY_CANDIDATE_PYTHON`, or explicit
 `KERIPY_INTEROP_PROFILE=candidate` with its root and interpreter. Main setup cannot
 replace this selection; missing candidate configuration and mismatched source/imports
-fail before protocol state. The native-registry owner retains the existing two reciprocal native
-proof cases and TS intake/reopen assertions. Its Python children use context-managed
-temporary stores; no persistent CLI stores or witness processes are launched.
+fail before protocol state. The native-registry owner covers reciprocal proof
+intake, protected custody handoff with fresh-process reopen, and reciprocal
+registrar/observer service boundaries. Its stores and service processes remain
+owned by the test's temporary scope.
 
 The `interop-kram` owner retains its mailbox-fork environment. Its pairwise IPEX
 file separately verifies the candidate Python IPEX actor, while the provider and
@@ -53,6 +54,12 @@ These are a selected interoperability target, not a conformance claim. The five 
 disclosure files use the candidate's flat-`dp` profile; the main and v1 frozen matrices
 remain independent.
 
+The integrated ACDC v2 target selects core `8f9734326314287a3dbd548b3e0cf4b8a6571add`.
+Application merge pins select the declared consumer family. The editable-source
+CI setup verifies the selected source/imports;
+it does not establish that the applications' declared dependencies resolve to the
+same installed family. Preserve that distinction in the final results.
+
 `scripts/ci/keripy-reference.json` freezes independent release profiles selected
 on 2026-10-20; main advanced to c7e74ad before final qualification. These supplement the mailbox-fork default; they do not relabel it.
 
@@ -65,7 +72,9 @@ on 2026-10-20; main advanced to c7e74ad before final qualification. These supple
 The `1.2` target is GLEIF-IT/keripy with `gleif-keri`/`gleif-hio` distributions;
 main and 1.3 retain WebOfTrust/keripy. It replaces the original 1.2.14 pin after
 its Directant dropped queued input on EOF. `qualify-reference-profiles.py` prepares
-only these three isolated environments for CI; candidate qualification has its own owner.
+these three isolated environments and the separately pinned candidate. Candidate-only
+ACDC v2 group cases are skipped in the older profiles; those skips are not
+qualification credit for the candidate.
 
 Prepare each clean checkout with its own venv, install it editable with the
 listed dependency pins, then set `KERIPY_INTEROP_PROFILE`,
@@ -130,6 +139,22 @@ context before the unchanged CLI stream, as the existing export-parity owner doe
    unless supported by the corresponding actual-path run.
 
 ## Current qualification evidence
+
+The final integrated ACDC v2 head requires the existing `keri-ci` selection with
+`full: true`: all required units, 17 interop owners and eight package smokes.
+That integrated run and the installed six-story application/GUI qualification
+are pending; earlier scoped checks and development artifact combinations do not
+replace them. The existing application harness includes installed CLI/unblind,
+protected custody/restart/derive and representative Locksmith GUI controls.
+
+The coherent Python family at core `8f973432` passed its 46 installed consumer
+owners: Dolly 2, Locksmith 32, Registrar 3, Observer 7 and Witness 2. All five
+consumer declarations and installed `Requires-Dist` selected that exact core;
+`pip check` passed. All 449 Python files matched committed source, normal wheels
+and actual installed imports before and after testing. These installed-owner
+results do not supply the pending end-to-end application or integrated TS credit.
+
+The following 1.0.0 results are historical evidence for their recorded sources.
 
 The 2026-10-16 clean source candidate `7217902a` completed all 25 KERI owners:
 943 cases over 142 files, including pairwise graduated disclosure, KRAM, composed
