@@ -93,7 +93,11 @@ Deno.test("acdc/messaging - canonical partial section commitments survive creden
       assertEquals(new SerderACDC({ raw: partial.raw }).sad![label], input);
       const tampered = structuredClone(partial.sad!);
       ((tampered[label] as MapperMap).status as MapperMap).value = "changed";
-      assertThrows(() => new SerderACDC({ sad: tampered }), DeserializeError, "compact-form ACDC SAID");
+      assertThrows(
+        () => new SerderACDC({ sad: tampered }),
+        DeserializeError,
+        `Invalid disclosed ${label} section commitment`,
+      );
     }
   }
 });
@@ -125,6 +129,9 @@ Deno.test("acdc/messaging - regcept matches KERIpy JSON and CESR vectors", () =>
 });
 
 Deno.test("acdc/messaging - registry update messages match KERIpy vectors", () => {
+  for (const sn of [0, 0n, -1, -1n]) {
+    assertThrows(() => blindate(regid, regid, blid, { sn }), ValidationError);
+  }
   const bupJson = blindate(regid, regid, blid, { stamp: updateStamp });
   assertEquals(bupJson.said, "EDGouTZMjO0HbHefvBrYtpWTY6y5TykF2LDgaZJNiJjB");
   assertEquals(
@@ -190,8 +197,8 @@ Deno.test("acdc/messaging - top-level and section builders produce compact discl
   assertEquals(agg, null);
   assertEquals(att?.ked?.a, { d: acdc.ked?.a, ...attribute, i: issuee });
   assertEquals(sch.ked?.s, actSchemaDefault()[1]);
-  assertEquals(edg.ked?.e, { d: acdc.ked?.e });
-  assertEquals(rul.ked?.r, { d: acdc.ked?.r });
+  assertEquals([acdc.ked?.e, edg.ked?.e], [{}, {}]);
+  assertEquals([acdc.ked?.r, rul.ked?.r], [{}, {}]);
   assertEquals(new SerderACDC({ raw: acdc.raw }).said, acdc.said);
 
   const expanded = acdcatt(issuer, { uuid, regid, issuee, attribute });

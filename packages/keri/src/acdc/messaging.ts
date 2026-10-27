@@ -215,6 +215,7 @@ export function blindate(
   options: BlindateOptions = {},
 ): SerderACDC {
   const { sn = 1, stamp, pvrsn = Vrsn_2_0, gvrsn = Vrsn_2_0, kind = Kinds.json } = options;
+  if (BigInt(sn) < 1n) throw new ValidationError(`ACDC blindable update sequence number must be positive: ${sn}`);
   return new SerderACDC({
     sad: {
       v: versionString({ pvrsn, gvrsn, kind }),

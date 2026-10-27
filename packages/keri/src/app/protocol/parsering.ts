@@ -186,6 +186,8 @@ export function* dispatchEnvelope(
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
+    // Historical upd bytes remain decodable, but cannot enter live registry processing.
+    if (serder.ilk === Ilks.upd) return { envelope, decision: { kind: "reject", reason: "event" } };
     if (serder.ilk === Ilks.rip || serder.ilk === Ilks.bup) {
       return {
         envelope,
