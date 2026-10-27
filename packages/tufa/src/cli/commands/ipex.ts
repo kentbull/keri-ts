@@ -1,5 +1,5 @@
 /** IPEX presentation after the KERI command has joined workers and closed owned stores. */
-import type { Operation } from "effection";
+import { call, type Operation, scoped, spawn } from "effection";
 import {
   ipexAdmitCommand as admit,
   ipexAgreeCommand as agree,
@@ -10,8 +10,14 @@ import {
   ipexPollCommand as poll,
   type IpexSendResult,
   ipexSpurnCommand as spurn,
+  parseBooleanOption,
+  parseGvrsn,
+  parseStringOption,
 } from "keri-ts/cli";
+import { CREDENTIAL_MAILBOX_TOPIC, runAgentRuntime, ValidationError } from "keri-ts/runtime";
+import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
+import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
 function printSend({ exn, deliveries, group }: IpexSendResult): void {
@@ -65,6 +71,10 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
 
 /** Display the admit/grant relationship after cleanup; wallet acceptance remains a protocol fact. */
 export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void> {
+  if (parseBooleanOption(args.native, "native") ?? false) {
+    yield* nativeAdmit(args);
+    return;
+  }
   const { admit: exn, grant, credential, saved, deliveries, group } = yield* admit(args);
   const facts = { grant: grant.said, credential, saved, deliveries };
   if (!exn) writeJsonLine({ ...facts, status: "credential-pending" });
@@ -76,6 +86,55 @@ export function* ipexAdmitCommand(args: Record<string, unknown>): Operation<void
       lead: group.lead,
       messages: group.messages,
     });}
+}
+
+/** Compose a single-holder native admission; domain checks and signing belong to Wallet. */
+function* nativeAdmit(args: Record<string, unknown>): Operation<void> {
+  const consent = parseBooleanOption(args.consent, "consent") ?? false;
+  if (!consent) throw new ValidationError("Native wallet admission requires explicit --consent.");
+  const said = parseStringOption(args.said, "said"), alias = parseStringOption(args.alias, "alias");
+  if (!said) throw new ValidationError("Accepted native Grant --said is required.");
+  if (args.grantFile) throw new ValidationError("Native wallet admission selects an accepted Grant with --said.");
+  const out = parseStringOption(args.out, "out"), message = parseStringOption(args.message, "message") ?? "";
+  const gvrsn = parseGvrsn(args.gvrsn ?? "2");
+  const completed = yield* withHabAndAgentRuntime(
+    walletStoreArgs(args),
+    alias,
+    { skipConfig: true },
+    function*({ hby, runtime, hab }) {
+      return yield* scoped(function*() {
+        if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+        const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
+        const prepared = yield* call(() => wallet.prepareAdmit(said, hab.pre, { consent, message, gvrsn }));
+        yield* runtime.reactor.processBytes(prepared.wire, { local: true });
+        yield* runtime.protocol.processEscrowsOnce();
+        if (!runtime.exc.complete(prepared.admit.said!)) {
+          throw new ValidationError("Local native Admit was not accepted.");
+        }
+        const admission = yield* call(() => wallet.recordAdmission(said, prepared.admit.said!, { consent }));
+        let deliveries: string[] = [];
+        if (out) Deno.writeFileSync(out, prepared.wire);
+        else {
+          const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: false }));
+          try {
+            const event = runtime.postman.send({
+              src: hab.pre,
+              dest: prepared.admit.sad!.ri as string,
+              topic: CREDENTIAL_MAILBOX_TOPIC,
+              msg: prepared.wire,
+            }, { notify: true });
+            const outcome = yield* runtime.postman.wait(event);
+            if (outcome.kin === "failed") throw outcome.error;
+            deliveries = outcome.deliveries;
+          } finally {
+            yield* host.halt();
+          }
+        }
+        return { ...admission, said: prepared.admit.said!, deliveries };
+      });
+    },
+  );
+  writeJsonLine(completed);
 }
 
 /** Project settled mailbox records without exposing Serder internals in CLI JSON. */

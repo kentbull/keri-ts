@@ -9,6 +9,15 @@ opening. `recordAdmission(..., {consent: true})` requires current authenticated
 root truth, the intended local holder and the actual accepted response.
 Neither protocol intake nor reading a Grant creates consent automatically.
 
+`prepareAdmit(grant, holder, {consent: true})` checks the exact accepted Grant,
+intended local holder and current authenticated root `true` before signing a
+native response. It returns `{admit, wire}` without recording inventory. The
+caller admits that wire through ordinary ingress, then calls `recordAdmission`
+with the actual accepted pair. False/unknown graphs and missing consent never
+produce a signature. This operation supports ordinary single-signature holders;
+negotiated source anchoring and group admission are deferred and refuse before
+signing. Native attachment genus defaults to 2.0.
+
 `inventory`, `admissions`, `issuedCredential` and asynchronous `heldCredential`
 read retained history. Held proofs come from that Grant's original nested rows;
 a later fuller disclosure, registry update or policy decision does not replace

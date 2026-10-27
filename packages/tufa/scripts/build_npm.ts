@@ -48,7 +48,13 @@ interface TufaNpmTargets {
 // Source markers identify generated CLI/module targets after DNT path rewriting.
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
-const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/", "/verifier/src/", "/hosting/src/"];
+const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
+  "/keri/src/",
+  "/cesr/src/",
+  "/verifier/src/",
+  "/hosting/src/",
+  "/wallet/src/",
+];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
   "libsodium-wrappers-sumo",
@@ -74,8 +80,10 @@ function dntPackageMappings(
   cesrVersion: string,
   verifierVersion: string,
   hostingVersion: string,
+  walletVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
@@ -195,6 +203,7 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
 const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
+const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
 
 await build({
   entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
@@ -203,7 +212,13 @@ await build({
     deno: true,
   },
   configFile: DENO_CONFIG_PATH,
-  mappings: dntPackageMappings(keriPackageVersion, cesrPackageVersion, verifierPackageVersion, hostingPackageVersion),
+  mappings: dntPackageMappings(
+    keriPackageVersion,
+    cesrPackageVersion,
+    verifierPackageVersion,
+    hostingPackageVersion,
+    walletPackageVersion,
+  ),
   typeCheck: false,
   test: false,
   skipNpmInstall: true,
@@ -242,6 +257,7 @@ await build({
       "@deno/shim-deno": "~0.18.0",
       "@keri-ts/verifier": verifierPackageVersion,
       "@keri-ts/hosting": hostingPackageVersion,
+      "@keri-ts/wallet": walletPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
@@ -269,6 +285,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/cesr`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/hosting`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/wallet`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
