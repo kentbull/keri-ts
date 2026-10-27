@@ -2,6 +2,7 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import reference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import {
   concatBytes,
   Counter,
@@ -336,7 +337,10 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
   }
 });
 
-Deno.test("selected Python and TypeScript explicitly approve ACDC v2 issuer and holder group lifecycles", async () => {
+Deno.test({
+  name: "selected Python and TypeScript explicitly approve ACDC v2 issuer and holder group lifecycles",
+  ignore: selectedKeripyProfile(Deno.env.toObject())?.commit !== reference.profiles.candidate.commit,
+}, async () => {
   const ctx = await createInteropContext(), port = randomPort(), origin = `http://127.0.0.1:${port}`;
   const child = spawnChild(
     ctx.pythonCommand,
@@ -414,7 +418,9 @@ Deno.test("selected Python and TypeScript explicitly approve ACDC v2 issuer and 
           }
           const schema = new Schemer({ sed: { $id: "", version: "1.0.0", type: "object" } });
           for (const role of roles) role.hby.db.schema.pin(schema.said, schema);
-          for (const label of ["issuer", "holder"]) yield* call(() => control(label, "schema", { schema: schema.sed }));
+          for (const label of ["issuer", "holder"]) {
+            yield* call(() => control(label, "schema", { schema: schema.sed }));
+          }
           const groups: Hab[] = [];
           for (const [index, label] of ["issuer", "holder"].entries()) {
             const role = roles[index], peer = peers[label];
@@ -429,7 +435,10 @@ Deno.test("selected Python and TypeScript explicitly approve ACDC v2 issuer and 
             for (const target of roles) yield* post(own, target.url);
             yield* post(own, index ? `${origin}/holder` : `${origin}/`);
             const mids = [role.member.pre, peer.member];
-            const made = role.hby.makeGroupHab("group", role.member, mids, mids, undefined, { isith: "2", nsith: "2" });
+            const made = role.hby.makeGroupHab("group", role.member, mids, mids, undefined, {
+              isith: "2",
+              nsith: "2",
+            });
             yield* post(
               concatBytes(Counter.makeGVC(Vrsn_1_0), made.message),
               index ? `${origin}/holder` : `${origin}/`,
@@ -691,12 +700,16 @@ Deno.test("selected Python and TypeScript explicitly approve ACDC v2 issuer and 
             false,
             "independent verifier has no inherited Grant state",
           );
-          const onward = yield* holder.discloser.prepareGrantBody(holderGroup.pre, { fromGrant: selected.exn.said! }, {
-            message: "exact group-held presentation",
-            recipient: verifier.member.pre,
-            xid: presentation.said!,
-            plan: [[schema.said, "/", []]],
-          });
+          const onward = yield* holder.discloser.prepareGrantBody(
+            holderGroup.pre,
+            { fromGrant: selected.exn.said! },
+            {
+              message: "exact group-held presentation",
+              recipient: verifier.member.pre,
+              xid: presentation.said!,
+              plan: [[schema.said, "/", []]],
+            },
+          );
           const onwardWire = yield* completeExchange(1, onward.exn, yield* presentationProof(onward));
           yield* post(onwardWire, verifier.url);
           assertEquals(verifier.runtime.exc.complete(onward.exn.said!), true);

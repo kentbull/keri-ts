@@ -17,8 +17,8 @@ def main():
     profiles = json.loads((repo / "scripts/ci/keripy-reference.json").read_text())["profiles"]
     cache = repo / ".cache/keripy-release-profiles"
     cache.mkdir(parents=True, exist_ok=True)
-    # The native-v2 candidate has its own owner, outside this frozen release matrix.
-    for name in ("main", "1.2", "1.3"):
+    # Candidate-only ACDC v2 cases coexist with the maintained release compatibility lanes.
+    for name in ("main", "1.2", "1.3", "candidate"):
         profile = profiles[name]
         root = cache / profile["commit"]
         if not root.exists():
