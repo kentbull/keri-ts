@@ -19,7 +19,7 @@ import {
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { acdcmap } from "../../../src/acdc/messaging.ts";
+import { acdcmap, acmSchemaDefault } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
@@ -141,7 +141,25 @@ for (const count of [1, 2]) {
               const rip = issuerRuntime.acdc!.store.event(registry.regk!)!;
               yield* anchor(rip, [issuer], [issuerRuntime]);
               accepted(registry, rip);
+              // Prove closure of the requested status subtree while its private sibling stays hidden.
+              const schema = acmSchemaDefault()[1];
+              schema.$id = "";
+              ((schema.properties as MapperMap).a as MapperMap).oneOf = [
+                { type: "string" },
+                {
+                  type: "object",
+                  properties: {
+                    status: {
+                      type: "object",
+                      required: ["d", "u", "value"],
+                      properties: { d: { type: "string" }, u: { type: "string" }, value: { type: "string" } },
+                      additionalProperties: false,
+                    },
+                  },
+                },
+              ];
               const credential = acdcmap(issuer.pre, {
+                schema,
                 regid: rip.said!,
                 uuid: nonce(),
                 attribute: {
