@@ -199,8 +199,7 @@ export async function readMailboxAdminRequest(
 /** Parse and return the first CESR message in one request body. */
 export function inspectCesrRequest(bytes: Uint8Array): SerderKERI | null {
   try {
-    const { smellage } = smell(bytes);
-    const serder = parseSerder(bytes.slice(0, smellage.size), smellage);
+    const serder = parseBytes(bytes)[0]?.body;
     return serder instanceof SerderKERI ? serder : null;
   } catch {
     return null;
