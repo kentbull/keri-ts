@@ -76,6 +76,7 @@ function* peers() {
   const exchanger = new Exchanger(receiver);
   loadIpexHandlers(receiver, exchanger, { registry });
   // These focused graphs use a single link at each depth; broader branching has separate cases.
+  // Request node presence; dedicated IPEX closure controls own whole-disclosure claims.
   const grant = (nodes: CesrFrame[], paths?: readonly string[]) => {
     const bodies = nodes.map((node) => node.body as SerderACDC);
     const serder = ipexExnBody(sender.pre, "/ipex/grant", bodies, {
@@ -85,7 +86,7 @@ function* peers() {
       plan: bodies.map((body, i) => [
         (body.schema as { $id: string }).$id ?? body.schema as string,
         paths?.[i] ?? (i ? `/e/link/_/${"e/link/_/".repeat(i - 1)}` : "/"),
-        [""],
+        [],
       ]),
     });
     return { serder, tsgs: [proof(serder, sender)], nests: nodes };

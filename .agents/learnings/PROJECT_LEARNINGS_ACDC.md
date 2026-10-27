@@ -219,6 +219,15 @@ bare-root schemas retain original bundled URI IDs across credential body formats
 s is their root ID. Serder checks commitments, while S1 checks each resource and
 its profile. Verification never repairs stale explicit schema claims. Frozen
 default/unbound format-specific schema construction remains separately qualified.
+One private SchemaResources owner authenticates roots, bundled IDs and static
+references for both ordinary validation and bounded disclosure closure. Whole
+`[""]`, relative `d/` and trailing-separator subtree claims use the selected
+explicit-acm schema proof: declared closed objects or schema-valued additional
+properties, unambiguous typed oneOf, and static refs without constraint siblings.
+Open/ambiguous schemas and whole aggregates refuse; scalar-only SAID strings are
+data, while compact-or-object positions must expose the object. Ordinary schema
+validation and issuer authentication remain separate. Missing resources retain
+the existing schema retry; closure never expands borrowed received credentials.
 
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.

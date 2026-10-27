@@ -65,13 +65,20 @@ propagate. Operator-specific interoperability remains separately qualified; hidd
 and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
 are separate work. The existing wire generator now records the selected candidate
 pin and its flat-plan decisions; independent historical primitive references stay frozen.
-Its whole-disclosure positive uses a closed typed schema, as required by the
-candidate's bounded closure check. TS still accepts some open or ambiguous whole-node
-schemas without proving recursive closure. It also rejects extra labeled leaf
+Whole-node `[""]` and relative `d/`, and trailing-separator subtree paths, require
+schema-proven closure under the selected explicit-acm profile. Static resources
+are authenticated by the same private owner as ordinary node validation; no
+received value is resolved or expanded. A string-only schema position remains
+ordinary scalar data even for SAID-shaped values, while a compact-or-object
+position must expose the map. Only closed typed objects or schema-valued additional
+properties, unambiguous typed oneOf and static refs without constraint siblings
+are supported; open/ambiguous schema forms and whole aggregates refuse. Missing
+schema resources use the existing retry path. Node presence `[]` and explicit
+leaf requests retain their independent meanings. TS still rejects extra labeled leaf
 properties permitted by the [pinned Edge property-field rule](https://github.com/trustoverip/kswg-acdc-specification/blob/2362e48a1e8668278575b4f5b239069b2c1a82ad/spec/spec-body.md#labeled-property-fields);
 that strict handling is a remaining row 14 compatibility gap, not a malformed-edge
-requirement. These gaps and remaining prefix/BFS semantics belong to the later
-disclosure-closure work. The selected cases do not qualify universal whole-node
+requirement. Those edge rules and remaining prefix/BFS semantics belong to the later
+disclosure-path work. The selected cases do not qualify universal whole-node
 interoperability.
 
 The TypeScript DI2I contract admits identity or an approved delegation chain at any

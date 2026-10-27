@@ -161,9 +161,11 @@ The selected candidate's `q.dp` is the flat disclosure triple list. Empty `[]` i
 accepted-prior inheritance: reject empty Apply/unsolicited Offer/bare Grant, keep
 Agree empty, and default solicited Offer/linked Grant to ditto. Bare one-node Grant
 still states its explicit root selection. Builders, handler and resolver share this
-shape; never translate authenticated nested-plan bytes. Candidate whole-node claims
-require closed typed schemas. The positive wire fixture supplies one; TS open/ambiguous
-whole-schema refusal and remaining path/closure semantics still need their own cut.
+shape; never translate authenticated nested-plan bytes. Whole-node and subtree
+claims require the bounded schema closure proof owned by acdc/scheming.ts; missing
+schema resources use the existing EXN schema escrow. Presence and explicit leaf
+paths retain their separate meaning. Compact-edge and prefix/omission semantics
+remain separate cuts.
 V2 IPEX Offers carry body-only reachable subgraphs and validate carried schemas;
 child proof attachments belong to Grants. Grants refuse field-map metadata with
 explicit empty `u`, while public fixed-field `act`/`acg` UUID slots remain valid.
