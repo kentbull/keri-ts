@@ -37,16 +37,20 @@ export class WalletAuthor {
     }
   }
 
-  /** Resolve only this local single-controller registry; groups retain their separate approval workflow. */
+  /** Resolve the actual local registry; staging supports groups while signing methods enforce their owner. */
   registry(name: string, controller: string): AcdcV2Registry {
     const registry = this.rgy.registryByName(name);
     if (!registry || registry.hab.pre !== controller) {
       throw new ValidationError("Unknown registry or different controller.");
     }
-    if (isLocalGroupHab(this.wallet.hby, registry.hab)) {
+    return registry;
+  }
+
+  /** Signing belongs either to this individual owner or to explicit group approval, never a staging flag. */
+  private individual(reg: AcdcV2Registry): void {
+    if (isLocalGroupHab(this.wallet.hby, reg.hab)) {
       throw new ValidationError("ACDC v2 group authoring requires member approval.");
     }
-    return registry;
   }
 
   /** Idempotently stage an alias, then return only its exact accepted inception. */
@@ -74,6 +78,30 @@ export class WalletAuthor {
     acdc: SerderACDC,
     state: string,
     options: AcdcV2UpdateOptions = {},
+  ): { event: SerderACDC; opening: RegistryDisclosure } {
+    return this.stageState(reg, acdc, state, options);
+  }
+
+  /** Ensure revocation of retained local issuance; an identical accepted revocation remains an idempotent retry. */
+  stageRevocation(
+    reg: AcdcV2Registry,
+    said: string,
+    options: AcdcV2UpdateOptions = {},
+  ): { event: SerderACDC; opening: RegistryDisclosure } {
+    const record = this.wallet.db.issued.get([said]);
+    if (!record || record.registry !== reg.regk) {
+      throw new ValidationError("Credential is not in this registry's issued inventory.");
+    }
+    return this.stageState(reg, this.wallet.issuedCredential(said), "revoked", options, true);
+  }
+
+  /** Share validation and exact pending-next reuse; only the concrete revocation ensure operation can reuse an accepted head. */
+  private stageState(
+    reg: AcdcV2Registry,
+    acdc: SerderACDC,
+    state: string,
+    options: AcdcV2UpdateOptions,
+    ensureRevoked = false,
   ): { event: SerderACDC; opening: RegistryDisclosure } {
     this.registry(reg.name, acdc.issuer!);
     if (!acdc.verify() || acdc.regid !== reg.regk) {
@@ -123,7 +151,7 @@ export class WalletAuthor {
       if (!options.public) this.custody!.retainDerivedUpdate(event, opening);
       return { event, opening };
     }
-    if (sn && head.ilk === "bup") {
+    if (ensureRevoked && sn && head.ilk === "bup") {
       const published = reg.store.publicOpening(head.said!);
       const opening = options.public ? published : derive(sn);
       if (opening && matches(head, opening) && (!options.public || published)) {
@@ -153,6 +181,7 @@ export class WalletAuthor {
     state: string,
     options: AcdcV2UpdateOptions = {},
   ): Operation<SerderACDC> {
+    this.individual(reg);
     const { event } = this.stage(reg, acdc, state, options);
     yield* this.anchor(reg, event);
     return event;
@@ -160,6 +189,7 @@ export class WalletAuthor {
 
   /** Preserve original issued history on retry; inventory follows exact witnessed TEL acceptance. */
   *issue(reg: AcdcV2Registry, acdc: SerderACDC, options: AcdcV2UpdateOptions = {}) {
+    this.individual(reg);
     this.registry(reg.name, acdc.issuer!);
     if (acdc.regid !== reg.regk) throw new ValidationError("Credential does not match this registry.");
     const old = this.wallet.db.issued.get([acdc.said!]);
@@ -171,16 +201,16 @@ export class WalletAuthor {
 
   /** Revoke only locally retained issuance, not an unrelated arbitrary target digest. */
   *revoke(reg: AcdcV2Registry, said: string, options: AcdcV2UpdateOptions = {}): Operation<SerderACDC> {
-    const record = this.wallet.db.issued.get([said]);
-    if (!record || record.registry !== reg.regk) {
-      throw new ValidationError("Credential is not in this registry's issued inventory.");
-    }
-    return yield* this.update(reg, this.wallet.issuedCredential(said), "revoked", options);
+    this.individual(reg);
+    const { event } = this.stageRevocation(reg, said, options);
+    yield* this.anchor(reg, event);
+    return event;
   }
 
   /** Reuse the current branch's already signed seal even before receipts; no extra anchor merely to poll. */
   *anchor(reg: AcdcV2Registry, event: SerderACDC): Operation<void> {
     this.registry(reg.name, reg.hab.pre);
+    this.individual(reg);
     const ordinal = Number(BigInt(`0x${event.sad!.n}`));
     const accepted = reg.store.seqEvent(reg.regk!, ordinal);
     if (accepted && bytesEqual(accepted.raw, event.raw)) return;

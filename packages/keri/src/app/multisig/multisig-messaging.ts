@@ -8,7 +8,7 @@
  * Neither completed transport nor collection of these identities proves group
  * acceptance. Callers must check their own accepted KEL/RPY/TEL/credential state.
  */
-import { concatBytes, type SerderKERI } from "cesr-ts";
+import { concatBytes, Counter, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "effection";
 import type { Baser } from "../../db/basing.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -68,7 +68,7 @@ export function multisigPayloadSaid(serder: SerderKERI): string | null {
     return typeof said === "string" && said.length > 0 ? said : null;
   }
   const route = serder.route ?? "";
-  const said = payloadSection(ked)[route.slice(route.lastIndexOf("/") + 1)];
+  const said = payloadSection(ked)[route === "/multisig/registry" ? "anc" : route.slice(route.lastIndexOf("/") + 1)];
   return typeof said === "string" && said.length > 0 ? said : null;
 }
 
@@ -159,12 +159,23 @@ export function signGroupMessage(
 ): SignedGroupMessage {
   const payloadSaid = multisigPayloadSaid(serder);
   if (!serder.said || !payloadSaid) throw new Error("Constructed multisig wrapper lacks its proposal identity");
+  const endorsed = member.endorse(serder, { pipelined: false });
+  const message = serder.pvrsn.major === 2
+    ? concatBytes(
+      serder.raw,
+      Counter.enclose({
+        code: "AttachmentGroup",
+        version: Vrsn_2_0,
+        qb64: concatBytes(endorsed.subarray(serder.raw.length), attachments),
+      }),
+    )
+    : concatBytes(endorsed, attachments);
   return {
     src: member.pre,
     recipient,
     exnSaid: serder.said,
     payloadSaid,
-    message: concatBytes(member.endorse(serder, { pipelined: false }), attachments),
+    message,
   };
 }
 

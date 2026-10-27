@@ -296,11 +296,220 @@ class Control:
             rep.text = traceback.format_exc()
 
 
+class AcdcV2Role:
+    """One independent member/store of a mixed issuer or holder group using actual v2 owners."""
+    def __init__(self, hby, root):
+        from keri import Vrsn_1_0, Vrsn_2_0
+        from keri.acdc import Regery, loadHandlers
+        from keri.acdc.regbasing import RegBaser
+        from keri.acdc.regeventing import Rever
+        from keri.app.credentialing import Wallet, WalletBaser
+        from keri.core import Parser
+        self.hby, self.version = hby, Vrsn_2_0
+        self.member = hby.makeHab('member', version=Vrsn_1_0)
+        self.rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=root, temp=False))
+        self.exc = exchanging.Exchanger(hby, handlers=[])
+        self.notifier = notifying.Notifier(hby)
+        self.verification = loadHandlers(hby, self.exc, self.notifier, rgy=self.rgy)
+        self.wallet = Wallet(hby, self.rgy, exc=self.exc, verification=self.verification,
+            db=WalletBaser(name=hby.name, headDirPath=root, temp=False))
+        self.rever = Rever(db=hby.db, reger=self.rgy.baser)
+        self.psr = Parser(kvy=hby.kvy, rgy=self.rever, exc=self.exc, version=Vrsn_2_0)
+        self.group = self.owner = None
+
+    def receive(self):
+        """Ordinary external intake cannot add this member's consent or signatures."""
+        if self.psr.ims:
+            self.psr.parse()
+        self.hby.kvy.processEscrows()
+        self.rever.processEscrows()
+        self.exc.processEscrow()
+        if self.owner:
+            self.owner.process()
+
+    def replay(self, hab):
+        from keri.core import Counter
+        return Counter.makeGVC(self.version) + b''.join(self.hby.db.clonePreIter(pre=hab.pre, gvrsn=self.version))
+
+    def join(self, member):
+        from keri import Vrsn_1_0
+        from keri.app.acdc_v2_grouping import AcdcV2GroupCoordinator
+        self.group = self.hby.makeGroupHab(group='group', mhab=self.member,
+            smids=[member, self.member.pre], rmids=[member, self.member.pre],
+            isith='2', nsith='2', version=Vrsn_1_0)
+        self.hby.kvy.processEscrows()
+        assert self.group.accepted
+        self.owner = AcdcV2GroupCoordinator(self.hby, self.rgy, self.group, self.exc, self.notifier)
+        self.rever = self.owner.rever
+        self.psr.kvy, self.psr.rgy = self.owner.mux.kvy, self.rever
+        return dict(group=self.group.pre, kel=self.replay(self.group).decode())
+
+    def registry(self, wire):
+        """Explicitly approve the exact authenticated TEL/anchor selected from this member wrapper."""
+        event, anchor, opening = self.owner.registryProposal(wire.encode())
+        wrapper, foot = self.owner.approveRegistry(event, anchor, opening=opening)
+        self.owner.process()
+        head = self.rgy.store.head(event.said if event.ilk == 'rip' else event.sad['rd'])
+        return dict(wire=(wrapper.raw + foot).decode(), said=wrapper.said,
+                    head=head.qb64 if head else None)
+
+    def exchange(self, wire):
+        """Apply the shared v2 graph gate before adding an independent group contribution."""
+        from keri.core import Parser
+        from keri.peer import serializeMessage
+        selected = self.owner.exchangeProposal(wire.encode())
+        child = Parser(version=self.version).parse(ims=bytearray(selected), processive=False)[0].serder
+        wrapper, foot = self.owner.approveExchange(selected)
+        return dict(wire=(wrapper.raw + foot).decode(), said=wrapper.said,
+                    child=child.said, complete=self.exc.complete(child.said),
+                    accepted=serializeMessage(self.hby, child.said, framed=False).decode()
+                        if self.exc.complete(child.said) else None)
+
+    def role(self, wire):
+        """Sign only an explicitly selected controller binding for this actual group/member set."""
+        from keri.core import Counter, SerderKERI
+        event = SerderKERI(raw=wire.encode())
+        assert event.route == '/end/role/add'
+        assert event.sad['a']['cid'] == self.group.pre
+        assert event.sad['a']['eid'] in self.group.smids
+        assert event.sad['a']['role'] == 'controller'
+        own = self.group.endorse(event, last=False, framed=False, gvrsn=self.version)
+        self.owner.receive(Counter.makeGVC(self.version) + own)
+        return dict(wire=(Counter.makeGVC(self.version) + own).decode())
+
+    def evidence(self):
+        """Replay accepted public histories; an opening must still be explicitly disclosed by its owner."""
+        from keri.core import Counter, Codens
+        raw = bytearray(self.replay(self.group))
+        for keys, _ in self.rgy.store.baser.heads.getTopItemIter():
+            for event in self.rgy.store.cloneTelIter(keys[0]):
+                raw.extend(event)
+                raw.extend(Counter(Codens.AttachmentGroup, count=0, version=self.version).qb64b)
+        return dict(wire=raw.decode())
+
+    def snapshot(self, registry=None, exchange=None, grant=None):
+        head = self.rgy.store.head(registry) if registry else None
+        result = dict(head=head.qb64 if head else None,
+                      complete=self.exc.complete(exchange) if exchange else False)
+        if grant:
+            held = self.wallet.heldCredential(grant)
+            result.update(credential=held['credential'].said, proof=held['proof'].decode(),
+                          grant=held['grant'].said, admit=held['admit'])
+        return result
+
+    def reopen(self):
+        """Reopen every persistent application, registry, identity and configuration environment."""
+        for store in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
+            store.close()
+            assert store.reopen()
+        self.hby.db.reload()
+        return dict(group=self.group.pre)
+
+class AcdcV2Control:
+    """Select actual local APIs; foreign signed bytes still enter ordinary HTTP/parser intake."""
+    def __init__(self, roles):
+        self.roles = roles
+
+    def on_get(self, req, rep):
+        rep.media = dict(ready=True)
+
+    def on_post(self, req, rep):
+        try:
+            for value in self.roles.values():
+                value.receive()
+            data = dict(req.media)
+            role = self.roles[data.pop('role', 'issuer')]
+            action = data.pop('action')
+            if action == 'connect':
+                from keri.core import Counter
+                result = {}
+                for name, value in self.roles.items():
+                    endpoint = value.member.makeEndRole(eid=value.member.pre, role='controller',
+                        gvrsn=value.version, framed=False)
+                    endpoint += value.member.makeLocScheme(url=data['origins'][name], eid=value.member.pre,
+                        scheme='http', gvrsn=value.version, framed=False)
+                    value.psr.ims.extend(Counter.makeGVC(value.version) + endpoint)
+                    value.receive()
+                    result[name] = dict(member=value.member.pre,
+                        kel=(value.replay(value.member) + endpoint).decode())
+                rep.media = result
+            elif action == 'join':
+                rep.media = role.join(**data)
+            elif action == 'schema':
+                from keri.core.scheming import Schemer
+                schema = Schemer(sed=data['schema'])
+                role.hby.db.schema.pin(keys=(schema.said,), val=schema)
+                rep.media = dict(said=schema.said)
+            elif action == 'registry':
+                rep.media = role.registry(**data)
+            elif action == 'exchange':
+                rep.media = role.exchange(**data)
+            elif action == 'role':
+                rep.media = role.role(**data)
+            elif action == 'evidence':
+                rep.media = role.evidence()
+            elif action == 'reopen':
+                rep.media = role.reopen()
+            elif action == 'admission':
+                record = role.wallet.recordAdmission(data['grant'], data['admit'], consent=data['consent'])
+                rep.media = dict(grant=record.grant, admit=record.admit)
+            elif action == 'snapshot':
+                rep.media = role.snapshot(**data)
+            else:
+                raise ValueError(action)
+        except Exception:
+            rep.status = falcon.HTTP_500
+            rep.text = traceback.format_exc()
+
+
+def run_acdc_v2(port, root):
+    """Keep the legacy lane intact and host two independent actual ACDC v2 group members."""
+    from contextlib import ExitStack
+    from keri import Vrsn_2_0
+    from keri.app.configing import Configer
+    with ExitStack() as stack:
+        roles = {}
+        for label in ('issuer', 'holder'):
+            cf = Configer(name=label, headDirPath=root, temp=False, reopen=True)
+            hby = stack.enter_context(habbing.openHby(name=label, headDirPath=root,
+                temp=False, cf=cf, version=Vrsn_2_0))
+            roles[label] = AcdcV2Role(hby, root)
+            stack.callback(roles[label].rgy.close)
+            stack.callback(roles[label].wallet.close)
+        control = AcdcV2Control(roles)
+        app = falcon.App()
+        app.add_route('/', HttpEnd(rxbs=roles['issuer'].psr.ims))
+        app.add_route('/holder', HttpEnd(rxbs=roles['holder'].psr.ims))
+        app.add_route('/_fixture', control)
+        app.add_route('/health', control)
+        server = createHttpServer('127.0.0.1', port, app)
+        doist = doing.Doist(tock=.005, real=True, doers=[http.ServerDoer(server=server)])
+        running = True
+        def stop(*_):
+            nonlocal running
+            running = False
+        signal.signal(signal.SIGTERM, stop)
+        try:
+            doist.enter()
+            while running:
+                doist.recur()
+                for value in roles.values():
+                    value.receive()
+                time.sleep(.005)
+        finally:
+            doist.exit()
+            server.close()
+
 def main():
     args = argparse.ArgumentParser()
     args.add_argument('port', type=int)
     args.add_argument('--legacy', action='store_true')
+    args.add_argument('--acdc-v2', action='store_true')
+    args.add_argument('--root')
     args = args.parse_args()
+    if args.acdc_v2:
+        run_acdc_v2(args.port, args.root)
+        return
     versions = {} if args.legacy else dict(version=kering.Vrsn_1_0)
     with habbing.openHby(name='legacy-group-peer', temp=True, **versions) as hby, \
          habbing.openHby(name='independent-holder', temp=True, **versions) as holder_hby:

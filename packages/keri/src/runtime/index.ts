@@ -233,6 +233,13 @@ export {
 export { type IpexGraph, walkIpexGraph } from "../app/ipex/ipex-graph.ts";
 export type { DisclosurePlan } from "../app/ipex/ipex-graph.ts";
 export {
+  approveStoredMultisigIpexWrappers,
+  prepareAcdcV2GroupIpex,
+  publishInitialGroupIpex,
+  requireAcdcV2GroupUse,
+  sendCompletedGroupIpex,
+} from "../app/ipex/ipex-grouping.ts";
+export {
   acceptedRegistryEvidence,
   authenticateIpexNode,
   type IpexNodeAuthentication,
@@ -300,6 +307,7 @@ export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
+export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
   Notifier,
 } from "../app/notifications/notifying.ts";

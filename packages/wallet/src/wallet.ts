@@ -170,7 +170,31 @@ export class Wallet {
     return origins[0];
   }
 
-  /** Require explicit consent and current root truth before authoring any holder signature. */
+  /** Freeze an unsigned response only after explicit consent, exact prior authentication and current root truth. */
+  *prepareAdmitBody(
+    grant: string,
+    holder: string,
+    { consent = false, message = "", gvrsn = Vrsn_2_0 }: {
+      consent?: boolean;
+      message?: string;
+      gvrsn?: Versionage;
+    } = {},
+  ): Operation<SerderKERI> {
+    if (consent !== true) throw new ValidationError("Explicit consent is required.");
+    if (gvrsn.major < 2) throw new ValidationError("ACDC v2 Admit requires attachment genus 2 or later.");
+    const g = yield* call(() => this.accepted(grant, "/ipex/grant")), hab = this.hby.habs.get(holder);
+    if (!hab || g.sad!.ri !== holder) throw new ValidationError("Grant must address the intended local holder.");
+    const response = this.hby.db.erpy.get([grant]);
+    if (response && this.exc.complete(response.qb64)) {
+      throw new ValidationError("Grant already has an accepted response.");
+    }
+    if (!this.graphAccepted(grant, this.origin(g))) {
+      throw new ValidationError("Current authenticated graph acceptance is required before signing.");
+    }
+    return ipexExnBody(holder, "/ipex/admit", [], { message, prior: g, gvrsn });
+  }
+
+  /** Sign an individual response; group approval consumes the same unsigned body through its own exact-stream owner. */
   *prepareAdmit(
     grant: string,
     holder: string,
@@ -183,23 +207,16 @@ export class Wallet {
   ): Operation<PreparedAdmit> {
     if (consent !== true) throw new ValidationError("Explicit consent is required.");
     if (gvrsn.major < 2) throw new ValidationError("ACDC v2 Admit requires attachment genus 2 or later.");
-    const g = yield* call(() => this.accepted(grant, "/ipex/grant")), hab = this.hby.habs.get(holder);
-    if (!hab || g.sad!.ri !== holder) throw new ValidationError("Grant must address the intended local holder.");
+    const hab = this.hby.habs.get(holder);
+    if (!hab) throw new ValidationError("Grant must address the intended local holder.");
     if (isLocalGroupHab(this.hby, hab)) {
       throw new ValidationError("ACDC v2 wallet admission requires a single-signature holder.");
     }
-    const anchored = (g.sad!.a as { ax?: boolean[] }).ax?.[0] === true;
+    const admit = yield* this.prepareAdmitBody(grant, holder, { consent, message, gvrsn });
+    const anchored = (admit.sad!.a as { ax?: boolean[] }).ax?.[0] === true;
     if (anchored && !receiptor) throw new ValidationError("Anchored Admit requires its actual receipt owner.");
-    const response = this.hby.db.erpy.get([grant]);
-    if (response && this.exc.complete(response.qb64)) {
-      throw new ValidationError("Grant already has an accepted response.");
-    }
-    if (!this.graphAccepted(grant, this.origin(g))) {
-      throw new ValidationError("Current authenticated graph acceptance is required before signing.");
-    }
-    const admit = ipexExnBody(holder, "/ipex/admit", [], { message, prior: g, gvrsn });
     const source = anchored ? yield* anchorExchange(this, receiptor!, hab, admit) : undefined;
-    if (!this.graphAccepted(grant, this.origin(g))) {
+    if (!this.graphAccepted(grant, this.origin(this.hby.db.exns.get([grant])!))) {
       throw new ValidationError("Current authenticated graph acceptance is required after source receipts.");
     }
     return {

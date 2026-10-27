@@ -1,7 +1,17 @@
 /** IPEX presentation after the KERI command has joined workers and closed owned stores. */
 import { RegistryCustody, WalletDiscloser } from "@keri-ts/wallet";
-import { BlindState, BoundState, concatBytes, isGroupTuple, NumberPrimitive, parseBlinder, Vrsn_2_0 } from "cesr-ts";
-import { call, type Operation, scoped, spawn } from "effection";
+import {
+  BlindState,
+  BoundState,
+  concatBytes,
+  Counter,
+  Matter,
+  parseBytes,
+  type SerderACDC,
+  type SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import {
   ipexAdmitCommand as admit,
   ipexAgreeCommand as agree,
@@ -14,20 +24,30 @@ import {
   ipexSpurnCommand as spurn,
   parseBooleanOption,
   parseGvrsn,
+  parseNumberOption,
   parseStringOption,
 } from "keri-ts/cli";
-import { publicOpeningAttachment } from "keri-ts/db";
 import {
+  type AgentRuntime,
+  approveStoredMultisigIpexWrappers,
   CREDENTIAL_MAILBOX_TOPIC,
+  type Hab,
+  type Habery,
+  isLocalGroupHab,
   Organizer,
+  prepareAcdcV2GroupIpex,
+  publishInitialGroupIpex,
   Receiptor,
   type RegistryDisclosure,
+  requireAcdcV2GroupUse,
   runAgentRuntime,
+  sendCompletedGroupIpex,
   ValidationError,
 } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
 function printSend({ exn, deliveries, group }: IpexSendResult): void {
@@ -39,6 +59,61 @@ function printSend({ exn, deliveries, group }: IpexSendResult): void {
       messages: group.messages,
       deliveries,
     });}
+}
+
+/** CLI owns the existing finite approval wait; protocol completion never substitutes for graph-use authorization. */
+function* acdcV2GroupDisclosure(
+  hby: Habery,
+  runtime: AgentRuntime,
+  hab: Hab,
+  exn: SerderKERI,
+  candidate: Uint8Array,
+  args: Record<string, unknown>,
+) {
+  const timeout = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
+  if (!Number.isFinite(timeout) || timeout < 0) throw new ValidationError("--approval-timeout must be nonnegative.");
+  const own = yield* prepareAcdcV2GroupIpex(hby, runtime.protocol, hab, candidate);
+  if (!own) throw new ValidationError("ACDC v2 group disclosure awaits authenticating dependencies.");
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+  try {
+    const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, own, Vrsn_2_0);
+    const deadline = Date.now() + timeout * 1000;
+    while (!runtime.exc.complete(exn.said!)) {
+      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, exn.said!, null);
+      if (runtime.exc.complete(exn.said!) || Date.now() >= deadline) break;
+      yield* sleep(Math.min(250, deadline - Date.now()));
+    }
+    if (!runtime.exc.complete(exn.said!)) {
+      return { said: exn.said!, accepted: false, status: "multisig-pending", ...publication };
+    }
+    requireAcdcV2GroupUse(hby, runtime.protocol, exn);
+    const out = parseStringOption(args.out, "out");
+    let deliveries = publication.deliveries;
+    if (out) {
+      const chunks: Uint8Array[] = [];
+      yield* call(async () => {
+        for await (const chunk of runtime.exc.replay(exn.said!)) chunks.push(chunk);
+      });
+      Deno.writeFileSync(out, concatBytes(...chunks));
+    } else if (runtime.exc.lead(hab, exn.said!)) {
+      deliveries = [
+        ...deliveries,
+        ...yield* sendCompletedGroupIpex(
+          hby,
+          runtime.postman,
+          null,
+          hab,
+          exn,
+          Vrsn_2_0,
+          runtime.acdc!.store,
+          runtime.exc,
+        ),
+      ];
+    }
+    return { said: exn.said!, accepted: true, status: "multisig-complete", messages: publication.messages, deliveries };
+  } finally {
+    yield* host.halt();
+  }
 }
 
 /** Display a completed apply attempt after resource cleanup. */
@@ -120,6 +195,18 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
       return yield* scoped(function*() {
         if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
         const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
+        if (isLocalGroupHab(hby, hab)) {
+          const admit = yield* wallet.prepareAdmitBody(said, hab.pre, { consent, message, gvrsn });
+          const candidate = concatBytes(
+            Counter.makeGVC(gvrsn),
+            admit.raw,
+            Counter.enclose({ qb64: new Uint8Array(), version: gvrsn }),
+          );
+          const result = yield* acdcV2GroupDisclosure(hby, runtime, hab, admit, candidate, args);
+          if (!result.accepted) return { ...result, grant: said };
+          const admission = yield* call(() => wallet.recordAdmission(said, admit.said!, { consent }));
+          return { ...result, ...admission };
+        }
         const prepared = yield* wallet.prepareAdmit(said, hab.pre, {
           consent,
           message,
@@ -160,20 +247,19 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
   writeJsonLine(completed);
 }
 
-/** Decode an explicitly supplied counted opening through the shared CESR tuple codec. */
+/** Decode exactly one raw opening tuple through existing CESR primitive and record codecs. */
 function openingFile(path: string): RegistryDisclosure {
-  const raw = Deno.readFileSync(path), group = parseBlinder(raw, Vrsn_2_0, "txt"), tuple = group.items[0];
-  if (group.consumed !== raw.length || group.items.length !== 1 || !isGroupTuple(tuple)) {
-    throw new ValidationError("Opening file must carry exactly one counted blind/bound tuple.");
+  const raw = Deno.readFileSync(path), fields: Uint8Array[] = [];
+  for (let offset = 0; offset < raw.length;) {
+    const field = new Matter({ qb64b: raw.subarray(offset) }).qb64b;
+    fields.push(field);
+    offset += field.length;
   }
-  const fields = tuple.map((field) => {
-    if (isGroupTuple(field) || !("qb64" in field)) throw new ValidationError("Invalid opening tuple field.");
-    return field.qb64;
-  });
-  const common = { d: fields[0], u: fields[1], td: fields[2], ts: fields[3] };
-  return fields.length === 6
-    ? BoundState.fromSad({ ...common, bn: new NumberPrimitive({ qb64: fields[4] }).numh, bd: fields[5] })
-    : BlindState.fromSad(common);
+  if (fields.length === 6) {
+    return BoundState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]]);
+  }
+  if (fields.length === 4) return BlindState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3]]);
+  throw new ValidationError("Opening file must carry exactly one raw blind or bound state tuple.");
 }
 
 /** Thin ACDC v2 argument/delivery wiring; wallet owns view selection, root gates, signing and source receipts. */
@@ -241,6 +327,45 @@ function* acdcV2Disclosure(
         if (registryName && !runtime.acdc.registryByName(registryName)) {
           throw new ValidationError("Unknown presentation registry.");
         }
+        if (isLocalGroupHab(hby, hab) && verb === "grant") {
+          let selected = yield* discloser.prepareGrantBody(hab.pre, selection, options);
+          if (registryName) {
+            const reg = runtime.acdc.registryByName(registryName)!;
+            const node = parseBytes(selected.raw)[0].body as SerderACDC;
+            if (
+              reg.hab.pre !== hab.pre || node.issuee !== hab.pre || (node.sad!.a as { rd?: unknown }).rd !== reg.regk
+            ) {
+              throw new ValidationError(
+                "Presentation registry must match the selected disclosed local Issuee declaration.",
+              );
+            }
+            const timeout = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
+            if (!Number.isFinite(timeout) || timeout < 0) {
+              throw new ValidationError("--approval-timeout must be nonnegative.");
+            }
+            const [proof, update] = reg.present(selected.exn, "presented");
+            yield* race([
+              (function*() {
+                yield* scoped(function*() {
+                  yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+                  yield* approveAcdcV2RegistryEvent(hby, runtime, hab, discloser.receiptor, update, proof);
+                });
+              })(),
+              (function*() {
+                yield* sleep(timeout * 1000);
+                throw new ValidationError("Group presentation approval remains pending.");
+              })(),
+            ]);
+            const seal = runtime.acdc.store.anchor(update.said!)!;
+            selected = yield* discloser.attachPresentationProof(selected, proof, { s: seal[0], d: seal[1] });
+          }
+          const candidate = concatBytes(
+            Counter.makeGVC(options.gvrsn),
+            selected.exn.raw,
+            Counter.enclose({ qb64: selected.nests, version: options.gvrsn }),
+          );
+          return yield* acdcV2GroupDisclosure(hby, runtime, hab, selected.exn, candidate, args);
+        }
         const prepared = verb === "apply"
           ? yield* discloser.prepareApply(hab.pre, options)
           : verb === "offer"
@@ -299,7 +424,7 @@ export function* ipexUnblindCommand(args: Record<string, unknown>): Operation<vo
       const proof = discloser.unblind(openingFile(path), said, states);
       if (!proof) throw new ValidationError("Candidates do not match the exact opening commitment.");
       const out = parseStringOption(args.out, "out");
-      if (out) Deno.writeFileSync(out, publicOpeningAttachment(proof));
+      if (out) Deno.writeFileSync(out, "bn" in proof ? BoundState.qb64b(proof) : BlindState.qb64b(proof));
       return { commitment: proof.d.nonce, credential: proof.td.nonce, state: proof.ts.label, matched: true };
     });
   });

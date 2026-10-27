@@ -181,7 +181,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
 });
 
 Deno.test({
-  name: "interop/native-registry - POSIX protected Python custody handoff derives exact openings after TS reopen",
+  name: "interop/native-registry - POSIX protected custody handoffs derive exact openings after reciprocal reopen",
   ignore: Deno.build.os === "windows",
   async fn() {
     assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
@@ -273,6 +273,59 @@ Deno.test({
             BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
             evidence.future,
           );
+          const issuer = holder;
+          const registry = runtime.acdc!.makeRegistry("reverse-handoff", issuer.pre);
+          const rip = store.event(registry.regk!)!;
+          issuer.interact({ data: [{ i: registry.regk, s: "0", d: rip.said }] });
+          assertEquals(registry.anchorMsg(rip.said!).kind, "accept");
+          const info = custody.createCustody(registry.regk!, evidence.controller);
+          const reverseCredential = acdcmap(issuer.pre, {
+            regid: registry.regk!,
+            attribute: { d: "", i: info.discloser, role: "reverse-custody-holder" },
+          });
+          const issuee = hby.db.getKever(info.discloser)!;
+          const bound = { bound: true, bsn: issuee.sn, bd: issuee.serder.said! };
+          const reverseOpening = custody.derive(
+            registry.regk!,
+            1,
+            reverseCredential.said!,
+            "issued",
+            bound,
+          ) as BoundState;
+          const reverseUpdate = blindate(registry.regk!, rip.said!, reverseOpening.d.nonce);
+          custody.retainDerivedUpdate(reverseUpdate, reverseOpening);
+          assertEquals(registry.processEvent(reverseUpdate).kind, "escrow");
+          issuer.interact({ data: [{ i: registry.regk, s: "1", d: reverseUpdate.said }] });
+          assertEquals(registry.anchorMsg(reverseUpdate.said!).kind, "accept");
+          assertEquals(store.opening(reverseUpdate.said!), null, "reverse custody is not public proof publication");
+          const reverseHandoff = `${ctx.home}/reverse-custody.json`;
+          yield* call(() => custody.exportCustody(registry.regk!, reverseHandoff));
+          assertEquals((yield* call(() => Deno.stat(reverseHandoff))).mode! & 0o7777, 0o600);
+          const reverse = {
+            root: `${ctx.home}/python`,
+            handoff: reverseHandoff,
+            info,
+            credential: t(reverseCredential.raw),
+            update: reverseUpdate.said,
+            bsn: Number(bound.bsn),
+            bd: bound.bd,
+            tel: t(store.cloneTel(registry.regk!)),
+            kel: [0, 1, 2].map(sn => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(""),
+          };
+          const expected = {
+            opening: BoundState.qb64(reverseOpening),
+            future: BlindState.qb64(
+              custody.derive(registry.regk!, 17, reverseCredential.said!, "revoked") as BlindState,
+            ),
+            update: reverseUpdate.said,
+            state: "issued",
+          };
+          for (const receive of ["import", "reopen"]) {
+            yield* call(() => Deno.writeTextFile(requestPath, JSON.stringify({ ...reverse, receive })));
+            const result = yield* call(() => runCmd(ctx.pythonCommand, [peer, "custody", requestPath], ctx.env));
+            assertEquals(result.code, 0, result.stderr);
+            assertEquals(JSON.parse(result.stdout), expected, `TS custody survives Python ${receive}`);
+          }
         } finally {
           yield* call(() => server.shutdown());
           yield* call(() => handler.close?.());

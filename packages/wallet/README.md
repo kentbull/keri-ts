@@ -16,8 +16,10 @@ recording inventory. For a negotiated anchored response, supply the actual
 `receiptor`; it gathers the exact source anchor's witness receipts before returning.
 The caller admits that wire through ordinary ingress, then calls `recordAdmission`
 with the actual accepted pair. False/unknown graphs and missing consent never
-produce a signature. This operation supports individual holders; group admission requires its separate
-member-approval workflow. ACDC v2 attachment genus defaults to 2.0.
+produce a signature. For a group holder, `prepareAdmitBody` applies the same
+consent, prior and root checks without signing. Pass that frozen body through
+`prepareAcdcV2GroupIpex` and explicit member approval, then record only the
+accepted pair. ACDC v2 attachment genus defaults to 2.0.
 
 `inventory`, `admissions`, `issuedCredential` and asynchronous `heldCredential`
 read retained history. Held proofs come from that Grant's original nested rows;
@@ -50,8 +52,14 @@ accepted BUP commits the frozen Grant body.
 
 Configure `Receiptor(hby, protocol, http, clock, {gvrsn})` for the actual witness attachment genus,
 independently of ACDC v2 IPEX genus. Its default remains 1.0; the known v2
-witness profile explicitly selects 2.0. Group disclosure uses its separate
-member-approval workflow.
+witness profile explicitly selects 2.0. For a group, `prepareGrantBody` freezes
+the same selected disclosure without signing. Complete any presentation BUP
+against that body before the first member approval; `attachPresentationProof`
+extends its proof without changing signed bodies. `prepareAcdcV2GroupIpex`
+checks the exact selected graph before each new member signature. Recheck
+current graph use after threshold completion and before delivery or consent;
+protocol completion alone grants no use authority. Approved wrapper retries
+preserve their original nests.
 
 ## ACDC v2 authoring
 
@@ -60,7 +68,10 @@ registry environment and actual receipt collector. `incept` returns an exact
 accepted RIP; `create` uses the existing ACDC builder; `issue`, `update` and
 `revoke` stage BUPs and return only after the exact KEL seal has authenticated
 historical witness quorum. `update` is a state advance, never historical `upd`.
-Groups require their separate member-approval workflow.
+For a group, `registry`, `create` and `stage` prepare the same events without
+signing. Use `approveAcdcV2Registry` and `publishAcdcV2Registry` for exact member
+approval; wait for ordinary accepted KEL/TEL and witness evidence before
+recording issuance. Individual signing methods continue to refuse groups.
 
 Public authoring explicitly retains and publishes its event opening. Derived
 authoring requires provisioned custody and retains exact nonsecret coordinates

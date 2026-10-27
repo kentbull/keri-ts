@@ -6,10 +6,15 @@ import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/commands/w
 // @file-test-lane app-fast-isolated
 
 import {
+  BlindState,
+  BoundState,
   collectPayload,
   Compactor,
+  Counter,
   Diger,
   framePayload,
+  makeBlindState,
+  makeBoundState,
   type MapperMap,
   NumberPrimitive,
   parseBytes,
@@ -26,6 +31,7 @@ import {
   Hab,
   Habery,
   ipexExnBody,
+  type RegistryDisclosure,
   Schemer,
   systemClock,
   ValidationError,
@@ -35,7 +41,7 @@ import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
 import { walletListCommand, walletReadCommand } from "../src/cli/commands/credentials.ts";
-import { ipexAdmitCommand, ipexApplyCommand, ipexGrantCommand } from "../src/cli/commands/ipex.ts";
+import { ipexAdmitCommand, ipexApplyCommand, ipexGrantCommand, ipexUnblindCommand } from "../src/cli/commands/ipex.ts";
 import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/commands/mailbox.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
@@ -1069,6 +1075,56 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
         "ACDC v2 CLI presents only the exact admitted view",
       );
       assertEquals(transmissions, 3, "explicit output file does not send implicitly");
+      for (const bound of [false, true]) {
+        const proof = (bound
+          ? makeBoundState({ acdc: held.credential.d, state: "issued" })
+          : makeBlindState({ acdc: held.credential.d, state: "issued" })) as RegistryDisclosure;
+        const hidden = ("bn" in proof
+          ? BoundState.fromSad({ ...BoundState.toSad(proof), td: "", ts: "" })
+          : BlindState.fromSad({ ...BlindState.toSad(proof), td: "", ts: "" })) as RegistryDisclosure;
+        const raw = "bn" in hidden ? BoundState.qb64b(hidden) : BlindState.qb64b(hidden);
+        const expected = "bn" in proof ? BoundState.qb64b(proof) : BlindState.qb64b(proof);
+        const opening = `${headDirPath}/opening-${bound}.cesr`, out = `${headDirPath}/matched-${bound}.cesr`;
+        Deno.writeFileSync(opening, raw);
+        closed = false;
+        await run(() =>
+          ipexUnblindCommand({
+            name,
+            headDirPath,
+            alias: "sender",
+            opening,
+            out,
+            said: held.credential.d,
+            states: "[\"issued\"]",
+          })
+        );
+        assertEquals(JSON.parse(records.pop()!).matched, true);
+        assertEquals(Deno.readFileSync(out), expected, "CLI artifacts use raw tuples, without attachment counters");
+        if (!bound) {
+          for (
+            const malformed of [
+              new Uint8Array([...raw, ...raw]),
+              Counter.enclose({ code: "BlindedStateQuadruples", qb64: raw, version: Vrsn_2_0 }),
+            ]
+          ) {
+            Deno.writeFileSync(opening, malformed);
+            closed = false;
+            await assertRejects(() =>
+              run(() =>
+                ipexUnblindCommand({
+                  name,
+                  headDirPath,
+                  alias: "sender",
+                  opening,
+                  said: held.credential.d,
+                  states: "[\"issued\"]",
+                })
+              )
+            );
+          }
+        }
+      }
+      assertEquals(transmissions, 3, "unblind does not send or confer admission");
       closed = false;
       injected = false;
       failClose = true;

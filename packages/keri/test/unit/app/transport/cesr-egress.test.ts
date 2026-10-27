@@ -176,27 +176,34 @@ Deno.test("CESR egress waits for each request before consuming the next frame", 
   assertEquals([pulls, requests, closed], [2, 2, true]);
 });
 Deno.test("CESR header egress normalizes binary attachments for HTTP", async () => {
-  // The source is binary v2 while the detached JSON body independently declares protocol v1.
-  const wire = decodeB64(t(fixture()));
-  let requests = 0;
-  const transport = httpClient(async (_url, init) => {
-    // Text qualification is mandatory in HTTP headers, including when input was qb2.
-    const header = new Headers(init!.headers).get(CESR_ATTACHMENT_HEADER)!;
-    assertEquals(/^[A-Za-z0-9_-]+$/.test(header), true);
-    const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
-    // The peer's counter context is v2; the JSON body protocol does not select it.
-    const frame = await read(concatBytes(Counter.makeGVC({ major: 2, minor: 0 }), body, b(header)));
-
-    assertEquals(frame.body.pvrsn, { major: 1, minor: 0 });
-    assertEquals(frame.gvrsn, { major: 2, minor: 0 });
-    assertEquals(concatBytes(...frame.essrs!.map((part) => part.raw)), b("abcxyz"));
-    requests++;
-    return new Response(null, { status: 204 });
-  });
-  await run(function*() {
-    yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), transport, {});
-  });
-  assertEquals(requests, 1);
+  // Attachment genus is independent of the unchanged v1 JSON protocol body.
+  for (const genus of [2, 1]) {
+    const wire = genus === 2
+      ? decodeB64(t(fixture()))
+      : concatBytes(Counter.makeGVC({ major: 1, minor: 0 }), b(json));
+    let requests = 0;
+    const transport = httpClient(async (_url, init) => {
+      const headers = new Headers(init!.headers);
+      assertEquals(headers.get("CESR-Genus"), String(genus));
+      // Text qualification is mandatory in HTTP headers, including when input was qb2.
+      const header = headers.get(CESR_ATTACHMENT_HEADER)!;
+      assertEquals(/^[A-Za-z0-9_-]+$/.test(header), true);
+      const body = new Uint8Array(await new Response(init!.body).arrayBuffer());
+      assertEquals(body, b(json));
+      // The peer selects attachment counters from the actual header, independently of the body.
+      const version = { major: headers.get("CESR-Genus") === "2" ? 2 : 1, minor: 0 } as const;
+      const frame = await read(concatBytes(Counter.makeGVC(version), body, b(header)));
+      assertEquals(frame.body.pvrsn, { major: 1, minor: 0 });
+      assertEquals(frame.gvrsn, { major: genus, minor: 0 });
+      assertEquals(concatBytes(...frame.essrs?.map((part) => part.raw) ?? []), genus === 2 ? b("abcxyz") : b(""));
+      requests++;
+      return new Response(null, { status: 204 });
+    });
+    await run(function*() {
+      yield* postCesr("https://peer.test/", (signal) => chunkBytes(wire, { signal }), transport, {});
+    });
+    assertEquals(requests, 1);
+  }
 });
 Deno.test("CESR request scope keeps successful responses live and cancels their unread tail", async () => {
   // A response remains readable until the consuming Operation finishes, then its resource closes.

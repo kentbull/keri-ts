@@ -55,11 +55,20 @@ void ({ i: "prefix", s: 0, d: "digest" } satisfies ConstructorParameters<typeof 
 // @ts-expect-error Event seals have no diagnostic extension slot.
 void ({ i: "prefix", s: "0", d: "digest", extra: true } satisfies ConstructorParameters<typeof AnchorQuerier>[3]);
 
+/** Inspect one framed HTTP message without treating its genus selector as body bytes. */
+function queryBody(bytes: Uint8Array): SerderKERI {
+  const frames = parseBytes(bytes);
+  assertEquals(frames.length, 1);
+  const { body } = frames[0];
+  assert(body instanceof SerderKERI);
+  return body;
+}
+
 /** Capture actual HTTP query wire after production framing; introductions are not queries. */
 function queryHttp(messages: Uint8Array[], urls: string[] = []): HttpClient {
   return httpClient(async (url, init) => {
     const bytes = await readCesrRequestBytes(new Request(url, init));
-    const serder = new SerderKERI({ raw: bytes });
+    const serder = queryBody(bytes);
     if (serder.ilk === "qry") {
       messages.push(bytes);
       urls.push(url);
@@ -110,7 +119,7 @@ Deno.test("runtime sends queued and recovery-cue queries through its concrete se
         [messages.length, signatures, runtime.querying.pending.length, runtime.querying.hasPendingDelivery],
         [2, 2, 0, false],
       );
-      assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["logs", "ksn"]);
+      assertEquals(messages.map((wire) => queryBody(wire).route), ["logs", "ksn"]);
       for (const message of messages) yield* call(() => assertQuerySigner(message, sender));
     } finally {
       sender.query = sign;
@@ -200,7 +209,7 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
       yield* processCuesOnce(runtime, { hab: sender, queryCues });
 
       yield* runtime.querying.deliverOnce();
-      assertEquals(new SerderKERI({ raw: messages[0] }).route, "ksn");
+      assertEquals(queryBody(messages[0]).route, "ksn");
       const notice = replyEvent(`/ksn/${subject.pre}`, subject.kever!.state().asDict());
       yield* runtime.reactor.processBytes(subject.endorse(notice, { pipelined: false }));
       yield* processCuesOnce(runtime, { hab: sender, queryCues });
@@ -225,7 +234,7 @@ Deno.test("KeyStateNoticer upgrades to logs on ahead state and completes only af
       yield* runtimeTurn(); // The noticer consumes its Deck on a cooperative turn.
 
       yield* runtime.querying.deliverOnce();
-      assertEquals(messages.map((wire) => new SerderKERI({ raw: wire }).route), ["ksn", "ksn", "logs"]);
+      assertEquals(messages.map((wire) => queryBody(wire).route), ["ksn", "ksn", "logs"]);
       assertEquals(caughtUp, false, "HTTP completion does not satisfy accepted-state catch-up");
       assertEquals(hby.db.getKever(subject.pre)?.sn, 0);
       yield* runtime.reactor.processBytes(interaction);
@@ -311,7 +320,7 @@ Deno.test("sequence and anchor workflows preserve the seal snapshot and complete
 
       yield* runtime.querying.deliverOnce();
       assertEquals(messages.length, 2);
-      const query = new SerderKERI({ raw: messages[1] }).ked?.q as { a: object };
+      const query = queryBody(messages[1]).ked?.q as { a: object };
       assertEquals(query.a, expected);
       assertEquals(Object.keys(query.a), ["i", "s", "d"]);
       assertEquals([sequenceDone, anchorDone], [false, false]);
@@ -384,7 +393,7 @@ Deno.test("anchor queries ask all eligible attesters once and stop on accepted s
 
       yield* inquisitor.deliverOnce();
       assertEquals(
-        messages.map((wire) => new SerderKERI({ raw: wire }).ked?.q),
+        messages.map((wire) => queryBody(wire).ked?.q),
         [first, second].map((attester) => ({ fn: "0", s: "0", a: seal, i: hab.pre, src: attester.pre })),
       );
       hab.interact({ data: [seal] });
@@ -459,7 +468,7 @@ Deno.test("ordinary inquiries randomly choose within the first eligible role and
       yield* inquisitor.deliverOnce();
       const sent = messages.map((msg, index) => ({
         url: urls[index],
-        src: (new SerderKERI({ raw: msg }).ked?.q as Record<string, unknown>).src,
+        src: (queryBody(msg).ked?.q as Record<string, unknown>).src,
       }));
       // Generated AIDs determine database order; both random extremes must select controllers.
       assertEquals(
@@ -494,7 +503,7 @@ Deno.test("selected roles keep missing locations visible instead of promoting an
       hby.db.ends.pin([subject.pre, Roles.controller, subject.pre], { allowed: false });
 
       yield* inquisitor.deliverOnce();
-      assertEquals((new SerderKERI({ raw: messages[0] }).ked?.q as Record<string, unknown>).src, agent.pre);
+      assertEquals((queryBody(messages[0]).ked?.q as Record<string, unknown>).src, agent.pre);
     } finally {
       yield* inquisitor.close();
       yield* hby.close(true);

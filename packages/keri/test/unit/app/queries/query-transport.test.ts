@@ -1,10 +1,11 @@
 import { call, run, sleep, spawn } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer, type Socket } from "node:net";
 import {
   attachmentPayload,
   collectPayload,
   concatBytes,
+  Counter,
   parse,
   parseBytes,
   SerderKERI,
@@ -31,12 +32,16 @@ import { SeqNoQuerier } from "../../../../src/app/queries/querying.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../../effection-http.ts";
 
-/** Collect the finite signed fixture through the same progressive frame boundary used by HTTP output. */
+/** Preserve each signed frame and its declared HTTP genus in the expected request bytes. */
 async function expectedMessages(bytes: Uint8Array): Promise<Uint8Array[]> {
   const messages: Uint8Array[] = [];
   for await (const frame of parse(chunkBytes(bytes))) {
-    // HTTP joins the signed body with its counted attachment enclosure, without a stream-level GVC.
-    messages.push(concatBytes(frame.body.raw, await collectPayload(attachmentPayload(frame))));
+    assertExists(frame.gvrsn);
+    messages.push(concatBytes(
+      Counter.makeGVC(frame.gvrsn),
+      frame.body.raw,
+      await collectPayload(attachmentPayload(frame)),
+    ));
   }
   return messages;
 }

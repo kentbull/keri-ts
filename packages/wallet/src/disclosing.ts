@@ -50,6 +50,12 @@ export interface PreparedDisclosure {
   wire: Uint8Array;
   support: Uint8Array;
 }
+/** Frozen unsigned Grant and its exact selected nodes; group approval and presentation anchoring remain explicit. */
+export interface PreparedGrantBody {
+  exn: SerderKERI;
+  raw: Uint8Array;
+  nests: Uint8Array;
+}
 /** Select an exact issued credential or a retained Grant, never the fullest cached credential. */
 export interface DisclosureSelection {
   said?: string;
@@ -406,18 +412,65 @@ export class WalletDiscloser {
       : undefined;
     return { exn, wire: exchangeWire(hab, exn, undefined, source), support: source ? this.kel(hab) : new Uint8Array() };
   }
+  /** Select and authorize once before freezing a Grant body, without signing or committing group approval. */
+  *prepareGrantBody(
+    sender: string,
+    selection: DisclosureSelection,
+    options: IpexV2BodyOptions & { priorSaid?: string },
+  ): Operation<PreparedGrantBody> {
+    const hab = this.wallet.hby.habs.get(sender);
+    if (!hab?.kever || (options.gvrsn ?? Vrsn_2_0).major < 2) {
+      throw new ValidationError("ACDC v2 Grant preparation requires an accepted local sender and attachment genus 2.");
+    }
+    const prior = yield* this.prior(options.priorSaid), raw = yield* this.selected(selection);
+    this.requireGraph(parseBytes(raw)[0].body.said!, raw);
+    const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/grant", raw, { ...options, prior });
+    return { exn, raw, nests };
+  }
+
+  /** Extend the frozen Grant's exact origin proof; ordinary intake still authenticates the supplied presentation evidence. */
+  *attachPresentationProof(
+    prepared: PreparedGrantBody,
+    opening: RegistryDisclosure,
+    source: SealSource,
+  ): Operation<PreparedGrantBody> {
+    const frames = parseBytes(prepared.raw), node = frames[0].body as SerderACDC;
+    if (!node.issuee || opening.td.nonce !== prepared.exn.said || opening.ts.label !== "presented") {
+      throw new ValidationError("Presentation proof must target this exact Grant and disclosed Issuee.");
+    }
+    const seal = Counter.enclose({
+      code: "SealSourceTriples",
+      qb64: concatBytes(new Prefixer({ qb64: node.issuee }).qb64b, source.s.qb64b, source.d.qb64b),
+      version: Vrsn_2_0,
+    });
+    const first = concatBytes(
+      node.raw,
+      Counter.enclose({
+        qb64: concatBytes(...frames[0].attachments.map(group => group.raw), publicOpeningAttachment(opening), seal),
+        version: Vrsn_2_0,
+      }),
+    );
+    const rest = yield* call(() =>
+      Promise.all(frames.slice(1).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
+    );
+    const raw = concatBytes(Counter.makeGVC(Vrsn_2_0), first, ...rest);
+    const payloads = yield* call(() =>
+      Promise.all(parseBytes(raw).map(frame => collectPayload(nestedPayload(frame, Vrsn_2_0))))
+    );
+    return { exn: prepared.exn, raw, nests: concatBytes(...payloads) };
+  }
   /** Authenticate and authorize the selected graph before the Grant builder and after receipt waits. */
   *prepareGrant(
     sender: string,
     selection: DisclosureSelection,
     options: IpexV2BodyOptions & { priorSaid?: string; presentation?: AcdcV2Registry },
   ): Operation<PreparedDisclosure> {
-    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0), prior = yield* this.prior(options.priorSaid);
-    let raw = yield* this.selected(selection);
+    const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0);
+    const prepared = yield* this.prepareGrantBody(sender, selection, options);
+    let raw = prepared.raw;
     const origin = parseBytes(raw)[0].body.said!;
-    this.requireGraph(origin, raw);
-    const [exn, originalNests] = yield* prepareIpexExn(sender, "/ipex/grant", raw, { ...options, prior });
-    let nests = originalNests;
+    const exn = prepared.exn;
+    let nests = prepared.nests;
     if (options.presentation) {
       const reg = options.presentation, frames = parseBytes(raw), node = frames[0].body as SerderACDC;
       const attribute = node.sad!.a as { rd?: unknown; i?: unknown };
@@ -434,33 +487,7 @@ export class WalletDiscloser {
       if (reg.store.seqEvent(reg.regk!, Number(BigInt(`0x${update.sad!.n}`)))?.said !== update.said) {
         throw new ValidationError("Presentation BUP remains pending authenticated acceptance.");
       }
-      const source = Counter.enclose({
-        code: "SealSourceTriples",
-        qb64: concatBytes(
-          new Prefixer({ qb64: sender }).qb64b,
-          seal.s.qb64b,
-          seal.d.qb64b,
-        ),
-        version: Vrsn_2_0,
-      });
-      const first = concatBytes(
-        node.raw,
-        Counter.enclose({
-          qb64: concatBytes(
-            ...frames[0].attachments.map((group) => group.raw),
-            publicOpeningAttachment(proof),
-            source,
-          ),
-        }),
-      );
-      const rest = yield* call(() =>
-        Promise.all(frames.slice(1).map((frame) => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-      );
-      raw = concatBytes(Counter.makeGVC(Vrsn_2_0), first, ...rest);
-      const payloads = yield* call(() =>
-        Promise.all(parseBytes(raw).map((frame) => collectPayload(nestedPayload(frame, Vrsn_2_0))))
-      );
-      nests = concatBytes(...payloads);
+      ({ raw, nests } = yield* this.attachPresentationProof({ exn, raw, nests }, proof, seal));
     }
     const source = (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
       ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn)

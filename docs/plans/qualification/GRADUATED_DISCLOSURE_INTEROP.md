@@ -1,6 +1,21 @@
 # Graduated disclosure and KRAM interop acceptance
 
-This is the acceptance matrix for the cleanup/release goal, extended by Kent's
+The selected core is `8f9734326314287a3dbd548b3e0cf4b8a6571add`; application pins
+are maintained in [`keripy-reference.json`](../../../scripts/ci/keripy-reference.json).
+[Authenticated IPEX intake](../../../packages/keri/src/app/ipex/ipex-v2.ts)
+retains the exact negotiated view independently of its
+graph-policy verdict. Known false and unresolved graphs therefore remain inspectable;
+consuming [wallet](../../../packages/wallet/src/wallet.ts) and
+[verifier](../../../packages/verifier/src/acdc-v2.ts) actions apply the shared evaluator explicitly. Structural,
+authentication, own-schema and negotiated-disclosure failures retain their refusal
+or missing-proof behavior. Historical claims below about semantic Grant refusal
+describe the earlier policy, not the current retention boundary.
+
+The [current qualification evidence](REFERENCE_ENVIRONMENTS.md#current-qualification-evidence)
+owns integrated CI, installed-family and application/GUI results and their remaining
+limits. Historical results below retain their original sources and policy.
+
+The following baseline describes the cleanup/release goal, extended by Kent's
 2026-10-15 request. The single-controller HTTP apply/grant probe passes at
 `366808c8`; it is standalone evidence and does not satisfy this maintained matrix.
 The maintained `interop-ipex-disclosure.test.ts` covers both single-controller
@@ -17,8 +32,7 @@ graph with a shared ancestor, in both directions. A missing descendant and an
 unsigned shared ancestor are refused before complete controls succeed through
 admit. Every node retains a partial disclosure. These are flat sibling artifacts
 representing graph edges, not unsupported child-owned nested streams.
-The `interop-ipex-disclosure` owner selects Python candidate
-`7ea525bab2a7f673041f793b31908aa29d0a6f1b` from
+The `interop-ipex-disclosure` owner selects the corrected Python candidate from
 [`keripy-reference.json`](../../../scripts/ci/keripy-reference.json), independently
 for focused PRs and in full mode. Historical #485's initial eight cases passed all
 twelve selected CI owners; #486's eighteen cases passed the selected ACDC deep owner

@@ -60,7 +60,8 @@ disclosed credential. A second/full disclosure has its own Grant key; reads do
 not merge private material or assert current standing. Legacy `vc list/export`
 and ordinary `ipex admit` retain their existing paths. ACDC v2 negotiated Admit
 publication gathers the required source-anchor receipts before returning; group
-approval remains a separate workflow.
+holders use explicit member approval of the exact Admit before wallet consent
+is recorded. `--approval-timeout 0` returns a pending proposal without admission.
 
 ## ACDC v2 IPEX disclosure
 
@@ -82,13 +83,24 @@ tufa ipex grant --acdc-v2 -n STORE -a HOLDER -r VERIFIER \
 requires that explicit authorization. This does not create wallet admission
 consent. A partial view cannot gain withheld fields from another cached Grant.
 `--refresh` updates proof evidence only; supply exact `--opening FILE...`, or use
-`--derive` with explicitly provisioned custody. `--presentation-registry NAME`
+`--derive` with explicitly provisioned custody. Opening files contain one raw
+concatenated BlindState or BoundState CESR tuple, without attachment counters. `--presentation-registry NAME`
 selects a local registry matching the disclosed Issuee declaration. `--input FILE`
 first admits supplied signed evidence through ordinary ingress.
 
+ACDC v2 group registry commands stage the same RIP/BUP bodies and publish exact
+member proposals. Approve registry proposals with `tufa multisig join`; approve
+IPEX proposals with `tufa ipex join`. A proposal or one local signature is not
+accepted issuance, admission or permission to present. Group Grant/Admit signing
+requires current authenticated root truth, and completed delivery or new consent
+rechecks that truth after threshold completion. Historical wallet reads keep the
+original admitted proof after revocation. Prepare a presentation BUP against the
+frozen unsigned Grant before its first member approval; recorded wrapper retries
+replay their exact original nests.
+
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
-writes the matching counted opening. A match does not establish accepted standing
+writes the matching raw opening tuple. A match does not establish accepted standing
 or permission to disclose.
 
 ACDC v2 IPEX attachment genus defaults to 2.0. Agree/Grant/Admit independently
@@ -97,11 +109,12 @@ default remains 1.0. Body protocol version and attachment genus are independent.
 `--out` writes supporting public evidence plus signed wire; otherwise existing
 runtime delivery runs and joins cleanup before final output.
 
-ACDC v2 mutation commands load the store's normal configuration. Set
-`"kram": {"enabled": true}` there to use the existing receiver-policy defaults
-when a flow requires qualified receiver time. `tufa agent` forwards KRAM from
-its selected configuration too; use the same policy for the store and its host.
-Omitting `kram` leaves that optional intake policy disabled.
+ACDC v2 mutation commands load the store's normal configuration. Flows requiring
+qualified receiver time need KRAM enabled with explicit cache windows; enabling
+it alone supplies no windows. The selected Locksmith policy is
+`"kram": {"enabled": true, "caches": {"~": [10000, 300000, 3600000, 86400000, 300000, 3600000, 86400000]}}`.
+`tufa agent` forwards KRAM from its selected configuration too; use the same
+policy for the store and its host. Omitting `kram` leaves it disabled.
 
 ## ACDC v2 registry authoring
 

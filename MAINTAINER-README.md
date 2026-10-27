@@ -19,13 +19,14 @@ Developer adoption and day-to-day package usage are documented in `README.md`,
 Use the checked-in `.tool-versions` file for local maintainer work:
 
 - Node `25.9.0`
-- Deno `2.7.11`
+- Deno `2.9.8`
 
-CI currently pins Deno `2.8.2` and Node `25.9.0`; the local Deno pin differs.
-Record the actual runtime when comparing results. This matters because the repo
-depends on a
-native `lmdb-js` addon rebuilt with `LMDB_DATA_V1=true`, and addon behavior has
-been sensitive to runtime drift.
+Local tooling and CI select Deno `2.9.8` and Node `25.9.0`. Deno 2.8.2 fails
+the configured HTTPS wrong-CA control after a valid connection; 2.9.8 rejects
+that connection. See the [configured-source boundary](docs/reference/compatibility/KERI_V1_V2_COMPATIBILITY.md#comp-02--detached-and-full-body-http-framing).
+Record the actual runtime when comparing results: the native `lmdb-js` addon is
+rebuilt with `LMDB_DATA_V1=true`, and its behavior has been sensitive to runtime
+drift.
 
 Local macOS note:
 

@@ -100,6 +100,12 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       receiptLimit = 3;
       const revoked = yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true });
       assertEquals([revoked.sad!.n, issuer.kever!.said], ["2", pendingSeal]);
+      const revokedSeal = issuer.kever!.said;
+      assertEquals(
+        (yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true })).said,
+        revoked.said,
+      );
+      assertEquals(issuer.kever!.said, revokedSeal, "accepted revocation retry must not create another anchor");
       assertEquals(
         wallet.db.issued.get([acdc.said!])!.update,
         original.update,
@@ -127,6 +133,34 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       assertEquals(rgy.store.publicOpening(successor.said!)!.ts.label, "renewed");
       assertEquals(custody.derivedOpening(staged.event).d.nonce, staged.opening.d.nonce);
       assertEquals([...rgy.store.cloneTelIter(rip.said!)].length, 5);
+      const reissued = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      const advance = author.stage(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      assertEquals(advance.event.sad!.n, (BigInt(`0x${reissued.sad!.n}`) + 1n).toString(16));
+      assertEquals(
+        advance.event.said === reissued.said,
+        false,
+        "explicit same-state update creates a fresh BUP/opening",
+      );
+      assertEquals(advance.opening.d.nonce === reissued.sad!.b, false, "an explicit advance has a fresh opening");
+      receiptLimit = 1;
+      yield* call(() =>
+        assertRejects(() =>
+          run(() => author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true }))
+        )
+      );
+      const pendingAdvanceSeal = issuer.kever!.said;
+      assertEquals(rgy.store.head(rip.said!)?.qb64, reissued.said, "one receipt cannot accept the pending successor");
+      yield* rgy.baser.close(false);
+      yield* rgy.baser.reopen({ reuse: true });
+      yield* db.close(false);
+      yield* db.reopen({ reuse: true });
+      rgy = new AcdcV2Regery(hby, rgy.baser);
+      author = new WalletAuthor(wallet, rgy, receiptor);
+      receiptLimit = 3;
+      const resumed = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      assertEquals(resumed.raw, advance.event.raw, "retry reuses the exact pending next event");
+      assertEquals(issuer.kever!.said, pendingAdvanceSeal, "retry gathers receipts for the same pending anchor");
+      assertEquals(wallet.db.issued.get([acdc.said!])!.update, original.update);
     } finally {
       yield* db.close(true);
       for (const server of servers) yield* call(() => server.shutdown());

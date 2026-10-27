@@ -19,7 +19,7 @@ import { parseGvrsn } from "../../../../cli.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
 import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";
-import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
+import { inspectCesrStream, readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { setupHby } from "../../../../src/cli/common/existing.ts";
 import {
   ipexAdmitCommand,
@@ -200,7 +200,9 @@ Deno.test("CLI - IPEX apply runs queued delivery before closing its command stor
   const messages: SerderKERI[] = [];
   let status = 204;
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
-    messages.push(new SerderKERI({ raw: await readCesrRequestBytes(request) }));
+    const { messages: received } = await inspectCesrStream(await readCesrRequestBytes(request));
+    assertEquals(received.length, 1);
+    messages.push(received[0]);
     return new Response(status === 503 ? "service unavailable" : null, { status });
   });
   const url = `http://127.0.0.1:${server.addr.port}/`;

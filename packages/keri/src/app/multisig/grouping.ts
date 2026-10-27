@@ -19,12 +19,15 @@ import {
   Prefixer,
   Saider,
   Serder,
+  SerderACDC,
   SerderKERI,
   type Versionage,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, type Operation } from "effection";
+import type { RegistryObserver } from "../../acdc/observing.ts";
+import { matchesRegistrySeal } from "../../acdc/regeventing.ts";
 import { exchange, nestedMultisigIlks } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
@@ -39,6 +42,7 @@ import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messagi
 export const MULTISIG_ICP_ROUTE = "/multisig/icp";
 export const MULTISIG_ROT_ROUTE = "/multisig/rot";
 export const MULTISIG_IXN_ROUTE = "/multisig/ixn";
+export const MULTISIG_REGISTRY_ROUTE = "/multisig/registry";
 export const MULTISIG_VCP_ROUTE = "/multisig/vcp";
 export const MULTISIG_ISS_ROUTE = "/multisig/iss";
 export const MULTISIG_REV_ROUTE = "/multisig/rev";
@@ -47,6 +51,7 @@ export const MULTISIG_RPY_ROUTE = "/multisig/rpy";
 
 /** Ordered route list used for handler registration. */
 export const MULTISIG_ROUTES = [
+  MULTISIG_REGISTRY_ROUTE,
   MULTISIG_ICP_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_IXN_ROUTE,
@@ -159,6 +164,50 @@ type MultisigMembership =
 export interface MultisigHandlerOptions {
   mux?: Multiplexor;
   notifier?: Notifier | null;
+  registry?: RegistryObserver | null;
+  messageKevery?: Kevery;
+}
+
+/** Validate the exact ACDC v2 TEL/KEL pair without granting member approval or writing evidence. */
+export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly CesrFrame[]) {
+  const payload = wrapper.sad?.a;
+  if (wrapper.route !== MULTISIG_REGISTRY_ROUTE || !isRecord(payload) || nests.length !== 2) return null;
+  const [tel, anchor] = nests.map(child => child.body);
+  if (
+    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI)
+    || !["rip", "bup"].includes(tel.ilk ?? "") || tel.pvrsn.major !== 2
+    || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid
+    || nests.some(child => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc
+    || !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre)
+    || !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some(seal => matchesRegistrySeal(seal, tel))
+  ) return null;
+  return { tel, anchor };
+}
+
+/** Commit one exact ACDC v2 registry/anchor pair using the ordinary nested-wire serializer. */
+export function* prepareAcdcV2RegistryExn(
+  sender: string,
+  tel: Uint8Array,
+  anchor: Uint8Array,
+  options: MultisigBuilderOptions = {},
+): Operation<MultisigMessage> {
+  const children = [tel, anchor].map(wire => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire)));
+  if (children.some(frames => frames.length !== 1)) {
+    throw new Error("ACDC v2 registry proposal requires one TEL and one KEL event.");
+  }
+  const nests = children.map(frames => frames[0]);
+  if (!(nests[1].body instanceof SerderKERI)) throw new Error("ACDC v2 registry anchor must be KERI.");
+  const wrapper =
+    exchange(MULTISIG_REGISTRY_ROUTE, { gid: nests[1].body.pre, tel: nests[0].body.said, anc: nests[1].body.said }, {
+      ...options,
+      sender,
+      version: Vrsn_2_0,
+    })[0];
+  if (!acdcV2RegistryProposal(wrapper, nests)) throw new Error("Invalid ACDC v2 registry proposal.");
+  const parts = yield* abortable(signal =>
+    Promise.all(nests.map(child => collectPayload(nestedPayload(child, Vrsn_2_0), signal)))
+  );
+  return [wrapper, concatBytes(...parts)] as const;
 }
 
 /** Coordinate one proposed group inception event. */
@@ -400,7 +449,7 @@ export class MultisigNotificationHandler implements ExchangeRouteHandler {
     this.mux = mux;
   }
 
-  /** Only the four frozen-reference v2 routes have child consumers. */
+  /** Only supported nested multisig routes have child consumers. */
   get acceptsNests(): boolean {
     return nestedMultisigIlks(this.resource) !== null;
   }
@@ -422,7 +471,13 @@ export function loadMultisigHandlers(
   exchanger: Exchanger,
   options: MultisigHandlerOptions = {},
 ): Multiplexor {
-  const mux = options.mux ?? new Multiplexor(hby, { notifier: options.notifier ?? null });
+  const mux = options.mux
+    ?? new Multiplexor(hby, {
+      notifier: options.notifier ?? null,
+      exchanger,
+      registry: options.registry ?? undefined,
+      messageKevery: options.messageKevery,
+    });
   for (const route of MULTISIG_ROUTES) {
     exchanger.addHandler(new MultisigNotificationHandler(route, mux));
   }
@@ -441,18 +496,32 @@ export class Multiplexor {
   readonly kvy: Kevery;
   readonly rvy: Revery;
   private readonly replay: Exchanger;
+  private readonly exchanger?: Exchanger;
+  private readonly registry?: RegistryObserver;
+  private readonly messageKevery: Kevery;
 
   /** Reuse durable group membership and separate child processors without sharing parent proof state. */
   constructor(
     hby: Habery,
-    { notifier }: { notifier?: Notifier | null } = {},
+    { notifier, exchanger, registry, messageKevery }: {
+      notifier?: Notifier | null;
+      exchanger?: Exchanger;
+      registry?: RegistryObserver;
+      messageKevery?: Kevery;
+    } = {},
   ) {
     this.hby = hby;
     this.notifier = notifier ?? null;
+    this.exchanger = exchanger;
+    this.registry = registry;
     const router = new Router();
     this.rvy = new Revery(hby.db, { rtr: router });
     new BasicReplyRouteHandler(this.rvy).registerReplyRoutes(router);
     this.kvy = new Kevery(hby.db, { lax: false, local: false, rvy: this.rvy });
+    this.messageKevery = messageKevery ?? this.kvy;
+    if (this.messageKevery.db !== hby.db) {
+      throw new TypeError("Multisig message intake must share the group evidence store.");
+    }
     this.kvy.registerReplyRoutes(router);
     this.replay = new Exchanger(hby);
   }
@@ -508,7 +577,17 @@ export class Multiplexor {
   /** Process only the approved direct child; arbitrary descendants remain guarded. */
   private *processApproved(nests: readonly CesrFrame[]): Operation<void> {
     for (const child of nests) {
-      yield* dispatchEnvelope(envelopeFromFrame(child, true), this.rvy, this.kvy);
+      yield* dispatchEnvelope(
+        envelopeFromFrame(child, true),
+        this.rvy,
+        this.kvy,
+        this.exchanger,
+        undefined,
+        undefined,
+        undefined,
+        this.messageKevery,
+        this.registry,
+      );
     }
   }
   /** Replay v1 children with their own stored proofs and signed attachment genus, as KERIpy does. */
@@ -596,6 +675,10 @@ export class Multiplexor {
         return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
       embeddedSaid = commitment;
+    } else if (route === MULTISIG_REGISTRY_ROUTE) {
+      const children = acdcV2RegistryProposal(serder, nests);
+      if (!children) return { ok: false, said, reason: "Invalid ACDC v2 registry/anchor proposal." };
+      embeddedSaid = children.anchor.said!;
     } else {
       const allowed = nestedMultisigIlks(route);
       if (!allowed || nests.length !== 1) {
@@ -605,7 +688,7 @@ export class Multiplexor {
       const signed = multisigPayloadSaid(serder);
       if (
         typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
-        || !(child.body instanceof SerderKERI) || child.nests?.length
+        || !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }

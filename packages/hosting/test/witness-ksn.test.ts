@@ -1,4 +1,4 @@
-import { SerderKERI } from "cesr-ts";
+import { attachmentPayload, collectPayload, parseBytes, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
@@ -56,6 +56,25 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
         assertEquals(rejected.status, status);
       }
       const event = [...peer.db.clonePreIter(controller.pre)][0];
+      const [frame] = parseBytes(event);
+      for (const major of [1, 2] as const) {
+        const attachments = yield* call(() => collectPayload(attachmentPayload(frame, { gvrsn: { major, minor: 0 } })));
+        const receipt = yield* call(() =>
+          fetch(origin + "/receipts", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/cesr",
+              "CESR-Genus": String(major),
+              "CESR-ATTACHMENT": new TextDecoder().decode(attachments),
+            },
+            body: new Uint8Array(frame.body.raw),
+            client,
+          })
+        );
+        yield* call(() => receipt.arrayBuffer());
+        assertEquals(receipt.status, 200);
+        assertEquals(hby.db.getKever(controller.pre)!.serder.raw, frame.body.raw);
+      }
       assertEquals((yield* witnessReceiptPost(runtime, witness, event)).kind, "accepted");
       // The actual query handler captures metadata without hydrating an event or pulling output early.
       const read = hby.db.getEvt;
