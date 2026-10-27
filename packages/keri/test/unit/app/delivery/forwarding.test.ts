@@ -5,11 +5,12 @@ import { httpClient } from "../../../support/http-client.ts";
  * routing through the supported Poster admission and completion operations.
  */
 import { call, type Operation, run, spawn } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { createServer } from "node:net";
 import {
   collectPayload,
   concatBytes,
+  Counter,
   framePayload,
   parseBytes,
   SerderKERI,
@@ -797,11 +798,21 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           });
 
           assertEquals(result.deliveries, [`http://127.0.0.1:${port}`]);
-          // Compare against original signed wire independently of the transport serializer.
-          assertEquals(concatBytes(...bodies.slice(0, frameCount)), expectedIntro);
+          // Remove only the declared HTTP selector before comparing original signed wire.
           assertEquals(bodies.length, frameCount + 1);
+          const originalIntro = [];
+          for (const [index, frame] of introduction.entries()) {
+            assertExists(frame.gvrsn);
+            const selector = Counter.makeGVC(frame.gvrsn);
+            assertEquals(bodies[index].subarray(0, selector.length), selector);
+            originalIntro.push(bodies[index].subarray(selector.length));
+          }
+          assertEquals(concatBytes(...originalIntro), expectedIntro);
 
-          const delivered = new SerderKERI({ raw: bodies.at(-1)! });
+          const frames = parseBytes(bodies.at(-1)!);
+          assertEquals(frames.length, 1);
+          const delivered = frames[0].body;
+          assert(delivered instanceof SerderKERI);
           assertEquals(delivered.route, "/fwd");
           assertEquals(delivered.ked?.q, {
             pre: recipient.pre,

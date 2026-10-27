@@ -1,6 +1,5 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { SerderKERI } from "../../../../../cesr/mod.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
@@ -10,7 +9,7 @@ import {
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
-import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
+import { inspectCesrStream, readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import {
   drainWitnessCues,
@@ -382,7 +381,9 @@ Deno.test("witness recovery queries use the concrete query owner and sign only o
       hby,
       httpClient(async (url, init) => {
         const wire = await readCesrRequestBytes(new Request(url, init));
-        if (new SerderKERI({ raw: wire }).ilk === "qry") sent++;
+        const { messages } = await inspectCesrStream(wire);
+        assertEquals(messages.length, 1);
+        if (messages[0].ilk === "qry") sent++;
         return new Response(null, { status: 204 });
       }),
       systemClock,

@@ -20,7 +20,7 @@ import { createHabery, type Hab } from "../../../src/app/identity/habbing.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
-import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import { inspectCesrStream, readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
@@ -1033,7 +1033,9 @@ Deno.test("registry TSN missing issuer and TEL retry through the normal runtime 
       hby,
       httpClient(async (url, init) => {
         const wire = await readCesrRequestBytes(new Request(url, init));
-        const message = new SerderKERI({ raw: wire });
+        const { messages } = await inspectCesrStream(wire);
+        assertEquals(messages.length, 1);
+        const [message] = messages;
         if (message.ilk === "qry") queries.push(message.ked!.q as Record<string, unknown>);
         return new Response(null, { status: 204 });
       }),
