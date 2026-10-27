@@ -28,7 +28,7 @@ To run selected maintained owners in CI instead:
 
 Unit choices are the existing `required` owners in
 [suite inventory](../../scripts/ci/keri-test-suites.ts), plus `ci` (all KERI
-required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (the HTTP hosting tests), `cesr` and
+required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (the HTTP hosting tests), `wallet` (the wallet inventory tests), `cesr` and
 `ci-tools` (the scope contract tests). Interop choices are the concrete owners in
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.
@@ -57,7 +57,7 @@ For the periodic broad run, use:
 ```
 ````
 
-Full mode runs all required KERI owners, Tufa, verifier, hosting, CESR, every maintained extended
+Full mode runs all required KERI owners, Tufa, verifier, hosting, wallet, CESR, every maintained extended
 interop owner and installed-package smoke tests. Interop owners run in separate
 jobs with their existing 25-minute PR cap. This is the broad PR battery; manual
 endurance and final clean-source release qualification remain separate gates.

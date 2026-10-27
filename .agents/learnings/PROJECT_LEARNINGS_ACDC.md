@@ -249,6 +249,13 @@ IPEX conversations, issuer proofs and wallet acceptance remain separate. Follow
 coordination. Legacy grant artifacts distinguish acdc/cancs TEL source proof from
 iss/ancs issuer KEL anchor; confusing them breaks credential presentation.
 
+The wallet package owns issued bytes and explicit consent to one accepted Grant/Admit
+pair. It borrows Habery, RegistryStore and Exchanger; callers own their lifetimes.
+New admission requires current authenticated root truth. Historical reads reuse
+outer exchange authentication and the original Grant nests without reevaluating
+current standing or substituting a fuller cached disclosure. Inventory and consent
+never imply custody of a private opening.
+
 Verifier work comes from accepted grants, saved credentials and TEL state, not
 Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a

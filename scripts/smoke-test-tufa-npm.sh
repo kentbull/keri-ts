@@ -6,6 +6,7 @@
 # - a locally built `keri-ts` tarball
 # - a locally built `@keri-ts/verifier` tarball
 # - a locally built `@keri-ts/hosting` tarball
+# - a locally built `@keri-ts/wallet` tarball for the independent wallet store probe
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -18,6 +19,7 @@ CESR_TARBALL_PATH="${2:-}"
 KERI_TARBALL_PATH="${3:-}"
 VERIFIER_TARBALL_PATH="${4:-}"
 HOSTING_TARBALL_PATH="${5:-}"
+WALLET_TARBALL_PATH="${6:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -36,6 +38,13 @@ if [[ -z "${TARBALL_PATH}" ]]; then
     HOSTING_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/hosting/npm" && npm pack --silent | tail -n1)"
     HOSTING_TARBALL_PATH="${ROOT_DIR}/packages/hosting/npm/${HOSTING_TARBALL_NAME}"
   fi
+fi
+
+# The wallet probe is an independent package consumer; Tufa has no wallet dependency.
+if [[ -z "${WALLET_TARBALL_PATH}" ]]; then
+  (cd "${ROOT_DIR}/packages/wallet" && deno task build:npm)
+  WALLET_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/wallet/npm" && npm pack --silent | tail -n1)"
+  WALLET_TARBALL_PATH="${ROOT_DIR}/packages/wallet/npm/${WALLET_TARBALL_NAME}"
 fi
 
 if [[ ! -f "${TARBALL_PATH}" ]]; then
@@ -105,6 +114,17 @@ if [[ -n "${HOSTING_TARBALL_PATH}" ]]; then
   HOSTING_TARBALL_NAME="$(basename "${HOSTING_TARBALL_PATH}")"
   DOCKER_ARGS+=(-v "${HOSTING_TARBALL_DIR}:/hosting-pkg")
   INSTALL_TARGETS=("/hosting-pkg/${HOSTING_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
+fi
+
+if [[ -n "${WALLET_TARBALL_PATH}" ]]; then
+  if [[ ! -f "${WALLET_TARBALL_PATH}" ]]; then
+    echo "Wallet tarball not found: ${WALLET_TARBALL_PATH}" >&2
+    exit 1
+  fi
+  WALLET_TARBALL_DIR="$(cd "$(dirname "${WALLET_TARBALL_PATH}")" && pwd)"
+  WALLET_TARBALL_NAME="$(basename "${WALLET_TARBALL_PATH}")"
+  DOCKER_ARGS+=(-v "${WALLET_TARBALL_DIR}:/wallet-pkg")
+  INSTALL_TARGETS=("/wallet-pkg/${WALLET_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 fi
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"

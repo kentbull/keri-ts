@@ -227,6 +227,8 @@ jobs:
           echo "verifier=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
           cd ../../hosting/npm
           echo "hosting=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../wallet/npm
+          echo "wallet=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: smoke test exact packages on the minimum Node version
         env:
@@ -237,7 +239,8 @@ jobs:
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
             "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
-            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}"
+            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
+            "packages/wallet/npm/${{ steps.pack.outputs.wallet }}"
 
       - name: smoke test exact packages on Alpine
         env:
@@ -248,7 +251,8 @@ jobs:
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
             "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
-            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}"
+            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
+            "packages/wallet/npm/${{ steps.pack.outputs.wallet }}"
 
       - name: smoke test exact packages on pointer-compressed Node
         env:
@@ -264,7 +268,8 @@ jobs:
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
             "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
-            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}"
+            "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
+            "packages/wallet/npm/${{ steps.pack.outputs.wallet }}"
 
       - name: retain packages on failure
         if: ${{ failure() }}
@@ -277,6 +282,7 @@ jobs:
             packages/tufa/npm/${{ steps.pack.outputs.tufa }}
             packages/verifier/npm/${{ steps.pack.outputs.verifier }}
             packages/hosting/npm/${{ steps.pack.outputs.hosting }}
+            packages/wallet/npm/${{ steps.pack.outputs.wallet }}
           if-no-files-found: ignore
           retention-days: 3
 
