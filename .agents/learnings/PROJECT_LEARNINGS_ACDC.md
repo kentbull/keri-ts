@@ -53,6 +53,12 @@ record schemas in structing.ts and counted transport in wrappers.
 
 ## TEL, verifier and IPEX
 
+`acdc/graphing.ts` owns relation evaluation and edge block/label rules over borrowed
+`AcdcGraph` indexes. `evaluateAcdcRelations` reads accepted KEL, schemas and supplied
+registry states; it preserves dependency, malformed, unknown-state and Boolean
+outcomes. IPEX supplies its existing frame graph directly, without projection or
+another walker. Negotiated disclosure and Offer/Grant traversal remain IPEX policy.
+
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
 BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
 Missing management state stays pending with its candidate signatures. Every admission

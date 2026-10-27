@@ -21,13 +21,14 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
 import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
 import { type ExchangeDecision, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../../src/app/ipex/ipex-building.ts";
-import { verifyIpexRelations as verifyRelations, walkIpexGraph } from "../../../../src/app/ipex/ipex-graph.ts";
+import { walkIpexGraph } from "../../../../src/app/ipex/ipex-graph.ts";
 import { authenticateIpexNode } from "../../../../src/app/ipex/ipex-node-authentication.ts";
 import { IpexV2Handler } from "../../../../src/app/ipex/ipex-v2.ts";
 import { type IpexRoute, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
@@ -43,8 +44,8 @@ import { Schemer } from "../../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import fixture from "../../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 /** These relation fixtures are unregistered; signed grants exercise authentication separately. */
-const verifyIpexRelations = (graph: Parameters<typeof verifyRelations>[0], db: Habery["db"]) =>
-  verifyRelations(graph, db, new Map());
+const evaluateRelations = (graph: Parameters<typeof evaluateAcdcRelations>[0], db: Habery["db"]) =>
+  evaluateAcdcRelations(graph, db, new Map());
 
 /** Feed signed public KEL bytes through normal event verification. */
 async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
@@ -918,8 +919,8 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         const root = near(far, pin);
         return walkIpexGraph(root.said!, [node(root), node(far)], true)!;
       };
-      assertEquals(verifyIpexRelations(graph(valid, schema.said), hby.db), true);
-      assertEquals(verifyIpexRelations(graph(invalid, schema.said), hby.db), false);
+      assertEquals(evaluateRelations(graph(valid, schema.said), hby.db), true);
+      assertEquals(evaluateRelations(graph(invalid, schema.said), hby.db), false);
       const alternative = credential("Near", {
         d: "",
         o: "OR",
@@ -937,7 +938,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         good: { n: valid.said },
       });
       assertEquals(
-        verifyIpexRelations(walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true)!, hby.db),
+        evaluateRelations(walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true)!, hby.db),
         true,
       );
       const edgeSchema = new Schemer({
@@ -950,23 +951,23 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       });
       const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
       const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true)!;
-      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
+      assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
       const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
       assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
       assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
       hby.db.schema.pin(edgeSchema.said, edgeSchema);
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(edgeGrant.serder.said!));
-      assertEquals(verifyIpexRelations(inheritedGraph, hby.db), true);
-      assertEquals(verifyIpexRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
-      assertEquals(verifyIpexRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);
+      assertEquals(evaluateRelations(inheritedGraph, hby.db), true);
+      assertEquals(evaluateRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
+      assertEquals(evaluateRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);
       // A real schema read failure propagates; it is never downgraded to missing-schema escrow.
       const get = hby.db.schema.get.bind(hby.db.schema);
       hby.db.schema.get = () => {
         throw new Error("schema storage unavailable");
       };
       try {
-        assertThrows(() => verifyIpexRelations(graph(valid, edgeSchema.said), hby.db), Error, "storage unavailable");
+        assertThrows(() => evaluateRelations(graph(valid, edgeSchema.said), hby.db), Error, "storage unavailable");
       } finally {
         hby.db.schema.get = get;
       }
