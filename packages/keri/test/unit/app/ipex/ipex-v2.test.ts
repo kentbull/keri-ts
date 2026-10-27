@@ -1019,6 +1019,72 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         });
         assertEquals((yield* submit(grant, [node(publicNode)])).kind, "accept");
       }
+      // Whole/subtree claims must expose schema-declared maps, not just their authentic digests.
+      const scalar = { type: "string" };
+      const profile = {
+        type: "object",
+        properties: { d: scalar, value: scalar },
+        additionalProperties: false,
+      };
+      const attribute = {
+        type: "object",
+        properties: { d: scalar, profile: { oneOf: [scalar, profile] }, reference: scalar },
+        additionalProperties: false,
+      };
+      const closed = new Schemer({
+        sed: { $id: "", version: "1.0.0", type: "object", properties: { a: attribute } },
+      });
+      const full = acdcmap(issuer.pre, {
+        schema: closed.said,
+        attribute: { d: "", profile: { d: "", value: "visible" }, reference: valid.said! },
+      });
+      const fullAttribute = full.sad!.a as MapperMap;
+      const hidden = new SerderACDC({
+        sad: { ...full.sad!, a: { ...fullAttribute, profile: (fullAttribute.profile as MapperMap).d } },
+        makify: true,
+      });
+      assertEquals(hidden.said, full.said, "hidden and expanded views keep the same credential commitment");
+      const disclose = (body: SerderACDC, fields: readonly string[]) => {
+        const grant = ipexExnBody(sender.pre, "/ipex/grant", [body], {
+          message: crypto.randomUUID(),
+          recipient: recipient.pre,
+          xid: crypto.randomUUID(),
+          plan: [[body.schema as string, "/", fields]],
+        });
+        return submit(grant, [node(body)]);
+      };
+      const waiting = yield* disclose(full, [""]);
+      assert(waiting.kind === "escrow");
+      assertEquals(waiting.reason, "Missing disclosure schema.");
+      assertExists(hby.db.emse!.get([waiting.said, closed.said]));
+      hby.db.schema.pin(closed.said, closed);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(waiting.said), "ordinary schema arrival completes the same retained Grant");
+      assertEquals((yield* disclose(hidden, [])).kind, "accept", "presence does not promise recursive closure");
+      assertEquals(
+        (yield* disclose(hidden, ["a/reference"])).kind,
+        "accept",
+        "explicit scalar-SAID data remains valid",
+      );
+      const closureKinds = [];
+      for (const fields of [[""], ["d/"], ["a/"]]) closureKinds.push((yield* disclose(hidden, fields)).kind);
+      assertEquals(closureKinds, ["reject", "reject", "reject"], "whole selectors cannot conceal nested maps");
+      for (const fields of [[""], ["d/"], ["a/"]]) {
+        assertEquals((yield* disclose(full, fields)).kind, "accept", "a scalar-only SAID is data, not a hidden map");
+      }
+      const wholeAggregate = acdcmap(issuer.pre, { schema: closed.said, aggregate: aggregate.sad!.A as string[] });
+      assertEquals(
+        (yield* disclose(wholeAggregate, [""])).kind,
+        "reject",
+        "whole aggregates remain outside this bounded profile",
+      );
+      const { additionalProperties: _, ...openAttribute } = attribute;
+      const open = new Schemer({
+        sed: { $id: "", version: "1.0.0", type: "object", properties: { a: openAttribute } },
+      });
+      hby.db.schema.pin(open.said, open);
+      const openNode = acdcmap(issuer.pre, { schema: open.said, attribute: fullAttribute });
+      assertEquals((yield* disclose(openNode, [""])).kind, "reject", "open schemas cannot prove whole disclosure");
       // Same-schema pins still evaluate the far credential; equality of IDs proves no payload constraint.
       const near = (far: SerderACDC, pin: string | MapperMap) =>
         credential("Near", { d: "", link: { n: far.said, s: pin } });

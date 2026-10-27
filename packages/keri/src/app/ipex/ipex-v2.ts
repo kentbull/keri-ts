@@ -156,7 +156,10 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const origin = attrs.o[0] as string;
     const graph = walkIpexGraph(origin, nests, true);
     if (!graph || [...graph.nodes.values()].some((node) => isIpexMetadata(node.body))) return false;
-    if (!verifyIpexDisclosure(plan, origin, graph)) return false;
+    const disclosure = verifyIpexDisclosure(plan, origin, graph, this.hby.db);
+    if (disclosure !== true) {
+      return disclosure ? { kind: "escrow", reason: "Missing disclosure schema.", schema: disclosure.said } : false;
+    }
     const fulfilled = this.offerFulfilled(previous, origin, graph);
     if (fulfilled !== true) return fulfilled;
     const registrations = new Map<string, RegistryState>();

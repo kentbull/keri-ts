@@ -1,7 +1,7 @@
-import { Diger, dumps, type MapperMap } from "cesr-ts";
+import { Diger, dumps, type MapperMap, ParserError } from "cesr-ts";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
-import { validateSchema } from "../../../src/acdc/scheming.ts";
+import { validateSchema, verifyDisclosureClosure } from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import type { Baser } from "../../../src/db/basing.ts";
 
@@ -179,14 +179,60 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
   cache.set(external.said, simple);
   expect(make({ $ref: external.said }), "invalid");
   assertEquals(new TextDecoder().decode(simple.raw), unchanged, "validation never changes cache or borrowed schemas");
-  const failed = {
-    schema: {
-      get() {
-        throw new Error("schema database unavailable");
+  // Whole disclosure shares these authenticated static resources, not a second resolver.
+  const closedAttribute = {
+    type: "object",
+    properties: { d: { type: "string" }, name: { type: "string" } },
+    additionalProperties: false,
+  };
+  const closed = make(closedAttribute);
+  assertEquals(verifyDisclosureClosure(credential(closed.sed), db, ["d/", "a/"]), { kind: "valid" });
+  assertEquals(
+    verifyDisclosureClosure(credential(closed.sed), db, ["a//"]).kind,
+    "invalid",
+    "malformed paths still refuse",
+  );
+  assertEquals(
+    verifyDisclosureClosure(credential(simple.sed), db, ["d/"]).kind,
+    "invalid",
+    "open object refuses closure",
+  );
+  const referenced = make({ $ref: closed.said + "#/properties/a" });
+  assertEquals(verifyDisclosureClosure(credential(referenced.sed), db, ["d/"]), { kind: "missing", said: closed.said });
+  cache.set(closed.said, closed);
+  assertEquals(verifyDisclosureClosure(credential(referenced.sed), db, ["d/"]), { kind: "valid" });
+  assertEquals(
+    verifyDisclosureClosure(rebound, db, ["d/"]).kind,
+    "invalid",
+    "closure authenticates stale bundled IDs too",
+  );
+  for (const applicator of ["anyOf", "allOf"] as const) {
+    const composed = make({ [applicator]: [closedAttribute] });
+    assertEquals(validateSchema(credential(composed.sed), db).kind, "valid");
+    assertEquals(verifyDisclosureClosure(credential(composed.sed), db, ["a/"]).kind, "invalid");
+  }
+  const branched = make({ oneOf: [{ type: "string" }, closedAttribute] });
+  assertEquals(verifyDisclosureClosure(credential(branched.sed), db, ["d/"]), { kind: "valid" });
+  const ambiguousClosure = make({ oneOf: [closedAttribute, closedAttribute] });
+  assertEquals(verifyDisclosureClosure(credential(ambiguousClosure.sed), db, ["a/"]).kind, "invalid");
+  const sibling = make({ $ref: "#/$defs/attribute", type: "object" }, { $defs: { attribute: closedAttribute } });
+  assertEquals(validateSchema(credential(sibling.sed), db).kind, "valid");
+  assertEquals(
+    verifyDisclosureClosure(credential(sibling.sed), db, ["a/"]).kind,
+    "invalid",
+    "ref siblings need intersections",
+  );
+  for (const failure of [new Error("schema database unavailable"), new ParserError("cached schema decode failed")]) {
+    const failed = {
+      schema: {
+        get() {
+          throw failure;
+        },
       },
-    },
-  } as unknown as Baser;
-  assertThrows(() => validateSchema(credential(simple.said), failed), Error, "database unavailable");
+    } as unknown as Baser;
+    assertEquals(assertThrows(() => validateSchema(credential(simple.said), failed)), failure);
+    assertEquals(assertThrows(() => verifyDisclosureClosure(credential(closed.said), failed, ["d/"])), failure);
+  }
   expect(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }), "valid");
   expect(make({}, { annotation: Array.from({ length: 5000 }, (_, i) => i) }), "valid");
   const deep: Record<string, unknown> = {};

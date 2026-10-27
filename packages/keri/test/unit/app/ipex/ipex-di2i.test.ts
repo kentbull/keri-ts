@@ -39,7 +39,8 @@ Deno.test("IPEX retains a signed DI2I grant until its delegator approval arrives
       message: "approved issuer",
       recipient: recipient.pre,
       xid: nodes[0].said!,
-      plan: nodes.map((body, index) => [(body.schema as { $id: string }).$id, index ? "/e/link/_/" : "/", [""]]),
+      // Request node presence; dedicated IPEX closure controls own whole-disclosure claims.
+      plan: nodes.map((body, index) => [(body.schema as { $id: string }).$id, index ? "/e/link/_/" : "/", []]),
     });
     const exchanger = new Exchanger(validator);
     loadIpexHandlers(validator, exchanger);

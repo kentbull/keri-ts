@@ -7,6 +7,8 @@ import {
   nodeLabels,
   sectionLabels,
 } from "../../acdc/graphing.ts";
+import { type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
+import type { Baser } from "../../db/basing.ts";
 
 /** One node selection: schema SAID, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -153,7 +155,12 @@ function equal(a: unknown, b: unknown): boolean {
 }
 
 /** Require the plan to select every disclosed node in canonical breadth-first order. */
-export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph: IpexGraph): boolean {
+export function verifyIpexDisclosure(
+  plan: DisclosurePlan,
+  origin: string,
+  graph: IpexGraph,
+  db: Baser,
+): boolean | Extract<SchemaValidation, { kind: "missing" }> {
   const selected: string[] = [];
   for (const [schema, prefix, fields] of plan) {
     let said = origin;
@@ -177,12 +184,14 @@ export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph
     const serder = node.body;
     const nodeSchema = serder.schema;
     if ((record(nodeSchema) ? nodeSchema.$id : nodeSchema) !== schema) return false;
-    if (fields.length === 1 && fields[0] === "") {
+    if (fields.includes("") || fields.includes("d/")) {
       for (const label of ["a", "e", "r"]) {
         const section = serder.sad![label];
         if (present(section) && !record(section)) return false;
       }
       if (present(serder.sad!.A) && !Array.isArray(serder.sad!.A)) return false;
+      const closure = verifyDisclosureClosure(serder, db, ["d/"]);
+      if (closure.kind !== "valid") return closure.kind === "missing" ? closure : false;
       continue;
     }
     const sections = new Map<string, string[]>();
@@ -214,6 +223,11 @@ export function verifyIpexDisclosure(plan: DisclosurePlan, origin: string, graph
       } catch {
         return false;
       }
+    }
+    const wholePaths = fields.filter((field) => field.endsWith("/"));
+    if (wholePaths.length) {
+      const closure = verifyDisclosureClosure(serder, db, wholePaths);
+      if (closure.kind !== "valid") return closure.kind === "missing" ? closure : false;
     }
   }
   return equal(selected, graph.order);

@@ -1,5 +1,5 @@
-/** Local v2 ACDC schema validation against the inspected 71438328 profile; no network resolution. */
-import { Diger, dumps, ParserError, type SerderACDC } from "cesr-ts";
+/** Authenticated local schemas and selected bounded v2 disclosure closure; no network resolution. */
+import { Diger, dumps, makePather, ParserError, type SerderACDC } from "cesr-ts";
 import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
@@ -151,74 +151,105 @@ function fragment(resource: Resource, value: string): Schema | boolean {
   }
   return target;
 }
-/** Local static schema closure plus a synchronous Draft 2020-12 validator; legacy Schemer behavior is unchanged. */
-export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | Readonly<Schema>): SchemaValidation {
-  const resources = new Map<string, Resource>(), roots: Schema[] = [];
-  const scopes = new Map<Schema, Resource>(), refs: { node: Schema; resource: Resource; value: unknown }[] = [];
-  const work: { schema: Schema | boolean; resource: Resource }[] = [];
-  let missing: string | null = null;
+/** Authenticate one local static resource graph, shared by validation and disclosure closure. */
+class SchemaResources {
+  private readonly resources = new Map<string, Resource>();
+  readonly roots: Schema[] = [];
+  readonly scopes = new Map<Schema, Resource>();
+  private readonly refs: { node: Schema; resource: Resource; value: unknown }[] = [];
+  private readonly work: { schema: Schema | boolean; resource: Resource }[] = [];
+  missing: string | null = null;
+
+  constructor(private readonly db: Baser) {}
+
   /** Cache reads remain outside input-validation catches and retain their infrastructure failures. */
-  function load(said: string): Resource | null {
-    const existing = resources.get(said);
+  private load(said: string): Resource | null {
+    const existing = this.resources.get(said);
     if (existing) return existing;
-    const cached = db.schema.get(said);
+    const cached = this.db.schema.get(said);
     if (!cached) {
-      missing = said;
+      this.missing = said;
       return null;
     }
     if (!(cached instanceof Schemer) || cached.kind !== "JSON") {
       throw new InvalidSchema("Unsupported non-JSON schema encoding");
     }
-    return add(cached.sed, true, said);
+    return this.add(cached.sed, true, said);
   }
   /** Verify each original resource before cloning it for compilation. */
-  function add(schema: Schema, root: boolean, expected?: string): Resource {
+  private add(schema: Schema, root: boolean, expected?: string): Resource {
     const said = identity(schema, root);
     if (expected && said !== expected) throw new InvalidSchema("Cached schema does not match its lookup SAID");
-    const existing = resources.get(said);
+    const existing = this.resources.get(said);
     if (existing) return existing;
     const resource = { said, schema, anchors: new Map<string, Schema | boolean>() };
-    resources.set(said, resource);
-    if (root) roots.push(schema);
-    work.push({ schema, resource });
+    this.resources.set(said, resource);
+    if (root) this.roots.push(schema);
+    this.work.push({ schema, resource });
     return resource;
   }
-  try {
-    const source = override ?? acdc.schema;
-    const root = object(source) ? add(source, true) : typeof source === "string" ? load(digest(source).qb64) : null;
-    if (!root) {
-      return missing
-        ? { kind: "missing", said: missing }
-        : { kind: "invalid", subject: "schema", reason: "Invalid ACDC schema field" };
-    }
+
+  /** Discover all original resources and static references before any private schema use. */
+  admit(source: unknown): Resource | null {
+    const root = object(source)
+      ? this.add(source, true)
+      : typeof source === "string"
+      ? this.load(digest(source).qb64)
+      : null;
+    if (!root) return null;
     for (;;) {
-      while (work.length) {
-        const item = work.pop()!;
-        if (typeof item.schema === "boolean" || scopes.has(item.schema)) continue;
+      while (this.work.length) {
+        const item = this.work.pop()!;
+        if (typeof item.schema === "boolean" || this.scopes.has(item.schema)) continue;
         const node = item.schema;
         let owner = item.resource;
-        if (node !== owner.schema && "$id" in node) owner = add(node, false);
-        scopes.set(node, owner);
+        if (node !== owner.schema && "$id" in node) owner = this.add(node, false);
+        this.scopes.set(node, owner);
         if (dynamic.some((key) => key in node)) throw new InvalidSchema("Dynamic schema references are prohibited");
         if ("$schema" in node && node.$schema !== dialect) throw new InvalidSchema("Schema must use Draft 2020-12");
         if (typeof node.$anchor === "string") owner.anchors.set(node.$anchor, node);
         if ("$ref" in node) {
-          refs.push({ node, resource: owner, value: node.$ref });
+          this.refs.push({ node, resource: owner, value: node.$ref });
         }
-        for (const child of children(node)) work.push({ schema: child, resource: owner });
+        for (const child of children(node)) this.work.push({ schema: child, resource: owner });
       }
       // Finish discovering bundled resources before cache lookup, including fragment targets in annotations.
-      for (const entry of refs) {
+      for (const entry of this.refs) {
         const parsed = reference(entry.value);
-        const owner = parsed.said ? load(parsed.said) : entry.resource;
-        if (!owner) return { kind: "missing", said: missing! };
+        const owner = parsed.said ? this.load(parsed.said) : entry.resource;
+        if (!owner) return null;
         // A just-loaded external resource must discover its anchors before fragment resolution.
-        if (!scopes.has(owner.schema)) continue;
+        if (!this.scopes.has(owner.schema)) continue;
         const target = fragment(owner, parsed.fragment);
-        if (object(target) && !scopes.has(target)) work.push({ schema: target, resource: owner });
+        if (object(target) && !this.scopes.has(target)) this.work.push({ schema: target, resource: owner });
       }
-      if (!work.length) break;
+      if (!this.work.length) break;
     }
+    return root;
+  }
+
+  /** Resolve only references authenticated by admit, preserving each bundled resource's scope. */
+  resolve(schema: Schema): Schema | boolean {
+    const owner = this.scopes.get(schema);
+    if (!owner) throw new Error("Admitted schema has no resource scope");
+    const parsed = reference(schema.$ref);
+    const target = parsed.said ? this.resources.get(parsed.said) : owner;
+    if (!target) throw new Error("Admitted schema reference has no resource");
+    return fragment(target, parsed.fragment);
+  }
+}
+
+/** Local static schema closure plus a synchronous Draft 2020-12 validator; legacy Schemer behavior is unchanged. */
+export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | Readonly<Schema>): SchemaValidation {
+  const resources = new SchemaResources(db);
+  try {
+    const root = resources.admit(override ?? acdc.schema);
+    if (!root) {
+      return resources.missing
+        ? { kind: "missing", said: resources.missing }
+        : { kind: "invalid", subject: "schema", reason: "Invalid ACDC schema field" };
+    }
+    const { roots, scopes } = resources;
     // Compile only admitted private copies. Canonical local URNs remove URI-alias ambiguity without changing stored IDs.
     const uri = (said: string) => `urn:said:${said}`;
     const registered = new Set<string>();
@@ -267,6 +298,152 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
     return validate(acdc.sad)
       ? { kind: "valid" }
       : { kind: "invalid", subject: "credential", reason: validator.errorsText(validate.errors) };
+  } catch (error) {
+    if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
+    throw error;
+  }
+}
+
+/** Select a declared JSON type without interpreting constraints or digest spelling. */
+function schemaTypeMatches(schema: unknown, value: unknown): boolean {
+  if (schema === true) return true;
+  if (!object(schema)) return false;
+  const type = schema.type;
+  if (object(value)) return type === "object";
+  if (Array.isArray(value)) return type === "array";
+  if (value === null) return type === "null";
+  if (typeof value === "number") return type === "number" || (Number.isInteger(value) && type === "integer");
+  if (typeof value === "string") return type === "string";
+  if (typeof value === "boolean") return type === "boolean";
+  return false;
+}
+
+/** Select one bounded, unambiguous branch; intersections and conditional reasoning stay unsupported. */
+function selectDisclosureSchema(
+  schema: unknown,
+  value: unknown,
+  resources: SchemaResources,
+  depth = 64,
+): Schema | false | null {
+  if (depth <= 0) return null;
+  if (typeof schema === "boolean") return schema === false ? false : null;
+  if (!object(schema)) return null;
+  if ("$ref" in schema) {
+    const annotations = new Set([
+      "$ref",
+      "$id",
+      "$schema",
+      "title",
+      "description",
+      "$comment",
+      "deprecated",
+      "readOnly",
+      "writeOnly",
+      "examples",
+      "default",
+    ]);
+    if (Object.keys(schema).some((key) => !annotations.has(key))) return null;
+    return selectDisclosureSchema(resources.resolve(schema), value, resources, depth - 1);
+  }
+  if (
+    ["anyOf", "allOf", "not", "if", "then", "else", "dependentSchemas", "patternProperties"].some((key) =>
+      key in schema
+    )
+  ) {
+    return null;
+  }
+  if ("oneOf" in schema) {
+    if (!Array.isArray(schema.oneOf) || schema.oneOf.length > 16) return null;
+    const matches = schema.oneOf.filter((branch) => schemaTypeMatches(branch, value));
+    return matches.length === 1 ? selectDisclosureSchema(matches[0], value, resources, depth - 1) : null;
+  }
+  return schema;
+}
+
+/** Detect a compact-or-expanded map position without classifying ordinary scalar SAID data as a hidden map. */
+function schemaMayMap(schema: unknown, resources: SchemaResources, depth = 64): boolean {
+  if (depth <= 0 || schema === true) return true;
+  if (!object(schema)) return false;
+  if (schema.type === "object") return true;
+  if ("$ref" in schema) return schemaMayMap(resources.resolve(schema), resources, depth - 1);
+  if (!("oneOf" in schema)) return false;
+  if (!Array.isArray(schema.oneOf) || schema.oneOf.length > 16) return true;
+  return schema.oneOf.some((branch) => schemaMayMap(branch, resources, depth - 1));
+}
+
+/** Prove each schema-declared field-map below the carried value is expanded, under selected bounded limits. */
+function closedBySchema(value: unknown, schema: unknown, resources: SchemaResources, depth = 64): boolean {
+  if (depth <= 0 || (typeof value === "string" && schemaMayMap(schema, resources, depth))) return false;
+  const selected = selectDisclosureSchema(schema, value, resources, depth);
+  if (selected === null) return false;
+  if (!object(value)) return schemaTypeMatches(selected, value);
+  if (!selected || selected.type !== "object" || !object(selected.properties)) return false;
+  const additional = selected.additionalProperties;
+  if (additional !== false && !object(additional)) return false;
+  for (const [label, child] of Object.entries(value)) {
+    const childSchema = selected.properties[label] ?? additional;
+    if (childSchema === false || !closedBySchema(child, childSchema, resources, depth - 1)) return false;
+  }
+  return true;
+}
+
+/** Locate the carried value and its authenticated subschema without resolving or expanding credential data. */
+function disclosureSubschema(schema: unknown, value: unknown, parts: readonly string[], resources: SchemaResources): {
+  value: unknown;
+  schema: unknown;
+} | null {
+  for (const part of parts) {
+    const selected = selectDisclosureSchema(schema, value, resources);
+    if (!selected || !object(value)) return null;
+    if (object(selected.properties) && Object.hasOwn(selected.properties, part)) schema = selected.properties[part];
+    else {
+      schema = selected.additionalProperties;
+      if (schema !== true && !object(schema)) return null;
+    }
+    if (!Object.hasOwn(value, part)) return null;
+    value = value[part];
+  }
+  return { value, schema };
+}
+
+/**
+ * Prove requested whole/subtree disclosure under the selected explicit-acm profile.
+ * Own-node schema validation remains separate. Missing static resources stay dependencies;
+ * open/ambiguous schemas, reference intersections and whole aggregates refuse the closure claim.
+ */
+export function verifyDisclosureClosure(acdc: SerderACDC, db: Baser, paths: readonly string[]): SchemaValidation {
+  const invalid = (): SchemaValidation => ({
+    kind: "invalid",
+    subject: "credential",
+    reason: "Unproved disclosure closure",
+  });
+  if (acdc.ilk !== "acm") return invalid();
+  const resources = new SchemaResources(db);
+  try {
+    const root = resources.admit(acdc.schema);
+    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : invalid();
+    for (const path of paths) {
+      let parts: string[];
+      try {
+        parts = [...makePather(path, { relative: true }).rparts];
+      } catch (error) {
+        if (error instanceof ParserError) return invalid();
+        throw error;
+      }
+      if (parts.at(-1) === "") parts.pop();
+      if (parts.length === 1 && parts[0] === "d") {
+        if (Object.hasOwn(acdc.sad!, "A")) return invalid();
+        for (const label of ["a", "e", "r"]) {
+          if (!Object.hasOwn(acdc.sad!, label)) continue;
+          const located = disclosureSubschema(root.schema, acdc.sad, [label], resources);
+          if (!located || !closedBySchema(located.value, located.schema, resources)) return invalid();
+        }
+      } else {
+        const located = disclosureSubschema(root.schema, acdc.sad, parts, resources);
+        if (!located || !closedBySchema(located.value, located.schema, resources)) return invalid();
+      }
+    }
+    return { kind: "valid" };
   } catch (error) {
     if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
     throw error;

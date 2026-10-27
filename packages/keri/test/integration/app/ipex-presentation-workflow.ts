@@ -19,7 +19,7 @@ import {
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
-import { acdcmap } from "../../../src/acdc/messaging.ts";
+import { acdcmap, acmSchemaDefault } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
@@ -154,7 +154,25 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           yield* anchor(prip, holders, holderRuntimes);
           accepted(presentation, prip);
 
+          // The negotiated whole status subtree needs declared closure; its private sibling stays hidden.
+          const schema = acmSchemaDefault()[1];
+          schema.$id = "";
+          ((schema.properties as MapperMap).a as MapperMap).oneOf = [
+            { type: "string" },
+            {
+              type: "object",
+              properties: {
+                status: {
+                  type: "object",
+                  required: ["d", "u", "value"],
+                  properties: { d: { type: "string" }, u: { type: "string" }, value: { type: "string" } },
+                  additionalProperties: false,
+                },
+              },
+            },
+          ];
           const credential = acdcmap(issuer.pre, {
+            schema,
             regid: irip.said!,
             uuid: nonce(),
             attribute: {
