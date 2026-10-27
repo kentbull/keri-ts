@@ -24,12 +24,27 @@ references; one result must not be attributed to another.
 
 ## Explicit 2.0.0 release peer profiles
 
-`setup-keripy-main-peer` prepares a separate main checkout/venv for native
-protocol and ESSR storage owners in PR, extended and macOS workflows. The suite
+`setup-keripy-main-peer` prepares a separate main checkout/venv for disclosure
+and ESSR storage owners in PR, extended and macOS workflows. The suite
 runner scopes it to those owners; it does not change other suites' mailbox-fork or explicitly selected wire
 peer. Local direct storage runs require the explicit `main` profile/root/Python;
 suite runs may instead supply `KERIPY_MAIN_ROOT` and
 `KERIPY_MAIN_PYTHON`. No legacy Baser qualification is implied.
+
+The same action's `profile: candidate` input prepares the native-v2 candidate for
+`interop-native-registry` in PR and extended workflows. Local owner runs require
+`KERIPY_CANDIDATE_ROOT` and `KERIPY_CANDIDATE_PYTHON`, or explicit
+`KERIPY_INTEROP_PROFILE=candidate` with its root and interpreter. Main setup cannot
+replace this selection; missing candidate configuration and mismatched source/imports
+fail before protocol state. This owner retains the existing two reciprocal native
+proof cases and TS intake/reopen assertions. Its Python children use context-managed
+temporary stores; no persistent CLI stores or witness processes are launched.
+
+The existing manifest records the six candidate source pins, the exact
+[R/W register](https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance)
+and [specification reference](https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/keri-acdc-v2-spec-v1.1-gap-closure-roadmap.md).
+These are a selected interoperability target, not a conformance claim. The five IPEX
+disclosure files remain on main pending their separate flat-`dp` alignment.
 
 `scripts/ci/keripy-reference.json` freezes independent release profiles selected
 on 2026-10-20; main advanced to c7e74ad before final qualification. These supplement the mailbox-fork default; they do not relabel it.
@@ -43,7 +58,7 @@ on 2026-10-20; main advanced to c7e74ad before final qualification. These supple
 The `1.2` target is GLEIF-IT/keripy with `gleif-keri`/`gleif-hio` distributions;
 main and 1.3 retain WebOfTrust/keripy. It replaces the original 1.2.14 pin after
 its Directant dropped queued input on EOF. `qualify-reference-profiles.py` prepares
-all three isolated environments for CI.
+only these three isolated environments for CI; candidate qualification has its own owner.
 
 Prepare each clean checkout with its own venv, install it editable with the
 listed dependency pins, then set `KERIPY_INTEROP_PROFILE`,

@@ -1,7 +1,7 @@
 """Live native registry builders and read-only vetting against independently parsed KELs.
 
-This driver uses supported main APIs. It neither patches Parser's unsupported
-native-registry route nor claims Python wallet or registry persistence.
+This driver parses foreign KELs and calls the candidate's read-only native proof
+APIs. It does not exercise Python wallet or registry persistence.
 """
 import argparse
 import json

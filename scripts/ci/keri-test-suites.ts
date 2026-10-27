@@ -108,12 +108,14 @@ export const suites: Record<string, TestSuite> = {
   "interop-ipex-disclosure": {
     files: [
       "test/integration/app/interop-ipex-disclosure.test.ts",
-      "test/integration/app/interop-native-registry.test.ts",
       "test/integration/app/interop-ipex-progressive.test.ts",
       "test/integration/app/interop-ipex-edge-refusals.test.ts",
       "test/integration/app/interop-ipex-conversation-refusals.test.ts",
       "test/integration/app/interop-ipex-presentation.test.ts",
     ],
+  },
+  "interop-native-registry": {
+    files: ["test/integration/app/interop-native-registry.test.ts"],
   },
   "interop-acdc-extended": {
     files: [
@@ -308,6 +310,7 @@ export const interop = [
   "interop-acdc-extended",
   "interop-acdc-deep",
   "interop-ipex-disclosure",
+  "interop-native-registry",
   "interop-delegation",
   "interop-witness-main",
   "interop-witness-cli",

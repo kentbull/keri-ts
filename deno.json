@@ -64,6 +64,7 @@
     "test:quality:keri:interop-parity": "deno run -A scripts/ci/run-keri-test-group.ts interop-parity",
     "test:quality:keri:interop-acdc-deep": "deno run -A scripts/ci/run-keri-test-group.ts interop-acdc-deep",
     "test:quality:keri:interop-ipex-disclosure": "deno run -A scripts/ci/run-keri-test-group.ts interop-ipex-disclosure",
+    "test:quality:keri:interop-native-registry": "deno run -A scripts/ci/run-keri-test-group.ts interop-native-registry",
     "test:quality:keri:interop-acdc-extended": "deno run -A scripts/ci/run-keri-test-group.ts interop-acdc-extended",
     "test:quality:keri:interop-delegation": "deno run -A scripts/ci/run-keri-test-group.ts interop-delegation",
     "test:quality:keri:interop-did-webs": "deno run -A scripts/ci/run-keri-test-group.ts interop-did-webs",

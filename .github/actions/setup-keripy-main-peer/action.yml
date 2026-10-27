@@ -1,26 +1,44 @@
-name: Set up pinned KERIpy main peer
-description: Isolate native protocol and ESSR storage peers from the mailbox-fork runtime
+name: Set up pinned KERIpy peer
+description: Isolate the selected main or candidate peer from the mailbox-fork runtime
+inputs:
+  profile:
+    description: Concrete main or candidate reference profile
+    required: false
+    default: main
 runs:
   using: composite
   steps:
     - id: pin
       shell: bash
-      run: node -p 'Object.entries(require("./scripts/ci/keripy-reference.json").profiles.main).map(([key, value]) => key + "=" + value).join("\n")' >> "$GITHUB_OUTPUT"
+      env:
+        PEER_PROFILE: ${{ inputs.profile }}
+      run: |
+        if [[ "$PEER_PROFILE" != main && "$PEER_PROFILE" != candidate ]]; then
+          echo "Expected main or candidate profile" >&2
+          exit 1
+        fi
+        node -p 'Object.entries(require("./scripts/ci/keripy-reference.json").profiles[process.env.PEER_PROFILE]).map(([key, value]) => key + "=" + value).join("\n")' >> "$GITHUB_OUTPUT"
 
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        repository: WebOfTrust/keripy
+        repository: ${{ steps.pin.outputs.repository }}
         ref: ${{ steps.pin.outputs.commit }}
-        path: .cache/keripy-main
+        path: .cache/keripy-${{ inputs.profile }}
 
-    - name: Install isolated main peer
+    - name: Install isolated selected peer
       shell: bash
       env:
         HIO: ${{ steps.pin.outputs.hio }}
         LMDB: ${{ steps.pin.outputs.lmdb }}
         FALCON: ${{ steps.pin.outputs.falcon }}
+        PEER_PROFILE: ${{ inputs.profile }}
       run: |
-        python3.14 -m venv "$RUNNER_TEMP/keripy-main-venv"
-        "$RUNNER_TEMP/keripy-main-venv/bin/python" -m pip install -e .cache/keripy-main "hio==$HIO" "lmdb==$LMDB" "falcon==$FALCON"
-        echo "KERIPY_MAIN_ROOT=$GITHUB_WORKSPACE/.cache/keripy-main" >> "$GITHUB_ENV"
-        echo "KERIPY_MAIN_PYTHON=$RUNNER_TEMP/keripy-main-venv/bin/python" >> "$GITHUB_ENV"
+        python3.14 -m venv "$RUNNER_TEMP/keripy-$PEER_PROFILE-venv"
+        "$RUNNER_TEMP/keripy-$PEER_PROFILE-venv/bin/python" -m pip install -e ".cache/keripy-$PEER_PROFILE" "hio==$HIO" "lmdb==$LMDB" "falcon==$FALCON"
+        if [[ "$PEER_PROFILE" == candidate ]]; then
+          PEER_ENV_PREFIX=KERIPY_CANDIDATE
+        else
+          PEER_ENV_PREFIX=KERIPY_MAIN
+        fi
+        echo "${PEER_ENV_PREFIX}_ROOT=$GITHUB_WORKSPACE/.cache/keripy-$PEER_PROFILE" >> "$GITHUB_ENV"
+        echo "${PEER_ENV_PREFIX}_PYTHON=$RUNNER_TEMP/keripy-$PEER_PROFILE-venv/bin/python" >> "$GITHUB_ENV"

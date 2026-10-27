@@ -35,7 +35,10 @@ introduced. Existing suite isolation and participant topology remain in force.
 graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
 changes can select that file alone. `interop-kram` separately owns the live
 single/group mailbox-authentication cases. Disclosure includes direct witnessed
-presentation and uses the manifest's main pin, as does ESSR storage. KRAM mailbox
+presentation and uses the manifest's main pin, as does ESSR storage. The separate
+`interop-native-registry` owner uses the candidate profile for the existing reciprocal
+native proof and reopen cases. Its selection does not repin the five disclosure files;
+their wire-profile change is a separate cut. KRAM mailbox
 cases retain the separate fork: upstream main has no `keri.app.mailboxing` host.
 Direct and mailbox presentation share the same workflow and participant topology. Full mode includes all these owners.
 Empty arrays explicitly select no owners for that lane.

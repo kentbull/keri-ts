@@ -1,4 +1,4 @@
-/** Native main proof APIs in both directions; TS intake uses the ordinary HTTP listener. */
+/** Native candidate proof APIs in both directions; TS intake uses the ordinary HTTP listener. */
 import { b, BlindState, makeBlindState, parseBytes, SerderACDC, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
@@ -24,7 +24,7 @@ interface NativeEvidence {
 }
 
 Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake and survives reopen", async () => {
-  assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "main");
+  assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   const options = { name: "native-observer", headDirPath: ctx.home, skipConfig: true };
   try {
@@ -81,7 +81,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
 });
 
 Deno.test("interop/native-registry - Python vets TS native evidence against an independently parsed KEL", async () => {
-  assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "main");
+  assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
     const evidence = await run(function*() {

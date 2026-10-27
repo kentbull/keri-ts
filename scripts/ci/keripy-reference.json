@@ -1,6 +1,43 @@
 {
   "commit": "331f32e4de13cc5cb699587c5b1f1e5bc4468035",
+  "candidate": {
+    "applications": {
+      "dolly": { "repository": "kentbull/dolly", "commit": "520f96453cb62e5d5809d0240dab448767c1b00b" },
+      "registrar": { "repository": "kentbull/kf-registrar", "commit": "7e9346682701154a7098d41ea6c5b556f999d241" },
+      "observer": { "repository": "kentbull/kf-observer", "commit": "dcd65ab717d6ea39419f8d7fcda6500b870f5215" },
+      "witness": { "repository": "kentbull/witness-hk", "commit": "179fc5592ff71e52b5b0df49c91ad38bc44b378c" },
+      "locksmith": { "repository": "kentbull/locksmith", "commit": "1d0aed0480b2d91847b37e00d2a9ef77327c383a" }
+    },
+    "decisionRegister": "https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance",
+    "specificationRoadmap": "https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/keri-acdc-v2-spec-v1.1-gap-closure-roadmap.md",
+    "specifications": {
+      "keri": {
+        "repository": "trustoverip/kswg-keri-specification",
+        "commit": "3753f37973febf85a78a000525d41bed66cf7c4d"
+      },
+      "acdc": {
+        "repository": "trustoverip/kswg-acdc-specification",
+        "commit": "2362e48a1e8668278575b4f5b239069b2c1a82ad"
+      },
+      "cesr": {
+        "repository": "trustoverip/kswg-cesr-specification",
+        "commit": "65fd7518b6fa318ef3fc700a824b18112b8392e2"
+      }
+    }
+  },
   "profiles": {
+    "candidate": {
+      "commit": "7ea525bab2a7f673041f793b31908aa29d0a6f1b",
+      "python": "3.14",
+      "hio": "0.7.20",
+      "lmdb": "2.3.0",
+      "falcon": "4.3.1",
+      "exportGenus": 2,
+      "protocolVersionArgument": true,
+      "repository": "kentbull/keripy",
+      "distribution": "keri",
+      "hioDistribution": "hio"
+    },
     "main": {
       "commit": "c7e74adc3129ba36302db32e58056560b0927424",
       "python": "3.14",

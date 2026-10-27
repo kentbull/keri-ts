@@ -20,6 +20,7 @@ on:
           - extended-interop
           - interop-acdc-deep
           - interop-ipex-disclosure
+          - interop-native-registry
           - interop-acdc-extended
           - interop-delegation
           - interop-mailbox
@@ -146,6 +147,12 @@ jobs:
       - name: Prepare pinned main protocol and storage peer
         if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure", "extended-interop", "qualification", "full"]'), inputs.target)
         uses: ./.github/actions/setup-keripy-main-peer
+
+      - name: Prepare pinned native candidate peer
+        if: contains(fromJSON('["interop-native-registry", "extended-interop", "qualification", "full"]'), inputs.target)
+        uses: ./.github/actions/setup-keripy-main-peer
+        with:
+          profile: candidate
 
       - name: run selected extended interop target
         shell: bash
