@@ -2,9 +2,9 @@ import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
 
-import { parseBytes, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Counter, parseBytes, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
-import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import {
   createAgentRuntime,
   createHabery,
@@ -59,7 +59,9 @@ Deno.test("HTTP cue drain publishes guarded wire while Poster owns delivery and 
       finish();
       assertStrictEquals(yield* call(() => assertRejects(() => Promise.resolve(delivering))), failure);
       assertEquals(runtime.postman.hasPending, false);
-      assertEquals(posted, wire);
+      const [frame] = parseBytes(wire);
+      assertExists(frame.gvrsn);
+      assertEquals(posted, concatBytes(Counter.makeGVC(frame.gvrsn), wire));
       yield* runtime.postman.process();
       assertEquals(sends, 1, "failed attempts do not retry automatically");
       failure = undefined;
