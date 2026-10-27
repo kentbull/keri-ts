@@ -104,11 +104,9 @@ export class RegistryStore {
     if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
     return this.baser.ancs.get(said);
   }
-  /** Retain the earliest caller-verified anchor; equal/later reseals cannot reorder siblings. */
+  /** Retain the first caller-verified anchor pair; later presentations cannot replace it. */
   putAnchor(said: string, number: NumberPrimitive, diger: Diger): boolean {
-    const current = this.anchor(said);
-    if (current && current[0].num <= number.num) return false;
-    return this.baser.ancs.pin(said, [number, diger]);
+    return this.baser.ancs.put(said, [number, diger]);
   }
   /** Read the accepted-head cache without verifying the event. */
   head(regk: string): Saider | null {

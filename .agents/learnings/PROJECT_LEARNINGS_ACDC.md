@@ -138,21 +138,30 @@ without its first BUP likewise leaves registry-backed authentication pending. Pa
 later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.
-Share parsed rip/bup field validation across observer and local processing, but
-retain their anchor rules: observer digest seals do not satisfy the local full
-tuple plus witness-receipt requirement. Field validity is not TEL acceptance.
+Share parsed rip/bup validation and one registry-seal matcher across observer and
+local processing. Accept only `{d}`, `{s,d}`, or `{i,s,d}` with every supplied
+coordinate matching. Both stateless vetting and durable discovery require the
+current accepted KEL head's prior-digest ancestry and that event's historical
+witness quorum. Superseded ordinal buckets retain history, not new TEL authority.
+Field validity is not TEL acceptance.
 Local TEL publication must atomically commit body, anchor, accepted ordinal/head
 and escrow cleanup; bind instance state only after the transaction succeeds.
 Stored body presence alone never counts as acceptance or an accepted predecessor.
 Explicit parsed RegistryObserver borrows public KEL/store without local Hab aliases.
 Before inception, updates stay in durable anchor escrow; retry reconstructs issuer
-from stored inception. Full tuple/witness intake is stronger than digest-only vet
-and extends upstream integration, without establishing global registry freshness.
+from stored inception. Exact seal/quorum authentication does not establish global
+registry freshness. Source couples/triples remain unsigned per-intake hints:
+reject resolvable false locators before writes or duplicate success, but never
+persist their conditions or prevent a later clean replay.
 Duplicate replay is read-only and cannot move the head backward. Missing anchors
 precede ordering escrow; unsafe numeric storage ordinals require explicit refusal.
 Retry arbitrates anchored siblings as a set, using earliest anchor then digest
 and SAID code-point order; database arrival order must not decide the winner.
 Explicit anchoring validates event membership/prior before storing the couple.
+Retain a valid first pair across reverse presentation, reseals and reopen. Before
+new TEL acceptance, remove a recovery-invalidated active pair and rediscover an
+authentic current-branch seal; the same TEL SAID may become eligible again.
+Keep already accepted TEL and historical KEL/FEL evidence unchanged.
 Queued progression commits one event at a time; later failures do not undo prior acceptance.
 Reopen named v2 registries from the stored rip issuer, not the first available
 Hab. Duplicate aliases share one instance; injected RegBaser ownership stays with its caller.

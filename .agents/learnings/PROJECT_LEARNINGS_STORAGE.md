@@ -88,7 +88,7 @@ accepted-chain reads and public engine intake share that same environment. Reado
 binds existing tables without migration. RegBaser's absent anchor/escrow adapters
 and RegistryStore's alias mapper are null on old layouts until explicit storage
 writes initialize them; reads cannot migrate a store. Anchor tuples retain bigint
-NumberPrimitive/Diger bytes and the earliest caller-verified source. The facade
+NumberPrimitive/Diger bytes and the first caller-verified source. The facade
 stores markers, not protocol validity; the engine owns acceptance policy.
 Do not suppress errors or weaken live-host assertions. Do not run command-local
 mutations against a store still hosted by a stale runtime. Prefer narrow tufa db

@@ -3,7 +3,13 @@ import { Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
-import { type RegistryEvent, validateRip, validateUpdate } from "./regeventing.ts";
+import {
+  type RegistryEvent,
+  type RegistrySourceLocators,
+  validateRegistrySourceLocators,
+  validateRip,
+  validateUpdate,
+} from "./regeventing.ts";
 import type { RegistryStore } from "./registering.ts";
 
 /** An update may arrive before its issuer can be recovered from the inception body. */
@@ -14,7 +20,7 @@ export type RegistryObserverDecision =
 /**
  * Borrow accepted public KEL state and one registry store without habitats, aliases or handles.
  * Reconstruct the engine's issuer from stored inception after reopen. Intake uses the engine's
- * full tuple/witness anchor policy, distinct from digest-only observer vetting. Each accepted
+ * exact registry-seal and historical witness policy shared with observer vetting. Each accepted
  * event commits independently; a later failure preserves the already accepted prefix.
  * Parsed evidence stays borrowed. Composition supplies this owner to native protocol dispatch;
  * no local habitat, alias or application disclosure custody is created by public intake.
@@ -23,7 +29,7 @@ export class RegistryObserver {
   constructor(readonly db: Baser, readonly store: RegistryStore) {}
 
   /** Stage parsed events before inception, otherwise delegate ordinary validation and acceptance. */
-  processEvent(serder: SerderACDC): RegistryObserverDecision {
+  processEvent(serder: SerderACDC, locators: RegistrySourceLocators = {}): RegistryObserverDecision {
     const result = serder.ilk === Ilks.rip ? validateRip(serder) : validateUpdate(serder, serder.regid ?? "");
     if (result.kind === "reject") return result;
     const event = result.event;
@@ -42,8 +48,9 @@ export class RegistryObserver {
       engine ??= new RegistryEventer(this.db, event.issuer, this.store, event.regid);
     }
     if (engine) {
-      return engine.processEvent(serder);
+      return engine.processEvent(serder, locators);
     }
+    if (!validateRegistrySourceLocators(serder, this.db, null, locators)) return { kind: "reject", reason: "anchor" };
     // Issuer/anchor discovery is impossible until RIP arrives; the existing anchor escrow owns this body.
     const baser = this.store.baser;
     if (baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");

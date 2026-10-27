@@ -189,7 +189,8 @@ export function* dispatchEnvelope(
     if (serder.ilk === Ilks.rip || serder.ilk === Ilks.bup) {
       return {
         envelope,
-        decision: registry?.processEvent(serder) ?? { kind: "drop", reason: "missingProcessor" },
+        decision: registry?.processEvent(serder, { sscs: envelope.sscs, ssts: envelope.ssts })
+          ?? { kind: "drop", reason: "missingProcessor" },
       };
     }
     return {
