@@ -1,4 +1,4 @@
-"""Generate checked ACDC issuee projections from frozen KERIpy without a database."""
+"""Generate checked ACDC issuee projections from selected KERIpy without a database."""
 import json
 import pathlib
 import subprocess
@@ -8,7 +8,7 @@ from keri import kering
 from keri.core import coring, mapping, serdering
 
 # Behavioral fixture pin, independent of the runtime interop harness.
-REFERENCE = "7143832813cac6a394ab1faf9be83bb3372be87c"
+REFERENCE = "7ea525bab2a7f673041f793b31908aa29d0a6f1b"
 
 
 def generate():
@@ -33,6 +33,8 @@ def generate():
                     if form == "aggregate":
                         # The first element commits the list; the second discloses its first member.
                         section = mapping.Aggor(ael=["", section], makify=True, kind=kind).ael
+                    elif version.major >= 2:
+                        section = serdering.SerderACDC.saidifySection(section, "a", kind)
                     sad = {"i": issuer, "s": schema, "A" if form == "aggregate" else "a": section}
                     value = serdering.SerderACDC(sad=sad, makify=True, pvrsn=version,
                                                 kind=kind, compactify=state == "compact")
