@@ -1,7 +1,7 @@
 /** Status-only consumers must still finish response cleanup before recording HTTP success. */
 import { resource, run } from "effection";
-import { assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { FetchHttpClient, type HttpStreamResponse } from "keri-ts/runtime";
+import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { FetchHttpClient, type HttpStreamResponse, TransportError } from "keri-ts/runtime";
 import { postWebhook } from "../src/webhook.ts";
 
 Deno.test("webhook HTTP success cannot hide response cleanup failure", async () => {
@@ -25,4 +25,12 @@ Deno.test("webhook HTTP success cannot hide response cleanup failure", async () 
     )
   );
   assertStrictEquals(error, failure);
+  http.open = () =>
+    resource<HttpStreamResponse>(function*() {
+      throw new TransportError("webhook socket unavailable");
+    });
+  assertEquals(
+    await run(() => postWebhook(http, () => 0, "http://unused.test/", { action: "iss", actor: "issuer", data: {} })),
+    false,
+  );
 });

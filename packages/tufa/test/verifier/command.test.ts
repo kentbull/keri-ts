@@ -10,6 +10,21 @@ Deno.test({
   permissions: { read: false, write: false, net: false },
   async fn() {
     await assertRejects(() => run(() => verifierRunCommand({ once: "false" })), ValidationError, "once");
+    const acdcV2 = {
+      name: "unopened",
+      hook: "http://unused.test/",
+      acdcV2: true,
+      alias: "verifier",
+      observer: "https://observer.test/",
+    };
+    await assertRejects(
+      () => run(() => verifierRunCommand({ ...acdcV2, observer: "http://observer.test/" })),
+      ValidationError,
+      "HTTPS",
+    );
+    for (const key of ["maximumAgeMs", "sourceTimeoutMs"] as const) {
+      await assertRejects(() => run(() => verifierRunCommand({ ...acdcV2, [key]: 0 })), ValidationError, "positive");
+    }
     for (const intervalMs of [null, "", false, [], Infinity, -1]) {
       await assertRejects(() => run(() => verifierRunCommand({ intervalMs })), ValidationError, "intervalMs");
     }

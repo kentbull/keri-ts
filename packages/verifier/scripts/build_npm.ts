@@ -13,6 +13,8 @@ import {
 const OUT_DIR = "./npm";
 const ROOT_MARKER = "Verifier application package entrypoint.";
 const keriVersion = readPackageVersionSync("../keri/package.json");
+const hostingVersion = readPackageVersionSync("../hosting/package.json");
+const registrarVersion = readPackageVersionSync("../registrar/package.json");
 const cesrVersion = readPackageVersionSync("../cesr/package.json");
 
 setIgnoreScriptsDefault();
@@ -23,6 +25,8 @@ await build({
   shims: { deno: true },
   configFile: new URL("../deno.json", import.meta.url).href,
   mappings: {
+    "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
+    "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
     "../keri/db.ts": { name: "keri-ts", version: keriVersion, subPath: "db" },
     "../cesr/mod.ts": { name: "cesr-ts", version: cesrVersion },
@@ -51,6 +55,8 @@ await build({
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
       "@deno/shim-deno": "~0.18.0",
+      "@keri-ts/hosting": hostingVersion,
+      "@keri-ts/registrar": registrarVersion,
       "cesr-ts": cesrVersion,
       "keri-ts": keriVersion,
       "effection": "^3.6.0",
@@ -80,9 +86,13 @@ await build({
     manifest.exports = { ".": { types: rootTypes, import: rootImport } };
     writeJsonFileSync(path, manifest);
     // DNT can leave unreferenced entrypoint copies for mapped dependencies.
-    for (const name of ["keri", "cesr"]) removeIfExistsSync(`${OUT_DIR}/esm/${name}`, { recursive: true });
+    for (const name of ["keri", "cesr", "hosting", "registrar"]) {
+      removeIfExistsSync(`${OUT_DIR}/esm/${name}`, { recursive: true });
+    }
     const bundled = ["esm", "types"].flatMap(folder => listFilesSync(`${OUT_DIR}/${folder}`))
-      .filter(path => ["/keri/src/", "/cesr/src/", "/tufa/src/"].some(part => path.includes(part)));
+      .filter(path =>
+        ["/keri/src/", "/cesr/src/", "/tufa/src/", "/hosting/src/", "/registrar/src/"].some(part => path.includes(part))
+      );
     if (bundled.length) throw new Error(`Verifier package bundles sibling sources: ${bundled.join(", ")}`);
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);

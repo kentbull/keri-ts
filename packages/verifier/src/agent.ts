@@ -29,6 +29,7 @@ import {
   type VcStateRecordShape,
 } from "keri-ts/runtime";
 import { type Operation } from "npm:effection@^3.6.0";
+import type { AcdcV2Verifier } from "./acdc-v2.ts";
 import type { VerifierCueBaser } from "./cue-store.ts";
 import { validateCredential, type VerifierBusinessValidator } from "./policy.ts";
 import { postWebhook, webhookBody } from "./webhook.ts";
@@ -57,6 +58,8 @@ export interface VerifierAgentOptions {
   timeoutMs?: number;
   /** Require a schema-specific validator before admitting a credential. */
   requireKnownSchemas?: boolean;
+  /** Concrete ACDC v2 evidence/current-source owner; omitted keeps the legacy workflow. */
+  acdcV2?: AcdcV2Verifier;
 }
 
 /** Sally-like verifier processor for one `Habery`/`Reger` runtime. */
@@ -85,6 +88,7 @@ export class VerifierAgent {
   readonly validators: Record<string, VerifierBusinessValidator>;
   /** Reject credentials without a configured schema validator when explicitly enabled. */
   readonly requireKnownSchemas: boolean;
+  readonly acdcV2?: AcdcV2Verifier;
 
   /**
    * Borrow the configured stores, protocol owner and webhook policy; open no runtime or background worker.
@@ -122,6 +126,7 @@ export class VerifierAgent {
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.validators = { ...validators };
     this.requireKnownSchemas = options.requireKnownSchemas ?? false;
+    this.acdcV2 = options.acdcV2;
   }
 
   /**
@@ -142,6 +147,7 @@ export class VerifierAgent {
 
     // Settle grant evidence and capture revocations before advancing shared protocol dependencies.
     result.grantsQueued += yield* this.scanAcceptedGrants();
+    yield* this.processAcdcV2Grants(result);
     result.revocationsQueued += this.processRevokedCues();
     yield* this.protocol.processEscrowsOnce();
     result.revocationsQueued += this.scanPersistedRevocations();
@@ -163,7 +169,7 @@ export class VerifierAgent {
   private *scanAcceptedGrants(): Operation<number> {
     let queued = 0;
     for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
-      if (grant.route !== IPEX_GRANT_ROUTE || !grant.said) {
+      if (grant.route !== IPEX_GRANT_ROUTE || !grant.said || grant.pvrsn.major === 2) {
         continue;
       }
       const credentialSaid = credentialSaidFromGrant(grant);
@@ -183,6 +189,67 @@ export class VerifierAgent {
       queued += 1;
     }
     return queued;
+  }
+
+  /** ACDC v2 work is keyed by exact Grant, preserving distinct retained partial/full views in the existing tables. */
+  private *processAcdcV2Grants(result: VerifierAgentProcessResult): Operation<void> {
+    if (!this.acdcV2) return;
+    for (const [, grant] of this.hby.db.exns.getTopItemIter()) {
+      if (grant.route !== IPEX_GRANT_ROUTE || grant.pvrsn.major !== 2 || !grant.said) continue;
+      const said = grant.said;
+      if (this.cdb.rack.get([said])) continue;
+      if (!this.hasQueuedOrSent(said)) {
+        this.cdb.iss.pin([said], nowDater(this.now()));
+        result.grantsQueued++;
+      }
+      const verification = yield* this.acdcV2.verifyCurrent(said), creder = verification.credential;
+      if (verification.kind === "missing") continue;
+      if (verification.kind === "refused" || !creder) {
+        this.cdb.iss.rem([said]);
+        this.cdb.recv.trim([said]);
+        result.rejected++;
+        continue;
+      }
+      const action = verification.kind === "revoked" ? "rev" : "iss";
+      if (action === "rev" && !this.cdb.ack.get([said])) {
+        this.cdb.iss.rem([said]);
+        this.cdb.recv.trim([said]);
+        result.rejected++;
+        continue;
+      }
+      if (action === "iss" && this.cdb.ack.get([said])) continue;
+      if (
+        action === "iss"
+        && validateCredential(creder, this.validators, { hby: this.hby, reger: this.reger }, this.requireKnownSchemas)
+      ) {
+        this.cdb.iss.rem([said]);
+        result.rejected++;
+        continue;
+      }
+      const ready = action === "iss" ? this.cdb.recv : this.cdb.revk;
+      const waiting = [...ready.getTopItemIter([said, ""])][0];
+      const dater = this.cdb.iss.get([said]) ?? (waiting ? new Dater({ qb64: waiting[0][1] }) : nowDater(this.now()));
+      if (this.expired(dater)) {
+        this.cdb.iss.rem([said]);
+        ready.trim([said]);
+        continue;
+      }
+      ready.pin([said, dater.qb64], creder);
+      this.cdb.snd.pin([said], new Prefixer({ qb64: creder.issuer! }));
+      this.cdb.iss.rem([said]);
+      if (action === "iss") result.presentationsReady++;
+      else result.revocationsReady++;
+      const payload = webhookBody(creder, action, null);
+      payload.data.grant = said;
+      payload.data.presenter = grant.pre;
+      payload.data.verifier = this.acdcV2.hab.pre;
+      payload.data.observations = verification.observations;
+      if (yield* postWebhook(this.http, this.now, this.hook, payload)) {
+        ready.rem([said, dater.qb64]);
+        (action === "iss" ? this.cdb.ack : this.cdb.rack).pin([said], creder);
+        result.webhooksSent++;
+      } else result.webhooksFailed++;
+    }
   }
 
   /** Consume a finite revocation-cue pass, restoring unrelated and failed records in their original order. */
@@ -341,6 +408,7 @@ export class VerifierAgent {
     let sent = 0;
     for (const [keys, creder] of [...db.getTopItemIter()]) {
       const [said, daterQb64] = keys;
+      if (said && this.hby.db.exns.get([said])?.pvrsn.major === 2) continue;
       if (!said || !daterQb64) {
         continue;
       }
@@ -419,7 +487,7 @@ export class VerifierAgent {
   }
 }
 
-/** Read the existing legacy Reger observer state; this application does not interpret native-v2 registries. */
+/** Read the existing legacy Reger observer state; this application does not interpret ACDC v2 registries. */
 function credentialState(reger: Reger, creder: SerderACDC): VcStateRecordShape | null {
   const regk = creder.regid;
   const said = creder.said;

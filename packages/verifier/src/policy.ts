@@ -60,7 +60,8 @@ export function validatorsFromVerifierConfig(
 
 /** Match the application's supported schema-SAID projection for policy and webhook consumers. */
 export function credentialSchema(creder: SerderACDC): string {
-  return typeof creder.schema === "string" ? creder.schema : "";
+  const schema = creder.schema;
+  return typeof schema === "string" ? schema : isRecord(schema) && typeof schema.$id === "string" ? schema.$id : "";
 }
 
 /** Narrow operator JSON mappings without imposing protocol or schema validation here. */

@@ -295,6 +295,16 @@ now function: local issuance/revocation Daters, webhook headers and expiry all u
 it. Credential/TEL timestamps remain source evidence. Expiry is strictly greater
 than the configured window and ready sending still precedes post-refusal expiry.
 
+ACDC v2 verifier work uses the exact retained authenticated Grant view, with Grant-keyed
+rows in the existing cue sidecar. Historical inspection is read-only and uses the
+explicit historical authentication mode. Current use separately acquires configured
+HTTPS observer-cache evidence, checks exact returned/local head and observation age,
+and applies issued-origin policy plus the shared evaluator with current per-node
+states. Known revoked far nodes remain Boolean False; opaque/malformed/missing
+material cannot authorize use. Public source openings are current proof inputs,
+never fuller credential-view substitution. Failed ready webhooks recheck standing
+before another attempt; source observation never proves global latest state.
+
 ## Interoperability traps
 
 - Holder vc list filters by subject; verifier acceptance uses saved/exportable SAIDs.

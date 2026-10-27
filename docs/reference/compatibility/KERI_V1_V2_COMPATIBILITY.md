@@ -14,6 +14,11 @@ forms or a claim that every combination of two implementations interoperates.
 
 ## Version vocabulary and reference limits
 
+Use **ACDC v2** for the credential protocol and its application workflows, with
+`--acdc-v2` as the explicit CLI selector. Reserve **native CESR** for the CESR
+body encoding; JSON ACDC v2 is a separate supported encoding choice. The word
+"native" does not distinguish v2 credentials from v1 credentials.
+
 | Dimension                | Meaning                                               | Compatibility consequence                                                                                  |
 | ------------------------ | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
 | Package release / branch | KERIpy 1.x, 2.x, a fork, or a keri-ts release         | A release may implement more than one protocol lane.                                                       |
@@ -275,6 +280,18 @@ Both differences use the existing deterministic UUID derivation and supported
 digest algorithms to produce the same CESR tuple forms. Independent hash checks
 and the [Python-produced SHA-256 opening case](../../../packages/keri/test/integration/app/interop-native-registry.test.ts)
 exercise that wire contract.
+
+ACDC v2 reporting has an explicit application-policy difference. The TypeScript
+[verifier](../../../packages/verifier/src/acdc-v2.ts) requires an issued origin
+and the shared graph evaluator's true verdict over current authenticated node
+states. A known revoked far node can therefore satisfy NOR/NAND. Selected
+[Dolly `b0a172a6`](https://github.com/kentbull/dolly/blob/b0a172a6bab4c3a3c61985bee893b3395e78c351/src/dolly/serving.py)
+additionally requires every disclosed node to remain issued. Both retain the
+same authenticated wire evidence; reporting decisions can differ. The existing
+[verifier workflow](../../../packages/tufa/test/integration/verifier-workflow.test.ts)
+checks an issued root with a revoked far node under NOR and AND, plus independent
+historical inspection and opaque/current revocation transitions. Missing or
+invalid evidence remains unresolved or refused under either policy.
 
 ## Known compatibility needs and explicit limits
 

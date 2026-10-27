@@ -1,4 +1,6 @@
-import { createVerifierCueBaser, validatorsFromVerifierConfig, VerifierAgent } from "@keri-ts/verifier";
+import { SourceTrust } from "@keri-ts/hosting";
+import { Registrar } from "@keri-ts/registrar";
+import { AcdcV2Verifier, createVerifierCueBaser, validatorsFromVerifierConfig, VerifierAgent } from "@keri-ts/verifier";
 import type { Versionage } from "cesr-ts";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import { ValidationError } from "keri-ts/runtime";
@@ -41,6 +43,20 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
   requireNonEmpty(runArgs.name, "Name");
   requireNonEmpty(runArgs.hook, "Webhook URL");
   const hook = runArgs.hook!;
+  const acdcV2 = parseBooleanOption(args.acdcV2, "acdc-v2") ?? false;
+  const alias = parseStringOption(args.alias, "alias");
+  const maximumAgeMs = numberArg(args.maximumAgeMs, 15000, "maximumAgeMs")!;
+  const requestTimeoutMs = numberArg(args.sourceTimeoutMs, 5000, "sourceTimeoutMs")!;
+  if (acdcV2 && (!alias || maximumAgeMs <= 0 || requestTimeoutMs <= 0)) {
+    throw new ValidationError("ACDC v2 verifier requires alias and positive source age/timeouts.");
+  }
+  const source = acdcV2
+    ? new SourceTrust({
+      url: requireOption(args.observer, "observer"),
+      caFile: parseStringOption(args.observerCa, "observer-ca"),
+      certName: parseStringOption(args.observerCertName, "observer-cert-name"),
+    })
+    : undefined;
 
   const completed = yield* withAgentRuntime(
     runArgs,
@@ -62,6 +78,18 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       let failure: { error: unknown } | undefined;
       try {
         const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
+        const acdcV2Hab = alias ? hby.habByName(alias) : null;
+        if (acdcV2 && (!acdcV2Hab || !runtime.acdc)) {
+          throw new ValidationError("ACDC v2 verifier identity or registry store is unavailable.");
+        }
+        const acdcV2Verifier = acdcV2
+          ? new AcdcV2Verifier(hby, acdcV2Hab!, runtime.exc, new Registrar(runtime.protocol, runtime.acdc!.store), {
+            source: source!,
+            maximumAgeMs,
+            requestTimeoutMs,
+            now: () => runtime.clock.now(),
+          })
+          : undefined;
         const agent = new VerifierAgent(
           hby,
           reger,
@@ -73,6 +101,7 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
           validatorsFromVerifierConfig(config),
           {
             hook,
+            acdcV2: acdcV2Verifier,
             gvrsn: runArgs.gvrsn,
             timeoutMs: runArgs.timeoutMs,
             requireKnownSchemas: isRecord(config) && config.requireKnownSchemas === true,
@@ -136,4 +165,11 @@ function requireNonEmpty(value: string | undefined, label: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** Strict source configuration is parsed before opening application stores. */
+function requireOption(value: unknown, label: string): string {
+  const text = parseStringOption(value, label);
+  if (!text) throw new ValidationError(`--${label} is required.`);
+  return text;
 }
