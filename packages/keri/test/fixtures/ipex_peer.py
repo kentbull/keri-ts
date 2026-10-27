@@ -41,7 +41,7 @@ class IpexPeer:
         self.graph = graph_disclosures(hby, self.hab, graph_case)
         self.recorder = Recorder()
         self.exc = Exchanger(hby=hby, handlers=[])
-        loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder)
+        self.verification = loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder)
         self.kvy = Kevery(db=hby.db, lax=False, local=False, cf=cf,
                           enableKram=True, exc=self.exc)
         self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc, framed=False)
@@ -154,7 +154,10 @@ class IpexPeer:
         previous = self.hby.db.exns.get(keys=(prior,)) if prior else None
         assert prior is None or previous is not None, f"Missing prior exchange: {prior}"
         body, attachments = self.message(verb, previous, invalid)
-        return self.deliver(body, bytes(body.raw + attachments), not invalid)
+        semantic = invalid is True and self.graph_case in (
+            "I2I", "E1E", "AND", "OR", "NAND", "NOR", "unknown-leaf", "unknown-group",
+            "edge-schema", "inherited-schema", "malformed-schema")
+        return self.deliver(body, bytes(body.raw + attachments), not invalid or semantic)
 
     def deliver(self, body, wire, accepted):
         """Local verification and public delivery consume the same signed bytes."""
@@ -212,7 +215,8 @@ class IpexPeer:
             accepted=db.exns.get(keys=(inspect,)) is not None,
             escrowed=db.epse.get(keys=(inspect,)) is not None,
             nests=len(db.enst.get(keys=(inspect,))))
-        return dict(messages=[body.sad for body in messages], received=self.received,
+        verdict = self.verification.evaluateGrant(inspect) if selected and selected.route == "/ipex/grant" else None
+        return dict(verdict=verdict, messages=[body.sad for body in messages], received=self.received,
                     known=list(self.kvy.kevers), notifications=len(self.recorder.items), inspected=inspected,
                     nodes=[dict(said=nest.serder.said, attributes=nest.serder.sad["a"],
                                 raw=nest.serder.raw.decode(),

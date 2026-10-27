@@ -123,7 +123,7 @@ Deno.test("IPEX node authentication keeps missing KEL evidence distinct from ref
     }
   });
 });
-Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned authenticated disclosures", async () => {
+Deno.test("v2 IPEX preserves frozen wire evidence while separating historical policy refusals", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
@@ -133,6 +133,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
       assertEquals(fixture.reference, "7ea525bab2a7f673041f793b31908aa29d0a6f1b");
+      const historicalPolicyRefusals = new Set(["edge operator E1E", "edge group AND"]);
       let through = 0;
       let notifications = 0;
       const vry = runtime.vdr!.vry;
@@ -162,9 +163,17 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
             undefined,
             vry,
           );
-          assertEquals(decision?.kind, row.outcome, row.name);
+          const historicalPolicyRefusal = historicalPolicyRefusals.has(row.name);
+          const currentOutcome = historicalPolicyRefusal ? "accept" : row.outcome;
+          assertEquals(decision?.kind, currentOutcome, row.name);
           assertEquals(childDispatches, 0, "nested nodes are not independent credential intake");
-          if (row.outcome === "accept") {
+          if (historicalPolicyRefusal) {
+            assertEquals(row.outcome, "reject", "historical Python policy outcome is preserved verbatim");
+            const graph = walkIpexGraph(frames[0].nests![0].body.said!, frames[0].nests!, true, hby.db);
+            assert(graph && !("kind" in graph));
+            assertEquals(evaluateRelations(graph, hby.db), false, row.name);
+          }
+          if (currentOutcome === "accept") {
             notifications++;
             assertExists(hby.db.exns.get(row.said), row.name);
             const replayed: Uint8Array[] = [];
@@ -1292,11 +1301,11 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       assert(inheritedGraph && !("kind" in inheritedGraph));
       assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
       const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
-      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
-      assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
+      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "accept");
+      assertEquals(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]), null);
+      const retainedPolicyGrant = hby.db.exns.get(edgeGrant.serder.said!)!.raw.slice();
       hby.db.schema.pin(edgeSchema.said, edgeSchema);
-      yield* exchanger.processEscrows();
-      assertExists(hby.db.exns.get(edgeGrant.serder.said!));
+      assertEquals(hby.db.exns.get(edgeGrant.serder.said!)!.raw, retainedPolicyGrant);
       assertEquals(evaluateRelations(inheritedGraph, hby.db), true);
       assertEquals(evaluateRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
       assertEquals(evaluateRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);

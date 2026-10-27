@@ -2,11 +2,11 @@
   "commit": "331f32e4de13cc5cb699587c5b1f1e5bc4468035",
   "candidate": {
     "applications": {
-      "dolly": { "repository": "kentbull/dolly", "commit": "520f96453cb62e5d5809d0240dab448767c1b00b" },
+      "dolly": { "repository": "kentbull/dolly", "commit": "e23604a3494c4270bf887d8eb109548b6cf3bb64" },
       "registrar": { "repository": "kentbull/kf-registrar", "commit": "7e9346682701154a7098d41ea6c5b556f999d241" },
       "observer": { "repository": "kentbull/kf-observer", "commit": "dcd65ab717d6ea39419f8d7fcda6500b870f5215" },
       "witness": { "repository": "kentbull/witness-hk", "commit": "179fc5592ff71e52b5b0df49c91ad38bc44b378c" },
-      "locksmith": { "repository": "kentbull/locksmith", "commit": "1d0aed0480b2d91847b37e00d2a9ef77327c383a" }
+      "locksmith": { "repository": "kentbull/locksmith", "commit": "3d5ef0c7b789bd5f543aa08bec7e42071c5106ec" }
     },
     "decisionRegister": "https://github.com/kentbull/enctx/blob/aced46824ad3d5b142e2cb5e7755effb7fb1d6f7/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance",
     "specificationRoadmap": "https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/keri-acdc-v2-spec-v1.1-gap-closure-roadmap.md",
@@ -27,7 +27,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "015e986dbdc27ceead2656cd9dca02f72a57a086",
+      "commit": "c4a6dc30d11d22d3ef0e3ee3e8864d0b62af462b",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",

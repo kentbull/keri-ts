@@ -115,23 +115,41 @@ function delegatedIssuer(issuer: string, issuee: string, db: Baser): boolean | R
   return true;
 }
 
+/** Only a visible block with absent/string i proves targeted or untargeted identity knowledge. */
+function edgeIssuee(node: SerderACDC): { known: boolean; issuee: string | null } {
+  const sad = node.sad!, aggregate = sad.A;
+  const block = Object.hasOwn(sad, "a") ? sad.a : Array.isArray(aggregate) ? aggregate[1] : undefined;
+  if (!record(block) || (Object.hasOwn(block, "i") && typeof block.i !== "string")) {
+    return { known: false, issuee: null };
+  }
+  return { known: true, issuee: typeof block.i === "string" ? block.i : null };
+}
+
 /** Identity policy is separate from edge shape and additional far-node schema validation. */
 function identityRelation(
   operators: readonly string[],
   near: SerderACDC,
   far: SerderACDC,
   db: Baser,
-): boolean | RelationDependency {
-  if (operators.includes("E1E") && (!near.issuee || !far.issuee || near.issuee !== far.issuee)) return false;
-  // Preserve the reference E1E extension's entity-only path unless identity is explicit.
-  let relation: "I2I" | "NI2I" | "DI2I" = far.issuee && !operators.includes("E1E") ? "I2I" : "NI2I";
+): boolean | null | RelationDependency {
+  const farIssuee = edgeIssuee(far);
+  const entity = operators.includes("E1E");
+  let relation: "I2I" | "NI2I" | "DI2I" | undefined;
   for (const operator of operators) {
     if (operator === "I2I" || operator === "NI2I" || operator === "DI2I") relation = operator;
   }
+  if (!relation && entity) relation = "NI2I";
+  if (relation !== "NI2I" && !farIssuee.known) return null;
+  relation ??= farIssuee.issuee ? "I2I" : "NI2I";
+  if (entity) {
+    const nearIssuee = edgeIssuee(near);
+    if (!farIssuee.known || !nearIssuee.known) return null;
+    if (!nearIssuee.issuee || !farIssuee.issuee || nearIssuee.issuee !== farIssuee.issuee) return false;
+  }
   if (relation === "NI2I") return true;
-  if (!far.issuee || !near.issuer) return false;
-  if (near.issuer === far.issuee) return true;
-  return relation === "DI2I" ? delegatedIssuer(near.issuer, far.issuee, db) : false;
+  if (!farIssuee.issuee || !near.issuer) return false;
+  if (near.issuer === farIssuee.issuee) return true;
+  return relation === "DI2I" ? delegatedIssuer(near.issuer, farIssuee.issuee, db) : false;
 }
 
 /** Check one declared edge relation and its schema pin after the graph's issuer proofs pass. */
@@ -139,7 +157,7 @@ function leafRelation(
   group: Record<string, unknown>,
   near: SerderACDC,
   graph: AcdcGraph,
-  inheritedSchema: unknown,
+  inheritedSchemas: readonly unknown[],
   db: Baser,
   validities: ReadonlyMap<string, boolean>,
 ): Relation {
@@ -157,11 +175,14 @@ function leafRelation(
   if (!operators || operators.some((item) => !unaryOps.has(item))) return null;
   const identity = identityRelation(operators, near, far, db);
   if (typeof identity === "object") return identity;
-  const schema = Object.hasOwn(group, "s") ? group.s : inheritedSchema;
+  const pins = Object.hasOwn(group, "s") ? [...inheritedSchemas, group.s] : inheritedSchemas;
   let schemaMatches = true;
-  if (schema != null) {
+  for (const schema of pins) {
     if (typeof schema !== "string" && !record(schema)) return null;
-    const result = validateSchema(far, db, schema);
+    const supplied = typeof schema === "string" && record(far.schema) && far.schema.$id === schema
+      ? far.schema
+      : schema;
+    const result = validateSchema(far, db, supplied);
     if (result.kind === "missing") return result;
     if (result.kind === "invalid") {
       if (result.subject === "schema") return null;
@@ -173,21 +194,21 @@ function leafRelation(
   return identity && schemaMatches && (operators.includes("NOT") ? !valid : valid);
 }
 
-/** Evaluate AND/OR edge groups; malformed members cannot be hidden by a passing sibling. */
+/** Reduce every AND/OR/NAND/NOR member; unresolved evidence is never negated or hidden by a decisive sibling. */
 function groupRelation(
   group: Record<string, unknown>,
   near: SerderACDC,
   graph: AcdcGraph,
-  inheritedSchema: unknown,
+  inheritedSchemas: readonly unknown[],
   nested: boolean,
   db: Baser,
   validities: ReadonlyMap<string, boolean>,
   path: readonly string[],
 ): Relation {
   const op = group.o ?? "AND";
-  if (op !== "AND" && op !== "OR") return null;
+  if (op !== "AND" && op !== "OR" && op !== "NAND" && op !== "NOR") return null;
   const labels = nested ? groupLabels : sectionLabels;
-  const schema = nested && Object.hasOwn(group, "s") ? group.s : inheritedSchema;
+  const pins = nested && Object.hasOwn(group, "s") ? [...inheritedSchemas, group.s] : inheritedSchemas;
   const results: boolean[] = [];
   for (const [key, node] of Object.entries(group)) {
     if (labels.has(key)) continue;
@@ -195,15 +216,25 @@ function groupRelation(
     if (target === false) return null;
     if (typeof target === "object" && target !== null) return target;
     const result = typeof target === "string"
-      ? leafRelation(record(node) ? node : { n: target }, near, graph, schema, db, validities)
+      ? leafRelation(record(node) ? node : { n: target }, near, graph, pins, db, validities)
       : record(node)
-      ? groupRelation(node, near, graph, schema, true, db, validities, [...path, key])
+      ? groupRelation(node, near, graph, pins, true, db, validities, [...path, key])
       : null;
     if (result === null) return null;
     if (typeof result === "object") return result;
     results.push(result);
   }
-  return !results.length ? null : op === "OR" ? results.some(Boolean) : results.every(Boolean);
+  if (!results.length) return null;
+  switch (op) {
+    case "AND":
+      return results.every(Boolean);
+    case "OR":
+      return results.some(Boolean);
+    case "NAND":
+      return !results.every(Boolean);
+    case "NOR":
+      return !results.some(Boolean);
+  }
 }
 
 /** Preserve malformed/dependency outcomes separately from a disproved node relationship. */
@@ -222,7 +253,7 @@ function nodeRelations(
       edge,
       near,
       graph,
-      null,
+      [],
       false,
       db,
       validities,
@@ -242,20 +273,20 @@ function nodeRelations(
  * Callers authenticate issuer proofs and own-node schemas, and supply unique,
  * coherent graph indexes and traversal orders. This function does not establish
  * those prerequisites; a true relation verdict is neither exchange acceptance
- * nor wallet consent.
+ * nor wallet consent. Applications require an explicit true verdict before use;
+ * null and dependency records remain unresolved rather than known false.
  */
 export function evaluateAcdcRelations(
   graph: AcdcGraph,
   db: Baser,
   registrations: ReadonlyMap<string, RegistryState>,
-): boolean | AcdcRelationIssue {
+): boolean | null | AcdcRelationIssue {
   const validities = new Map<string, boolean>();
   const origin = graph.order[0];
   for (const said of graph.dependencyOrder) {
     const near = graph.nodes.get(said)!.body;
     const matched = nodeRelations(near, graph, db, validities);
-    if (matched === null) return false;
-    if (typeof matched === "object") return matched;
+    if (matched === null || typeof matched === "object") return matched;
     let valid = matched;
     if (said !== origin && near.regid) {
       const state = registrations.get(said)?.state ?? null;
@@ -264,5 +295,5 @@ export function evaluateAcdcRelations(
     }
     validities.set(said, valid);
   }
-  return validities.get(origin) ?? false;
+  return validities.get(origin) ?? null;
 }

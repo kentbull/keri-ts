@@ -36,28 +36,61 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       "malformed-schema",
     ] as const satisfies readonly EdgeRefusalCase[]
   ) {
-    Deno.test(`IPEX ${implementation} discloser: refuse ${graph}, then admit signed schema-valid chain`, () =>
+    const semantic = !["malformed-leaf", "simple-edge"].includes(graph);
+    const expectedPolicy = graph === "edge-schema" || graph === "inherited-schema" ? false : null;
+    Deno.test(`IPEX ${implementation} discloser: ${semantic ? "retain unresolved/false" : "refuse"} ${graph}, then admit signed schema-valid chain`, () =>
       withIpexPeers({ issuer: implementation, graph }, async ({ issuer, holder }) => {
-        const apply = await exchange(holder, issuer, "apply");
-        const offer = await exchange(issuer, holder, "offer", apply);
-        const agree = await exchange(holder, issuer, "agree", offer);
+        let apply = await exchange(holder, issuer, "apply");
+        let offer = await exchange(issuer, holder, "offer", apply);
+        let agree = await exchange(holder, issuer, "agree", offer);
+        const first = [apply, offer, agree];
         const bad = await issuer.send("grant", agree, true);
         await observed(
-          "malformed/schema-invalid grant crossed real ingress",
+          "selected graph crossed real ingress",
           async () => (await holder.snapshot()).received.includes(bad) ? true : undefined,
         );
-        await assertRefused(issuer, holder, bad);
+        let oldRaws: string[][] = [];
+        if (semantic) {
+          const retained = await Promise.all([issuer.snapshot(bad), holder.snapshot(bad)]);
+          for (const snapshot of retained) {
+            assertEquals([snapshot.inspected?.accepted, snapshot.inspected?.escrowed, snapshot.inspected?.nests], [
+              true,
+              false,
+              2,
+            ]);
+            assertEquals(snapshot.verdict, expectedPolicy);
+          }
+          oldRaws = retained.map((snapshot) => snapshot.nodes.map((node) => node.raw));
+          apply = await exchange(holder, issuer, "apply");
+          offer = await exchange(issuer, holder, "offer", apply);
+          agree = await exchange(holder, issuer, "agree", offer);
+          assertEquals(
+            first.some((said) => [apply, offer, agree].includes(said)),
+            false,
+            "positive control uses a fresh reply lineage",
+          );
+        } else await assertRefused(issuer, holder, bad);
         const grant = await exchange(issuer, holder, "grant", agree);
         await exchange(holder, issuer, "admit", grant);
-        for (const peer of [issuer, holder]) {
+        for (const [i, peer] of [issuer, holder].entries()) {
           const snapshot = await peer.snapshot(grant);
-          assertEquals(snapshot.messages.map((message) => message.r).sort(), [
-            "/ipex/admit",
-            "/ipex/agree",
-            "/ipex/apply",
-            "/ipex/grant",
-            "/ipex/offer",
-          ]);
+          assertEquals(
+            snapshot.messages.map((message) => message.r).sort(),
+            [
+              "/ipex/admit",
+              "/ipex/agree",
+              "/ipex/apply",
+              "/ipex/grant",
+              "/ipex/offer",
+              ...(semantic ? ["/ipex/agree", "/ipex/apply", "/ipex/grant", "/ipex/offer"] : []),
+            ].sort(),
+          );
+          assertEquals(snapshot.verdict, true);
+          assertEquals(
+            snapshot.messages.find((message) => message.d === grant)!.p,
+            agree,
+            "positive Grant answers its fresh Agree",
+          );
           assertEquals(snapshot.nodes.length, 2);
           assertEquals(snapshot.nodes[0].said, issuer.info.commitment);
           for (const node of snapshot.nodes) {
@@ -66,8 +99,13 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
             assertEquals(typeof node.attributes.private, "string");
             assertEquals(node.raw.includes("hidden-value"), false);
           }
+          if (semantic) {
+            const old = await peer.snapshot(bad);
+            assertEquals(old.verdict, expectedPolicy);
+            assertEquals(old.nodes.map((node) => node.raw), oldRaws[i], "old retained evidence is immutable");
+          }
         }
-        await assertRefused(issuer, holder, bad);
+        if (!semantic) await assertRefused(issuer, holder, bad);
       }));
   }
   for (const graph of ["fixed-path", "optional-path"] as const satisfies readonly PathShapeCase[]) {

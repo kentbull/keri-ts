@@ -91,7 +91,7 @@ def graph_disclosures(hby, hab, graph_case):
         return path_shape_graph(hby, hab, graph_case)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
-    if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
+    if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR", "NAND", "NOR"):
         return relation_graph(hby, hab, graph_case)
     if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "simple-edge", "edge-schema", "inherited-schema", "malformed-schema"):
         return edge_refusal_graph(hby, hab, graph_case)
@@ -148,6 +148,10 @@ def deep_graph(hby, hab, graph_case):
 
 def relation_edge(graph_case, far, invalid):
     """Keep the nested AND/OR truth table separate from credential construction."""
+    if graph_case in ("NAND", "NOR"):
+        return dict(d="", o=graph_case,
+            first=dict(n=far.said, o="NI2I" if invalid else "I2I"),
+            second=dict(n=far.said, o="NI2I" if graph_case == "NAND" else "I2I"))
     if graph_case not in ("AND", "OR"):
         return dict(d="", authority=dict(n=far.said, o=graph_case))
     return dict(d="", o=graph_case, authority=dict(
@@ -168,7 +172,7 @@ def relation_graph(hby, hab, graph_case):
     full, partial = near(far)
     nodes = [partial, far]
     bad_nodes = nodes
-    if graph_case in ("AND", "OR"):
+    if graph_case in ("AND", "OR", "NAND", "NOR"):
         bad_nodes = [near(far, invalid=True)[1], far]
     elif graph_case != "NI2I":
         _, bad_far = disclosure(authority.pre, issuee=authority.pre if graph_case == "I2I" else hab.pre)

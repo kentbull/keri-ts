@@ -55,9 +55,14 @@ record schemas in structing.ts and counted transport in wrappers.
 
 `acdc/graphing.ts` owns relation evaluation and edge block/label rules over borrowed
 `AcdcGraph` indexes. `evaluateAcdcRelations` reads accepted KEL, schemas and supplied
-registry states; it preserves dependency, malformed, unknown-state and Boolean
-outcomes. IPEX supplies its existing frame graph directly, without projection or
-another walker. Negotiated disclosure and Offer/Grant traversal remain IPEX policy.
+registry states and returns true, false, null or a typed dependency/unknown-state
+issue. Applications require explicit true before use; retention is never that
+approval. Every ancestor and local pin remains an additional constraint. Visible
+untargeted Issuees differ from hidden attribute/first-aggregate-member blocks;
+hidden identity evidence stays unresolved. AND/OR/NAND/NOR require all operands
+resolved; NOT only inverts far-node truth, never identity or schema constraints.
+IPEX retains authenticated, schema-valid negotiated evidence without evaluating
+relations. Negotiated disclosure and Offer/Grant traversal remain IPEX policy.
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
 BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
