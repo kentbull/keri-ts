@@ -54,6 +54,7 @@ const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
   "/verifier/src/",
   "/hosting/src/",
   "/wallet/src/",
+  "/registrar/src/",
 ];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
@@ -81,8 +82,10 @@ function dntPackageMappings(
   verifierVersion: string,
   hostingVersion: string,
   walletVersion: string,
+  registrarVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
@@ -204,6 +207,7 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
 const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
 const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
+const registrarPackageVersion = resolveWorkspacePackageVersion("../registrar/package.json");
 
 await build({
   entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
@@ -218,6 +222,7 @@ await build({
     verifierPackageVersion,
     hostingPackageVersion,
     walletPackageVersion,
+    registrarPackageVersion,
   ),
   typeCheck: false,
   test: false,
@@ -258,6 +263,7 @@ await build({
       "@keri-ts/verifier": verifierPackageVersion,
       "@keri-ts/hosting": hostingPackageVersion,
       "@keri-ts/wallet": walletPackageVersion,
+      "@keri-ts/registrar": registrarPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
@@ -286,6 +292,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/hosting`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/wallet`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/registrar`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);

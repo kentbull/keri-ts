@@ -623,6 +623,7 @@ export {
 } from "../did/webs/resolving.ts";
 export {
   makeNowIso8601,
+  timestampMicros,
 } from "../time/mod.ts";
 
 export { HTTPMessenger, type HTTPMessengerOptions } from "../app/transport/http-messenger.ts";

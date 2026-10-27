@@ -1,7 +1,7 @@
 /** Business notification JSON and one scoped status-only HTTP attempt. */
 import type { SerderACDC } from "cesr-ts";
 import { call, type Operation } from "effection";
-import type { HttpClient, VcStateRecordShape } from "keri-ts/runtime";
+import { type HttpClient, TransportError, type VcStateRecordShape } from "keri-ts/runtime";
 import { credentialSchema } from "./policy.ts";
 
 export interface VerifierWebhookBody {
@@ -52,19 +52,24 @@ export function* postWebhook(
   body: VerifierWebhookBody,
 ): Operation<boolean> {
   const raw = JSON.stringify(body);
-  return yield* call(function*() {
-    const response = yield* http.open(hook, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "sally-resource": String(body.data.schema ?? ""),
-        "sally-timestamp": new Date(now()).toISOString(),
-      },
-      body: raw,
+  try {
+    return yield* call(function*() {
+      const response = yield* http.open(hook, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "sally-resource": String(body.data.schema ?? ""),
+          "sally-timestamp": new Date(now()).toISOString(),
+        },
+        body: raw,
+      });
+      // Returning from this call scope closes the unread response before publishing success.
+      return response.ok;
     });
-    // Returning from this call scope closes the unread response before publishing success.
-    return response.ok;
-  });
+  } catch (error) {
+    if (error instanceof TransportError) return false;
+    throw error;
+  }
 }
 
 /** ACDC attributes are protocol/schema data; narrow the mapping before projecting webhook fields. */
