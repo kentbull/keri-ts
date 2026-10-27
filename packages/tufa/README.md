@@ -60,7 +60,8 @@ disclosed credential. A second/full disclosure has its own Grant key; reads do
 not merge private material or assert current standing. Legacy `vc list/export`
 and ordinary `ipex admit` retain their existing paths. ACDC v2 negotiated Admit
 publication gathers the required source-anchor receipts before returning; group
-approval remains a separate workflow.
+holders use explicit member approval of the exact Admit before wallet consent
+is recorded. `--approval-timeout 0` returns a pending proposal without admission.
 
 ## ACDC v2 IPEX disclosure
 
@@ -85,6 +86,16 @@ consent. A partial view cannot gain withheld fields from another cached Grant.
 `--derive` with explicitly provisioned custody. `--presentation-registry NAME`
 selects a local registry matching the disclosed Issuee declaration. `--input FILE`
 first admits supplied signed evidence through ordinary ingress.
+
+ACDC v2 group registry commands stage the same RIP/BUP bodies and publish exact
+member proposals. Approve registry proposals with `tufa multisig join`; approve
+IPEX proposals with `tufa ipex join`. A proposal or one local signature is not
+accepted issuance, admission or permission to present. Group Grant/Admit signing
+requires current authenticated root truth, and completed delivery or new consent
+rechecks that truth after threshold completion. Historical wallet reads keep the
+original admitted proof after revocation. Prepare a presentation BUP against the
+frozen unsigned Grant before its first member approval; recorded wrapper retries
+replay their exact original nests.
 
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`

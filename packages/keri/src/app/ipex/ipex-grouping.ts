@@ -8,28 +8,42 @@
  * delivery and credential owners; its byte-input context belongs to the operation.
  */
 import {
+  type CesrFrame,
   type Cigar,
+  collectPayload,
   concatBytes,
   Counter,
   Diger,
+  framePayload,
+  nestedPayload,
   parseBytes,
   Prefixer,
   Seqner,
+  type SerderACDC,
   SerderKERI,
   type Siger,
   type Versionage,
   Vrsn_1_0,
+  Vrsn_2_0,
 } from "cesr-ts";
-import { type Operation } from "npm:effection@^3.6.0";
+import { call, type Operation } from "npm:effection@^3.6.0";
+import { evaluateAcdcRelations } from "../../acdc/graphing.ts";
+import type { RegistryState } from "../../acdc/regeventing.ts";
+import type { RegistryStore } from "../../acdc/registering.ts";
+import { validateSchema } from "../../acdc/scheming.ts";
 import { resolveAttachmentGvrsn } from "../../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import { exchange, serializeMessage } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
+import { messageAttachmentGroups } from "../../core/protocol-serialization.ts";
 import type { Baser } from "../../db/basing.ts";
+import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import type { Reger } from "../../db/reger.ts";
 import type { Poster } from "../delivery/forwarding.ts";
+import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupMemberHasKey, groupSigningMembers, localGroupMember } from "../multisig/group-members.ts";
 import {
@@ -60,7 +74,141 @@ import {
   credentialSaidFromGrant,
   validateAdmitGrant,
 } from "./ipex-credentialing.ts";
+import { walkIpexGraph } from "./ipex-graph.ts";
+import { authenticateIpexNode } from "./ipex-node-authentication.ts";
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexConversationReady, ipexRecipient } from "./ipexing.ts";
+
+/** Authenticate the exact disclosed graph; only the existing evaluator's explicit true authorizes new use. */
+function acdcV2GraphUse(
+  hby: Habery,
+  registry: RegistryStore | null,
+  origin: string,
+  nests: readonly CesrFrame[],
+): boolean | null {
+  const graph = walkIpexGraph(origin, nests, true, hby.db);
+  if (graph && "kind" in graph) return null;
+  if (!graph) throw new ValidationError("ACDC v2 group graph is malformed or incomplete.");
+  const states = new Map<string, RegistryState>();
+  for (const [said, node] of graph.nodes) {
+    const schema = validateSchema(node.body, hby.db);
+    if (schema.kind === "missing") return null;
+    if (schema.kind === "invalid") throw new ValidationError("ACDC v2 group node violates its own schema.");
+    const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry);
+    if (auth.kind === "missing") return null;
+    if (auth.kind !== "authenticated") throw new ValidationError("ACDC v2 group issuer proof is invalid.");
+    if (auth.registration) states.set(said, auth.registration);
+  }
+  if (evaluateAcdcRelations(graph, hby.db, states) !== true) {
+    throw new ValidationError("ACDC v2 group graph is false or unresolved.");
+  }
+  return true;
+}
+/** Current retained Grant authentication and graph truth are separate from protocol completion/history. */
+function acdcV2GrantUse(
+  hby: Habery,
+  exchanger: Exchanger,
+  registry: RegistryStore | null,
+  said: string,
+): boolean | null {
+  const grant = hby.db.exns.get([said]);
+  if (!grant || !exchanger.verifyAccepted(said, IPEX_GRANT_ROUTE)) return null;
+  const origins = (grant.sad!.a as { o?: unknown }).o;
+  if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
+    throw new ValidationError("ACDC v2 group Grant requires one origin.");
+  }
+  return acdcV2GraphUse(hby, registry, origins[0], loadNests(hby.db, said));
+}
+
+/** Recheck current graph authorization at an accepted group's new delivery, output or consent action. */
+export function requireAcdcV2GroupUse(hby: Habery, protocol: ProtocolProcessor, embedded: SerderKERI): void {
+  const grant = embedded.route === IPEX_GRANT_ROUTE
+    ? embedded.said
+    : embedded.route === IPEX_ADMIT_ROUTE
+    ? embedded.sad!.p
+    : undefined;
+  if (
+    typeof grant === "string" && acdcV2GrantUse(hby, protocol.exc, protocol.registry?.store ?? null, grant) !== true
+  ) {
+    throw new ValidationError("ACDC v2 group graph is unavailable for completed use.");
+  }
+}
+/** Approve exactly one ACDC v2 IPEX stream before adding this member's signature; no new acceptance rows are manufactured. */
+export function* prepareAcdcV2GroupIpex(
+  hby: Habery,
+  protocol: ProtocolProcessor,
+  group: Hab,
+  raw: Uint8Array,
+): Operation<Uint8Array | null> {
+  const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), raw));
+  const frame = frames[0], embedded = frame?.body;
+  if (
+    frames.length !== 1 || !(embedded instanceof SerderKERI) || embedded.pvrsn.major !== 2 || embedded.pre !== group.pre
+    || !embedded.route?.startsWith("/ipex/")
+  ) {
+    throw new ValidationError("ACDC v2 group approval requires one exact group-authored IPEX message.");
+  }
+  localGroupMember(hby, group.pre);
+  const envelope = envelopeFromFrame(frame);
+  const prior = localIpexContribution(
+    hby.db,
+    localGroupMember(hby, group.pre).pre,
+    embedded,
+    rebuildStoredExchangeGroups(hby.db, embedded.said!),
+  );
+  if (!prior) {
+    // A group candidate legitimately carries fewer than its final threshold.
+    // Verify each supplied contribution against its accepted establishment keys;
+    // the ordinary Exchanger still owns threshold completion after explicit approval.
+    for (const proof of envelope.tsgs.filter(proof => proof.pre === group.pre)) {
+      if (proof.sn > BigInt(Number.MAX_SAFE_INTEGER)) throw new ValidationError("Invalid group proof ordinal.");
+      const said = hby.db.kels.getLast(group.pre, Number(proof.sn));
+      const event = said ? hby.db.getEvtSerder(group.pre, said) : null;
+      if (!event) return null;
+      if (
+        said !== proof.said || !event.estive
+        || Kever.verifyIndexedSignatures(embedded.raw, proof.sigers, event.verfers).sigers.length
+          !== proof.sigers.length
+      ) {
+        throw new ValidationError("Invalid group member contribution.");
+      }
+    }
+    const supplied = verifyExchangeProofs(hby.db, embedded, {
+      tsgs: envelope.tsgs.filter(proof => proof.pre !== group.pre),
+      cigars: envelope.cigars,
+      sourceSeals: envelope.ssts,
+    });
+    if (supplied.invalid) throw new ValidationError("ACDC v2 group candidate contains invalid exchange proof.");
+    if (supplied.missing.length) return null;
+    if (embedded.route === IPEX_GRANT_ROUTE) {
+      const origins = (embedded.sad!.a as { o?: unknown }).o;
+      if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
+        throw new ValidationError("ACDC v2 group Grant requires one origin.");
+      }
+      if (acdcV2GraphUse(hby, protocol.registry?.store ?? null, origins[0], frame.nests ?? []) !== true) return null;
+    } else if (embedded.route === IPEX_ADMIT_ROUTE) {
+      if (
+        typeof embedded.sad!.p !== "string"
+        || acdcV2GrantUse(hby, protocol.exc, protocol.registry?.store ?? null, embedded.sad!.p) !== true
+      ) return null;
+    }
+  }
+  const establishment = group.kever!, sigers = prior ? prior.sigers : group.sign(embedded.raw, true);
+  const proof = prior
+    ?? new TransIdxSigGroup(
+      new Prefixer({ qb64: group.pre }),
+      hby.db.getEvtSerder(group.pre, establishment.lastEst.d)!.sner!,
+      new Diger({ qb64: establishment.lastEst.d }),
+      sigers,
+    );
+  const approved = {
+    ...frame,
+    attachments: [...frame.attachments, ...messageAttachmentGroups({ tsgs: [proof] }, Vrsn_2_0)],
+  };
+  const wire = yield* call(() => collectPayload(framePayload(approved, { gvrsn: Vrsn_2_0 })));
+  yield* new Reactor(protocol).processBytes(wire, { local: true });
+  yield* protocol.processEscrowsOnce();
+  return wire;
+}
 
 export interface MultisigIpexApprovalOptions {
   publish?: boolean;
@@ -96,7 +244,7 @@ export function* approveMultisigIpex(
   const { child, groupHab } = loadIpexProposal(hby, wrapper);
   const { event: embedded, genus } = child;
   const embeddedSaid = embedded.said!;
-  if (embedded.route === IPEX_GRANT_ROUTE && !reger) {
+  if (embedded.pvrsn.major === 1 && embedded.route === IPEX_GRANT_ROUTE && !reger) {
     throw new ValidationError("VDR runtime did not open Reger.");
   }
   const payloadSaid = multisigPayloadSaid(wrapper);
@@ -129,6 +277,8 @@ export function* approveMultisigIpex(
         groupHab,
         embedded,
         options.gvrsn,
+        protocol.registry?.store ?? null,
+        protocol.exc,
       )),
     );
   }
@@ -142,7 +292,10 @@ export function* approveMultisigIpex(
 
 /** Decode one accepted coordination wrapper and select its actual local group signing state. */
 function loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
-  const child = multisigChild(hby, wrapper, "exn");
+  const frame = wrapper.pvrsn.major === 2 ? loadNests(hby.db, wrapper.said!)[0] : undefined;
+  const child = frame && frame.body instanceof SerderKERI
+    ? { event: frame.body, attachment: new Uint8Array(), genus: frame.gvrsn!, frame }
+    : multisigChild(hby, wrapper, "exn");
   if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
   const group = child.event.pre;
   if (!group || !child.event.said || !wrapper.said) {
@@ -162,10 +315,15 @@ function* approveIpexChild(
   hby: Habery,
   protocol: ProtocolProcessor,
   groupHab: Hab,
-  { event: embedded, attachment: peerAttachment, genus }: ReturnType<typeof loadIpexProposal>["child"],
+  child: ReturnType<typeof loadIpexProposal>["child"],
   wrapper: SerderKERI,
   reger: Reger | null,
 ): Operation<Uint8Array | null> {
+  const { event: embedded, attachment: peerAttachment, genus } = child;
+  if (embedded.pvrsn.major === 2 && "frame" in child) {
+    const raw = yield* call(() => collectPayload(framePayload(child.frame, { gvrsn: Vrsn_2_0 })));
+    return yield* prepareAcdcV2GroupIpex(hby, protocol, groupHab, raw);
+  }
   if (embedded.route === IPEX_GRANT_ROUTE) {
     if (!reger) throw new ValidationError("Grant approval requires the local credential wallet.");
     if (!credentialGrantReady(hby, reger, embedded, peerAttachment, genus)) return null;
@@ -225,6 +383,9 @@ export function groupIpexPartial(
   attachments: Uint8Array = new Uint8Array(),
   gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
+  if (embedded.pvrsn.major === 2) {
+    throw new ValidationError("ACDC v2 group IPEX requires exact-stream prepareAcdcV2GroupIpex approval.");
+  }
   const group = groupHab.pre;
   const groupRecord = hby.db.getHab(group);
   const memberPre = groupRecord?.mid;
@@ -303,17 +464,42 @@ function* prepareGroupIpexMessages(
   childGvrsn?: Versionage,
 ): Operation<SignedGroupMessage[]> {
   const member = localGroupMember(hby, groupHab.pre);
-  const child = new SerderKERI({ raw: embedded });
-  const genus = child.gvrsn ?? childGvrsn ?? child.pvrsn;
+  const frames = parseBytes(childGvrsn ? concatBytes(Counter.makeGVC(childGvrsn), embedded) : embedded);
+  const childFrame = frames[0], child = childFrame?.body;
+  if (frames.length !== 1 || !(child instanceof SerderKERI)) {
+    throw new ValidationError("Group IPEX requires one complete exchange.");
+  }
+  const genus = childFrame.gvrsn ?? child.gvrsn ?? childGvrsn ?? child.pvrsn;
+  if (child.pvrsn.major === 2) {
+    if (child.route === IPEX_GRANT_ROUTE) {
+      const origins = (child.sad!.a as { o?: unknown }).o;
+      if (
+        !Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string"
+        || acdcV2GraphUse(hby, protocol.registry?.store ?? null, origins[0], childFrame.nests ?? []) !== true
+      ) {
+        throw new ValidationError("ACDC v2 group graph is unavailable before proposal publication.");
+      }
+    } else if (
+      child.route === IPEX_ADMIT_ROUTE && (typeof child.sad!.p !== "string"
+        || acdcV2GrantUse(hby, protocol.exc, protocol.registry?.store ?? null, child.sad!.p) !== true)
+    ) {
+      throw new ValidationError("ACDC v2 group Grant is unavailable before Admit publication.");
+    }
+  }
   const payload = { gid: groupHab.pre, ...multisigChildGenusAttrs(child, genus) };
   const input = new Reactor(protocol);
   const messages: SignedGroupMessage[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
-    const prepared = exchange(MULTISIG_EXN_ROUTE, payload, {
-      sender: member.pre,
-      recipient,
-      embeds: { exn: embedded },
-    });
+    const prepared = child.pvrsn.major === 2
+      ? [
+        exchange(MULTISIG_EXN_ROUTE, { gid: groupHab.pre, exn: child.said! }, {
+          sender: member.pre,
+          recipient,
+          version: Vrsn_2_0,
+        })[0],
+        yield* call(() => collectPayload(nestedPayload(childFrame, Vrsn_2_0))),
+      ] as const
+      : exchange(MULTISIG_EXN_ROUTE, payload, { sender: member.pre, recipient, embeds: { exn: embedded } });
     const signed = yield* prepareGroupMessage(protocol.exc, member, recipient, prepared);
     yield* input.processBytes(signed.message, { local: true });
     if (
@@ -387,7 +573,9 @@ export function* approveStoredMultisigIpexWrappers(
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = embeddedBusinessExnSAD(wrapper);
+    const embeddedSad = wrapper.pvrsn.major === 2
+      ? loadNests(hby.db, wrapper.said!)[0]?.body.ked
+      : embeddedBusinessExnSAD(wrapper);
     if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
       continue;
     }
@@ -407,7 +595,9 @@ export function findPendingMultisigIpex(db: Baser): SerderKERI | null {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = embeddedBusinessExnSAD(wrapper);
+    const embeddedSad = wrapper.pvrsn.major === 2
+      ? loadNests(db, wrapper.said!)[0]?.body.ked
+      : embeddedBusinessExnSAD(wrapper);
     if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
       continue;
     }
@@ -438,30 +628,67 @@ export function* sendCompletedGroupIpex(
   groupHab: Hab,
   embedded: SerderKERI,
   gvrsn: Versionage = Vrsn_1_0,
+  registry: RegistryStore | null = null,
+  exchanger?: Exchanger,
 ): Operation<string[]> {
   if (!embedded.said) {
     throw new ValidationError("Completed group IPEX message is missing a SAID.");
   }
   const priorSaid = embedded.ked?.p;
   const prior = typeof priorSaid === "string" && priorSaid.length > 0 ? hby.db.exns.get([priorSaid]) : null;
-  const recipient = ipexRecipient(embedded, prior ?? undefined);
+  const recipient = embedded.pvrsn.major === 2 && typeof embedded.sad?.ri === "string"
+    ? embedded.sad.ri
+    : ipexRecipient(embedded, prior ?? undefined);
   if (!recipient) {
     throw new ValidationError(`Unable to find recipient for ${embedded.route ?? "<unknown>"} ${embedded.said}.`);
   }
 
   const messages: Uint8Array[] = [];
-  if (embedded.route === IPEX_GRANT_ROUTE) {
+  if (embedded.pvrsn.major === 2) {
+    if (!exchanger) {
+      throw new ValidationError("ACDC v2 group delivery requires its actual exchange verification owner.");
+    }
+    const grant = embedded.route === IPEX_GRANT_ROUTE
+      ? embedded.said
+      : embedded.route === IPEX_ADMIT_ROUTE
+      ? embedded.sad!.p
+      : undefined;
+    if (typeof grant === "string" && acdcV2GrantUse(hby, exchanger, registry, grant) !== true) {
+      throw new ValidationError("ACDC v2 group graph is unavailable for completed delivery.");
+    }
+    if (embedded.route === IPEX_GRANT_ROUTE) {
+      const nests = loadNests(hby.db, embedded.said!), aids = new Set([groupHab.pre]), regids = new Set<string>();
+      for (const node of nests) {
+        const body = node.body as SerderACDC;
+        if (body.issuer) aids.add(body.issuer);
+        if (body.issuee) aids.add(body.issuee);
+        if (body.regid) regids.add(body.regid);
+        const a = body.sad!.a as { rd?: unknown };
+        if (a && typeof a === "object" && typeof a.rd === "string") regids.add(a.rd);
+      }
+      messages.push(Counter.makeGVC(Vrsn_2_0));
+      for (const aid of aids) {
+        const state = hby.db.getKever(aid);
+        if (state) messages.push(...hby.db.cloneDelegation(state, Vrsn_2_0), ...hby.db.clonePreIter(aid, 0, Vrsn_2_0));
+      }
+      for (const regid of regids) {
+        if (!registry) throw new ValidationError("ACDC v2 group delivery registry evidence is unavailable.");
+        messages.push(registry.cloneTel(regid));
+      }
+    }
+  } else if (embedded.route === IPEX_GRANT_ROUTE) {
     if (!reger) {
       throw new ValidationError("VDR runtime did not open Reger.");
     }
     messages.push(...groupGrantSupport(hby, reger, embedded, recipient, gvrsn));
   }
 
-  messages.push(storedExchangeMessage(
-    hby,
-    requireStoredExchange(hby, embedded.said),
-    gvrsn,
-  ));
+  if (embedded.pvrsn.major === 2) {
+    messages.push(yield* abortable(signal => collectBytes(exchanger!.replay(embedded.said!, signal))));
+    return yield* sendCredentialStream(postman, localGroupMember(hby, groupHab.pre), recipient, messages);
+  } else {
+    messages.push(storedExchangeMessage(hby, requireStoredExchange(hby, embedded.said), gvrsn));
+  }
   return yield* sendCredentialBytes(
     postman,
     localGroupMember(hby, groupHab.pre),

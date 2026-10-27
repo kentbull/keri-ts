@@ -1,9 +1,21 @@
 /** Tufa parses/configures ACDC v2 authoring; wallet owns state transitions and acceptance. */
 import { RegistryCustody, WalletAuthor } from "@keri-ts/wallet";
-import { type MapperMap } from "cesr-ts";
-import { call, type Operation, race, scoped, sleep } from "effection";
+import { type MapperMap, type SerderACDC } from "cesr-ts";
+import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
-import { Receiptor, Schemer, ValidationError } from "keri-ts/runtime";
+import {
+  type AgentRuntime,
+  approveAcdcV2Registry,
+  type Hab,
+  type Habery,
+  isLocalGroupHab,
+  publishAcdcV2Registry,
+  Receiptor,
+  type RegistryDisclosure,
+  runAgentRuntime,
+  Schemer,
+  ValidationError,
+} from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
@@ -23,6 +35,30 @@ function required(value: unknown, flag: string): string {
   const text = parseStringOption(value, flag);
   if (!text) throw new ValidationError(`--${flag} is required.`);
   return text;
+}
+
+/** Complete one explicit member approval using the existing shared processors and witness receipt owner. */
+export function* approveAcdcV2RegistryEvent(
+  hby: Habery,
+  runtime: AgentRuntime,
+  hab: Hab,
+  receiptor: Receiptor,
+  event: SerderACDC,
+  opening?: RegistryDisclosure,
+): Operation<void> {
+  const approved = yield* approveAcdcV2Registry(hby, runtime.protocol, hab, event, { opening });
+  yield* publishAcdcV2Registry(hby, runtime.postman, hab, approved);
+  const anchor = (approved[0].sad!.a as { anc: string }).anc;
+  const sealing = hby.db.getEvtSerder(hab.pre, anchor)!;
+  const regid = event.ilk === "rip" ? event.said! : event.regid!;
+  while (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said !== event.said) {
+    if (hby.db.kels.getLast(hab.pre, sealing.sn!) === anchor) {
+      yield* receiptor.receipt(hab.pre, { sn: sealing.sn!, allowTcp: true });
+    }
+    yield* runtime.protocol.processEscrowsOnce();
+    if (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said === event.said) break;
+    yield* sleep(100);
+  }
 }
 
 /** Compose one finite author operation and print acceptance only after all owned stores close. */
@@ -61,12 +97,24 @@ export function* acdcV2AuthorCommand(
               }),
               custody,
             );
+            const group = isLocalGroupHab(hby, hab);
+            if (group) yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+            function* approve(event: SerderACDC, opening?: RegistryDisclosure): Operation<void> {
+              yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, opening);
+            }
             if (operation === "incept") {
               if (args.discloser && !withCustody) throw new ValidationError("--discloser requires --with-custody.");
               if (custody && (!hby.mgr.aeid || !hby.mgr.seed)) {
                 throw new ValidationError("Private custody requires an authenticated encrypted Keeper.");
               }
-              const event = yield* author.incept(name, hab.pre);
+              const reg = group
+                ? runtime.acdc.registryByName(name) ?? runtime.acdc.makeRegistry(name, hab.pre)
+                : undefined;
+              if (reg && reg.hab.pre !== hab.pre) {
+                throw new ValidationError("Registry belongs to a different controller.");
+              }
+              const event = reg ? reg.store.event(reg.regk!)! : yield* author.incept(name, hab.pre);
+              if (group) yield* approve(event);
               const info = custody?.createCustody(
                 event.said!,
                 parseStringOption(args.discloser, "discloser") ?? hab.pre,
@@ -96,7 +144,11 @@ export function* acdcV2AuthorCommand(
                 edge: section(args.edges, "edges"),
                 rule: section(args.rules, "rules"),
               });
-              const record = yield* author.issue(reg, acdc, options);
+              const staged = group ? author.stage(reg, acdc, "issued", options) : undefined;
+              if (staged) yield* approve(staged.event, staged.opening);
+              const record = staged
+                ? wallet.recordIssued(acdc, staged.event.said!, { blinder: staged.opening })
+                : yield* author.issue(reg, acdc, options);
               return {
                 credential: record.credential,
                 registry: record.registry,
@@ -105,6 +157,19 @@ export function* acdcV2AuthorCommand(
               };
             }
             const said = required(args.said, "said");
+            if (group) {
+              if (wallet.db.issued.get([said])?.registry !== reg.regk) {
+                throw new ValidationError("Credential is not in this registry's issued inventory.");
+              }
+              const staged = author.stage(
+                reg,
+                wallet.issuedCredential(said),
+                operation === "revoke" ? "revoked" : required(args.state, "state"),
+                options,
+              );
+              yield* approve(staged.event, staged.opening);
+              return { credential: said, registry: reg.regk, update: staged.event.said, accepted: true };
+            }
             const event = operation === "revoke"
               ? yield* author.revoke(reg, said, options)
               : yield* author.update(reg, wallet.issuedCredential(said), required(args.state, "state"), options);

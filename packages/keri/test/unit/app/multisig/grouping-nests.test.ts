@@ -7,6 +7,7 @@ import {
   Counter,
   Diger,
   framePayload,
+  makeBlindState,
   nestedPayload,
   NumberPrimitive,
   parseBytes,
@@ -27,19 +28,28 @@ import {
   assertRejects,
   assertThrows,
 } from "jsr:@std/assert";
+import {
+  acdcmap as acdcV2Map,
+  blindate as acdcV2Blindate,
+  regcept as acdcV2Regcept,
+} from "../../../../src/acdc/messaging.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../../src/app/credentials/credential-workflows.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
 import {
   approveMultisigIpex,
   groupIpexPartial,
+  prepareAcdcV2GroupIpex,
   publishInitialGroupIpex,
+  sendCompletedGroupIpex,
 } from "../../../../src/app/ipex/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
 import {
+  acdcV2RegistryProposal,
   loadMultisigHandlers,
   type MultisigEventProposal,
   multisigExnBody,
@@ -54,13 +64,18 @@ import {
   prepareMultisigEventExn,
 } from "../../../../src/app/multisig/grouping.ts";
 import { signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
-import { approvePendingMultisigProposal, publishProposal } from "../../../../src/app/multisig/multisig-workflows.ts";
+import {
+  approveAcdcV2Registry,
+  approvePendingMultisigProposal,
+  publishProposal,
+} from "../../../../src/app/multisig/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { interact as interactEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
@@ -70,6 +85,7 @@ import {
   revoke as revokeCredentialEvent,
 } from "../../../../src/core/protocol-vdr-eventing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
+import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import { Reger } from "../../../../src/db/reger.ts";
 import { credential, Credentialer, Regery, serializeCredential } from "../../../../src/vdr/credentialing.ts";
 import framing714 from "../../../fixtures/multisig-framing-714.json" with { type: "json" };
@@ -97,7 +113,7 @@ void ({
 } satisfies MultisigVdrProposal);
 
 /** Sign just the wrapper body with its sender's accepted establishment keys. */
-function proof(sender: Hab, serder: SerderKERI): TransIdxSigGroup[] {
+function proof(sender: Hab, serder: SerderKERI | SerderACDC): TransIdxSigGroup[] {
   const establishment = sender.db.getEvtSerder(sender.pre, sender.kever!.lastEst.d)!;
   return [
     new TransIdxSigGroup(
@@ -1996,3 +2012,235 @@ Deno.test("group credential producers publish typed evidence and usable proposal
     });
   });
 });
+
+Deno.test("ACDC v2 registry group proposals retain peer evidence until exact local approval", async () => {
+  await participants(async (left, right, alice, bob) => {
+    const members = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "2", nsith: "2" });
+    const remote = right.makeGroupHab("acdc-v2-group", bob, members, members, undefined, { isith: "2", nsith: "2" });
+    await run(function*() {
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        for (const runtime of [receiver, sender]) {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            { local: true },
+          );
+        }
+        const rip = acdcV2Regcept(local.hab.pre);
+        const anchor = right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }] }).serder;
+        const telFrame = parseBytes(
+          concatBytes(
+            rip.raw,
+            Counter.enclose({ code: "AttachmentGroup", qb64: new Uint8Array(), version: Vrsn_2_0 }),
+          ),
+        )[0];
+        const kelFrame =
+          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
+        const wrapper = exchange("/multisig/registry", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
+          sender: bob.pre,
+          version: Vrsn_2_0,
+        })[0];
+        const candidate = { serder: wrapper, nests: [telFrame, kelFrame], tsgs: proof(bob, wrapper) };
+        assertEquals((yield* receiver.exc.processEvent(candidate)).kind, "accept");
+        assertEquals(receiver.acdc!.store.head(rip.said!), null, "peer proposal is not member consent");
+        assertEquals(
+          yield* approvePendingMultisigProposal(left, receiver, {
+            said: wrapper.said!,
+            callbacks: {
+              approveProposal: () => false,
+              chooseGroupAlias: () => "acdc-v2-group",
+              chooseRegistryName: () => "registry",
+            },
+          }),
+          null,
+        );
+        assertEquals(
+          receiver.acdc!.store.head(rip.said!),
+          null,
+          "declining the actual CLI approval path remains inert",
+        );
+        const [approval, approvalFoot] = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, rip, {
+          anchor,
+        });
+        assertEquals(receiver.exc.complete(approval.said!), true);
+        yield* receiver.protocol.processEscrowsOnce();
+        assertEquals(left.db.getKever(local.hab.pre)?.serder.said, anchor.said);
+        assertEquals(receiver.acdc!.store.head(rip.said!)?.qb64, rip.said);
+        yield* sender.reactor.processBytes(concatBytes(approval.raw, approvalFoot));
+        const [peer, peerFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, rip, { anchor });
+        yield* receiver.reactor.processBytes(concatBytes(peer.raw, peerFoot));
+        assertEquals(sender.acdc!.store.head(rip.said!)?.qb64, rip.said);
+        const sealed = local.hab.kever!.serder.said;
+        yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, rip);
+        assertEquals(local.hab.kever!.serder.said, sealed, "exact accepted retry reuses its verified group anchor");
+        const credential = acdcV2Map(local.hab.pre, {
+          regid: rip.said!,
+          attribute: { d: "", i: alice.pre, role: "group holder" },
+        });
+        let prior = rip.said!;
+        for (const [index, state] of ["issued", "revoked"].entries()) {
+          const opening = makeBlindState({ acdc: credential.said!, state, sn: BigInt(index + 1) });
+          const event = acdcV2Blindate(rip.said!, prior, opening.d.nonce, { sn: index + 1 });
+          const [first, firstFoot] = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, event, {
+            opening,
+          });
+          assertEquals(receiver.acdc!.store.head(rip.said!)?.qb64, prior, "a local share is not threshold acceptance");
+          yield* sender.reactor.processBytes(concatBytes(first.raw, firstFoot));
+          assertEquals(sender.acdc!.store.head(rip.said!)?.qb64, prior, "receipt is not explicit peer consent");
+          const nests = loadNests(right.db, first.said!), selected = acdcV2RegistryProposal(first, nests)!;
+          const disclosed = envelopeFromFrame(nests[0]).bsqs[0];
+          assertEquals(selected.tel.raw, event.raw);
+          const [second, secondFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, selected.tel, {
+            anchor: selected.anchor,
+            opening: disclosed,
+          });
+          yield* receiver.reactor.processBytes(concatBytes(second.raw, secondFoot));
+          yield* receiver.protocol.processEscrowsOnce();
+          for (const runtime of [receiver, sender]) {
+            assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, event.said);
+            assertExists(runtime.acdc!.store.opening(event.said!));
+          }
+          prior = event.said!;
+        }
+        for (const hby of [left, right]) {
+          yield* hby.ks.reopen();
+          yield* hby.db.reopen();
+        }
+        for (const runtime of [receiver, sender]) yield* runtime.acdc!.baser.reopen();
+        assertEquals((yield* receiver.exc.processEvent(candidate)).kind, "accept");
+        assertEquals(
+          receiver.acdc!.store.head(rip.said!)?.qb64,
+          prior,
+          "old proposal replay cannot lower accepted history",
+        );
+
+        const wrong = exchange("/multisig/registry", { gid: local.hab.pre, tel: alice.pre, anc: anchor.said! }, {
+          sender: bob.pre,
+          version: Vrsn_2_0,
+        })[0];
+        assertEquals(
+          (yield* receiver.exc.processEvent({ ...candidate, serder: wrong, tsgs: proof(bob, wrong) })).kind,
+          "reject",
+        );
+      } finally {
+        yield* sender.close();
+        yield* receiver.close();
+      }
+    });
+  });
+});
+
+for (const verdict of ["true", "false", "unresolved"] as const) {
+  Deno.test(`ACDC v2 group signing requires exact authenticated root truth: ${verdict}`, async () => {
+    await participants(async (left, right, alice, bob) => {
+      const mids = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("acdc-v2-signing", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
+      const remote = right.makeGroupHab("acdc-v2-signing", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
+      await run(function*() {
+        const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+        const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+        try {
+          for (const runtime of [receiver, sender]) {
+            yield* runtime.reactor.processBytes(
+              messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+              { local: true },
+            );
+          }
+          const schema = new Schemer({
+            sed: { $id: "", version: "1.0.0", type: "object", additionalProperties: true },
+          });
+          right.db.schema.pin(schema.said, schema);
+          if (verdict !== "true") left.db.schema.pin(schema.said, schema);
+          const full = acdcV2Map(bob.pre, {
+            schema: schema.said,
+            attribute: { d: "", i: verdict === "false" ? alice.pre : bob.pre, role: "authority" },
+          });
+          const far = verdict === "unresolved"
+            ? acdcV2Map(bob.pre, { schema: schema.said, attribute: (full.sad!.a as { d: string }).d })
+            : full;
+          const near = acdcV2Map(bob.pre, {
+            schema: schema.said,
+            attribute: { d: "", i: local.hab.pre },
+            edge: { d: "", authority: { n: far.said! } },
+          });
+          const nodes = [near, far].map(body => ({
+            body,
+            gvrsn: Vrsn_2_0,
+            attachments: messageAttachmentGroups({ tsgs: proof(bob, body) }, Vrsn_2_0),
+          }));
+          const grant = ipexExnBody(local.hab.pre, "/ipex/grant", [near, far], {
+            recipient: alice.pre,
+            xid: near.said!,
+            message: "exact group view",
+            plan: [[schema.said, "/", []], [schema.said, "/e/authority/_/", []]],
+          });
+          const candidate = yield* call(() =>
+            collectPayload(framePayload({ body: grant, gvrsn: Vrsn_2_0, attachments: [], nests: nodes }))
+          );
+          const oldSign = local.hab.sign.bind(local.hab);
+          let signs = 0;
+          // A call-through spy observes the private-key boundary; all authentication and signing stay real.
+          local.hab.sign = ((...args: Parameters<Hab["sign"]>) => {
+            signs++;
+            return oldSign(...args);
+          }) as Hab["sign"];
+          if (verdict !== "true") {
+            yield* call(() =>
+              assertRejects(
+                () => run(() => prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, candidate)),
+                ValidationError,
+                "false or unresolved",
+              )
+            );
+            assertEquals(signs, 0);
+            assertEquals(receiver.exc.complete(grant.said!), false);
+          } else {
+            assertEquals(yield* prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, candidate), null);
+            assertEquals(signs, 0, "missing own schema cannot reach member signing");
+            left.db.schema.pin(schema.said, schema);
+            const first = yield* prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, candidate);
+            assertExists(first);
+            assertEquals(signs, 1);
+            assertEquals(receiver.exc.complete(grant.said!), false);
+            assertEquals(yield* prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, candidate), first);
+            assertEquals(signs, 1, "exact retry reuses the verified member contribution");
+            const second = yield* prepareAcdcV2GroupIpex(right, sender.protocol, remote.hab, first);
+            assertExists(second);
+            yield* receiver.reactor.processBytes(second, { local: true });
+            assertEquals(sender.exc.complete(grant.said!), true);
+            assertEquals(receiver.exc.complete(grant.said!), true);
+            assertEquals(left.db.exns.get([grant.said!])?.raw, grant.raw);
+            bob.rotate();
+            yield* call(() => learn(left, bob));
+            assertEquals(receiver.exc.complete(grant.said!), true, "protocol completion remains historical");
+            yield* call(() =>
+              assertRejects(
+                () =>
+                  run(() =>
+                    sendCompletedGroupIpex(
+                      left,
+                      receiver.postman,
+                      null,
+                      local.hab,
+                      grant,
+                      Vrsn_2_0,
+                      receiver.acdc!.store,
+                      receiver.exc,
+                    )
+                  ),
+                ValidationError,
+                "unavailable",
+              )
+            );
+            assertEquals(left.db.exns.get([grant.said!])?.raw, grant.raw);
+          }
+        } finally {
+          yield* sender.close();
+          yield* receiver.close();
+        }
+      });
+    });
+  });
+}

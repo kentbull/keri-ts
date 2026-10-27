@@ -266,9 +266,13 @@ export function serializeMessage(
   });
 }
 
-/** Exact v2 multisig route/child-ilk contract at frozen KERIpy 927c0cb8 grouping.py:validate. */
+/** Selected ACDC v2 multisig routes; exact child relationships remain the coordinator's obligation. */
 export function nestedMultisigIlks(route: string): readonly string[] | null {
   switch (route) {
+    case "/multisig/registry":
+      return ["rip", "bup", "ixn", "rot", "drt"];
+    case "/multisig/exn":
+      return ["exn"];
     case "/multisig/icp":
       return ["icp", "dip"];
     case "/multisig/rot":

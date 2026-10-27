@@ -37,16 +37,20 @@ export class WalletAuthor {
     }
   }
 
-  /** Resolve only this local single-controller registry; groups retain their separate approval workflow. */
+  /** Resolve the actual local registry; staging supports groups while signing methods enforce their owner. */
   registry(name: string, controller: string): AcdcV2Registry {
     const registry = this.rgy.registryByName(name);
     if (!registry || registry.hab.pre !== controller) {
       throw new ValidationError("Unknown registry or different controller.");
     }
-    if (isLocalGroupHab(this.wallet.hby, registry.hab)) {
+    return registry;
+  }
+
+  /** Signing belongs either to this individual owner or to explicit group approval, never a staging flag. */
+  private individual(reg: AcdcV2Registry): void {
+    if (isLocalGroupHab(this.wallet.hby, reg.hab)) {
       throw new ValidationError("ACDC v2 group authoring requires member approval.");
     }
-    return registry;
   }
 
   /** Idempotently stage an alias, then return only its exact accepted inception. */
@@ -153,6 +157,7 @@ export class WalletAuthor {
     state: string,
     options: AcdcV2UpdateOptions = {},
   ): Operation<SerderACDC> {
+    this.individual(reg);
     const { event } = this.stage(reg, acdc, state, options);
     yield* this.anchor(reg, event);
     return event;
@@ -160,6 +165,7 @@ export class WalletAuthor {
 
   /** Preserve original issued history on retry; inventory follows exact witnessed TEL acceptance. */
   *issue(reg: AcdcV2Registry, acdc: SerderACDC, options: AcdcV2UpdateOptions = {}) {
+    this.individual(reg);
     this.registry(reg.name, acdc.issuer!);
     if (acdc.regid !== reg.regk) throw new ValidationError("Credential does not match this registry.");
     const old = this.wallet.db.issued.get([acdc.said!]);
@@ -181,6 +187,7 @@ export class WalletAuthor {
   /** Reuse the current branch's already signed seal even before receipts; no extra anchor merely to poll. */
   *anchor(reg: AcdcV2Registry, event: SerderACDC): Operation<void> {
     this.registry(reg.name, reg.hab.pre);
+    this.individual(reg);
     const ordinal = Number(BigInt(`0x${event.sad!.n}`));
     const accepted = reg.store.seqEvent(reg.regk!, ordinal);
     if (accepted && bytesEqual(accepted.raw, event.raw)) return;
