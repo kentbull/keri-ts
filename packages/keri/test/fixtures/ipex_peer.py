@@ -16,7 +16,8 @@ from keri import Kinds, Vrsn_2_0
 from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.core import Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
+from keri.core import Diger, Kevery, Number, Parser, SealSource, SerderACDC, SerderKERI, exchange, messagize
+from keri.kering import KeriError
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage
 
@@ -30,6 +31,27 @@ class Recorder:
 
     def add(self, attrs):
         self.items.append(attrs)
+
+
+class ArrivalHttpEnd(HttpEnd):
+    """Observe transport arrivals without interpreting nested evidence or acceptance."""
+    def __init__(self, rxbs, received):
+        super().__init__(rxbs=rxbs)
+        self.received = received
+
+    def on_post(self, req, rep):
+        """Let the real endpoint enqueue bytes before reading only this outer body."""
+        start = len(self.rxbs)
+        super().on_post(req, rep)
+        if len(self.rxbs) == start:
+            return
+        try:
+            said = SerderKERI(raw=self.rxbs[start:], verify=False).said
+        except (KeriError, TypeError, ValueError):
+            # Malformed outer data remains the real Parser's responsibility.
+            return
+        if isinstance(said, str):
+            self.received.append(said)
 
 
 class IpexPeer:
@@ -48,7 +70,7 @@ class IpexPeer:
         self.received = []
         self.running = True
         app = falcon.App()
-        app.add_route("/", HttpEnd(rxbs=self.parser.ims))
+        app.add_route("/", ArrivalHttpEnd(rxbs=self.parser.ims, received=self.received))
         app.add_route("/_fixture", PeerControl(self))
         self.server = createHttpServer("127.0.0.1", port, app)
         self.doist = doing.Doist(tock=.005, real=True,
@@ -70,10 +92,7 @@ class IpexPeer:
     def receive(self):
         if not self.parser.ims:
             return
-        arrived = bytearray(self.parser.ims)
         self.parser.parse()
-        decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
-        self.received.extend(frame.serder.said for frame in decoded)
 
     def post(self, wire):
         req = Request(self.remote["url"], data=bytes(wire), method="POST",

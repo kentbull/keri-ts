@@ -165,7 +165,7 @@ def edge_refusal_graph(hby, hab, graph_case):
         if graph_case == "unknown-group":
             edge["o"] = "UNKNOWN" if invalid else "AND"
         if graph_case == "malformed-leaf" and invalid:
-            leaf["unexpected"] = True
+            leaf["n"] = 42  # Reserved node references must be qualified SAID strings.
         if graph_case == "edge-schema":
             leaf["s"] = pin("visitor" if invalid else "citizen")
         if graph_case == "inherited-schema":

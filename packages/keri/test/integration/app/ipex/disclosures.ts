@@ -240,7 +240,7 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
     let edge: MapperMap = { d: "", authority: leaf };
     if (graphCase === "unknown-leaf" && invalid) leaf.o = "UNKNOWN";
     if (graphCase === "unknown-group") edge.o = invalid ? "UNKNOWN" : "AND";
-    if (graphCase === "malformed-leaf" && invalid) leaf.unexpected = true;
+    if (graphCase === "malformed-leaf" && invalid) leaf.n = 42; // Node references must be qualified SAID strings.
     if (graphCase === "edge-schema") leaf.s = pin(invalid ? "visitor" : "citizen");
     if (graphCase === "inherited-schema") {
       edge = {

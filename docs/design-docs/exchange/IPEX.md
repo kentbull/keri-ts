@@ -55,9 +55,12 @@ are separate work. The existing wire generator now records the selected candidat
 pin and its flat-plan decisions; independent historical primitive references stay frozen.
 Its whole-disclosure positive uses a closed typed schema, as required by the
 candidate's bounded closure check. TS still accepts some open or ambiguous whole-node
-schemas without proving recursive closure; this known gap and remaining prefix/BFS
-semantics belong to the later disclosure-closure work. These selected cases do not
-qualify universal whole-node interoperability.
+schemas without proving recursive closure. It also rejects extra labeled leaf
+properties permitted by the [pinned Edge property-field rule](https://github.com/trustoverip/kswg-acdc-specification/blob/2362e48a1e8668278575b4f5b239069b2c1a82ad/spec/spec-body.md#labeled-property-fields);
+that strict handling is a remaining row 14 compatibility gap, not a malformed-edge
+requirement. These gaps and remaining prefix/BFS semantics belong to the later
+disclosure-closure work. The selected cases do not qualify universal whole-node
+interoperability.
 
 The TypeScript DI2I contract admits identity or an approved delegation chain at any
 depth. Every hop needs the delegator's accepted approval of the delegated inception;
