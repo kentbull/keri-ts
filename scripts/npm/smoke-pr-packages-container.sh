@@ -62,12 +62,12 @@ if [ ! -x "${TUFA_BIN}" ]; then
 fi
 
 # Load the actual wallet-dependent command, requiring consent before any store opens.
-if "${TUFA_BIN}" ipex admit --native --said missing --name missing --alias holder > /tmp/tufa-native-consent.log 2>&1; then
-  echo "Native admission unexpectedly succeeded without consent" >&2
+if "${TUFA_BIN}" ipex admit --acdc-v2 --said missing --name missing --alias holder > /tmp/tufa-acdc-v2-consent.log 2>&1; then
+  echo "ACDC v2 admission unexpectedly succeeded without consent" >&2
   exit 1
 fi
-if ! grep -Fq 'Native wallet admission requires explicit --consent' /tmp/tufa-native-consent.log; then
-  cat /tmp/tufa-native-consent.log >&2
+if ! grep -Fq 'ACDC v2 wallet admission requires explicit --consent.' /tmp/tufa-acdc-v2-consent.log; then
+  cat /tmp/tufa-acdc-v2-consent.log >&2
   exit 1
 fi
 "${TUFA_BIN}" vc wallet read --help | grep -q -- '--grant'
