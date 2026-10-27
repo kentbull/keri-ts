@@ -22,6 +22,7 @@ VERIFIER_TARBALL_PATH="${4:-}"
 HOSTING_TARBALL_PATH="${5:-}"
 WALLET_TARBALL_PATH="${6:-}"
 REGISTRAR_TARBALL_PATH="${7:-}"
+OBSERVER_TARBALL_PATH="${8:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -54,6 +55,13 @@ if [[ -z "${REGISTRAR_TARBALL_PATH}" ]]; then
   (cd "${ROOT_DIR}/packages/registrar" && deno task build:npm)
   REGISTRAR_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/registrar/npm" && npm pack --silent | tail -n1)"
   REGISTRAR_TARBALL_PATH="${ROOT_DIR}/packages/registrar/npm/${REGISTRAR_TARBALL_NAME}"
+fi
+
+# The observer is an independent installed application, not a Tufa dependency.
+if [[ -z "${OBSERVER_TARBALL_PATH}" ]]; then
+  (cd "${ROOT_DIR}/packages/observer" && deno task build:npm)
+  OBSERVER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/observer/npm" && npm pack --silent | tail -n1)"
+  OBSERVER_TARBALL_PATH="${ROOT_DIR}/packages/observer/npm/${OBSERVER_TARBALL_NAME}"
 fi
 
 if [[ ! -f "${TARBALL_PATH}" ]]; then
@@ -144,6 +152,15 @@ REGISTRAR_TARBALL_DIR="$(cd "$(dirname "${REGISTRAR_TARBALL_PATH}")" && pwd)"
 REGISTRAR_TARBALL_NAME="$(basename "${REGISTRAR_TARBALL_PATH}")"
 DOCKER_ARGS+=(-v "${REGISTRAR_TARBALL_DIR}:/registrar-pkg")
 INSTALL_TARGETS=("/registrar-pkg/${REGISTRAR_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
+
+if [[ ! -f "${OBSERVER_TARBALL_PATH}" ]]; then
+  echo "Observer tarball not found: ${OBSERVER_TARBALL_PATH}" >&2
+  exit 1
+fi
+OBSERVER_TARBALL_DIR="$(cd "$(dirname "${OBSERVER_TARBALL_PATH}")" && pwd)"
+OBSERVER_TARBALL_NAME="$(basename "${OBSERVER_TARBALL_PATH}")"
+DOCKER_ARGS+=(-v "${OBSERVER_TARBALL_DIR}:/observer-pkg")
+INSTALL_TARGETS=("/observer-pkg/${OBSERVER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 

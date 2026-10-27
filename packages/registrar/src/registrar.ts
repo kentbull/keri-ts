@@ -1,6 +1,16 @@
 /** Signed service routes over the shared public KEL/TEL acceptance owner. */
 import type { ProtocolHandler } from "@keri-ts/hosting";
-import { b, type CesrFrame, concatBytes, parseBytes, ParserError, SerderACDC, SerderKERI } from "cesr-ts";
+import {
+  b,
+  type CesrFrame,
+  concatBytes,
+  Counter,
+  parseBytes,
+  ParserError,
+  SerderACDC,
+  SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { run } from "effection";
 import type { RegistryStore } from "keri-ts/db";
 import {
@@ -118,7 +128,10 @@ export class Registrar {
         if (!issuers.has(issuer)) {
           const kever = this.processor.kvy.db.getKever(issuer);
           if (!kever) return text("Supporting controller evidence is unavailable", 503);
-          kel.push(...this.processor.kvy.db.cloneDelegation(kever), ...this.processor.kvy.db.clonePreIter(issuer));
+          kel.push(
+            ...this.processor.kvy.db.cloneDelegation(kever, Vrsn_2_0),
+            ...this.processor.kvy.db.clonePreIter(issuer, 0, Vrsn_2_0),
+          );
           issuers.add(issuer);
         }
       }
@@ -126,9 +139,12 @@ export class Registrar {
         if (BigInt(`0x${event.sad!.n}`) >= BigInt(sn)) tel.push(this.fullEvidence ? history[i] : event.raw);
       }
     }
-    return new Response(new Uint8Array(concatBytes(...kel, ...tel)).buffer, {
-      headers: { "Content-Type": CESR_CONTENT_TYPE },
-    });
+    return new Response(
+      new Uint8Array(concatBytes(...(this.fullEvidence ? [Counter.makeGVC(Vrsn_2_0)] : []), ...kel, ...tel)).buffer,
+      {
+        headers: { "Content-Type": CESR_CONTENT_TYPE },
+      },
+    );
   };
 
   /** Authenticate exactly one complete query through the actual shared KRAM verifier. */

@@ -1576,10 +1576,11 @@ export class Baser {
   *clonePreIter(
     pre: string,
     fn = 0,
+    requestedGenus: Versionage = Vrsn_1_0,
   ): Generator<Uint8Array> {
     for (const [, currentFn, said] of this.fels.getAllItemIter(pre, fn)) {
       try {
-        yield this.cloneEvtMsg(pre, currentFn, said);
+        yield this.cloneEvtMsg(pre, currentFn, said, requestedGenus);
       } catch {
         continue;
       }
@@ -1594,6 +1595,7 @@ export class Baser {
    */
   *cloneDelegation(
     kever: Kever,
+    requestedGenus: Versionage = Vrsn_1_0,
   ): Generator<Uint8Array> {
     if (!kever.delegated || !kever.delpre) {
       return;
@@ -1602,8 +1604,8 @@ export class Baser {
     if (!delegator) {
       return;
     }
-    yield* this.cloneDelegation(delegator);
-    yield* this.clonePreIter(kever.delpre, 0);
+    yield* this.cloneDelegation(delegator, requestedGenus);
+    yield* this.clonePreIter(kever.delpre, 0, requestedGenus);
   }
 
   /**

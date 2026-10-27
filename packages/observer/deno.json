@@ -1,0 +1,28 @@
+{
+  "name": "@keri-ts/observer",
+  "version": "2.0.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "check": "deno check mod.ts scripts/build_npm.ts test/*.ts",
+    "test": "deno test -A test",
+    "lint": "deno lint mod.ts src scripts test --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "build:npm": "deno run -A scripts/build_npm.ts"
+  },
+  "imports": {
+    "@keri-ts/registrar": "../registrar/mod.ts",
+    "@keri-ts/hosting": "../hosting/mod.ts",
+    "cesr-ts": "../cesr/mod.ts",
+    "keri-ts/db": "../keri/db.ts",
+    "keri-ts/runtime": "../keri/runtime.ts",
+    "effection": "npm:effection@^3.6.0",
+    "jsr:@std/assert": "jsr:@std/assert@^0.217.0",
+    "@deno/dnt": "jsr:@deno/dnt@^0.42.3"
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "deno.ns",
+      "dom"
+    ]
+  }
+}

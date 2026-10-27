@@ -1,9 +1,10 @@
 import { run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { b, Cipher, parseSerder, Prefixer, SerderKERI, Signer, smell } from "../../../../cesr/mod.ts";
+import { b, Cipher, Kinds, parseSerder, Prefixer, SerderKERI, Signer, smell, Vrsn_2_0 } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { saltySigner } from "../../../src/app/identity/keeping.ts";
 import { makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
+import { query } from "../../../src/core/protocol-eventing.ts";
 import { createLMDBer } from "../../../src/db/core/lmdber.ts";
 import {
   BytesIoSetSuber,
@@ -377,6 +378,20 @@ Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared pars
       assertEquals(suber.put(["Epre", serder.said!], serder), true);
       assertEquals(suber.get(["Epre", serder.said!])?.said, serder.said);
       assertEquals(suber.get(["Epre", serder.said!])?.ilk, "icp");
+      const native = query("tels/bulk", {}, {
+        pre: makeSignerMaterial("native-query", true).verfer.qb64,
+        version: Vrsn_2_0,
+        kind: Kinds.cesr,
+      });
+      assertEquals(suber.put(["Epre", native.said!], native), true);
+      for (const body of [serder, native]) assertEquals(suber.get(["Epre", body.said!])?.raw, body.raw);
+      yield* lmdber.reopen();
+      const reopened = new SerderSuber<SerderKERI>(lmdber, { subkey: "evts." });
+      for (const body of [serder, native]) {
+        assertEquals(reopened.get(["Epre", body.said!])?.said, body.said);
+        assertEquals(reopened.get(["Epre", body.said!])?.ilk, body.ilk);
+        assertEquals(reopened.get(["Epre", body.said!])?.raw, body.raw);
+      }
     } finally {
       yield* lmdber.close(true);
     }

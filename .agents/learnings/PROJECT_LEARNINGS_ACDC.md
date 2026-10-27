@@ -278,6 +278,14 @@ KRAM plus configured publisher/observer allowlists. It hosts accepted public
 evidence; a bulk response makes no fresh-observation claim. Composition owns HTTP
 and store lifetimes.
 
+The observer schedules fixed HTTPS bulk pulls independently of reader queries.
+Its separate source records retain only completed time and returned accepted heads;
+renewal requires complete prior membership, no scoped unresolved ordinals and exact
+local heads. Cache-only responses require recent observation of the current head.
+Shared hosting owns CA/name verification and joined finite requests without redirects.
+Full evidence selects CESR-v2 attachment genus independently of signed KEL body
+version. Stored native query bodies hydrate through the existing Serdery parser.
+
 Verifier work comes from accepted grants, saved credentials and TEL state, not
 Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a

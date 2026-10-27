@@ -1,8 +1,9 @@
 /** Compile-only installed application composition through supported public package declarations. */
-import { VerifierAgent, type VerifierCueBaser, createVerifierCueBaser } from "@keri-ts/verifier";
 import { createProtocolHandler, createTufaApp, runHostKernel, startServer } from "@keri-ts/hosting";
-import { Wallet, type WalletOptions, createWalletBaser } from "@keri-ts/wallet";
+import { createObservationBaser, type ObservationBaser, Observer } from "@keri-ts/observer";
 import { Registrar } from "@keri-ts/registrar";
+import { createVerifierCueBaser, VerifierAgent, type VerifierCueBaser } from "@keri-ts/verifier";
+import { createWalletBaser, Wallet, type WalletOptions } from "@keri-ts/wallet";
 import type { RegistryStore } from "keri-ts/db";
 import type { AgentRuntime, ProtocolProcessor } from "keri-ts/runtime";
 
@@ -10,8 +11,15 @@ import type { AgentRuntime, ProtocolProcessor } from "keri-ts/runtime";
 export function verifier(runtime: AgentRuntime, cdb: VerifierCueBaser, hook: string): VerifierAgent {
   if (!runtime.vdr) throw new Error("Legacy credential profile is required");
   return new VerifierAgent(
-    runtime.hby, runtime.vdr.reger, cdb, runtime.protocol, runtime.cues, runtime.http,
-    () => runtime.clock.now(), {}, { hook },
+    runtime.hby,
+    runtime.vdr.reger,
+    cdb,
+    runtime.protocol,
+    runtime.cues,
+    runtime.http,
+    () => runtime.clock.now(),
+    {},
+    { hook },
   );
 }
 
@@ -33,3 +41,13 @@ export const walletStore = createWalletBaser;
 export function registrar(processor: ProtocolProcessor, store: RegistryStore): Registrar {
   return new Registrar(processor, store, { publishers: [], observers: [], fullEvidence: true });
 }
+
+/** Compose the installed observation owner without inventing a runtime container. */
+export function observer(processor: ProtocolProcessor, store: RegistryStore, observations: ObservationBaser): Observer {
+  return new Observer(processor, store, observations, {
+    sources: [{ url: "https://registrar.example/" }],
+    readers: ["reader"],
+  });
+}
+/** Expose observation-store acquisition declarations to the installed compiler. */
+export const observationStore = createObservationBaser;

@@ -5,6 +5,10 @@ inputs:
     description: Concrete main or candidate reference profile
     required: false
     default: main
+  services:
+    description: Include selected registrar/observer sources for native service interop
+    required: false
+    default: "false"
 runs:
   using: composite
   steps:
@@ -18,12 +22,27 @@ runs:
           exit 1
         fi
         node -p 'Object.entries(require("./scripts/ci/keripy-reference.json").profiles[process.env.PEER_PROFILE]).map(([key, value]) => key + "=" + value).join("\n")' >> "$GITHUB_OUTPUT"
+        node -p 'Object.entries(require("./scripts/ci/keripy-reference.json").candidate.applications).filter(([name]) => ["registrar", "observer"].includes(name)).flatMap(([name, value]) => [name + "_repository=" + value.repository, name + "_commit=" + value.commit]).join("\n")' >> "$GITHUB_OUTPUT"
 
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: ${{ steps.pin.outputs.repository }}
         ref: ${{ steps.pin.outputs.commit }}
         path: .cache/keripy-${{ inputs.profile }}
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: inputs.services == 'true'
+      with:
+        repository: ${{ steps.pin.outputs.registrar_repository }}
+        ref: ${{ steps.pin.outputs.registrar_commit }}
+        path: .cache/registrar
+
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      if: inputs.services == 'true'
+      with:
+        repository: ${{ steps.pin.outputs.observer_repository }}
+        ref: ${{ steps.pin.outputs.observer_commit }}
+        path: .cache/observer
 
     - name: Install isolated selected peer
       shell: bash
@@ -42,3 +61,11 @@ runs:
         fi
         echo "${PEER_ENV_PREFIX}_ROOT=$GITHUB_WORKSPACE/.cache/keripy-$PEER_PROFILE" >> "$GITHUB_ENV"
         echo "${PEER_ENV_PREFIX}_PYTHON=$RUNNER_TEMP/keripy-$PEER_PROFILE-venv/bin/python" >> "$GITHUB_ENV"
+
+    - name: Prepare selected service imports against the candidate core
+      if: inputs.services == 'true'
+      shell: bash
+      run: |
+        # Install only the apps: their declared 7ea core pins remain unchanged.
+        # This explicit selected-candidate override is not family qualification.
+        "$RUNNER_TEMP/keripy-candidate-venv/bin/python" -m pip install --no-deps -e .cache/registrar -e .cache/observer

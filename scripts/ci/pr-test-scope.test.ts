@@ -15,7 +15,7 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
   const source = selectScope({ ...input, files: ["packages/keri/src/core/routing.ts"] });
   assertEquals(source.unit, {
     kind: "ci",
-    targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "cesr", "ci-tools"],
+    targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
   });
   assertEquals(source.interop, ["interop-parity"]);
   assertEquals(source.packageSmoke, true);
@@ -25,10 +25,14 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
       "packages/hosting/src/http/app.ts",
       "packages/wallet/src/wallet.ts",
       "packages/registrar/src/registrar.ts",
+      "packages/observer/src/observer.ts",
     ]
   ) {
     assertEquals(selectScope({ ...input, files: [file] }), {
-      unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "cesr", "ci-tools"] },
+      unit: {
+        kind: "ci",
+        targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
+      },
       interop: [],
       packageSmoke: true,
     });
@@ -58,17 +62,24 @@ Deno.test("PR scope credits local units only for the exact head and retains sele
 Deno.test("PR scope uses existing owners and full mode covers the maintained battery", () => {
   assertEquals(
     requestedScope(
-      block({ unit: [required[0], "tufa", "verifier", "hosting", "wallet", "registrar"], interop: [], package: false }),
+      block({
+        unit: [required[0], "tufa", "verifier", "hosting", "wallet", "registrar", "observer"],
+        interop: [],
+        package: false,
+      }),
       head,
     )
       ?.unit,
     {
       kind: "ci",
-      targets: [required[0], "tufa", "verifier", "hosting", "wallet", "registrar"],
+      targets: [required[0], "tufa", "verifier", "hosting", "wallet", "registrar", "observer"],
     },
   );
   assertEquals(requestedScope(block({ full: true }), head), {
-    unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "cesr", "ci-tools"] },
+    unit: {
+      kind: "ci",
+      targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
+    },
     interop,
     packageSmoke: true,
   });
@@ -102,7 +113,7 @@ Deno.test("PR scope cannot downscope fork checks through its description", () =>
   });
   assertEquals(result.unit, {
     kind: "ci",
-    targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "cesr", "ci-tools"],
+    targets: ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "observer", "cesr", "ci-tools"],
   });
   assertEquals(result.interop, ["interop-parity"]);
   assertEquals(result.packageSmoke, true);

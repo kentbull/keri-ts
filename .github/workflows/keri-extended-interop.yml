@@ -153,6 +153,7 @@ jobs:
         uses: ./.github/actions/setup-keripy-main-peer
         with:
           profile: candidate
+          services: ${{ contains(fromJSON('["interop-native-registry", "extended-interop", "qualification", "full"]'), inputs.target) }}
 
       - name: run selected extended interop target
         shell: bash
