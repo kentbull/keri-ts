@@ -30,6 +30,7 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       "unknown-leaf",
       "unknown-group",
       "malformed-leaf",
+      "simple-edge",
       "edge-schema",
       "inherited-schema",
       "malformed-schema",

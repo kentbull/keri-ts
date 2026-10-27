@@ -74,12 +74,25 @@ position must expose the map. Only closed typed objects or schema-valued additio
 properties, unambiguous typed oneOf and static refs without constraint siblings
 are supported; open/ambiguous schema forms and whole aggregates refuse. Missing
 schema resources use the existing retry path. Node presence `[]` and explicit
-leaf requests retain their independent meanings. TS still rejects extra labeled leaf
-properties permitted by the [pinned Edge property-field rule](https://github.com/trustoverip/kswg-acdc-specification/blob/2362e48a1e8668278575b4f5b239069b2c1a82ad/spec/spec-body.md#labeled-property-fields);
-that strict handling is a remaining row 14 compatibility gap, not a malformed-edge
-requirement. Those edge rules and remaining prefix/BFS semantics belong to the later
-disclosure-path work. The selected cases do not qualify universal whole-node
-interoperability.
+leaf requests retain their independent meanings.
+
+The same authenticated resource owner proves the bounded simple-edge profile:
+a digest at a declared nonreserved edge/group child is a far reference only when
+its statically resolved schema is string-only. Open, map-admitting and ambiguous
+leaf schemas remain opaque even if a matching node is supplied. Expanded ancestors
+may select the unique object branch of a string/object oneOf; digest-valued leaves
+never use that selection. Expanded n leaves allow application properties after the
+reserved d,u,n,s,o,w fields in that order; those properties never extend the graph.
+Traversal, virtual `_` hops and the existing relation evaluator share this classifier.
+
+An empty graph prefix uses its tuple's BFS position. A nonorigin positional tuple
+requires the full gapless BFS plan and a schema-proven closed, required edge hierarchy
+for every disclosed node. Present optional members, ancestor unions and expanded
+arrays cannot prove that fixed shape and require explicit prefixes. Explicit
+/e/.../_/ selectors may omit unrequested plan entries, but selections remain unique,
+origin-first and strictly BFS ordered; intermediate `_` hops restart at e. Relative
+empty fields under an empty prefix request nothing; d/ still requests whole closure.
+These bounded rules do not claim universal shorthand or whole-node interoperability.
 
 The TypeScript DI2I contract admits identity or an approved delegation chain at any
 depth. Every hop needs the delegator's accepted approval of the delegated inception;

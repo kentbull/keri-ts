@@ -14,7 +14,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
@@ -96,7 +96,7 @@ function* peers() {
 
 /** Each negated root still declares its independent identity/schema constraints. */
 function root(hab: Hab, far: SerderACDC, o: string | string[] = ["NOT", "NI2I"], extra: MapperMap = {}) {
-  return acdcmap(hab.pre, { attribute: { d: "", name: "root" }, edge: { d: "", link: { n: far.said, o, ...extra } } });
+  return acdcmap(hab.pre, { attribute: { d: "", name: "root" }, edge: { d: "", link: { n: far.said, ...extra, o } } });
 }
 
 for (const negated of [false, true]) {
@@ -272,7 +272,7 @@ Deno.test("NOT rechecks missing edge schemas and cannot invert a failing own-nod
     const tail = acdcmap(p.tail.pre, { attribute: { d: "", name: "other" } });
     const far = acdcmap(p.far.pre, {
       attribute: { d: "", name: "far" },
-      edge: { d: "", link: { n: tail.said, o: "NI2I", s: schema.said } },
+      edge: { d: "", link: { n: tail.said, s: schema.said, o: "NI2I" } },
     });
     const args = p.grant([signed(root(p.near, far), p.near), signed(far, p.far), signed(tail, p.tail)]);
     assertEquals((yield* p.exchanger.processEvent(args)).kind, "escrow");
@@ -404,8 +404,10 @@ Deno.test("IPEX graph dependency order handles shared cross-links independently 
         gvrsn: Vrsn_2_0,
       })),
       true,
+      hby.db,
     );
     assertExists(graph);
+    assert(!("kind" in graph));
     assertEquals(graph.order, [root.said!, left.said!, right.said!, tail.said!]);
     assertEquals(graph.dependencyOrder, [tail.said!, left.said!, right.said!, root.said!]);
   });

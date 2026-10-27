@@ -449,3 +449,100 @@ export function verifyDisclosureClosure(acdc: SerderACDC, db: Baser, paths: read
     throw error;
   }
 }
+
+/** Resolve static edge types; only an expanded ancestor may select a string/object union. */
+function staticEdgeSchema(schema: unknown, resources: SchemaResources, expanded = false, depth = 64): Schema | null {
+  if (depth <= 0 || !object(schema)) return null;
+  const annotations = [
+    "$id",
+    "$schema",
+    "title",
+    "description",
+    "$comment",
+    "deprecated",
+    "readOnly",
+    "writeOnly",
+    "examples",
+    "default",
+  ];
+  if ("$ref" in schema) {
+    if (Object.keys(schema).some((key) => key !== "$ref" && !annotations.includes(key))) return null;
+    return staticEdgeSchema(resources.resolve(schema), resources, expanded, depth - 1);
+  }
+  if (
+    ["anyOf", "allOf", "not", "if", "then", "else", "dependentSchemas", "patternProperties"].some((key) =>
+      key in schema
+    )
+  ) return null;
+  if ("oneOf" in schema) {
+    if (
+      !expanded || Object.keys(schema).some((key) => key !== "oneOf" && !annotations.includes(key))
+      || !Array.isArray(schema.oneOf) || schema.oneOf.length !== 2
+    ) return null;
+    const branches = schema.oneOf.map((branch) => staticEdgeSchema(branch, resources, false, depth - 1));
+    if (
+      !branches.every((branch) => branch) || !branches.some((branch) => branch!.type === "string")
+      || !branches.some((branch) => branch!.type === "object")
+    ) return null;
+    return branches.find((branch) => branch!.type === "object")!;
+  }
+  return schema;
+}
+
+/** Interpret only authenticated, declared string-only edge children; open/ambiguous values remain opaque. */
+export function simpleEdgeSchema(
+  acdc: SerderACDC,
+  db: Baser,
+  path: readonly string[],
+): boolean | Extract<SchemaValidation, { kind: "missing" }> {
+  const resources = new SchemaResources(db);
+  try {
+    const root = resources.admit(acdc.schema);
+    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : false;
+    let schema: unknown = root.schema, instance: unknown = acdc.sad;
+    for (const part of path) {
+      const selected = staticEdgeSchema(schema, resources, true);
+      if (
+        !selected || selected.type !== "object" || !object(instance) || "n" in instance
+        || !object(selected.properties) || !Object.hasOwn(selected.properties, part) || !Object.hasOwn(instance, part)
+      ) return false;
+      schema = selected.properties[part];
+      instance = instance[part];
+    }
+    return staticEdgeSchema(schema, resources)?.type === "string";
+  } catch (error) {
+    if (error instanceof InvalidSchema) return false;
+    throw error;
+  }
+}
+
+/** Positional far-node selectors require a closed, required hierarchy, never an instance-dependent shape. */
+export function fixedEdgeOrder(acdc: SerderACDC, db: Baser): boolean | Extract<SchemaValidation, { kind: "missing" }> {
+  const resources = new SchemaResources(db);
+  const fixed = (schema: unknown, root = false, depth = 64): boolean => {
+    const selected = depth > 0 ? staticEdgeSchema(schema, resources) : null;
+    if (!selected) return false;
+    if (selected.type === "string") return !root;
+    if (selected.type !== "object") return false;
+    const props = object(selected.properties) ? selected.properties : {};
+    const required = Array.isArray(selected.required) ? selected.required : [];
+    if (required.includes("n") && "n" in props) return !root;
+    if (selected.additionalProperties !== false) return false;
+    const labels = root ? ["d", "u", "o", "w"] : ["d", "u", "s", "o", "w"];
+    const children = Object.keys(props).filter((key) => !labels.includes(key));
+    return children.every((key) => required.includes(key) && fixed(props[key], false, depth - 1));
+  };
+  try {
+    const root = resources.admit(acdc.schema);
+    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : false;
+    const schema = staticEdgeSchema(root.schema, resources);
+    if (!schema || schema.type !== "object") return false;
+    const props = object(schema.properties) ? schema.properties : {};
+    return "e" in props
+      ? Array.isArray(schema.required) && schema.required.includes("e") && fixed(props.e, true)
+      : schema.additionalProperties === false;
+  } catch (error) {
+    if (error instanceof InvalidSchema) return false;
+    throw error;
+  }
+}

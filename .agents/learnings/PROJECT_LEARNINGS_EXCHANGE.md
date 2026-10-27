@@ -164,8 +164,13 @@ still states its explicit root selection. Builders, handler and resolver share t
 shape; never translate authenticated nested-plan bytes. Whole-node and subtree
 claims require the bounded schema closure proof owned by acdc/scheming.ts; missing
 schema resources use the existing EXN schema escrow. Presence and explicit leaf
-paths retain their separate meaning. Compact-edge and prefix/omission semantics
-remain separate cuts.
+paths retain their separate meaning. Empty graph prefixes select by tuple BFS position;
+nonorigin positional selection requires a gapless plan and schema-proven closed,
+required edge hierarchy for every node. Optional members remain optional even when
+present. Explicit /e/.../_/ selectors may omit unrequested plan entries, preserve
+strict origin-first BFS order, and restart at e after each intermediate hop. The
+shared ACDC classifier handles expanded leaves and schema-proven string-only edges;
+missing resources use schema escrow. Grant still carries every selected far node.
 V2 IPEX Offers carry body-only reachable subgraphs and validate carried schemas;
 child proof attachments belong to Grants. Grants refuse field-map metadata with
 explicit empty `u`, while public fixed-field `act`/`acg` UUID slots remain valid.

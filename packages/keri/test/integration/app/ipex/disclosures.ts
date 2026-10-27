@@ -2,6 +2,7 @@
 import { Compactor, Kinds, type MapperMap, NonceDex, Noncer, type SerderACDC } from "cesr-ts";
 import { assertEquals } from "jsr:@std/assert";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
+import { validateSchema } from "../../../../src/acdc/scheming.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
@@ -9,7 +10,7 @@ import { Schemer } from "../../../../src/core/scheming.ts";
 /** Build a full commitment and its status-only partial with identical SAIDs. */
 function disclosure(
   issuer: string,
-  options: { issuee?: string; edge?: MapperMap } = {},
+  options: { issuee?: string; edge?: MapperMap; edgeSchema?: MapperMap } = {},
 ): { full: SerderACDC; partial: SerderACDC } {
   const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
   const scalar = { type: "string" };
@@ -58,13 +59,14 @@ function disclosure(
             additionalProperties: false,
           }],
         },
-        e: { oneOf: [scalar, { type: "object" }] },
+        e: options.edgeSchema ?? { oneOf: [scalar, { type: "object" }] },
       },
       additionalProperties: false,
     },
   });
   const full = acdcmap(issuer, {
-    ...options,
+    issuee: options.issuee,
+    edge: options.edge,
     schema: schema.sed as MapperMap,
     uuid: nonce(),
     attribute: {
@@ -109,6 +111,7 @@ export type EdgeRefusalCase =
   | "unknown-leaf"
   | "unknown-group"
   | "malformed-leaf"
+  | "simple-edge"
   | "edge-schema"
   | "inherited-schema"
   | "malformed-schema";
@@ -225,7 +228,27 @@ function relationGraph(hby: Habery, hab: Hab, graphCase: RelationCase): Disclosu
 /** Signed controls vary only malformed edge syntax or a declared far-node schema constraint. */
 function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): DisclosureGraph {
   const authority = hby.makeHab("authority");
-  const far = disclosure(authority.pre, { issuee: hab.pre });
+  const simpleSchema = (): MapperMap => {
+    const scalar = { type: "string" };
+    const resource = new Schemer({
+      sed: {
+        $id: "",
+        version: "1.0.0",
+        type: "object",
+        properties: {
+          d: scalar,
+          authority: { $ref: "#/$defs/target" },
+          opaque: { oneOf: [scalar, { type: "object", properties: { n: scalar } }] },
+        },
+        $defs: { target: scalar },
+      },
+    });
+    return { oneOf: [scalar, resource.sed as MapperMap] };
+  };
+  const far = disclosure(authority.pre, {
+    issuee: hab.pre,
+    ...(graphCase === "simple-edge" ? { edgeSchema: simpleSchema() } : {}),
+  });
   const pin = (value: string, version = "1.0.0") =>
     new Schemer({
       sed: {
@@ -236,9 +259,8 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
       },
     }).sed as MapperMap;
   const near = (invalid: boolean) => {
-    const leaf: MapperMap = { n: far.partial.said, o: "I2I" };
+    const leaf: MapperMap = { n: far.partial.said };
     let edge: MapperMap = { d: "", authority: leaf };
-    if (graphCase === "unknown-leaf" && invalid) leaf.o = "UNKNOWN";
     if (graphCase === "unknown-group") edge.o = invalid ? "UNKNOWN" : "AND";
     if (graphCase === "malformed-leaf" && invalid) leaf.n = 42; // Node references must be qualified SAID strings.
     if (graphCase === "edge-schema") leaf.s = pin(invalid ? "visitor" : "citizen");
@@ -249,9 +271,25 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
       };
     }
     if (graphCase === "malformed-schema") leaf.s = pin("citizen", invalid ? "invalid-version" : "1.0.0");
+    leaf.o = graphCase === "unknown-leaf" && invalid ? "UNKNOWN" : "I2I";
+    if (graphCase === "simple-edge") {
+      return disclosure(hab.pre, {
+        edge: { d: "", authority: far.partial.said!, ...(invalid ? { opaque: far.partial.said! } : {}) },
+        edgeSchema: simpleSchema(),
+      });
+    }
     return disclosure(hab.pre, { edge });
   };
   const good = near(false), bad = near(true);
+  if (graphCase === "simple-edge") {
+    for (const node of [good.full, good.partial, bad.full, bad.partial, far.full, far.partial]) {
+      assertEquals(node.schema, good.full.schema, "both controls satisfy the negotiated repeated-schema plan");
+      assertEquals(validateSchema(node, hby.db), { kind: "valid" }, "opacity refusal is not own-schema failure");
+    }
+    for (const node of [good.partial, bad.partial]) {
+      assertEquals((node.sad!.e as MapperMap).authority, far.partial.said);
+    }
+  }
   return {
     fullNodes: [good.full, far.full],
     nodes: [good.partial, far.partial],

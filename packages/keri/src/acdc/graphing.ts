@@ -1,8 +1,8 @@
 /** Evaluate disclosed ACDC edge relationships over borrowed credential graph indexes. */
-import { SealEvent, type SerderACDC } from "cesr-ts";
+import { Saider, SealEvent, type SerderACDC } from "cesr-ts";
 import type { Baser } from "../db/basing.ts";
 import type { RegistryState } from "./regeventing.ts";
-import { type SchemaValidation, validateSchema } from "./scheming.ts";
+import { type SchemaValidation, simpleEdgeSchema, validateSchema } from "./scheming.ts";
 
 /** Borrow credential nodes and caller-supplied traversal orders without projecting frames. */
 export interface AcdcGraph {
@@ -40,6 +40,45 @@ export function acdcEdgeBlocks(value: unknown): Record<string, unknown>[] | null
   if (!present(value)) return [];
   if (record(value)) return [value];
   return Array.isArray(value) && value.every(record) ? value : null;
+}
+
+/** Shared edge interpretation: a target, group/opaque null, malformed false, or missing schema; never rewrites nodes. */
+export function acdcEdgeTarget(
+  near: SerderACDC,
+  path: readonly string[],
+  value: unknown,
+  db: Baser,
+): string | null | false | MissingSchema {
+  if (path.length < 2 || path[0] !== "e" || path.slice(1).some((part) => nodeLabels.has(part))) return null;
+  let ancestor: unknown = near.sad;
+  for (const part of path) {
+    if (record(ancestor)) {
+      if ("n" in ancestor) return null;
+      ancestor = ancestor[part];
+    } else if (Array.isArray(ancestor) && /^\d+$/.test(part) && Number(part) < ancestor.length) {
+      ancestor = ancestor[Number(part)];
+    } else break;
+  }
+  let target: unknown;
+  if (record(value)) {
+    if (!("n" in value)) return null;
+    const reserved = Object.keys(value).filter((key) => nodeLabels.has(key));
+    const expected = [...nodeLabels].filter((key) => Object.hasOwn(value, key));
+    if (reserved.some((key, i) => key !== expected[i] || Object.keys(value)[i] !== key)) return false;
+    target = value.n;
+  } else if (typeof value === "string") {
+    const simple = simpleEdgeSchema(near, db, path);
+    if (typeof simple === "object") return simple;
+    if (!simple) return null;
+    target = value;
+  } else return null;
+  if (typeof target !== "string") return false;
+  try {
+    return new Saider({ qb64: target }).qb64 === target ? target : false;
+  } catch {
+    // Qualified peer text can also fail in the primitive's base64 decoder.
+    return false;
+  }
 }
 
 /** Walk approved inception relationships without modifying delegation hints or imposing a depth policy. */
@@ -104,7 +143,7 @@ function leafRelation(
   db: Baser,
   validities: ReadonlyMap<string, boolean>,
 ): Relation {
-  if (Object.keys(group).some((key) => !nodeLabels.has(key)) || typeof group.n !== "string") return null;
+  if (typeof group.n !== "string") return null;
   const far = graph.nodes.get(group.n)?.body;
   if (!far) return null;
   const op = group.o;
@@ -143,6 +182,7 @@ function groupRelation(
   nested: boolean,
   db: Baser,
   validities: ReadonlyMap<string, boolean>,
+  path: readonly string[],
 ): Relation {
   const op = group.o ?? "AND";
   if (op !== "AND" && op !== "OR") return null;
@@ -151,10 +191,14 @@ function groupRelation(
   const results: boolean[] = [];
   for (const [key, node] of Object.entries(group)) {
     if (labels.has(key)) continue;
-    if (!record(node)) return null;
-    const result = Object.hasOwn(node, "n")
-      ? leafRelation(node, near, graph, schema, db, validities)
-      : groupRelation(node, near, graph, schema, true, db, validities);
+    const target = acdcEdgeTarget(near, [...path, key], node, db);
+    if (target === false) return null;
+    if (typeof target === "object" && target !== null) return target;
+    const result = typeof target === "string"
+      ? leafRelation(record(node) ? node : { n: target }, near, graph, schema, db, validities)
+      : record(node)
+      ? groupRelation(node, near, graph, schema, true, db, validities, [...path, key])
+      : null;
     if (result === null) return null;
     if (typeof result === "object") return result;
     results.push(result);
@@ -172,10 +216,18 @@ function nodeRelations(
   const edges = acdcEdgeBlocks(near.sad!.e);
   if (!edges) return null;
   let valid = true;
-  for (const edge of edges) {
-    const matched = Object.hasOwn(edge, "n")
-      ? leafRelation(edge, near, graph, null, db, validities)
-      : groupRelation(edge, near, graph, null, false, db, validities);
+  for (const [index, edge] of edges.entries()) {
+    if (Object.hasOwn(edge, "n")) return null;
+    const matched = groupRelation(
+      edge,
+      near,
+      graph,
+      null,
+      false,
+      db,
+      validities,
+      Array.isArray(near.sad!.e) ? ["e", String(index)] : ["e"],
+    );
     if (matched === null || typeof matched === "object") return matched;
     valid &&= matched;
   }

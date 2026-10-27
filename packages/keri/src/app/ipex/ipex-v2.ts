@@ -142,7 +142,8 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (verb === "offer" && nests.length) {
       if (nests.some(hasIpexNodeAttachments)) return false;
-      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false);
+      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false, this.hby.db);
+      if (graph && "kind" in graph) return { kind: "escrow", reason: "Missing edge schema.", schema: graph.said };
       return graph ? this.nodeSchemas(graph) : false;
     }
     if (verb !== "grant") return true;
@@ -154,7 +155,8 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
-    const graph = walkIpexGraph(origin, nests, true);
+    const graph = walkIpexGraph(origin, nests, true, this.hby.db);
+    if (graph && "kind" in graph) return { kind: "escrow", reason: "Missing edge schema.", schema: graph.said };
     if (!graph || [...graph.nodes.values()].some((node) => isIpexMetadata(node.body))) return false;
     const disclosure = verifyIpexDisclosure(plan, origin, graph, this.hby.db);
     if (disclosure !== true) {
@@ -241,7 +243,8 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (offeredOrigin === origin) return true;
     const nests = loadNests(this.hby.db, offerSaid);
     if (!nests.length) return missing(`Missing metadata ACDC for accepted Offer ${offerSaid}.`);
-    const offered = walkIpexGraph(offeredOrigin, nests, false);
+    const offered = walkIpexGraph(offeredOrigin, nests, false, this.hby.db);
+    if (offered && "kind" in offered) return { kind: "escrow", reason: "Missing edge schema.", schema: offered.said };
     if (!offered) return false;
     const metadata = offered.nodes.get(offeredOrigin)!.body;
     if (!isIpexMetadata(metadata)) return false;

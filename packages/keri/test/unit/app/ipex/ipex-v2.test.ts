@@ -25,6 +25,7 @@ import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
 import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
+import { validateSchema } from "../../../../src/acdc/scheming.ts";
 import { type ExchangeDecision, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody, prepareIpexExn } from "../../../../src/app/ipex/ipex-building.ts";
@@ -1085,12 +1086,174 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       hby.db.schema.pin(open.said, open);
       const openNode = acdcmap(issuer.pre, { schema: open.said, attribute: fullAttribute });
       assertEquals((yield* disclose(openNode, [""])).kind, "reject", "open schemas cannot prove whole disclosure");
+      // Schema-declared simple edges and explicit paths use the same authenticated ingress.
+      const edgeNode = (properties: MapperMap, required: string[], edge: MapperMap, union = false) => {
+        const shape = {
+          type: "object",
+          properties: { d: scalar, ...properties },
+          required,
+          additionalProperties: false,
+        };
+        const schema = new Schemer({
+          sed: {
+            $id: "",
+            version: "1.0.0",
+            type: "object",
+            required: ["e"],
+            properties: { e: union ? { oneOf: [{ type: "string" }, shape] } : shape },
+          },
+        });
+        return acdcmap(issuer.pre, { schema: schema.sed as MapperMap, attribute: { d: "", name: "Near" }, edge });
+      };
+      const edgeIntake = (bodies: SerderACDC[], prefixes: string[]) => {
+        const [body] = exchange("/ipex/grant", { m: crypto.randomUUID(), o: [bodies[0].said] }, {
+          sender: sender.pre,
+          recipient: recipient.pre,
+          xid: crypto.randomUUID(),
+          pvrsn: Vrsn_2_0,
+          modifiers: {
+            dp: prefixes.map((prefix, i) => {
+              const source = bodies[i].schema;
+              return [typeof source === "string" ? source : (source as MapperMap).$id, prefix, []];
+            }),
+          },
+        });
+        return submit(body, bodies.map((body) => node(body)));
+      };
+      const stringEdge = edgeNode({ link: scalar }, ["link"], { d: "", link: valid.said! }, true);
+      const labeled = edgeNode({ link: { type: "object" } }, ["link"], {
+        d: "",
+        link: { n: valid.said!, context: "ordinary application data" },
+      });
+      const fixedSchema = new Schemer({
+        sed: {
+          $id: "",
+          version: "1.0.0",
+          type: "object",
+          properties: Object.fromEntries(Object.keys(valid.sad!).map((key) => [key, {}])),
+          additionalProperties: false,
+        },
+      });
+      const fixedFar = (name: string) =>
+        acdcmap(issuer.pre, { schema: fixedSchema.sed as MapperMap, attribute: { d: "", name } });
+      const fixedValid = fixedFar("Ada"), sibling = fixedFar("Sibling");
+      const fixed = edgeNode({ first: scalar, second: scalar }, ["first", "second"], {
+        d: "",
+        first: fixedValid.said!,
+        second: sibling.said!,
+      });
+      const optional = edgeNode({ link: scalar }, [], { d: "", link: valid.said! });
+      for (const body of [stringEdge, labeled, fixed, fixedValid, sibling, optional]) {
+        assertEquals(validateSchema(body, hby.db), { kind: "valid" }, JSON.stringify(body.sad!.e));
+      }
+      const outcomes = [];
+      outcomes.push((yield* edgeIntake([stringEdge, valid], ["/", "/e/link/_/"])).kind);
+      outcomes.push((yield* edgeIntake([labeled, valid], ["/", "/e/link/_/"])).kind);
+      outcomes.push((yield* edgeIntake([fixed, fixedValid, sibling], ["", "", ""])).kind);
+      // Explicit selectors may leave a carried, unrequested BFS node out of the plan.
+      outcomes.push((yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/"])).kind);
+      outcomes.push((yield* edgeIntake([optional, valid], ["", ""])).kind);
+      outcomes.push((yield* edgeIntake([optional, valid], ["/", "/e/link/_/"])).kind);
+      assertEquals(outcomes, ["accept", "accept", "accept", "accept", "reject", "accept"]);
+      assertEquals(
+        (yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/", "/e/first/_/"])).kind,
+        "reject",
+        "explicit selections retain BFS order",
+      );
+      assertEquals(
+        (yield* edgeIntake([stringEdge], ["/"])).kind,
+        "reject",
+        "a selected far node cannot be added to immutable Grant bytes later",
+      );
+      for (const target of [42, "4A!!"]) {
+        const malformed = edgeNode({ link: {} }, ["link"], { d: "", link: { n: target } });
+        assertEquals((yield* edgeIntake([malformed], ["/"])).kind, "reject", "malformed target refuses at intake");
+      }
+      const wrongOrder = edgeNode({ link: { type: "object" } }, ["link"], {
+        d: "",
+        link: { context: "before reserved", n: valid.said! },
+      });
+      assertEquals((yield* edgeIntake([wrongOrder, valid], ["/", "/e/link/_/"])).kind, "reject");
+      const leafProperty = edgeNode({ link: { type: "object" } }, ["link"], {
+        d: "",
+        link: { n: valid.said!, extra: { n: sibling.said! } },
+      });
+      assertEquals(
+        (yield* edgeIntake([leafProperty, valid, sibling], ["/", "/e/link/_/", "/e/link/extra/_/"])).kind,
+        "reject",
+        "leaf application properties never extend graph reachability",
+      );
+      const absentSchema = acdcmap(issuer.pre, {
+        schema: (stringEdge.schema as MapperMap).$id as string,
+        attribute: { d: "", name: "Near" },
+        edge: stringEdge.sad!.e as MapperMap,
+      });
+      const waitingEdge = yield* edgeIntake([absentSchema, valid], ["/", "/e/link/_/"]);
+      assert(waitingEdge.kind === "escrow");
+      assertEquals(waitingEdge.reason, "Missing edge schema.");
+      const cachedEdgeSchema = new Schemer({ sed: stringEdge.schema as MapperMap });
+      hby.db.schema.pin(cachedEdgeSchema.said, cachedEdgeSchema);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(waitingEdge.said), "schema arrival retries the unchanged signed Grant");
+      const optionalGroup = edgeNode(
+        {
+          link: scalar,
+          optional: {
+            type: "object",
+            properties: { d: scalar, link: scalar },
+            required: ["link"],
+            additionalProperties: false,
+          },
+        },
+        ["link"],
+        { d: "", link: valid.said! },
+      );
+      assertEquals(
+        (yield* edgeIntake([optionalGroup, valid], ["", ""])).kind,
+        "reject",
+        "an absent optional group also prevents fixed shape",
+      );
+      assertEquals((yield* edgeIntake([optionalGroup, valid], ["/", "/e/link/_/"])).kind, "accept");
+      const arraySchema = new Schemer({
+        sed: {
+          $id: "",
+          version: "1.0.0",
+          type: "object",
+          properties: { e: { type: "array", items: { type: "object" } } },
+        },
+      });
+      const arrayEdge = new SerderACDC({
+        sad: { ...valid.sad!, s: arraySchema.sed, e: [{ link: { n: valid.said } }] },
+        makify: true,
+      });
+      assertEquals(
+        (yield* edgeIntake([arrayEdge, valid], ["/", "/e/0/link/_/"])).kind,
+        "accept",
+        "expanded arrays retain explicit-hop support",
+      );
+      assertEquals(
+        (yield* edgeIntake([arrayEdge, valid], ["", ""])).kind,
+        "reject",
+        "arrays do not establish positional shape",
+      );
+      for (const prefix of ["/a/link/_/", "/e/link/_/a/link/_/"]) {
+        assertEquals((yield* edgeIntake([stringEdge, valid], ["/", prefix])).kind, "reject");
+      }
+      // A leaf union remains opaque even when a matching far node is carried.
+      const ambiguous = edgeNode(
+        { link: { oneOf: [scalar, { type: "object", properties: { n: scalar } }] } },
+        ["link"],
+        { d: "", link: valid.said! },
+      );
+      assertEquals((yield* edgeIntake([ambiguous, valid], ["/", "/e/link/_/"])).kind, "reject");
       // Same-schema pins still evaluate the far credential; equality of IDs proves no payload constraint.
       const near = (far: SerderACDC, pin: string | MapperMap) =>
         credential("Near", { d: "", link: { n: far.said, s: pin } });
       const graph = (far: SerderACDC, pin: string | MapperMap) => {
         const root = near(far, pin);
-        return walkIpexGraph(root.said!, [node(root), node(far)], true)!;
+        const graph = walkIpexGraph(root.said!, [node(root), node(far)], true, hby.db);
+        assert(graph && !("kind" in graph));
+        return graph;
       };
       assertEquals(evaluateRelations(graph(valid, schema.said), hby.db), true);
       assertEquals(evaluateRelations(graph(invalid, schema.said), hby.db), false);
@@ -1110,8 +1273,10 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         },
         good: { n: valid.said },
       });
+      const alternativeGraph = walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true, hby.db);
+      assert(alternativeGraph && !("kind" in alternativeGraph));
       assertEquals(
-        evaluateRelations(walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true)!, hby.db),
+        evaluateRelations(alternativeGraph, hby.db),
         true,
       );
       const edgeSchema = new Schemer({
@@ -1123,7 +1288,8 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         },
       });
       const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
-      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true)!;
+      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true, hby.db);
+      assert(inheritedGraph && !("kind" in inheritedGraph));
       assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
       const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
       assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");

@@ -1,7 +1,12 @@
 import { Diger, dumps, type MapperMap, ParserError } from "cesr-ts";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
-import { validateSchema, verifyDisclosureClosure } from "../../../src/acdc/scheming.ts";
+import {
+  fixedEdgeOrder,
+  simpleEdgeSchema,
+  validateSchema,
+  verifyDisclosureClosure,
+} from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import type { Baser } from "../../../src/db/basing.ts";
 
@@ -222,6 +227,58 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     "invalid",
     "ref siblings need intersections",
   );
+  // Edge queries share resource authentication and preserve nested $id reference scope.
+  const edgeResource: Record<string, unknown> = {
+    $id: "did:keri:" + "#".repeat(44),
+    version: "1.0.0",
+    type: "object",
+    properties: { d: { type: "string" }, link: { $ref: "#/$defs/target" } },
+    required: ["link"],
+    additionalProperties: false,
+    $defs: { target: { type: "string" } },
+  };
+  edgeResource.$id = "did:keri:" + new Diger({ raw: Diger.digest(dumps(edgeResource, "JSON"), "E"), code: "E" }).qb64;
+  const edgeSchema = make({}, {
+    required: ["e"],
+    properties: { e: { $ref: edgeResource.$id } },
+    $defs: { edge: edgeResource, target: { type: "object" } },
+  });
+  const edgeCredential = (schema: Record<string, unknown> | string) =>
+    acdcmap(issuer, {
+      schema: schema as MapperMap | string,
+      attribute: { d: "", name: "Ada" },
+      edge: { d: "", link: simple.said },
+    });
+  const scoped = edgeCredential(edgeSchema.sed);
+  assertEquals(validateSchema(scoped, db), { kind: "valid" });
+  assertEquals(simpleEdgeSchema(scoped, db, ["e", "link"]), true);
+  assertEquals(fixedEdgeOrder(scoped, db), true, "nested resource local ref cannot bind the root's object definition");
+  const missingEdge = edgeCredential(edgeSchema.said);
+  assertEquals(simpleEdgeSchema(missingEdge, db, ["e", "link"]), { kind: "missing", said: edgeSchema.said });
+  assertEquals(fixedEdgeOrder(missingEdge, db), { kind: "missing", said: edgeSchema.said });
+  const unionEdgeSchema = make({}, {
+    properties: { e: { oneOf: [{ type: "string" }, { $ref: edgeResource.$id }] } },
+    required: ["e"],
+    $defs: { edge: edgeResource },
+  });
+  assertEquals(simpleEdgeSchema(edgeCredential(unionEdgeSchema.sed), db, ["e", "link"]), true);
+  assertEquals(
+    fixedEdgeOrder(edgeCredential(unionEdgeSchema.sed), db),
+    false,
+    "ancestor unions require explicit selectors",
+  );
+  for (
+    const leaf of [{}, { type: ["string", "object"] }, { oneOf: [{ type: "string" }, { type: "object" }] }, {
+      $ref: edgeResource.$id + "#/$defs/target",
+      type: "string",
+    }]
+  ) {
+    const opaque = make({}, {
+      properties: { e: { type: "object", properties: { link: leaf } } },
+      $defs: { edge: edgeResource },
+    });
+    assertEquals(simpleEdgeSchema(edgeCredential(opaque.sed), db, ["e", "link"]), false);
+  }
   for (const failure of [new Error("schema database unavailable"), new ParserError("cached schema decode failed")]) {
     const failed = {
       schema: {
@@ -232,6 +289,8 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     } as unknown as Baser;
     assertEquals(assertThrows(() => validateSchema(credential(simple.said), failed)), failure);
     assertEquals(assertThrows(() => verifyDisclosureClosure(credential(closed.said), failed, ["d/"])), failure);
+    assertEquals(assertThrows(() => simpleEdgeSchema(missingEdge, failed, ["e", "link"])), failure);
+    assertEquals(assertThrows(() => fixedEdgeOrder(missingEdge, failed)), failure);
   }
   expect(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }), "valid");
   expect(make({}, { annotation: Array.from({ length: 5000 }, (_, i) => i) }), "valid");

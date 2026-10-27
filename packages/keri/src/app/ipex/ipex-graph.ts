@@ -2,12 +2,12 @@
 import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SerderACDC } from "cesr-ts";
 import {
   acdcEdgeBlocks as blocks,
+  acdcEdgeTarget,
   type AcdcGraph,
   groupLabels,
-  nodeLabels,
   sectionLabels,
 } from "../../acdc/graphing.ts";
-import { type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
+import { fixedEdgeOrder, type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
 
 /** One node selection: schema SAID, graph path and relative disclosure paths. */
@@ -53,10 +53,13 @@ export function validDisclosurePlan(value: unknown): value is DisclosurePlan {
     if (!Array.isArray(item) || item.length !== 3) return false;
     const [schema, path, fields] = item;
     if (!validSaid(schema) || typeof path !== "string") return false;
-    if (path !== "/") {
-      if (!path.startsWith("/") || !path.endsWith("/")) return false;
+    if (path !== "" && path !== "/") {
+      if (!path.startsWith("/e/") || !path.endsWith("/_/")) return false;
       const parts = path.replace(/^\/+|\/+$/g, "").split("/");
-      if (parts.some((part) => !part) || parts.at(-1) !== "_") return false;
+      if (
+        parts.some((part) => !part)
+        || parts.some((part, i) => part === "_" && i < parts.length - 1 && parts[i + 1] !== "e")
+      ) return false;
     }
     if (!Array.isArray(fields)) return false;
     if (fields.length === 1 && fields[0] === "") continue;
@@ -77,7 +80,12 @@ export function validDisclosurePlan(value: unknown): value is DisclosurePlan {
  * Offers may omit far nodes; grants require every referenced node. Nested ownership
  * does not make these nodes independently accepted runtime messages.
  */
-export function walkIpexGraph(origin: string, nests: readonly CesrFrame[], closed: boolean): IpexGraph | null {
+export function walkIpexGraph(
+  origin: string,
+  nests: readonly CesrFrame[],
+  closed: boolean,
+  db: Baser,
+): IpexGraph | null | Extract<SchemaValidation, { kind: "missing" }> {
   const nodes = new Map<string, CesrFrame & { body: SerderACDC }>();
   for (const [index, frame] of nests.entries()) {
     const body = frame.body;
@@ -103,23 +111,29 @@ export function walkIpexGraph(origin: string, nests: readonly CesrFrame[], close
     dependencies.set(said, farNodes);
     const edges = blocks(nodes.get(said)!.body.sad!.e);
     if (!edges) return null;
-    const groups = edges.map((edge) => ({ edge, nested: false }));
+    const groups = edges.map((edge, index) => ({
+      edge: edge as unknown,
+      nested: false,
+      path: Array.isArray(nodes.get(said)!.body.sad!.e) ? ["e", String(index)] : ["e"],
+    }));
     for (let g = 0; g < groups.length; g++) {
-      const { edge, nested } = groups[g];
-      if (Object.hasOwn(edge, "n")) {
-        if (Object.keys(edge).some((key) => !nodeLabels.has(key)) || !validSaid(edge.n)) return null;
-        if (!nodes.has(edge.n)) {
+      const { edge, nested, path } = groups[g];
+      const target = acdcEdgeTarget(nodes.get(said)!.body, path, edge, db);
+      if (target === false) return null;
+      if (typeof target === "object" && target !== null) return target;
+      if (typeof target === "string") {
+        if (!nodes.has(target)) {
           if (closed) return null;
         } else {
-          farNodes.add(edge.n);
-          if (!seen.has(edge.n)) queue.push(edge.n);
+          farNodes.add(target);
+          if (!seen.has(target)) queue.push(target);
         }
       } else {
+        if (!record(edge)) return null;
         const labels = nested ? groupLabels : sectionLabels;
         for (const [key, value] of Object.entries(edge)) {
           if (labels.has(key)) continue;
-          if (!record(value)) return null;
-          groups.push({ edge: value, nested: true });
+          groups.push({ edge: value, nested: true, path: [...path, key] });
         }
       }
     }
@@ -154,37 +168,52 @@ function equal(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** Require the plan to select every disclosed node in canonical breadth-first order. */
+/** Explicit selectors may omit unrequested nodes; positional selectors require fixed, gapless BFS shape. */
 export function verifyIpexDisclosure(
   plan: DisclosurePlan,
   origin: string,
   graph: IpexGraph,
   db: Baser,
 ): boolean | Extract<SchemaValidation, { kind: "missing" }> {
+  if (!plan.length || graph.order[0] !== origin) return false;
   const selected: string[] = [];
-  for (const [schema, prefix, fields] of plan) {
-    let said = origin;
+  let lastIndex = -1, positional = false;
+  for (const [position, [schema, prefix, fields]] of plan.entries()) {
+    if (prefix === "" && position >= graph.order.length) return false;
+    let said = prefix === "" ? graph.order[position] : origin;
+    positional ||= prefix === "" && position > 0;
     let node = graph.nodes.get(said);
     if (!node) return false;
     let value: unknown = node.body.sad;
-    if (prefix !== "/") {
+    let edgePath: string[] = [];
+    if (prefix !== "" && prefix !== "/") {
       for (const part of prefix.replace(/^\/+|\/+$/g, "").split("/")) {
         if (part === "_") {
-          if (!record(value) || typeof value.n !== "string") return false;
-          said = value.n;
+          const target = acdcEdgeTarget(node.body, edgePath, value, db);
+          if (typeof target === "object" && target !== null) return target;
+          if (typeof target !== "string") return false;
+          said = target;
           node = graph.nodes.get(said);
           if (!node) return false;
           value = node.body.sad;
-        } else if (record(value) && Object.hasOwn(value, part)) value = value[part];
-        else if (Array.isArray(value) && /^\d+$/.test(part) && Number(part) < value.length) value = value[Number(part)];
-        else return false;
+          edgePath = [];
+        } else {
+          if (record(value) && Object.hasOwn(value, part)) value = value[part];
+          else if (Array.isArray(value) && /^\d+$/.test(part) && Number(part) < value.length) {
+            value = value[Number(part)];
+          } else return false;
+          edgePath.push(part);
+        }
       }
     }
+    const index = graph.order.indexOf(said);
+    if (index <= lastIndex) return false;
+    lastIndex = index;
     selected.push(said);
     const serder = node.body;
     const nodeSchema = serder.schema;
     if ((record(nodeSchema) ? nodeSchema.$id : nodeSchema) !== schema) return false;
-    if (fields.includes("") || fields.includes("d/")) {
+    if ((prefix !== "" && fields.includes("")) || fields.includes("d/")) {
       for (const label of ["a", "e", "r"]) {
         const section = serder.sad![label];
         if (present(section) && !record(section)) return false;
@@ -196,6 +225,7 @@ export function verifyIpexDisclosure(
     }
     const sections = new Map<string, string[]>();
     for (const field of fields) {
+      if (!field) continue;
       try {
         const pather = makePather(field, { relative: true });
         pather.resolve(serder.sad);
@@ -230,5 +260,13 @@ export function verifyIpexDisclosure(
       if (closure.kind !== "valid") return closure.kind === "missing" ? closure : false;
     }
   }
-  return equal(selected, graph.order);
+  if (selected[0] !== origin) return false;
+  if (positional) {
+    if (!equal(selected, graph.order)) return false;
+    for (const said of graph.order) {
+      const fixed = fixedEdgeOrder(graph.nodes.get(said)!.body, db);
+      if (fixed !== true) return fixed;
+    }
+  }
+  return true;
 }
