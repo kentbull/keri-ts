@@ -82,6 +82,10 @@ tracks historical readers, safe conversion boundaries and the linked Python port
   in `disclosure.ts` and transport in Structor/Blinder/Mediar. Reuse hydrated
   primitives; do not serialize solely to parse again. Keep raw `SerderKERI.a`
   checks distinct from typed projections.
+  Fixed-field commitment helpers replace only `d`, retaining carried primitive
+  encodings. Recovery requires explicit UUID or deterministic raw/qualified salt
+  and selects the digest from one canonical 44-character E-I BLID; matching
+  explicit codes are honored. New construction may still generate fresh UUIDs.
 - `SealKind.d` remains Noncer-capable, including empty/salt values. TS storage
   retaining those roles is a documented correction to frozen Python's Diger cast.
   `FirstSeen` owns Number/Dater projections; `Dater.dts` is canonical ISO text.

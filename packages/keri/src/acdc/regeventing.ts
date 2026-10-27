@@ -8,9 +8,10 @@ import {
   type BoundState,
   commitBlindState,
   commitBoundState,
-  type Diger,
+  Diger,
   Ilks,
   type NumberPrimitive,
+  ParserError,
   type SealEvent,
   type SealSource,
   type SerderACDC,
@@ -271,9 +272,18 @@ function vetAnchor(
   return missing;
 }
 
-/** Recompute the disclosed tuple with the reference's default Blake3 commitment. */
+/** Authenticate the declared native BLID against the exact carried primitive tuple. */
 function vetBlind(blinder: RegistryDisclosure, blid: string): boolean {
-  const redone = "bn" in blinder ? commitBoundState(blinder, "E") : commitBlindState(blinder, "E");
+  if (!/^[E-I][A-Za-z0-9_-]{43}$/.test(blid) || blinder.d.nonce !== blid) return false;
+  let digest: Diger;
+  try {
+    digest = new Diger({ qb64: blid });
+  } catch (error) {
+    if (error instanceof ParserError) return false;
+    throw error;
+  }
+  if (new Diger({ code: digest.code, raw: digest.raw }).qb64 !== blid) return false;
+  const redone = "bn" in blinder ? commitBoundState(blinder, digest.code) : commitBlindState(blinder, digest.code);
   return redone.d.nonce === blid;
 }
 

@@ -4,6 +4,7 @@ This driver parses foreign KELs and calls the candidate's read-only native proof
 APIs. It does not exercise Python wallet or registry persistence.
 """
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,7 +12,7 @@ from keri import Vrsn_2_0
 from keri.acdc.messaging import acdcmap, blindate, regcept
 from keri.acdc.regeventing import vet, vetBinds
 from keri.app import openHby
-from keri.core import Blinder, BlindState, Kevery, Parser, SerderACDC
+from keri.core import Blinder, BlindState, DigDex, Diger, Kevery, Parser, SerderACDC
 
 
 def author():
@@ -21,7 +22,12 @@ def author():
         rip = regcept(issuer.pre)
         issuer.interact(data=[dict(i=rip.said, s="0", d=rip.said)], gvrsn=Vrsn_2_0)
         credential = acdcmap(issuer.pre, regid=rip.said, attribute=dict(d="", name="Ada"))
-        opening = Blinder.blind(acdc=credential.said, state="issued", sn=1)
+        opening = Blinder(crew=BlindState(d="", u=Blinder.makeUUID(sn=1),
+                                         td=credential.said, ts="issued"),
+                          makify=True, saids={"d": DigDex.SHA2_256})
+        material = b"#" * 44 + b"".join(value.qb64b for value in opening.data[1:])
+        assert Diger(raw=hashlib.sha256(material).digest(),
+                     code=DigDex.SHA2_256).qb64 == opening.said
         update = blindate(rip.said, rip.said, opening.said)
         issuer.interact(data=[dict(i=rip.said, s="1", d=update.said)], gvrsn=Vrsn_2_0)
         return dict(rip=rip.raw.decode(), update=update.raw.decode(),

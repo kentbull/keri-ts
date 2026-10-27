@@ -136,13 +136,13 @@ export interface MakeTypeMediaOptions extends MakeBlindUuidOptions {
 export interface UnblindBlindStateOptions extends MakeBlindUuidOptions {
   /** Target commitment nonce (`BlindState.d.nonce`) to match. */
   said: string;
-  /** Disclosure UUID. Omit to deterministically reconstruct it. */
+  /** Disclosure UUID. Omit only when deterministic raw salt or qualified salt is supplied. */
   uuid?: NoncerLike;
   /** Candidate disclosed ACDC/TEL SAID. Empty placeholder is auto-included. */
   acdc?: NoncerLike;
   /** Candidate state labels to try while searching for the matching record. */
   states?: readonly LabelerLike[];
-  /** Optional digest/noncer code for recomputed candidates. */
+  /** Optional digest code matching the target commitment; inferred from `said` when omitted. */
   code?: string;
 }
 
@@ -159,16 +159,10 @@ export interface UnblindBoundStateOptions extends UnblindBlindStateOptions {
 }
 
 type DisclosureRecord = BlindStateRecord | BoundStateRecord | TypeMediaRecord;
-type DisclosureSad = Readonly<{ d: string }>;
 type DisclosureTupleField = Readonly<{ qb64: string }>;
-type DisclosureDescriptor<
-  TRecord extends DisclosureRecord,
-  TSad extends DisclosureSad,
-> = {
+type DisclosureDescriptor<TRecord extends DisclosureRecord> = {
   readonly fields: readonly string[];
-  toSad(value: TRecord): TSad;
   toTuple(value: TRecord): readonly DisclosureTupleField[];
-  fromSad(value: TSad): TRecord;
 };
 
 /** Normalize `Number`-like input into the KERIpy `numh` hex string projection. */
@@ -246,6 +240,29 @@ function ensurePresentUuid(
   return makeBlindUuid(options);
 }
 
+/** Recovery needs known material; unlike new construction it must never invent a random UUID. */
+function recoveryDisclosureUuid(value: NoncerLike, options: MakeBlindUuidOptions): Noncer {
+  if (value == null && options.raw === undefined && options.salt === undefined) {
+    throw new TypeError("Disclosure recovery requires a UUID, raw salt, or qualified salt.");
+  }
+  return ensurePresentUuid(value, options);
+}
+
+/** Recover only one canonical native BLID and select its declared supported digest. */
+function recoveryDisclosureCode(said: string, code?: string): string {
+  if (!/^[E-I][A-Za-z0-9_-]{43}$/.test(said)) {
+    throw new TypeError("Disclosure recovery requires one canonical 44-character digest.");
+  }
+  const target = new Diger({ qb64: said });
+  if (new Diger({ code: target.code, raw: target.raw }).qb64 !== said) {
+    throw new TypeError("Disclosure recovery requires one canonical 44-character digest.");
+  }
+  if (code !== undefined && code !== target.code) {
+    throw new TypeError("Disclosure recovery digest code must match the target commitment.");
+  }
+  return target.code;
+}
+
 /** Choose the digest/noncer code used for the recomputed commitment field `d`. */
 function effectiveDisclosureCode(current: Noncer, code?: string): string {
   if (code !== undefined) {
@@ -264,11 +281,8 @@ function effectiveDisclosureCode(current: Noncer, code?: string): string {
  *
  * This mirrors the saidive/makify behavior KERIpy gets through `Structor`.
  */
-function computeDisclosureNonce<
-  TRecord extends DisclosureRecord,
-  TSad extends DisclosureSad,
->(
-  descriptor: DisclosureDescriptor<TRecord, TSad>,
+function computeDisclosureNonce<TRecord extends DisclosureRecord>(
+  descriptor: DisclosureDescriptor<TRecord>,
   value: TRecord,
   code?: string,
 ): Noncer {
@@ -286,22 +300,6 @@ function computeDisclosureNonce<
     code: effectiveCode,
     raw: Diger.digest(b(ser), effectiveCode),
   });
-}
-
-/** Rebuild the record with a freshly committed `d` field. */
-function saidifyDisclosureRecord<
-  TRecord extends DisclosureRecord,
-  TSad extends DisclosureSad,
->(
-  descriptor: DisclosureDescriptor<TRecord, TSad>,
-  value: TRecord,
-  code?: string,
-): TRecord {
-  const d = computeDisclosureNonce(descriptor, value, code);
-  return descriptor.fromSad({
-    ...descriptor.toSad(value),
-    d: d.nonce,
-  } as TSad);
 }
 
 /**
@@ -340,7 +338,7 @@ export function commitBlindState(
   value: BlindStateRecord,
   code?: string,
 ): BlindStateRecord {
-  return saidifyDisclosureRecord(BlindState, value, code);
+  return BlindState.fromTuple([computeDisclosureNonce(BlindState, value, code), value.u, value.td, value.ts]);
 }
 
 /**
@@ -353,7 +351,14 @@ export function commitBoundState(
   value: BoundStateRecord,
   code?: string,
 ): BoundStateRecord {
-  return saidifyDisclosureRecord(BoundState, value, code);
+  return BoundState.fromTuple([
+    computeDisclosureNonce(BoundState, value, code),
+    value.u,
+    value.td,
+    value.ts,
+    value.bn,
+    value.bd,
+  ]);
 }
 
 /**
@@ -366,7 +371,7 @@ export function commitTypeMedia(
   value: TypeMediaRecord,
   code?: string,
 ): TypeMediaRecord {
-  return saidifyDisclosureRecord(TypeMedia, value, code);
+  return TypeMedia.fromTuple([computeDisclosureNonce(TypeMedia, value, code), value.u, value.mt, value.mv]);
 }
 
 /**
@@ -487,7 +492,8 @@ export function unblindBlindState(
     code,
   }: UnblindBlindStateOptions,
 ): BlindStateRecord | null {
-  const resolvedUuid = ensurePresentUuid(uuid, { raw, salt, sn, tier });
+  const resolvedUuid = recoveryDisclosureUuid(uuid, { raw, salt, sn, tier });
+  const digestCode = recoveryDisclosureCode(said, code);
   const acdcs = [...new Set([coerceNonceText(acdc), ""])];
   const stateTexts = [...new Set(states.map(coerceLabelText).concat(""))];
 
@@ -500,7 +506,7 @@ export function unblindBlindState(
         uuid: resolvedUuid,
         acdc: td,
         state: ts,
-        code,
+        code: digestCode,
       });
       if (candidate.d.nonce === said) {
         return candidate;
@@ -536,7 +542,8 @@ export function unblindBoundState(
     code,
   }: UnblindBoundStateOptions,
 ): BoundStateRecord | null {
-  const resolvedUuid = ensurePresentUuid(uuid, { raw, salt, sn, tier });
+  const resolvedUuid = recoveryDisclosureUuid(uuid, { raw, salt, sn, tier });
+  const digestCode = recoveryDisclosureCode(said, code);
   const acdcs = [...new Set([coerceNonceText(acdc), ""])];
   const stateTexts = [...new Set(states.map(coerceLabelText).concat(""))];
   // Placeholder bound pairs matter for parity with KERIpy's partially revealed
@@ -560,7 +567,7 @@ export function unblindBoundState(
           state: ts,
           bsn: bn,
           bd,
-          code,
+          code: digestCode,
         });
         if (candidate.d.nonce === said) {
           return candidate;

@@ -259,6 +259,23 @@ version does not test its native Baser binding or full Habery/Keeper interchange
 Direct legacy LMDB support has a [deferred canonical roadmap owner](../../plans/db/DB_PARITY_PLAN.md#deferred-legacy-lmdb-compatibility)
 outside the 2.0 gate; legacy wire support remains required.
 
+Disclosure recovery has two bounded API differences from selected Python
+`c60da4bf`; [the CESR owner regressions](../../../packages/cesr/test/unit/primitives/structuring/disclosure.test.ts)
+cover the TypeScript behavior:
+
+- `unblindBlindState` and `unblindBoundState` accept deterministic `raw` salt
+  without a separate `salt` argument. Python `Blinder.unblind` rejects that
+  raw-only call in its preliminary salt guard.
+- TypeScript infers the target BLID's supported digest code and honors a matching
+  explicit code. Python's recovery search constructs default Blake3 candidates;
+  alternate-code recovery API equivalence is not claimed. Generic commitment and
+  TypeMedia digest capabilities are unchanged.
+
+Both differences use the existing deterministic UUID derivation and supported
+digest algorithms to produce the same CESR tuple forms. Independent hash checks
+and the [Python-produced SHA-256 opening case](../../../packages/keri/test/integration/app/interop-native-registry.test.ts)
+exercise that wire contract.
+
 ## Known compatibility needs and explicit limits
 
 | ID     | Need / limit                                         | Current disposition                                                                                                                                                                                                                                                                                                                                  |

@@ -1,4 +1,7 @@
-import { assertEquals } from "jsr:@std/assert";
+import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { b } from "../../../../src/core/bytes.ts";
+import { DigDex, NumDex } from "../../../../src/primitives/base/codex.ts";
+import { Noncer } from "../../../../src/primitives/crypto/noncer.ts";
 import { Salter } from "../../../../src/primitives/crypto/salter.ts";
 import {
   commitBlindState,
@@ -12,6 +15,9 @@ import {
   unblindBoundState,
 } from "../../../../src/primitives/structuring/disclosure.ts";
 import { BlindState, BoundState, TypeMedia } from "../../../../src/primitives/structuring/structing.ts";
+import { Bexter } from "../../../../src/primitives/values/bexter.ts";
+import { Labeler } from "../../../../src/primitives/values/labeler.ts";
+import { NumberPrimitive } from "../../../../src/primitives/values/number.ts";
 import {
   KERIPY_DISCLOSURE_HELPER_VECTORS,
   KERIPY_STRUCTING_DATA_VECTORS,
@@ -183,4 +189,67 @@ Deno.test("primitives/disclosure - helpers preserve KERIpy blind/bound/media com
     ),
     typeMedia,
   );
+  const raw = new Salter({ qb64: KERIPY_DISCLOSURE_HELPER_VECTORS.salt }).raw;
+  assertEquals(
+    unblindBlindState({
+      said: placeholderBlind.d.nonce,
+      raw,
+      sn: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBlind.sn,
+    }),
+    placeholderBlind,
+  );
+  assertEquals(
+    unblindBoundState({
+      said: placeholderBound.d.nonce,
+      raw,
+      sn: KERIPY_DISCLOSURE_HELPER_VECTORS.placeholderBound.sn,
+    }),
+    placeholderBound,
+  );
+  assertThrows(() => unblindBlindState({ said: placeholderBlind.d.nonce }), TypeError, "recovery");
+  assertThrows(() => unblindBoundState({ said: placeholderBound.d.nonce }), TypeError, "recovery");
+});
+
+Deno.test("primitives/disclosure - exact opening bytes and declared recovery digest stay bound", async () => {
+  const options = {
+    uuid: KERIPY_DISCLOSURE_HELPER_VECTORS.revokedBlind.uuid,
+    acdc: KERIPY_DISCLOSURE_HELPER_VECTORS.revokedBlind.acdc,
+    state: "issued",
+    code: DigDex.SHA2_256,
+  };
+  const blind = makeBlindState(options), bound = makeBoundState({ ...options, bsn: 1, bd: options.acdc });
+  const alternateText = new Labeler(new Bexter({ code: "4A", raw: Bexter.rawify("issued") }));
+  const alternateNumber = new NumberPrimitive({ code: NumDex.Long, raw: new Uint8Array([0, 0, 0, 1]) });
+  const alternative = BoundState.fromTuple([bound.d, bound.u, bound.td, alternateText, alternateNumber, bound.bd]);
+  assertEquals(alternative.ts.text, bound.ts.text);
+  assertEquals(alternative.bn.num, bound.bn.num);
+  assertEquals(alternative.ts.qb64 === bound.ts.qb64, false);
+  assertEquals(alternative.bn.qb64 === bound.bn.qb64, false);
+  // WebCrypto is independent of the Diger hash implementation used by commitment helpers.
+  const material = "#".repeat(44) + BoundState.toTuple(alternative).slice(1).map((field) => field.qb64).join("");
+  const expected = new Noncer({
+    code: DigDex.SHA2_256,
+    raw: new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(b(material)))),
+  });
+  const committed = commitBoundState(alternative);
+  assertEquals(committed.d.nonce, expected.nonce);
+  assertEquals(committed.ts.qb64, alternateText.qb64);
+  assertEquals(committed.bn.qb64, alternateNumber.qb64);
+  const search = { uuid: options.uuid, acdc: options.acdc, states: [options.state] };
+  assertEquals(unblindBlindState({ ...search, said: blind.d.nonce }), blind);
+  assertEquals(
+    unblindBoundState({ ...search, said: bound.d.nonce, code: DigDex.SHA2_256, bounds: [[1, options.acdc]] }),
+    bound,
+  );
+  assertThrows(
+    () => unblindBlindState({ ...search, said: blind.d.nonce, code: DigDex.Blake3_256 }),
+    TypeError,
+    "match",
+  );
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  const padBits = blind.d.nonce[0] + alphabet[alphabet.indexOf(blind.d.nonce[1]) + 16] + blind.d.nonce.slice(2);
+  assertEquals(new Noncer({ qb64: padBits }).raw, blind.d.raw, "only discarded pad bits changed");
+  for (const said of ["", options.uuid, blind.d.nonce + "1AAP", padBits]) {
+    assertThrows(() => unblindBlindState({ ...search, said }));
+  }
 });

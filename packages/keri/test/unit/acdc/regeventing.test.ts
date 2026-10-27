@@ -1,10 +1,14 @@
 /** Frozen registry decisions use independently signed KELs through the real runtime. */
 import {
   b,
+  Bexter,
   BlindState,
   BoundState,
+  commitBlindState,
   concatBytes,
   Diger,
+  Labeler,
+  Noncer,
   NumberPrimitive,
   parseBytes,
   Saider,
@@ -194,6 +198,59 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
     }
   });
 });
+Deno.test("registry openings bind their declared digest and exact primitive bytes", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    try {
+      const issuer = hby.makeHab("issuer"), base = BlindState.fromSad(fixture.disclosures.issued);
+      /** Build the SHA-256 oracle with WebCrypto, independently of the commitment helpers. */
+      const sha256 = async (opening: RegistryDisclosure): Promise<RegistryDisclosure> => {
+        const tuple = "bn" in opening ? BoundState.toTuple(opening) : BlindState.toTuple(opening);
+        const material = "#".repeat(44) + tuple.slice(1).map((field) => field.qb64).join("");
+        const raw = new Uint8Array(await crypto.subtle.digest("SHA-256", new Uint8Array(b(material))));
+        return Object.freeze({ ...opening, d: new Noncer({ code: "I", raw }) });
+      };
+      const alternateText = new Labeler(new Bexter({ code: "4A", raw: Bexter.rawify(base.ts.text) }));
+      const alternateNumber = new NumberPrimitive({ code: "0H", raw: new Uint8Array([0, 0, 0, 1]) });
+      const alternative = BlindState.fromTuple([base.d, base.u, base.td, alternateText]);
+      const bound = BoundState.fromTuple([base.d, base.u, base.td, base.ts, alternateNumber, base.td]);
+      const publicOpening = commitBlindState(BlindState.fromTuple([
+        base.d,
+        new Noncer({ qb64: "1AAP" }),
+        base.td,
+        base.ts,
+      ]));
+      /** Anchor each exact commitment through ordinary accepted issuer KEL processing. */
+      const check = (opening: RegistryDisclosure, blid = opening.d.nonce) => {
+        const rip = regcept(issuer.pre), update = blindate(rip.said!, rip.said!, blid);
+        issuer.interact({ data: [{ d: rip.said! }, { d: update.said! }] });
+        return vet({ db: hby.db, rip, updates: [update], blinder: opening });
+      };
+      assertEquals(check(base).kind, "verified");
+      for (const d of [new Noncer({ qb64: fixture.disclosures.vacuous.d }), new Noncer({ qb64: "1AAP" })]) {
+        assertEquals(check(Object.freeze({ ...base, d }), base.d.nonce), { kind: "reject", reason: "disclosure" });
+      }
+      for (
+        const opening of [
+          yield* call(() => sha256(base)),
+          yield* call(() => sha256(alternative)),
+          yield* call(() => sha256(bound)),
+          publicOpening,
+        ]
+      ) {
+        assertEquals(check(opening).kind, "verified");
+      }
+      assertEquals(
+        check(alternative, base.d.nonce).kind,
+        "reject",
+        "same text with changed bytes is not the old opening",
+      );
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("registry field validation shares parsed facts without accepting a chain", () => {
   const body = (name: keyof typeof fixture.bodies) => new SerderACDC({ raw: b(fixture.bodies[name]) });
   const rip = body("rip"), update = body("issued");
