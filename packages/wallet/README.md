@@ -24,5 +24,29 @@ a later fuller disclosure, registry update or policy decision does not replace
 those bytes. History retrieval authenticates the retained outer exchanges through
 Exchanger replay without asserting current issuer standing or graph validity.
 
-Custody, derivation, issuance operations, negotiation and CLI composition are
-outside this first owner cut.
+Issuance operations and negotiation are separate from inventory and custody.
+
+## Optional protected custody
+
+`RegistryCustody({hby, registry, db})` is an explicit capability over the existing
+wallet environment. Ordinary inventory never creates it or reads its encrypted
+rows. `createCustody(registry, discloser)` requires an accepted locally controlled
+inception and the designated discloser's known KEL. Secrets use the authenticated
+encrypted Keeper AEID; plaintext fallback and salt regeneration after undisclosed
+blinded history are refused.
+
+`derive` returns an event-opening candidate, not accepted standing or permission
+to present a credential. `retainDerivedUpdate(event, opening)` records only the
+exact event SAID, target, state and optional bound KEL coordinates before new
+processing/anchoring. `derivedOpening(event)` requires that exact accepted event
+and verifies the reconstructed commitment after reopen; a later public successor
+never selects another credential's inputs or publishes private openings.
+
+`exportCustody` and `importCustody` implement the Python-compatible protected
+operator handoff on POSIX only. Export exclusively creates a mode0600 file;
+import refuses symlinks, non-regular/multiply-linked files, another owner, loose
+permissions and mismatched bindings/profile. Transfer is an explicit authenticated
+private operator step: file mode does not authenticate the sender or secure the
+channel, and the file contains plaintext secret material. Keeper AEID replacement
+leaves custody unusable until explicit import with `rewrap: true` under the current
+authenticated Keeper; there is no automatic migration or key distribution.

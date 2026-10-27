@@ -1,7 +1,8 @@
 """Live native registry builders and read-only vetting against independently parsed KELs.
 
-This driver parses foreign KELs and calls the candidate's read-only native proof
-APIs. It does not exercise Python wallet or registry persistence.
+The proof controls parse foreign KELs and call the candidate's read-only native
+proof APIs. The POSIX custody control also uses its actual wallet/registry owners
+to export a protected operator handoff.
 """
 import argparse
 import hashlib
@@ -65,12 +66,80 @@ def verify(evidence):
         return state._asdict()
 
 
+def custody_handoff(request):
+    """Export one protected operator file; return wire and selected test openings, never its salt."""
+    import os
+    if os.name != "posix":
+        raise RuntimeError("protected custody handoff fixture requires POSIX")
+    from keri.acdc import Regery, Registrar
+    from keri.acdc.regbasing import RegBaser
+    from keri.app.configing import Configer
+    from keri.app.credentialing import Wallet, WalletBaser
+    from keri.app.registry_custody import RegistryCustody
+    from keri.core import Signer
+
+    root = Path(request["root"])
+    key = Signer(transferable=False)
+    with openHby(name="custody-python", temp=False, headDirPath=str(root),
+                 cf=Configer(name="custody-python", temp=True), seed=key.qb64,
+                 aeid=key.verfer.qb64, version=Vrsn_2_0) as hby:
+        issuer = hby.makeHab(name="issuer", version=Vrsn_2_0)
+        Parser(version=Vrsn_2_0, kvy=Kevery(db=hby.db, lax=False, local=False)).parse(
+            ims=bytearray(request["kel"].encode()))
+        issuee = hby.db.kevers[request["discloser"]]
+        rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=str(root), temp=False))
+        wallet = Wallet(hby, rgy, db=WalletBaser(name=hby.name, headDirPath=str(root), temp=False))
+        custody = RegistryCustody(hby, rgy, db=wallet.db)
+        try:
+            registry = Registrar(rgy).makeRegistry(name="handoff", prefix=issuer.pre)
+            rip = rgy.store.event(registry.regk)
+
+            def accept(event):
+                issuer.interact(data=[dict(i=registry.regk, s=event.sad["n"], d=event.said)], gvrsn=Vrsn_2_0)
+                assert registry.anchorMsg(event.said)
+
+            accept(rip)
+            info = custody.createCustody(registry.regk, request["discloser"])
+            credential = acdcmap(issuer.pre, regid=registry.regk,
+                                attribute=dict(d="", i=request["discloser"], role="custody-holder"))
+            proofs, updates = [], []
+            prior = rip.said
+            for sn, state in [(1, "issued"), (2, "revoked")]:
+                proof = custody.derive(registry.regk, sn, credential.said, state,
+                                       bound=True, bsn=issuee.sn, bd=issuee.serder.said)
+                update = blindate(registry.regk, prior, proof.said, sn=sn)
+                wallet.retainDerivedUpdate(update, proof)  # F02 ordering: before processing/anchor.
+                registry.processEvent(update)
+                accept(update)
+                proofs.append(proof)
+                updates.append(update)
+                prior = update.said
+            public = Blinder.blind(acdc="", state="")
+            successor = blindate(registry.regk, prior, public.said, sn=3)
+            registry.processEvent(successor)
+            accept(successor)
+            wallet.retainPublicOpening(successor, public)
+            custody.exportCustody(registry.regk, request["handoff"])
+            published = bytes(successor.raw) + bytes(Counter.enclose(
+                qb64=Blinder.enclose([public]), code=Codens.AttachmentGroup, version=Vrsn_2_0))
+            return dict(registry=registry.regk, controller=issuer.pre, discloser=request["discloser"],
+                        rip=rip.raw.decode(), credential=credential.raw.decode(),
+                        updates=[update.raw.decode() for update in updates], publicUpdate=published.decode(),
+                        opening=proofs[0].crew._asdict(),
+                        future=custody.derive(registry.regk, 17, credential.said, "revoked").qb64,
+                        kel=b"".join(hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)).decode())
+        finally:
+            wallet.close()
+            rgy.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("author", "verify"))
+    parser.add_argument("mode", choices=("author", "verify", "custody"))
     parser.add_argument("evidence", nargs="?")
     args = parser.parse_args()
-    result = author() if args.mode == "author" else verify(json.loads(Path(args.evidence).read_text()))
+    evidence = json.loads(Path(args.evidence).read_text()) if args.evidence else None
+    result = author() if args.mode == "author" else (custody_handoff(evidence) if args.mode == "custody" else verify(evidence))
     print(json.dumps(result))
 
 

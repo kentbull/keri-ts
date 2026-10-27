@@ -2,7 +2,7 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { b, BlindState, BoundState, makeBlindState, parseBytes, SerderACDC, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
@@ -43,7 +43,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const [published] = parseBytes(b(evidence.publicUpdate));
     assertEquals(BoundState.qb64(envelopeFromFrame(published).bsss[0]), BoundState.qb64(blinder));
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const handler = createProtocolHandler(runtime);
@@ -69,7 +69,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
         yield* hby.close();
       }
     });
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -112,7 +112,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
-    const evidence = await run(function*() {
+    const evidence = await run(function* () {
       const hby = yield* createHabery({ name: "native-author", temp: true, skipConfig: true });
       try {
         const issuer = hby.makeHab("issuer");
@@ -150,4 +150,137 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   } finally {
     await Deno.remove(ctx.home, { recursive: true });
   }
+});
+
+Deno.test({
+  name: "interop/native-registry - POSIX protected Python custody handoff derives exact openings after TS reopen",
+  ignore: Deno.build.os === "windows",
+  async fn() {
+    assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
+    const ctx = await createInteropContext();
+    const { createWalletBaser } = await import("../../../../wallet/mod.ts");
+    const { RegistryCustody } = await import("../../../../wallet/src/custody.ts");
+    const options = { name: "custody-ts", headDirPath: ctx.home, skipConfig: true, bran: "MyPasscodeARealSecret" };
+    const requestPath = `${ctx.home}/custody-request.json`, handoff = `${ctx.home}/custody.json`;
+    let evidence: {
+      registry: string;
+      controller: string;
+      discloser: string;
+      rip: string;
+      credential: string;
+      updates: string[];
+      publicUpdate: string;
+      kel: string;
+      opening: NativeEvidence["opening"];
+      future: string;
+    };
+    try {
+      await run(function* () {
+        const hby = yield* createHabery(options);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
+        const handler = createProtocolHandler(runtime);
+        const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
+        try {
+          const holder = hby.makeHab("holder"), root = `${ctx.home}/python`;
+          yield* call(() => Deno.mkdir(root));
+          yield* call(() =>
+            Deno.writeTextFile(
+              requestPath,
+              JSON.stringify({
+                root,
+                handoff,
+                discloser: holder.pre,
+                kel: t(acceptedEventReplayMessage(hby, holder.pre, 0, Vrsn_2_0).message),
+              }),
+            )
+          );
+          const result = yield* call(() => runCmd(ctx.pythonCommand, [peer, "custody", requestPath], ctx.env));
+          assertEquals(result.code, 0, result.stderr);
+          evidence = JSON.parse(result.stdout);
+          const url = `http://127.0.0.1:${server.addr.port}/`;
+          for (const frame of parseBytes(b(evidence.kel))) yield* call(() => post(url, frame));
+          for (const raw of [evidence.rip, ...evidence.updates, evidence.publicUpdate]) {
+            const frame = raw === evidence.publicUpdate ? parseBytes(b(raw))[0] : {
+              body: new SerderACDC({ raw: b(raw) }),
+              attachments: [],
+              gvrsn: Vrsn_2_0,
+            };
+            yield* call(() => post(url, frame));
+          }
+          const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
+          const credential = new SerderACDC({ raw: b(evidence.credential) });
+          const update = new SerderACDC({ raw: b(evidence.updates[0]) });
+          assertEquals(store.head(evidence.registry)!.qb64, parseBytes(b(evidence.publicUpdate))[0].body.said);
+          assertThrows(
+            () => custody.derive(evidence.registry, 1, credential.said!, "issued"),
+            Error,
+            "not provisioned",
+          );
+          yield* call(() =>
+            assertRejects(
+              () => custody.importCustody(handoff, { ...evidence, controller: holder.pre }),
+              Error,
+              "controller",
+            )
+          );
+          yield* call(() => custody.importCustody(handoff, evidence));
+          const opening = custody.derive(evidence.registry, 1, credential.said!, "issued", {
+            bound: true,
+            bsn: holder.kever!.sn,
+            bd: holder.kever!.serder.said!,
+          });
+          assertEquals(BoundState.qb64(opening as BoundState), BoundState.qb64(BoundState.fromSad(evidence.opening)));
+          custody.retainDerivedUpdate(update, opening);
+          assertEquals(store.opening(update.said!), null, "custody never publishes its derived opening");
+          const state = vet({
+            db: hby.db,
+            rip: store.seqEvent(evidence.registry, 0)!,
+            updates: [update],
+            acdc: credential,
+            blinder: opening,
+          });
+          assertEquals(state.kind, "verified");
+          assertEquals(
+            BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
+            evidence.future,
+          );
+        } finally {
+          yield* call(() => server.shutdown());
+          yield* call(() => handler.close?.());
+          yield* db.close();
+          yield* runtime.close();
+          yield* hby.close();
+        }
+      });
+      await run(function* () {
+        const hby = yield* createHabery(options);
+        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
+        try {
+          const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
+          const update = new SerderACDC({ raw: b(evidence.updates[0]) });
+          assertEquals(
+            BoundState.qb64(custody.derivedOpening(update) as BoundState),
+            BoundState.qb64(BoundState.fromSad(evidence.opening)),
+          );
+          assertEquals(store.opening(update.said!), null);
+          const successor = parseBytes(b(evidence.publicUpdate))[0];
+          assertEquals(store.head(evidence.registry)!.qb64, successor.body.said);
+          assert(store.opening(successor.body.said!) !== null, "separately published public successor survives reopen");
+          const credential = new SerderACDC({ raw: b(evidence.credential) });
+          assertEquals(
+            BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
+            evidence.future,
+          );
+        } finally {
+          yield* db.close();
+          yield* runtime.close();
+          yield* hby.close();
+        }
+      });
+    } finally {
+      await Deno.remove(ctx.home, { recursive: true });
+    }
+  },
 });
