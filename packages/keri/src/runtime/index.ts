@@ -385,6 +385,7 @@ export {
   type RegistryVerification,
   vet,
   vetBinds,
+  vetBlind,
 } from "../acdc/regeventing.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {

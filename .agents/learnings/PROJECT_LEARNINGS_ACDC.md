@@ -144,6 +144,13 @@ body after non-refusal. Pending material is not acceptance. Accepted cloneTel re
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
+RegistryCustody is an explicit capability over the existing wallet environment.
+Keeper AEID and authenticated ciphertext own the secret; ordinary inventory never
+loads it. Protected POSIX handoff matches the Python profile. The nonsecret
+event-SAID index retains exact target/state/bound coordinates before derived BUP
+processing so reopen and later public successors cannot select different inputs.
+Reconstructed openings must match the exact accepted event; AEID replacement
+requires explicit operator reimport, and missing private history never regenerates salt.
 Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
 checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied
 TEL SAID and verifies its contiguous anchored prefix; omission checks the full current
