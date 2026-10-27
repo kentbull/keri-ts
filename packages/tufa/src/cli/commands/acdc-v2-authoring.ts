@@ -161,12 +161,9 @@ export function* acdcV2AuthorCommand(
               if (wallet.db.issued.get([said])?.registry !== reg.regk) {
                 throw new ValidationError("Credential is not in this registry's issued inventory.");
               }
-              const staged = author.stage(
-                reg,
-                wallet.issuedCredential(said),
-                operation === "revoke" ? "revoked" : required(args.state, "state"),
-                options,
-              );
+              const staged = operation === "revoke"
+                ? author.stageRevocation(reg, said, options)
+                : author.stage(reg, wallet.issuedCredential(said), required(args.state, "state"), options);
               yield* approve(staged.event, staged.opening);
               return { credential: said, registry: reg.regk, update: staged.event.said, accepted: true };
             }

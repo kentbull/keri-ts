@@ -79,6 +79,30 @@ export class WalletAuthor {
     state: string,
     options: AcdcV2UpdateOptions = {},
   ): { event: SerderACDC; opening: RegistryDisclosure } {
+    return this.stageState(reg, acdc, state, options);
+  }
+
+  /** Ensure revocation of retained local issuance; an identical accepted revocation remains an idempotent retry. */
+  stageRevocation(
+    reg: AcdcV2Registry,
+    said: string,
+    options: AcdcV2UpdateOptions = {},
+  ): { event: SerderACDC; opening: RegistryDisclosure } {
+    const record = this.wallet.db.issued.get([said]);
+    if (!record || record.registry !== reg.regk) {
+      throw new ValidationError("Credential is not in this registry's issued inventory.");
+    }
+    return this.stageState(reg, this.wallet.issuedCredential(said), "revoked", options, true);
+  }
+
+  /** Share validation and exact pending-next reuse; only the concrete revocation ensure operation can reuse an accepted head. */
+  private stageState(
+    reg: AcdcV2Registry,
+    acdc: SerderACDC,
+    state: string,
+    options: AcdcV2UpdateOptions,
+    ensureRevoked = false,
+  ): { event: SerderACDC; opening: RegistryDisclosure } {
     this.registry(reg.name, acdc.issuer!);
     if (!acdc.verify() || acdc.regid !== reg.regk) {
       throw new ValidationError("Credential does not match this registry.");
@@ -127,7 +151,7 @@ export class WalletAuthor {
       if (!options.public) this.custody!.retainDerivedUpdate(event, opening);
       return { event, opening };
     }
-    if (sn && head.ilk === "bup") {
+    if (ensureRevoked && sn && head.ilk === "bup") {
       const published = reg.store.publicOpening(head.said!);
       const opening = options.public ? published : derive(sn);
       if (opening && matches(head, opening) && (!options.public || published)) {
@@ -177,11 +201,10 @@ export class WalletAuthor {
 
   /** Revoke only locally retained issuance, not an unrelated arbitrary target digest. */
   *revoke(reg: AcdcV2Registry, said: string, options: AcdcV2UpdateOptions = {}): Operation<SerderACDC> {
-    const record = this.wallet.db.issued.get([said]);
-    if (!record || record.registry !== reg.regk) {
-      throw new ValidationError("Credential is not in this registry's issued inventory.");
-    }
-    return yield* this.update(reg, this.wallet.issuedCredential(said), "revoked", options);
+    this.individual(reg);
+    const { event } = this.stageRevocation(reg, said, options);
+    yield* this.anchor(reg, event);
+    return event;
   }
 
   /** Reuse the current branch's already signed seal even before receipts; no extra anchor merely to poll. */
