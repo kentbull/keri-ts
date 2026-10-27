@@ -106,6 +106,11 @@ cat >"${CONFIG_DIR}/keri/cf/${CONFIG_FILE}/${CONFIG_FILE}.json" <<EOF
 EOF
 "${TUFA_BIN}" init --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --salt 0ADHFiisJ7FnfWkPl4YfX6AK >/dev/null
 "${TUFA_BIN}" incept --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --file /samples/incept-config/single-sig-incept.json --transferable >/dev/null
+# Separate installed commands must reload the actual ACDC v2 registry alias.
+REGISTRY_JSON="$("${TUFA_BIN}" vc registry incept --acdc-v2 --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --registry-name acdc-v2-smoke --with-custody)"
+CREDENTIAL_JSON="$("${TUFA_BIN}" vc create --acdc-v2 --name "${NAME}" --head-dir "${HEAD_DIR}" --passcode "${PASSCODE}" --alias "${ALIAS}" --registry-name acdc-v2-smoke --public --data '{"d":"","name":"Ada"}')"
+node -e 'const [registry, credential] = process.argv.slice(1).map(JSON.parse); if (registry.accepted !== true || credential.accepted !== true || credential.registry !== registry.registry || typeof credential.credential !== "string") throw new Error("Installed ACDC v2 authoring did not retain its registry across commands");' "${REGISTRY_JSON}" "${CREDENTIAL_JSON}"
+
 rm -f /tmp/tufa-agent.exitcode
 (
   "${TUFA_BIN}" agent --name "${NAME}" --head-dir "${HEAD_DIR}" --config-dir "${CONFIG_DIR}" --config-file "${CONFIG_FILE}" -p "${PORT}" -P "${PASSCODE}" >/tmp/tufa-agent.log 2>&1
