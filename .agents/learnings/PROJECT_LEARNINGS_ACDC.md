@@ -151,6 +151,14 @@ event-SAID index retains exact target/state/bound coordinates before derived BUP
 processing so reopen and later public successors cannot select different inputs.
 Reconstructed openings must match the exact accepted event; AEID replacement
 requires explicit operator reimport, and missing private history never regenerates salt.
+WalletAuthor composes the existing native Regery, finite builders and Receiptor.
+BUP staging is not acceptance: success and issued inventory require the exact
+accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
+reuse pending BUP/opening bytes and the current branch's already signed KEL seal.
+Public proof retention uses RegistryStore's decoder; private derivation retains
+nonsecret event-specific coordinates before processing and never publishes implicitly.
+Tufa owns only argument/configuration, protected operator handoff and final output
+following joined cleanup; native update means BUP state advance, never historical upd.
 Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
 checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied
 TEL SAID and verifies its contiguous anchored prefix; omission checks the full current

@@ -149,6 +149,19 @@ export class RegistryStore {
   opening(said: string): Uint8Array | null {
     return this.baser.openings.get(said);
   }
+  /** Decode and authenticate one deliberately public stored opening, including pending events. */
+  publicOpening(said: string): RegistryDisclosure | null {
+    const raw = this.opening(said);
+    if (!raw) return null;
+    const event = this.event(said), opening = retainedOpening(raw);
+    if (
+      !event || event.said !== said || event.ilk !== Ilks.bup || !event.verify()
+      || !vetBlind(opening, event.sad!.b as string)
+    ) {
+      throw new DatabaseOperationError("Retained public opening does not authenticate its stored event.");
+    }
+    return opening;
+  }
   /** Retain one authentic public BUP opening only against its exact already-stored body. */
   retainOpening(event: SerderACDC, opening: RegistryDisclosure): RegistryDisclosure {
     if (event.ilk !== Ilks.bup || !event.verify()) throw new ValidationError("Public opening requires a verified BUP.");
@@ -213,12 +226,7 @@ export class RegistryStore {
       const event = this.event(said.qb64);
       if (!event) continue;
       const raw = this.opening(event.said!);
-      if (raw) {
-        const opening = retainedOpening(raw);
-        if (event.ilk !== Ilks.bup || !event.verify() || !vetBlind(opening, event.sad!.b as string)) {
-          throw new DatabaseOperationError("Retained public opening does not authenticate its accepted event.");
-        }
-      }
+      if (raw) this.publicOpening(event.said!);
       yield messagize(event, raw ?? new Uint8Array(), { gvrsn: Vrsn_2_0 });
     }
   }

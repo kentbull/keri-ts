@@ -52,6 +52,9 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       addStoreOptions(
         registry.command("incept")
           .description("Create a local credential registry")
+          .option("--native", "Use native ACDC v2 registry acceptance")
+          .option("--with-custody", "Provision encrypted derivation custody after accepted inception")
+          .option("--discloser <aid>", "Explicit designated custody participant")
           .requiredOption("--registry-name <name>", "Registry name")
           .option("--usage <text>", "Human-readable registry usage for multisig proposals")
           .option("--timeout <seconds>", "Wait for local TEL publication (default: 60; 0 returns pending state)")
@@ -95,6 +98,9 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       addStoreOptions(
         vc.command("create")
           .description("Create and issue a registry-backed credential")
+          .option("--native", "Use native ACDC v2 issuance")
+          .option("--public", "Deliberately publish the BUP opening; otherwise derive from custody")
+          .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
           .requiredOption("--registry-name <name>", "Registry name")
           .option(
             "--timeout <seconds>",
@@ -117,6 +123,47 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       args: dispatchArgs,
     },
   );
+
+  registerDispatchedCommand(
+    addHabOption(addStoreOptions(
+      vc.command("update")
+        .description("Advance native BUP state; never authors historical upd")
+        .requiredOption("--registry-name <name>", "Native registry alias")
+        .requiredOption("--said <said>", "Locally issued credential")
+        .requiredOption("--state <state>", "New explicit state")
+        .option("--timeout <seconds>", "Wait for exact native acceptance (default: 60)")
+        .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
+        .option("--public", "Deliberately publish the opening"),
+    )),
+    dispatch,
+    {
+      name: "vc.update",
+      load: () => import("../commands/native-authoring.ts"),
+      exportName: "nativeUpdateCommand",
+      args: dispatchArgs,
+    },
+  );
+  const custody = registry.command("custody").description("Explicit protected custody operator handoff");
+  for (const operation of ["import", "export"] as const) {
+    const command = addHabOption(addStoreOptions(
+      custody.command(operation)
+        .option("--registry-name <name>", "Native registry alias")
+        .option("--registry <said>", "Accepted registry SAID for a designated remote discloser")
+        .requiredOption("--file <path>", "Protected mode0600 plaintext handoff artifact"),
+    ));
+    if (operation === "import") {
+      command.requiredOption("--controller <aid>", "Expected registry controller").requiredOption(
+        "--discloser <aid>",
+        "Expected designated discloser",
+      ).option("--rewrap", "Explicitly rewrap an existing custody record under this Keeper");
+    }
+    registerDispatchedCommand(command, dispatch, {
+      name: `vc.registry.custody.${operation}`,
+      load: () => import("../commands/native-authoring.ts"),
+      exportName: operation === "import" ? "custodyImportCommand" : "custodyExportCommand",
+      args: dispatchArgs,
+    });
+  }
 
   registerKeriCliCommand(
     addStoreOptions(
@@ -165,6 +212,9 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
     addStoreOptions(
       vc.command("revoke")
         .description("Revoke a local credential")
+        .option("--native", "Use a native ACDC v2 revoked BUP")
+        .option("--public", "Deliberately publish the BUP opening; otherwise derive from custody")
+        .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")
         .option("-a, --alias <alias>", "Human readable alias for the local identifier")
         .requiredOption("--registry-name <name>", "Registry name")
         .requiredOption("--said <said>", "Credential SAID")

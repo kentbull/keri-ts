@@ -182,7 +182,7 @@ function onCurrentRegistryBranch(db: Baser, issuer: string, anchor: SerderKERI):
 }
 
 /** Match only the selected digest/couple/triple shapes, without dropping supplied coordinates. */
-function matchesRegistrySeal(candidate: unknown, event: SerderACDC): boolean {
+export function matchesRegistrySeal(candidate: unknown, event: SerderACDC): boolean {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
   const seal = candidate as Record<string, unknown>;
   const fields = Object.keys(seal).sort().join(",");

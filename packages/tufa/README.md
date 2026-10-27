@@ -60,3 +60,27 @@ disclosed credential. A second/full disclosure has its own Grant key; reads do
 not merge private material or assert current standing. Legacy `vc list/export`
 and ordinary `ipex admit` retain their existing paths. Native negotiation,
 anchored Admit publication, groups and custody remain separate operations.
+
+## Native registry authoring
+
+Use `vc registry incept --native --registry-name NAME --alias AID_ALIAS`, then
+`vc create --native --registry-name NAME --alias AID_ALIAS --data JSON`. Native
+create/revoke default to derived custody; `--public` deliberately publishes the
+BUP opening instead. `vc update --registry-name NAME --alias AID_ALIAS --said CREDENTIAL --state STATE` advances native BUP state. `vc revoke --native` uses the
+same exact acceptance path. Legacy commands retain their existing defaults.
+
+Provision explicitly with inception's `--with-custody` and optional `--discloser`.
+An encrypted authenticated Keeper is required. `vc registry custody export` writes
+an exclusive protected `--file`; `import` requires explicit `--controller` and
+`--discloser`, and optionally `--rewrap` after Keeper AEID replacement. Select a
+local `--registry-name` or accepted `--registry` SAID for a remote designated
+discloser. Transfer the plaintext artifact over an authenticated private operator
+channel; the CLI does not distribute secrets. Derived state commands accept
+`--bound-event` for an exact witnessed Issuee event. Groups remain a separate
+approval workflow.
+
+Native success JSON follows exact anchored acceptance and joined store cleanup.
+A timeout or receipt failure leaves protocol staging for explicit retry; retrying
+uses the same already signed KEL seal rather than making another anchor. Ordinary
+registrar replay distributes public evidence; native authoring does not revive
+historical `upd`, use TEL backers, or claim peer delivery from local acceptance.

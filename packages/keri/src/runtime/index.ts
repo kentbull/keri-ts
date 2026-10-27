@@ -377,6 +377,7 @@ export {
   type RegistryObserverDecision,
 } from "../acdc/observing.ts";
 export {
+  matchesRegistrySeal,
   type RegistryBindingEvidence,
   type RegistryDisclosure,
   type RegistryEvidence,
@@ -387,6 +388,13 @@ export {
   vetBinds,
   vetBlind,
 } from "../acdc/regeventing.ts";
+/** Native ACDC services are distinct from the legacy VDR Regery/Registry exports. */
+export {
+  createRegery as createNativeRegery,
+  Regery as NativeRegery,
+  Registry as NativeRegistry,
+} from "../acdc/registraring.ts";
+export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,
