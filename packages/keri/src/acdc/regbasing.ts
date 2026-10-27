@@ -3,7 +3,7 @@ import { b, Diger, NumberPrimitive, Saider, SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "../db/core/lmdber.ts";
-import { B64OnIoSetSuber, CatCesrSuber, CesrOnSuber, CesrSuber, SerderSuber } from "../db/subing.ts";
+import { B64OnIoSetSuber, BytesSuber, CatCesrSuber, CesrOnSuber, CesrSuber, SerderSuber } from "../db/subing.ts";
 
 /** Registry paths retain the existing .tufa default and explicit .keri compatibility mode. */
 export interface RegBaserOptions extends LMDBerOptions {
@@ -23,6 +23,8 @@ export class RegBaser extends LMDBer {
   tels!: CesrOnSuber<Saider>;
   /** Registry-SAID -> current accepted head SAID; physical heds. is rebuildable from tels. */
   heads!: CesrSuber<Saider>;
+  /** Event-SAID -> one deliberately published counted BSQ/BSS opening; never private custody. */
+  openings!: BytesSuber;
 
   /** Event-SAID -> earliest verified KEL source couple, in the current store. */
   ancs!: CatCesrSuber<[NumberPrimitive, Diger]>;
@@ -55,6 +57,7 @@ export class RegBaser extends LMDBer {
       this.evts = new SerderSuber(this, { subkey: "evts.", ctor: SerderACDC });
       this.tels = new CesrOnSuber(this, { subkey: "tels.", ctor: Saider });
       this.heads = new CesrSuber(this, { subkey: "heds.", ctor: Saider });
+      this.openings = new BytesSuber(this, { subkey: "openings." });
       this.ancs = new CatCesrSuber(this, { subkey: "ancs.", ctor: [NumberPrimitive, Diger] });
       this.maes = new B64OnIoSetSuber(this, { subkey: "maes." });
       this.ooes = new B64OnIoSetSuber(this, { subkey: "ooes." });

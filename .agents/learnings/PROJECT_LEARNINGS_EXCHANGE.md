@@ -191,8 +191,10 @@ grants remain evidence; no automatic revalidation or global freshness is implied
 Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
 receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee
-source triples. Bind the exact grant target at the inclusive receipt cutoff;
-later accepted TEL updates cannot refresh it. Preserve missing proof escrow and
+source triples. Bind the exact grant target at the highest accepted BUP actually
+sealed by the verified Issuee source. Completed receiver KRAM remains a separate
+acceptance prerequisite; its timestamp does not select TEL history or infer
+publication time. Later accepted TEL updates cannot refresh the old source proof. Preserve missing proof escrow and
 independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
 
 The four multisig event builders carry one MultisigEventProposal with correlated

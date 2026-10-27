@@ -1,5 +1,5 @@
-/** Public registry intake; pinned KERIpy main exposes vetting but no corresponding parser route. */
-import { Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
+/** Public native registry intake with event-local opening preflight and durable retention. */
+import { type BlindState, type BoundState, bytesEqual, Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
 import { type RegistryEventDecision, RegistryEventer } from "./regengine.ts";
@@ -9,8 +9,15 @@ import {
   validateRegistrySourceLocators,
   validateRip,
   validateUpdate,
+  vetBlind,
 } from "./regeventing.ts";
-import type { RegistryStore } from "./registering.ts";
+import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
+
+/** Typed public attachments deliberately carried on this native TEL frame only. */
+export interface RegistryIntakeEvidence extends RegistrySourceLocators {
+  bsqs?: readonly BlindState[];
+  bsss?: readonly BoundState[];
+}
 
 /** An update may arrive before its issuer can be recovered from the inception body. */
 export type RegistryObserverDecision =
@@ -29,10 +36,20 @@ export class RegistryObserver {
   constructor(readonly db: Baser, readonly store: RegistryStore) {}
 
   /** Stage parsed events before inception, otherwise delegate ordinary validation and acceptance. */
-  processEvent(serder: SerderACDC, locators: RegistrySourceLocators = {}): RegistryObserverDecision {
+  processEvent(serder: SerderACDC, locators: RegistryIntakeEvidence = {}): RegistryObserverDecision {
     const result = serder.ilk === Ilks.rip ? validateRip(serder) : validateUpdate(serder, serder.regid ?? "");
     if (result.kind === "reject") return result;
     const event = result.event;
+    const openings = [...locators.bsqs ?? [], ...locators.bsss ?? []], opening = openings[0];
+    if (openings.length > 1 || (opening && event.ilk !== Ilks.bup)) return { kind: "reject", reason: "disclosure" };
+    if (opening) {
+      if (!vetBlind(opening, serder.sad!.b as string)) return { kind: "reject", reason: "disclosure" };
+      const old = this.store.opening(event.said), stored = this.store.event(event.said);
+      if (
+        (old && !bytesEqual(old, publicOpeningAttachment(opening)))
+        || (stored && !bytesEqual(stored.raw, serder.raw))
+      ) return { kind: "reject", reason: "disclosure" };
+    }
     // Unknown registry routing cannot rely on a stored RIP to validate its qualified SAID.
     try {
       if (new Diger({ qb64: event.regid }).qb64 !== event.regid) return { kind: "reject", reason: "registry" };
@@ -48,7 +65,9 @@ export class RegistryObserver {
       engine ??= new RegistryEventer(this.db, event.issuer, this.store, event.regid);
     }
     if (engine) {
-      return engine.processEvent(serder, locators);
+      const decision = engine.processEvent(serder, locators);
+      if (decision.kind !== "reject" && opening) this.store.retainOpening(serder, opening);
+      return decision;
     }
     if (!validateRegistrySourceLocators(serder, this.db, null, locators)) return { kind: "reject", reason: "anchor" };
     // Issuer/anchor discovery is impossible until RIP arrives; the existing anchor escrow owns this body.
@@ -57,6 +76,7 @@ export class RegistryObserver {
     return baser.env!.transactionSync(() => {
       this.store.putEvent(serder);
       this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
+      if (opening) this.store.retainOpening(serder, opening);
       return { kind: "escrow", reason: "inception", event } as const;
     });
   }

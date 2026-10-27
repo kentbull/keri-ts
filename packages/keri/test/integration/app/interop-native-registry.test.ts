@@ -6,7 +6,9 @@ import { fromFileUrl } from "jsr:@std/path";
 import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
+import { publicOpeningAttachment } from "../../../src/acdc/registering.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
+import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
@@ -18,6 +20,7 @@ const peer = fromFileUrl(new URL("../../fixtures/native_registry_peer.py", impor
 interface NativeEvidence {
   rip: string;
   update: string;
+  publicUpdate: string;
   laterUpdate: string;
   credential: string;
   opening: { d: string; u: string; td: string; ts: string; bn: string; bd: string };
@@ -37,6 +40,8 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const later = new SerderACDC({ raw: b(evidence.laterUpdate) });
     const acdc = new SerderACDC({ raw: b(evidence.credential) });
     const blinder = BoundState.fromSad(evidence.opening);
+    const [published] = parseBytes(b(evidence.publicUpdate));
+    assertEquals(BoundState.qb64(envelopeFromFrame(published).bsss[0]), BoundState.qb64(blinder));
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
     await run(function*() {
       const hby = yield* createHabery(options);
@@ -46,8 +51,14 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
       const url = `http://127.0.0.1:${server.addr.port}/`;
       try {
         for (const frame of parseBytes(b(evidence.kel))) yield* call(() => post(url, frame));
-        for (const body of [rip, update, later]) {
-          yield* call(() => post(url, { body, attachments: [], gvrsn: Vrsn_2_0 }));
+        for (
+          const frame of [{ body: rip, attachments: [], gvrsn: Vrsn_2_0 }, published, {
+            body: later,
+            attachments: [],
+            gvrsn: Vrsn_2_0,
+          }]
+        ) {
+          yield* call(() => post(url, frame));
         }
         assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, later.said);
         assertEquals(t(runtime.acdc!.store.event(update.said!)!.raw), evidence.update);
@@ -64,6 +75,10 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
       try {
         const store = runtime.acdc!.store;
         assertEquals(store.head(rip.said!)?.qb64, later.said);
+        assertEquals(store.opening(update.said!), publicOpeningAttachment(blinder), "published proof survives reopen");
+        assertEquals(store.opening(later.said!), null, "opaque suffix stays private");
+        const replayed = parseBytes(store.cloneTel(rip.said!));
+        assertEquals(BoundState.qb64(envelopeFromFrame(replayed[1]).bsss[0]), BoundState.qb64(blinder));
         const chain = {
           db: hby.db,
           rip: store.event(rip.said!)!,

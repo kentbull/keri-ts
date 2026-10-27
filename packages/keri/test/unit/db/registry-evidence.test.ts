@@ -1,17 +1,31 @@
 /** Public registry intake preserves accepted prefixes and current storage bytes across reopen. */
-import { b, BoundState, Diger, NumberPrimitive, parseBytes, SerderACDC } from "cesr-ts";
+import {
+  b,
+  BlindState,
+  BoundState,
+  concatBytes,
+  Counter,
+  Diger,
+  makeBlindState,
+  NumberPrimitive,
+  parseBlinder,
+  parseBytes,
+  SerderACDC,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
-import { vetBinds } from "../../../src/acdc/regeventing.ts";
-import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { type RegistryDisclosure, vetBinds } from "../../../src/acdc/regeventing.ts";
+import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
+import { messagize } from "../../../src/core/protocol-serialization.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {
@@ -127,11 +141,52 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
     const observer = new RegistryObserver(hby.db, store);
     const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
     const issued = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d);
+    const opening = BlindState.fromSad(fixture.disclosures.issued);
+    const boundOpening = BoundState.fromSad(fixture.disclosures["bound-interaction"]);
+    const bound = blindate(rip.said!, issued.said!, boundOpening.d.nonce, { sn: 2 });
+    const intake = function*(event: SerderACDC, proofs: readonly RegistryDisclosure[] = []) {
+      const attachments = proofs.map((proof) =>
+        Counter.enclose({
+          code: "bn" in proof ? "BoundStateSextuples" : "BlindedStateQuadruples",
+          version: Vrsn_2_0,
+          qb64: "bn" in proof ? BoundState.qb64b(proof) : BlindState.qb64b(proof),
+        })
+      );
+      const [frame] = parseBytes(messagize(event, concatBytes(...attachments), { gvrsn: Vrsn_2_0 }));
+      return (yield* dispatchEnvelope(
+        envelopeFromFrame(frame),
+        hby.rvy,
+        hby.kevery,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        hby.kevery,
+        observer,
+      )).decision;
+    };
     try {
-      assertEquals(observer.processEvent(rip).kind, "escrow");
-      assertEquals(observer.processEvent(issued).kind, "escrow");
+      for (
+        const [event, proofs] of [[rip, [opening]], [issued, [opening, opening]], [issued, [
+          BlindState.fromSad(fixture.disclosures.vacuous),
+        ]]] as const
+      ) {
+        assertEquals(yield* intake(event, proofs), { kind: "reject", reason: "disclosure" });
+        assertEquals(store.event(event.said!), null, "bad public openings cannot stage an event");
+      }
+      assertEquals([...baser.openings.getTopItemIter()], []);
+      assertThrows(() => store.retainOpening(rip, opening), Error, "verified BUP");
+      assertThrows(() => store.retainOpening(issued, opening), Error, "exact stored event body");
+      assertEquals((yield* intake(issued, [opening]))?.kind, "escrow", "public opening arrives before RIP or KEL");
+      assertEquals((yield* intake(bound, [boundOpening]))?.kind, "escrow");
+      const publicBytes = store.opening(issued.said!)!;
+      assertExists(publicBytes);
+      yield* baser.close(false);
+      yield* baser.reopen({ reuse: true });
+      assertEquals(store.opening(issued.said!), publicBytes, "unaccepted published evidence survives reopen");
+      assertEquals((yield* intake(rip))?.kind, "escrow");
       assertEquals([store.head(rip.said!), ...[0, 1].map((sn) => store.seqSaider(rip.said!, sn))], [null, null, null]);
-      for (const [sn, event] of [rip, issued].entries()) {
+      for (const [sn, event] of [rip, issued, bound].entries()) {
         const anchor = issuer.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] });
         const wires = sn ? [anchor] : [acceptedEventReplayMessage(source, issuer.pre, 0).message, anchor];
         for (const wire of wires) {
@@ -146,20 +201,53 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
       }
       assertEquals(hby.habs.size, 0, "the registry issuer is independently controlled");
       assertEquals(observer.processEvent(rip).kind, "duplicate");
-      assertEquals(store.head(rip.said!)!.qb64, issued.said, "prefix replay cannot downgrade the head");
+      assertEquals(store.head(rip.said!)!.qb64, bound.said, "prefix replay cannot downgrade the head");
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
       assertEquals(store.seqEvent(rip.said!, 0)!.raw, rip.raw);
       assertEquals(store.seqEvent(rip.said!, 1)!.raw, issued.raw);
-      for (const event of [issued, issued]) assertEquals(observer.processEvent(event).kind, "duplicate");
-      assertEquals([...baser.tels.getTopItemIter(rip.said!)].length, 2);
-      const bad = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d, { sn: 2 });
+      const replay = store.cloneTel(rip.said!);
+      const frames = parseBytes(replay);
+      assertEquals(frames.map((frame) => frame.body.raw), [rip.raw, issued.raw, bound.raw]);
+      assertEquals(envelopeFromFrame(frames[1]).bsqs.map(BlindState.qb64), [BlindState.qb64(opening)]);
+      assertEquals(envelopeFromFrame(frames[2]).bsss.map(BoundState.qb64), [BoundState.qb64(boundOpening)]);
+      for (let twice = 0; twice < 2; twice++) {
+        for (const frame of parseBytes(replay)) {
+          const decision = yield* dispatchEnvelope(
+            envelopeFromFrame(frame),
+            hby.rvy,
+            hby.kevery,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            hby.kevery,
+            observer,
+          );
+          assertEquals(decision.decision?.kind, "duplicate");
+        }
+        assertEquals(store.cloneTel(rip.said!), replay, "exact public replay is idempotent");
+      }
+      assertEquals([...baser.tels.getTopItemIter(rip.said!)].length, 3);
+      const bad = blindate(rip.said!, rip.said!, fixture.disclosures.issued.d, { sn: 3 });
       assertEquals(observer.processEvent(bad), { kind: "reject", reason: "prior" });
       assertEquals(store.event(bad.said!), null);
-      assertEquals(store.head(rip.said!)!.qb64, issued.said);
-      const distant = blindate(rip.said!, issued.said!, fixture.disclosures.issued.d, { sn: 16384 });
+      assertEquals(store.head(rip.said!)!.qb64, bound.said);
+      const distant = blindate(rip.said!, bound.said!, fixture.disclosures.issued.d, { sn: 16384 });
       assertEquals(observer.processEvent(distant).kind, "escrow", "missing evidence, not an event-count quota");
-      assertEquals(store.head(rip.said!)!.qb64, issued.said);
+      assertEquals(store.head(rip.said!)!.qb64, bound.said);
+      const rival = blindate(rip.said!, rip.said!, fixture.disclosures.vacuous.d);
+      assertEquals((yield* intake(rival, [BlindState.fromSad(fixture.disclosures.vacuous)]))?.kind, "reject");
+      assertEquals(store.opening(rival.said!), null, "a refused rival cannot acquire a published opening");
+      assertEquals(store.cloneTel(rip.said!), replay, "nonaccepted candidates never enter accepted replay");
+      baser.openings.pin(issued.said!, concatBytes(publicBytes, publicBytes));
+      assertEquals(
+        yield* intake(issued, [opening]),
+        { kind: "reject", reason: "disclosure" },
+        "retained conflict precedes duplicate success",
+      );
+      assertThrows(() => store.cloneTel(rip.said!), Error, "Corrupt retained public opening");
+      baser.openings.pin(issued.said!, publicBytes);
       const unknown = new SerderACDC({ raw: b(fixture.bodies.rip) }).said!;
       for (const regid of [rip.said!, unknown]) {
         const huge = blindate(regid, regid, fixture.disclosures.issued.d, {
@@ -168,6 +256,14 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
         assertEquals(observer.processEvent(huge), { kind: "reject", reason: "ordinalRange" });
         assertEquals(store.event(huge.said!), null, "unsafe ordinals cannot reach pre-inception staging");
       }
+      const promoted = makeBlindState({ state: "x".repeat(20_000) });
+      const large = blindate(rip.said!, bound.said!, promoted.d.nonce, { sn: 3 });
+      const seal = issuer.interact({ data: [{ i: rip.said!, s: "3", d: large.said! }] });
+      for (const frame of parseBytes(seal)) yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+      assertEquals((yield* intake(large, [promoted]))?.kind, "accept");
+      assertEquals(parseBlinder(store.opening(large.said!)!, Vrsn_2_0, "txt").name, "BigBlindedStateQuadruples");
+      const [largeReplay] = parseBytes(store.cloneTel(rip.said!, 3));
+      assertEquals(BlindState.qb64(envelopeFromFrame(largeReplay).bsqs[0]), BlindState.qb64(promoted));
     } finally {
       yield* baser.close(true);
       yield* source.close(true);
@@ -189,6 +285,7 @@ Deno.test("current registry store reopens readonly without changing evidence", a
         const store = new RegistryStore(writer);
         store.accept(rip.said!, 0, rip);
         store.accept(rip.said!, 1, issued);
+        store.retainOpening(issued, BlindState.fromSad(fixture.disclosures.issued));
         store.putAnchor(issued.said!, NumberPrimitive.fromNum(1n), new Diger({ qb64: issued.said! }));
       } finally {
         yield* writer.close();
@@ -198,7 +295,12 @@ Deno.test("current registry store reopens readonly without changing evidence", a
       try {
         const store = new RegistryStore(reader);
         assertEquals(store.seqEvent(rip.said!, 0)!.raw, rip.raw);
-        assertEquals(store.cloneTel(rip.said!, 1), issued.raw);
+        assertEquals(
+          store.cloneTel(rip.said!, 1),
+          messagize(issued, publicOpeningAttachment(BlindState.fromSad(fixture.disclosures.issued)), {
+            gvrsn: Vrsn_2_0,
+          }),
+        );
         assertEquals(store.anchor(issued.said!)![0].num, 1n);
         assertEquals([...reader.maes.getTopItemIter()], []);
         assertEquals([...reader.ooes.getTopItemIter()], []);
@@ -228,6 +330,7 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
       assertEquals(store.opened, true);
       assertEquals(store.records, null);
       assertEquals(baser.hasTable("ancs."), true);
+      assertEquals(baser.hasTable("openings."), true);
       for (const sn of [-1, Number.MAX_SAFE_INTEGER + 1, NaN]) {
         assertThrows(() => store.seqEvent(rip.said!, sn), RangeError, "safe integer");
         assertThrows(() => store.accept(rip.said!, sn, vacuous), RangeError, "safe integer");
@@ -239,6 +342,18 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
       assertEquals([...baser.maes.getTopItemIter()], []);
       store.putEvent(issued);
       assertEquals(store.event(issued.said!)!.raw, issued.raw);
+      baser.evts.pin(issued.said!, vacuous);
+      assertThrows(
+        () => store.retainOpening(issued, BlindState.fromSad(fixture.disclosures.issued)),
+        Error,
+        "exact stored event body",
+      );
+      store.putEvent(issued);
+      assertThrows(
+        () => store.retainOpening(issued, BlindState.fromSad(fixture.disclosures.vacuous)),
+        Error,
+        "event commitment",
+      );
       assertEquals(store.head(rip.said!), null, "a stored body is not an acceptance marker");
       assertEquals(store.seqEvent(rip.said!, 1), null);
       store.accept(rip.said!, 0, rip);
@@ -246,9 +361,10 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
       assertEquals(store.head(rip.said!)!.qb64, issued.said);
       assertEquals(store.headEvent(rip.said!)!.raw, issued.raw);
       assertEquals(store.seqSaider(rip.said!, 0)!.qb64, rip.said);
-      assertEquals([...store.cloneTelIter(rip.said!)], [rip.raw, issued.raw]);
-      assertEquals(store.cloneTel(rip.said!), new Uint8Array([...rip.raw, ...issued.raw]));
-      assertEquals(store.cloneTel(rip.said!, 1), issued.raw);
+      const opaque = [rip, issued].map((event) => messagize(event, new Uint8Array(), { gvrsn: Vrsn_2_0 }));
+      assertEquals([...store.cloneTelIter(rip.said!)], opaque);
+      assertEquals(store.cloneTel(rip.said!), concatBytes(...opaque));
+      assertEquals(store.cloneTel(rip.said!, 1), messagize(issued, new Uint8Array(), { gvrsn: Vrsn_2_0 }));
       assertEquals(store.cloneTel(rip.said!, 2), new Uint8Array());
       assertEquals(store.cloneTel("unknown"), new Uint8Array());
       const early = NumberPrimitive.fromNum((1n << 64n) + 3n);
@@ -282,7 +398,7 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
       assertEquals(store.anchor(issued.said!)![0].num, late.num);
       assertEquals(baser.maes!.get(rip.said!, 1), [[issued.said!], [vacuous.said!]]);
       assertEquals(baser.ooes!.get(rip.said!, 1), [[issued.said!]]);
-      assertEquals(store.cloneTel(rip.said!, 1), issued.raw);
+      assertEquals(store.cloneTel(rip.said!, 1), messagize(issued, new Uint8Array(), { gvrsn: Vrsn_2_0 }));
       store.clearEscrows(rip.said!, 1, issued.said!);
       assertEquals(baser.maes!.get(rip.said!, 1), [[vacuous.said!]]);
       assertEquals(baser.ooes!.get(rip.said!, 1), []);
@@ -315,8 +431,9 @@ Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", 
       presenter.interact({ data: [{ i: presenting.regk!, s: "0", d: presenting.regk! }] });
       rgy.processEscrows();
       const acdc = acdcmap(issuer.pre, { regid: issuing.regk, attribute: { d: "", name: "Alice" } });
-      const [issued] = issuing.blind(acdc, "issued", options);
+      const [issued, issuedEvent] = issuing.blind(acdc, "issued", options);
       assertEquals([issued.td.nonce, issued.ts.text], [acdc.said, "issued"]);
+      assertEquals(rgy.store.opening(issuedEvent.said!), null, "returning a local/private opening does not publish it");
       const bodies = [...baser.evts.getTopItemIter()].length;
       assertThrows(() => presenting.present("bad"), Error, "valid grant SAID");
       assertThrows(() => presenting.present({ said: null }), Error, "valid grant SAID");
