@@ -1,9 +1,9 @@
 /** Native candidate proof APIs in both directions; TS intake uses the ordinary HTTP listener. */
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { b, BlindState, BoundState, makeBlindState, parseBytes, SerderACDC, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../../src/acdc/registering.ts";

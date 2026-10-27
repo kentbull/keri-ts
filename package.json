@@ -11,7 +11,8 @@
     "packages/tufa",
     "packages/keri",
     "packages/cesr",
-    "packages/verifier"
+    "packages/verifier",
+    "packages/hosting"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",

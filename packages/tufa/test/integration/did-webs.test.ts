@@ -1,3 +1,5 @@
+import { startServer } from "@keri-ts/hosting";
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { action, call, type Operation, run, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
@@ -12,8 +14,6 @@ import {
 import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
 import { httpClient } from "../../../keri/test/support/http-client.ts";
-import { startServer } from "../../src/host/http-server.ts";
-import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
 import { reserveTcpPort, startTestServer, waitForServer, waitForTaskHalt } from "../test-helpers.ts";
 
 Deno.test("tufa/dkr - HTTP waits for every supplied introduction on the existing host", async () => {

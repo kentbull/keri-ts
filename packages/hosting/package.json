@@ -1,0 +1,11 @@
+{
+  "name": "@keri-ts/hosting",
+  "version": "2.0.0",
+  "description": "HTTP host lifecycle, application middleware and protocol route composition",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentbull/keri-ts.git",
+    "directory": "packages/hosting"
+  }
+}

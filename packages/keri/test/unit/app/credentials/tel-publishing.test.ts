@@ -1,6 +1,6 @@
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes } from "jsr:@std/assert";
-import { createProtocolHandler } from "../../../../../tufa/src/http/protocol-handler.ts";
 import { runTufa } from "../../../../../tufa/test/test-helpers.ts";
 import { publishPendingTel } from "../../../../src/app/credentials/tel-publishing.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";

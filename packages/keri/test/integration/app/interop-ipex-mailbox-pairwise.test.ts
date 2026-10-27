@@ -3,12 +3,12 @@ import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
 
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { collectPayload, framePayload, parseBytes, Prefixer, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { decodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";

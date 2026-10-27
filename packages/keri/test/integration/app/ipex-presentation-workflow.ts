@@ -3,6 +3,7 @@ import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
 
+import { createProtocolHandler } from "@keri-ts/hosting";
 import {
   type CesrFrame,
   collectPayload,
@@ -18,7 +19,6 @@ import {
 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap, acmSchemaDefault } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";

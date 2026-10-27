@@ -1,5 +1,6 @@
 /** Compile-only installed application composition through supported public package declarations. */
 import { VerifierAgent, type VerifierCueBaser, createVerifierCueBaser } from "@keri-ts/verifier";
+import { createProtocolHandler, createTufaApp, runHostKernel, startServer } from "@keri-ts/hosting";
 import type { AgentRuntime } from "keri-ts/runtime";
 
 /** Compose the application without a private protocol import or dependency-discovery container. */
@@ -13,3 +14,6 @@ export function verifier(runtime: AgentRuntime, cdb: VerifierCueBaser, hook: str
 
 /** Expose the concrete application's storage acquisition type to the installed compiler. */
 export const cueStore = createVerifierCueBaser;
+
+/** Expose the concrete hosting composition surface to the installed compiler. */
+export const hosting = { createProtocolHandler, createTufaApp, runHostKernel, startServer };

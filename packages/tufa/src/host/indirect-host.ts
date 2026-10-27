@@ -1,6 +1,6 @@
+import { runHostKernel } from "@keri-ts/hosting";
 import type { Operation } from "effection";
 import type { Hab, Habery } from "keri-ts/runtime";
-import { runHostKernel } from "./kernel.ts";
 
 /** Shared long-lived indirect-host settings used by `agent` and mailbox hosts. */
 export interface IndirectHostOptions {

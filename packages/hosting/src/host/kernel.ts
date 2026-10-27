@@ -28,7 +28,7 @@ export interface HostKernelHttpSpec {
   onListen?: (address: HttpListenAddress) => void;
 }
 
-/** Package-internal host-kernel configuration for one long-lived role host. */
+/** Concrete host-kernel configuration for one long-lived role host. */
 export interface HostKernelSpec {
   /** Whether this host constructs provider mailbox storage. */
   enableMailboxStore: boolean;

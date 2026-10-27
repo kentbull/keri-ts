@@ -1,8 +1,8 @@
 /** Mixed-member legacy credential evidence over real HTTP; Python uses public APIs, not KLI join. */
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { concatBytes, parseBytes, type SerderKERI } from "../../../../cesr/mod.ts";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
 import { createHabery } from "../../../src/app/identity/habbing.ts";

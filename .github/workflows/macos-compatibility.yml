@@ -197,6 +197,13 @@ jobs:
           TARBALL="$(npm pack --silent | tail -n 1)"
           echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
 
+      - name: pack hosting npm tarball
+        id: pack-hosting
+        run: |
+          cd packages/hosting/npm
+          TARBALL="$(npm pack --silent | tail -n 1)"
+          echo "tarball=${TARBALL}" >> "$GITHUB_OUTPUT"
+
       - name: smoke test keri-ts tarball on macOS
         # Install and execute the actual packed tarballs on macOS to catch
         # platform-specific npm/bin/runtime issues after packaging.
@@ -205,11 +212,12 @@ jobs:
           CESR_TARBALL="${GITHUB_WORKSPACE}/packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}"
           TUFA_TARBALL="${GITHUB_WORKSPACE}/packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}"
           VERIFIER_TARBALL="${GITHUB_WORKSPACE}/packages/verifier/npm/${{ steps.pack-verifier.outputs.tarball }}"
+          HOSTING_TARBALL="${GITHUB_WORKSPACE}/packages/hosting/npm/${{ steps.pack-hosting.outputs.tarball }}"
           SAMPLE="${GITHUB_WORKSPACE}/samples/cesr-streams/CESR_1_0-oor-auth-vc.cesr"
           TMP_DIR="$(mktemp -d)"
           cd "${TMP_DIR}"
           npm init -y >/dev/null
-          npm install "${CESR_TARBALL}" "${TARBALL}" "${VERIFIER_TARBALL}" "${TUFA_TARBALL}" >/dev/null
+          npm install "${CESR_TARBALL}" "${TARBALL}" "${VERIFIER_TARBALL}" "${HOSTING_TARBALL}" "${TUFA_TARBALL}" >/dev/null
           TUFA_BIN="${TMP_DIR}/node_modules/.bin/tufa"
           test -x "${TUFA_BIN}"
           V1="$("${TUFA_BIN}" version | tr -d '\r')"
@@ -242,5 +250,6 @@ jobs:
             packages/cesr/npm/${{ steps.pack-cesr.outputs.tarball }}
             packages/tufa/npm/${{ steps.pack-tufa.outputs.tarball }}
             packages/verifier/npm/${{ steps.pack-verifier.outputs.tarball }}
+            packages/hosting/npm/${{ steps.pack-hosting.outputs.tarball }}
           if-no-files-found: error
           retention-days: 14

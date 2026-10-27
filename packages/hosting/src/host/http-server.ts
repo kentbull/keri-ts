@@ -1,8 +1,8 @@
 /**
- * Shared HTTP host adapters for the Tufa application edge.
+ * Shared HTTP host adapters for the HTTP application edge.
  *
  * This module owns Deno/Node listener startup, request bridging, and shutdown.
- * Protocol route composition lives under `tufa/src/http`, while route-facing
+ * Protocol route composition lives under `hosting/src/http`, while route-facing
  * policy lives in `keri-ts` through `ProtocolHostPolicy`.
  */
 import { action, call, type Operation } from "effection";
@@ -33,7 +33,7 @@ interface ServerOptions {
   onError: (error: unknown) => Response;
 }
 
-/** Tufa-owned HTTP host options. */
+/** HTTP host options. */
 export interface RuntimeHttpHostOptions extends ProtocolHostPolicy {
   hostname?: string;
   onListen?: (address: { port: number; hostname: string }) => void;
@@ -267,7 +267,7 @@ export function openNodeServerHost(
   };
 }
 
-/** Open one Tufa-owned HTTP host and return its cleanup handle. */
+/** Open one HTTP host and return its cleanup handle. */
 function openServerHost(
   port: number,
   logger: Logger,

@@ -1,3 +1,4 @@
+import { startServer } from "@keri-ts/hosting";
 import { action, call, type Operation, race, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { once } from "node:events";
@@ -11,7 +12,6 @@ import {
   Vrsn_2_0,
   WireParseError,
 } from "../../../../../cesr/mod.ts";
-import { startServer } from "../../../../../tufa/src/host/http-server.ts";
 import { startWitnessTcpServer } from "../../../../../tufa/src/host/witness-tcp.ts";
 import {
   acceptedEventReplayMessage,

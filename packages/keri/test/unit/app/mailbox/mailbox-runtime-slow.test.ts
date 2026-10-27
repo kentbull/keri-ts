@@ -1,3 +1,4 @@
+import { startServer } from "@keri-ts/hosting";
 import { action, call, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, SealSource, SerderKERI, Siger } from "../../../../../cesr/mod.ts";
@@ -8,7 +9,6 @@ import {
   mailboxRemoveCommand,
   mailboxUpdateCommand,
 } from "../../../../../tufa/src/cli/commands/mailbox.ts";
-import { startServer } from "../../../../../tufa/src/host/http-server.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../../src/app/mailbox/mailbox-sse.ts";
 import { mailboxQueryTopics, mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";

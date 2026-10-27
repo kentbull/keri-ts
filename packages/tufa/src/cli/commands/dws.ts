@@ -1,4 +1,5 @@
 /** Long-lived `tufa dws resolver` service command. */
+import { startServer } from "@keri-ts/hosting";
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
@@ -8,7 +9,6 @@ import {
   createAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
-import { startServer } from "../../host/http-server.ts";
 import { setupHby } from "../support/existing.ts";
 
 interface DwsResolverArgs {

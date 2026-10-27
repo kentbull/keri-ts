@@ -3,7 +3,7 @@ import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/asser
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 
-import { startServer } from "../../../../../tufa/src/host/http-server.ts";
+import { startServer } from "@keri-ts/hosting";
 import {
   createAgentRuntime,
   runAgentRuntime,

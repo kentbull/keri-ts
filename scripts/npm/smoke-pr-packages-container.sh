@@ -37,15 +37,16 @@ CESR_TARBALL="${1:-}"
 KERI_TARBALL="${2:-}"
 TUFA_TARBALL="${3:-}"
 VERIFIER_TARBALL="${4:-}"
-if [ -z "${CESR_TARBALL}" ] || [ -z "${KERI_TARBALL}" ] || [ -z "${TUFA_TARBALL}" ] || [ -z "${VERIFIER_TARBALL}" ]; then
-  echo "Usage: smoke-pr-packages-container.sh <cesr-ts.tgz> <keri-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz>" >&2
+HOSTING_TARBALL="${5:-}"
+if [ -z "${CESR_TARBALL}" ] || [ -z "${KERI_TARBALL}" ] || [ -z "${TUFA_TARBALL}" ] || [ -z "${VERIFIER_TARBALL}" ] || [ -z "${HOSTING_TARBALL}" ]; then
+  echo "Usage: smoke-pr-packages-container.sh <cesr-ts.tgz> <keri-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz>" >&2
   exit 1
 fi
 
 WORK_DIR="$(mktemp -d)"
 cd "${WORK_DIR}"
 npm init -y >/dev/null 2>&1
-npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${VERIFIER_TARBALL}" "${TUFA_TARBALL}" >/dev/null
+npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${VERIFIER_TARBALL}" "${HOSTING_TARBALL}" "${TUFA_TARBALL}" >/dev/null
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
 
 cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs /smoke-scripts/keri-consumer.ts /smoke-scripts/tufa-consumer.ts "${WORK_DIR}/"

@@ -13,14 +13,16 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
     packageSmoke: false,
   });
   const source = selectScope({ ...input, files: ["packages/keri/src/core/routing.ts"] });
-  assertEquals(source.unit, { kind: "ci", targets: ["ci", "tufa", "verifier", "cesr", "ci-tools"] });
+  assertEquals(source.unit, { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "cesr", "ci-tools"] });
   assertEquals(source.interop, ["interop-parity"]);
   assertEquals(source.packageSmoke, true);
-  assertEquals(selectScope({ ...input, files: ["packages/verifier/src/agent.ts"] }), {
-    unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "cesr", "ci-tools"] },
-    interop: [],
-    packageSmoke: true,
-  });
+  for (const file of ["packages/verifier/src/agent.ts", "packages/hosting/src/http/app.ts"]) {
+    assertEquals(selectScope({ ...input, files: [file] }), {
+      unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "cesr", "ci-tools"] },
+      interop: [],
+      packageSmoke: true,
+    });
+  }
   assertEquals(selectScope({ ...input, release: true, files: ["packages/keri/deno.json"] }), {
     unit: { kind: "ci", targets: [] },
     interop: [],
@@ -45,14 +47,15 @@ Deno.test("PR scope credits local units only for the exact head and retains sele
 
 Deno.test("PR scope uses existing owners and full mode covers the maintained battery", () => {
   assertEquals(
-    requestedScope(block({ unit: [required[0], "tufa", "verifier"], interop: [], package: false }), head)?.unit,
+    requestedScope(block({ unit: [required[0], "tufa", "verifier", "hosting"], interop: [], package: false }), head)
+      ?.unit,
     {
       kind: "ci",
-      targets: [required[0], "tufa", "verifier"],
+      targets: [required[0], "tufa", "verifier", "hosting"],
     },
   );
   assertEquals(requestedScope(block({ full: true }), head), {
-    unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "cesr", "ci-tools"] },
+    unit: { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "cesr", "ci-tools"] },
     interop,
     packageSmoke: true,
   });
@@ -84,7 +87,7 @@ Deno.test("PR scope cannot downscope fork checks through its description", () =>
     sameRepository: false,
     release: false,
   });
-  assertEquals(result.unit, { kind: "ci", targets: ["ci", "tufa", "verifier", "cesr", "ci-tools"] });
+  assertEquals(result.unit, { kind: "ci", targets: ["ci", "tufa", "verifier", "hosting", "cesr", "ci-tools"] });
   assertEquals(result.interop, ["interop-parity"]);
   assertEquals(result.packageSmoke, true);
 });
