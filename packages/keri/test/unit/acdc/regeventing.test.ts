@@ -280,10 +280,44 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
   assertEquals(validateUpdate(body("wrong-prior"), rip.said!, rip.said!), { kind: "reject", reason: "prior" });
   assertEquals(validateUpdate(body("gap"), rip.said!).kind, "valid", "sequence continuity belongs to the engine");
   assertEquals(validateUpdate(update, rip.said!, rip.said!).kind, "valid");
-  assertEquals(validateUpdate(blindate(rip.said!, rip.said!, update.sad!.b as string, { sn: 0 }), rip.said!), {
-    kind: "reject",
-    reason: "sequence",
-  });
+  // Received bodies still reach native validation even when the public builder refuses them.
+  const received = (fields: Record<string, string>, inception = false) => {
+    const authored = new SerderACDC({ sad: { ...(inception ? rip.sad : update.sad), ...fields }, makify: true });
+    return new SerderACDC({ raw: authored.raw });
+  };
+  for (const n of ["0", "01", "A", "0a", "100000000000000000000000000000000"]) {
+    assertEquals(validateUpdate(received({ n }), rip.said!), { kind: "reject", reason: "sequence" }, n);
+  }
+  assertEquals(validateRip(received({ n: "00" }, true)), { kind: "reject", reason: "sequence" });
+  for (const n of ["a", "ffffffffffffffffffffffffffffffff"]) {
+    assertEquals(validateUpdate(received({ n }), rip.said!).kind, "valid", n);
+  }
+  for (
+    const dt of [
+      "2024-02-29T01:02:03.123456+05:30",
+      "2024-02-29T01:02:03.123456-03:30",
+    ]
+  ) {
+    assertEquals(validateUpdate(received({ dt }), rip.said!).kind, "valid", dt);
+    assertEquals(validateRip(received({ dt }, true)).kind, "valid", dt);
+  }
+  for (
+    const dt of [
+      "2024-02-29T01:02:03.123456Z",
+      "2024-02-29T01:02:03+00:00",
+      "2024-02-29T01:02:03.12345+00:00",
+      "2024-02-29T01:02:03.1234567+00:00",
+      "0000-02-29T01:02:03.123456+00:00",
+      "2023-02-29T01:02:03.123456+00:00",
+      "2024-02-30T01:02:03.123456+00:00",
+      "2024-02-29T24:02:03.123456+00:00",
+      "2024-02-29T01:02:03.123456+24:00",
+      "2024-02-29T01:02:03.123456+01:60",
+    ]
+  ) {
+    assertEquals(validateUpdate(received({ dt }), rip.said!), { kind: "reject", reason: "timestamp" }, dt);
+    assertEquals(validateRip(received({ dt }, true)), { kind: "reject", reason: "timestamp" }, dt);
+  }
 });
 Deno.test("local registry anchors require exact supplied coordinates and verified witness receipts", async () => {
   await run(function*() {
@@ -479,7 +513,7 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
       const first = blindate(rip.said!, rip.said!, blid);
       const second = blindate(rip.said!, first.said!, blid, { sn: 2 });
       const wrong = blindate(rip.said!, rip.said!, blid, { sn: 2 });
-      const competitor = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00Z" });
+      const competitor = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00.000000+00:00" });
       assertEquals(engine.processEvent(first), { kind: "reject", reason: "event" });
       issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
       assertEquals(engine.processEvent(rip).kind, "accept");
@@ -572,7 +606,7 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
       const blid = fixture.disclosures.issued.d;
       const candidates = [0, 1, 2].map((second) =>
         blindate(rip.said!, rip.said!, blid, {
-          stamp: `2026-10-13T01:00:0${second}Z`,
+          stamp: `2026-10-13T01:00:0${second}.000000+00:00`,
         })
       );
       for (const event of candidates) assertEquals(engine.processEvent(event).kind, "escrow");
@@ -594,7 +628,7 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
       const tied = [0, 1].map((second) =>
         blindate(rip.said!, winner.said!, blid, {
           sn: 2,
-          stamp: `2026-10-13T01:01:0${second}Z`,
+          stamp: `2026-10-13T01:01:0${second}.000000+00:00`,
         })
       ).sort((a, b) => a.said! < b.said! ? -1 : 1);
       for (const event of [...tied].reverse()) engine.processEvent(event);
@@ -659,7 +693,7 @@ Deno.test("registry queued replay retains first anchors and advances a contiguou
       const blid = fixture.disclosures.issued.d;
       const first = blindate(rip.said!, rip.said!, blid);
       const winner = blindate(rip.said!, first.said!, blid, { sn: 2 });
-      const loser = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T02:00:00Z" });
+      const loser = blindate(rip.said!, first.said!, blid, { sn: 2, stamp: "2026-10-13T02:00:00.000000+00:00" });
       const third = blindate(rip.said!, winner.said!, blid, { sn: 3 });
       const stale = blindate(rip.said!, first.said!, blid, { sn: 3 });
       for (const event of [first, loser, winner, stale, third]) engine.processEvent(event);
@@ -881,7 +915,7 @@ Deno.test("registry blind updates extend one staged frontier across reopen and r
       const issuer = hby.makeHab("issuer"), other = hby.makeHab("other");
       let registry = rgy.makeRegistry("local", issuer.pre);
       const regid = registry.regk!, acdc = acdcmap(issuer.pre, { regid, attribute: { d: "", name: "Alice" } });
-      const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001Z" };
+      const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001+00:00" };
       assertThrows(() => registry.blind(acdc, "issued", options), Error, "must be anchored");
       issuer.interact({ data: [{ i: regid, s: "0", d: regid }] });
       assertEquals(registry.anchorMsg(regid).kind, "accept");
@@ -958,7 +992,7 @@ Deno.test("registry blind updates extend one staged frontier across reopen and r
         rgy.store.putEvent = put;
       }
       assertEquals(baser.maes!.get(regid, 4), []);
-      const siblings = ["2026-10-13T02:00:00Z", "2026-10-13T02:00:01Z"].map((stamp) =>
+      const siblings = ["2026-10-13T02:00:00.000000+00:00", "2026-10-13T02:00:01.000000+00:00"].map((stamp) =>
         blindate(regid, third.said!, issued.d.nonce, { sn: 4, stamp })
       );
       for (const event of siblings) registry.processEvent(event);
@@ -1123,7 +1157,7 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       const wrongRegistry = blindate(first.said!, first.said!, blid);
       assertEquals(observer.processEvent(wrongRegistry), { kind: "reject", reason: "registry" });
       assertEquals(store.event(wrongRegistry.said!), null);
-      const competitor = blindate(regid, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00Z" });
+      const competitor = blindate(regid, first.said!, blid, { sn: 2, stamp: "2026-10-13T01:00:00.000000+00:00" });
       assertEquals(observer.processEvent(competitor), { kind: "reject", reason: "duplicity" });
       assertEquals(store.head(regid)!.qb64, second.said);
       const third = blindate(regid, second.said!, blid, { sn: 3 });

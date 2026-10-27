@@ -141,7 +141,11 @@ later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.
 Share parsed rip/bup validation and one registry-seal matcher across observer and
-local processing. Accept only `{d}`, `{s,d}`, or `{i,s,d}` with every supplied
+local processing. Native ordinals use canonical lowercase hex without leading zeros
+within 128 bits; BUP authoring requires a positive ordinal. Native timestamps carry
+six fractional digits and a numeric offset, with real calendar/offset validation.
+Historical `upd` bytes remain serializable and decodable; live dispatch explicitly
+refuses them. Accept only `{d}`, `{s,d}`, or `{i,s,d}` with every supplied
 coordinate matching. Both stateless vetting and durable discovery require the
 current accepted KEL head's prior-digest ancestry and that event's historical
 witness quorum. Superseded ordinal buckets retain history, not new TEL authority.

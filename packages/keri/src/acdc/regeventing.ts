@@ -96,9 +96,15 @@ export type RegistryEventValidation =
 function normalizeEvent(event: SerderACDC): RegistryEventValidation {
   if (!event.verify() || (event.ilk !== Ilks.rip && event.ilk !== Ilks.bup)) return { kind: "reject", reason: "event" };
   const sequence = event.sad?.n;
-  if (typeof sequence !== "string" || !/^[0-9a-fA-F]+$/.test(sequence) || ordinal(event) >= 2n ** 128n) {
+  if (typeof sequence !== "string" || !/^(0|[1-9a-f][0-9a-f]*)$/.test(sequence) || ordinal(event) >= 2n ** 128n) {
     return { kind: "reject", reason: "sequence" };
   }
+  const stamp = event.sad?.dt;
+  if (
+    typeof stamp !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}[+-]\d{2}:\d{2}$/.test(stamp)
+    || stamp.startsWith("0000-")
+    || timestampMicros(stamp) === null
+  ) return { kind: "reject", reason: "timestamp" };
   return {
     kind: "valid",
     event: {

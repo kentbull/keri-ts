@@ -3,6 +3,7 @@ import { assertEquals } from "jsr:@std/assert";
 import {
   Diger,
   NumberPrimitive,
+  parseBytes,
   Prefixer,
   SealEvent,
   SealSource,
@@ -11,7 +12,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import { blindate, regcept } from "../../../../src/acdc/messaging.ts";
+import { blindate, regcept, update as historicalUpdate } from "../../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
 import { encodeHugeNumber } from "../../../../src/app/identity/keeping.ts";
 import {
@@ -208,6 +209,16 @@ Deno.test("native registry dispatch recovers foreign dependencies across reopen 
       try {
         const issuer = sender.makeHab("issuer");
         const rip = regcept(issuer.pre);
+        for (const kind of ["JSON", "CESR"] as const) {
+          const historical = historicalUpdate(rip.said!, rip.said!, rip.said!, "issued", { kind });
+          const [parsed] = yield* call(() => parseBytes(historical.raw));
+          assertEquals(parsed.body.ilk, "upd", "historical serialization and decoding remain available");
+          assertEquals(parsed.body.raw, historical.raw);
+          assertEquals((yield* runtime.protocol.dispatch(parsed)).decision, { kind: "reject", reason: "event" });
+          assertEquals(runtime.acdc!.store.head(rip.said!), null);
+          assertEquals(runtime.acdc!.baser.maes.get(rip.said!, 1), []);
+          assertEquals((yield* protocolFixture(hby).dispatch(parsed)).decision, { kind: "reject", reason: "event" });
+        }
         const update = blindate(rip.said!, rip.said!, rip.said!);
         issuer.interact({ data: [{ i: rip.said, s: "0", d: rip.said }] });
         issuer.interact({ data: [{ i: rip.said, s: "1", d: update.said }] });
