@@ -7,11 +7,12 @@
  */
 import { call, type Operation, scoped } from "effection";
 import { vcCreateCommand as create, vcRegistryInceptCommand as incept, vcRevokeCommand as revoke } from "keri-ts/cli";
-import { parseStringOption } from "keri-ts/cli";
+import { parseBooleanOption, parseStringOption } from "keri-ts/cli";
 import { ValidationError } from "keri-ts/runtime";
 import { withAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import { nativeAuthorCommand } from "./native-authoring.ts";
 
 /** List explicit native inventory references, separately from legacy verifier-saved credentials. */
 export function* walletListCommand(args: Record<string, unknown>): Operation<void> {
@@ -42,6 +43,10 @@ export function* walletReadCommand(args: Record<string, unknown>): Operation<voi
 
 /** Display the created registry or group proposal, after its owned resources close. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
+  if (parseBooleanOption(args.native, "native")) {
+    yield* nativeAuthorCommand(args, "incept");
+    return;
+  }
   const { name, registry, issuer, group, publicationComplete } = yield* incept(args);
   const identity = { name, registry, issuer, publicationComplete };
   if (group) {
@@ -60,6 +65,10 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
 
 /** Project credential identity and typed issuance outcomes into the CLI JSON record. */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
+  if (parseBooleanOption(args.native, "native")) {
+    yield* nativeAuthorCommand(args, "issue");
+    return;
+  }
   const { creder, tel, status, group, publicationComplete } = yield* create(args);
   const issued = {
     said: creder.said,
@@ -87,6 +96,10 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
 
 /** Render revocation after its host and database owners close; keep proposal sends distinct from delivery. */
 export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
+  if (parseBooleanOption(args.native, "native")) {
+    yield* nativeAuthorCommand(args, "revoke");
+    return;
+  }
   const { said, tel, status, accepted, publicationComplete, deliveries, group } = yield* revoke(args);
   writeJsonLine({
     said,

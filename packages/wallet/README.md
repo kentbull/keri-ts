@@ -26,6 +26,24 @@ Exchanger replay without asserting current issuer standing or graph validity.
 
 Issuance operations and negotiation are separate from inventory and custody.
 
+## Native authoring
+
+`WalletAuthor(wallet, nativeRegery, receiptor, custody?)` borrows the same public
+registry environment and actual receipt collector. `incept` returns an exact
+accepted RIP; `create` uses the existing ACDC builder; `issue`, `update` and
+`revoke` stage BUPs and return only after the exact KEL seal has authenticated
+historical witness quorum. `update` is a state advance, never historical `upd`.
+Groups require their separate member-approval workflow.
+
+Public authoring explicitly retains and publishes its event opening. Derived
+authoring requires provisioned custody and retains exact nonsecret coordinates
+before processing, including a matching pending retry. A supplied `boundEvent`
+must be an accepted witnessed Issuee event; a new bound BUP requires the known
+current event. Retries reuse stored BUP bytes and an already signed current-branch
+KEL seal, even when receipts were missing. They do not author another anchor just
+to poll. Issuance inventory follows accepted TEL evidence and preserves the
+original issuance reference after later state advances or revocation.
+
 ## Optional protected custody
 
 `RegistryCustody({hby, registry, db})` is an explicit capability over the existing
