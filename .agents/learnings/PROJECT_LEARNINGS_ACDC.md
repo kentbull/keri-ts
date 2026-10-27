@@ -125,6 +125,13 @@ RegistryObserver intake owns per-event engine publication. Normal dispatch route
 to this owner; runtime retries snapshot both durable escrow tables before writes,
 including foreign registries with no local aliases after reopen. Supplied anchored
 prefixes cannot hide an unanchored suffix.
+RegistryStore retains deliberately published native BUP openings by event SAID in
+the required current-schema openings table. Intake preflights zero-or-one BSQ/BSS,
+exact BLID and retained bytes before staging, then retains against the exact stored
+body after non-refusal. Pending material is not acceptance. Accepted cloneTel replay
+uses framed exact bodies and retained counted openings, with an empty foot otherwise;
+event/seqEvent remain raw access. Replay validates without writing, including readonly
+stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
 Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
 checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied
 TEL SAID and verifies its contiguous anchored prefix; omission checks the full current

@@ -12,7 +12,7 @@ from keri import Vrsn_2_0
 from keri.acdc.messaging import acdcmap, blindate, regcept
 from keri.acdc.regeventing import vet, vetBinds
 from keri.app import openHby
-from keri.core import Blinder, BlindState, BoundState, DigDex, Diger, Kevery, Parser, SerderACDC
+from keri.core import Blinder, BlindState, BoundState, Codens, Counter, DigDex, Diger, Kevery, Parser, SerderACDC
 
 
 def author():
@@ -32,11 +32,14 @@ def author():
         assert Diger(raw=hashlib.sha256(material).digest(),
                      code=DigDex.SHA2_256).qb64 == opening.said
         update = blindate(rip.said, rip.said, opening.said)
+        public_update = bytes(update.raw) + bytes(Counter.enclose(qb64=Blinder.enclose([opening]),
+                                                                code=Codens.AttachmentGroup, version=Vrsn_2_0))
         issuer.interact(data=[dict(i=rip.said, s="1", d=update.said)], gvrsn=Vrsn_2_0)
         opaque = Blinder.blind(acdc=credential.said, state="revoked", sn=2)
         later = blindate(rip.said, update.said, opaque.said, sn=2)
         issuer.interact(data=[dict(i=rip.said, s="2", d=later.said)], gvrsn=Vrsn_2_0)
         return dict(rip=rip.raw.decode(), update=update.raw.decode(),
+                    publicUpdate=public_update.decode(),
                     laterUpdate=later.raw.decode(),
                     credential=credential.raw.decode(), opening=opening.crew._asdict(),
                     kel=b"".join(message for hab in (issuer, issuee)

@@ -1,10 +1,55 @@
-/** Storage-only facade for public registry evidence and local registry aliases. */
-import { type Diger, type NumberPrimitive, Saider, type SerderACDC } from "cesr-ts";
+/** Public registry evidence storage, exact opening verification and accepted replay. */
+import {
+  BlindState,
+  BoundState,
+  bytesEqual,
+  Counter,
+  type Diger,
+  Ilks,
+  isGroupTuple,
+  type NumberPrimitive,
+  parseBlinder,
+  Saider,
+  type SerderACDC,
+  Vrsn_2_0,
+} from "cesr-ts";
 import type { Operation } from "effection";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
+import { messagize } from "../core/protocol-serialization.ts";
 import { RawRecord } from "../core/records.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
+import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
+
+/** Encode one deliberately public opening using its exact primitive representations. */
+export function publicOpeningAttachment(opening: RegistryDisclosure): Uint8Array {
+  return Counter.enclose({
+    code: "bn" in opening ? "BoundStateSextuples" : "BlindedStateQuadruples",
+    version: Vrsn_2_0,
+    qb64: "bn" in opening ? BoundState.qb64b(opening) : BlindState.qb64b(opening),
+  });
+}
+
+/** Decode one retained counted tuple through the existing CESR codec and semantic descriptors. */
+function retainedOpening(raw: Uint8Array): RegistryDisclosure {
+  const parsed = parseBlinder(raw, Vrsn_2_0, "txt"), tuple = parsed.items[0];
+  if (parsed.consumed !== raw.length || parsed.items.length !== 1 || !tuple || !isGroupTuple(tuple)) {
+    throw new DatabaseOperationError("Corrupt retained public opening.");
+  }
+  const fields = tuple.map((field) => {
+    if (isGroupTuple(field) || !("qb64b" in field)) throw new DatabaseOperationError("Corrupt retained opening tuple.");
+    return field.qb64b;
+  });
+  if (
+    (parsed.name === "BlindedStateQuadruples" || parsed.name === "BigBlindedStateQuadruples") && fields.length === 4
+  ) {
+    return BlindState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3]]);
+  }
+  if ((parsed.name === "BoundStateSextuples" || parsed.name === "BigBoundStateSextuples") && fields.length === 6) {
+    return BoundState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]]);
+  }
+  throw new DatabaseOperationError("Corrupt retained public opening family.");
+}
 
 /** Local v2 aliases store only their public registry key, separately from legacy VDR records. */
 export interface RegistryRecordShape {
@@ -46,7 +91,8 @@ function registryOrdinal(sn: number): number {
 
 /**
  * Wrap a supplied RegBaser without opening another environment. Reads and writes
- * are storage operations: callers authenticate events/anchors and decide acceptance.
+ * retain public bytes; retainOpening checks the exact body and BLID. Callers
+ * authenticate KEL anchors and decide TEL acceptance.
  * Explicit close delegates to the supplied owner; construction adds no lifetime scope.
  * Local aliases are optional; public observer stores need only evidence tables.
  */
@@ -99,6 +145,33 @@ export class RegistryStore {
   putEvent(serder: SerderACDC): boolean {
     return this.baser.evts.pin(serder.said!, serder);
   }
+  /** Read deliberately published opening bytes for this exact event, without creating evidence. */
+  opening(said: string): Uint8Array | null {
+    return this.baser.openings.get(said);
+  }
+  /** Retain one authentic public BUP opening only against its exact already-stored body. */
+  retainOpening(event: SerderACDC, opening: RegistryDisclosure): RegistryDisclosure {
+    if (event.ilk !== Ilks.bup || !event.verify()) throw new ValidationError("Public opening requires a verified BUP.");
+    const stored = this.event(event.said!);
+    if (!stored || !bytesEqual(stored.raw, event.raw)) {
+      throw new ValidationError("Public opening requires the exact stored event body.");
+    }
+    if (!vetBlind(opening, event.sad!.b as string)) {
+      throw new ValidationError("Public opening does not match the event commitment.");
+    }
+    const raw = publicOpeningAttachment(opening), old = this.opening(event.said!);
+    if (old) {
+      if (!bytesEqual(old, raw)) {
+        throw new ValidationError("A different public opening is already retained for this event.");
+      }
+    } else if (!this.baser.openings.put(event.said!, raw)) {
+      const retained = this.opening(event.said!);
+      if (!retained || !bytesEqual(retained, raw)) {
+        throw new ValidationError("A different public opening is already retained for this event.");
+      }
+    }
+    return opening;
+  }
   /** Read a stored source couple. */
   anchor(said: string): [NumberPrimitive, Diger] | null {
     if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
@@ -134,11 +207,19 @@ export class RegistryStore {
     this.baser.tels.putOn(regk, sn, said);
     this.baser.heads.pin(regk, said);
   }
-  /** Yield stored accepted bodies from the inclusive ordinal; skip missing bodies like the reference. */
+  /** Yield accepted public TEL frames, with a retained opening or an explicit empty attachment foot. */
   *cloneTelIter(regk: string, sn = 0): Generator<Uint8Array> {
     for (const [, , said] of this.baser.tels.getAllItemIter(regk, registryOrdinal(sn))) {
       const event = this.event(said.qb64);
-      if (event) yield event.raw;
+      if (!event) continue;
+      const raw = this.opening(event.said!);
+      if (raw) {
+        const opening = retainedOpening(raw);
+        if (event.ilk !== Ilks.bup || !event.verify() || !vetBlind(opening, event.sad!.b as string)) {
+          throw new DatabaseOperationError("Retained public opening does not authenticate its accepted event.");
+        }
+      }
+      yield messagize(event, raw ?? new Uint8Array(), { gvrsn: Vrsn_2_0 });
     }
   }
   /** Eagerly collect accepted TEL bytes in ordinal order. */
