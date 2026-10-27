@@ -89,6 +89,8 @@ tracks historical readers, safe conversion boundaries and the linked Python port
 - SAID exclusions omit fields only from hashing after complete SAD size calculation;
   the returned SAD/raw retains them. Missing ignored fields reject.
 - Tholder uses exact semantic thresholds and left-to-right clause slots. Its
+  numeric thresholds count distinct already-verified signer indices, not signature
+  occurrences; the primitive does not verify signatures or impose index bounds.
   1,000-weight/65,536-character defaults are deployment limits, including qualified
   input (an intentional correction to frozen Python's limen bypass). Numeric
   thresholds retain their domain. The configurable caps are the accepted narrow
