@@ -74,6 +74,7 @@ export function authenticateIpexNode(
   envelope: IpexNodeProofs,
   db: Baser,
   registry: RegistryStore | null,
+  historical = false,
 ): IpexNodeAuthentication {
   if (serder.regid) {
     const proofs = [...envelope.bsqs, ...envelope.bsss];
@@ -83,12 +84,46 @@ export function authenticateIpexNode(
     // RIP establishes the registry but cannot bind a credential. Ordinary ingress
     // may retry this grant before the first BUP arrives; that is still a dependency.
     if (!chain.updates.length) return { kind: "missing", reason: `Missing issuer TEL update for ${serder.regid}.` };
+    let at: string | undefined;
+    if (historical) {
+      if (!serder.verify() || serder.issuer !== chain.rip.issuer || serder.regid !== chain.rip.said) {
+        return { kind: "reject" };
+      }
+      // Authenticate all supplied bodies/duplicates and known bound contradictions
+      // before missing evidence wins, independently of attachment order.
+      if (
+        proofs.some((proof) => !vetBlind(proof, proof.d.nonce))
+        || new Set(proofs.map((proof) => proof.d.nonce)).size !== proofs.length
+      ) return { kind: "reject" };
+      let unresolved = false;
+      for (const proof of proofs) {
+        if (proof.td.nonce && proof.td.nonce !== serder.said) continue;
+        const bound = vetBound(proof, serder, db);
+        if (bound?.kind === "reject") return { kind: "reject" };
+        if (bound) unresolved = true;
+      }
+      const selected = [];
+      for (const proof of proofs) {
+        if (proof.td.nonce !== serder.said) continue;
+        const matches = chain.updates.filter((event) => event.sad!.b === proof.d.nonce);
+        if (matches.length > 1) return { kind: "reject" };
+        if (matches.length) selected.push(matches[0]);
+        else unresolved = true;
+      }
+      if (unresolved) return { kind: "missing", reason: `Missing retained issuer proof evidence for ${serder.said}.` };
+      if (!selected.length) return { kind: "reject" };
+      const candidates = new Set(selected.map((event) => event.said));
+      // Accepted history is ascending. Vacuous and other-target openings cannot
+      // advance this issuer prefix; generic source locators never select it.
+      at = chain.updates.findLast((event) => candidates.has(event.said))!.said!;
+    }
     const result = vetBinds({
       ...chain,
       db,
       blinders: proofs,
       target: serder.said!,
       acdc: serder,
+      at,
     });
     if (result.kind === "missing" && result.reason === "anchor") {
       return { kind: "missing", reason: `Missing issuer TEL anchor for ${serder.regid}.` };

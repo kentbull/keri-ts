@@ -33,7 +33,7 @@ import {
   type MissingExchangeState,
   verifyExchangeProofs,
 } from "../../core/exchange/exchange-proofing.ts";
-import { supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
+import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
@@ -122,6 +122,8 @@ export interface ExchangeRouteHandler {
     mailboxAid?: string | null;
     /** Qualified first receiver receipt, retained through dependency retry. */
     receiverTime?: string;
+    /** Read-only retained inspection may select exact issuer prefixes from its carried openings. */
+    historical?: boolean;
   }): ExchangeRouteVerification;
   /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
@@ -415,7 +417,7 @@ export class Exchanger {
     prepared: PreparedExchangeEvidence,
   ): ExchangeAdmission {
     const said = args.serder.said!;
-    const authentication = this.authenticate(args.serder, resolved, handler);
+    const authentication = this.authenticate(args.serder, resolved, handler, this.cues);
     const cues: AgentCue[] = [];
     if (authentication.kind === "reject") return { decision: authentication, cues };
     let pending = authentication.kind === "escrow"
@@ -469,7 +471,9 @@ export class Exchanger {
       }
     }
     if (pending && this.complete(said)) return { decision: pending, cues };
-    if (prepared.nests) publishNests(this.hby.db, said, prepared.nests);
+    const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
+      && this.complete(said);
+    if (prepared.nests && !retainedIpex) publishNests(this.hby.db, said, prepared.nests);
     let newEscrow = false;
     if (!pending && approved) {
       this.clearEscrow(said, true);
@@ -638,6 +642,35 @@ export class Exchanger {
   }
 
   /**
+   * Reauthenticate one accepted body and its exact retained view through its
+   * registered route. No queries, writes, handling or notices occur. Historical
+   * mode proves retained issuer prefixes, not current standing, graph policy or
+   * consent; the default continues to require current issuer history.
+   */
+  verifyAccepted(said: string, route: string, { historical = false }: { historical?: boolean } = {}): boolean {
+    const serder = this.hby.db.exns.get([said]);
+    if (!serder || serder.route !== route || !serder.verify()) return false;
+    const handler = this.versionedRoutes.get(route)?.get(serder.pvrsn.major) ?? this.routes.get(route);
+    if (!handler?.verify) return false;
+    const args = this.escrowInput(serder);
+    if (this.verifyEssr(serder, args.essrs)) return false;
+    const approved = this.authenticate(serder, this.resolveProofs(args), handler, new Deck<AgentCue>());
+    if (approved.kind !== "verified") return false;
+    const meta = this.hby.db.exchangeMeta.get([said]);
+    return handler.verify({
+      serder,
+      attachments: normalizeAttachments(args.ptds ?? []),
+      essrs: args.essrs,
+      nests: loadNests(this.hby.db, said),
+      mailboxAid: meta?.mailboxAid,
+      receiverTime: storedReceiverTime(meta),
+      historical,
+      ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
+      ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
+    }) === true;
+  }
+
+  /**
    * Elect the lowest verified index in the first authenticated sender proof group.
    *
    * Like KERIpy, choose one stored establishment group deterministically. Require
@@ -695,11 +728,12 @@ export class Exchanger {
     }
     return result;
   }
-  /** Match sender-factor precedence and let the registered route select supplemental evidence. */
+  /** Match sender-factor precedence; the caller supplies live admission or isolated inspection cues. */
   private authenticate(
     serder: SerderKERI,
     resolved: ResolvedExchangeFactors,
     handler: ExchangeRouteHandler | undefined,
+    queries: Deck<AgentCue>,
   ):
     | AuthenticatedExchange
     | (
@@ -714,7 +748,7 @@ export class Exchanger {
     const cigars = senderTsgs.length && !handler?.verifyEvidence ? [] : resolved.cigars;
     const senderCigars = cigars.filter((cigar) => cigar.verfer?.qb64 === sender);
     const extraCigars = cigars.filter((cigar) => cigar.verfer?.qb64 !== sender);
-    this.cueMissingStates(resolved.missing);
+    for (const cue of this.missingStateCues(resolved.missing)) queries.push(cue);
     if (
       resolved.missing.length && (!handler?.acceptsMissingEvidence || resolved.missing.some((m) => m.pre === sender))
     ) {
@@ -731,7 +765,7 @@ export class Exchanger {
       sourceSeals: resolved.sourceSeals.filter((seal) => seal.i.qb64 === sender),
     });
     if (sealed.missing.length) {
-      this.cueMissingStates(sealed.missing);
+      for (const cue of this.missingStateCues(sealed.missing)) queries.push(cue);
       return {
         kind: handler?.acceptsSscs ? "escrow" : "reject",
         ...(!handler?.acceptsSscs ? { preserveEscrow: true as const } : {}),
@@ -781,7 +815,7 @@ export class Exchanger {
       });
       // Each reference helper invocation deduplicates its own coordinate list. Do not
       // re-query unresolved last groups when passing them on to the selection hook.
-      this.cueMissingStates(missing);
+      for (const cue of this.missingStateCues(missing)) queries.push(cue);
       if (missing.length && !handler.acceptsMissingEvidence) {
         return { kind: "reject", said, preserveEscrow: true, reason: "Missing supplemental proof key state." };
       }
@@ -810,11 +844,6 @@ export class Exchanger {
       },
     };
   }
-  /** Missing-key queries describe observed facts even when later validation or storage fails. */
-  private cueMissingStates(missing: readonly MissingExchangeState[]): void {
-    for (const cue of this.missingStateCues(missing)) this.cues.push(cue);
-  }
-
   /** Match _cueMissingKeyState's coordinate deduplication within this invocation. */
   private missingStateCues(missing: readonly MissingExchangeState[]): AgentCue[] {
     const cues: AgentCue[] = [];
