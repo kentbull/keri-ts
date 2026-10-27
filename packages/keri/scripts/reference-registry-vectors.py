@@ -9,9 +9,7 @@ from keri.core import Blinder, BoundState, SerderACDC, Salter, Diger
 from keri.core import mapping
 from keri.acdc import messaging, regeventing
 
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
-# Frozen timestamp-cutoff cases retain historical behavior. Selected-candidate
-# authenticated historical-head selection is qualified separately by parity row09.
+REFERENCE = "08af0bcf093e41ac337e4f1a4b4a19c8e244f1e3"
 root = pathlib.Path(regeventing.__file__).resolve().parents[3]
 
 
@@ -59,7 +57,7 @@ def update(name, rip, prior, target, state, sn, stamp, bound=False):
 
 
 def attributes(name):
-    """Author the flat exposed attribute commitment before using the frozen builder."""
+    """Author the flat exposed attribute commitment before using the credential builder."""
     return mapping.Compactor(mad=dict(d="", name=name), kind=kering.Kinds.json,
                              makify=True).mad
 
@@ -76,7 +74,7 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
     stranger = hby.makeHab(name="stranger")
     wires.extend(bytes(hab.msgOwnEvent(sn=0)).decode() for hab in (issuer, stranger))
 
-    def case(name, rip="rip", updates=(), acdc=None, blinder=None, blinders=None, target=None, cutoff=None, source=None, controller=None, requireSource=False):
+    def case(name, rip="rip", updates=(), acdc=None, blinder=None, blinders=None, target=None, cutoff=None, at=None, source=None, controller=None, requireSource=False):
         """Run the unmodified reference and preserve its decision and complete state."""
         args = dict(rip=bodies[rip], updates=[bodies[key] for key in updates], db=hby.db)
         if acdc is not None:
@@ -87,17 +85,19 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
             args["blinder"] = disclosures[blinder]
         if blinders is not None:
             args.update(blinders=[disclosures[key] for key in blinders], target=bodies[target].said,
-                        controller=controller, cutoff=cutoff, requireSource=requireSource)
+                        controller=controller, cutoff=cutoff, at=bodies[at].said if at else None, requireSource=requireSource)
         try:
             state = (regeventing.vetBinds if blinders is not None else regeventing.vet)(**args)._asdict()
             state["sn"] = str(state["sn"])
             outcome = dict(kind="verified", state=state)
+        except kering.MissingBlindError:
+            outcome = dict(kind="missing", reason="disclosure")
         except kering.MissingAnchorError:
             outcome = dict(kind="missing", reason="anchor")
         except kering.ValidationError as error:
             outcome = dict(kind="reject", reason=reasons[type(error).__name__])
         cases.append(dict(name=name, through=len(wires), rip=rip, updates=list(updates), acdc=acdc,
-                          blinder=blinder, blinders=blinders, target=target, cutoff=cutoff,
+                          blinder=blinder, blinders=blinders, target=target, cutoff=cutoff, at=at,
                           source=source, controller=controller, requireSource=requireSource, expected=outcome))
 
     rip = body("rip", messaging.regcept(israid=issuer.pre, uuid=salt, stamp=stamp0))
@@ -135,15 +135,26 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
     revoked = update("revoked", rip, vacuous, acdc.said, "revoked", 3, stamp3)
     anchor(issuer, vacuous, revoked)
     case("unordered duplicate chain", updates=["revoked", "issued", "vacuous", "issued"], acdc="acdc", blinder="revoked")
-    case("historical binding behind vacuous head", updates=["issued", "vacuous", "revoked"], acdc="acdc", blinders=["issued", "vacuous"], target="acdc", cutoff=stamp2)
-    case("microsecond cutoff", updates=["issued", "vacuous", "revoked"], blinders=["issued"], target="acdc", cutoff=stamp1)
+    case("historical binding behind vacuous head", updates=["issued", "vacuous", "revoked"], acdc="acdc", blinders=["issued", "vacuous"], target="acdc", at="vacuous")
+    case("exact issued head", updates=["issued", "vacuous", "revoked"], blinders=["issued"], target="acdc", at="issued")
+    case("timestamp cutoff refused", updates=["issued"], blinders=["issued"], target="acdc", cutoff=stamp1)
     case("missing intervening disclosure", updates=["issued", "vacuous"], blinders=["issued"], target="acdc")
     case("duplicate disclosure", updates=["issued"], blinders=["issued", "issued"], target="acdc")
     case("required binding source absent", updates=["issued"], blinders=["issued"], target="acdc", requireSource=True)
     case("required binding source supplied", updates=["issued"], blinders=["issued"], target="acdc", source={"issued": first_anchor.sn}, requireSource=True)
     bound = update("bound", rip, rip, acdc.said, "issued", 1, stamp3, bound=True)
     anchor(issuer, bound)
-    case("bound state", updates=["bound"], acdc="acdc", blinder="bound")
+    case("malformed bound state", updates=["bound"], acdc="acdc", blinder="bound")
+    bound_acdc = body("bound-acdc", messaging.acdcmap(israid=issuer.pre, regid=rip.said,
+                      attribute=dict(attributes("Bound Alice"), i=stranger.pre)))
+    good_bound = Blinder(crew=BoundState(d="", u=disclosures["issued"].uuid,
+                         td=bound_acdc.said, ts="issued", bn=f"{stranger.kever.sn:x}",
+                         bd=stranger.kever.serder.said), makify=True)
+    disclosures["bound-interaction"] = good_bound
+    valid_bound = body("bound-interaction", messaging.blindate(regid=rip.said, prior=rip.said,
+                       blid=good_bound.said, sn=1, stamp=stamp3))
+    anchor(issuer, valid_bound)
+    case("bound interaction state", updates=["bound-interaction"], acdc="bound-acdc", blinder="bound-interaction")
     # Each binding rule has an independent target commitment, so equality of the
     # target SAID cannot mask a wrong issuer or credential-to-registry link.
     for key, owner, regid in [("oneway", issuer, None), ("wrong-issuer", stranger, rip.said), ("wrong-rd", issuer, first.said)]:

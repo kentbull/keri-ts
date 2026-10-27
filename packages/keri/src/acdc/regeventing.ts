@@ -44,7 +44,7 @@ export interface RegistryState {
 }
 /** Missing anchors are retryable observations, not a durable escrow operation. */
 export type RegistryRefusal =
-  | { kind: "missing"; reason: "anchor"; issuer: string; said: string }
+  | { kind: "missing"; reason: "anchor" | "disclosure"; issuer: string; said: string }
   | {
     kind: "reject";
     reason:
@@ -279,7 +279,7 @@ function vetAnchor(
 }
 
 /** Authenticate the declared native BLID against the exact carried primitive tuple. */
-function vetBlind(blinder: RegistryDisclosure, blid: string): boolean {
+export function vetBlind(blinder: RegistryDisclosure, blid: string): boolean {
   if (!/^[E-I][A-Za-z0-9_-]{43}$/.test(blid) || blinder.d.nonce !== blid) return false;
   let digest: Diger;
   try {
@@ -291,6 +291,24 @@ function vetBlind(blinder: RegistryDisclosure, blid: string): boolean {
   if (new Diger({ code: digest.code, raw: digest.raw }).qb64 !== blid) return false;
   const redone = "bn" in blinder ? commitBoundState(blinder, digest.code) : commitBlindState(blinder, digest.code);
   return redone.d.nonce === blid;
+}
+
+/** A bound opening names an exact accepted Issuee event, including historical interactions. */
+export function vetBound(blinder: RegistryDisclosure, acdc: SerderACDC | undefined, db: Baser): RegistryRefusal | null {
+  if (!("bn" in blinder)) return null;
+  const number = blinder.bn.num, digest = blinder.bd.nonce;
+  if (!blinder.td.nonce && !blinder.ts.text) {
+    return number === 0n && !digest ? null : { kind: "reject", reason: "binding" };
+  }
+  if (!digest || !acdc || blinder.td.nonce !== acdc.said || !acdc.issuee) return { kind: "reject", reason: "binding" };
+  const issuer = acdc.issuee;
+  const missing: RegistryRefusal = { kind: "missing", reason: "anchor", issuer, said: digest };
+  if (number > BigInt(Number.MAX_SAFE_INTEGER)) return missing;
+  const accepted = db.kels.getLast(issuer, Number(number));
+  if (!accepted) return missing;
+  if (accepted !== digest) return { kind: "reject", reason: "anchor" };
+  const event = db.getEvtSerder(issuer, accepted);
+  return event && db.fullyWitnessed(event) ? null : missing;
 }
 
 /** A registry must bind both the exact credential and its issuer, plus rd when present. */
@@ -353,6 +371,8 @@ export function vet(
   };
   if (head.ilk === Ilks.bup && blinder) {
     if (!vetBlind(blinder, head.sad!.b as string)) return { kind: "reject", reason: "disclosure" };
+    const refusal = vetBound(blinder, acdc, db);
+    if (refusal) return refusal;
     state.acdc = blinder.td.nonce || null;
     state.state = blinder.ts.text || null;
   }
@@ -364,36 +384,41 @@ export function vet(
   return { kind: "verified", state };
 }
 
-/** Node-local disclosures and optional receiver-observed historical cutoff. */
+/** Node-local disclosures and an optional exact historical TEL head. */
 export interface RegistryBindingEvidence extends Omit<RegistryEvidence, "blinder"> {
   blinders: readonly RegistryDisclosure[];
   target: string;
   controller?: string;
+  /** Obsolete timestamp selection is refused; select an exact TEL SAID with at. */
   cutoff?: string;
+  at?: string;
   requireSource?: boolean;
 }
 
 /**
  * Resolve the latest non-vacuous binding behind a verified (possibly historical)
  * head. Every intervening vacuous update needs exactly one authentic disclosure.
- * The caller supplies a trusted receiver timestamp; this creates no KRAM state.
+ * The selected SAID fixes the TEL prefix; neither timestamps nor source hints select it.
  */
 export function vetBinds(
-  { rip, updates = [], db, sources = new Map(), acdc, blinders, target, controller, cutoff, requireSource = false }:
+  { rip, updates = [], db, sources = new Map(), acdc, blinders, target, controller, cutoff, at, requireSource = false }:
     RegistryBindingEvidence,
 ): RegistryVerification {
-  if (cutoff !== undefined) {
-    const when = timestampMicros(cutoff);
-    const inception = timestampMicros(rip.sad?.dt);
-    if (when === null || inception === null) return { kind: "reject", reason: "timestamp" };
-    if (inception > when) return { kind: "reject", reason: "binding" };
-    const selected = [];
+  if (cutoff !== undefined) return { kind: "reject", reason: "event" };
+  if (at !== undefined) {
+    const selected = [rip, ...updates].filter((event) => event.said === at);
+    if (selected.length !== 1) return { kind: "missing", reason: "anchor", issuer: rip.issuer!, said: at };
+    const checked = selected[0].ilk === Ilks.rip ? validateRip(selected[0]) : validateUpdate(selected[0], rip.said!);
+    if (checked.kind === "reject") return checked;
+    const prefix = [];
     for (const update of updates) {
-      const stamp = timestampMicros(update.sad?.dt);
-      if (stamp === null) return { kind: "reject", reason: "timestamp" };
-      if (stamp <= when) selected.push(update);
+      const sequence = update.sad?.n;
+      if (typeof sequence !== "string" || !/^(0|[1-9a-f][0-9a-f]*)$/.test(sequence) || ordinal(update) >= 2n ** 128n) {
+        return { kind: "reject", reason: "sequence" };
+      }
+      if (ordinal(update) <= checked.event.sn) prefix.push(update);
     }
-    updates = selected;
+    updates = prefix;
   }
   const result = vet({ rip, updates, db, sources });
   if (result.kind !== "verified") return result;
@@ -401,10 +426,19 @@ export function vetBinds(
   const newest = [...updates].sort((a, b) => ordinal(a) > ordinal(b) ? -1 : ordinal(a) < ordinal(b) ? 1 : 0);
   for (const update of newest) {
     const matches = blinders.filter((blinder) => blinder.d.nonce === update.sad!.b);
+    if (!matches.length) {
+      if (
+        blinders.some((blinder) => !vetBlind(blinder, blinder.d.nonce))
+        || new Set(blinders.map((blinder) => blinder.d.nonce)).size !== blinders.length
+      ) return { kind: "reject", reason: "disclosure" };
+      return { kind: "missing", reason: "disclosure", issuer: result.state.issuer, said: update.said! };
+    }
     if (matches.length !== 1 || !vetBlind(matches[0], update.sad!.b as string)) {
       return { kind: "reject", reason: "disclosure" };
     }
     const blinder = matches[0];
+    const refusal = vetBound(blinder, acdc, db);
+    if (refusal) return refusal;
     const td = blinder.td.nonce;
     const state = blinder.ts.text;
     if (!td && !state) continue;

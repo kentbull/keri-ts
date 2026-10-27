@@ -125,15 +125,27 @@ RegistryObserver intake owns per-event engine publication. Normal dispatch route
 to this owner; runtime retries snapshot both durable escrow tables before writes,
 including foreign registries with no local aliases after reopen. Supplied anchored
 prefixes cannot hide an unanchored suffix.
-Disclosed issuer/target/rd, blinded/bound state and historical cutoff are separate
-checks. Shared time/mod.ts parsing retains exact microseconds and requires an explicit
-RFC3339 zone; cutoff selection includes events exactly at the supplied timestamp.
+Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
+checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied
+TEL SAID and verifies its contiguous anchored prefix; omission checks the full current
+head. Timestamp cutoffs are refused. A missing opening is retryable only after checking
+supplied opening bodies and duplicate commitments for contradictions.
+After BLID authentication, bound openings require the disclosed target ACDC's Issuee
+and exact accepted bn/bd event with historical witness quorum. Interactions qualify;
+current-head ancestry and establishment-key signature policy do not apply to this
+historical reference. Vacuous bound openings require bn=0 and empty bd.
 IPEX borrows RegistryStore and collects accepted updates without an event quota.
 Ordinals must remain exactly representable by the numeric storage API; an existing
 head with missing accepted rows is corruption.
-Supplied chain authentication does not prove global freshness. IPEX
-presentation cutoffs use completed receiver-observed KRAM time, retained through
-dependency escrow and reopen. An accepted source naming a not-yet-accepted registry
+Supplied chain authentication does not prove global freshness. IPEX presentations
+select the highest accepted BUP actually sealed by a verified Issuee SST, retaining
+the explicit binding-source requirement. Generic node source hints do not select
+issuer history. Missing selected presentation openings are refused. Issuer proof
+retry requires a self-valid target opening absent from accepted BUP commitments;
+known-old or unrelated proofs remain refused, and known bound contradictions win
+before unresolved proofs. Completed receiver-observed KRAM time remains required
+for presentation acceptance, independent of TEL selection,
+retained through dependency escrow and reopen. An accepted source naming a not-yet-accepted registry
 update stays retryable even when its RIP has arrived; intermediate ingress sweeps
 must not turn that missing dependency into a binding rejection. An issuer RIP
 without its first BUP likewise leaves registry-backed authentication pending. Partial group signatures do not complete that time;

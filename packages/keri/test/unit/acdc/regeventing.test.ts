@@ -1,4 +1,4 @@
-/** Frozen registry decisions use independently signed KELs through the real runtime. */
+/** Selected Python registry decisions use independently signed KELs through the real runtime. */
 import {
   b,
   Bexter,
@@ -8,6 +8,7 @@ import {
   concatBytes,
   Diger,
   Labeler,
+  makeBoundState,
   Noncer,
   NumberPrimitive,
   parseBytes,
@@ -94,8 +95,8 @@ Deno.test("shared registry time preserves exact microseconds and injected clock 
   );
 });
 
-Deno.test("v2 registry vetting matches frozen decisions through missing evidence, binding and historical changes", async () => {
-  assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
+Deno.test("v2 registry vetting matches selected Python decisions through missing evidence, binding and historical changes", async () => {
+  assertEquals(fixture.reference, "08af0bcf093e41ac337e4f1a4b4a19c8e244f1e3");
   const bodies = new Map(Object.entries(fixture.bodies).map(([name, raw]) => [name, new SerderACDC({ raw: b(raw) })]));
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-vetting-${crypto.randomUUID()}`, temp: true, skipConfig: true });
@@ -122,6 +123,7 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
             blinders: row.blinders.map(disclosure),
             target: bodies.get(row.target!)!.said!,
             cutoff: row.cutoff ?? undefined,
+            at: row.at ? bodies.get(row.at)!.said! : undefined,
             controller: row.controller ?? undefined,
             requireSource: row.requireSource,
           })
@@ -155,35 +157,42 @@ Deno.test("v2 registry vetting matches frozen decisions through missing evidence
         blinders: [disclosure("issued")],
         target: bodies.get("acdc")!.said!,
       };
-      // The frozen issued state includes its exact timestamp and stays selected one microsecond later.
-      const expected = fixture.cases.find((row) => row.name === "microsecond cutoff")!.expected;
-      assertEquals(vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000000Z" }), {
-        kind: "reject",
-        reason: "binding",
-      });
-      for (const cutoff of ["2026-10-13T01:00:01.000001Z", "2026-10-13T01:00:01.000002Z"]) {
-        const result = vetBinds({ ...args, cutoff });
-        assertEquals(result.kind, "verified", cutoff);
-        if (result.kind === "verified") {
-          assertEquals<unknown>(
-            { ...result, state: { ...result.state, sn: result.state.sn.toString() } },
-            expected,
-            cutoff,
+      const historical = { ...args, updates: [bodies.get("issued")!, bodies.get("vacuous")!, bodies.get("revoked")!] };
+      const at = bodies.get("issued")!.said!;
+      for (let reopen = 0; reopen < 2; reopen++) {
+        const exact = vetBinds({ ...historical, at });
+        assertEquals(exact.kind, "verified", "opaque later updates do not change exact historical authentication");
+        if (exact.kind === "verified") {
+          assertEquals([exact.state.said, exact.state.sn, exact.state.state], [at, 1n, "issued"]);
+        }
+        assertEquals(vetBinds(historical).kind, "missing", "current standing needs the later opening");
+        const current = vetBinds({
+          ...historical,
+          blinders: [disclosure("issued"), disclosure("vacuous"), disclosure("revoked")],
+        });
+        assertEquals(current.kind, "verified");
+        if (current.kind === "verified") assertEquals([current.state.sn, current.state.state], [3n, "revoked"]);
+        for (const blinders of [[disclosure("issued"), disclosure("issued")], [disclosure("tampered")]]) {
+          assertEquals(
+            vetBinds({ ...historical, blinders }),
+            { kind: "reject", reason: "disclosure" },
+            "missing state cannot hide contradictory openings",
           );
         }
+        for (const selected of ["", bodies.get("substitute")!.said!]) {
+          assertEquals(vetBinds({ ...historical, at: selected }).kind, "missing");
+        }
+        assertEquals(
+          vetBinds({ ...historical, at, updates: [...historical.updates, bodies.get("issued")!] }).kind,
+          "missing",
+          "ambiguous historical selector",
+        );
+        assertEquals(vetBinds({ ...historical, cutoff: "2026-10-13T01:00:01.000001+00:00" }), {
+          kind: "reject",
+          reason: "event",
+        });
+        yield* hby.db.reopen();
       }
-      assertEquals(vetBinds({ ...args, cutoff: "2026-02-30T01:00:00+00:00" }), {
-        kind: "reject",
-        reason: "timestamp",
-      });
-      assertEquals(vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000001" }), {
-        kind: "reject",
-        reason: "timestamp",
-      });
-      assertEquals(
-        vetBinds({ ...args, cutoff: "2026-10-13T02:00:01.000001+01:00" }),
-        vetBinds({ ...args, cutoff: "2026-10-13T01:00:01.000001Z" }),
-      );
       assertThrows(
         () =>
           vet({
@@ -234,12 +243,16 @@ Deno.test("registry openings bind their declared digest and exact primitive byte
         const opening of [
           yield* call(() => sha256(base)),
           yield* call(() => sha256(alternative)),
-          yield* call(() => sha256(bound)),
           publicOpening,
         ]
       ) {
         assertEquals(check(opening).kind, "verified");
       }
+      assertEquals(
+        check(yield* call(() => sha256(bound))),
+        { kind: "reject", reason: "binding" },
+        "a valid BLID cannot replace missing bound Issuee evidence",
+      );
       assertEquals(
         check(alternative, base.d.nonce).kind,
         "reject",
@@ -1256,6 +1269,13 @@ Deno.test("registry anchors keep their historical receipt requirement after witn
         false,
         "removing the witness cannot authenticate an old registry anchor",
       );
+      const acdc = acdcmap(issuer.pre, { attribute: { i: issuer.pre, name: "Bound Alice" } });
+      const boundRip = regcept(issuer.pre);
+      const bound = makeBoundState({ acdc: acdc.said!, state: "issued", bsn: anchor.sn!, bd: anchor.said! });
+      const boundEvent = blindate(boundRip.said!, boundRip.said!, bound.d.nonce);
+      issuer.interact({ data: [{ d: boundRip.said! }, { d: boundEvent.said! }] });
+      const checkBound = () => vet({ db: hby.db, rip: boundRip, updates: [boundEvent], acdc, blinder: bound });
+      assertEquals(checkBound().kind, "missing", "bound interaction retains its historical witness requirement");
       hby.kevery.processReceipt({
         serder: receipt(issuer.pre, anchor.sn!, anchor.said!),
         cigars: witness.sign(anchor.raw, false),
@@ -1268,6 +1288,47 @@ Deno.test("registry anchors keep their historical receipt requirement after witn
         true,
         "the historical witness's late receipt proves the anchor",
       );
+      assertEquals(checkBound().kind, "verified", "a bound event may be an interaction behind the current rotation");
+      assertEquals(
+        vetBinds({ db: hby.db, rip: boundRip, updates: [boundEvent], acdc, blinders: [bound], target: acdc.said! })
+          .kind,
+        "verified",
+      );
+      yield* hby.db.reopen();
+      assertEquals(checkBound().kind, "verified", "bound history survives reopen");
+      for (
+        const [bsn, bd, expected] of [[anchor.sn!, issuer.kever!.said, "reject"], [
+          99,
+          anchor.said!,
+          "missing",
+        ]] as const
+      ) {
+        const candidate = makeBoundState({ acdc: acdc.said!, state: "issued", bsn, bd });
+        const event = blindate(boundRip.said!, boundRip.said!, candidate.d.nonce);
+        issuer.interact({ data: [{ d: event.said! }] });
+        assertEquals(vet({ db: hby.db, rip: boundRip, updates: [event], acdc, blinder: candidate }).kind, expected);
+      }
+      for (const candidate of [makeBoundState(), makeBoundState({ bsn: 1 }), makeBoundState({ bd: anchor.said! })]) {
+        const event = blindate(boundRip.said!, boundRip.said!, candidate.d.nonce);
+        issuer.interact({ data: [{ d: event.said! }] });
+        assertEquals(
+          vet({ db: hby.db, rip: boundRip, updates: [event], blinder: candidate }).kind,
+          candidate.bn.num === 0n && !candidate.bd.nonce ? "verified" : "reject",
+          "only strict empty bound coordinates are vacuous",
+        );
+      }
+      const other = hby.makeHab("other-issuee");
+      other.interact();
+      for (const issuee of [null, other.pre]) {
+        const target = acdcmap(issuer.pre, { attribute: issuee ? { i: issuee } : { name: "No Issuee" } });
+        const candidate = makeBoundState({ acdc: target.said!, state: "issued", bsn: anchor.sn!, bd: anchor.said! });
+        const event = blindate(boundRip.said!, boundRip.said!, candidate.d.nonce);
+        issuer.interact({ data: [{ d: event.said! }] });
+        assertEquals(vet({ db: hby.db, rip: boundRip, updates: [event], acdc: target, blinder: candidate }), {
+          kind: "reject",
+          reason: issuee ? "anchor" : "binding",
+        }, "an authentic event of another controller cannot replace the disclosed Issuee");
+      }
       issuer.rotate({ adds: [witness.pre], toad: 1 });
       assertEquals(verifyRegistryAnchor(validated.event, claim), true);
     } finally {

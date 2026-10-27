@@ -179,7 +179,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       if (declarations === null) return false;
       if (declarations.length && !receiverTime) return false;
       for (const [issuee, registry] of declarations) {
-        const result = this.presentation(node, registry, issuee, serder.said!, receiverTime!);
+        const result = this.presentation(node, registry, issuee, serder.said!);
         if (result !== true) return result;
         tethered.add(issuee);
       }
@@ -280,13 +280,13 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     regid: string,
     issuee: string,
     target: string,
-    cutoff: string,
   ): ExchangeRouteVerification {
     const envelope = envelopeFromFrame(frame), blinders = [...envelope.bsqs, ...envelope.bsss];
     if (!blinders.length || !this.registry) return false;
     const chain = acceptedRegistryEvidence(this.registry, regid);
     if (!chain) return missing(`Missing presentation TEL evidence for ${regid}.`);
     const sources = new Map<string, string>();
+    let selected: { said: string; sn: bigint } | null = null;
     let unresolved = false;
     for (const seal of envelope.ssts) {
       if (seal.i.qb64 !== issuee) continue;
@@ -319,21 +319,26 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         if (checked.kind !== "valid") throw new DatabaseOperationError("Accepted presentation update is corrupt.");
         if (verifyRegistryAnchor(checked.event, { db: this.hby.db, issuer: issuee, number: seal.s, diger: seal.d })) {
           sources.set(update.said!, seal.d.qb64);
+          if (!selected || checked.event.sn > selected.sn) selected = { said: update.said!, sn: checked.event.sn };
         }
       }
     }
     if (!sources.size && unresolved) return missing(`Missing presentation anchor source for ${regid}.`);
+    if (!selected) return false;
     const result = vetBinds({
       ...chain,
       db: this.hby.db,
       blinders,
       target,
       controller: issuee,
-      cutoff,
+      at: selected.said,
       sources,
       requireSource: true,
     });
-    if (result.kind === "missing" || (result.kind === "reject" && result.reason === "anchor" && unresolved)) {
+    if (
+      (result.kind === "missing" && result.reason === "anchor")
+      || (result.kind === "reject" && result.reason === "anchor" && unresolved)
+    ) {
       return missing(`Missing presentation TEL anchor for ${regid}.`);
     }
     return result.kind === "verified" && result.state.regid === regid;

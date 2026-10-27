@@ -1,5 +1,5 @@
 {
-  "reference": "927c0cb8794d7c84fc17143c67df64aab9deda6c",
+  "reference": "08af0bcf093e41ac337e4f1a4b4a19c8e244f1e3",
   "bodies": {
     "rip": "{\"v\":\"ACDCCAACAAJSONAADa.\",\"t\":\"rip\",\"d\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"u\":\"0AAwMTIzNDU2Nzg5YWJjZGVm\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"n\":\"0\",\"dt\":\"2026-10-13T01:00:00.000000+00:00\"}",
     "acdc": "{\"v\":\"ACDCCAACAAJSONAAbB.\",\"t\":\"acm\",\"d\":\"EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"s\":{\"$id\":\"EPrsJF2BXyDUgDCVbGURsGNwCZjyrxD5M2qnBmhvoZYQ\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"ACM Default Schema\",\"description\":\"Default JSON Schema for acm ACDC.\",\"credentialType\":\"ACDC_acm_message\",\"version\":\"2.0.0\",\"type\":\"object\",\"required\":[\"v\",\"d\",\"i\",\"s\"],\"properties\":{\"v\":{\"description\":\"ACDC version string\",\"type\":\"string\"},\"t\":{\"description\":\"Message type\",\"type\":\"string\"},\"d\":{\"description\":\"Message SAID\",\"type\":\"string\"},\"u\":{\"description\":\"Message UUID\",\"type\":\"string\"},\"i\":{\"description\":\"Issuer AID\",\"type\":\"string\"},\"rd\":{\"description\":\"Registry SAID\",\"type\":\"string\"},\"s\":{\"description\":\"Schema Section\",\"oneOf\":[{\"description\":\"Schema Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Schema Section\",\"type\":\"object\"}]},\"a\":{\"description\":\"Attribute Section\",\"oneOf\":[{\"description\":\"Attribute Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Attribute Section\",\"type\":\"object\"}]},\"A\":{\"description\":\"Aggregate Section\",\"oneOf\":[{\"description\":\"Aggregate Section AGID\",\"type\":\"string\"},{\"description\":\"Uncompacted Aggregate Section\",\"type\":\"array\"}]},\"e\":{\"description\":\"Edge Section\",\"oneOf\":[{\"description\":\"Edge Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Edge Section\",\"type\":\"object\"}]},\"r\":{\"description\":\"Rule Section\",\"oneOf\":[{\"description\":\"Rule Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Rule Section\",\"type\":\"object\"}]}},\"additionalProperties\":false},\"a\":{\"d\":\"EDCt06zQ-EKDa537SwSH7Z91hyvmuWbDLV7jWbIynjbq\",\"name\":\"Alice\"}}",
@@ -14,6 +14,8 @@
     "vacuous": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EAOsRB7v860_gMR2BLQaAX74ehtxm3gGI7zUoNIX_Z0M\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"2\",\"p\":\"EKBaUTD-M5aPKvzXw-IGOLY-LgdS5gjLlpvGnYCwGO1j\",\"dt\":\"2026-10-13T01:00:01.000002+00:00\",\"b\":\"EAaemVlIFj33uXb4CugKMSFgu7iPiXYYPjICvb5roVl-\"}",
     "revoked": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EARA93Bqo8alDY0isuOO30QlIcTbcVhCh3eC27VQdpig\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"3\",\"p\":\"EAOsRB7v860_gMR2BLQaAX74ehtxm3gGI7zUoNIX_Z0M\",\"dt\":\"2026-10-13T01:00:01.000003+00:00\",\"b\":\"EI6uLUcq0Wa81blsWlehijlduzd5uGoyMwtLC0E2XtD5\"}",
     "bound": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EClVVId3hkrO9qJx_DR8VnfZzsIzeFSMM1Wn92RPCKj_\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"1\",\"p\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"dt\":\"2026-10-13T01:00:01.000003+00:00\",\"b\":\"ECcztfUuQhP89yNX4ZO5gDYfZ2BHnVciLiD3Szu553MP\"}",
+    "bound-acdc": "{\"v\":\"ACDCCAACAAJSONAAb6.\",\"t\":\"acm\",\"d\":\"ELyxTIIEZoMyzsQz0IbFPfgtqeITiCXKjs5XMmj-v6jY\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"s\":{\"$id\":\"EPrsJF2BXyDUgDCVbGURsGNwCZjyrxD5M2qnBmhvoZYQ\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"ACM Default Schema\",\"description\":\"Default JSON Schema for acm ACDC.\",\"credentialType\":\"ACDC_acm_message\",\"version\":\"2.0.0\",\"type\":\"object\",\"required\":[\"v\",\"d\",\"i\",\"s\"],\"properties\":{\"v\":{\"description\":\"ACDC version string\",\"type\":\"string\"},\"t\":{\"description\":\"Message type\",\"type\":\"string\"},\"d\":{\"description\":\"Message SAID\",\"type\":\"string\"},\"u\":{\"description\":\"Message UUID\",\"type\":\"string\"},\"i\":{\"description\":\"Issuer AID\",\"type\":\"string\"},\"rd\":{\"description\":\"Registry SAID\",\"type\":\"string\"},\"s\":{\"description\":\"Schema Section\",\"oneOf\":[{\"description\":\"Schema Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Schema Section\",\"type\":\"object\"}]},\"a\":{\"description\":\"Attribute Section\",\"oneOf\":[{\"description\":\"Attribute Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Attribute Section\",\"type\":\"object\"}]},\"A\":{\"description\":\"Aggregate Section\",\"oneOf\":[{\"description\":\"Aggregate Section AGID\",\"type\":\"string\"},{\"description\":\"Uncompacted Aggregate Section\",\"type\":\"array\"}]},\"e\":{\"description\":\"Edge Section\",\"oneOf\":[{\"description\":\"Edge Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Edge Section\",\"type\":\"object\"}]},\"r\":{\"description\":\"Rule Section\",\"oneOf\":[{\"description\":\"Rule Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Rule Section\",\"type\":\"object\"}]}},\"additionalProperties\":false},\"a\":{\"d\":\"ELaN47PrEXcmPO02_U0KYVc4j1yujdHMPu5XhHU8fCq4\",\"name\":\"Bound Alice\",\"i\":\"ENd0mAxw5HWWu-wcrY_glwFhGhNjTeoPZXXSDln3jUvn\"}}",
+    "bound-interaction": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EPmlp5DVwynqimWue7o_hLzwwWI5_72KBJoXUoDettDX\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"1\",\"p\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"dt\":\"2026-10-13T01:00:01.000003+00:00\",\"b\":\"ELvuZGcXeVEmR0fLuISB7A3Fzyhq5laDF7K4arSoo7XX\"}",
     "oneway": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EA1jP_sWZMoClRXyxdGj8mQmNFalV8pauEjTTE94tfoB\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"1\",\"p\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"dt\":\"2026-10-13T01:00:01.000003+00:00\",\"b\":\"EGWRmq8a5Hqh-ZoJBZZijbPlIASH3xoZZpzST_Rgu0vs\"}",
     "oneway-acdc": "{\"v\":\"ACDCCAACAAJSONAAaN.\",\"t\":\"acm\",\"d\":\"EK8bFl-4bd9YEW-mgEp5tmQyuA3cmEJDBf33uObOrxcd\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":{\"$id\":\"EPrsJF2BXyDUgDCVbGURsGNwCZjyrxD5M2qnBmhvoZYQ\",\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"title\":\"ACM Default Schema\",\"description\":\"Default JSON Schema for acm ACDC.\",\"credentialType\":\"ACDC_acm_message\",\"version\":\"2.0.0\",\"type\":\"object\",\"required\":[\"v\",\"d\",\"i\",\"s\"],\"properties\":{\"v\":{\"description\":\"ACDC version string\",\"type\":\"string\"},\"t\":{\"description\":\"Message type\",\"type\":\"string\"},\"d\":{\"description\":\"Message SAID\",\"type\":\"string\"},\"u\":{\"description\":\"Message UUID\",\"type\":\"string\"},\"i\":{\"description\":\"Issuer AID\",\"type\":\"string\"},\"rd\":{\"description\":\"Registry SAID\",\"type\":\"string\"},\"s\":{\"description\":\"Schema Section\",\"oneOf\":[{\"description\":\"Schema Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Schema Section\",\"type\":\"object\"}]},\"a\":{\"description\":\"Attribute Section\",\"oneOf\":[{\"description\":\"Attribute Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Attribute Section\",\"type\":\"object\"}]},\"A\":{\"description\":\"Aggregate Section\",\"oneOf\":[{\"description\":\"Aggregate Section AGID\",\"type\":\"string\"},{\"description\":\"Uncompacted Aggregate Section\",\"type\":\"array\"}]},\"e\":{\"description\":\"Edge Section\",\"oneOf\":[{\"description\":\"Edge Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Edge Section\",\"type\":\"object\"}]},\"r\":{\"description\":\"Rule Section\",\"oneOf\":[{\"description\":\"Rule Section SAID\",\"type\":\"string\"},{\"description\":\"Uncompacted Rule Section\",\"type\":\"object\"}]}},\"additionalProperties\":false},\"a\":{\"d\":\"EDCt06zQ-EKDa537SwSH7Z91hyvmuWbDLV7jWbIynjbq\",\"name\":\"Alice\"}}",
     "wrong-issuer": "{\"v\":\"ACDCCAACAAJSONAAEi.\",\"t\":\"bup\",\"d\":\"EFy9lFaimLcZpa_niHZI2OeDgoHLNV1PrWsexk3Zwwzs\",\"rd\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"n\":\"1\",\"p\":\"ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y\",\"dt\":\"2026-10-13T01:00:01.000003+00:00\",\"b\":\"EGe9h89zUnuRm1y-kT9yYCCTzYIZXTCZqLx_SOSw7064\"}",
@@ -60,6 +62,14 @@
       "bn": "0",
       "bd": ""
     },
+    "bound-interaction": {
+      "d": "ELvuZGcXeVEmR0fLuISB7A3Fzyhq5laDF7K4arSoo7XX",
+      "u": "aLCn6VBWdFGZmtzhOIWHqtAZHAQerL-_eanD_wsDbSoq",
+      "td": "ELyxTIIEZoMyzsQz0IbFPfgtqeITiCXKjs5XMmj-v6jY",
+      "ts": "issued",
+      "bn": "1",
+      "bd": "EKDAlZ3t1-iIg6YLnL6VimhDdSf-K4pBTEP5djQCtSiS"
+    },
     "oneway": {
       "d": "EGWRmq8a5Hqh-ZoJBZZijbPlIASH3xoZZpzST_Rgu0vs",
       "u": "aLCn6VBWdFGZmtzhOIWHqtAZHAQerL-_eanD_wsDbSoq",
@@ -89,9 +99,10 @@
     "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EFYfscu6by8V2uUDpEXjgkf7GnaFjmH_oYjuGxpwWbAl\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"4\",\"p\":\"EGmxLNg63TkUDBRjtmx-yloSMo0V9YNyIyXrurvqlmbM\",\"a\":[{\"s\":\"1\",\"d\":\"EPB0rTyc01OBZNcol2FKwFBuQofLtqxKtwO2J4sZITQ7\"}]}-CAX-KAWAABTxSlJM-slPiBKbGgbdjySDYBkxjiqZTc1EgJTxoyt7jraAAMfCiRwJK8NkpSbFjnxcfJk90U86jdAJC_XXowJ",
     "{\"v\":\"KERICAACAAJSONAAFG.\",\"t\":\"ixn\",\"d\":\"EMXY4KF9yOVbF9h49sTij24YG1nyUU4nQIyCHM6oMK9D\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"5\",\"p\":\"EFYfscu6by8V2uUDpEXjgkf7GnaFjmH_oYjuGxpwWbAl\",\"a\":[{\"s\":\"2\",\"d\":\"EAOsRB7v860_gMR2BLQaAX74ehtxm3gGI7zUoNIX_Z0M\"},{\"s\":\"3\",\"d\":\"EARA93Bqo8alDY0isuOO30QlIcTbcVhCh3eC27VQdpig\"}]}-CAX-KAWAADXj2QTkzXvzN8ElC-gq5GZDRph90KDHw1nZld1R5AA4AFPK78IJ_6HbczFYPpLWbQiCQcNmg0UH2w1JNCYAH0O",
     "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EJ-M6z_WS5DrPwxlue_V5dUk5xCejutaoB98SgrwXCrL\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"6\",\"p\":\"EMXY4KF9yOVbF9h49sTij24YG1nyUU4nQIyCHM6oMK9D\",\"a\":[{\"s\":\"1\",\"d\":\"EClVVId3hkrO9qJx_DR8VnfZzsIzeFSMM1Wn92RPCKj_\"}]}-CAX-KAWAABNi1MlhK0AMQXQxEqu2aj6JEjWFVxLX23R6Ac0wkCmbKNKhcwh9NLAQLb9DvyMDHFIYFT5Xv6qYKlyf-4NvkoD",
-    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EPJojSdW-tPbyVDJuMLa2y4D4M11IZfhKtmERpCO9zOF\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"7\",\"p\":\"EJ-M6z_WS5DrPwxlue_V5dUk5xCejutaoB98SgrwXCrL\",\"a\":[{\"s\":\"1\",\"d\":\"EA1jP_sWZMoClRXyxdGj8mQmNFalV8pauEjTTE94tfoB\"}]}-CAX-KAWAABnEyrSp-V7yKA95YNikvgb4LiQP9P2V2zWRqucPasPABua5yGnYZkWqtIp7B73rJOxzAF9lO7bmZ6k37jHR1UE",
-    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EFQNIsoKstaXxd_XIntOejN2AqU3a-r0KITlCFnOx_4H\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"8\",\"p\":\"EPJojSdW-tPbyVDJuMLa2y4D4M11IZfhKtmERpCO9zOF\",\"a\":[{\"s\":\"1\",\"d\":\"EFy9lFaimLcZpa_niHZI2OeDgoHLNV1PrWsexk3Zwwzs\"}]}-CAX-KAWAAAOo_JYa2QGM925LXbu-jDQ41X-kYWrsnR-l7LkLEGLQEMmkBACnqM4ZUtQ61_PznMq1gCn3ZLkD3ou-xvB_okA",
-    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EJqubTBK9dopO2x0dZZe0y21z-9U3mlBP0pmVA4CO3AV\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"9\",\"p\":\"EFQNIsoKstaXxd_XIntOejN2AqU3a-r0KITlCFnOx_4H\",\"a\":[{\"s\":\"1\",\"d\":\"EDX37CozWIXUCilLFaG0dUaAaRMZSyd15yt6K96tpU2T\"}]}-CAX-KAWAACnlAwBdKU9cV3cB-WKsWTZYVy-5hFXgMKa-fxaxiZhz8n3SPaNMSC1ooSbqhHYj4Jia83v7mOkCNvBaBvr7cAG"
+    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EKddXuJc1SqpFuKpKOU45mM_53COaEEoflY7hKuoAnsP\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"7\",\"p\":\"EJ-M6z_WS5DrPwxlue_V5dUk5xCejutaoB98SgrwXCrL\",\"a\":[{\"s\":\"1\",\"d\":\"EPmlp5DVwynqimWue7o_hLzwwWI5_72KBJoXUoDettDX\"}]}-CAX-KAWAABAFvDDdUQDFqkNhSaLw0iHfdG2UtdlbUWSNFrk7qAhadbOXFjUCcULtsOeHBd0kWRJ5szO-tHtZFIjvZ-wq6AC",
+    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EBvvBzKXQhSMtb6dFGxVLACEHjmk4NriJhCyRqvNsfpR\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"8\",\"p\":\"EKddXuJc1SqpFuKpKOU45mM_53COaEEoflY7hKuoAnsP\",\"a\":[{\"s\":\"1\",\"d\":\"EA1jP_sWZMoClRXyxdGj8mQmNFalV8pauEjTTE94tfoB\"}]}-CAX-KAWAAA-vRsM-060PGizC-FgdIRQvsZc7qbeCZzmcU7Y6yd3h8WhoOPObA7wIwsbJRomZpLsceloa_evbgiJqfaWubwK",
+    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EJ-UkQEMQhfmni8DhJmcnKE1OUSsa7bMZ-JEr_qhYssv\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"9\",\"p\":\"EBvvBzKXQhSMtb6dFGxVLACEHjmk4NriJhCyRqvNsfpR\",\"a\":[{\"s\":\"1\",\"d\":\"EFy9lFaimLcZpa_niHZI2OeDgoHLNV1PrWsexk3Zwwzs\"}]}-CAX-KAWAAC8lrvLisYE_d-Kg_5ejpas2Xk4qdYyrWLo4bPL0bJ8wum9tSykUJaVFAKAWZLgdSH8qQ3KCX4-2Sg34J99lhEH",
+    "{\"v\":\"KERICAACAAJSONAAEJ.\",\"t\":\"ixn\",\"d\":\"EA1zutSy9TCKrjjCt0uy7y_pmZ2O2h1VJX6D5aMKkmmQ\",\"i\":\"EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps\",\"s\":\"a\",\"p\":\"EJ-UkQEMQhfmni8DhJmcnKE1OUSsa7bMZ-JEr_qhYssv\",\"a\":[{\"s\":\"1\",\"d\":\"EDX37CozWIXUCilLFaG0dUaAaRMZSyd15yt6K96tpU2T\"}]}-CAX-KAWAABfPFwM0SMeQ-BMooZfIpwmWbvOVhjRcz4J2cJur5hABIeaf_NY8FweV1QBue2Q_u9Zuyc58puMeKzwUmIF1LoB"
   ],
   "cases": [
     {
@@ -104,6 +115,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -140,6 +152,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -160,6 +173,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -200,6 +214,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -240,6 +255,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -258,6 +274,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -278,6 +295,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -298,6 +316,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -318,6 +337,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -338,6 +358,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -358,6 +379,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -378,6 +400,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": {
         "issued": "EGnvhRpbs8b8fYFnic9TV-oMpvS0jdrhuNOBu1MbpS_S"
       },
@@ -420,6 +443,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": {
         "issued": 0
       },
@@ -462,6 +486,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": {
         "issued": 3
       },
@@ -482,6 +507,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -503,6 +529,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -524,6 +551,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -547,6 +575,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -599,7 +628,8 @@
         "vacuous"
       ],
       "target": "acdc",
-      "cutoff": "2026-10-13T01:00:01.000002+00:00",
+      "cutoff": null,
+      "at": "vacuous",
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -633,7 +663,7 @@
       }
     },
     {
-      "name": "microsecond cutoff",
+      "name": "exact issued head",
       "through": 8,
       "rip": "rip",
       "updates": [
@@ -647,7 +677,8 @@
         "issued"
       ],
       "target": "acdc",
-      "cutoff": "2026-10-13T01:00:01.000001+00:00",
+      "cutoff": null,
+      "at": "issued",
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -677,6 +708,29 @@
       }
     },
     {
+      "name": "timestamp cutoff refused",
+      "through": 8,
+      "rip": "rip",
+      "updates": [
+        "issued"
+      ],
+      "acdc": null,
+      "blinder": null,
+      "blinders": [
+        "issued"
+      ],
+      "target": "acdc",
+      "cutoff": "2026-10-13T01:00:01.000001+00:00",
+      "at": null,
+      "source": null,
+      "controller": null,
+      "requireSource": false,
+      "expected": {
+        "kind": "reject",
+        "reason": "event"
+      }
+    },
+    {
       "name": "missing intervening disclosure",
       "through": 8,
       "rip": "rip",
@@ -691,11 +745,12 @@
       ],
       "target": "acdc",
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
       "expected": {
-        "kind": "reject",
+        "kind": "missing",
         "reason": "disclosure"
       }
     },
@@ -714,6 +769,7 @@
       ],
       "target": "acdc",
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -736,6 +792,7 @@
       ],
       "target": "acdc",
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": true,
@@ -758,6 +815,7 @@
       ],
       "target": "acdc",
       "cutoff": null,
+      "at": null,
       "source": {
         "issued": 2
       },
@@ -789,7 +847,7 @@
       }
     },
     {
-      "name": "bound state",
+      "name": "malformed bound state",
       "through": 9,
       "rip": "rip",
       "updates": [
@@ -800,6 +858,28 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
+      "source": null,
+      "controller": null,
+      "requireSource": false,
+      "expected": {
+        "kind": "reject",
+        "reason": "binding"
+      }
+    },
+    {
+      "name": "bound interaction state",
+      "through": 10,
+      "rip": "rip",
+      "updates": [
+        "bound-interaction"
+      ],
+      "acdc": "bound-acdc",
+      "blinder": "bound-interaction",
+      "blinders": null,
+      "target": null,
+      "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -808,10 +888,10 @@
         "state": {
           "regid": "ECGUl2NFQq5dAj1s7bIAP7TWNFLfUWjzqrnxroHjuG3Y",
           "issuer": "EPC5K6miQ2syaqWg5IOhk7JqTJRSGI95qDIpJOsNZnps",
-          "said": "EClVVId3hkrO9qJx_DR8VnfZzsIzeFSMM1Wn92RPCKj_",
+          "said": "EPmlp5DVwynqimWue7o_hLzwwWI5_72KBJoXUoDettDX",
           "sn": "1",
           "ilk": "bup",
-          "acdc": "EJt3vzyzwZsSlL-LRyjG3lsJta_gxHjTmdbSYp6foOcx",
+          "acdc": "ELyxTIIEZoMyzsQz0IbFPfgtqeITiCXKjs5XMmj-v6jY",
           "state": "issued",
           "stamp": "2026-10-13T01:00:01.000003+00:00",
           "binding": "mutual",
@@ -821,8 +901,8 @@
               "EJrg6f-U2eCqjddUL-irJzphoMtPX5UzV8pZu2NwuPYY"
             ],
             [
-              6,
-              "EJ-M6z_WS5DrPwxlue_V5dUk5xCejutaoB98SgrwXCrL"
+              7,
+              "EKddXuJc1SqpFuKpKOU45mM_53COaEEoflY7hKuoAnsP"
             ]
           ]
         }
@@ -830,7 +910,7 @@
     },
     {
       "name": "oneway",
-      "through": 10,
+      "through": 11,
       "rip": "rip",
       "updates": [
         "oneway"
@@ -840,6 +920,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -861,8 +942,8 @@
               "EJrg6f-U2eCqjddUL-irJzphoMtPX5UzV8pZu2NwuPYY"
             ],
             [
-              7,
-              "EPJojSdW-tPbyVDJuMLa2y4D4M11IZfhKtmERpCO9zOF"
+              8,
+              "EBvvBzKXQhSMtb6dFGxVLACEHjmk4NriJhCyRqvNsfpR"
             ]
           ]
         }
@@ -870,7 +951,7 @@
     },
     {
       "name": "wrong-issuer",
-      "through": 11,
+      "through": 12,
       "rip": "rip",
       "updates": [
         "wrong-issuer"
@@ -880,6 +961,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,
@@ -890,7 +972,7 @@
     },
     {
       "name": "wrong-rd",
-      "through": 12,
+      "through": 13,
       "rip": "rip",
       "updates": [
         "wrong-rd"
@@ -900,6 +982,7 @@
       "blinders": null,
       "target": null,
       "cutoff": null,
+      "at": null,
       "source": null,
       "controller": null,
       "requireSource": false,

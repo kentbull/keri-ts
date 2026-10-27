@@ -1,5 +1,5 @@
 /** Native candidate proof APIs in both directions; TS intake uses the ordinary HTTP listener. */
-import { b, BlindState, makeBlindState, parseBytes, SerderACDC, t, Vrsn_2_0 } from "cesr-ts";
+import { b, BlindState, BoundState, makeBlindState, parseBytes, SerderACDC, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path";
@@ -18,8 +18,9 @@ const peer = fromFileUrl(new URL("../../fixtures/native_registry_peer.py", impor
 interface NativeEvidence {
   rip: string;
   update: string;
+  laterUpdate: string;
   credential: string;
-  opening: { d: string; u: string; td: string; ts: string };
+  opening: { d: string; u: string; td: string; ts: string; bn: string; bd: string };
   kel: string;
 }
 
@@ -33,8 +34,9 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const evidence: NativeEvidence = JSON.parse(result.stdout);
     const rip = new SerderACDC({ raw: b(evidence.rip) });
     const update = new SerderACDC({ raw: b(evidence.update) });
+    const later = new SerderACDC({ raw: b(evidence.laterUpdate) });
     const acdc = new SerderACDC({ raw: b(evidence.credential) });
-    const blinder = BlindState.fromSad(evidence.opening);
+    const blinder = BoundState.fromSad(evidence.opening);
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
     await run(function*() {
       const hby = yield* createHabery(options);
@@ -44,10 +46,10 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
       const url = `http://127.0.0.1:${server.addr.port}/`;
       try {
         for (const frame of parseBytes(b(evidence.kel))) yield* call(() => post(url, frame));
-        for (const body of [rip, update]) {
+        for (const body of [rip, update, later]) {
           yield* call(() => post(url, { body, attachments: [], gvrsn: Vrsn_2_0 }));
         }
-        assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, update.said);
+        assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, later.said);
         assertEquals(t(runtime.acdc!.store.event(update.said!)!.raw), evidence.update);
       } finally {
         yield* call(() => server.shutdown());
@@ -61,16 +63,26 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const store = runtime.acdc!.store;
-        assertEquals(store.head(rip.said!)?.qb64, update.said);
-        const chain = { db: hby.db, rip: store.event(rip.said!)!, updates: [store.event(update.said!)!], acdc };
-        const state = vet({ ...chain, blinder });
+        assertEquals(store.head(rip.said!)?.qb64, later.said);
+        const chain = {
+          db: hby.db,
+          rip: store.event(rip.said!)!,
+          updates: [store.event(update.said!)!, store.event(later.said!)!],
+          acdc,
+        };
+        assertEquals(
+          vetBinds({ ...chain, blinders: [blinder], target: acdc.said! }).kind,
+          "missing",
+          "current standing remains opaque",
+        );
+        const state = vetBinds({ ...chain, at: update.said!, blinders: [blinder], target: acdc.said! });
         assertEquals(state.kind, "verified");
         if (state.kind !== "verified") throw new Error("Expected verified native state");
         assertEquals(state.state.acdc, acdc.said);
         assertEquals(state.state.state, "issued");
         assertEquals(state.state.binding, "mutual");
         assertEquals(state.state.anchors.map(([sn]) => sn), [1, 2]);
-        assertEquals(vetBinds({ ...chain, blinders: [blinder], target: acdc.said! }), state);
+        assertEquals(vet({ ...chain, updates: [update], blinder }), state);
       } finally {
         yield* runtime.close();
         yield* hby.close();
