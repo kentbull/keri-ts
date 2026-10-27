@@ -10,8 +10,11 @@ import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from ".
 import { consoleLogger } from "../core/logger.ts";
 import type { Baser } from "../db/basing.ts";
 import {
+  findRegistryAnchor,
   type RegistryEvent,
   type RegistryEventValidation,
+  type RegistrySourceLocators,
+  validateRegistrySourceLocators,
   validateRip,
   validateUpdate,
   verifyRegistryAnchor,
@@ -79,10 +82,12 @@ export class RegistryEventer {
     const prior = event.sn > 0n ? this.acceptedAt(event.regid, Number(event.sn) - 1) : null;
     if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
     if ((number === undefined) !== (diger === undefined)) return { kind: "reject", reason: "anchor" };
+    if (number && diger && !verifyRegistryAnchor(event, { db: this.db, issuer: this.issuer, number, diger })) {
+      return { kind: "reject", reason: "anchor" };
+    }
+    // Already accepted TEL history is immutable; explicit claims still verify before duplicate success.
+    if (occupied?.kind === "duplicate") return this.processEvent(serder);
     if (number && diger) {
-      if (!verifyRegistryAnchor(event, { db: this.db, issuer: this.issuer, number, diger })) {
-        return { kind: "reject", reason: "anchor" };
-      }
       this.store.putAnchor(said, number, diger);
     } else {
       this.discoverAnchor(event);
@@ -213,18 +218,21 @@ export class RegistryEventer {
   }
 
   /** Accept one parsed event, then advance ready successors without recursive replay. */
-  processEvent(serder: SerderACDC): RegistryEventDecision {
-    const decision = this.processOne(serder);
+  processEvent(serder: SerderACDC, locators: RegistrySourceLocators = {}): RegistryEventDecision {
+    const decision = this.processOne(serder, locators);
     if (decision.kind === "accept") this.processQueued();
     return decision;
   }
 
   /** Decide and persist one event; callers own subsequent chain progression. */
-  private processOne(serder: SerderACDC): RegistryEventDecision {
-    if (this.regk === null || serder.ilk === Ilks.rip) return this.processInception(serder);
+  private processOne(serder: SerderACDC, locators: RegistrySourceLocators = {}): RegistryEventDecision {
+    if (this.regk === null || serder.ilk === Ilks.rip) return this.processInception(serder, locators);
     const result = validateUpdate(serder, this.regk);
     if (result.kind === "reject") return result;
     const event = result.event;
+    if (!validateRegistrySourceLocators(serder, this.db, this.issuer, locators)) {
+      return { kind: "reject", reason: "anchor" };
+    }
     // Preserve protocol precision until the existing ordinal storage seam can represent it.
     if (event.sn > BigInt(Number.MAX_SAFE_INTEGER)) return { kind: "reject", reason: "ordinalRange" };
     const prior = this.acceptedAt(event.regid, Number(event.sn) - 1);
@@ -258,10 +266,13 @@ export class RegistryEventer {
   }
 
   /** Validate, anchor and accept one inception, or retain its body in anchor escrow. */
-  private processInception(serder: SerderACDC): RegistryEventDecision {
+  private processInception(serder: SerderACDC, locators: RegistrySourceLocators): RegistryEventDecision {
     const result = validateRip(serder, this.issuer);
     if (result.kind === "reject") return result;
     const event = result.event;
+    if (!validateRegistrySourceLocators(serder, this.db, this.issuer, locators)) {
+      return { kind: "reject", reason: "anchor" };
+    }
     if (this.regk !== null && this.regk !== event.regid) return { kind: "reject", reason: "registry" };
     const previous = this.acceptedEvent(event);
     if (previous) {
@@ -340,17 +351,24 @@ export class RegistryEventer {
     this.store.baser.ooes.rem(event.regid, Number(event.sn));
   }
 
-  /** Keep an already verified anchor or discover the earliest fully witnessed seal. */
+  /** Keep a valid first pair; recovery-invalidated pending anchors must rediscover current-branch authority. */
   private discoverAnchor(event: RegistryEvent): void {
-    if (this.store.anchor(event.said)) return;
-    const anchor = this.db.fetchLastSealingEventByEventSeal(this.issuer, {
-      i: event.regid,
-      s: event.serder.sad!.n,
-      d: event.said,
-    });
+    const current = this.store.anchor(event.said);
+    if (current) {
+      if (
+        verifyRegistryAnchor(event, {
+          db: this.db,
+          issuer: this.issuer,
+          number: current[0],
+          diger: current[1],
+        })
+      ) return;
+      this.store.baser.ancs.rem(event.said);
+    }
+    const anchor = findRegistryAnchor(this.db, this.issuer, event.serder);
     if (!anchor) return;
-    const number = NumberPrimitive.fromNum(BigInt(anchor.sn!));
-    const diger = new Diger({ qb64: anchor.said! });
+    const number = NumberPrimitive.fromNum(BigInt(anchor[0]));
+    const diger = new Diger({ qb64: anchor[1] });
     if (verifyRegistryAnchor(event, { db: this.db, issuer: this.issuer, number, diger })) {
       this.store.putAnchor(event.said, number, diger);
     }

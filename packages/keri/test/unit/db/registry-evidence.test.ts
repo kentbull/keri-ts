@@ -217,7 +217,7 @@ Deno.test("current registry store reopens readonly without changing evidence", a
   }
 });
 
-Deno.test("registry storage facade preserves aliases, earliest anchors, accepted cloning and escrow order", async () => {
+Deno.test("registry storage facade preserves aliases, first anchors, accepted cloning and escrow order", async () => {
   await run(function*() {
     const baser = yield* openRegistry({ name: `registry-facade-${crypto.randomUUID()}`, temp: true });
     const store = new RegistryStore(baser);
@@ -257,12 +257,16 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
       const second = new Diger({ qb64: issued.said! });
       assertEquals(store.putAnchor(issued.said!, late, first), true);
       assertEquals(store.putAnchor(issued.said!, late, second), false, "equal reseals retain the first digest");
-      assertEquals(store.putAnchor(issued.said!, early, second), true);
+      assertEquals(
+        store.putAnchor(issued.said!, early, second),
+        false,
+        "an earlier reseal cannot replace the first pair",
+      );
       assertEquals(store.putAnchor(issued.said!, late, first), false);
-      assertEquals(store.anchor(issued.said!)!.map((item) => item.qb64), [early.qb64, second.qb64]);
+      assertEquals(store.anchor(issued.said!)!.map((item) => item.qb64), [late.qb64, first.qb64]);
       assertEquals(
         baser.getVal(baser.ancs!.sdb, b(issued.said!)),
-        b("SAAAAQAAAAAAAAADEKBaUTD-M5aPKvzXw-IGOLY-LgdS5gjLlpvGnYCwGO1j"),
+        b(`${late.qb64}${first.qb64}`),
       );
       assertEquals(store.putRecord("public", { registryKey: rip.said! }), true);
       assertEquals(store.records!.get("public")!.asDict(), { registryKey: rip.said! });
@@ -275,7 +279,7 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
       yield* baser.reopen();
       assertEquals(store.records === aliases, false, "alias mapper follows the owner's new environment");
       assertEquals(store.records!.get("public")!.registryKey, rip.said);
-      assertEquals(store.anchor(issued.said!)![0].num, early.num);
+      assertEquals(store.anchor(issued.said!)![0].num, late.num);
       assertEquals(baser.maes!.get(rip.said!, 1), [[issued.said!], [vacuous.said!]]);
       assertEquals(baser.ooes!.get(rip.said!, 1), [[issued.said!]]);
       assertEquals(store.cloneTel(rip.said!, 1), issued.raw);
@@ -284,7 +288,7 @@ Deno.test("registry storage facade preserves aliases, earliest anchors, accepted
       assertEquals(baser.ooes!.get(rip.said!, 1), []);
       yield* baser.reopen({ readonly: true });
       assertEquals(store.records!.get("public")!.registryKey, rip.said);
-      assertEquals(store.anchor(issued.said!)![0].num, early.num);
+      assertEquals(store.anchor(issued.said!)![0].num, late.num);
       assertEquals(baser.maes!.get(rip.said!, 1), [[vacuous.said!]]);
       const path = baser.path!;
       yield* store.close();

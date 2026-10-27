@@ -1,7 +1,22 @@
 /** Frozen registry decisions use independently signed KELs through the real runtime. */
-import { b, BlindState, BoundState, Diger, NumberPrimitive, parseBytes, Saider, SerderACDC } from "cesr-ts";
+import {
+  b,
+  BlindState,
+  BoundState,
+  concatBytes,
+  Diger,
+  NumberPrimitive,
+  parseBytes,
+  Saider,
+  SealEvent,
+  SealSource,
+  SerderACDC,
+  type Siger,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { isAbsolute, relative } from "jsr:@std/path";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegistryEventer } from "../../../src/acdc/regengine.ts";
@@ -19,8 +34,10 @@ import { createRegery } from "../../../src/acdc/registraring.ts";
 import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
+import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-countering.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";
-import { receipt } from "../../../src/core/protocol-eventing.ts";
+import { interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
+import { messagize } from "../../../src/core/protocol-serialization.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
@@ -211,7 +228,7 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
     reason: "sequence",
   });
 });
-Deno.test("local registry anchors require the full seal and verified witness receipts", async () => {
+Deno.test("local registry anchors require exact supplied coordinates and verified witness receipts", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const witnessHby = yield* createHabery({
@@ -226,9 +243,25 @@ Deno.test("local registry anchors require the full seal and verified witness rec
       if (validated.kind !== "valid") throw new Error("Expected valid registry inception");
       const event = validated.event;
       const db = hby.db;
-      const seal = { i: rip.said!, s: "0", d: rip.said! };
-      // Observer digest vetting deliberately permits all four seals; the local path permits only the last.
-      for (const candidate of [rip.said!, { ...seal, i: issuer.pre }, { ...seal, s: "1" }, seal]) {
+      // Separate registry events keep earlier valid seals from hiding a false coordinate.
+      for (const shape of ["digest", "couple", "triple", "issuer", "ordinal", "string", "extra"]) {
+        const candidateRip = regcept(issuer.pre), result = validateRip(candidateRip);
+        if (result.kind !== "valid") throw new Error("Expected valid registry inception");
+        const seal = { i: candidateRip.said!, s: "0", d: candidateRip.said! };
+        const candidate = shape === "digest"
+          ? { d: candidateRip.said! }
+          : shape === "couple"
+          ? { s: "0", d: candidateRip.said! }
+          : shape === "issuer"
+          ? { ...seal, i: issuer.pre }
+          : shape === "ordinal"
+          ? { ...seal, s: "1" }
+          : shape === "string"
+          ? candidateRip.said!
+          : shape === "extra"
+          ? { ...seal, extra: "unsupported" }
+          : seal;
+        const valid = ["digest", "couple", "triple"].includes(shape);
         issuer.interact({ data: [candidate] });
         const anchor = issuer.kever!.serder;
         const claim = {
@@ -237,7 +270,8 @@ Deno.test("local registry anchors require the full seal and verified witness rec
           number: NumberPrimitive.fromNum(BigInt(anchor.sn!)),
           diger: new Diger({ qb64: anchor.said! }),
         };
-        assertEquals(verifyRegistryAnchor(event, claim), false, "not yet fully witnessed");
+        assertEquals(verifyRegistryAnchor(result.event, claim), false, "not yet fully witnessed");
+        assertEquals(vet({ db, rip: candidateRip }).kind, "missing", "stateless vetting also needs witness quorum");
         hby.kevery.processReceipt({
           serder: receipt(issuer.pre, anchor.sn!, anchor.said!),
           cigars: witness.sign(anchor.raw, false),
@@ -246,11 +280,28 @@ Deno.test("local registry anchors require the full seal and verified witness rec
           local: false,
         });
         assertEquals(db.fullyWitnessed(anchor), true);
-        assertEquals(vet({ db, rip }).kind, "verified");
-        assertEquals(verifyRegistryAnchor(event, claim), candidate === seal);
-        assertEquals(verifyRegistryAnchor(event, { ...claim, diger: new Diger({ qb64: rip.said! }) }), false);
+        assertEquals(vet({ db, rip: candidateRip }).kind, valid ? "verified" : "missing", shape);
+        assertEquals(verifyRegistryAnchor(result.event, claim), valid, shape);
+        assertEquals(verifyRegistryAnchor(result.event, { ...claim, diger: new Diger({ qb64: rip.said! }) }), false);
       }
       assertEquals(verifyRegistryAnchor(event, { db, issuer: issuer.pre }), false);
+      const unaccepted = interact(issuer.pre, issuer.kever!.said, issuer.kever!.sn + 2, [{ d: rip.said! }]);
+      const staged = hby.kevery.processEvent({
+        serder: unaccepted,
+        sigers: issuer.sign(unaccepted.raw, true),
+        wigers: [],
+        sscs: [],
+        ssts: [],
+        frcs: [],
+        local: true,
+      });
+      assertEquals(staged.kind === "escrow" ? staged.reason : null, "ooo");
+      assertEquals(db.getEvtSerder(issuer.pre, unaccepted.said!)!.said, unaccepted.said);
+      assertEquals(
+        vet({ db, rip, sources: new Map([[rip.said!, unaccepted.said!]]) }).kind,
+        "missing",
+        "a stored source SAID must also resolve at its accepted KEL ordinal",
+      );
       assertEquals(
         verifyRegistryAnchor(event, {
           db,
@@ -538,7 +589,7 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
     }
   });
 });
-Deno.test("registry queued replay retains earliest anchors and advances a contiguous chain", async () => {
+Deno.test("registry queued replay retains first anchors and advances a contiguous chain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-queued-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: `registry-queued-${crypto.randomUUID()}`, temp: true });
@@ -560,12 +611,30 @@ Deno.test("registry queued replay retains earliest anchors and advances a contig
       assertEquals(store.anchor(first.said!), null);
       for (const event of [winner, loser, third, stale]) {
         issuer.interact({ data: [{ i: rip.said!, s: event.sad!.n, d: event.said! }] });
+        const earlier = issuer.kever!.serder;
+        if (event === winner) issuer.interact({ data: [{ d: event.said! }] });
         const decision = engine.anchorMsg(
           event.said!,
           NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
           new Diger({ qb64: issuer.kever!.said }),
         );
         assertEquals(decision.kind === "escrow" && decision.reason, "order");
+        if (event === winner) {
+          const firstPair = store.anchor(event.said!)!.map((value) => value.qb64);
+          assertEquals(
+            engine.anchorMsg(
+              event.said!,
+              NumberPrimitive.fromNum(BigInt(earlier.sn!)),
+              new Diger({ qb64: earlier.said! }),
+            ).kind,
+            "escrow",
+          );
+          assertEquals(
+            store.anchor(event.said!)!.map((value) => value.qb64),
+            firstPair,
+            "reverse presentation cannot replace the first verified pair with an earlier ordinal",
+          );
+        }
       }
       const earliest = store.anchor(winner.said!)!.map((value) => value.qb64);
       issuer.interact({ data: [{ i: rip.said!, s: "2", d: winner.said! }] });
@@ -596,6 +665,11 @@ Deno.test("registry queued replay retains earliest anchors and advances a contig
       assertEquals([...baser.maes!.getTopItemIter(rip.said!)], []);
       assertEquals([...baser.ooes!.getTopItemIter(rip.said!)], []);
       assertEquals(engine.anchorMsg(winner.said!).kind, "duplicate");
+      assertEquals(
+        store.anchor(winner.said!)!.map((value) => value.qb64),
+        earliest,
+        "replay and reopen retain the same pair",
+      );
       assertEquals(store.head(rip.said!)!.qb64, third.said);
 
       const badPrior = blindate(rip.said!, first.said!, blid, { sn: 4 });
@@ -616,6 +690,131 @@ Deno.test("registry queued replay retains earliest anchors and advances a contig
     }
   });
 });
+for (const sealingOrdinal of [3, 4]) {
+  Deno.test(`registry recovery removes pending authority from disputed KEL ordinal ${sealingOrdinal}`, async () => {
+    await run(function*() {
+      const root = Deno.makeTempDirSync({ prefix: "registry-recovery-" });
+      const options = { name: "registry-recovery", headDirPath: root, skipConfig: true };
+      let hby = yield* createHabery(options), baser = yield* openRegistry(options);
+      let store = new RegistryStore(baser), issuer = hby.makeHab("issuer");
+      const rip = regcept(issuer.pre), regid = rip.said!, pre = issuer.pre;
+      let engine = new RegistryEventer(hby.db, pre, store);
+      /** Reacquire all owners and reconstruct accepted caches from durable state. */
+      function* reopen() {
+        yield* baser.close(false);
+        yield* hby.close(false);
+        hby = yield* createHabery(options);
+        baser = yield* openRegistry(options);
+        store = new RegistryStore(baser);
+        issuer = hby.habByName("issuer")!;
+        engine = new RegistryEventer(hby.db, pre, store, regid);
+      }
+      try {
+        for (const path of [hby.db.path!, hby.ks.path!, baser.path!]) {
+          const child = relative(root, path);
+          assertEquals(isAbsolute(child) || child.split(/[\\/]/)[0] === "..", false);
+        }
+        engine.processEvent(rip);
+        issuer.interact({ data: [{ d: regid }] });
+        assertEquals(engine.anchorMsg(regid).kind, "accept");
+        const first = blindate(regid, regid, fixture.disclosures.issued.d);
+        const second = blindate(regid, first.said!, fixture.disclosures.issued.d, { sn: 2 });
+        issuer.interact({ data: [{ d: first.said! }] });
+        const surviving = issuer.kever!.serder;
+        issuer.interact({ data: sealingOrdinal === 3 ? [{ d: second.said! }] : [] });
+        const third = issuer.kever!.serder;
+        issuer.interact({ data: sealingOrdinal === 4 ? [{ d: second.said! }] : [] });
+        const disputed = sealingOrdinal === 3 ? third : issuer.kever!.serder;
+        assertEquals(engine.processEvent(second).kind, "escrow");
+        assertEquals(store.event(first.said!), null, "the surviving predecessor seal is known before its TEL body");
+        assertEquals(store.anchor(second.said!)![1].qb64, disputed.said);
+        const [verfers, digers] = issuer.mgr.rotate({ pre, ncount: 1, temp: true, erase: false });
+        const keys = verfers.map((verfer) => verfer.qb64);
+        const recovery = rotate(pre, keys, surviving.said!, {
+          sn: 3,
+          ndigs: digers.map((diger) => diger.qb64),
+          wits: [],
+          toad: 0,
+        });
+        const recovered = hby.kevery.processEvent({
+          serder: recovery,
+          sigers: issuer.mgr.sign(recovery.raw, keys, true) as Siger[],
+          wigers: [],
+          sscs: [],
+          ssts: [],
+          frcs: [],
+          local: true,
+        });
+        assertEquals(recovered.kind, "accept");
+        yield* reopen();
+        assertEquals(issuer.kever!.said, recovery.said);
+        assertEquals(engine.processEvent(first).kind, "accept");
+        assertEquals(
+          store.seqSaider(regid, 2),
+          null,
+          "disputed history cannot authorize queued TEL after recovery/reopen",
+        );
+        assertEquals(store.head(regid)!.qb64, first.said);
+        assertEquals(
+          store.anchor(second.said!),
+          null,
+          "remove the invalid active pair, retaining historical KEL evidence",
+        );
+        const validated = validateUpdate(second, regid);
+        if (validated.kind !== "valid") throw new Error("Expected valid registry update");
+        assertEquals(
+          verifyRegistryAnchor(validated.event, {
+            db: hby.db,
+            issuer: pre,
+            number: NumberPrimitive.fromNum(BigInt(disputed.sn!)),
+            diger: new Diger({ qb64: disputed.said! }),
+          }),
+          false,
+        );
+        assertEquals(
+          vet({ db: hby.db, rip, updates: [first, second], sources: new Map([[second.said!, disputed.said!]]) }).kind,
+          "missing",
+        );
+        const locator = SealSource.fromSad({ s: disputed.snh!, d: disputed.said! });
+        assertEquals(new RegistryObserver(hby.db, store).processEvent(second, { sscs: [locator] }), {
+          kind: "reject",
+          reason: "anchor",
+        });
+        assertEquals(engine.processEvent(second).kind, "escrow");
+        issuer.interact({ data: [{ d: second.said! }] });
+        const authentic = issuer.kever!.serder;
+        assertEquals(engine.processEvent(second).kind, "accept", "authentic resealing restores same-TEL liveness");
+        assertEquals(store.anchor(second.said!)![1].qb64, authentic.said);
+        assertEquals(
+          vet({
+            db: hby.db,
+            rip,
+            updates: [first, second],
+            sources: new Map([[second.said!, disputed.said!]]),
+          }).kind,
+          "verified",
+          "a disputed stateless hint still falls back to an authentic new seal",
+        );
+        yield* reopen();
+        assertEquals(engine.processEvent(second).kind, "duplicate");
+        assertEquals(store.head(regid)!.qb64, second.said);
+        assertEquals(hby.db.getEvtSerder(pre, disputed.said!)!.raw, disputed.raw);
+        assertEquals(hby.db.kels.getOn(pre, disputed.sn!).includes(disputed.said!), true);
+        assertEquals([...hby.db.fels.getAllItemIter(pre)].some(([, , said]) => said === disputed.said), true);
+        assertEquals(
+          hby.db.fullyWitnessed(disputed),
+          true,
+          "historical receipt proof remains independent of current authority",
+        );
+      } finally {
+        yield* baser.close(true);
+        yield* hby.close(true);
+        Deno.removeSync(root, { recursive: true });
+      }
+    });
+  });
+}
+
 Deno.test("registry blind updates extend one staged frontier across reopen and refuse forks", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -770,11 +969,11 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       assertEquals([store.head(regid), ...[0, 1, 2].map((sn) => store.seqSaider(regid, sn))], [null, null, null, null]);
       yield* call(() => ingest(hby, acceptedEventReplayMessage(source, issuer.pre, 0).message));
       witnessReceipt();
-      yield* call(() => ingest(hby, issuer.interact({ data: [regid] })));
+      yield* call(() => ingest(hby, issuer.interact({ data: [{ s: "1", d: regid }] })));
       witnessReceipt();
-      assertEquals(vet({ db: hby.db, rip }).kind, "verified", "digest-only observer vet is deliberately weaker");
+      assertEquals(vet({ db: hby.db, rip }).kind, "missing", "a supplied false ordinal cannot be ignored");
       observer.processEscrows(regid);
-      assertEquals(store.head(regid), null, "digest-only seals do not authorize public engine intake");
+      assertEquals(store.head(regid), null, "false seal coordinates do not authorize public engine intake");
       const anchored = issuer.interact({
         data: [rip, first, second].map((event) => ({ i: regid, s: event.sad!.n, d: event.said! })),
       });
@@ -786,6 +985,76 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       assertEquals([0, 1, 2].map((sn) => store.seqSaider(regid, sn)!.qb64), [regid, first.said, second.said]);
       assertEquals(store.head(regid)!.qb64, second.said);
       assertEquals([...baser.maes!.getTopItemIter(regid), ...baser.ooes!.getTopItemIter(regid)], []);
+
+      /** Traverse real source-couple/triple parsing and registry dispatch, including empty clean replay. */
+      const intake = async (event: SerderACDC, source?: SealSource | SealEvent) => {
+        const tuple = source ? ("i" in source ? SealEvent.toTuple(source) : SealSource.toTuple(source)) : [];
+        const payload = tuple.map((part) => part.qb64b);
+        const proof = source
+          ? concatBytes(
+            attachmentCounterPayloadQb64b(
+              "i" in source ? "SealSourceTriples" : "SealSourceCouples",
+              1,
+              payload,
+              Vrsn_2_0,
+            ),
+            ...payload,
+          )
+          : new Uint8Array();
+        const frames = await parseBytes(messagize(event, proof, { gvrsn: Vrsn_2_0 }));
+        assertEquals(frames.length, 1);
+        const result = await run(() =>
+          dispatchEnvelope(
+            envelopeFromFrame(frames[0]),
+            hby.rvy,
+            hby.kevery,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            hby.kevery,
+            observer,
+          )
+        );
+        return result.decision;
+      };
+      for (const triple of [false, true]) {
+        for (
+          const wrong of triple
+            ? ["digest", "event", "controller", "unavailable"]
+            : ["digest", "event", "unavailable"]
+        ) {
+          const candidate = regcept(issuer.pre);
+          yield* call(() => ingest(hby, issuer.interact({ data: [{ d: candidate.said! }] })));
+          witnessReceipt();
+          const seal = {
+            s: wrong === "event" ? "0" : wrong === "unavailable" ? "ffff" : issuer.kever!.serder.snh!,
+            d: wrong === "digest" ? candidate.said! : wrong === "event"
+              ? source.db.kels.getLast(issuer.pre, 0)!
+              : issuer.kever!.said,
+          };
+          const locator = triple
+            ? SealEvent.fromSad({ ...seal, i: wrong === "controller" ? witness.pre : issuer.pre })
+            : SealSource.fromSad(seal);
+          const received = yield* call(() => intake(candidate, locator));
+          assertEquals(received?.kind, wrong === "unavailable" ? "accept" : "reject", `${triple}/${wrong}`);
+          if (wrong !== "unavailable") {
+            assertEquals([store.event(candidate.said!), store.head(candidate.said!)], [null, null]);
+            assertEquals(baser.maes.get(candidate.said!, 0), []);
+            assertEquals(
+              (yield* call(() => intake(candidate)))?.kind,
+              "accept",
+              "a false hint cannot poison clean replay",
+            );
+            assertEquals(
+              (yield* call(() => intake(candidate, locator)))?.kind,
+              "reject",
+              "locators precede duplicate success",
+            );
+          }
+          assertEquals(store.head(candidate.said!)!.qb64, candidate.said);
+        }
+      }
       assertEquals(hby.habs.size, 0, "the observer has no local controlling habitat");
       assertEquals(store.records, null, "public intake creates no local aliases");
       assertEquals(observer.processEvent(rip).kind, "duplicate");

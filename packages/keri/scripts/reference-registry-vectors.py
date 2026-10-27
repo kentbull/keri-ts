@@ -6,9 +6,12 @@ import sys
 from keri import kering
 from keri.app import habbing
 from keri.core import Blinder, BoundState, SerderACDC, Salter, Diger
+from keri.core import mapping
 from keri.acdc import messaging, regeventing
 
 REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+# Frozen timestamp-cutoff cases retain historical behavior. Selected-candidate
+# authenticated historical-head selection is qualified separately by parity row09.
 root = pathlib.Path(regeventing.__file__).resolve().parents[3]
 
 
@@ -55,9 +58,15 @@ def update(name, rip, prior, target, state, sn, stamp, bound=False):
     return body(name, messaging.blindate(regid=rip.said, prior=prior.said, blid=blind.said, sn=sn, stamp=stamp))
 
 
+def attributes(name):
+    """Author the flat exposed attribute commitment before using the frozen builder."""
+    return mapping.Compactor(mad=dict(d="", name=name), kind=kering.Kinds.json,
+                             makify=True).mad
+
+
 def anchor(hab, *events, data=None):
     """Record exact signed wire consumed independently by the TS KEL processor."""
-    wires.append(bytes(hab.interact(data=data if data is not None else [dict(s="fff", d=e.said) for e in events])).decode())
+    wires.append(bytes(hab.interact(data=data if data is not None else [dict(s=e.sad["n"], d=e.said) for e in events])).decode())
     return hab.kever.serder
 
 
@@ -92,8 +101,8 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
                           source=source, controller=controller, requireSource=requireSource, expected=outcome))
 
     rip = body("rip", messaging.regcept(israid=issuer.pre, uuid=salt, stamp=stamp0))
-    anchor(issuer, data=[rip.said])
-    acdc = body("acdc", messaging.acdcmap(israid=issuer.pre, regid=rip.said, attribute=dict(d="", name="Alice")))
+    anchor(issuer, data=[dict(d=rip.said)])
+    acdc = body("acdc", messaging.acdcmap(israid=issuer.pre, regid=rip.said, attribute=attributes("Alice")))
     first = update("issued", rip, rip, acdc.said, "issued", 1, stamp1)
     case("inception")
     case("missing supplied update anchor", updates=["issued"], acdc="acdc", blinder="issued")
@@ -107,7 +116,7 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
     remake("wrong-registry", first, rd=first.said)
     for name, r, us in [("nonzero inception", "bad-n", []), ("gap", "rip", ["gap"]), ("wrong prior", "rip", ["wrong-prior"]), ("wrong registry", "rip", ["wrong-registry"])]:
         case(name, rip=r, updates=us)
-    body("substitute", messaging.acdcmap(israid=issuer.pre, regid=rip.said, attribute=dict(d="", name="Mallory")))
+    body("substitute", messaging.acdcmap(israid=issuer.pre, regid=rip.said, attribute=attributes("Mallory")))
     case("substituted credential", updates=["issued"], acdc="substitute", blinder="issued")
     disclosures["tampered"] = Blinder(crew=disclosures["issued"].crew._replace(ts="revoked"), verify=False)
     case("stale disclosure digest", updates=["issued"], blinder="tampered")
@@ -138,7 +147,7 @@ with habbing.openHby(name="registry-vectors", temp=True, salt=salt) as hby:
     # Each binding rule has an independent target commitment, so equality of the
     # target SAID cannot mask a wrong issuer or credential-to-registry link.
     for key, owner, regid in [("oneway", issuer, None), ("wrong-issuer", stranger, rip.said), ("wrong-rd", issuer, first.said)]:
-        credential = body(key, messaging.acdcmap(israid=owner.pre, regid=regid, attribute=dict(d="", name="Alice")))
+        credential = body(key, messaging.acdcmap(israid=owner.pre, regid=regid, attribute=attributes("Alice")))
         event = update(key, rip, rip, credential.said, "issued", 1, stamp3)
         # update() interns the event separately from the presented credential.
         bodies[key + "-acdc"] = credential
