@@ -49,6 +49,21 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
   });
 
   try {
+    // Real preparation and host-created stores, including setupWitness's unbased Reger,
+    // must be owned by this harness rather than the writable system default root.
+    for (const node of harness.nodes) {
+      for (
+        const tail of [
+          `ks/${harness.base}/${node.name}`,
+          `db/${harness.base}/${node.name}`,
+          `reg/${harness.base}/${node.name}`,
+          `reg/${node.name}`,
+          `mbx/${harness.base}/${node.name}`,
+        ]
+      ) {
+        assertEquals((await Deno.stat(`${harness.home}/keri/${tail}/data.mdb`)).isFile, true, tail);
+      }
+    }
     const initialWitnesses = harness.activeWitnesses(3);
     const spareWitness = harness.node("wit");
 
@@ -382,6 +397,8 @@ Deno.test("Interop witness: tufa controller completes fully witnessed inception 
     }
   } finally {
     await harness.close();
+    await Deno.remove(harness.home, { recursive: true });
+    await Deno.remove(harness.configRoot, { recursive: true });
   }
 });
 

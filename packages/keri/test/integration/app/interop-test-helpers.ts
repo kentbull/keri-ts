@@ -43,6 +43,8 @@ export interface InteropContext {
   kliCommand: string;
   /** Verified interpreter used by auxiliary Python interop helpers. */
   pythonCommand: string;
+  /** Actual CLI module selected by the runtime provenance check. */
+  cliModule: string;
 }
 
 /** One started KERIpy witness process plus its advertised network state. */
@@ -1264,7 +1266,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     HOME: home,
     ...(denoDir ? { DENO_DIR: denoDir } : {}),
   };
-  const { kliCommand, pythonCommand } = await resolveKeripyRuntime(home, baseEnv);
+  const { kliCommand, pythonCommand, provenance } = await resolveKeripyRuntime(home, baseEnv);
   const kliBin = kliCommand.slice(0, kliCommand.lastIndexOf("/"));
   const env = {
     ...baseEnv,
@@ -1276,6 +1278,7 @@ export async function createInteropContext(): Promise<InteropContext> {
     repoRoot: workspaceRoot(),
     kliCommand,
     pythonCommand,
+    cliModule: provenance.cliModule,
   };
 }
 
@@ -1459,7 +1462,8 @@ async function writeKeriPyWitnessConfig(
 
 /** Seed one KERIpy witness store with real CLI init + incept commands. */
 async function initializeKeriPyWitness(
-  kliCommand: string,
+  ctx: InteropContext,
+  home: string,
   env: Record<string, string>,
   base: string,
   configRoot: string,
@@ -1468,8 +1472,13 @@ async function initializeKeriPyWitness(
   await requireSuccess(
     `${alias} init`,
     runCmd(
-      kliCommand,
+      ctx.pythonCommand,
       [
+        `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
+        "--test-root",
+        home,
+        "--cli-module",
+        ctx.cliModule,
         "init",
         ...keripyProtocolVersionArgs(env, "1.0"),
         "--name",
@@ -1490,8 +1499,13 @@ async function initializeKeriPyWitness(
   const incepted = await requireSuccess(
     `${alias} incept`,
     runCmd(
-      kliCommand,
+      ctx.pythonCommand,
       [
+        `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
+        "--test-root",
+        home,
+        "--cli-module",
+        ctx.cliModule,
         "incept",
         ...keripyProtocolVersionArgs(env, "1.0"),
         "--name",
@@ -1519,75 +1533,79 @@ export async function startKeriPyWitnessHarness(
   options: KeriPyWitnessHarnessOptions = {},
 ): Promise<KeriPyWitnessHarness> {
   const aliases = options.aliases ?? DEFAULT_KERIPY_WITNESS_ALIASES;
-  const home = await Deno.makeTempDir({ prefix: "keripy-witness-home-" });
-  const configRoot = await Deno.makeTempDir({
-    prefix: "keripy-witness-config-",
-  });
-  const base = options.base
-    ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
-  const env = {
-    ...ctx.env,
-    HOME: home,
-  };
-
+  let home: string | undefined;
+  let configRoot: string | undefined;
   const nodes: KeriPyWitnessNode[] = [];
-  const allocatedPorts = new Set<number>();
-  for (const alias of aliases) {
-    const httpPort = randomPort(allocatedPorts);
-    const tcpPort = randomPort(allocatedPorts);
-    await writeKeriPyWitnessConfig(configRoot, alias, httpPort, tcpPort);
-    const pre = await initializeKeriPyWitness(
-      ctx.kliCommand,
-      env,
-      base,
-      configRoot,
-      alias,
-    );
-    nodes.push({
-      alias,
-      name: alias,
-      pre,
-      httpPort,
-      tcpPort,
-      httpOrigin: `http://127.0.0.1:${httpPort}`,
-      tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
-      controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
-      witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
-      mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
-    });
-  }
-
-  const children = nodes.map((node) =>
-    spawnChild(
-      ctx.pythonCommand,
-      [
-        // Current `witness start` cannot select protocol/genus; the fixture does.
-        `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
-        ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
-        ...(options.messengerProbe ? ["--messenger-probe"] : []),
-        "--name",
-        node.name,
-        "--base",
-        base,
-        "--alias",
-        node.alias,
-        "--passcode",
-        KERIPY_WITNESS_PASSCODE,
-        "--config-dir",
-        configRoot,
-        "--config-file",
-        node.alias,
-        "--http",
-        String(node.httpPort),
-        "--tcp",
-        String(node.tcpPort),
-      ],
-      env,
-    )
-  );
-
+  const children: SpawnedChild[] = [];
   try {
+    home = await Deno.makeTempDir({ prefix: "keripy-witness-home-" });
+    configRoot = await Deno.makeTempDir({ prefix: "keripy-witness-config-" });
+    const base = options.base
+      ?? `interop-wits-${crypto.randomUUID().slice(0, 8)}`;
+    const env = {
+      ...ctx.env,
+      HOME: home,
+    };
+
+    const allocatedPorts = new Set<number>();
+    for (const alias of aliases) {
+      const httpPort = randomPort(allocatedPorts);
+      const tcpPort = randomPort(allocatedPorts);
+      await writeKeriPyWitnessConfig(configRoot, alias, httpPort, tcpPort);
+      const pre = await initializeKeriPyWitness(
+        ctx,
+        home,
+        env,
+        base,
+        configRoot,
+        alias,
+      );
+      nodes.push({
+        alias,
+        name: alias,
+        pre,
+        httpPort,
+        tcpPort,
+        httpOrigin: `http://127.0.0.1:${httpPort}`,
+        tcpUrl: `tcp://127.0.0.1:${tcpPort}`,
+        controllerOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/controller`,
+        witnessOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/witness/${pre}`,
+        mailboxOobi: `http://127.0.0.1:${httpPort}/oobi/${pre}/mailbox/${pre}`,
+      });
+    }
+
+    for (const node of nodes) {
+      children.push(spawnChild(
+        ctx.pythonCommand,
+        [
+          // Current `witness start` cannot select protocol/genus; the fixture does.
+          `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
+          "--test-root",
+          home,
+          ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
+          ...(options.messengerProbe ? ["--messenger-probe"] : []),
+          "--name",
+          node.name,
+          "--base",
+          base,
+          "--alias",
+          node.alias,
+          "--passcode",
+          KERIPY_WITNESS_PASSCODE,
+          "--config-dir",
+          configRoot,
+          "--config-file",
+          node.alias,
+          "--http",
+          String(node.httpPort),
+          "--tcp",
+          String(node.tcpPort),
+        ],
+        env,
+      ));
+    }
     await Promise.all(nodes.map((node) => waitForKeriPyWitnessReady(node)));
+    return new KeriPyWitnessHarness(home, base, configRoot, env, ctx.kliCommand, nodes, children);
   } catch (error) {
     const details = await Promise.all(
       children.map((child, index) =>
@@ -1596,20 +1614,13 @@ export async function startKeriPyWitnessHarness(
         )
       ),
     );
+    if (configRoot) await Deno.remove(configRoot, { recursive: true });
+    if (home) await Deno.remove(home, { recursive: true });
     throw new Error(
       `${error instanceof Error ? error.message : String(error)}\n${details.join("\n\n")}`,
+      { cause: error },
     );
   }
-
-  return new KeriPyWitnessHarness(
-    home,
-    base,
-    configRoot,
-    env,
-    ctx.kliCommand,
-    nodes,
-    children,
-  );
 }
 
 /** Start KERIpy's fixed-port demo witness topology with its built-in curls config. */

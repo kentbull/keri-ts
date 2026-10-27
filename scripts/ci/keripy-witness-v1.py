@@ -7,13 +7,17 @@ are explicit. Real witness routing, receipt processing, and storage stay intact.
 """
 
 import argparse
+import importlib
+from pathlib import Path
 import signal
+import sys
 
 from keri.app.configing import Configer
 from keri.app.directing import runController
 from keri.app.habbing import Habery, HaberyDoer
 from keri.app.indirecting import setupWitness
 from keri import kering
+from keri.db.dbing import LMDBer
 
 
 def stop(_signal, _frame):
@@ -23,6 +27,23 @@ def stop(_signal, _frame):
 
 def main():
     """Open one isolated fixture store and serve its configured HTTP/TCP ports."""
+    root_parser = argparse.ArgumentParser(add_help=False)
+    root_parser.add_argument("--test-root", required=True)
+    root_parser.add_argument("--cli-module", choices=("keri.cli.kli", "keri.app.cli.kli"))
+    root_args, remaining = root_parser.parse_known_args()
+    root = Path(root_args.test_root).resolve(strict=True)
+    if not root.is_dir():
+        root_parser.error("--test-root must be an existing test-owned directory")
+    # Set both primary and fallback roots inside each actual fixture process.
+    # LMDB subclasses include Keeper, Baser, Reger and Mailboxer; Configer is a Filer.
+    for store in (LMDBer, Configer):
+        store.HeadDirPath = store.AltHeadDirPath = str(root)
+    if root_args.cli_module:
+        if not remaining or remaining[0] not in ("init", "incept"):
+            root_parser.error("witness preparation supports only init and incept")
+        sys.argv = ["kli", *remaining]
+        return importlib.import_module(root_args.cli_module).main()
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--name", required=True)
     parser.add_argument("--base", required=True)
@@ -34,7 +55,7 @@ def main():
     parser.add_argument("--tcp", type=int, required=True)
     parser.add_argument("--legacy", action="store_true", help="Use the v1-only reference API.")
     parser.add_argument("--messenger-probe", action="store_true", help="Enable test-only transport commands.")
-    args = parser.parse_args()
+    args = parser.parse_args(remaining)
     signal.signal(signal.SIGTERM, stop)
 
     cf = Configer(name=args.config_file, headDirPath=args.config_dir,
@@ -66,4 +87,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())
