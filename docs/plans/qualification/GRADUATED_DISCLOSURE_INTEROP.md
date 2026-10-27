@@ -12,8 +12,9 @@ or missing-proof behavior. Historical claims below about semantic Grant refusal
 describe the earlier policy, not the current retention boundary.
 
 The [current qualification evidence](REFERENCE_ENVIRONMENTS.md#current-qualification-evidence)
-owns integrated CI, installed-family and application/GUI results and their remaining
-limits. Historical results below retain their original sources and policy.
+records the completed Deno 2.9.8 full CI, installed-family and eight application-path
+results, including exact artifact/harness credits and limits. Historical results
+below retain their original sources and policy.
 
 The following baseline describes the cleanup/release goal, extended by Kent's
 2026-10-15 request. The single-controller HTTP apply/grant probe passes at

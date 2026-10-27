@@ -48,7 +48,7 @@ workflows prepare the candidate for that composition too; the other KRAM files
 keep their existing peer. No wire translation connects the two runtimes.
 
 The existing manifest records the six candidate source pins, the exact
-[R/W register](https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance)
+[R/W register](https://github.com/kentbull/enctx/blob/aced46824ad3d5b142e2cb5e7755effb7fb1d6f7/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance)
 and [specification reference](https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/keri-acdc-v2-spec-v1.1-gap-closure-roadmap.md).
 These are a selected interoperability target, not a conformance claim. The five IPEX
 disclosure files use the candidate's flat-`dp` profile; the main and v1 frozen matrices
@@ -140,19 +140,70 @@ context before the unchanged CLI stream, as the existing export-parity owner doe
 
 ## Current qualification evidence
 
-The final integrated ACDC v2 head requires the existing `keri-ci` selection with
-`full: true`: all required units, 17 interop owners and eight package smokes.
-That integrated run and the installed six-story application/GUI qualification
-are pending; earlier scoped checks and development artifact combinations do not
-replace them. The existing application harness includes installed CLI/unblind,
-protected custody/restart/derive and representative Locksmith GUI controls.
+PR #701 merged as `f716a71996370ecedc8847548bbb077ed6194df2`, with the same tree
+as tested `fda9bbe83b8e631b22a7926f0151d10452654153`.
+[Full CI 40596875506](https://github.com/kentbull/keri-ts/actions/runs/40596875506)
+passed on Deno 2.9.8: nine unit groups reported 1,538 passed, zero failed/ignored;
+17 interop owners reported 193 passed, zero failed and three expected candidate-only
+group skips on older main/1.2/1.3 profiles. All eight package smokes and strict
+NodeNext declarations passed on Node 20.3.0 Bookworm, 26.12.1 Alpine and
+26.10.0 NodeCaged. Earlier Deno 2.8 results are not the final qualification credit.
 
 The coherent Python family at core `8f973432` passed its 46 installed consumer
 owners: Dolly 2, Locksmith 32, Registrar 3, Observer 7 and Witness 2. All five
 consumer declarations and installed `Requires-Dist` selected that exact core;
 `pip check` passed. All 449 Python files matched committed source, normal wheels
-and actual installed imports before and after testing. These installed-owner
-results do not supply the pending end-to-end application or integrated TS credit.
+and actual installed imports before and after testing. Seven adapter source files
+also matched their installed wheel (456 Python/adapter files total). All 1,429
+installed npm files matched the tarballs built from committed source. The installed
+application runtime used Node 26.10.0 and Python 3.14.8.
+
+All eight application paths passed with three witnesses/quorum two, explicit
+consent, immutable-view checks and two accepted Dolly hooks per path:
+
+| Existing scenario                         | Installed application path                                               | Result |
+| ----------------------------------------- | ------------------------------------------------------------------------ | ------ |
+| `holder-full-then-graduated`              | Tufa issuer → Locksmith Qt holder → Dolly                                | Passed |
+| `locksmith-issuer-through-holder`         | Locksmith issuer → Tufa holder → Dolly                                   | Passed |
+| `holder-partial-then-onward`              | Tufa issuer → Locksmith holder → Dolly                                   | Passed |
+| `holder-supplied-state-opening`           | Python KLI issuer → Tufa holder, including actual unblind → Dolly        | Passed |
+| `holder-provisioned-state-derivation`     | Python KLI issuer → Tufa holder, including custody/reopen/derive → Dolly | Passed |
+| `holder-selected-discloser-openings` (S5) | Tufa issuer → Locksmith Qt holder and designated presenter → Dolly       | Passed |
+| `holder-selected-discloser-derivation`    | Tufa issuer → Locksmith Qt holder and designated presenter → Dolly       | Passed |
+| `holder-selected-discloser-derivation`    | Python KLI issuer → Tufa holder and distinct Tufa presenter → Dolly      | Passed |
+
+Seven paths used TS
+`2f6e74be990d88672b8d9674c5177a28b2ce327e` with harness
+`631f9c7c3216f491125b476a68eaa9e843406071`. Final S5 used a core tarball built from
+`7adf86791c736b26860003173654eeeb60d91255`, the other seven unchanged tarballs,
+and harness `0221d2df7e6279bf27455291c0ce6eb99ed47de2`. The seven earlier paths
+were not rerun with that core artifact: its only production delta was the witness
+inspector, which they do not invoke; an installed public Node HTTP control verified
+both genus 1 and 2 separately. Changes after `7adf8679` were tests, runtime pinning
+and docs; product bytes remained identical. These are the credited sources and
+limits, not a claim that all eight paths ran at the final merge SHA.
+
+Product artifact SHA-256 values recorded for these installed runs follow. These
+are qualified local builds, not published releases. The five consumer wheel build
+heads were tree-identical to the application merge pins in the reference manifest.
+
+| Artifact                                      | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `cesr-ts-2.0.0.tgz`                           | `fc042321eb08eccf4b2eab32a7a7bc5775e17712e3de3edc653a5bf994d66cc1` |
+| `keri-ts-2.0.0.tgz`                           | `523463dc8616e9962f4738c953a9a18ac3406458b7bcc7e14e6f7b5d5cbf1292` |
+| `keri-ts-hosting-2.0.0.tgz`                   | `44265ddf292e1609434500a56967ed9a1dbdef9d8abcaf97a0035c553fc957f2` |
+| `keri-ts-observer-2.0.0.tgz`                  | `9a0d53297d2b7b6f0be8dbde2ba1d09a1272c4c6fad738db0f440d4c37f27567` |
+| `keri-ts-registrar-2.0.0.tgz`                 | `c50d2e28a0f7a757852f3bdfc504b363575bfadf1683501e447b4a6ab9b14046` |
+| `keri-ts-tufa-2.0.0.tgz`                      | `50067ff5ed53fefc73f53d952641221d94d96622c470ddd3546c93645f947970` |
+| `keri-ts-verifier-2.0.0.tgz`                  | `102632b2b011a6d0f6d95ba0db451cb302d7d308ab6de804a1b18433baa6e4f6` |
+| `keri-ts-wallet-2.0.0.tgz`                    | `6759304ab259cc3ab95a556cc79367bd17ac0653adcfbf75b68732701e8d7fc3` |
+| `dolly-0.1.0.dev0-py3-none-any.whl`           | `2152d6ee50171815d926c814393baa791a30b0ba55799d0b7e03a98fd679dcb6` |
+| `keri-2.1.0.dev1-py3-none-any.whl`            | `5487adc00c186e55ff6f789cd9c1d4bca62e352a15af2908257ad26ca0536d41` |
+| `kf_observer-0.0.1-py3-none-any.whl`          | `b49bbbd44e22e4d306e3b0b312fc324c6a0b4393a844ab9d075c8786f8041e90` |
+| `kf_registrar-0.0.1-py3-none-any.whl`         | `a22e192609a4879b6e4945365c2a990888a4eae6ad44daabbeb3bf514f825722` |
+| `locksmith-0.0.1-py3-none-any.whl`            | `814014ad6e7e415dee4933a90a088d604942d5ade461a945ca3c207ac747dfee` |
+| `witopnet-0.0.1-py3-none-any.whl`             | `fa84fd34757bcbdf87c08fca19241baf4ece9cb158052b3dd303015d08197a94` |
+| `keri-ts-2.0.0.tgz` (earlier `2f6e74be` core) | `6874ab833e491c4d7f41730cb273fe7db8189030b2a57e294e25581ff56ea1c9` |
 
 The following 1.0.0 results are historical evidence for their recorded sources.
 
