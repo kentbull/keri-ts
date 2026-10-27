@@ -4,6 +4,7 @@ import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import reference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import {
+  BlindState,
   concatBytes,
   Counter,
   Diger,
@@ -18,7 +19,6 @@ import {
 import { createWalletBaser, type PreparedGrantBody, Wallet, WalletDiscloser } from "../../../../wallet/mod.ts";
 import { acdcmap, blindate as acdcBlindate } from "../../../src/acdc/messaging.ts";
 import type { RegistryDisclosure } from "../../../src/acdc/regeventing.ts";
-import { publicOpeningAttachment } from "../../../src/acdc/registering.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
 import { groupEndorseReply } from "../../../src/app/identity/endpoint-roleing.ts";
@@ -512,7 +512,7 @@ Deno.test({
           issuer.wallet.recordIssued(credential, issuance.said!, { blinder: issued });
           assertEquals(holder.wallet.inventory().held.length, 0);
           const openingFile = `${ctx.home}/issued-opening.cesr`;
-          Deno.writeFileSync(openingFile, publicOpeningAttachment(issued));
+          Deno.writeFileSync(openingFile, BlindState.qb64b(issued));
           const pendingGrant = yield* call(() =>
             runCmdWithTimeout(
               Deno.execPath(),

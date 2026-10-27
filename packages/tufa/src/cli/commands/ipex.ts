@@ -5,8 +5,7 @@ import {
   BoundState,
   concatBytes,
   Counter,
-  isGroupTuple,
-  parseBlinder,
+  Matter,
   parseBytes,
   type SerderACDC,
   type SerderKERI,
@@ -28,7 +27,6 @@ import {
   parseNumberOption,
   parseStringOption,
 } from "keri-ts/cli";
-import { publicOpeningAttachment } from "keri-ts/db";
 import {
   type AgentRuntime,
   approveStoredMultisigIpexWrappers,
@@ -249,21 +247,19 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
   writeJsonLine(completed);
 }
 
-/** Decode an explicitly supplied counted opening through the shared CESR tuple codec. */
+/** Decode exactly one raw opening tuple through existing CESR primitive and record codecs. */
 function openingFile(path: string): RegistryDisclosure {
-  const raw = Deno.readFileSync(path), group = parseBlinder(raw, Vrsn_2_0, "txt"), tuple = group.items[0];
-  if (group.consumed !== raw.length || group.items.length !== 1 || !isGroupTuple(tuple)) {
-    throw new ValidationError("Opening file must carry exactly one counted blind/bound tuple.");
+  const raw = Deno.readFileSync(path), fields: Uint8Array[] = [];
+  for (let offset = 0; offset < raw.length;) {
+    const field = new Matter({ qb64b: raw.subarray(offset) }).qb64b;
+    fields.push(field);
+    offset += field.length;
   }
-  const fields = tuple.map((field) => {
-    if (isGroupTuple(field) || !("qb64b" in field)) throw new ValidationError("Invalid opening tuple field.");
-    return field.qb64b;
-  });
   if (fields.length === 6) {
     return BoundState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3], fields[4], fields[5]]);
   }
   if (fields.length === 4) return BlindState.fromQb64bTuple([fields[0], fields[1], fields[2], fields[3]]);
-  throw new ValidationError("Opening file must carry one blind or bound state tuple.");
+  throw new ValidationError("Opening file must carry exactly one raw blind or bound state tuple.");
 }
 
 /** Thin ACDC v2 argument/delivery wiring; wallet owns view selection, root gates, signing and source receipts. */
@@ -428,7 +424,7 @@ export function* ipexUnblindCommand(args: Record<string, unknown>): Operation<vo
       const proof = discloser.unblind(openingFile(path), said, states);
       if (!proof) throw new ValidationError("Candidates do not match the exact opening commitment.");
       const out = parseStringOption(args.out, "out");
-      if (out) Deno.writeFileSync(out, publicOpeningAttachment(proof));
+      if (out) Deno.writeFileSync(out, "bn" in proof ? BoundState.qb64b(proof) : BlindState.qb64b(proof));
       return { commitment: proof.d.nonce, credential: proof.td.nonce, state: proof.ts.label, matched: true };
     });
   });

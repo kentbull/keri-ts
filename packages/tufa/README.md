@@ -83,7 +83,8 @@ tufa ipex grant --acdc-v2 -n STORE -a HOLDER -r VERIFIER \
 requires that explicit authorization. This does not create wallet admission
 consent. A partial view cannot gain withheld fields from another cached Grant.
 `--refresh` updates proof evidence only; supply exact `--opening FILE...`, or use
-`--derive` with explicitly provisioned custody. `--presentation-registry NAME`
+`--derive` with explicitly provisioned custody. Opening files contain one raw
+concatenated BlindState or BoundState CESR tuple, without attachment counters. `--presentation-registry NAME`
 selects a local registry matching the disclosed Issuee declaration. `--input FILE`
 first admits supplied signed evidence through ordinary ingress.
 
@@ -99,7 +100,7 @@ replay their exact original nests.
 
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
-writes the matching counted opening. A match does not establish accepted standing
+writes the matching raw opening tuple. A match does not establish accepted standing
 or permission to disclose.
 
 ACDC v2 IPEX attachment genus defaults to 2.0. Agree/Grant/Admit independently
