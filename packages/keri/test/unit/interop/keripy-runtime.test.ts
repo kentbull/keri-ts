@@ -43,9 +43,11 @@ Deno.test("KERIpy release profiles refuse missing environments and mismatched pi
   }
 });
 
-Deno.test("Native registry requires its candidate while main owners keep their selected peer", () => {
+Deno.test("Native registry and IPEX require their candidate while ESSR keeps its main peer", () => {
   const main = { KERIPY_MAIN_ROOT: "/main", KERIPY_MAIN_PYTHON: "/main/python" };
-  assertThrows(() => keripySuiteEnvironment("interop-native-registry", main), Error, "requires a candidate");
+  for (const owner of ["interop-native-registry", "interop-ipex-disclosure"]) {
+    assertThrows(() => keripySuiteEnvironment(owner, main), Error, "requires a candidate");
+  }
   assertThrows(
     () => keripySuiteEnvironment("interop-native-registry", { ...main, KERIPY_CANDIDATE_ROOT: "/candidate" }),
     Error,
@@ -66,10 +68,18 @@ Deno.test("Native registry requires its candidate while main owners keep their s
   for (const owner of ["interop-native-registry", "interop-ipex-disclosure", "interop-essr-storage"]) {
     assertEquals(keripySuiteEnvironment(owner, selected), selected);
   }
-  for (const owner of ["interop-ipex-disclosure", "interop-essr-storage"]) {
+  for (const owner of ["interop-essr-storage"]) {
     const env = keripySuiteEnvironment(owner, main);
     assertEquals(env.KERIPY_INTEROP_PROFILE, "main");
     assertEquals(env.KERIPY_INTEROP_ROOT, main.KERIPY_MAIN_ROOT);
     assertEquals(env.KERIPY_INTEROP_EXPECTED_COMMIT, reference.profiles.main.commit);
   }
+  const fork = {
+    KERIPY_INTEROP_ROOT: "/mailbox",
+    KERIPY_INTEROP_PYTHON: "/mailbox/python",
+    KERIPY_INTEROP_EXPECTED_COMMIT: reference.commit,
+    KERIPY_CANDIDATE_ROOT: "/candidate",
+    KERIPY_CANDIDATE_PYTHON: "/candidate/python",
+  };
+  assertEquals(keripySuiteEnvironment("interop-kram", fork), fork, "mailbox providers retain their separate fork");
 });

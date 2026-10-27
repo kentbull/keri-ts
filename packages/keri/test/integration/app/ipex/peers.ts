@@ -71,7 +71,7 @@ export interface PeerInfo {
 
 /** The same observations from each implementation, without sharing persistence internals. */
 export interface PeerSnapshot {
-  messages: { d: string; r: string; p: string; x: string; i: string; ri: string }[];
+  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: DisclosurePlan } }[];
   received: string[];
   known: string[];
   notifications?: number;
@@ -318,7 +318,7 @@ class TypeScriptPeer implements IpexPeer {
         }).qb64
         : previous.sad!.x as string,
       dig: defect.kind === "prior" ? defect.said : prior,
-      modifiers: verb === "grant" ? { dp: [[]] } : {},
+      modifiers: verb === "grant" ? { dp: [] } : {},
       pvrsn: Vrsn_2_0,
       gvrsn: Vrsn_2_0,
     });

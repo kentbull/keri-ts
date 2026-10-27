@@ -170,11 +170,11 @@ jobs:
         run: deno run -A packages/cesr/scripts/verify-tables.ts
 
       - name: Prepare pinned main protocol and storage peer
-        if: contains(fromJSON('["interop-essr-storage", "interop-ipex-disclosure"]'), matrix.target)
+        if: matrix.target == 'interop-essr-storage'
         uses: ./.github/actions/setup-keripy-main-peer
 
       - name: Prepare pinned native candidate peer
-        if: matrix.target == 'interop-native-registry'
+        if: contains(fromJSON('["interop-native-registry", "interop-ipex-disclosure", "interop-kram"]'), matrix.target)
         uses: ./.github/actions/setup-keripy-main-peer
         with:
           profile: candidate

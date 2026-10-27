@@ -1,17 +1,26 @@
 # IPEX runtime and nested disclosure
 
-Six v2 routes follow frozen `acdc/ipexing.py`; the existing v1 handlers/builders
+Six v2 routes follow the manifest's selected Python candidate `acdc/ipexing.py`; the existing v1 handlers/builders
 retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
 supply an independent issuer proof for every child. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
 signatures. Parent proofs never authenticate children. TS supports DI2I and NOT
-under the profiles below. The inspected Python reference leaves both unsatisfied;
-neither operator enters Python interop until that reference supports it. The
+under the profiles below. Selected-candidate operator interoperability remains
+separately qualified in the later graph work. The
 [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
 keeps TS operator qualification distinct from pairwise evidence.
 Deeper child-owned nests are
 guarded until their processing is defined.
+
+The selected `q.dp` is the flat list of `[schema SAID, graph prefix, relative paths]`
+triples from the [pinned disclosure-path text](https://github.com/trustoverip/kswg-acdc-specification/blob/2362e48a1e8668278575b4f5b239069b2c1a82ad/spec/spec-body.md#disclosure-paths).
+Apply, unsolicited Offer and bare Grant require a non-empty plan. A solicited Offer
+defaults to `[]` after checking its Apply's plan; Agree must use `[]`, and a linked
+Grant defaults to `[]`. Empty lists inherit only through accepted predecessors;
+they never authorize a vacuous opener. A bare one-node Grant still defaults to
+`[[schema, "/", []]]`, explicitly selecting that node without requesting additional
+fields. No historical nested-plan translation or signed-byte rewriting is supported.
 
 `ipexExnBody` synchronously accepts parsed credential bodies and explicit route
 options. It reads no payload or storage and authenticates no signatures. Opening
@@ -40,9 +49,15 @@ every issuer, own-node schemas, edge semantics/schema pins, and presentation
 obligations in that order. Explicit/inherited edge schemas validate decoded far
 credentials; equal schema IDs never waive constraints. Missing local resources
 use schema EXN escrow; invalid schemas reject, infrastructure/resource failures
-propagate. NOT/DI2I remain unsatisfied in the inspected reference; hidden aggregate
+propagate. Operator-specific interoperability remains separately qualified; hidden aggregate
 and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
-are separate work. Preserve the 927 commitment/wire labels and expectations.
+are separate work. The existing wire generator now records the selected candidate
+pin and its flat-plan decisions; independent historical primitive references stay frozen.
+Its whole-disclosure positive uses a closed typed schema, as required by the
+candidate's bounded closure check. TS still accepts some open or ambiguous whole-node
+schemas without proving recursive closure; this known gap and remaining prefix/BFS
+semantics belong to the later disclosure-closure work. These selected cases do not
+qualify universal whole-node interoperability.
 
 The TypeScript DI2I contract admits identity or an approved delegation chain at any
 depth. Every hop needs the delegator's accepted approval of the delegated inception;

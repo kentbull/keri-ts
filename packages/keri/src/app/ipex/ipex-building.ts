@@ -79,7 +79,13 @@ export function ipexExnBody(
       || (verb === "offer" && priorAnchor && anchor !== true))
   ) throw new Error("IPEX reply must preserve the anchoring requirement.");
   let plan = options.plan;
-  if (verb === "offer") plan ??= (prior?.sad?.q as { dp?: DisclosurePlan[] } | undefined)?.dp?.[0];
+  if (verb === "offer" && prior && (plan === undefined || !plan.length)) {
+    const inherited = (prior.sad?.q as { dp?: unknown } | undefined)?.dp;
+    if (!validDisclosurePlan(inherited) || !inherited.length) {
+      throw new Error("IPEX offer cannot inherit an invalid or empty Apply plan.");
+    }
+    plan ??= [];
+  }
   if (verb === "agree") {
     if (plan?.length) throw new Error("IPEX agree must use an empty ditto plan.");
     plan = [];
@@ -97,10 +103,11 @@ export function ipexExnBody(
       ]];
     } else throw new Error("A grant with multiple nodes requires an explicit disclosure plan.");
   }
-  const modifiers: { dp?: DisclosurePlan[] } = {};
+  const modifiers: { dp?: DisclosurePlan } = {};
   if (["apply", "offer", "agree", "grant"].includes(verb)) {
     if (!validDisclosurePlan(plan)) throw new Error("IPEX requires a valid disclosure plan.");
-    modifiers.dp = [structuredClone(plan)];
+    if (!plan.length && !prior) throw new Error("An IPEX opener requires a non-empty disclosure plan.");
+    modifiers.dp = structuredClone(plan);
   } else if (plan !== undefined) throw new Error("This IPEX route does not negotiate disclosure.");
   if (verb === "grant") {
     if (!prior && Boolean(plan!.length) !== Boolean(nodes.length)) {

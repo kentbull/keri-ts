@@ -86,11 +86,11 @@ function jobs(suite: TestSuite): number {
 /** Select the concrete owner's peer without allowing main setup to replace the candidate. */
 export function keripySuiteEnvironment(name: string, inherited: Record<string, string>): Record<string, string> {
   const env = { ...inherited, ...suites[name]?.env };
-  if (name === "interop-native-registry") {
+  if (["interop-native-registry", "interop-ipex-disclosure"].includes(name)) {
     if (env.KERIPY_INTEROP_PROFILE !== "candidate") {
       const root = env.KERIPY_CANDIDATE_ROOT?.trim();
       const python = env.KERIPY_CANDIDATE_PYTHON?.trim();
-      if (!root || !python) throw new Error("Native registry requires a candidate root and Python interpreter.");
+      if (!root || !python) throw new Error(`${name} requires a candidate root and Python interpreter.`);
       Object.assign(env, {
         KERIPY_INTEROP_PROFILE: "candidate",
         KERIPY_INTEROP_ROOT: root,
@@ -99,12 +99,12 @@ export function keripySuiteEnvironment(name: string, inherited: Record<string, s
       });
     }
     if (!env.KERIPY_INTEROP_ROOT?.trim() || !env.KERIPY_INTEROP_PYTHON?.trim()) {
-      throw new Error("Native registry requires a candidate root and Python interpreter.");
+      throw new Error(`${name} requires a candidate root and Python interpreter.`);
     }
   }
   const mainRoot = env.KERIPY_MAIN_ROOT;
   if (
-    ["interop-essr-storage", "interop-ipex-disclosure"].includes(name) && mainRoot
+    name === "interop-essr-storage" && mainRoot
     && env.KERIPY_INTEROP_PROFILE !== "candidate"
   ) {
     const python = env.KERIPY_MAIN_PYTHON;

@@ -11,7 +11,39 @@ from keri.core.scheming import Schemer
 
 def disclosure(issuer, *, issuee=None, edge=None):
     """Build a full commitment and its status-only partial with identical SAIDs."""
-    full = acdcmap(issuer, uuid=Noncer().qb64, iseaid=issuee, edge=edge, attribute=dict(
+    scalar = {"type": "string"}
+    value_block = {"oneOf": [scalar, {
+        "type": "object", "required": ["d", "u", "value"],
+        "properties": {"d": scalar, "u": scalar, "value": scalar},
+        "additionalProperties": False,
+    }]}
+    schema = Schemer(sed={
+        "$id": "", "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "version": "1.0.0", "type": "object",
+        "required": ["v", "t", "d", "u", "i", "s", "a"],
+        "properties": {
+            "v": scalar, "t": {"type": "string", "const": "acm"},
+            "d": scalar, "u": scalar, "i": scalar,
+            "s": {"oneOf": [scalar, {"type": "object"}]},
+            "a": {"oneOf": [scalar, {
+                "type": "object", "required": ["d", "u", "status", "contact", "role", "private"],
+                "properties": {
+                    "d": scalar, "u": scalar, "i": scalar, "status": value_block,
+                    "contact": {"oneOf": [scalar, {
+                        "type": "object", "required": ["d", "u", "city", "email", "postcode"],
+                        "properties": {"d": scalar, "u": scalar, "city": value_block,
+                                       "email": value_block, "postcode": value_block},
+                        "additionalProperties": False,
+                    }]},
+                    "role": value_block, "private": value_block,
+                },
+                "additionalProperties": False,
+            }]},
+            "e": {"oneOf": [scalar, {"type": "object"}]},
+        },
+        "additionalProperties": False,
+    })
+    full = acdcmap(issuer, uuid=Noncer().qb64, iseaid=issuee, edge=edge, schema=schema.sed, attribute=dict(
         d="", u=Noncer().qb64,
         status=dict(d="", u=Noncer().qb64, value="citizen"),
         contact=dict(d="", u=Noncer().qb64,
