@@ -5,9 +5,40 @@
  * accepted/saved/TEL/verifier fields remain separate protocol facts. Formatting
  * here never turns a successful proposal send into credential lifecycle success.
  */
-import type { Operation } from "effection";
+import { call, type Operation, scoped } from "effection";
 import { vcCreateCommand as create, vcRegistryInceptCommand as incept, vcRevokeCommand as revoke } from "keri-ts/cli";
+import { parseStringOption } from "keri-ts/cli";
+import { ValidationError } from "keri-ts/runtime";
+import { withAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
+import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+
+/** List explicit native inventory references, separately from legacy verifier-saved credentials. */
+export function* walletListCommand(args: Record<string, unknown>): Operation<void> {
+  const inventory = yield* withAgentRuntime(walletStoreArgs(args), { skipConfig: true }, function*({ hby, runtime }) {
+    return yield* scoped(function*() {
+      if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+      const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
+      return wallet.inventory();
+    });
+  });
+  writeJsonLine(inventory);
+}
+
+/** Read one admitted Grant's exact disclosed credential without merging fuller local material. */
+export function* walletReadCommand(args: Record<string, unknown>): Operation<void> {
+  const grant = parseStringOption(args.grant, "grant");
+  if (!grant) throw new ValidationError("Admitted Grant --grant is required.");
+  const held = yield* withAgentRuntime(walletStoreArgs(args), { skipConfig: true }, function*({ hby, runtime }) {
+    return yield* scoped(function*() {
+      if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+      const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
+      const record = yield* call(() => wallet.heldCredential(grant));
+      return { grant: record.grant.said, admit: record.admit, credential: record.credential.sad };
+    });
+  });
+  writeJsonLine(held);
+}
 
 /** Display the created registry or group proposal, after its owned resources close. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {

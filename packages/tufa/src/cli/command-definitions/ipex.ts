@@ -103,6 +103,8 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
         ipex.command("admit")
           .description("Send or write an IPEX admit after local credential acceptance")
           .option("--said <said>", "Accepted grant EXN SAID")
+          .option("--native", "Admit an accepted native ACDC v2 Grant into wallet inventory")
+          .option("--consent", "Explicitly consent to native wallet admission after current graph verification")
           .option("--grant-file <file>", "Authenticated grant/support wire file")
           .option("--timeout <seconds>", "Wait for local credential acceptance (default: 60; 0 returns pending)")
           .option("--approval-timeout <seconds>", "Wait for group approval (default: 60; 0 returns pending)")

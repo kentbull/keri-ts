@@ -5,14 +5,27 @@ import { queryCommand } from "../src/cli/commands/query.ts";
 import { witnessStartCommand, witnessSubmitCommand } from "../src/cli/commands/witness.ts";
 // @file-test-lane app-fast-isolated
 
-import { run } from "effection";
+import {
+  collectPayload,
+  Compactor,
+  Diger,
+  framePayload,
+  type MapperMap,
+  NumberPrimitive,
+  parseBytes,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { call, run } from "effection";
 import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import {
+  acdcmap,
   createAgentRuntime,
   createHabery,
   DISPLAY_VERSION as KERI_DISPLAY_VERSION,
   FetchHttpClient,
+  Hab,
   Habery,
+  ipexExnBody,
   Schemer,
   systemClock,
   ValidationError,
@@ -21,10 +34,14 @@ import { Command } from "npm:commander@^10.0.1";
 import { tufa } from "../src/cli/cli.ts";
 import { registerCmds } from "../src/cli/command-definitions.ts";
 import type { CommandSelection } from "../src/cli/command-types.ts";
-import { ipexApplyCommand } from "../src/cli/commands/ipex.ts";
+import { walletListCommand, walletReadCommand } from "../src/cli/commands/credentials.ts";
+import { ipexAdmitCommand, ipexApplyCommand } from "../src/cli/commands/ipex.ts";
 import { mailboxAddCommand, mailboxStartCommand, mailboxUpdateCommand } from "../src/cli/commands/mailbox.ts";
 import { createCmdHandlers } from "../src/cli/handlers.ts";
 import { DISPLAY_VERSION as TUFA_DISPLAY_VERSION } from "../src/version.ts";
+
+import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
+import { messageAttachmentGroups } from "../../keri/src/core/protocol-serialization.ts";
 
 interface CmdResult {
   code: number;
@@ -107,6 +124,8 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
   ["vc", "registry", "status", "-n", "store", "--registry-name", "vlei"],
   ["vc", "create", "-n", "store", "-a", "issuer", "--registry-name", "vlei"],
   ["vc", "list", "-n", "store"],
+  ["vc", "wallet", "list", "-n", "store"],
+  ["vc", "wallet", "read", "-n", "store", "--grant", "Egrant"],
   ["vc", "export", "-n", "store", "--said", "Ecredential"],
   ["vc", "import", "-n", "store"],
   ["vc", "revoke", "-n", "store", "--registry-name", "vlei", "--said", "Ecredential"],
@@ -333,6 +352,26 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
 });
 
 Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
+  const native = parseCommandSelection([
+    "ipex",
+    "admit",
+    "-n",
+    "store",
+    "-a",
+    "holder",
+    "--said",
+    "Egrant",
+    "--native",
+    "--consent",
+  ]);
+  assertEquals([native.name, native.args.native, native.args.consent, native.args.said], [
+    "ipex.admit",
+    true,
+    true,
+    "Egrant",
+  ]);
+  const read = parseCommandSelection(["vc", "wallet", "read", "-n", "store", "--grant", "Egrant"]);
+  assertEquals([read.name, read.args.grant], ["vc.wallet.read", "Egrant"]);
   const grant = parseCommandSelection([
     "ipex",
     "grant",
@@ -797,6 +836,8 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
   });
   const url = `http://127.0.0.1:${server.addr.port}/`;
   let sender = "", recipient = "";
+  const nativeGrants: string[] = [];
+  let disclosed: MapperMap;
   const close = Habery.prototype.close;
   const log = console.log;
   const records: string[] = [];
@@ -812,6 +853,59 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
         recipient = target.pre;
         yield* runtime.reactor.processBytes(target.makeEndRole(target.pre, "controller", true));
         yield* runtime.reactor.processBytes(target.makeLocScheme(url, target.pre, "http"));
+        const holder = hby.habByName("sender")!;
+        const full = acdcmap(target.pre, {
+          issuee: holder.pre,
+          attribute: { d: "", status: "citizen", private: { d: "", value: "not-disclosed" } },
+        });
+        const compactor = new Compactor({ mad: full.attrib as MapperMap, kind: full.kind, makify: true });
+        compactor.compact(["a/status"], "a");
+        const partial = acdcmap(target.pre, {
+          uuid: full.sad!.u as string,
+          schema: full.schema as MapperMap,
+          attribute: compactor.partials!["a/status"].mad,
+        });
+        assertEquals(partial.said, full.said);
+        disclosed = partial.sad as MapperMap;
+        for (const mode of ["true", "false", "unknown", "close-failure"]) {
+          const root = mode === "false" || mode === "unknown"
+            ? acdcmap(target.pre, {
+              attribute: { d: "", role: "near" },
+              edge: {
+                d: "",
+                proof: {
+                  n: partial.said!,
+                  o: mode === "false" ? "I2I" : "UNKNOWN",
+                },
+              },
+            })
+            : partial;
+          const nodes = root === partial ? [partial] : [root, partial];
+          const grant = ipexExnBody(target.pre, "/ipex/grant", nodes, {
+            message: mode,
+            recipient: holder.pre,
+            xid: root.said!,
+            plan: nodes.map((node, i) => [(node.schema as MapperMap).$id as string, i ? "/e/proof/_/" : "/", []]),
+          });
+          const frame = parseBytes(target.endorse(grant, { gvrsn: Vrsn_2_0, genusify: true }))[0];
+          frame.nests = nodes.map((node) => ({
+            body: node,
+            gvrsn: Vrsn_2_0,
+            attachments: messageAttachmentGroups({
+              tsgs: [
+                new TransIdxSigGroup(
+                  target.kever!.prefixer,
+                  NumberPrimitive.fromNum(BigInt(target.kever!.lastEst.s)),
+                  new Diger({ qb64: target.kever!.lastEst.d }),
+                  target.sign(node.raw, true),
+                ),
+              ],
+            }, Vrsn_2_0),
+          }));
+          yield* runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(frame))));
+          assertEquals(runtime.exc.complete(grant.said!), true);
+          nativeGrants.push(grant.said!);
+        }
       } finally {
         yield* runtime.close();
         yield* hby.close();
@@ -845,6 +939,59 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
     assertEquals(closed, true);
     assertEquals(transmissions, 2, "Shutdown failure does not undo a completed HTTP transmission");
     assertEquals(records, [], "Failed shutdown must not publish final command success");
+    failClose = false;
+    const sign = Hab.prototype.sign;
+    let signatures = 0;
+    Hab.prototype.sign = function(this: Hab, ...args: Parameters<typeof sign>) {
+      if (this.pre === sender) signatures++;
+      return sign.apply(this, args);
+    } as typeof sign;
+    try {
+      const native = { name, headDirPath, alias: "sender", native: true, said: nativeGrants[0] };
+      await assertRejects(() => run(() => ipexAdmitCommand(native)), ValidationError, "consent");
+      for (const said of nativeGrants.slice(1, 3)) {
+        closed = false;
+        await assertRejects(
+          () => run(() => ipexAdmitCommand({ ...native, said, consent: true })),
+          ValidationError,
+          "graph",
+        );
+      }
+      assertEquals(signatures, 0, "consent, false and unknown checks precede holder signing");
+      closed = false;
+      await run(() => walletListCommand({ name, headDirPath }));
+      assertEquals(JSON.parse(records.pop()!).held, []);
+      assertEquals(transmissions, 2);
+      closed = false;
+      await run(() => ipexAdmitCommand({ ...native, consent: true }));
+      const admitted = JSON.parse(records.pop()!);
+      assertEquals([admitted.grant, admitted.holder, admitted.deliveries], [nativeGrants[0], sender, [url]]);
+      assertEquals(transmissions, 3);
+      closed = false;
+      await run(() => walletReadCommand({ name, headDirPath, grant: nativeGrants[0] }));
+      const held = JSON.parse(records.pop()!);
+      assertEquals([held.grant, held.admit, held.credential], [nativeGrants[0], admitted.admit, disclosed!]);
+      assertEquals(typeof held.credential.a.private, "string");
+      closed = false;
+      injected = false;
+      failClose = true;
+      const failed = await assertRejects(() =>
+        run(() => ipexAdmitCommand({ ...native, said: nativeGrants[3], consent: true }))
+      );
+      assertEquals(failed, fault);
+      assertEquals(transmissions, 4);
+      assertEquals(records, [], "Native admission success also follows owned shutdown");
+      failClose = false;
+      closed = false;
+      await run(() => walletListCommand({ name, headDirPath }));
+      assertEquals(
+        JSON.parse(records.pop()!).held.map((row: { grant: string }) => row.grant).sort(),
+        [nativeGrants[0], nativeGrants[3]].sort(),
+        "actual accepted consent survives delivery and later close failure",
+      );
+    } finally {
+      Hab.prototype.sign = sign;
+    }
   } finally {
     Habery.prototype.close = close;
     console.log = log;

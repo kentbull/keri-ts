@@ -12,6 +12,19 @@ import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
  */
 export function registerVcCmds(program: Command, dispatch: CommandDispatch): void {
   const vc = program.command("vc").description("Credential operations");
+  const wallet = vc.command("wallet").description("Native ACDC wallet inventory and exact admitted disclosures");
+  for (const operation of ["list", "read"] as const) {
+    const command = addStoreOptions(wallet.command(operation));
+    if (operation === "read") {
+      command.requiredOption("--grant <said>", "Admitted Grant SAID selecting the exact disclosure");
+    }
+    registerDispatchedCommand(command, dispatch, {
+      name: `vc.wallet.${operation}`,
+      load: () => import("../commands/credentials.ts"),
+      exportName: operation === "list" ? "walletListCommand" : "walletReadCommand",
+      args: dispatchArgs,
+    });
+  }
 
   const schema = vc.command("schema").description("Credential schema operations");
   registerKeriCliCommand(

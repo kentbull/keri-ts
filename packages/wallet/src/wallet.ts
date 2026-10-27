@@ -1,5 +1,13 @@
 /** Explicit ACDC inventory and consent over borrowed authenticated protocol evidence. */
-import { bytesEqual, collectPayload, nestedPayload, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import {
+  bytesEqual,
+  collectPayload,
+  nestedPayload,
+  SerderACDC,
+  type SerderKERI,
+  type Versionage,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { loadNests, type RegistryStore } from "keri-ts/db";
 import {
   acceptedRegistryEvidence,
@@ -8,6 +16,8 @@ import {
   evaluateAcdcRelations,
   type Exchanger,
   type Habery,
+  ipexExnBody,
+  isLocalGroupHab,
   type RegistryDisclosure,
   type RegistryState,
   ValidationError,
@@ -31,6 +41,11 @@ export interface HeldCredential {
   artifacts: Uint8Array[];
   grant: SerderKERI;
   admit: string;
+}
+/** A signed response prepared after consent/current policy; intake and delivery remain caller-owned. */
+export interface PreparedAdmit {
+  admit: SerderKERI;
+  wire: Uint8Array;
 }
 /** Compare durable application values, including exact originally issued raw bytes. */
 function identical(left: object, right: object): boolean {
@@ -135,6 +150,50 @@ export class Wallet {
     return evaluateAcdcRelations(graph, this.hby.db, registrations) === true;
   }
 
+  /** Resolve only the origin actually carried by this accepted Grant. */
+  private origin(grant: SerderKERI): string {
+    const origins = grant.sad!.a && (grant.sad!.a as Record<string, unknown>).o;
+    if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
+      throw new ValidationError("Wallet admission requires one disclosed origin.");
+    }
+    if (
+      !loadNests(this.hby.db, grant.said!).some((node) =>
+        node.body instanceof SerderACDC && node.body.said === origins[0]
+      )
+    ) {
+      throw new ValidationError("Accepted Grant origin is missing.");
+    }
+    return origins[0];
+  }
+
+  /** Require explicit consent and current root truth before authoring any holder signature. */
+  async prepareAdmit(
+    grant: string,
+    holder: string,
+    { consent = false, message = "", gvrsn = Vrsn_2_0 }: { consent?: boolean; message?: string; gvrsn?: Versionage } =
+      {},
+  ): Promise<PreparedAdmit> {
+    if (consent !== true) throw new ValidationError("Explicit consent is required.");
+    if (gvrsn.major < 2) throw new ValidationError("Native Admit requires attachment genus 2 or later.");
+    const g = await this.accepted(grant, "/ipex/grant"), hab = this.hby.habs.get(holder);
+    if (!hab || g.sad!.ri !== holder) throw new ValidationError("Grant must address the intended local holder.");
+    if (isLocalGroupHab(this.hby, hab)) {
+      throw new ValidationError("Native wallet admission requires a single-signature holder.");
+    }
+    if ((g.sad!.a as { ax?: boolean[] }).ax?.[0]) {
+      throw new ValidationError("Anchored Admit requires the source-anchor publication workflow.");
+    }
+    const response = this.hby.db.erpy.get([grant]);
+    if (response && this.exc.complete(response.qb64)) {
+      throw new ValidationError("Grant already has an accepted response.");
+    }
+    if (!this.graphAccepted(grant, this.origin(g))) {
+      throw new ValidationError("Current authenticated graph acceptance is required before signing.");
+    }
+    const admit = ipexExnBody(holder, "/ipex/admit", [], { message, prior: g, gvrsn });
+    return { admit, wire: hab.endorse(admit, { pipelined: false, gvrsn, genusify: true }) };
+  }
+
   /** Record explicit local consent to one accepted, linked Grant/Admit pair. */
   async recordAdmission(
     grant: string,
@@ -150,14 +209,7 @@ export class Wallet {
     ) {
       throw new ValidationError("Admit must be the intended local holder response to this Grant.");
     }
-    const origins = g.sad!.a && (g.sad!.a as Record<string, unknown>).o;
-    if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
-      throw new ValidationError("Wallet admission requires one disclosed origin.");
-    }
-    const origin = origins[0];
-    if (!loadNests(this.hby.db, grant).some((node) => node.body instanceof SerderACDC && node.body.said === origin)) {
-      throw new ValidationError("Accepted Grant origin is missing.");
-    }
+    const origin = this.origin(g);
     const old = this.db.admitted.get([grant]);
     if (old) {
       if (old.admit !== admit || old.credential !== origin || old.holder !== holder) {

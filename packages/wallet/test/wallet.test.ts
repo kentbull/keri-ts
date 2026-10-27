@@ -15,6 +15,7 @@ import {
   Prefixer,
   SerderACDC,
   type SerderKERI,
+  Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -92,12 +93,12 @@ async function withPeers(
     }
   });
 }
-/** Deliver the same real Grant/Admit pair to both actual processors. */
-function* pair(
+/** Deliver an independently authenticated Grant before any holder response is signed. */
+function* grant(
   p: Parameters<Parameters<typeof withPeers>[0]>[0],
   nodes: SerderACDC[],
   message: string,
-): Operation<[SerderKERI, SerderKERI]> {
+): Operation<SerderKERI> {
   const grant = ipexExnBody(p.issuer.pre, "/ipex/grant", nodes, {
     message,
     recipient: p.holder.pre,
@@ -108,14 +109,8 @@ function* pair(
   yield* ingest(frame, p.source, p.sending);
   yield* ingest(frame, p.receiver, p.receiving);
   assert(p.receiving.complete(grant.said!));
-  const admit = ipexExnBody(p.holder.pre, "/ipex/admit", [], { message: "retain", prior: grant });
-  const response = signed(admit, p.holder);
-  yield* ingest(response, p.receiver, p.receiving);
-  yield* ingest(response, p.source, p.sending);
-  assert(p.receiving.complete(admit.said!));
-  return [grant, admit];
+  return grant;
 }
-
 Deno.test("wallet keeps distinct partial/full consent and exact retained proofs across all-owner reopen", async () => {
   await withPeers(function*(p) {
     const nonce = () => new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64;
@@ -139,7 +134,34 @@ Deno.test("wallet keeps distinct partial/full consent and exact retained proofs 
     assertEquals(partial.said, full.said);
     const pairs: [SerderKERI, SerderKERI][] = [];
     for (const [i, node] of [partial, full].entries()) {
-      const [g, a] = yield* pair(p, [node], `view-${i}`);
+      const g = yield* grant(p, [node], `view-${i}`);
+      const sign = p.holder.sign;
+      let signatures = 0;
+      p.holder.sign = function(this: Hab, ...args: Parameters<typeof sign>) {
+        signatures++;
+        return sign.apply(this, args);
+      } as typeof sign;
+      yield* call(() => assertRejects(() => p.wallet.prepareAdmit(g.said!, p.holder.pre), ValidationError, "consent"));
+      yield* call(() =>
+        assertRejects(
+          () => p.wallet.prepareAdmit(g.said!, p.holder.pre, { consent: true, gvrsn: Vrsn_1_0 }),
+          ValidationError,
+          "genus",
+        )
+      );
+      assertEquals(signatures, 0);
+      const prepared = yield* call(() => p.wallet.prepareAdmit(g.said!, p.holder.pre, { consent: true }));
+      assertEquals(signatures, 1);
+      p.holder.sign = sign;
+      const a = prepared.admit;
+      assertEquals(p.wallet.inventory().held.length, i, "preparing a signature does not record consent");
+      assertEquals(p.receiving.complete(a.said!), false);
+      yield* call(() =>
+        assertRejects(() => p.wallet.recordAdmission(g.said!, a.said!, { consent: true }), ValidationError, "Accepted")
+      );
+      yield* ingest(prepared.wire, p.receiver, p.receiving);
+      yield* ingest(prepared.wire, p.source, p.sending);
+      assert(p.receiving.complete(a.said!));
       pairs.push([g, a]);
       assertEquals(p.wallet.admissions(full.said!).length, i);
       yield* call(() => assertRejects(() => p.wallet.recordAdmission(g.said!, a.said!), ValidationError, "consent"));
@@ -191,11 +213,24 @@ for (const operator of ["I2I", "UNKNOWN"]) {
         attribute: { d: "", role: "near" },
         edge: { d: "", proof: { n: far.said!, o: operator } },
       });
-      const [g, a] = yield* pair(p, [near, far], operator);
+      const g = yield* grant(p, [near, far], operator);
       assert(p.receiving.verifyAccepted(g.said!, "/ipex/grant"));
       const graph = walkIpexGraph(near.said!, loadNests(p.receiver.db, g.said!), true, p.receiver.db);
       assert(graph && !("kind" in graph));
       assertEquals(evaluateAcdcRelations(graph, p.receiver.db, new Map()), operator === "I2I" ? false : null);
+      const sign = p.holder.sign;
+      let signatures = 0;
+      p.holder.sign = function(this: Hab, ...args: Parameters<typeof sign>) {
+        signatures++;
+        return sign.apply(this, args);
+      } as typeof sign;
+      yield* call(() =>
+        assertRejects(() => p.wallet.prepareAdmit(g.said!, p.holder.pre, { consent: true }), ValidationError, "graph")
+      );
+      assertEquals(signatures, 0, "false/unknown roots cannot cause a holder signature");
+      p.holder.sign = sign;
+      const a = ipexExnBody(p.holder.pre, "/ipex/admit", [], { message: "protocol only", prior: g });
+      yield* ingest(signed(a, p.holder), p.receiver, p.receiving);
       yield* call(() =>
         assertRejects(() => p.wallet.recordAdmission(g.said!, a.said!, { consent: true }), ValidationError, "graph")
       );

@@ -251,7 +251,9 @@ iss/ancs issuer KEL anchor; confusing them breaks credential presentation.
 
 The wallet package owns issued bytes and explicit consent to one accepted Grant/Admit
 pair. It borrows Habery, RegistryStore and Exchanger; callers own their lifetimes.
-New admission requires current authenticated root truth. Historical reads reuse
+New admission requires current authenticated root truth before signing; preparing
+an Admit creates no inventory until ordinary ingress accepts the actual pair.
+Tufa composes the wallet and prints results after owned shutdown. Historical reads reuse
 outer exchange authentication and the original Grant nests without reevaluating
 current standing or substituting a fuller cached disclosure. Inventory and consent
 never imply custody of a private opening.

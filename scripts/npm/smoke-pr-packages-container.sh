@@ -59,6 +59,17 @@ if [ ! -x "${TUFA_BIN}" ]; then
   exit 1
 fi
 
+# Load the actual wallet-dependent command, requiring consent before any store opens.
+if "${TUFA_BIN}" ipex admit --native --said missing --name missing --alias holder > /tmp/tufa-native-consent.log 2>&1; then
+  echo "Native admission unexpectedly succeeded without consent" >&2
+  exit 1
+fi
+if ! grep -Fq 'Native wallet admission requires explicit --consent' /tmp/tufa-native-consent.log; then
+  cat /tmp/tufa-native-consent.log >&2
+  exit 1
+fi
+"${TUFA_BIN}" vc wallet read --help | grep -q -- '--grant'
+
 cp /smoke-scripts/smoke-tufa-authoring.mjs "${WORK_DIR}/"
 node ./smoke-tufa-authoring.mjs
 cp /smoke-scripts/smoke-tufa-runtime.mjs "${WORK_DIR}/smoke-tufa-runtime.mjs"

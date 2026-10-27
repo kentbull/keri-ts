@@ -214,6 +214,7 @@ export {
   type ContactRecord,
   Organizer,
 } from "../app/identity/organizing.ts";
+export { ipexExnBody } from "../app/ipex/ipex-building.ts";
 export {
   type CredentialAdmitMessage,
   type CredentialArtifact,
