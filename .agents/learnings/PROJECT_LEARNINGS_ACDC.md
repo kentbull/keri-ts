@@ -220,7 +220,7 @@ s is their root ID. Serder checks commitments, while S1 checks each resource and
 its profile. Verification never repairs stale explicit schema claims. Frozen
 default/unbound format-specific schema construction remains separately qualified.
 One private SchemaResources owner authenticates roots, bundled IDs and static
-references for both ordinary validation and bounded disclosure closure. Whole
+references for ordinary validation, bounded disclosure closure and static edge-shape queries. Whole
 `[""]`, relative `d/` and trailing-separator subtree claims use the selected
 explicit-acm schema proof: declared closed objects or schema-valued additional
 properties, unambiguous typed oneOf, and static refs without constraint siblings.
@@ -228,6 +228,12 @@ Open/ambiguous schemas and whole aggregates refuse; scalar-only SAID strings are
 data, while compact-or-object positions must expose the object. Ordinary schema
 validation and issuer authentication remain separate. Missing resources retain
 the existing schema retry; closure never expands borrowed received credentials.
+The shared ACDC edge classifier admits a digest child only at a declared string-only
+edge/group schema position. Open/map-admitting leaf unions stay opaque even with a
+matching supplied node. An expanded ancestor may select exactly one object and one
+string oneOf branch; fixed positional shape admits no such union. Static refs retain
+nested resource scopes. Expanded n leaves require reserved labels before application
+properties in d,u,n,s,o,w order; properties never extend a leaf into further graph hops.
 
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.

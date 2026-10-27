@@ -1,6 +1,6 @@
 /** Malformed edge syntax and schema failures cross actual pairwise IPEX ingress before valid controls. */
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import type { EdgeRefusalCase } from "./ipex/disclosures.ts";
+import type { EdgeRefusalCase, PathShapeCase } from "./ipex/disclosures.ts";
 import { type IpexPeer, observed, withIpexPeers } from "./ipex/peers.ts";
 
 /** Scenario steps wait for real accepted state, not HTTP acknowledgements. */
@@ -30,6 +30,7 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       "unknown-leaf",
       "unknown-group",
       "malformed-leaf",
+      "simple-edge",
       "edge-schema",
       "inherited-schema",
       "malformed-schema",
@@ -67,6 +68,57 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
           }
         }
         await assertRefused(issuer, holder, bad);
+      }));
+  }
+  for (const graph of ["fixed-path", "optional-path"] as const satisfies readonly PathShapeCase[]) {
+    Deno.test(`IPEX ${implementation} discloser: ${graph === "fixed-path" ? "fixed positional success" : "optional positional refusal then explicit success"}`, () =>
+      withIpexPeers({ issuer: implementation, graph }, async ({ issuer, holder, plan }) => {
+        assertEquals(plan.map(([schema]) => schema), issuer.info.schemas);
+        assertEquals(plan.map(([, prefix]) => prefix), ["", ""]);
+        let apply = await exchange(holder, issuer, "apply");
+        let offer = await exchange(issuer, holder, "offer", apply);
+        let agree = await exchange(holder, issuer, "agree", offer);
+        for (const peer of [issuer, holder]) {
+          const negotiated = (await peer.snapshot()).messages.find((message) => message.d === apply)!;
+          assertEquals(negotiated.q.dp, plan, "both stores accepted the exact positional plan");
+        }
+        let refused: string | undefined;
+        if (graph === "optional-path") {
+          const rejected = await issuer.send("grant", agree, true);
+          refused = rejected;
+          await observed(
+            "optional positional Grant crossed ordinary ingress",
+            async () => (await holder.snapshot()).received.includes(rejected) ? true : undefined,
+          );
+          await assertRefused(issuer, holder, refused);
+          const explicit = plan.map(([schema, , fields], i) => [schema, i ? "/e/authority/_/" : "/", fields] as const);
+          await issuer.connect(holder.info, explicit);
+          await holder.connect(issuer.info, explicit);
+          // A fresh lineage changes only selection; both peers assert identical carried credential bytes.
+          apply = await exchange(holder, issuer, "apply");
+          offer = await exchange(issuer, holder, "offer", apply);
+          agree = await exchange(holder, issuer, "agree", offer);
+        }
+        const grant = await exchange(issuer, holder, "grant", agree);
+        await exchange(holder, issuer, "admit", grant);
+        for (const peer of [issuer, holder]) {
+          const snapshot = await peer.snapshot(grant);
+          assertEquals(snapshot.inspected?.accepted, true);
+          assertEquals(snapshot.inspected?.escrowed, false);
+          assertEquals(snapshot.messages.length, refused ? 8 : 5);
+          assertEquals(snapshot.nodes.length, 2);
+          assertEquals(snapshot.nodes[0].said, issuer.info.commitment);
+          for (const node of snapshot.nodes) {
+            assertEquals(node.independentlyAccepted, false);
+            assertEquals(node.attributes.status.value, "citizen");
+            assertEquals(typeof node.attributes.private, "string");
+            assertEquals(node.raw.includes("hidden-value"), false);
+          }
+          const acceptedPlan = snapshot.messages.find((message) => message.d === apply)!.q.dp!;
+          assertEquals(acceptedPlan.map(([schema]) => schema), issuer.info.schemas);
+          assertEquals(acceptedPlan.map(([, prefix]) => prefix), refused ? ["/", "/e/authority/_/"] : ["", ""]);
+        }
+        if (refused) await assertRefused(issuer, holder, refused);
       }));
   }
 }

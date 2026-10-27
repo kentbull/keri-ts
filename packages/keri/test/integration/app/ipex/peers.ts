@@ -66,7 +66,7 @@ export type Verb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
 export interface PeerInfo {
   pre: string;
   url: string;
-  schema: string;
+  schemas: string[];
   commitment: string;
 }
 
@@ -127,7 +127,7 @@ class TypeScriptPeer implements IpexPeer {
     this.info = {
       pre: this.hab.pre,
       url: `http://127.0.0.1:${this.server.addr.port}/`,
-      schema: (this.graph.fullNodes[0].sad!.s as { $id: string }).$id,
+      schemas: this.graph.fullNodes.map((node) => (node.schema as { $id: string }).$id),
       commitment: this.graph.fullNodes[0].said!,
     };
   }
@@ -237,6 +237,14 @@ class TypeScriptPeer implements IpexPeer {
     let carried: SerderACDC[] = [];
     if (verb === "grant") carried = this.disclosed(invalid);
     if (verb === "offer" && !this.graphCase) carried = this.disclosed(false);
+    if (verb === "grant" && (this.graphCase === "fixed-path" || this.graphCase === "optional-path")) {
+      assertEquals(this.plan.map(([schema]) => schema), carried.map((node) => (node.schema as { $id: string }).$id));
+      assertEquals(
+        carried.map((node) => node.raw),
+        this.graph.nodes.map((node) => node.raw),
+        "prefix selection preserves exact credential bytes",
+      );
+    }
     const body = ipexExnBody(this.hab.pre, `/ipex/${verb}`, carried, {
       message: invalid ? "invalid chain" : verb,
       prior: previous ?? undefined,
@@ -497,7 +505,7 @@ export async function withIpexPeers(
       (ts) =>
         withPythonPeer(context, tsIssuer ? undefined : options.graph, async (py) => {
           const issuer = tsIssuer ? ts : py, holder = tsIssuer ? py : ts;
-          const plan = disclosurePlan(issuer.info.schema, options.graph);
+          const plan = disclosurePlan(issuer.info.schemas, options.graph);
           await ts.connect(py.info, plan);
           await py.connect(ts.info, plan);
           for (const [peer, other] of [[ts, py], [py, ts]]) {
