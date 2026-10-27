@@ -1,7 +1,7 @@
 /** Select PR checks from explicit maintainer scope, reusing the maintained suite inventory. */
 import { interop as interopOwners, required } from "./keri-test-suites.ts";
 
-const allUnits = ["ci", "tufa", "verifier", "hosting", "wallet", "cesr", "ci-tools"] as const;
+const allUnits = ["ci", "tufa", "verifier", "hosting", "wallet", "registrar", "cesr", "ci-tools"] as const;
 const unitOwners = [...allUnits, ...required] as const;
 type UnitTarget = typeof unitOwners[number];
 type InteropTarget = typeof interopOwners[number];
@@ -133,6 +133,8 @@ async function runUnit(): Promise<void> {
       ? ["task", "test:verifier"]
       : target === "hosting"
       ? ["task", "test:hosting"]
+      : target === "registrar"
+      ? ["task", "test:registrar"]
       : target === "wallet"
       ? ["task", "test:wallet"]
       : target === "cesr"

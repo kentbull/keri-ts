@@ -2,7 +2,9 @@
 import { VerifierAgent, type VerifierCueBaser, createVerifierCueBaser } from "@keri-ts/verifier";
 import { createProtocolHandler, createTufaApp, runHostKernel, startServer } from "@keri-ts/hosting";
 import { Wallet, type WalletOptions, createWalletBaser } from "@keri-ts/wallet";
-import type { AgentRuntime } from "keri-ts/runtime";
+import { Registrar } from "@keri-ts/registrar";
+import type { RegistryStore } from "keri-ts/db";
+import type { AgentRuntime, ProtocolProcessor } from "keri-ts/runtime";
 
 /** Compose the application without a private protocol import or dependency-discovery container. */
 export function verifier(runtime: AgentRuntime, cdb: VerifierCueBaser, hook: string): VerifierAgent {
@@ -26,3 +28,8 @@ export function wallet(options: WalletOptions): Wallet {
 
 /** Expose the wallet inventory acquisition type to the installed compiler. */
 export const walletStore = createWalletBaser;
+
+/** Compose registrar through real concrete protocol owners; Tufa need not depend on it. */
+export function registrar(processor: ProtocolProcessor, store: RegistryStore): Registrar {
+  return new Registrar(processor, store, { publishers: [], observers: [], fullEvidence: true });
+}

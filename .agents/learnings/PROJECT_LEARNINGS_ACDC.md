@@ -258,6 +258,11 @@ outer exchange authentication and the original Grant nests without reevaluating
 current standing or substituting a fuller cached disclosure. Inventory and consent
 never imply custody of a private opening.
 
+The registrar borrows the native processor/store and requires enabled, non-exempt
+KRAM plus configured publisher/observer allowlists. It hosts accepted public
+evidence; a bulk response makes no fresh-observation claim. Composition owns HTTP
+and store lifetimes.
+
 Verifier work comes from accepted grants, saved credentials and TEL state, not
 Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.
 Bounded runs rescan persisted revocation state; issuance ack cannot suppress a

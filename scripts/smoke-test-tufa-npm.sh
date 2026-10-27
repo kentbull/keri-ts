@@ -7,6 +7,7 @@
 # - a locally built `@keri-ts/verifier` tarball
 # - a locally built `@keri-ts/hosting` tarball
 # - a locally built `@keri-ts/wallet` tarball for the independent wallet store probe
+# - a locally built `@keri-ts/registrar` tarball for its public service probe
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -20,6 +21,7 @@ KERI_TARBALL_PATH="${3:-}"
 VERIFIER_TARBALL_PATH="${4:-}"
 HOSTING_TARBALL_PATH="${5:-}"
 WALLET_TARBALL_PATH="${6:-}"
+REGISTRAR_TARBALL_PATH="${7:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -45,6 +47,13 @@ if [[ -z "${WALLET_TARBALL_PATH}" ]]; then
   (cd "${ROOT_DIR}/packages/wallet" && deno task build:npm)
   WALLET_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/wallet/npm" && npm pack --silent | tail -n1)"
   WALLET_TARBALL_PATH="${ROOT_DIR}/packages/wallet/npm/${WALLET_TARBALL_NAME}"
+fi
+
+# The registrar is an independent installed application, not a Tufa dependency.
+if [[ -z "${REGISTRAR_TARBALL_PATH}" ]]; then
+  (cd "${ROOT_DIR}/packages/registrar" && deno task build:npm)
+  REGISTRAR_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/registrar/npm" && npm pack --silent | tail -n1)"
+  REGISTRAR_TARBALL_PATH="${ROOT_DIR}/packages/registrar/npm/${REGISTRAR_TARBALL_NAME}"
 fi
 
 if [[ ! -f "${TARBALL_PATH}" ]]; then
@@ -126,6 +135,15 @@ if [[ -n "${WALLET_TARBALL_PATH}" ]]; then
   DOCKER_ARGS+=(-v "${WALLET_TARBALL_DIR}:/wallet-pkg")
   INSTALL_TARGETS=("/wallet-pkg/${WALLET_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 fi
+
+if [[ ! -f "${REGISTRAR_TARBALL_PATH}" ]]; then
+  echo "Registrar tarball not found: ${REGISTRAR_TARBALL_PATH}" >&2
+  exit 1
+fi
+REGISTRAR_TARBALL_DIR="$(cd "$(dirname "${REGISTRAR_TARBALL_PATH}")" && pwd)"
+REGISTRAR_TARBALL_NAME="$(basename "${REGISTRAR_TARBALL_PATH}")"
+DOCKER_ARGS+=(-v "${REGISTRAR_TARBALL_DIR}:/registrar-pkg")
+INSTALL_TARGETS=("/registrar-pkg/${REGISTRAR_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 

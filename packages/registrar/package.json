@@ -1,0 +1,11 @@
+{
+  "name": "@keri-ts/registrar",
+  "version": "2.0.0",
+  "description": "Signed public ACDC registry publication and bulk evidence queries",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentbull/keri-ts.git",
+    "directory": "packages/registrar"
+  }
+}
