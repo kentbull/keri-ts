@@ -45,7 +45,7 @@ export function* acdcV2AuthorCommand(
       return yield* withHabAndAgentRuntime(
         walletStoreArgs(args),
         alias,
-        { skipConfig: true },
+        { skipConfig: false },
         function*({ hby, runtime, hab }) {
           return yield* scoped(function*() {
             if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");

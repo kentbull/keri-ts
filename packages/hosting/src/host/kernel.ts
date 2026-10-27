@@ -7,6 +7,7 @@ import {
   createAgentRuntime,
   type Hab,
   type Habery,
+  type KramConfig,
   type ProtocolHostPolicy,
   runAgentRuntime,
 } from "keri-ts/runtime";
@@ -32,6 +33,8 @@ export interface HostKernelHttpSpec {
 export interface HostKernelSpec {
   /** Whether this host constructs provider mailbox storage. */
   enableMailboxStore: boolean;
+  /** Explicit receiver policy selected by this host's composition root; omission leaves KRAM disabled. */
+  kram?: KramConfig;
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
   http: HostKernelHttpSpec;
@@ -53,6 +56,7 @@ export function* runHostKernel(
 ): Operation<void> {
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
+    kram: spec.kram,
   });
   const hostedPrefixes = spec.hostedPrefixes ?? [spec.serviceHab.pre];
   const protocolPolicy: ProtocolHostPolicy = {

@@ -115,7 +115,7 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
   const completed = yield* withHabAndAgentRuntime(
     walletStoreArgs(args),
     alias,
-    { skipConfig: true },
+    { skipConfig: false },
     function*({ hby, runtime, hab }) {
       return yield* scoped(function*() {
         if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
@@ -192,7 +192,7 @@ function* acdcV2Disclosure(
   const completed = yield* withHabAndAgentRuntime(
     walletStoreArgs(args),
     alias,
-    { skipConfig: true },
+    { skipConfig: false },
     function*({ hby, runtime, hab }) {
       return yield* scoped(function*() {
         if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");

@@ -1,6 +1,6 @@
 import { runHostKernel } from "@keri-ts/hosting";
 import type { Operation } from "effection";
-import type { Hab, Habery } from "keri-ts/runtime";
+import type { Hab, Habery, KramConfig } from "keri-ts/runtime";
 
 /** Shared long-lived indirect-host settings used by `agent` and mailbox hosts. */
 export interface IndirectHostOptions {
@@ -8,6 +8,7 @@ export interface IndirectHostOptions {
   listenHost?: string;
   serviceHab: Hab;
   hostedPrefixes?: readonly string[];
+  kram?: KramConfig;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
 
@@ -26,6 +27,7 @@ export function* runIndirectHost(
     enableMailboxStore: true,
     serviceHab: options.serviceHab,
     hostedPrefixes: options.hostedPrefixes,
+    kram: options.kram,
     protocolPolicy: {},
     http: {
       port: options.port,

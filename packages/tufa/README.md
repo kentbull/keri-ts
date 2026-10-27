@@ -97,6 +97,12 @@ default remains 1.0. Body protocol version and attachment genus are independent.
 `--out` writes supporting public evidence plus signed wire; otherwise existing
 runtime delivery runs and joins cleanup before final output.
 
+ACDC v2 mutation commands load the store's normal configuration. Set
+`"kram": {"enabled": true}` there to use the existing receiver-policy defaults
+when a flow requires qualified receiver time. `tufa agent` forwards KRAM from
+its selected configuration too; use the same policy for the store and its host.
+Omitting `kram` leaves that optional intake policy disabled.
+
 ## ACDC v2 registry authoring
 
 Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then
