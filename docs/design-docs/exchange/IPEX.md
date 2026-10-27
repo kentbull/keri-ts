@@ -49,6 +49,15 @@ proofs in its existing escrow, retries from persisted children, and notifies onl
 after acceptance. Replay preserves child proof enclosures. An accepted grant
 is conversation evidence; nested nodes are not independent credential or wallet
 acceptances. Schema resolution uses already cached schemas, without fetching.
+`Exchanger.verifyAccepted(said, route)` reauthenticates the exact retained body,
+outer factors and child view through its registered route. It preserves receiver
+time and produces no queries, writes, notices or escrows. Identical recorded replies
+remain eligible; other accepted replies refuse. Accepted duplicates cannot replace
+the first retained children. Missing or invalid authentication returns false;
+storage failures propagate. This is authentication/protocol inspection, not a
+relation, current-use or consent verdict.
+Consumers read the accepted body from Baser and hydrate its original children
+with `loadNests` from `keri-ts/db`; inspection never merges a fuller credential cache.
 Historical grant source seals remain valid after later rotations: the referenced
 accepted KEL event must commit to that exact grant SAID. Exchanger verifies these
 coordinates before route selection; the IPEX handler retains those seals and
@@ -135,10 +144,13 @@ is no native action workflow to retrofit in this cut. Runtime composition, EXN
 completion and retained presentation evidence do not substitute for explicit
 semantic approval; later native wallet/verifier actions must call the evaluator.
 
-Later updates do not rewrite accepted conversation history. New grants and
-explicit validation re-evaluate current evidence; no background invalidation,
-policy scheduler or new persistence is implied. Presentation checks retain their
-separate frozen KRAM receiver cutoff.
+Later updates do not rewrite accepted conversation history. New grants and default
+inspection re-evaluate current issuer history. Explicit `{ historical: true }`
+inspection selects the highest unique accepted BUP named by retained target BLIDs;
+vacuous openings and generic source locators cannot advance that prefix. Invalid
+or duplicate openings and bound contradictions refuse before missing evidence.
+Historical inspection neither proves current standing nor records a past policy
+decision. Presentation keeps its independent completed KRAM receiver-time gate.
 
 Explicit `RegistryObserver` intake delegates parsed public rip/bup events to the
 normal engine with full witnessed tuple anchors and per-event atomic acceptance.
@@ -155,8 +167,8 @@ route; local registry services are separate.
 Disclosed presentation registries require retained, trusted KRAM receiver time.
 After every node's issuer verifies, each unique Issuee/registry declaration must
 independently bind the exact grant SAID through node-local BLIDs. The accepted
-RegistryStore chain is vetted at the inclusive microsecond cutoff; later updates
-cannot replace that history. Explicit child source triples must identify an
+RegistryStore chain is vetted at the highest accepted BUP sealed by the verified
+Issuee source; receiver time does not select history. Explicit child source triples must identify an
 accepted fully witnessed Issuee KEL event containing the full selected TEL seal.
 Absent sources fail; unavailable attached sources/TEL are typed proof dependencies.
 Verified Issuees may satisfy the negotiated grant anchor requirement. Parent

@@ -98,7 +98,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
   }
 
   /** Validate conversation, disclosure and authentication obligations in reference order. */
-  verify({ serder, nests = [], sscs = [], evidence, receiverTime }: VerifyArgs): ExchangeRouteVerification {
+  verify(
+    { serder, nests = [], sscs = [], evidence, receiverTime, historical = false }: VerifyArgs,
+  ): ExchangeRouteVerification {
     if (serder.pvrsn.major !== 2 || serder.route !== this.resource) return false;
     const route = serder.route.split("/");
     const verb = route[2];
@@ -167,7 +169,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       const frame = graph.nodes.get(said)!;
       const envelope = envelopeFromFrame(frame);
       if (!frame.body.regid && this.presentationRegistries(frame.body) === null) return false;
-      const result = authenticateIpexNode(frame.body, envelope, this.hby.db, this.registry);
+      const result = authenticateIpexNode(frame.body, envelope, this.hby.db, this.registry, historical);
       if (result.kind === "missing") return missing(result.reason);
       if (result.kind === "reject") return false;
     }
@@ -290,7 +292,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       || current.sad!.x !== prior.sad!.x
     ) return null;
     const response = this.hby.db.erpy.get(said);
-    if (response && this.hby.db.exns.get(response.qb64)) return null;
+    if (response && response.qb64 !== current.said && this.hby.db.exns.get(response.qb64)) return null;
     return prior;
   }
 

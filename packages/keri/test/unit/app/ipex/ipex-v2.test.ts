@@ -21,6 +21,7 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { loadNests } from "../../../../db.ts";
 import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
 import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
@@ -442,6 +443,11 @@ for (const foreign of [false, true]) {
         assertEquals(accepted.decision?.kind, "accept");
         yield* receiver.db.reopen();
         assertExists(receiver.db.exns.get(grant.said!));
+        assertEquals(
+          exchanger.verifyAccepted(grant.said!, "/ipex/grant"),
+          true,
+          "retained inspection preserves permanent historical source anchors after rotation",
+        );
         const replay: Uint8Array[] = [];
         yield* call(async () => {
           for await (const chunk of exchanger.replay(grant.said!)) replay.push(chunk);
@@ -538,6 +544,18 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
       assertEquals(left.db.exns.get(grant.said!), null);
       assertExists(left.db.epse.get(grant.said!));
       assertEquals(left.db.enst.get(grant.said!).length, 1);
+      assertEquals(
+        new IpexV2Handler("/ipex/grant", right).verify({
+          serder: grant,
+          nests: [node],
+          attachments: [],
+          evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+        }),
+        true,
+        "the identical accepted response remains eligible for retained verification",
+      );
+      assertEquals(receiving.verifyAccepted(grant.said!, "/ipex/grant"), false, "escrow is not accepted evidence");
+      assertEquals(sending.verifyAccepted(grant.said!, "/ipex/grant"), true);
       yield* receiving.processEscrows();
       yield* receiving.processEscrows();
       assertEquals([...receiving.cues].filter((cue) => cue.kin === "proof").length, 1);
@@ -549,6 +567,107 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
       assertEquals(left.db.epse.get(grant.said!), null);
       assertEquals(notifier.list().length, 4);
       assertEquals(left.db.exns.get(node.body.said!), null);
+      assertEquals(
+        new Exchanger(left).verifyAccepted(grant.said!, "/ipex/grant"),
+        false,
+        "generic EXN retention is insufficient",
+      );
+      const generic = ipexExnBody(sender.pre, "/ipex/grant", [node.body as SerderACDC], {
+        ...common,
+        message: "generic retention",
+        recipient: receiver.pre,
+        xid: node.body.said!,
+      });
+      const genericProof = new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sender.sign(generic.raw, true),
+      );
+      assertEquals((yield* new Exchanger(left).processEvent({ serder: generic, tsgs: [genericProof] })).kind, "accept");
+      assertEquals(
+        receiving.verifyAccepted(generic.said!, "/ipex/grant"),
+        false,
+        "outer-only generic acceptance does not authenticate a Grant view",
+      );
+      assertEquals(receiving.verifyAccepted(grant.said!, "/ipex/offer"), false, "inspection binds the exact route");
+      const retained = left.db.enst.get(grant.said!);
+      const before = [
+        receiving.cues.toArray(),
+        notifier.list().length,
+        left.db.exchangeMeta.get(grant.said!),
+        left.db.erpy.get(agree.said!),
+        left.db.epse.get(grant.said!),
+        left.db.emse?.get(grant.said!),
+      ];
+      for (let i = 0; i < 2; i++) assertEquals(receiving.verifyAccepted(grant.said!, "/ipex/grant"), true);
+      assertEquals(
+        [
+          receiving.cues.toArray(),
+          notifier.list().length,
+          left.db.exchangeMeta.get(grant.said!),
+          left.db.erpy.get(agree.said!),
+          left.db.epse.get(grant.said!),
+          left.db.emse?.get(grant.said!),
+        ],
+        before,
+        "inspection has no admission side effects",
+      );
+      const tsgs = [
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: sender.pre }),
+          sender.kever!.sner,
+          new Diger({ qb64: sender.kever!.said }),
+          sender.sign(grant.raw, true),
+        ),
+      ];
+      const alternate = { ...node, attachments: [...node.attachments, ...node.attachments] };
+      const duplicate = {
+        body: grant,
+        attachments: messageAttachmentGroups({ tsgs }, Vrsn_2_0),
+        gvrsn: Vrsn_2_0,
+        nests: [alternate],
+      };
+      const duplicateWire = yield* call(() => collectPayload(framePayload(duplicate)));
+      const [parsed] = yield* call(() => parseBytes(duplicateWire));
+      const result = yield* dispatchEnvelope(envelopeFromFrame(parsed), left.rvy, left.kevery, receiving);
+      assertEquals(result.decision?.kind, "accept");
+      assertEquals(
+        left.db.enst.get(grant.said!),
+        retained,
+        "verified duplicate cannot replace the first accepted child view",
+      );
+      const rival = ipexExnBody(sender.pre, "/ipex/grant", [node.body as SerderACDC], {
+        ...common,
+        message: "rival",
+        prior: agree,
+      });
+      const rivalProof = new TransIdxSigGroup(
+        new Prefixer({ qb64: sender.pre }),
+        sender.kever!.sner,
+        new Diger({ qb64: sender.kever!.said }),
+        sender.sign(rival.raw, true),
+      );
+      assertEquals(
+        (yield* receiving.processEvent({ serder: rival, tsgs: [rivalProof], nests: [node] })).kind,
+        "reject",
+      );
+      assertEquals(receiving.verifyAccepted(rival.said!, "/ipex/grant"), false);
+      yield* left.db.reopen();
+      assertEquals(receiving.verifyAccepted(grant.said!, "/ipex/grant"), true);
+      assertEquals(left.db.enst.get(grant.said!), retained);
+      assertEquals(
+        loadNests(left.db, grant.said!).map((frame) => frame.body.raw),
+        [node.body.raw],
+        "public hydration reads exactly the authenticated retained view",
+      );
+      left.db.esigs.remTop([grant.said!]);
+      assertEquals(receiving.complete(grant.said!), true);
+      assertEquals(
+        receiving.verifyAccepted(grant.said!, "/ipex/grant"),
+        false,
+        "accepted marker cannot replace missing outer authentication",
+      );
     } finally {
       yield* noter.close(true);
       yield* right.close(true);
@@ -654,15 +773,23 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       assertEquals(hby.db.exns.get([credential.said!]), null, "parent acceptance never dispatches its child");
       const handler = new IpexV2Handler("/ipex/grant", hby, null, store);
-      const verify = (nest: CesrFrame = child, cutoff: string | undefined = receipt, body = grant) =>
+      const verify = (
+        nest: CesrFrame = child,
+        cutoff: string | undefined = receipt,
+        body = grant,
+        historical = false,
+      ) =>
         handler.verify({
           serder: body,
           nests: [nest],
           attachments: [],
           evidence: { tsgs: [], cigars: [], sourceSeals: [] },
           receiverTime: cutoff,
+          historical,
         });
       assertEquals(verify(), true, "Issuee presentation proof alone satisfies permitted ax anchoring");
+      assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
+      assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }), true);
       assertEquals(
         handler.verify({
           serder: grant,
@@ -731,6 +858,48 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(observer.processEvent(newerIssuer).kind, "accept");
       const oldIssuerSource = yield* node([iblind, pblind], [source, issuerSource]);
       assertEquals(verify(oldIssuerSource), false, "generic issuer source cannot select old issuer standing");
+      assertEquals(
+        runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"),
+        false,
+        "current use still requires the newer issuer opening",
+      );
+      assertEquals(
+        runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }),
+        true,
+        "retained BLID selects its exact authenticated issuer prefix behind an opaque successor",
+      );
+      const disclosedRevocation = yield* node([opaque, pblind]);
+      assertEquals(verify(disclosedRevocation), true, "authenticated revocation is not a policy approval");
+      const vacantIssuer = makeBlindState({ sn: 3 });
+      const issuerVacuous = blindate(irip.said!, newerIssuer.said!, vacantIssuer.d.nonce, { sn: 3, stamp: earlier });
+      anchor(issuer, issuerVacuous);
+      assertEquals(observer.processEvent(issuerVacuous).kind, "accept");
+      const retainedWithVacuity = yield* node([iblind, vacantIssuer, pblind]);
+      assertEquals(
+        verify(retainedWithVacuity, receipt, grant, true),
+        true,
+        "vacuous opening cannot advance historical selection past a hidden successor",
+      );
+      assertEquals(verify(noIssuer, receipt, grant, true), false);
+      assertEquals(verify(duplicate, receipt, grant, true), false);
+      const unavailable = makeBlindState({ acdc: credential.said!, state: "issued", sn: 9 });
+      for (const proofs of [[unavailable, iblind, iblind, pblind], [iblind, iblind, unavailable, pblind]]) {
+        assertEquals(
+          verify(yield* node(proofs), receipt, grant, true),
+          false,
+          "duplicate contradiction wins before an unmatched target dependency in either order",
+        );
+      }
+      const retained = hby.db.enst.get(grant.said!), cues = runtime.exc.cues.toArray();
+      yield* store.baser.reopen();
+      yield* hby.db.reopen();
+      for (let i = 0; i < 2; i++) {
+        assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }), true);
+        assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"), false);
+      }
+      assertEquals(hby.db.enst.get(grant.said!), retained);
+      assertEquals(runtime.exc.cues.toArray(), cues);
+      assertEquals(hby.db.exchangeMeta.get(grant.said!)?.receiverTime, receipt);
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

@@ -41,6 +41,13 @@ and joins the actual database flush. Determine whether to
 publish a pending cue from the escrow write result, not a pre-I/O membership plan.
 An incomplete duplicate remains pending without replacing accepted rows or rerunning
 handling; `complete(said)` reports durable acceptance, not the current attempt.
+`verifyAccepted(said, route)` separately reauthenticates stored outer factors,
+exact first-accepted children and receiver metadata through the registered route,
+without queries, writes, notices or escrow. Identical recorded replies are eligible;
+other accepted replies refuse. Default inspection uses current issuer history;
+explicit historical mode selects only exact retained target BLIDs from accepted
+BUPs. Vacuous openings and generic source locators cannot advance it. Neither
+inspection mode supplies graph-policy approval, current-use consent or wallet acceptance.
 Canonical 32-digit signature ordinals prevent Number/Seqner retry duplicates.
 Keep ests/eidx and cigar verifier context; recheck proof factors on replay.
 Stored epath rows contain complete counted groups; serializers take only their
