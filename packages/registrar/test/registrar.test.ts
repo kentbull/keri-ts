@@ -169,6 +169,39 @@ Deno.test("registrar serves foreign published public history only after shared a
       );
       assertEquals(noProof.status, 401);
       yield* call(() => noProof.text());
+      const newerOpening = makeBlindState({
+        acdc: credential.said!,
+        state: "revoked",
+        sn: 2n,
+        raw: b("newer-state-1234"),
+      });
+      const newer = blindate(rip.said!, update.said!, newerOpening.d.nonce, { sn: 2 });
+      publisher.interact({ data: [{ s: newer.sad!.n, d: newer.said! }] });
+      const newerStream = t(concatBytes(...issuer.db.clonePreIter(publisher.pre), framed(newer, newerOpening)));
+      const advanced = yield* call(() =>
+        fetch(`${url}/ingest`, {
+          method: "POST",
+          ...buildCesrStreamRequest(signed(publisher, "tels/publish", { stream: newerStream })),
+        })
+      );
+      assertEquals(advanced.status, 200);
+      yield* call(() => advanced.json());
+      const oldPrefix = yield* call(() =>
+        fetch(`${url}/ingest`, {
+          method: "POST",
+          ...buildCesrStreamRequest(
+            signed(publisher, "tels/publish", { stream: t(concatBytes(framed(update, opening), framed(rip))) }),
+          ),
+        })
+      );
+      assertEquals(oldPrefix.status, 200);
+      const returned = yield* call(() => oldPrefix.json());
+      assertEquals(
+        returned.heads,
+        { [rip.said!]: update.said },
+        "summary names the highest accepted returned event, not the newer local cache head",
+      );
+      assertEquals(hosted.acdc!.store.head(rip.said!)?.qb64, newer.said);
     } finally {
       yield* call(() => server.shutdown());
       yield* call(() => app.close());

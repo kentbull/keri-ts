@@ -225,8 +225,10 @@ export class Registrar {
       ) bucket = "pending";
       const values = summary[bucket];
       values[regid] = Number(values[regid] ?? 0) + 1;
-      const head = this.store.head(regid);
-      if (head) summary.heads[regid] = head.qb64;
+      if (bucket === "accepted" && sn !== null) {
+        const previous = summary.heads[regid];
+        if (!previous || ordinal(this.store.event(previous)!.sad!.n)! < sn) summary.heads[regid] = event.said!;
+      }
     }
     return summary;
   }
