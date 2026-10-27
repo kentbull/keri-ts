@@ -520,7 +520,7 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
     }
   });
 });
-Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutoff across observer retry", async () => {
+Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL head across observer retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), issuee = hby.makeHab("issuee"), sender = hby.makeHab("sender");
@@ -546,7 +546,7 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
     });
     const iblind = makeBlindState({ acdc: credential.said!, state: "issued" });
     const ibup = blindate(irip.said!, irip.said!, iblind.d.nonce, { stamp: receipt });
-    anchor(issuer, ibup);
+    const issuerSource = anchor(issuer, ibup);
     assertEquals(observer.processEvent(irip).kind, "accept");
     const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], {
       kind: Kinds.json,
@@ -599,17 +599,17 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       assertExists(hby.db.epse.get([grant.said!]), "accepted inception does not satisfy the source's missing update");
       assertEquals(hby.db.exns.get([grant.said!]), null);
       assertEquals(observer.processEvent(pbup).kind, "accept");
-      // A newer accepted update must not rewrite the already observed grant cutoff.
+      // Backdated later updates cannot replace the exact Issuee-sealed historical head.
       const vacant = makeBlindState({ sn: 2 });
-      const vacantTime = makeNowIso8601(new Date(now));
+      const vacantTime = earlier;
       const vacuous = blindate(prip.said!, pbup.said!, vacant.d.nonce, { sn: 2, stamp: vacantTime });
-      anchor(issuee, vacuous);
+      const vacantSource = anchor(issuee, vacuous);
       assertEquals(observer.processEvent(vacuous).kind, "accept");
       now += 1000;
       const newer = makeBlindState({ acdc: credential.said!, state: "revoked", sn: 3 });
       const latest = blindate(prip.said!, vacuous.said!, newer.d.nonce, {
         sn: 3,
-        stamp: makeNowIso8601(new Date(now)),
+        stamp: earlier,
       });
       anchor(issuee, latest);
       assertEquals(observer.processEvent(latest).kind, "accept");
@@ -628,13 +628,22 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
         });
       assertEquals(verify(), true, "Issuee presentation proof alone satisfies permitted ax anchoring");
       assertEquals(
-        handler.verify({ serder: grant, nests: [child], attachments: [] }),
+        handler.verify({
+          serder: grant,
+          nests: [child],
+          attachments: [],
+          evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+        }),
         false,
-        "no sender-time fallback",
+        "completed receiver-time acceptance remains required without selecting TEL history",
       );
-      assertEquals(verify(child, receipt.replace("123000", "122999")), false, "one microsecond before binding");
-      assertEquals(verify(child, makeNowIso8601(new Date(now))), false, "later time cannot use the old disclosure");
-      const continued = yield* node([iblind, pblind, vacant]);
+      assertEquals(
+        verify(child, receipt.replace("123000", "122999")),
+        true,
+        "receiver time does not select TEL history",
+      );
+      assertEquals(verify(child, makeNowIso8601(new Date(now))), true, "later receipt retains the same exact source");
+      const continued = yield* node([iblind, pblind, vacant], [source, vacantSource]);
       {
         assertEquals(
           verify(continued, vacantTime),
@@ -665,7 +674,7 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
       const noIssuer = yield* node([pblind]);
       const duplicate = yield* node([iblind, pblind, pblind]);
       {
-        assertEquals(verify(noIssuer), false, "parent and Issuee proofs cannot replace the child's issuer proof");
+        assertEquals(verify(noIssuer), false, "unrelated proofs cannot replace the child's issuer opening");
         assertEquals(verify(duplicate), false, "exactly one disclosure must match each selected BLID");
       }
       for (const sn of [99n, 9007199254740993n]) {
@@ -674,6 +683,18 @@ Deno.test("IPEX presentation proofs bind the grant and freeze its receiver cutof
           assertEquals((verify(unavailable) as { kind: string }).kind, "escrow");
         }
       }
+      const opaque = makeBlindState({ acdc: credential.said!, state: "revoked", sn: 2 });
+      const unmatched = yield* node([opaque, pblind]);
+      assertEquals(
+        (verify(unmatched) as { kind: string }).kind,
+        "escrow",
+        "a self-valid unmatched target proof may await its TEL event",
+      );
+      const newerIssuer = blindate(irip.said!, ibup.said!, opaque.d.nonce, { sn: 2, stamp: earlier });
+      anchor(issuer, newerIssuer);
+      assertEquals(observer.processEvent(newerIssuer).kind, "accept");
+      const oldIssuerSource = yield* node([iblind, pblind], [source, issuerSource]);
+      assertEquals(verify(oldIssuerSource), false, "generic issuer source cannot select old issuer standing");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

@@ -1,6 +1,13 @@
 /** Node issuer authentication over public KEL/TEL evidence; no conversation or validity policy. */
 import { Diger, NumberPrimitive, Prefixer, type SealEvent, type SerderACDC } from "cesr-ts";
-import { type RegistryState, validateRip, validateUpdate, vetBinds } from "../../acdc/regeventing.ts";
+import {
+  type RegistryState,
+  validateRip,
+  validateUpdate,
+  vetBinds,
+  vetBlind,
+  vetBound,
+} from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
@@ -83,8 +90,32 @@ export function authenticateIpexNode(
       target: serder.said!,
       acdc: serder,
     });
-    if (result.kind === "missing") {
+    if (result.kind === "missing" && result.reason === "anchor") {
       return { kind: "missing", reason: `Missing issuer TEL anchor for ${serder.regid}.` };
+    }
+    if ((result.kind === "missing" || result.kind === "reject") && result.reason === "disclosure") {
+      // An unmatched self-valid target opening may be waiting for its TEL event.
+      // Known old proofs and unrelated node proofs do not establish that dependency.
+      if (!serder.verify() || serder.issuer !== chain.rip.issuer || serder.regid !== chain.rip.said) {
+        return { kind: "reject" };
+      }
+      const known = new Set(chain.updates.map((event) => event.sad!.b));
+      for (const proof of proofs) {
+        if (
+          !vetBlind(proof, proof.d.nonce)
+          || (known.has(proof.d.nonce) && proofs.filter((item) => item.d.nonce === proof.d.nonce).length !== 1)
+        ) return { kind: "reject" };
+      }
+      let unmatched = false;
+      for (const proof of proofs) {
+        if (proof.td.nonce !== serder.said) continue;
+        const bound = vetBound(proof, serder, db);
+        if (bound?.kind === "reject") return { kind: "reject" };
+        if (!known.has(proof.d.nonce)) unmatched = true;
+      }
+      return unmatched
+        ? { kind: "missing", reason: `Missing issuer TEL evidence for disclosed target ${serder.said}.` }
+        : { kind: "reject" };
     }
     return result.kind === "verified" && result.state.regid === serder.regid
       ? { kind: "authenticated", registration: result.state }

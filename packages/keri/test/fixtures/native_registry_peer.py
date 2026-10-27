@@ -12,27 +12,35 @@ from keri import Vrsn_2_0
 from keri.acdc.messaging import acdcmap, blindate, regcept
 from keri.acdc.regeventing import vet, vetBinds
 from keri.app import openHby
-from keri.core import Blinder, BlindState, DigDex, Diger, Kevery, Parser, SerderACDC
+from keri.core import Blinder, BlindState, BoundState, DigDex, Diger, Kevery, Parser, SerderACDC
 
 
 def author():
     """Author fresh evidence using a Python issuer; return only public wire and a disclosure."""
     with openHby(name="native-author", temp=True, version=Vrsn_2_0) as hby:
         issuer = hby.makeHab(name="issuer", version=Vrsn_2_0)
+        issuee = hby.makeHab(name="issuee", version=Vrsn_2_0)
+        issuee.interact(gvrsn=Vrsn_2_0)
         rip = regcept(issuer.pre)
         issuer.interact(data=[dict(i=rip.said, s="0", d=rip.said)], gvrsn=Vrsn_2_0)
-        credential = acdcmap(issuer.pre, regid=rip.said, attribute=dict(d="", name="Ada"))
-        opening = Blinder(crew=BlindState(d="", u=Blinder.makeUUID(sn=1),
-                                         td=credential.said, ts="issued"),
+        credential = acdcmap(issuer.pre, regid=rip.said, attribute=dict(d="", i=issuee.pre, name="Ada"))
+        opening = Blinder(crew=BoundState(d="", u=Blinder.makeUUID(sn=1),
+                                         td=credential.said, ts="issued",
+                                         bn=f"{issuee.kever.sn:x}", bd=issuee.kever.serder.said),
                           makify=True, saids={"d": DigDex.SHA2_256})
         material = b"#" * 44 + b"".join(value.qb64b for value in opening.data[1:])
         assert Diger(raw=hashlib.sha256(material).digest(),
                      code=DigDex.SHA2_256).qb64 == opening.said
         update = blindate(rip.said, rip.said, opening.said)
         issuer.interact(data=[dict(i=rip.said, s="1", d=update.said)], gvrsn=Vrsn_2_0)
+        opaque = Blinder.blind(acdc=credential.said, state="revoked", sn=2)
+        later = blindate(rip.said, update.said, opaque.said, sn=2)
+        issuer.interact(data=[dict(i=rip.said, s="2", d=later.said)], gvrsn=Vrsn_2_0)
         return dict(rip=rip.raw.decode(), update=update.raw.decode(),
+                    laterUpdate=later.raw.decode(),
                     credential=credential.raw.decode(), opening=opening.crew._asdict(),
-                    kel=b"".join(hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)).decode())
+                    kel=b"".join(message for hab in (issuer, issuee)
+                                 for message in hby.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_2_0)).decode())
 
 
 def verify(evidence):

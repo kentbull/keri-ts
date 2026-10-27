@@ -308,7 +308,7 @@ Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", 
       let rgy = yield* createRegery({ hby, baser });
       const issuing = rgy.makeRegistry("issuing", issuer.pre),
         presenting = rgy.makeRegistry("presenting", presenter.pre);
-      const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001Z" };
+      const options = { raw: b("0123456789abcdef"), stamp: "2026-10-13T01:00:00.000001+00:00" };
       const target = new SerderACDC({ raw: b(fixture.bodies.acdc) }).said!;
       assertThrows(() => presenting.present(target, undefined, options), Error, "must be anchored");
       issuer.interact({ data: [{ i: issuing.regk!, s: "0", d: issuing.regk! }] });
@@ -376,7 +376,12 @@ Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", 
         target,
         controller: presenter.pre,
       };
-      assertEquals(vetBinds({ ...evidence, blinders: [presented] }), { kind: "reject", reason: "disclosure" });
+      assertEquals(vetBinds({ ...evidence, blinders: [presented] }), {
+        kind: "missing",
+        reason: "disclosure",
+        issuer: presenter.pre,
+        said: second.said!,
+      });
       const checked = vetBinds({ ...evidence, blinders: [presented, vacuous] });
       assertEquals(checked.kind, "verified");
       if (checked.kind === "verified") {
@@ -391,8 +396,11 @@ Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", 
       rgy.processEscrows();
       assertEquals([reopened.sn, reopened.head!.qb64], [3n, third.said]);
       const latest = vetBinds({ ...evidence, updates: [first, second, third], blinders: [presented, vacuous, bound] });
-      assertEquals(latest.kind, "verified");
-      if (latest.kind === "verified") assertEquals(latest.state.state, "shared");
+      assertEquals(
+        latest,
+        { kind: "reject", reason: "binding" },
+        "opaque TEL acceptance does not authenticate an invalid bound opening",
+      );
       const put = reopened.store.putEvent;
       try {
         reopened.store.putEvent = () => {
