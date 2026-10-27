@@ -68,12 +68,13 @@ class IpexPeer:
             time.sleep(.005)
 
     def receive(self):
+        """Observe structurally decoded frames after real intake; None records nothing."""
         if not self.parser.ims:
             return
         arrived = bytearray(self.parser.ims)
         self.parser.parse()
         decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
-        self.received.extend(frame.serder.said for frame in decoded)
+        self.received.extend(frame.serder.said for frame in decoded or ())
 
     def post(self, wire):
         req = Request(self.remote["url"], data=bytes(wire), method="POST",
@@ -125,11 +126,11 @@ class IpexPeer:
     def message(self, verb, prior, invalid):
         recipient = self.remote["pre"]
         if verb == "apply":
-            return apply(self.hab, recipient, "status only", modifiers=dict(dp=[self.plan]))
+            return apply(self.hab, recipient, "status only", modifiers=dict(dp=self.plan))
         if verb == "offer":
             return offer(self.hab, "status only", origin=None if self.graph_case else self.disclosed()[0],
                          artifacts=None if self.graph_case else [], apply=prior, recp=recipient,
-                         modifiers=dict(dp=[self.plan]) if prior is None else None)
+                         modifiers=dict(dp=self.plan) if prior is None else None)
         if verb == "agree":
             return agree(self.hab, "agreed", prior)
         if verb == "spurn":
@@ -143,7 +144,7 @@ class IpexPeer:
                       for i, node in enumerate(nodes)]
             return grant(self.hab, recipient, "status only", origin=proofs[0],
                          artifacts=proofs[1:], agree=prior,
-                         modifiers=dict(dp=[self.plan]) if prior is None else None)
+                         modifiers=dict(dp=self.plan) if prior is None else None)
         raise ValueError(f"Unknown IPEX verb: {verb}")
 
     def send(self, verb, prior=None, invalid=False):
@@ -168,7 +169,7 @@ class IpexPeer:
                                                d=self.hab.kever.serder.said),
                           nested=True, gvrsn=Vrsn_2_0)
         body, attachments = grant(self.hab, self.remote["pre"], "anchored before rotation",
-                                  origin=child, ax=[True], modifiers=dict(dp=[self.plan]))
+                                  origin=child, ax=[True], modifiers=dict(dp=self.plan))
         self.hab.rotate(version=Vrsn_2_0, gvrsn=Vrsn_2_0)
         for sn in range(first_sn, self.hab.kever.sn + 1):
             self.post(self.hab.msgOwnEvent(sn=sn, framed=True, gvrsn=Vrsn_2_0))
@@ -191,7 +192,7 @@ class IpexPeer:
                         xid=Diger(ser=b"other conversation").qb64 if kind == "exchange-id" else previous.sad["x"],
                         prior=defect["said"] if kind == "prior" else prior,
                         route=f"/ipex/{verb}", attributes=attributes,
-                        modifiers=dict(dp=[[]]) if verb == "grant" else {},
+                        modifiers=dict(dp=[]) if verb == "grant" else {},
                         pvrsn=Vrsn_2_0, gvrsn=Vrsn_2_0, kind=Kinds.json)
         wire = self.signed(body, owner=owner, nests=[self.signed(node) for node in nodes] or None)
         return dict(said=self.deliver(body, bytes(wire), False), sender=owner.pre)

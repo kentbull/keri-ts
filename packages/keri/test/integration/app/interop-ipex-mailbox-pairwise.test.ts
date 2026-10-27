@@ -25,6 +25,7 @@ import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
   randomPort,
+  resolveKeripyRuntime,
   spawnChild,
   startKeriPyWitnessHarness,
   withStartedChild,
@@ -56,6 +57,24 @@ for (const tsDiscloser of [true, false]) {
     Deno.test(`IPEX mailbox pairwise: ${tsDiscloser ? "TS → KERIpy" : "KERIpy → TS"}, ${count}-signer TS, witnessed ${graphCase}`, async () => {
       const ctx = await createInteropContext(), aliases = ["wan", "wil", "wes"];
       try {
+        // The mailbox provider/witnesses retain their fork; only the IPEX peer uses
+        // the flat-profile candidate, verified independently before any hosts start.
+        const candidateRoot = ctx.env.KERIPY_CANDIDATE_ROOT?.trim();
+        const candidatePython = ctx.env.KERIPY_CANDIDATE_PYTHON?.trim();
+        if (!candidateRoot || !candidatePython) {
+          throw new Error("Pairwise IPEX requires KERIPY_CANDIDATE_ROOT and KERIPY_CANDIDATE_PYTHON.");
+        }
+        const candidateDir = `${ctx.home}/ipex-candidate`;
+        await Deno.mkdir(candidateDir);
+        const candidateEnv: Record<string, string> = {
+          ...ctx.env,
+          KERIPY_INTEROP_PROFILE: "candidate",
+          KERIPY_INTEROP_ROOT: candidateRoot,
+          KERIPY_INTEROP_PYTHON: candidatePython,
+        };
+        // The candidate profile owns its exact pin, independently of a fork override.
+        delete candidateEnv.KERIPY_INTEROP_EXPECTED_COMMIT;
+        const candidate = await resolveKeripyRuntime(candidateDir, candidateEnv);
         const witnesses = await startKeriPyWitnessHarness(ctx, { aliases });
         try {
           const providerPort = randomPort(), mailboxUrl = `http://127.0.0.1:${providerPort}/`;
@@ -77,9 +96,9 @@ for (const tsDiscloser of [true, false]) {
             );
             const peerPort = randomPort();
             const child = spawnChild(
-              ctx.pythonCommand,
-              [PEER, ctx.home, config, graphCase, String(peerPort)],
-              ctx.env,
+              candidate.pythonCommand,
+              [PEER, candidateDir, config, graphCase, String(peerPort)],
+              candidateEnv,
               ctx.repoRoot,
             );
             let exited: Deno.CommandStatus | undefined;
@@ -92,7 +111,7 @@ for (const tsDiscloser of [true, false]) {
                 const py = await observed("witnessed Python IPEX peer", async () => {
                   if (exited) throw new Error(`Python IPEX peer exited ${exited.code}`);
                   try {
-                    return JSON.parse(await Deno.readTextFile(`${ctx.home}/ready.json`)) as PeerInfo & {
+                    return JSON.parse(await Deno.readTextFile(`${candidateDir}/ready.json`)) as PeerInfo & {
                       authorization: string;
                       event: string;
                       witnesses: string[];

@@ -6,6 +6,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import {
   type CesrFrame,
   collectPayload,
+  Compactor,
   concatBytes,
   Counter,
   DigDex,
@@ -71,7 +72,7 @@ export interface PeerInfo {
 
 /** The same observations from each implementation, without sharing persistence internals. */
 export interface PeerSnapshot {
-  messages: { d: string; r: string; p: string; x: string; i: string; ri: string }[];
+  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: DisclosurePlan } }[];
   received: string[];
   known: string[];
   notifications?: number;
@@ -213,12 +214,17 @@ class TypeScriptPeer implements IpexPeer {
       attributes.d = "";
       (attributes.status as MapperMap).d = "";
       (attributes.status as MapperMap).value = "forged-value";
+      // Normalize only the already disclosed maps; the negative is its old issuer proof.
+      const compactor = new Compactor({ mad: attributes, kind: node.kind, compactify: true, verify: false });
+      const normalized = Object.values(compactor.partials!).at(-1);
+      assertExists(normalized);
       nodes[0] = acdcmap(node.issuer!, {
         uuid: node.sad!.u as string,
         schema: node.sad!.s as MapperMap,
         edge: node.sad!.e as MapperMap | undefined,
-        attribute: attributes,
+        attribute: normalized.mad,
       });
+      assertEquals(nodes[0].verify(), true, "the altered disclosure remains a well-formed credential body");
     }
     return nodes;
   }
@@ -318,7 +324,7 @@ class TypeScriptPeer implements IpexPeer {
         }).qb64
         : previous.sad!.x as string,
       dig: defect.kind === "prior" ? defect.said : prior,
-      modifiers: verb === "grant" ? { dp: [[]] } : {},
+      modifiers: verb === "grant" ? { dp: [] } : {},
       pvrsn: Vrsn_2_0,
       gvrsn: Vrsn_2_0,
     });

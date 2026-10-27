@@ -47,6 +47,9 @@ async function assertConversation({ issuer, holder, plan }: IpexPeers, verbs: Ve
     const lineage = verbs.map((verb) => {
       const message = snapshot.messages.find((message) => message.r === `/ipex/${verb}`);
       assertExists(message, verb);
+      if (["apply", "offer", "agree", "grant"].includes(verb)) {
+        assertEquals(message.q.dp, verb === verbs[0] ? plan : [], `${verb}: exact flat plan or prior ditto`);
+      }
       return message;
     });
     assertEquals(lineage[0].p, "");

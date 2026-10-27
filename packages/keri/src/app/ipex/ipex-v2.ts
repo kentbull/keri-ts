@@ -40,9 +40,9 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 /** Require the current single-DAG outer list shape. */
-function single(value: unknown, type: "boolean" | "string" | "array"): value is [unknown] {
+function single(value: unknown, type: "boolean" | "string"): value is [unknown] {
   return Array.isArray(value) && value.length === 1
-    && (type === "array" ? Array.isArray(value[0]) : typeof value[0] === type);
+    && typeof value[0] === type;
 }
 /** Parsed exchange bodies retain the exact same ordered disclosure plan through dittos. */
 function samePlan(a: DisclosurePlan, b: DisclosurePlan): boolean {
@@ -110,9 +110,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (!record(attrs) || !Object.hasOwn(attrs, "m") || !record(q)) return false;
     if (Object.hasOwn(attrs, "ax") && !single(attrs.ax, "boolean")) return false;
     if (["apply", "offer", "agree", "grant"].includes(verb)) {
-      if (!single(q.dp, "array") || !validDisclosurePlan(q.dp[0])) return false;
+      if (!validDisclosurePlan(q.dp) || (!q.dp.length && !priorSaid)) return false;
     }
-    if (verb === "agree" && (q.dp as unknown[][])[0].length) return false;
+    if (verb === "agree" && (q.dp as DisclosurePlan).length) return false;
     if (verb === "offer") {
       if (Object.hasOwn(attrs, "o")) {
         if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0])) return false;
@@ -126,6 +126,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       previous = this.prior(verb, serder, priorSaid);
       if (!previous) return false;
     }
+    if (verb === "offer" && !(q.dp as DisclosurePlan).length && (!previous || !this.plan(previous))) return false;
     const requiresAnchor = (attrs.ax as boolean[] | undefined)?.[0] === true;
     const priorAttrs = previous?.sad?.a;
     const priorAnchor = record(priorAttrs) && (priorAttrs.ax as boolean[] | undefined)?.[0] === true;
@@ -146,12 +147,6 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (previous) {
       const priorPlan = this.plan(previous);
       if (!priorPlan || !samePlan(plan, priorPlan)) return false;
-    }
-    if (!plan.length) {
-      if (!Array.isArray(attrs.o) || attrs.o.length || nests.length) return false;
-      return requiresAnchor || priorAnchor
-        ? sscs.length ? this.sourceAnchor(serder, serder.pre!, sscs.at(-1)!) : false
-        : true;
     }
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
@@ -261,10 +256,10 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       ) return null;
       seen.add(current.said);
       const q = current.sad!.q;
-      if (!record(q) || !single(q.dp, "array") || !validDisclosurePlan(q.dp[0])) return null;
-      if (q.dp[0].length) return q.dp[0];
+      if (!record(q) || !validDisclosurePlan(q.dp)) return null;
+      if (q.dp.length) return q.dp;
       const prior: unknown = current.sad!.p;
-      if (!prior) return [];
+      if (!prior) return null;
       current = typeof prior === "string" ? this.hby.db.exns.get(prior) : null;
     }
     return null;

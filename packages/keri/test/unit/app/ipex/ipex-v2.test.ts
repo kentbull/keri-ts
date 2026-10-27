@@ -37,6 +37,7 @@ import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
@@ -129,7 +130,7 @@ Deno.test("v2 IPEX matches frozen wire decisions and retains only parent-owned a
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
-      assertEquals(fixture.reference, "927c0cb8794d7c84fc17143c67df64aab9deda6c");
+      assertEquals(fixture.reference, "7ea525bab2a7f673041f793b31908aa29d0a6f1b");
       let through = 0;
       let notifications = 0;
       const vry = runtime.vdr!.vry;
@@ -280,6 +281,35 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     };
     const built = ipexExnBody(parent.pre!, parent.route as IpexRoute, nodes, opts);
     assertEquals(built.raw, parent.raw);
+    const plan = [[(nodes[0].schema as { $id: string }).$id, "/", []]];
+    assertEquals(built.sad!.q, { dp: plan }, "a bare one-node Grant states its root selection");
+    for (const route of ["/ipex/apply", "/ipex/offer", "/ipex/grant"] as const) {
+      assertThrows(
+        () => ipexExnBody(parent.pre!, route, [], { ...opts, plan: [] }),
+        Error,
+        "opener requires a non-empty disclosure plan",
+      );
+    }
+    assertThrows(
+      () => ipexExnBody(parent.pre!, "/ipex/apply", [], { ...opts, plan: [["", "/", []]] }),
+      Error,
+      "valid disclosure plan",
+    );
+    for (const dp of [[], { invalid: "plan" }, [["", "/", []]]]) {
+      const [prior] = exchange("/ipex/apply", { m: "invalid prior plan" }, {
+        sender: opts.recipient,
+        recipient: parent.pre!,
+        xid: opts.xid,
+        modifiers: { dp },
+        kind: parent.kind,
+        pvrsn: Vrsn_2_0,
+      });
+      assertThrows(
+        () => ipexExnBody(parent.pre!, "/ipex/offer", nodes, { message: "offer", prior }),
+        Error,
+        "cannot inherit an invalid or empty Apply plan",
+      );
+    }
     // No frame payload is touched by the ordinary body constructor.
     assertThrows(() => ipexExnBody(parent.pre!, "/ipex/apply", nodes, opts), Error, "Only offer and grant");
     const childWire = await collectPayload(framePayload(frame.nests![0]));
@@ -438,6 +468,8 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
         message: "grant",
         prior: agree,
       });
+      assertEquals(apply.sad!.q, { dp: [[schema.$id, "/", []]] });
+      for (const reply of [offer, agree, grant]) assertEquals(reply.sad!.q, { dp: [] });
       for (const body of [apply, offer, agree, grant]) {
         const hab = body.pre === sender.pre ? sender : receiver;
         const establishment = hab.db.getEvtSerder(hab.pre, hab.kever!.lastEst.d)!;

@@ -12,8 +12,60 @@ function disclosure(
   options: { issuee?: string; edge?: MapperMap } = {},
 ): { full: SerderACDC; partial: SerderACDC } {
   const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+  const scalar = { type: "string" };
+  const valueBlock = {
+    oneOf: [scalar, {
+      type: "object",
+      required: ["d", "u", "value"],
+      properties: { d: scalar, u: scalar, value: scalar },
+      additionalProperties: false,
+    }],
+  };
+  const schema = new Schemer({
+    sed: {
+      $id: "",
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      version: "1.0.0",
+      type: "object",
+      required: ["v", "t", "d", "u", "i", "s", "a"],
+      properties: {
+        v: scalar,
+        t: { type: "string", const: "acm" },
+        d: scalar,
+        u: scalar,
+        i: scalar,
+        s: { oneOf: [scalar, { type: "object" }] },
+        a: {
+          oneOf: [scalar, {
+            type: "object",
+            required: ["d", "u", "status", "contact", "role", "private"],
+            properties: {
+              d: scalar,
+              u: scalar,
+              i: scalar,
+              status: valueBlock,
+              contact: {
+                oneOf: [scalar, {
+                  type: "object",
+                  required: ["d", "u", "city", "email", "postcode"],
+                  properties: { d: scalar, u: scalar, city: valueBlock, email: valueBlock, postcode: valueBlock },
+                  additionalProperties: false,
+                }],
+              },
+              role: valueBlock,
+              private: valueBlock,
+            },
+            additionalProperties: false,
+          }],
+        },
+        e: { oneOf: [scalar, { type: "object" }] },
+      },
+      additionalProperties: false,
+    },
+  });
   const full = acdcmap(issuer, {
     ...options,
+    schema: schema.sed as MapperMap,
     uuid: nonce(),
     attribute: {
       d: "",
@@ -188,7 +240,7 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
     let edge: MapperMap = { d: "", authority: leaf };
     if (graphCase === "unknown-leaf" && invalid) leaf.o = "UNKNOWN";
     if (graphCase === "unknown-group") edge.o = invalid ? "UNKNOWN" : "AND";
-    if (graphCase === "malformed-leaf" && invalid) leaf.unexpected = true;
+    if (graphCase === "malformed-leaf" && invalid) leaf.n = 42; // Node references must be qualified SAID strings.
     if (graphCase === "edge-schema") leaf.s = pin(invalid ? "visitor" : "citizen");
     if (graphCase === "inherited-schema") {
       edge = {

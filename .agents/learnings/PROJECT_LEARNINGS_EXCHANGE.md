@@ -7,10 +7,10 @@ protocol evidence, transactions and actual resource cleanup.
 ## Proof and persistence boundaries
 
 The [disclosure acceptance matrix](../../docs/plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-separates TypeScript operator support from Python interoperability. DI2I/NOT may
-be implemented from established semantics without waiting for Python, but neither
-belongs in Python interop cases until the selected reference supports it. A
-reference stub is not a permanent product contract. NOT must distinguish proved
+separates TypeScript operator support from Python interoperability. Qualify operator
+interoperability against demonstrated selected-reference behavior; implementation
+availability alone is not qualification. A reference stub is not a permanent product
+contract. NOT must distinguish proved
 invalidity from unknown evidence before inversion; missing or unauthenticated
 input cannot establish a negative authorization predicate.
 
@@ -157,6 +157,13 @@ v1 retains its distinct prior-route rule (grant follows agree, not apply).
 Closed IPEX verbs and their guard belong to the protocol module; version-specific
 predecessor policies remain distinct. Application-defined IPEX payload fields
 match KERIpy extension semantics, while disclosure modifiers use a named dp field.
+The selected candidate's `q.dp` is the flat disclosure triple list. Empty `[]` is
+accepted-prior inheritance: reject empty Apply/unsolicited Offer/bare Grant, keep
+Agree empty, and default solicited Offer/linked Grant to ditto. Bare one-node Grant
+still states its explicit root selection. Builders, handler and resolver share this
+shape; never translate authenticated nested-plan bytes. Candidate whole-node claims
+require closed typed schemas. The positive wire fixture supplies one; TS open/ambiguous
+whole-schema refusal and remaining path/closure semantics still need their own cut.
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.

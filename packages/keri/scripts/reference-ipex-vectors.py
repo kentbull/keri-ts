@@ -1,15 +1,15 @@
-"""Independent nested IPEX wire and decisions from the frozen, unmodified reference."""
+"""Independent flat-plan IPEX wire and decisions from the pinned, unmodified candidate."""
 import json
 import pathlib
 import subprocess
 import sys
 from keri import Kinds, Vrsn_2_0
 from keri.app import openHby
-from keri.core import Diger, Number, Parser, Salter, SealSource, exchange, messagize
+from keri.core import Diger, Number, Parser, Salter, Schemer, SealSource, exchange, messagize
 from keri.acdc import acdcmap, ipexing
 from keri.peer import Exchanger
 
-REFERENCE = "927c0cb8794d7c84fc17143c67df64aab9deda6c"
+REFERENCE = "7ea525bab2a7f673041f793b31908aa29d0a6f1b"
 root = pathlib.Path(ipexing.__file__).resolve().parents[3]
 
 
@@ -73,7 +73,7 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
         elif verb == "offer" and nodes:
             data["o"] = [ipexing._streamSerder(nodes[0]).said]
         data.update(attrs or {})
-        q = dict(dp=[plan if dp is None else dp]) if verb in ("apply", "offer", "agree", "grant") else {}
+        q = dict(dp=plan if dp is None else dp) if verb in ("apply", "offer", "agree", "grant") else {}
         body = exchange(sender=sender.pre, receiver=to or (prior.pre if prior else recipient.pre),
                         xid=prior.sad["x"] if prior else Diger(ser=name.encode()).qb64,
                         prior=prior.said if prior else "", route=f"/ipex/{verb}", modifiers=q,
@@ -91,16 +91,38 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
     emit("tampered child signature", nodes=[signed(origin, data=b"different credential")])
     emit("foreign child signer", nodes=[signed(origin, holder)])
     emit("wrong origin commitment", nodes=[signed(origin)], attrs=dict(o=[issuer.pre]))
-    emit("whole disclosure", nodes=[signed(origin)], dp=[[schema, "/", [""]]])
+    # Whole disclosure needs a closed typed schema in the selected candidate profile.
+    scalar = {"type": "string"}
+    whole_schema = Schemer(sed={
+        "$id": "", "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "version": "1.0.0", "type": "object",
+        "required": ["v", "t", "d", "i", "s", "a"],
+        "properties": {
+            "v": scalar, "t": {"type": "string", "const": "acm"},
+            "d": scalar, "i": scalar,
+            "s": {"oneOf": [scalar, {"type": "object"}]},
+            "a": {"type": "object", "required": ["d", "i", "role"],
+                  "properties": {"d": scalar, "i": scalar, "role": scalar},
+                  "additionalProperties": False},
+        },
+        "additionalProperties": False,
+    })
+    whole = acdcmap(israid=issuer.pre, iseaid=holder.pre, schema=whole_schema.sed,
+                    attribute=dict(d="", role="member"))
+    emit("whole disclosure", nodes=[signed(whole)], dp=[[whole_schema.said, "/", [""]]])
+    assert cases[-1]["outcome"] == "accept", "closed typed whole disclosure remains positive"
     emit("requested canonical attribute path", nodes=[signed(origin)], dp=[[schema, "/", ["a/role"]]])
     nontrans_node = acdcmap(israid=nontrans.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
     emit("nontransferable child issuer", nodes=[signed(nontrans_node, nontrans)], dp=[[nontrans_node.schema["$id"], "/", []]])
     emit("requested missing field", nodes=[signed(origin)], dp=[[schema, "/", ["a/missing"]]])
     emit("wrong schema obligation", nodes=[signed(origin)], dp=[[issuer.pre, "/", []]])
     emit("vacuous grant", dp=[])
+    assert cases[-1]["outcome"] == "reject", "an empty plan cannot open a Grant"
     emit("empty plan cannot carry a child", nodes=[signed(origin)], dp=[])
     emit("grant optional foreign evidence", nodes=[signed(origin)], endorsers=[issuer])
     emit("apply rejects foreign evidence", verb="apply", endorsers=[issuer])
+    emit("apply rejects empty schema identifier", verb="apply", dp=[["", "/", []]])
+    assert cases[-1]["outcome"] == "reject", "Apply schema identifiers must be qualified SAIDs"
 
     far = acdcmap(israid=issuer.pre, iseaid=issuer.pre, attribute=dict(d="", role="authority"))
     near = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, "I2I"))
@@ -125,7 +147,7 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
         emit(f"edge group {operator}", nodes=[signed(grouped), signed(far), signed(origin)], dp=dp)
 
     apply = emit("linear apply", verb="apply", sender=recipient, to=holder.pre)
-    offer = emit("linear metadata offer", verb="offer", nodes=[origin], prior=apply)
+    offer = emit("linear metadata offer", verb="offer", nodes=[origin], dp=[], prior=apply)
     agree = emit("linear agree ditto", verb="agree", dp=[], prior=offer, sender=recipient)
     emit("grant cannot renegotiate prior", nodes=[signed(origin)], dp=[[schema, "/", [""]]], prior=agree)
     grant = emit("linear grant ditto", nodes=[signed(origin)], dp=[], prior=agree)

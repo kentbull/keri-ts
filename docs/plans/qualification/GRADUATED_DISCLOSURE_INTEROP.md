@@ -17,15 +17,17 @@ graph with a shared ancestor, in both directions. A missing descendant and an
 unsigned shared ancestor are refused before complete controls succeed through
 admit. Every node retains a partial disclosure. These are flat sibling artifacts
 representing graph edges, not unsupported child-owned nested streams.
-The selected reference is consolidated mailbox fork `331f32e4`; #485's initial
-eight cases passed all twelve selected CI owners; #486's eighteen cases passed
-the selected ACDC deep owner before the larger-graph extension.
-These cases share the `interop-ipex-disclosure` owner, selected independently
-for focused PRs and included in full mode. The CLI helper and both manual platform/
-extended workflows take their functional peer pin from
-[`keripy-reference.json`](../../../scripts/ci/keripy-reference.json); the older
-workflow overrides no longer select a different fork revision. Frozen CESR table
-sources remain a separate reference.
+The `interop-ipex-disclosure` owner selects Python candidate
+`7ea525bab2a7f673041f793b31908aa29d0a6f1b` from
+[`keripy-reference.json`](../../../scripts/ci/keripy-reference.json), independently
+for focused PRs and in full mode. Historical #485's initial eight cases passed all
+twelve selected CI owners; #486's eighteen cases passed the selected ACDC deep owner
+before the larger-graph extension. Those results retain their recorded reference
+pins and are not candidate qualification credit. The previously selected reference
+was consolidated mailbox fork `331f32e4`. The `interop-kram` provider and witnesses
+retain fork `331f32e4`; its pairwise IPEX composition selects
+the candidate credential peer independently. Frozen CESR table sources remain a
+separate reference.
 Eight additional cases in `interop-ipex-progressive.test.ts` exercise both
 independent implementations with two signed I2I nodes. Four separate apply-through-
 admit conversations reveal status, then a nested city, then email/role, then a
@@ -35,8 +37,8 @@ replay preserves those partials without adding conversation rows. Dedicated
 extra-field, missing-field and altered-plaintext/wrong-commitment-proof grants
 are refused before a matching valid control in each direction.
 Twelve cases in `interop-ipex-edge-refusals.test.ts` cover both directions for
-unknown leaf/group operators, unexpected leaf fields, direct/inherited far-node
-schema mismatches and a self-addressed schema with an invalid profile version.
+unknown leaf/group operators, a non-string reserved `n` reference, direct/inherited
+far-node schema mismatches and a self-addressed schema with an invalid profile version.
 Both issuers authenticate the bad graph: refusal is the named edge/schema gate.
 A valid signed two-node counterpart then completes through admit; refused rows
 and child evidence remain absent on both stores before and after that control.
@@ -78,16 +80,13 @@ Preserve actual escrow semantics and positive controls.
 
 ## TypeScript operator support, separate from interop
 
-DI2I and NOT belong in dedicated keri-ts tests, not KERIpy interop tests, until
-the selected Python reference supports them. This exclusion applies to refusal
-cases too: do not add an interop scenario asserting the current Python stub.
-KERIpy `71438328` and inspected main `c102367e` leave both operators unsatisfied
-in `src/keri/acdc/ipexing.py`. That is a reference limitation, not a requirement
-to preserve refusal in TypeScript. Implement support when KERIpy supports it or
-the semantics are sufficiently established; an upstream merge is not required
-for TypeScript-only support. Do not modify KERIpy outside the authorized minimal
-mailbox fixes. Claim pairwise operator coverage only after actual Python support
-and successful independent peer tests.
+The DI2I and NOT evidence below comes from dedicated keri-ts tests. Their earlier
+interop exclusion followed operator stubs in historical KERIpy `71438328` and
+inspected main `c102367e`; those limitations are not expected-refusal contracts
+for candidate `7ea525ba`, which implements both operators. Source support alone
+does not establish bilateral qualification. Claim candidate pairwise operator
+coverage only after successful independent peer tests; the TS-only results below
+do not supply that evidence.
 
 The [ACDC operator specification](https://trustoverip.github.io/kswg-acdc-specification/)
 defines delegation and negation. [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559)
@@ -169,7 +168,7 @@ involved. Crash/reopen and witnessed cases are separate scenarios; the latter do
 not claim witnessed restart coverage. Composed IPEX and presentation evidence
 below remain distinct from provider authentication. No business-ack/outbox machinery.
 
-`interop-ipex-presentation.test.ts`, also owned by `interop-kram`, composes TS
+`interop-ipex-presentation.test.ts`, owned by `interop-ipex-disclosure`, composes TS
 issuer, holder and receiver stores with three real KERIpy witnesses. Single and
 independent two-of-two holders complete offer → agree → grant → admit through
 HTTP. RegistryObserver is explicitly composed by the application; its parsed
@@ -207,8 +206,9 @@ presentation cutoffs over mailbox delivery or a witnessed process crash.
 
 `interop-ipex-mailbox-pairwise.test.ts` adds independent Python and TypeScript
 credential processors in both disclosure directions through the real Python
-mailbox. The TS controller is single-signer or two-of-two with separate member
-stores; both controllers have three Python witnesses with threshold two. Python
+mailbox. Its provider and witnesses use fork `331f32e4`, while the independently
+verified Python IPEX peer uses candidate `7ea525ba`. The TS controller is single-signer
+or two-of-two with separate member stores; both controllers have three Python witnesses with threshold two. Python
 adds its witnesses by a receipted rotation. Actual Python StreamPoster/Poller and
 TS Poster/signed KRAM queries carry the complete apply-through-admit lineage.
 Three-node I2I chains and four-node I2I/NI2I branching graphs reject a delivered
@@ -232,9 +232,9 @@ actual stored representation, not a separately retained producer object.
 ## Qualified baseline and regression floor
 
 The maintained pairwise owner covers the requested conversation, graph/operator,
-multiple/nested attribute, progressive, failure and spurn families. TS DI2I and
-NOT remain separately qualified profiles, excluded from Python interop until
-supported there. Preserve these cases rather than rebuilding the matrix.
+multiple/nested attribute, progressive, failure and spurn families. The DI2I and
+NOT results remain TS-only; candidate bilateral operator qualification is not
+established by this matrix. Preserve these cases rather than rebuilding the matrix.
 
 The composed KRAM/mailbox, residual architecture, complete maintained/manual and
 clean installed Node minimum/current gates pass for the published 1.0.0 baseline.
