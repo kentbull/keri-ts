@@ -12,13 +12,14 @@ KERI_TARBALL_PATH="${1:-}"
 CESR_TARBALL_PATH="${2:-}"
 TUFA_TARBALL_PATH="${3:-}"
 VERIFIER_TARBALL_PATH="${4:-}"
+HOSTING_TARBALL_PATH="${5:-}"
 
-if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" ]]; then
-  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz>" >&2
+if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" ]]; then
+  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz>" >&2
   exit 1
 fi
 
-for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}"; do
+for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}" "${HOSTING_TARBALL_PATH}"; do
   if [[ ! -f "${tarball}" ]]; then
     echo "Tarball not found: ${tarball}" >&2
     exit 1
@@ -33,6 +34,7 @@ fi
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${KERI_TARBALL_PATH}"
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${TUFA_TARBALL_PATH}" --include-bin
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${VERIFIER_TARBALL_PATH}"
+deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${HOSTING_TARBALL_PATH}"
 
 KERI_TARBALL_DIR="$(cd "$(dirname "${KERI_TARBALL_PATH}")" && pwd)"
 KERI_TARBALL_NAME="$(basename "${KERI_TARBALL_PATH}")"
@@ -42,6 +44,8 @@ TUFA_TARBALL_DIR="$(cd "$(dirname "${TUFA_TARBALL_PATH}")" && pwd)"
 TUFA_TARBALL_NAME="$(basename "${TUFA_TARBALL_PATH}")"
 VERIFIER_TARBALL_DIR="$(cd "$(dirname "${VERIFIER_TARBALL_PATH}")" && pwd)"
 VERIFIER_TARBALL_NAME="$(basename "${VERIFIER_TARBALL_PATH}")"
+HOSTING_TARBALL_DIR="$(cd "$(dirname "${HOSTING_TARBALL_PATH}")" && pwd)"
+HOSTING_TARBALL_NAME="$(basename "${HOSTING_TARBALL_PATH}")"
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 
 echo "Running combined Docker smoke test on ${SMOKE_NODE_IMAGE}"
@@ -52,10 +56,12 @@ docker run --rm \
   -v "${CESR_TARBALL_DIR}:/cesr-pkg" \
   -v "${TUFA_TARBALL_DIR}:/tufa-pkg" \
   -v "${VERIFIER_TARBALL_DIR}:/verifier-pkg" \
+  -v "${HOSTING_TARBALL_DIR}:/hosting-pkg" \
   -v "${SAMPLES_DIR}:/samples" \
   -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro" \
   "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-pr-packages-container.sh \
     "/cesr-pkg/${CESR_TARBALL_NAME}" \
     "/keri-pkg/${KERI_TARBALL_NAME}" \
     "/tufa-pkg/${TUFA_TARBALL_NAME}" \
-    "/verifier-pkg/${VERIFIER_TARBALL_NAME}"
+    "/verifier-pkg/${VERIFIER_TARBALL_NAME}" \
+    "/hosting-pkg/${HOSTING_TARBALL_NAME}"

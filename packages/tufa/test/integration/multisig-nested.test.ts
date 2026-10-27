@@ -2,6 +2,8 @@ import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
 // @file-test-lane app-stateful-a
 
+import { startServer } from "@keri-ts/hosting";
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import {
@@ -13,8 +15,6 @@ import {
   Schemer,
   settleRuntimeIngress,
 } from "keri-ts/runtime";
-import { startServer } from "../../src/host/http-server.ts";
-import { createProtocolHandler } from "../../src/http/protocol-handler.ts";
 import {
   reserveTcpPort,
   runTufa,

@@ -333,7 +333,8 @@ Director close wakes polls/rejects new streams before stores close.
 
 Notifier publishes transient Signaler hints only after durable mutation; false/
 throw emits no hint and later signaling failure cannot roll back a notice. Borrowed
-producers stay borrowed. Tufa owns CLI/role hosts/listeners; KERI owns library/runtime/
+producers stay borrowed. Hosting owns the connected HTTP host/kernel and adapters;
+Tufa retains CLI, indirect/role and witness TCP composition. KERI owns library/runtime/
 DB. Bootstrap uses explicit config paths.
 
 The maintained interop-kram owner checks single/group mailbox authentication in

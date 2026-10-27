@@ -6,7 +6,7 @@ import {
   handleMailboxAdmin,
   settleMailboxAdminIngress,
   validateMailboxAuthorizationReply,
-} from "../../../../../tufa/src/http/protocol/endpoints/mailbox-admin.ts";
+} from "../../../../../hosting/src/http/protocol/endpoints/mailbox-admin.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { collectBytes } from "../../../../src/app/transport/byte-source.ts";
 import type { CesrStreamInspection } from "../../../../src/app/transport/cesr-http.ts";

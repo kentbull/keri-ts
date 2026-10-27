@@ -18,14 +18,11 @@ import {
 } from "../../../scripts/npm/dnt-helpers.ts";
 
 const ENTRYPOINT = "./src/npm/index.ts";
-const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const NODE_CLI_ENTRYPOINT = "./src/cli/node.ts";
 const OUT_DIR = "./npm";
 const DENO_CONFIG_PATH = new URL("../deno.json", import.meta.url).href;
 const NPM_MAIN_PATH = "./esm/tufa/npm/src/npm/index.js";
 const NPM_TYPES_PATH = "./types/npm/index.d.ts";
-const NPM_RUNTIME_PATH = "./esm/tufa/npm/src/npm/runtime.js";
-const NPM_RUNTIME_TYPES_PATH = "./types/npm/runtime.d.ts";
 const NPM_BIN_PATH = "./esm/tufa/npm/src/cli/node.js";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
@@ -45,24 +42,13 @@ interface TufaNpmTargets {
     import: string;
     types: string;
   };
-  runtime: {
-    import: string;
-    types: string;
-  };
-  hostKernel: { import: string; types: string };
-  protocolHandler: { import: string; types: string };
   bin: string;
 }
 
-// Source markers survive DNT path rewriting. Use the host kernel
-// function name in both JavaScript and declarations so maintainer-comment edits
-// cannot change the selected package entrypoint.
+// Source markers identify generated CLI/module targets after DNT path rewriting.
 const ROOT_ENTRYPOINT_MARKER = "Minimal npm module surface for the `tufa` application package.";
-const RUNTIME_ENTRYPOINT_MARKER = "npm subpath entrypoint for `@keri-ts/tufa/runtime`.";
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
-const HOST_KERNEL_MARKER = "runHostKernel(";
-const PROTOCOL_HANDLER_MARKER = "Build the shared protocol handler used by the Deno and Node HTTP hosts.";
-const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/", "/verifier/src/"];
+const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/", "/verifier/src/", "/hosting/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
   "libsodium-wrappers-sumo",
@@ -87,8 +73,10 @@ function dntPackageMappings(
   keriVersion: string,
   cesrVersion: string,
   verifierVersion: string,
+  hostingVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
@@ -114,35 +102,6 @@ function resolveGeneratedTargets(): TufaNpmTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "index.d.ts", marker: ROOT_ENTRYPOINT_MARKER },
       ),
     },
-    runtime: {
-      import: findGeneratedEntrypoint(
-        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "runtime.js", marker: RUNTIME_ENTRYPOINT_MARKER },
-      ),
-      types: findGeneratedEntrypoint(
-        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "runtime.d.ts", marker: RUNTIME_ENTRYPOINT_MARKER },
-      ),
-    },
-    hostKernel: {
-      import: findGeneratedEntrypoint(
-        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "kernel.js", marker: HOST_KERNEL_MARKER },
-      ),
-      types: findGeneratedEntrypoint(
-        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "kernel.d.ts", marker: HOST_KERNEL_MARKER },
-      ),
-    },
-    protocolHandler: {
-      import: findGeneratedEntrypoint(
-        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "protocol-handler.js", marker: PROTOCOL_HANDLER_MARKER },
-      ),
-      types: findGeneratedEntrypoint(
-        {
-          root: `${OUT_DIR}/types`,
-          outDir: OUT_DIR,
-          fileName: "protocol-handler.d.ts",
-          marker: PROTOCOL_HANDLER_MARKER,
-        },
-      ),
-    },
     bin: findGeneratedEntrypoint(
       { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "node.js", marker: BIN_ENTRYPOINT_MARKER },
     ),
@@ -150,12 +109,6 @@ function resolveGeneratedTargets(): TufaNpmTargets {
 
   assertPackagePathExists(OUT_DIR, targets.root.import);
   assertPackagePathExists(OUT_DIR, targets.root.types);
-  assertPackagePathExists(OUT_DIR, targets.runtime.import);
-  assertPackagePathExists(OUT_DIR, targets.runtime.types);
-  assertPackagePathExists(OUT_DIR, targets.hostKernel.import);
-  assertPackagePathExists(OUT_DIR, targets.hostKernel.types);
-  assertPackagePathExists(OUT_DIR, targets.protocolHandler.import);
-  assertPackagePathExists(OUT_DIR, targets.protocolHandler.types);
   assertPackagePathExists(OUT_DIR, targets.bin);
 
   return targets;
@@ -192,18 +145,6 @@ function normalizeBuiltManifest(): TufaNpmTargets {
     ".": {
       import: targets.root.import,
       types: targets.root.types,
-    },
-    "./runtime": {
-      import: targets.runtime.import,
-      types: targets.runtime.types,
-    },
-    "./host/kernel": {
-      import: targets.hostKernel.import,
-      types: targets.hostKernel.types,
-    },
-    "./http/protocol-handler": {
-      import: targets.protocolHandler.import,
-      types: targets.protocolHandler.types,
     },
   };
   manifest.bin = {
@@ -253,15 +194,16 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 );
 
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
+const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
 
 await build({
-  entryPoints: [ENTRYPOINT, RUNTIME_ENTRYPOINT, NODE_CLI_ENTRYPOINT],
+  entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
   outDir: OUT_DIR,
   shims: {
     deno: true,
   },
   configFile: DENO_CONFIG_PATH,
-  mappings: dntPackageMappings(keriPackageVersion, cesrPackageVersion, verifierPackageVersion),
+  mappings: dntPackageMappings(keriPackageVersion, cesrPackageVersion, verifierPackageVersion, hostingPackageVersion),
   typeCheck: false,
   test: false,
   skipNpmInstall: true,
@@ -291,10 +233,6 @@ await build({
         import: NPM_MAIN_PATH,
         types: NPM_TYPES_PATH,
       },
-      "./runtime": {
-        import: NPM_RUNTIME_PATH,
-        types: NPM_RUNTIME_TYPES_PATH,
-      },
     },
     bin: {
       tufa: NPM_BIN_PATH,
@@ -303,6 +241,7 @@ await build({
     dependencies: {
       "@deno/shim-deno": "~0.18.0",
       "@keri-ts/verifier": verifierPackageVersion,
+      "@keri-ts/hosting": hostingPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
@@ -329,6 +268,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/keri`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/cesr`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/hosting`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);

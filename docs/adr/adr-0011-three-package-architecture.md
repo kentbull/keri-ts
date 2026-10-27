@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-04-09
 - Scope: repo-level package boundaries across `packages/tufa`, `packages/verifier`,
-  `packages/keri`, and `packages/cesr`
+  `packages/hosting`, `packages/keri`, and `packages/cesr`
 - Related:
   - `docs/ARCHITECTURE_MAP.md`
   - `docs/archived-plan-docs/packaging/layers-and-libs-reorg.md`
@@ -35,8 +35,9 @@ records the split as a durable architectural rule.
 The repo uses concrete package boundaries with a one-way dependency graph:
 
 - `tufa -> @keri-ts/verifier -> keri-ts -> cesr-ts`
-- Tufa also uses KERI and CESR public operations directly; the verifier package
-  also uses CESR primitives directly.
+- `tufa -> @keri-ts/hosting -> keri-ts -> cesr-ts`
+- Tufa also uses KERI and CESR public operations directly; both extracted
+  application packages use the concrete public operations they need.
 
 Package ownership is:
 
@@ -65,10 +66,18 @@ Package ownership is:
   host/listener composition or protocol acceptance
 - exposes its supported application API through `packages/verifier/mod.ts`
 
+### `@keri-ts/hosting`
+
+- owns the connected HTTP host/kernel, Deno/Node adapters, Hono app policy/error
+  handling and protocol route composition
+- preserves the existing concrete lifecycle and borrowed KERI runtime operations
+- exposes supported host/app/protocol operations through `packages/hosting/mod.ts`
+- does not own Tufa role/indirect-host/CLI porcelain or witness TCP composition
+
 ### `tufa`
 
-- owns application composition, CLI UX, long-lived host/kernel lifecycle, HTTP
-  edge, middleware, and operator-facing role hosting
+- owns application/CLI UX, indirect-host and operator-facing role composition,
+  including witness TCP; it consumes the concrete HTTP hosting package
 - retains `tufa verifier run` registration, runtime composition and the full CLI
   workflow test, consuming `@keri-ts/verifier` directly
 - is an application package, not a generic host framework abstraction for other
@@ -84,7 +93,7 @@ The supported package entrypoints are:
 - `packages/keri/db.ts`
 - `packages/keri/cli.ts` (separate command-helper boundary consumed by Tufa)
 - `packages/tufa/mod.ts`
-- `packages/tufa/runtime.ts` (host embedding operations)
+- `packages/hosting/mod.ts` (HTTP host/app/protocol operations and data)
 - `packages/verifier/mod.ts` (verifier application operations and data)
 
 The runtime barrel names supported operations and data explicitly; module
@@ -103,14 +112,15 @@ Internal implementation zones remain internal unless deliberately exported:
 
 - `keri-ts` must not regain CLI entry ownership
 - `keri-ts` must not regain listener startup or Hono ownership
-- `tufa` may depend on `@keri-ts/verifier` and `keri-ts`; the verifier package
-  depends on public KERI/CESR surfaces and never on Tufa
+- `tufa` may depend on `@keri-ts/verifier`, `@keri-ts/hosting` and `keri-ts`;
+  extracted application packages depend on public KERI/CESR surfaces and never on Tufa
 - `keri-ts` may not depend on either application package
 - `keri-ts` may depend on `cesr-ts`, but `cesr-ts` must remain independent of
   KERI or application hosting concerns
 - package-surface tests should validate behavior at the owning package boundary:
-  - `packages/tufa/test/**` for CLI, host, HTTP edge, and composed CLI workflows
+  - `packages/tufa/test/**` for CLI, role/indirect-host composition and composed workflows
   - `packages/verifier/test/**` for verifier workflow, policy and webhook behavior
+  - `packages/hosting/test/**` for HTTP host, routing, policy and joined cleanup
   - `packages/keri/test/**` for library, runtime, and DB behavior
   - `packages/cesr/test/**` for CESR behavior
 
@@ -119,7 +129,7 @@ Internal implementation zones remain internal unless deliberately exported:
 - preserves a clean dependency graph
 - makes `keri-ts` usable as a real library instead of an app/library hybrid
 - prevents browser-hostile imports from leaking into the default KERI surface
-- keeps HTTP framework and listener churn isolated to `tufa`
+- keeps HTTP framework and concrete HTTP listener ownership in `@keri-ts/hosting`
 - keeps CESR reusable below KERI instead of drifting into KERI-shaped or
   application-shaped ownership
 - matches the package boundaries the repo is already validating and maintaining

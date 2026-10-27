@@ -1,3 +1,4 @@
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import {
@@ -16,7 +17,6 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";

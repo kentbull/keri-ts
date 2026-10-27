@@ -22,6 +22,7 @@ CESR_TARBALL_PATH="${CESR_TARBALL_PATH:-}"
 KERI_TARBALL_PATH="${KERI_TARBALL_PATH:-}"
 TUFA_TARBALL_PATH="${TUFA_TARBALL_PATH:-}"
 VERIFIER_TARBALL_PATH="${VERIFIER_TARBALL_PATH:-}"
+HOSTING_TARBALL_PATH="${HOSTING_TARBALL_PATH:-}"
 KERI_BASE="${KERI_BASE:-${RUN_ID}}"
 KEEP_RUN_DIR="${KEEP_RUN_DIR:-true}"
 SALLY_VLEI_IMAGE="${SALLY_VLEI_IMAGE:-gleif/vlei:1.0.3}"
@@ -298,13 +299,15 @@ prepare_tufa_command() {
 
   require_cmd npm
   require_cmd node
-  if [[ -z "${CESR_TARBALL_PATH}" || -z "${KERI_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" ]]; then
+  if [[ -z "${CESR_TARBALL_PATH}" || -z "${KERI_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" ]]; then
     run deno task npm:build:all
   fi
   [[ -n "${CESR_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/cesr/npm" CESR_TARBALL_PATH
   [[ -n "${KERI_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/keri/npm" KERI_TARBALL_PATH
   [[ -n "${TUFA_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/tufa/npm" TUFA_TARBALL_PATH
   [[ -n "${VERIFIER_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/verifier/npm" VERIFIER_TARBALL_PATH
+  [[ -n "${HOSTING_TARBALL_PATH}" ]] || pack_package_tarball "${ROOT_DIR}/packages/hosting/npm" HOSTING_TARBALL_PATH
+  [[ -f "${HOSTING_TARBALL_PATH}" ]] || fail "Hosting tarball not found: ${HOSTING_TARBALL_PATH}"
   [[ -f "${VERIFIER_TARBALL_PATH}" ]] || fail "Verifier tarball not found: ${VERIFIER_TARBALL_PATH}"
   [[ -f "${CESR_TARBALL_PATH}" ]] || fail "CESR tarball not found: ${CESR_TARBALL_PATH}"
   [[ -f "${KERI_TARBALL_PATH}" ]] || fail "keri-ts tarball not found: ${KERI_TARBALL_PATH}"
@@ -316,6 +319,7 @@ prepare_tufa_command() {
     "${CESR_TARBALL_PATH}" \
     "${KERI_TARBALL_PATH}" \
     "${VERIFIER_TARBALL_PATH}" \
+    "${HOSTING_TARBALL_PATH}" \
     "${TUFA_TARBALL_PATH}"
   TUFACMD=("${TUFA_NPM_PREFIX}/bin/tufa")
   [[ -x "${TUFACMD[0]}" ]] || fail "Tarball install did not produce executable ${TUFACMD[0]}"

@@ -3,8 +3,8 @@
  *
  * This module intentionally stays small: it builds request context, applies
  * explicit route precedence, and dispatches to endpoint modules. Transport
- * setup lives under `tufa/src/host`, while endpoint-specific HTTP semantics
- * live under `tufa/src/http/protocol`.
+ * setup lives under `hosting/src/host`, while endpoint-specific HTTP semantics
+ * live under `hosting/src/http/protocol`.
  */
 import { type AgentRuntime, type ProtocolHostPolicy } from "keri-ts/runtime";
 import { ArtifactFiles } from "./protocol/artifact-files.ts";

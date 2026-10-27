@@ -1,5 +1,5 @@
+import { createTufaApp } from "@keri-ts/hosting";
 import type { Operation } from "effection";
-import { createTufaApp } from "../../../tufa/src/http/app.ts";
 import type { ProtocolHostPolicy } from "../../src/app/protocol/protocol-host-policy.ts";
 import type { AgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
 import type { RuntimeClock, RuntimeTimer } from "../../src/app/runtime/runtime-clock.ts";

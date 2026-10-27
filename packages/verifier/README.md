@@ -18,8 +18,8 @@ HTTP success markers are local workflow history, not KERI receipts or business
 acknowledgements. Schema-specific validators decide business policy separately
 from authenticated protocol evidence.
 
-`tufa verifier run` remains the CLI composition. `@keri-ts/tufa/runtime` exposes
-Tufa hosts; verifier applications import this package directly.
+`tufa verifier run` remains the CLI composition. `@keri-ts/hosting` exposes
+the concrete HTTP host; verifier applications import this package directly.
 
 Run `deno task check`, `deno task test` and `deno task build:npm` from this directory.
 Licensed under Apache-2.0; see the repository's `LICENSE`.

@@ -1,0 +1,27 @@
+{
+  "name": "@keri-ts/hosting",
+  "version": "2.0.0",
+  "exports": "./mod.ts",
+  "tasks": {
+    "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
+    "fmt:check": "deno run -A npm:dprint@0.49.0 check --config ../../dprint.json .",
+    "lint": "deno lint mod.ts src scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "check": "deno check mod.ts scripts/build_npm.ts test/*.ts",
+    "test": "deno test -A test",
+    "build:npm": "deno run -A scripts/build_npm.ts"
+  },
+  "imports": {
+    "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
+    "cesr-ts": "../cesr/mod.ts",
+    "keri-ts/db": "../keri/db.ts",
+    "keri-ts/runtime": "../keri/runtime.ts",
+    "effection": "npm:effection@^3.6.0"
+  },
+  "compilerOptions": {
+    "lib": [
+      "deno.window",
+      "deno.ns",
+      "dom"
+    ]
+  }
+}

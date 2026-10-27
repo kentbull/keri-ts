@@ -5,6 +5,7 @@
 # - a locally built `cesr-ts` tarball
 # - a locally built `keri-ts` tarball
 # - a locally built `@keri-ts/verifier` tarball
+# - a locally built `@keri-ts/hosting` tarball
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -16,6 +17,7 @@ TARBALL_PATH="${1:-}"
 CESR_TARBALL_PATH="${2:-}"
 KERI_TARBALL_PATH="${3:-}"
 VERIFIER_TARBALL_PATH="${4:-}"
+HOSTING_TARBALL_PATH="${5:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -28,6 +30,11 @@ if [[ -z "${TARBALL_PATH}" ]]; then
     (cd "${ROOT_DIR}/packages/verifier" && deno task build:npm)
     VERIFIER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/verifier/npm" && npm pack --silent | tail -n1)"
     VERIFIER_TARBALL_PATH="${ROOT_DIR}/packages/verifier/npm/${VERIFIER_TARBALL_NAME}"
+  fi
+  if [[ -z "${HOSTING_TARBALL_PATH}" ]]; then
+    (cd "${ROOT_DIR}/packages/hosting" && deno task build:npm)
+    HOSTING_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/hosting/npm" && npm pack --silent | tail -n1)"
+    HOSTING_TARBALL_PATH="${ROOT_DIR}/packages/hosting/npm/${HOSTING_TARBALL_NAME}"
   fi
 fi
 
@@ -87,6 +94,17 @@ if [[ -n "${VERIFIER_TARBALL_PATH}" ]]; then
   VERIFIER_TARBALL_NAME="$(basename "${VERIFIER_TARBALL_PATH}")"
   DOCKER_ARGS+=(-v "${VERIFIER_TARBALL_DIR}:/verifier-pkg")
   INSTALL_TARGETS=("/verifier-pkg/${VERIFIER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
+fi
+
+if [[ -n "${HOSTING_TARBALL_PATH}" ]]; then
+  if [[ ! -f "${HOSTING_TARBALL_PATH}" ]]; then
+    echo "Hosting tarball not found: ${HOSTING_TARBALL_PATH}" >&2
+    exit 1
+  fi
+  HOSTING_TARBALL_DIR="$(cd "$(dirname "${HOSTING_TARBALL_PATH}")" && pwd)"
+  HOSTING_TARBALL_NAME="$(basename "${HOSTING_TARBALL_PATH}")"
+  DOCKER_ARGS+=(-v "${HOSTING_TARBALL_DIR}:/hosting-pkg")
+  INSTALL_TARGETS=("/hosting-pkg/${HOSTING_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 fi
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"

@@ -17,7 +17,7 @@ export interface CreateTufaAppOptions {
  * Build the Stage 4 Hono shell for the Tufa HTTP edge.
  *
  * Stage 4 keeps route semantics inside the protocol handler while moving
- * cross-cutting HTTP policy into explicit Tufa-owned middleware and error
+ * cross-cutting HTTP policy into explicit hosting-owned middleware and error
  * mapping.
  */
 export function createTufaApp(

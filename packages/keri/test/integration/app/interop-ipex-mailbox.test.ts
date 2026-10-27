@@ -3,6 +3,7 @@ import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Witnessed TS IPEX conversations carried by a real KERIpy KRAM mailbox. */
 
+import { createProtocolHandler } from "@keri-ts/hosting";
 import {
   collectPayload,
   Compactor,
@@ -18,7 +19,6 @@ import {
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { createProtocolHandler } from "../../../../tufa/src/http/protocol-handler.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";

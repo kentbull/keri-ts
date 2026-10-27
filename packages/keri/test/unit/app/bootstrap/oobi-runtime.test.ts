@@ -1,8 +1,8 @@
+import { startServer } from "@keri-ts/hosting";
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Diger, Prefixer, SerderKERI } from "../../../../../cesr/mod.ts";
-import { startServer } from "../../../../../tufa/src/host/http-server.ts";
-import { createProtocolHandler } from "../../../../../tufa/src/http/protocol-handler.ts";
 import { resolveBootstrap } from "../../../../src/app/bootstrap/bootstrapping.ts";
 import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";

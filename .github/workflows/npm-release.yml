@@ -62,6 +62,12 @@ jobs:
               echo "artifact=verifier-npm" >> "$GITHUB_OUTPUT"
               echo "title=@keri-ts/verifier" >> "$GITHUB_OUTPUT"
               ;;
+            hosting)
+              echo "path=packages/hosting/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=@keri-ts/hosting" >> "$GITHUB_OUTPUT"
+              echo "artifact=hosting-npm" >> "$GITHUB_OUTPUT"
+              echo "title=@keri-ts/hosting" >> "$GITHUB_OUTPUT"
+              ;;
             *) exit 2 ;;
           esac
 
@@ -92,8 +98,9 @@ jobs:
           case "$PACKAGE" in
             cesr) deno task test:cesr ;;
             keri) deno task test:quality:keri:fast ;;
-            tufa) deno task test:quality:tufa && deno task test:verifier ;;
+            tufa) deno task test:quality:tufa && deno task test:verifier && deno task test:hosting ;;
             verifier) deno task test:verifier ;;
+            hosting) deno task test:hosting ;;
           esac
 
       - name: test package tooling
@@ -108,10 +115,11 @@ jobs:
           case "$PACKAGE" in
             cesr) (cd packages/cesr && deno task build:npm) ;;
             keri) (cd packages/keri && deno task build:npm) ;;
-            tufa|verifier)
+            tufa|verifier|hosting)
               (cd packages/cesr && deno run -A scripts/build_npm.ts)
               (cd packages/keri && deno run -A scripts/build_npm.ts)
               (cd packages/verifier && deno run -A scripts/build_npm.ts)
+              (cd packages/hosting && deno run -A scripts/build_npm.ts)
               (cd packages/tufa && deno run -A scripts/build_npm.ts)
               ;;
           esac
@@ -125,6 +133,8 @@ jobs:
           npm view "cesr-ts@${CESR_DEP}" version >/dev/null
           VERIFIER_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['@keri-ts/verifier']")
           npm view "@keri-ts/verifier@${VERIFIER_DEP}" version >/dev/null
+          HOSTING_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['@keri-ts/hosting']")
+          npm view "@keri-ts/hosting@${HOSTING_DEP}" version >/dev/null
 
       - name: pack and smoke the primary tarball
         id: pack
@@ -145,13 +155,15 @@ jobs:
               cd ../../..
               bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
               ;;
-            tufa|verifier)
+            tufa|verifier|hosting)
               cd packages/cesr/npm
               CESR_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../keri/npm
               KERI_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../verifier/npm
               VERIFIER_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../hosting/npm
+              HOSTING_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../tufa/npm
               TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../..
@@ -159,8 +171,10 @@ jobs:
                 "packages/tufa/npm/$TARBALL" \
                 "packages/cesr/npm/$CESR_TARBALL" \
                 "packages/keri/npm/$KERI_TARBALL" \
-                "packages/verifier/npm/$VERIFIER_TARBALL"
+                "packages/verifier/npm/$VERIFIER_TARBALL" \
+                "packages/hosting/npm/$HOSTING_TARBALL"
               if [[ "$PACKAGE" == verifier ]]; then TARBALL="$VERIFIER_TARBALL"; fi
+              if [[ "$PACKAGE" == hosting ]]; then TARBALL="$HOSTING_TARBALL"; fi
               ;;
           esac
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"

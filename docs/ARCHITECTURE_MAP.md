@@ -26,7 +26,8 @@ reference material and historical reports.
 
 - Dependency graph:
   - `tufa -> @keri-ts/verifier -> keri-ts -> cesr-ts`
-  - Tufa and the verifier also borrow the public lower-package operations directly.
+  - `tufa -> @keri-ts/hosting -> keri-ts -> cesr-ts`
+  - Tufa and both extracted packages borrow the public lower-package operations directly.
 - `mod.ts`
   - Repo-root runner for the `tufa` application package.
 - `packages/keri/mod.ts`
@@ -40,10 +41,10 @@ reference material and historical reports.
 - `packages/verifier/**`
   - Verifier application policy, workflow cue storage and webhook package.
 - `packages/tufa/src/host/**`
-  - Active shared host kernel plus Deno/Node/TCP listener ownership.
-- `packages/tufa/src/http/**`
-  - Active Hono shell, Stage 4 middleware policy, and HTTP route composition
-    ownership.
+  - Indirect-host and witness TCP composition retained with Tufa roles.
+- `packages/hosting/**`
+  - Shared HTTP host/kernel, Deno/Node listeners, Hono middleware/error policy
+    and connected protocol routes.
 - `packages/tufa/src/roles/**`
   - Active mailbox and witness role-host composition ownership.
 - `packages/tufa/src/cli/**`
@@ -81,10 +82,9 @@ reference material and historical reports.
 - `packages/tufa`
   - Application package that owns the `tufa` binary boundary.
 - `packages/tufa/src/host/*`
-  - Internal shared host kernel and listener adapters.
-- `packages/tufa/src/http/*`
-  - Internal Hono edge, app policy middleware/error mapping, and protocol-route
-    composition.
+  - Internal indirect-host and witness TCP composition.
+- `packages/hosting/mod.ts`
+  - Supported HTTP host/kernel, app policy and protocol-handler API.
 - `packages/tufa/src/roles/*`
   - Internal mailbox/witness role-host composition over the shared kernel.
 - `packages/tufa/src/cli/*`
@@ -97,7 +97,15 @@ reference material and historical reports.
   - Supported verifier agent, cue-store, policy configuration and webhook data API.
 - `packages/verifier/src/*`
   - Internal application implementation over public KERI runtime/DB and CESR APIs.
-  - CLI registration and listener/runtime composition remain in Tufa.
+  - CLI registration and verifier composition remain in Tufa.
+
+### `@keri-ts/hosting`
+
+- `packages/hosting/mod.ts`
+  - Supported concrete HTTP host/kernel, app and protocol-handler operations/data.
+- `packages/hosting/src/host/*` and `packages/hosting/src/http/*`
+  - Internal Deno/Node lifecycle adapters, middleware/error policy and connected routes.
+  - Tufa retains indirect-host, role and witness TCP composition.
 
 ### CESR Package
 
@@ -116,9 +124,11 @@ reference material and historical reports.
     implementation bodies only; the active runnable CLI, command tree, dispatch
     plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
 - `packages/tufa/test/*`
-  - Canonical package-surface CLI, server, host, and HTTP edge validation.
+  - Canonical package-surface CLI, role startup and composed workflow validation.
 - `packages/verifier/test/*`
   - Verifier agent/webhook validation with application-owned peers and clocks.
+- `packages/hosting/test/*`
+  - HTTP app/adapter/route and joined lifecycle validation.
 - `packages/keri/test/*`
   - Canonical library/runtime/DB/protocol validation, even when some tests use
     Tufa helpers as scaffolding.
@@ -165,10 +175,10 @@ reference material and historical reports.
 
 - Error model:
   - CESR still owns its typed parser errors.
-  - `packages/tufa/src/http/*` now owns app-level HTTP error mapping for
+  - `packages/hosting/src/http/*` now owns app-level HTTP error mapping for
     unhandled transport-edge failures.
 - Logging:
-  - `packages/tufa/src/http/*` now uses injected `Logger` middleware for request
+  - `packages/hosting/src/http/*` now uses injected `Logger` middleware for request
     logging and edge-failure reporting.
   - core and runtime layers still mostly use the shared console-backed logger.
 - Config/runtime flags: spread between task definitions and module constants.
