@@ -1,14 +1,14 @@
-/** Finite native registry authoring; existing engines own acceptance and receipt authentication. */
+/** Finite ACDC v2 registry authoring; existing engines own acceptance and receipt authentication. */
 import { bytesEqual, makeBlindState, type SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
 import {
   acdcmap,
   type AcdcMapOptions,
+  type AcdcV2Regery,
+  type AcdcV2Registry,
   blindate,
   isLocalGroupHab,
   matchesRegistrySeal,
-  type NativeRegery,
-  type NativeRegistry,
   type Receiptor,
   type RegistryDisclosure,
   validateAcdcSchema,
@@ -18,7 +18,7 @@ import type { RegistryCustody } from "./custody.ts";
 import type { Wallet } from "./wallet.ts";
 
 /** Public means deliberate opening publication; private derivation requires supplied custody. */
-export interface NativeUpdateOptions {
+export interface AcdcV2UpdateOptions {
   public?: boolean;
   stamp?: string;
   boundEvent?: string;
@@ -28,7 +28,7 @@ export interface NativeUpdateOptions {
 export class WalletAuthor {
   constructor(
     readonly wallet: Wallet,
-    readonly rgy: NativeRegery,
+    readonly rgy: AcdcV2Regery,
     readonly receiptor: Receiptor,
     readonly custody?: RegistryCustody,
   ) {
@@ -38,13 +38,13 @@ export class WalletAuthor {
   }
 
   /** Resolve only this local single-controller registry; groups retain their separate approval workflow. */
-  registry(name: string, controller: string): NativeRegistry {
+  registry(name: string, controller: string): AcdcV2Registry {
     const registry = this.rgy.registryByName(name);
     if (!registry || registry.hab.pre !== controller) {
       throw new ValidationError("Unknown registry or different controller.");
     }
     if (isLocalGroupHab(this.wallet.hby, registry.hab)) {
-      throw new ValidationError("Native group authoring requires member approval.");
+      throw new ValidationError("ACDC v2 group authoring requires member approval.");
     }
     return registry;
   }
@@ -53,7 +53,7 @@ export class WalletAuthor {
   *incept(name: string, controller: string): Operation<SerderACDC> {
     const hab = this.wallet.hby.habs.get(controller);
     if (!hab || isLocalGroupHab(this.wallet.hby, hab)) {
-      throw new ValidationError("Native inception requires a local individual controller.");
+      throw new ValidationError("ACDC v2 inception requires a local individual controller.");
     }
     const reg = this.rgy.registryByName(name) ?? this.rgy.makeRegistry(name, controller);
     this.registry(name, controller);
@@ -62,18 +62,18 @@ export class WalletAuthor {
     return event;
   }
 
-  /** Construct the issuer's credential using the existing native finite builder. */
-  create(reg: NativeRegistry, options: Omit<AcdcMapOptions, "regid">): SerderACDC {
+  /** Construct the issuer's credential using the existing ACDC v2 finite builder. */
+  create(reg: AcdcV2Registry, options: Omit<AcdcMapOptions, "regid">): SerderACDC {
     this.registry(reg.name, reg.hab.pre);
     return acdcmap(reg.hab.pre, { ...options, regid: reg.regk });
   }
 
   /** Stage one BUP state advance, preserving an exact pending retry and its opening. Never author historical upd. */
   stage(
-    reg: NativeRegistry,
+    reg: AcdcV2Registry,
     acdc: SerderACDC,
     state: string,
-    options: NativeUpdateOptions = {},
+    options: AcdcV2UpdateOptions = {},
   ): { event: SerderACDC; opening: RegistryDisclosure } {
     this.registry(reg.name, acdc.issuer!);
     if (!acdc.verify() || acdc.regid !== reg.regk) {
@@ -84,7 +84,7 @@ export class WalletAuthor {
       throw new ValidationError(schema.kind === "missing" ? `Missing ACDC schema: ${schema.said}` : schema.reason);
     }
     const head = reg.store.headEvent(reg.regk!);
-    if (!head || head.ilk === "upd") throw new ValidationError("An accepted native registry head is required.");
+    if (!head || head.ilk === "upd") throw new ValidationError("An accepted ACDC v2 registry head is required.");
     if (options.public && options.boundEvent) {
       throw new ValidationError("Public opening cannot use private bound coordinates.");
     }
@@ -148,10 +148,10 @@ export class WalletAuthor {
 
   /** Advance one explicit state through real anchoring; staging is never reported as accepted. */
   *update(
-    reg: NativeRegistry,
+    reg: AcdcV2Registry,
     acdc: SerderACDC,
     state: string,
-    options: NativeUpdateOptions = {},
+    options: AcdcV2UpdateOptions = {},
   ): Operation<SerderACDC> {
     const { event } = this.stage(reg, acdc, state, options);
     yield* this.anchor(reg, event);
@@ -159,7 +159,7 @@ export class WalletAuthor {
   }
 
   /** Preserve original issued history on retry; inventory follows exact witnessed TEL acceptance. */
-  *issue(reg: NativeRegistry, acdc: SerderACDC, options: NativeUpdateOptions = {}) {
+  *issue(reg: AcdcV2Registry, acdc: SerderACDC, options: AcdcV2UpdateOptions = {}) {
     this.registry(reg.name, acdc.issuer!);
     if (acdc.regid !== reg.regk) throw new ValidationError("Credential does not match this registry.");
     const old = this.wallet.db.issued.get([acdc.said!]);
@@ -170,7 +170,7 @@ export class WalletAuthor {
   }
 
   /** Revoke only locally retained issuance, not an unrelated arbitrary target digest. */
-  *revoke(reg: NativeRegistry, said: string, options: NativeUpdateOptions = {}): Operation<SerderACDC> {
+  *revoke(reg: AcdcV2Registry, said: string, options: AcdcV2UpdateOptions = {}): Operation<SerderACDC> {
     const record = this.wallet.db.issued.get([said]);
     if (!record || record.registry !== reg.regk) {
       throw new ValidationError("Credential is not in this registry's issued inventory.");
@@ -179,7 +179,7 @@ export class WalletAuthor {
   }
 
   /** Reuse the current branch's already signed seal even before receipts; no extra anchor merely to poll. */
-  *anchor(reg: NativeRegistry, event: SerderACDC): Operation<void> {
+  *anchor(reg: AcdcV2Registry, event: SerderACDC): Operation<void> {
     this.registry(reg.name, reg.hab.pre);
     const ordinal = Number(BigInt(`0x${event.sad!.n}`));
     const accepted = reg.store.seqEvent(reg.regk!, ordinal);
@@ -203,7 +203,7 @@ export class WalletAuthor {
     reg.processEscrows();
     const exact = reg.store.seqEvent(reg.regk!, ordinal);
     if (!exact || !bytesEqual(exact.raw, event.raw)) {
-      throw new ValidationError("Native registry event remains pending authenticated anchor receipts.");
+      throw new ValidationError("ACDC v2 registry event remains pending authenticated anchor receipts.");
     }
   }
 }

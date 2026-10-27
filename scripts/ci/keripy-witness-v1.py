@@ -1,9 +1,10 @@
-"""Start a real KERIpy witness with explicit v1 framing for the v1 interop matrix.
+"""Start a real KERIpy witness with explicit framing, defaulting to the v1 matrix.
 
 The current ``kli witness start`` opens Habery at the default genus and exposes
 ``--version`` only for printing the package version. Open the same CLI-created
 store through the public library API so both body and attachment expectations
-are explicit. Real witness routing, receipt processing, and storage stay intact.
+are explicit. Native positive cases may select v2. Real witness routing, receipt
+processing, and storage stay intact.
 """
 
 import argparse
@@ -54,13 +55,17 @@ def main():
     parser.add_argument("--http", type=int, required=True)
     parser.add_argument("--tcp", type=int, required=True)
     parser.add_argument("--legacy", action="store_true", help="Use the v1-only reference API.")
+    parser.add_argument("--protocol-version", type=int, choices=(1, 2), default=1,
+                        help="Select the actual Habery and witness endpoint/parser version.")
     parser.add_argument("--messenger-probe", action="store_true", help="Enable test-only transport commands.")
     args = parser.parse_args(remaining)
+    if args.legacy and args.protocol_version != 1:
+        parser.error("the legacy reference supports only protocol version 1")
     signal.signal(signal.SIGTERM, stop)
 
     cf = Configer(name=args.config_file, headDirPath=args.config_dir,
                   temp=False, reopen=True, clear=False)
-    version = {} if args.legacy else {"version": kering.Vrsn_1_0}
+    version = {} if args.legacy else {"version": kering.Vrsn_2_0 if args.protocol_version == 2 else kering.Vrsn_1_0}
     hby = Habery(name=args.name, base=args.base, bran=args.passcode, cf=cf, **version)
     mbx = None
     try:

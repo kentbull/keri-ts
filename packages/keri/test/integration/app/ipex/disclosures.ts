@@ -102,6 +102,7 @@ export function partialDisclosure(full: SerderACDC, fields: readonly string[]): 
   });
   compactor.compact([...fields], "a");
   const partial = acdcmap(full.issuer!, {
+    regid: full.regid ?? undefined,
     uuid: full.sad!.u as string,
     schema: full.sad!.s as MapperMap,
     attribute: compactor.partials![fields.join("|")].mad,

@@ -207,3 +207,34 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
       }));
   }
 }
+
+for (const implementation of ["TypeScript", "KERIpy"] as const) {
+  Deno.test(`IPEX wallet ${implementation} issuer: negotiated source anchors, consent and exact presentation after reopen with three witnesses`, () =>
+    withIpexPeers({ issuer: implementation, wallet: true }, async (peers) => {
+      const { issuer, holder } = peers;
+      const apply = await exchange(holder, issuer, "apply");
+      const offer = await exchange(issuer, holder, "offer", apply);
+      const agree = await exchange(holder, issuer, "agree", offer);
+      const grant = await exchange(issuer, holder, "grant", agree);
+      await exchange(holder, issuer, "admit", grant);
+      const before = (await holder.snapshot(grant)).nodes.map(node => node.raw);
+      const retainedProofs = await Promise.all(
+        [issuer, holder].map(async peer => (await peer.snapshot(grant)).nodes.map(node => node.proof)),
+      );
+      assertEquals(before.length, 1);
+      assertEquals(before[0].includes("hidden-value"), false);
+      await issuer.reopenWallet();
+      await holder.reopenWallet();
+      const presentation = await holder.present(grant);
+      await observed(
+        "issuer accepted exact retained presentation",
+        async () => (await issuer.snapshot()).messages.find(message => message.d === presentation),
+      );
+      for (const [index, peer] of [issuer, holder].entries()) {
+        assertEquals((await peer.snapshot(grant)).nodes.map(node => node.raw), before);
+        assertEquals((await peer.snapshot(grant)).nodes.map(node => node.proof), retainedProofs[index]);
+        assertEquals((await peer.snapshot(presentation)).nodes.map(node => node.raw), before);
+        assertEquals((await peer.snapshot(presentation)).inspected?.accepted, true);
+      }
+    }));
+}

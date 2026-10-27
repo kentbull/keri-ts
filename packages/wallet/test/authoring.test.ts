@@ -3,10 +3,10 @@ import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import {
   acdcmap,
+  AcdcV2Regery,
   createAgentRuntime,
   createHabery,
   FetchHttpClient,
-  NativeRegery,
   Receiptor,
   Roles,
   Schemes,
@@ -17,7 +17,7 @@ import { createProtocolHandler } from "../../hosting/mod.ts";
 import { createWalletBaser, Wallet, WalletAuthor } from "../mod.ts";
 import { RegistryCustody } from "../src/custody.ts";
 
-Deno.test("native author retries exact pending seals, requires witness quorum and retains public/derived issuance across reopen", async () => {
+Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum and retains public/derived issuance across reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: crypto.randomUUID(),
@@ -95,7 +95,7 @@ Deno.test("native author retries exact pending seals, requires witness quorum an
       yield* rgy.baser.reopen({ reuse: true });
       yield* db.close(false);
       yield* db.reopen({ reuse: true });
-      rgy = new NativeRegery(hby, rgy.baser);
+      rgy = new AcdcV2Regery(hby, rgy.baser);
       author = new WalletAuthor(wallet, rgy, receiptor);
       receiptLimit = 3;
       const revoked = yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true });

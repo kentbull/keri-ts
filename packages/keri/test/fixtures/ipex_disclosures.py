@@ -65,7 +65,7 @@ def partial_disclosure(full, fields):
     compactor = Compactor(mad=copy.deepcopy(full.sad["a"]),
                           kind=full.kind, verify=False)
     compactor.compact(paths=fields, root="a")
-    partial = acdcmap(full.israid, uuid=full.sad["u"], schema=full.sad["s"],
+    partial = acdcmap(full.israid, uuid=full.sad["u"], schema=full.sad["s"], regid=full.regid,
                       attribute=compactor.partials[tuple(fields)].mad,
                       edge=full.sad.get("e"))
     assert partial.said == full.said

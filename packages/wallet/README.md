@@ -1,7 +1,7 @@
 # ACDC wallet inventory
 
 This application package retains issued credential bytes and explicit consent to
-one accepted Grant/Admit pair. Supply the actual Habery, native RegistryStore,
+one accepted Grant/Admit pair. Supply the actual Habery, ACDC v2 RegistryStore,
 Exchanger and an opened WalletBaser. Callers own and close those stores.
 
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
@@ -11,12 +11,13 @@ Neither protocol intake nor reading a Grant creates consent automatically.
 
 `prepareAdmit(grant, holder, {consent: true})` checks the exact accepted Grant,
 intended local holder and current authenticated root `true` before signing a
-native response. It returns `{admit, wire}` without recording inventory. The
-caller admits that wire through ordinary ingress, then calls `recordAdmission`
+ACDC v2 response. This Effection operation returns `{admit, wire, support}` without
+recording inventory. For a negotiated anchored response, supply the actual
+`receiptor`; it gathers the exact source anchor's witness receipts before returning.
+The caller admits that wire through ordinary ingress, then calls `recordAdmission`
 with the actual accepted pair. False/unknown graphs and missing consent never
-produce a signature. This operation supports ordinary single-signature holders;
-negotiated source anchoring and group admission are deferred and refuse before
-signing. Native attachment genus defaults to 2.0.
+produce a signature. This operation supports individual holders; group admission requires its separate
+member-approval workflow. ACDC v2 attachment genus defaults to 2.0.
 
 `inventory`, `admissions`, `issuedCredential` and asynchronous `heldCredential`
 read retained history. Held proofs come from that Grant's original nested rows;
@@ -24,11 +25,37 @@ a later fuller disclosure, registry update or policy decision does not replace
 those bytes. History retrieval authenticates the retained outer exchanges through
 Exchanger replay without asserting current issuer standing or graph validity.
 
-Issuance operations and negotiation are separate from inventory and custody.
+## ACDC v2 disclosure
 
-## Native authoring
+`WalletDiscloser(wallet, receiptor, custody?)` borrows those actual owners. Its
+Effection operations `prepareApply`, `prepareOffer`, `prepareReply` and
+`prepareGrant` return `{exn, wire, support}`; callers own ordinary ingress and
+delivery. Negotiated source anchoring freezes the exchange body before gathering
+witness receipts. Grant creation requires current authenticated complete-root
+truth before signing and again after receipt collection.
 
-`WalletAuthor(wallet, nativeRegery, receiptor, custody?)` borrows the same public
+Select `{said}` from issued inventory or `{fromGrant}` from an exact admitted
+Grant. `disclose` can reduce that view; `refresh` can replace proof evidence
+without expanding credential material. Event-specific `openings` are explicit;
+`derive: true` additionally requires provisioned custody. `registryProof` returns
+verified accepted event evidence. `unblind` recovers a candidate from an explicitly
+possessed UUID and candidate states; it grants neither standing nor consent.
+
+For a separately authorized presenter, select `{transferred: exactWire, presenterAuthorized: true}`, or authorize an already accepted transferred
+`fromGrant` explicitly. These paths preserve transferred credential/proof bytes
+and create no issued/admitted inventory row. Presenter authorization remains
+separate from holder admission consent and possession of a derivation salt.
+A local `presentation` registry must match the selected Issuee declaration; its
+accepted BUP commits the frozen Grant body.
+
+Configure `Receiptor(hby, protocol, http, clock, {gvrsn})` for the actual witness attachment genus,
+independently of ACDC v2 IPEX genus. Its default remains 1.0; the known v2
+witness profile explicitly selects 2.0. Group disclosure uses its separate
+member-approval workflow.
+
+## ACDC v2 authoring
+
+`WalletAuthor(wallet, acdcV2Regery, receiptor, custody?)` borrows the same public
 registry environment and actual receipt collector. `incept` returns an exact
 accepted RIP; `create` uses the existing ACDC builder; `issue`, `update` and
 `revoke` stage BUPs and return only after the exact KEL seal has authenticated

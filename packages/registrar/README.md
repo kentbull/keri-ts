@@ -1,14 +1,14 @@
 # Public registry registrar
 
 `Registrar(processor, store, {publishers, observers, fullEvidence})` borrows the
-actual `ProtocolProcessor` and its native `RegistryStore`. The caller owns stores,
+actual `ProtocolProcessor` and its ACDC v2 `RegistryStore`. The caller owns stores,
 KRAM configuration and HTTP host lifetime. The actual KRAM owner must be enabled,
 non-exempt for these queries and have configured cache windows; the test uses the
 selected Python catchall tuple `[1000,5000,60000,300000,5000,60000,300000]`. Pass `registrar.handle` to the public
 hosting package's `createTufaApp({protocolHandler})` or ordinary server composition.
 
 POST `/ingest` accepts one allow-listed, KRAM-authenticated KERI v2 `tels/publish`
-query with public CESR text in `q.stream`. The common native processor alone owns
+query with public CESR text in `q.stream`. The common ACDC v2 processor alone owns
 KEL/TEL acceptance, public openings and persistent pending evidence. Responses
 report 200 accepted, 202 pending or 422 rejected outcomes; publication creates no
 issuer alias, keys, custody or private application records.

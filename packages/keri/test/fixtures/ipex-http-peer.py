@@ -9,7 +9,8 @@ from ipex_peer import open_peer
 
 def main():
     root, graph, port = sys.argv[1:]
-    with open_peer(int(port), None if graph == "-" else graph) as peer:
+    with open_peer(int(port), None if graph in ("-", "wallet") else graph,
+                   root=root if graph == "wallet" else None) as peer:
         signal.signal(signal.SIGTERM, lambda *_: peer.stop())
         # Publish complete coordinates atomically to the polling parent.
         pending = Path(root, "ready.pending")

@@ -12,13 +12,13 @@ import { ValidationError } from "keri-ts/runtime";
 import { withAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
-import { nativeAuthorCommand } from "./native-authoring.ts";
+import { acdcV2AuthorCommand } from "./acdc-v2-authoring.ts";
 
-/** List explicit native inventory references, separately from legacy verifier-saved credentials. */
+/** List explicit ACDC v2 inventory references, separately from legacy verifier-saved credentials. */
 export function* walletListCommand(args: Record<string, unknown>): Operation<void> {
   const inventory = yield* withAgentRuntime(walletStoreArgs(args), { skipConfig: true }, function*({ hby, runtime }) {
     return yield* scoped(function*() {
-      if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+      if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
       const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
       return wallet.inventory();
     });
@@ -32,7 +32,7 @@ export function* walletReadCommand(args: Record<string, unknown>): Operation<voi
   if (!grant) throw new ValidationError("Admitted Grant --grant is required.");
   const held = yield* withAgentRuntime(walletStoreArgs(args), { skipConfig: true }, function*({ hby, runtime }) {
     return yield* scoped(function*() {
-      if (!runtime.acdc) throw new ValidationError("Native registry evidence is unavailable.");
+      if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
       const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
       const record = yield* call(() => wallet.heldCredential(grant));
       return { grant: record.grant.said, admit: record.admit, credential: record.credential.sad };
@@ -43,8 +43,8 @@ export function* walletReadCommand(args: Record<string, unknown>): Operation<voi
 
 /** Display the created registry or group proposal, after its owned resources close. */
 export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operation<void> {
-  if (parseBooleanOption(args.native, "native")) {
-    yield* nativeAuthorCommand(args, "incept");
+  if (parseBooleanOption(args.acdcV2, "acdc-v2")) {
+    yield* acdcV2AuthorCommand(args, "incept");
     return;
   }
   const { name, registry, issuer, group, publicationComplete } = yield* incept(args);
@@ -65,8 +65,8 @@ export function* vcRegistryInceptCommand(args: Record<string, unknown>): Operati
 
 /** Project credential identity and typed issuance outcomes into the CLI JSON record. */
 export function* vcCreateCommand(args: Record<string, unknown>): Operation<void> {
-  if (parseBooleanOption(args.native, "native")) {
-    yield* nativeAuthorCommand(args, "issue");
+  if (parseBooleanOption(args.acdcV2, "acdc-v2")) {
+    yield* acdcV2AuthorCommand(args, "issue");
     return;
   }
   const { creder, tel, status, group, publicationComplete } = yield* create(args);
@@ -96,8 +96,8 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
 
 /** Render revocation after its host and database owners close; keep proposal sends distinct from delivery. */
 export function* vcRevokeCommand(args: Record<string, unknown>): Operation<void> {
-  if (parseBooleanOption(args.native, "native")) {
-    yield* nativeAuthorCommand(args, "revoke");
+  if (parseBooleanOption(args.acdcV2, "acdc-v2")) {
+    yield* acdcV2AuthorCommand(args, "revoke");
     return;
   }
   const { said, tel, status, accepted, publicationComplete, deliveries, group } = yield* revoke(args);

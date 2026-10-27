@@ -44,9 +44,9 @@ application policy, cue storage and webhook work live in `@keri-ts/verifier`;
 Tufa retains command registration and runtime composition. Import verifier APIs
 from `@keri-ts/verifier` and HTTP hosting APIs from `@keri-ts/hosting` directly.
 
-## Native wallet admission
+## ACDC v2 wallet admission
 
-`tufa ipex admit --native --consent --said <grant> -n <store> -a <holder>`
+`tufa ipex admit --acdc-v2 --consent --said <grant> -n <store> -a <holder>`
 requires a locally accepted v2 Grant and explicit wallet consent. Wallet checks
 current authenticated graph truth before signing; ordinary ingress must accept
 the Admit before consent is recorded. Delivery uses the existing host/Poster
@@ -54,20 +54,58 @@ workflow, or `--out <file>` writes the signed response. Final JSON follows owned
 store/runtime shutdown. A later delivery or shutdown failure does not erase an
 already accepted local admission.
 
-`tufa vc wallet list -n <store>` lists native issued/held inventory references.
+`tufa vc wallet list -n <store>` lists ACDC v2 issued/held inventory references.
 `tufa vc wallet read -n <store> --grant <grant>` reads that admitted Grant's exact
 disclosed credential. A second/full disclosure has its own Grant key; reads do
 not merge private material or assert current standing. Legacy `vc list/export`
-and ordinary `ipex admit` retain their existing paths. Native negotiation,
-anchored Admit publication, groups and custody remain separate operations.
+and ordinary `ipex admit` retain their existing paths. ACDC v2 negotiated Admit
+publication gathers the required source-anchor receipts before returning; group
+approval remains a separate workflow.
 
-## Native registry authoring
+## ACDC v2 IPEX disclosure
 
-Use `vc registry incept --native --registry-name NAME --alias AID_ALIAS`, then
-`vc create --native --registry-name NAME --alias AID_ALIAS --data JSON`. Native
+The existing `ipex apply`, `offer`, `agree`, `grant` and `spurn` commands accept
+`--acdc-v2`. Supply a flat disclosure `--plan JSON_OR_@FILE` for Apply/Offer, and
+carry the actual predecessor with `--apply`, `--offer`, or Grant's `--prior`.
+`--anchor` requests negotiated source anchoring. Grant authorizes current graph
+use before signing and rechecks after receipt collection.
+
+For an admitted view, use:
+
+```sh
+tufa ipex grant --acdc-v2 -n STORE -a HOLDER -r VERIFIER \
+  --from-grant GRANT --disclose '["a/status/"]' --out presentation.cesr
+```
+
+`--said` selects an issued credential. A separately transferred exact stream uses
+`--view FILE --presenter-authorized`; an accepted transferred `--from-grant` also
+requires that explicit authorization. This does not create wallet admission
+consent. A partial view cannot gain withheld fields from another cached Grant.
+`--refresh` updates proof evidence only; supply exact `--opening FILE...`, or use
+`--derive` with explicitly provisioned custody. `--presentation-registry NAME`
+selects a local registry matching the disclosed Issuee declaration. `--input FILE`
+first admits supplied signed evidence through ordinary ingress.
+
+`ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
+explicitly possessed opening UUID against candidate states; optional `--out FILE`
+writes the matching counted opening. A match does not establish accepted standing
+or permission to disclose.
+
+ACDC v2 IPEX attachment genus defaults to 2.0. Agree/Grant/Admit independently
+accept `--witness-gvrsn 2` for the known v2 witness profile; the witness
+default remains 1.0. Body protocol version and attachment genus are independent.
+`--out` writes supporting public evidence plus signed wire; otherwise existing
+runtime delivery runs and joins cleanup before final output.
+
+## ACDC v2 registry authoring
+
+Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then
+`vc create --acdc-v2 --registry-name NAME --alias AID_ALIAS --data JSON`. ACDC v2
 create/revoke default to derived custody; `--public` deliberately publishes the
-BUP opening instead. `vc update --registry-name NAME --alias AID_ALIAS --said CREDENTIAL --state STATE` advances native BUP state. `vc revoke --native` uses the
-same exact acceptance path. Legacy commands retain their existing defaults.
+BUP opening instead. `vc update --registry-name NAME --alias AID_ALIAS --said CREDENTIAL --state STATE` advances ACDC v2 BUP state. `vc revoke --acdc-v2` uses the
+same exact acceptance path. All four authoring commands accept `--witness-gvrsn 2`
+for the known v2 witness profile; the default remains 1.0. Legacy commands retain
+their existing defaults.
 
 Provision explicitly with inception's `--with-custody` and optional `--discloser`.
 An encrypted authenticated Keeper is required. `vc registry custody export` writes
@@ -79,8 +117,8 @@ channel; the CLI does not distribute secrets. Derived state commands accept
 `--bound-event` for an exact witnessed Issuee event. Groups remain a separate
 approval workflow.
 
-Native success JSON follows exact anchored acceptance and joined store cleanup.
+ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying
 uses the same already signed KEL seal rather than making another anchor. Ordinary
-registrar replay distributes public evidence; native authoring does not revive
+registrar replay distributes public evidence; ACDC v2 authoring does not revive
 historical `upd`, use TEL backers, or claim peer delivery from local acceptance.
