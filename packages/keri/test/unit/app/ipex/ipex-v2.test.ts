@@ -20,9 +20,9 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assert, assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
-import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
+import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
 import { type ExchangeDecision, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
@@ -236,6 +236,20 @@ Deno.test("v2 IPEX competing nested offers share one synchronous conversation de
       });
       const opener = yield* dispatchEnvelope(envelopeFromFrame(frame(recipient, apply)), hby.rvy, hby.kevery, left);
       assertEquals(opener.decision?.kind, "accept");
+      const proofOffer = ipexExnBody(sender.pre, "/ipex/offer", [node.body as SerderACDC], {
+        kind: Kinds.json,
+        message: "issuer proofs belong to the Grant",
+        prior: apply,
+      });
+      const proofWire = yield* call(() => collectPayload(framePayload(frame(sender, proofOffer, [node]))));
+      const [proofFrame] = parseBytes(proofWire);
+      assertEquals(
+        (yield* dispatchEnvelope(envelopeFromFrame(proofFrame), hby.rvy, hby.kevery, left)).decision?.kind,
+        "reject",
+      );
+      assertEquals(hby.db.exns.get(proofOffer.said!), null);
+      assertEquals(hby.db.epse.get(proofOffer.said!), null);
+      assertEquals(hby.db.erpy.get(apply.said!), null, "a refused child role cannot consume the response");
       const contenders = ["first offer", "second offer"].map((message) =>
         frame(
           sender,
@@ -244,7 +258,7 @@ Deno.test("v2 IPEX competing nested offers share one synchronous conversation de
             message,
             prior: apply,
           }),
-          [node],
+          [{ ...node, attachments: [] }],
         )
       );
       const results = yield* call(() =>
@@ -282,7 +296,7 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     };
     const built = ipexExnBody(parent.pre!, parent.route as IpexRoute, nodes, opts);
     assertEquals(built.raw, parent.raw);
-    const plan = [[(nodes[0].schema as { $id: string }).$id, "/", []]];
+    const plan = [[(nodes[0].schema as { $id: string }).$id, "/", []]] as const;
     assertEquals(built.sad!.q, { dp: plan }, "a bare one-node Grant states its root selection");
     for (const route of ["/ipex/apply", "/ipex/offer", "/ipex/grant"] as const) {
       assertThrows(
@@ -313,7 +327,18 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
     }
     // No frame payload is touched by the ordinary body constructor.
     assertThrows(() => ipexExnBody(parent.pre!, "/ipex/apply", nodes, opts), Error, "Only offer and grant");
+    const metadata = new SerderACDC({ sad: { ...nodes[0].sad!, u: "" }, makify: true });
+    assertThrows(
+      () => ipexExnBody(parent.pre!, "/ipex/grant", [metadata], opts),
+      Error,
+      "credentials, not metadata",
+    );
     const childWire = await collectPayload(framePayload(frame.nests![0]));
+    await assertRejects(
+      () => run(() => prepareIpexExn(parent.pre!, "/ipex/offer", childWire, { ...opts, plan })),
+      Error,
+      "must not carry attachments",
+    );
     const [prepared, nested] = await run(() => prepareIpexExn(parent.pre!, "/ipex/grant", childWire, opts));
     assertEquals(prepared.raw, built.raw);
     assertEquals(nested.length > 0, true);
@@ -482,7 +507,7 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
             hab.sign(body.raw, true),
           ),
         ];
-        const children = body === offer || body === grant ? [node] : [];
+        const children = body === offer ? [{ ...node, attachments: [] }] : body === grant ? [node] : [];
         const frame: CesrFrame = {
           ...reference,
           body,
@@ -911,6 +936,88 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         const rejected = args(verb, [invalid], verb === "/ipex/grant");
         assertEquals((yield* exchanger.processEvent(rejected)).kind, "reject");
         assertEquals(hby.db.exns.get(rejected.serder.said!), null);
+      }
+      // A correctly authenticated Grant must still fulfill the exact accepted Offer.
+      const submit = (serder: SerderKERI, nests: CesrFrame[] = []) => {
+        const signer = serder.pre === sender.pre ? sender : recipient;
+        return exchanger.processEvent({
+          serder,
+          nests,
+          tsgs: [
+            new TransIdxSigGroup(
+              new Prefixer({ qb64: signer.pre }),
+              signer.kever!.sner,
+              new Diger({ qb64: signer.kever!.said }),
+              signer.sign(serder.raw, true),
+            ),
+          ],
+        });
+      };
+      const aggregate = acdcagg(issuer.pre, { schema: schema.said, aggregate: ["", { d: "", name: "Ada" }] });
+      for (
+        const [carry, name, credential, outcome] of [
+          [false, "Ada", valid, "escrow"],
+          [true, "Grace", valid, "reject"],
+          [true, "Ada", valid, "accept"],
+          [true, "Ada", aggregate, "accept"],
+        ] as const
+      ) {
+        const metadata = acdcmap(issuer.pre, {
+          uuid: "",
+          schema: schema.sed as MapperMap,
+          ...(credential === aggregate
+            ? { aggregate: (aggregate.sad!.A as string[])[0] }
+            : { attribute: { d: "", name } }),
+        });
+        assert(metadata.said !== credential.said, "metadata and credential roots differ");
+        const apply = ipexExnBody(recipient.pre, "/ipex/apply", [], {
+          message: "request",
+          recipient: sender.pre,
+          xid: crypto.randomUUID(),
+          plan: [[schema.said, "/", []]],
+        });
+        const offered = ipexExnBody(sender.pre, "/ipex/offer", [metadata], { message: "promise", prior: apply });
+        const agreed = ipexExnBody(recipient.pre, "/ipex/agree", [], { message: "accept promise", prior: offered });
+        for (const body of [apply, offered, agreed]) {
+          assertEquals((yield* submit(body, body === offered && carry ? [node(metadata, false)] : [])).kind, "accept");
+        }
+        const granted = ipexExnBody(sender.pre, "/ipex/grant", [credential], { message: "fulfill", prior: agreed });
+        assertEquals(
+          (yield* submit(granted, [node(credential)])).kind,
+          outcome,
+          `metadata ${carry ? name : "unavailable"}`,
+        );
+        assertEquals(Boolean(hby.db.exns.get(granted.said!)), outcome === "accept");
+        assertEquals(Boolean(hby.db.epse.get(granted.said!)), outcome === "escrow");
+      }
+      // Bypass authoring validation: an issuer signature cannot turn metadata into a Grant credential.
+      const metadata = acdcmap(issuer.pre, { uuid: "", schema: schema.said, attribute: { d: "", name: "Ada" } });
+      const [metadataGrant] = exchange("/ipex/grant", { m: "metadata is not a credential", o: [metadata.said] }, {
+        sender: sender.pre,
+        recipient: recipient.pre,
+        xid: crypto.randomUUID(),
+        modifiers: { dp: [[schema.said, "/", []]] },
+        pvrsn: Vrsn_2_0,
+      });
+      assertEquals((yield* submit(metadataGrant, [node(metadata)])).kind, "reject");
+      assertEquals(hby.db.exns.get(metadataGrant.said!), null);
+      assertEquals(hby.db.epse.get(metadataGrant.said!), null);
+      for (
+        const publicNode of [
+          acdcatt(issuer.pre, {
+            schema: schema.said,
+            attribute: { d: "", name: "Ada" },
+          }),
+          aggregate,
+        ]
+      ) {
+        assertEquals(publicNode.sad!.u, "", "a fixed public UUID slot does not mark metadata");
+        const grant = ipexExnBody(sender.pre, "/ipex/grant", [publicNode], {
+          message: "public fixed-field credential",
+          recipient: recipient.pre,
+          xid: crypto.randomUUID(),
+        });
+        assertEquals((yield* submit(grant, [node(publicNode)])).kind, "accept");
       }
       // Same-schema pins still evaluate the far credential; equality of IDs proves no payload constraint.
       const near = (far: SerderACDC, pin: string | MapperMap) =>

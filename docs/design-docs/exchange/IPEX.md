@@ -22,6 +22,18 @@ they never authorize a vacuous opener. A bare one-node Grant still defaults to
 `[[schema, "/", []]]`, explicitly selecting that node without requesting additional
 fields. No historical nested-plan translation or signed-byte rewriting is supported.
 
+An Offer's carried nodes contain bodies without proof attachments; empty counted
+feet carry no evidence. A Grant cannot use field-map metadata (explicit empty
+`u` on implicit/acm/ace nodes) as a credential. Public fixed-field act/acg nodes
+may retain their empty UUID slot. Before issuer authentication, the Grant must
+fulfill its accepted Offer. An identical root SAID suffices; a different root
+requires the offered metadata body, its own schema validation, the same issuer,
+any nonempty promised registry, and matching commitments for every nonempty
+promised s/a/A/e/r section. Existing Serder verification authenticates exposed
+section claims, so compact and expanded representations compare without rewriting
+received bytes. Missing named metadata uses existing proof escrow; a known
+contradiction rejects. Offers without an origin impose no credential promise.
+
 `ipexExnBody` synchronously accepts parsed credential bodies and explicit route
 options. It reads no payload or storage and authenticates no signatures. Opening
 callers supply an exchange id; replies preserve parties and the prior id.
@@ -43,8 +55,8 @@ coordinates before route selection; the IPEX handler retains those seals and
 prefers them to signatures from the same AID. Supplemental transferable signatures
 still require the endorser's current establishment keys. This matches main
 `c7e74ad`; rotation does not erase a permanent KEL commitment.
-The separately pinned 71438328 profile validates every carried metadata-offer
-node without demanding withheld issuer proofs. Grants verify disclosure, then
+The selected candidate validates every carried metadata-offer node without
+withheld issuer proofs. Grants verify disclosure and Offer fulfillment, then
 every issuer, own-node schemas, edge semantics/schema pins, and presentation
 obligations in that order. Explicit/inherited edge schemas validate decoded far
 credentials; equal schema IDs never waive constraints. Missing local resources

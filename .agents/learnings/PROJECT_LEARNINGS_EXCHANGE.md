@@ -164,9 +164,14 @@ still states its explicit root selection. Builders, handler and resolver share t
 shape; never translate authenticated nested-plan bytes. Candidate whole-node claims
 require closed typed schemas. The positive wire fixture supplies one; TS open/ambiguous
 whole-schema refusal and remaining path/closure semantics still need their own cut.
-V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
-proof; metadata offers withhold issuer proofs but still validate carried schemas.
-Grant order is issuer authentication, own schemas, edge pins, then presentation.
+V2 IPEX Offers carry body-only reachable subgraphs and validate carried schemas;
+child proof attachments belong to Grants. Grants refuse field-map metadata with
+explicit empty `u`, while public fixed-field `act`/`acg` UUID slots remain valid.
+After disclosure checks, a Grant must fulfill its exact accepted Offer: identical
+root, or metadata with matching issuer, promised registry and every nonempty
+section commitment. Compare only Serder-verified d/$id/AGID claims; missing named
+metadata uses proof escrow, known contradictions reject. Then verify each node's
+independent issuer proof, own schema, edge pins and presentation obligations.
 The edge evaluator lives in `acdc/graphing.ts`; IPEX passes its borrowed frame-valued
 graph structurally at this same point. The single IPEX walker still owns flat nested
 frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Shared
