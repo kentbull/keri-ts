@@ -107,6 +107,7 @@ export {
 } from "../app/transport/tcp-egress.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
+export { type AcdcGraph, type AcdcRelationIssue, evaluateAcdcRelations } from "../acdc/graphing.ts";
 export {
   Oobiery,
   oobiRequestExn,

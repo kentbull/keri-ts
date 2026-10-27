@@ -167,6 +167,10 @@ whole-schema refusal and remaining path/closure semantics still need their own c
 V2 IPEX offer/grant verifies negotiated graphs and each node's independent issuer
 proof; metadata offers withhold issuer proofs but still validate carried schemas.
 Grant order is issuer authentication, own schemas, edge pins, then presentation.
+The edge evaluator lives in `acdc/graphing.ts`; IPEX passes its borrowed frame-valued
+graph structurally at this same point. The single IPEX walker still owns flat nested
+frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Shared
+edge block/label syntax belongs to ACDC, without moving conversation policy.
 `ipex-node-authentication` reads only Baser/RegistryStore and returns authenticated
 proof, a missing dependency or refusal. A verified registration retains its actual
 bound state; authentication alone does not interpret it as credential validity.

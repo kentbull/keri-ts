@@ -14,6 +14,7 @@ import {
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
+import { evaluateAcdcRelations } from "../../acdc/graphing.ts";
 import { type RegistryState, validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
@@ -28,7 +29,6 @@ import {
   type IpexGraph,
   validDisclosurePlan,
   verifyIpexDisclosure,
-  verifyIpexRelations,
   walkIpexGraph,
 } from "./ipex-graph.ts";
 import { acceptedRegistryEvidence, authenticateIpexNode } from "./ipex-node-authentication.ts";
@@ -164,7 +164,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     const schemas = this.nodeSchemas(graph);
     if (schemas !== true) return schemas;
-    const relations = verifyIpexRelations(graph, this.hby.db, registrations);
+    const relations = evaluateAcdcRelations(graph, this.hby.db, registrations);
     if (typeof relations === "object") {
       if (relations.kind === "unknownState") return false;
       if (relations.kind === "missingKel") return missing(`Missing delegation KEL approval for ${relations.pre}.`);
