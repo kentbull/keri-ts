@@ -332,6 +332,7 @@ export async function assertKeriPyWitnessStores(
         {
           name: node.name,
           base: harness.base,
+          headDirPath: harness.home,
           bran: KERIPY_WITNESS_PASSCODE,
           compat: true,
           readonly: true,

@@ -16,6 +16,13 @@ behavior has its own retained regression.
 
 Witness harnesses use temporary copied configs and bind-checked randomized ports,
 with a shared exclusion set for all HTTP/TCP endpoints in each topology.
+Persistent witness preparation and serving bind primary and fallback LMDB/Configer
+roots inside each actual fixture subprocess; changing HOME alone leaves writable
+`/usr/local/var` stores outside cleanup. The existing witness fixture delegates
+init/incept to the verified CLI module and preserves its exit status. Compatibility
+inspection uses the same explicit root; the existing witness case checks actual store
+files, including the internal unbased witness Reger.
+Startup failures join tracked children before removing only harness-created roots.
 Track children before readiness waits and report their output on startup failure.
 Probe OOBIs, not nonexistent health endpoints; resolve both controller and witness
 OOBIs. Proved controller/witness combinations do not imply untested KLI replacement
