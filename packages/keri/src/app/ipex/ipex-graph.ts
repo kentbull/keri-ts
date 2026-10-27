@@ -16,6 +16,17 @@ export interface IpexGraph extends AcdcGraph {
 }
 const nodeIlks = new Set([null, "acm", "ace", "act", "acg"]);
 
+/** Empty UUID marks field-map metadata; fixed-field public credentials keep that slot empty too. */
+export function isIpexMetadata(node: SerderACDC): boolean {
+  return [null, "acm", "ace"].includes(node.ilk) && node.sad!.u === "";
+}
+
+/** Offers carry bodies only; empty counted feet convey no child evidence. */
+export function hasIpexNodeAttachments(frame: CesrFrame): boolean {
+  return frame.attachments.some((group) => group.items.length > 0)
+    || Boolean(frame.essrs?.length || frame.nests?.length);
+}
+
 /** SAD maps, including null-prototype maps, exclude scalar/array representations. */
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

@@ -20,13 +20,16 @@ import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
+import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import type { ExchangeRouteHandler, ExchangeRouteVerification } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import {
   type DisclosurePlan,
+  hasIpexNodeAttachments,
   type IpexGraph,
+  isIpexMetadata,
   validDisclosurePlan,
   verifyIpexDisclosure,
   walkIpexGraph,
@@ -138,6 +141,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       return sscs.length ? this.sourceAnchor(serder, serder.pre!, sscs.at(-1)!) : false;
     }
     if (verb === "offer" && nests.length) {
+      if (nests.some(hasIpexNodeAttachments)) return false;
       const graph = walkIpexGraph((attrs.o as string[])[0], nests, false);
       return graph ? this.nodeSchemas(graph) : false;
     }
@@ -151,7 +155,10 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
     const graph = walkIpexGraph(origin, nests, true);
-    if (!graph || !verifyIpexDisclosure(plan, origin, graph)) return false;
+    if (!graph || [...graph.nodes.values()].some((node) => isIpexMetadata(node.body))) return false;
+    if (!verifyIpexDisclosure(plan, origin, graph)) return false;
+    const fulfilled = this.offerFulfilled(previous, origin, graph);
+    if (fulfilled !== true) return fulfilled;
     const registrations = new Map<string, RegistryState>();
     for (const said of graph.order) {
       const frame = graph.nodes.get(said)!;
@@ -215,6 +222,52 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       if (result.kind === "missing") return { kind: "escrow", reason: "Missing node schema.", schema: result.said };
     }
     return true;
+  }
+
+  /** Compare the exact accepted Offer before authenticating the Grant's independent issuer proofs. */
+  private offerFulfilled(agree: SerderKERI | null, origin: string, graph: IpexGraph): ExchangeRouteVerification {
+    if (agree?.route !== "/ipex/agree") return true;
+    const offerSaid = agree.sad!.p as string;
+    const offer = this.hby.db.exns.get(offerSaid);
+    if (!offer) return missing(`Missing accepted Offer ${offerSaid}.`);
+    const attrs = offer.sad!.a;
+    if (!record(attrs)) return false;
+    if (!Object.hasOwn(attrs, "o")) return true;
+    if (!single(attrs.o, "string")) return false;
+    const offeredOrigin = attrs.o[0] as string;
+    if (offeredOrigin === origin) return true;
+    const nests = loadNests(this.hby.db, offerSaid);
+    if (!nests.length) return missing(`Missing metadata ACDC for accepted Offer ${offerSaid}.`);
+    const offered = walkIpexGraph(offeredOrigin, nests, false);
+    if (!offered) return false;
+    const metadata = offered.nodes.get(offeredOrigin)!.body;
+    if (!isIpexMetadata(metadata)) return false;
+    const schemas = this.nodeSchemas(offered);
+    if (schemas !== true) return schemas;
+    const granted = graph.nodes.get(origin)!.body;
+    if (metadata.issuer !== granted.issuer || (metadata.regid && metadata.regid !== granted.regid)) return false;
+    for (const label of ["s", "a", "A", "e", "r"]) {
+      const section = metadata.sad![label];
+      if (
+        section === undefined || section === null || section === ""
+        || (Array.isArray(section) && !section.length) || (record(section) && !Object.keys(section).length)
+      ) continue;
+      const promised = this.sectionCommitment(label, section);
+      if (!promised || promised !== this.sectionCommitment(label, granted.sad![label])) return false;
+    }
+    return true;
+  }
+
+  /** Read only walk-verified nodes: Serder authenticates exposed d/$id/AGID claims; strings stay opaque. */
+  private sectionCommitment(label: string, value: unknown): string | null {
+    const said = typeof value === "string"
+      ? value
+      : label === "A" && Array.isArray(value)
+      ? value[0]
+      : record(value)
+      ? value[label === "s" ? "$id" : "d"]
+      : null;
+    return this.validOrigin(said) ? said as string : null;
   }
 
   /** Origin commitments are SAIDs, never implicit signatures over the node. */

@@ -3,7 +3,7 @@ import { collectPayload, nestedPayload, parseBytes, SerderACDC, type SerderKERI,
 import type { Operation } from "effection";
 import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
 import { abortable } from "../runtime/abortable.ts";
-import { type DisclosurePlan, validDisclosurePlan } from "./ipex-graph.ts";
+import { type DisclosurePlan, hasIpexNodeAttachments, isIpexMetadata, validDisclosurePlan } from "./ipex-graph.ts";
 import type { IpexBuilderOptions, IpexMessage, IpexRoute } from "./ipexing.ts";
 
 /** Explicit body inputs; opening a conversation requires a caller-supplied exchange id. */
@@ -41,6 +41,7 @@ export function ipexExnBody(
     throw new Error("IPEX requires parsed disclosed ACDC nodes.");
   }
   if (new Set(nodes.map((node) => node.said)).size !== nodes.length) throw new Error("Duplicate IPEX credential node.");
+  if (verb === "grant" && nodes.some(isIpexMetadata)) throw new Error("IPEX Grant requires credentials, not metadata.");
   const prior = options.prior;
   let recipient = options.recipient;
   let xid = options.xid;
@@ -144,6 +145,9 @@ export function* prepareIpexExn(
     const frames = parseBytes(wire);
     if (frames.some((frame) => !(frame.body instanceof SerderACDC) || frame.nests?.length)) {
       throw new Error("IPEX requires direct credential node frames.");
+    }
+    if (route === "/ipex/offer" && frames.some(hasIpexNodeAttachments)) {
+      throw new Error("IPEX Offer nodes must not carry attachments.");
     }
     const body = ipexExnBody(sender, route, frames.map((frame) => frame.body as SerderACDC), options);
     const payloads = frames.map((frame) => nestedPayload(frame, Vrsn_2_0));
