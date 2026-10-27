@@ -105,6 +105,15 @@ tracks historical readers, safe conversion boundaries and the linked Python port
   round trips; makify replaces claims and verify:false explicitly skips checks.
   Compactor retains disclosure wire checks without flat-map claim verification;
   expanded disclosures are checked by their credential/aggregate owners.
+  ACDC v2 Serder authors exposed map commitments with Compactor's compact/expand
+  lifecycle and aggregates with Aggor, then verifies the same normalization against
+  received sections without rewriting their bytes. The last Compactor partial
+  retains exactly the input exposure; hidden strings remain opaque and empty maps
+  remain empty. A valid
+  enclosing compact-form SAID does not excuse a stale section/aggregate claim.
+  Preserve the shallow JSON schema-resource path, including bundled URI IDs;
+  broader schema authentication belongs to its own owner. Behavioral issuee
+  vectors use selected Python `7ea525ba`, independent of frozen codex/table pins.
 
 ## Owners and follow-ups
 

@@ -4,6 +4,8 @@ import { DeserializeError } from "../../../src/core/errors.ts";
 import { b } from "../../../src/index.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
 import { Matter } from "../../../src/primitives/base/matter.ts";
+import { Compactor } from "../../../src/primitives/structuring/compactor.ts";
+import { Mapper, type MapperMap } from "../../../src/primitives/structuring/mapper.ts";
 import { parseSerder, Serder, SerderACDC, SerderKERI, sizeify } from "../../../src/serder/serder.ts";
 import { reapSerder } from "../../../src/serder/serdery.ts";
 import { smell, versify } from "../../../src/serder/smell.ts";
@@ -487,7 +489,7 @@ Deno.test("serder: SerderACDC can preserve expanded v2 sections while computing 
     i: issuer,
     rd: regid,
     s: { d: "", title: "schema" },
-    a: { d: "", i: issuer, role: "holder" },
+    a: { d: "", i: issuer, role: "holder", status: { d: "", value: "citizen" } },
     e: { d: "", link: regid },
     r: { d: "", usage: "test" },
   };
@@ -517,6 +519,27 @@ Deno.test("serder: SerderACDC can preserve expanded v2 sections while computing 
   assertEquals(typeof expanded.attrib, "object");
   assertEquals(typeof compacted.schema, "string");
   assertEquals(typeof compacted.attrib, "string");
+
+  // Author each exposed node against its most compact children, then retain
+  // exactly that exposure when a receiver verifies the original bytes.
+  const normalized = new Compactor({ mad: expanded.attrib as MapperMap, kind: "JSON", makify: true, compactify: true });
+  assertEquals(Object.values(normalized.partials!).at(-1)!.mad, expanded.attrib);
+  const changed = structuredClone(expanded.sad!);
+  ((changed.a as MapperMap).status as MapperMap).d = regid;
+  assertThrows(() => new SerderACDC({ raw: sizeify(changed, "JSON").raw }), DeserializeError);
+  const partial = structuredClone(expanded.sad!);
+  const attributes = partial.a as MapperMap;
+  attributes.status = (attributes.status as MapperMap).d;
+  const partialRaw = sizeify(partial, "JSON").raw;
+  const received = new SerderACDC({ raw: partialRaw });
+  assertEquals(received.said, expanded.said);
+  assertEquals(received.sad, partial);
+  assertEquals(received.raw, partialRaw);
+  assertEquals(new SerderACDC({ raw: compacted.raw }).verify(), true);
+
+  const empty = new SerderACDC({ sad: { ...expanded.sad, a: {} }, makify: true });
+  assertEquals(empty.attrib, {});
+  assertEquals(new SerderACDC({ raw: empty.raw }).attrib, {});
 });
 
 Deno.test("serder: SerderACDC rejects expanded-section tampering when top-level d is left stale", () => {
@@ -525,40 +548,69 @@ Deno.test("serder: SerderACDC rejects expanded-section tampering when top-level 
   // because `d` commits to the compact form of those sections.
   const issuer = "DNG2arBDtHK_JyHRAq-emRdC6UM-yIpCAeJIWDiXp4Hx";
   const regid = "EFXIx7URwmw7AVQTBcMxPXfOOJ2YYA1SJAam69DXV8D2";
-  const serder = new SerderACDC({
-    sad: {
-      v: versify({
-        proto: "ACDC",
-        pvrsn: Vrsn_2_0,
-        gvrsn: Vrsn_2_0,
-        kind: "JSON",
-        size: 0,
-      }),
-      t: "acm",
-      d: "",
-      u: "",
-      i: issuer,
-      rd: regid,
-      s: { d: "", title: "schema" },
-      a: { d: "", i: issuer, role: "holder" },
-      e: { d: "", link: regid },
-      r: { d: "", usage: "test" },
-    },
-    pvrsn: Vrsn_2_0,
-    gvrsn: Vrsn_2_0,
-    kind: "JSON",
-    makify: true,
-    compactify: false,
-  });
+  for (const kind of ["JSON", "CESR"] as const) {
+    const serder = new SerderACDC({
+      sad: {
+        v: versify({
+          proto: "ACDC",
+          pvrsn: Vrsn_2_0,
+          gvrsn: Vrsn_2_0,
+          kind: "JSON",
+          size: 0,
+        }),
+        t: "acm",
+        d: "",
+        u: "",
+        i: issuer,
+        rd: regid,
+        s: { d: "", title: "schema" },
+        a: { d: "", i: issuer, role: "holder" },
+        e: { d: "", link: regid },
+        r: { d: "", usage: "test" },
+      },
+      pvrsn: Vrsn_2_0,
+      gvrsn: Vrsn_2_0,
+      kind,
+      makify: true,
+      compactify: false,
+    });
 
-  const tampered = serder.sad ?? {};
-  ((tampered.a as Record<string, unknown>).role) = "tampered";
-  const { raw } = sizeify(tampered, "JSON");
+    assertEquals(new SerderACDC({ raw: serder.raw }).verify(), true);
+    for (const label of ["s", "a", "e", "r"]) {
+      const changed = structuredClone(serder.sad!);
+      (changed[label] as MapperMap)[label === "s" ? "$id" : "d"] = regid;
+      assertEquals(changed.d, serder.said);
+      const raw = sizeify(changed, kind).raw;
+      const unchecked = new SerderACDC({ raw, verify: false });
+      assertEquals(unchecked.verify(), false, `${label} claim must verify independently of enclosing d`);
+      assertEquals(unchecked.raw, raw);
+      assertEquals(unchecked.sad, changed);
+      assertThrows(() => new SerderACDC({ raw }), DeserializeError);
+    }
 
-  assertThrows(
-    () => new SerderACDC({ raw, verify: true }),
-    DeserializeError,
-  );
+    const aggregateSad = structuredClone(serder.sad!);
+    delete aggregateSad.a;
+    aggregateSad.A = ["", { d: "", i: issuer, role: "holder" }, regid];
+    const aggregate = new SerderACDC({ sad: aggregateSad, makify: true });
+    assertEquals(new SerderACDC({ raw: aggregate.raw }).verify(), true);
+    for (const member of [false, true]) {
+      const changed = structuredClone(aggregate.sad!);
+      const list = changed.A as (string | MapperMap)[];
+      if (member) (list[1] as MapperMap).d = regid;
+      else list[0] = regid;
+      assertEquals(changed.d, aggregate.said);
+      assertThrows(() => new SerderACDC({ raw: sizeify(changed, kind).raw }), DeserializeError);
+    }
+
+    const tampered = serder.sad ?? {};
+    ((tampered.a as Record<string, unknown>).role) = "tampered";
+    const { raw } = sizeify(tampered, kind);
+
+    assertThrows(
+      () => new SerderACDC({ raw, verify: true }),
+      DeserializeError,
+    );
+  }
 });
 
 Deno.test("serder: SerderACDC partial schema sections compute and verify $id while leaving the visible section expanded", () => {
@@ -598,8 +650,19 @@ Deno.test("serder: ACDC issuee follows disclosed attributes or aggregate members
 });
 
 Deno.test("serder: stale explicit schema claims cannot enter verification fallback", () => {
+  const resource = Mapper.fromSad({
+    $id: "",
+    title: "schema",
+    $defs: { Inner: { $id: "urn:example:inner", type: "string" } },
+  }, { kind: "JSON", strict: false, saidive: true, saids: { $id: "E" }, makify: true }).mad;
   for (const kind of ["JSON", "CBOR", "MGPK", "CESR"] as const) {
     const options = { kind, pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0 };
+    const bundled = new SerderACDC({
+      ...options,
+      sad: { t: "acm", u: "", i: KERIPY_STRUCTING_DATA_VECTORS.sealEvent.i, s: resource },
+      makify: true,
+    });
+    assertEquals(new SerderACDC({ raw: bundled.raw }).schema, resource);
     const valid = new SerderACDC({
       ...options,
       sad: { t: "acm", u: "", i: KERIPY_STRUCTING_DATA_VECTORS.sealEvent.i, s: { $id: "", title: "schema" } },

@@ -1008,6 +1008,7 @@ function computeAcdcFieldVariants(
   const sectionConfig = acdcSectionConfig(label);
   if (
     sectionConfig && value && typeof value === "object" && !Array.isArray(value)
+    && Object.keys(value).length > 0
   ) {
     if (label === "s" && typeof (value as SadMap).$id === "string") {
       // A JSON resource binds its whole shallow map, including bundled URI IDs.
@@ -1027,32 +1028,7 @@ function computeAcdcFieldVariants(
         };
       }
     }
-    const section = value as SadMap;
-    let display: unknown;
-    if (topLevelCompactable && label !== "s" && typeof section.d === "string" && section.d) {
-      // A disclosed section already carries its canonical commitment. Rehashing
-      // its visible partial would change that evidence without changing the credential SAID.
-      display = cloneDefault(section);
-    } else {
-      const expanded = new Compactor({
-        mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
-        kind,
-        verify: false,
-        saidive: true,
-        strict: sectionConfig.strict,
-        saids: sectionConfig.saids,
-        makify: true,
-      });
-      expanded.trace(true);
-      if (label === "s" && verifySections && JSON.stringify(expanded.mad) !== JSON.stringify(value)) {
-        throw new DeserializeError("Invalid schema section commitment.");
-      }
-      display = expanded.mad;
-    }
-
-    if (!topLevelCompactable) return { display, compact: display };
-
-    const compacted = new Compactor({
+    const section = new Compactor({
       mad: withAcdcSectionPlaceholder(label, value as SadMap) as MapperMap,
       kind,
       verify: false,
@@ -1060,11 +1036,27 @@ function computeAcdcFieldVariants(
       strict: sectionConfig.strict,
       saids: sectionConfig.saids,
       makify: true,
+      compactify: label !== "s",
     });
-    compacted.compact();
+    // Compact/expand computes each exposed map against its compact children.
+    // The final partial restores only nodes carried by this input; hidden strings
+    // stay opaque. Verification compares that result without replacing received bytes.
+    if (label === "s") section.trace(true);
+    const display = label === "s"
+      ? section.mad
+      : Object.values(section.partials ?? {}).at(-1)?.mad ?? section.mad;
+    if (verifySections && JSON.stringify(display) !== JSON.stringify(value)) {
+      throw new DeserializeError(
+        label === "s" ? "Invalid schema section commitment." : `Invalid disclosed ${label} section commitment.`,
+      );
+    }
+
+    if (!topLevelCompactable) return { display, compact: display };
+
+    if (label === "s") section.compact();
     return {
-      display: compactify ? (compacted.said ?? compacted.mad) : display,
-      compact: compacted.said ?? compacted.mad,
+      display: compactify ? (section.said ?? section.mad) : display,
+      compact: section.said ?? section.mad,
     };
   }
 
@@ -1075,6 +1067,9 @@ function computeAcdcFieldVariants(
       makify: true,
       verify: false,
     });
+    if (verifySections && JSON.stringify(aggor.ael) !== JSON.stringify(value)) {
+      throw new DeserializeError("Invalid disclosed A section commitment.");
+    }
     if (!topLevelCompactable || partialSection) {
       return {
         display: aggor.ael,
