@@ -1,0 +1,11 @@
+{
+  "name": "@keri-ts/wallet",
+  "version": "2.0.0",
+  "description": "Explicit local ACDC credential inventory and admission",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentbull/keri-ts.git",
+    "directory": "packages/wallet"
+  }
+}

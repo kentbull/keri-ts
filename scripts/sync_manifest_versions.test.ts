@@ -3,7 +3,14 @@ import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 
 Deno.test("manifest sync repairs Deno and workspace lock versions without dependency drift", async () => {
   const root = await Deno.makeTempDir({ prefix: "manifest-mirrors-" });
-  const versions = { tufa: "0.12.0", keri: "0.12.0", cesr: "0.11.0", verifier: "0.1.0", hosting: "0.1.0" };
+  const versions = {
+    tufa: "0.12.0",
+    keri: "0.12.0",
+    cesr: "0.11.0",
+    verifier: "0.1.0",
+    hosting: "0.1.0",
+    wallet: "0.1.0",
+  };
   const lock = {
     name: "fixture",
     lockfileVersion: 3,
@@ -13,6 +20,7 @@ Deno.test("manifest sync repairs Deno and workspace lock versions without depend
       "packages/tufa": { version: "0.9.0", license: "Apache-2.0" },
       "packages/verifier": { version: "0.0.0", license: "Apache-2.0" },
       "packages/hosting": { version: "0.0.0", license: "Apache-2.0" },
+      "packages/wallet": { version: "0.0.0", license: "Apache-2.0" },
       "packages/keri": { version: "0.9.0", license: "Apache-2.0" },
       "packages/cesr": { version: "0.9.0", license: "Apache-2.0" },
     },
@@ -49,6 +57,7 @@ Deno.test("manifest sync repairs Deno and workspace lock versions without depend
         "packages/tufa": { ...lock.packages["packages/tufa"], version: versions.tufa },
         "packages/verifier": { ...lock.packages["packages/verifier"], version: versions.verifier },
         "packages/hosting": { ...lock.packages["packages/hosting"], version: versions.hosting },
+        "packages/wallet": { ...lock.packages["packages/wallet"], version: versions.wallet },
         "packages/keri": { ...lock.packages["packages/keri"], version: versions.keri },
         "packages/cesr": { ...lock.packages["packages/cesr"], version: versions.cesr },
       },

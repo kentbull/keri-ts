@@ -12,7 +12,8 @@
     "packages/keri",
     "packages/cesr",
     "packages/verifier",
-    "packages/hosting"
+    "packages/hosting",
+    "packages/wallet"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",

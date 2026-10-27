@@ -228,7 +228,13 @@ export {
   processCredentialPresentationArtifacts,
   storedGrantArtifacts,
 } from "../app/ipex/ipex-credentialing.ts";
+export { type IpexGraph, walkIpexGraph } from "../app/ipex/ipex-graph.ts";
 export type { DisclosurePlan } from "../app/ipex/ipex-graph.ts";
+export {
+  acceptedRegistryEvidence,
+  authenticateIpexNode,
+  type IpexNodeAuthentication,
+} from "../app/ipex/ipex-node-authentication.ts";
 export {
   IPEX_GRANT_ROUTE,
   IPEX_ROUTES,
@@ -299,6 +305,7 @@ export {
   Signal,
   Signaler,
 } from "../app/notifications/signaling.ts";
+export { RawRecord } from "../core/records.ts";
 
 export {
   type CredentialStateProvider,

@@ -68,6 +68,12 @@ jobs:
               echo "artifact=hosting-npm" >> "$GITHUB_OUTPUT"
               echo "title=@keri-ts/hosting" >> "$GITHUB_OUTPUT"
               ;;
+            wallet)
+              echo "path=packages/wallet/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=@keri-ts/wallet" >> "$GITHUB_OUTPUT"
+              echo "artifact=wallet-npm" >> "$GITHUB_OUTPUT"
+              echo "title=@keri-ts/wallet" >> "$GITHUB_OUTPUT"
+              ;;
             *) exit 2 ;;
           esac
 
@@ -101,6 +107,7 @@ jobs:
             tufa) deno task test:quality:tufa && deno task test:verifier && deno task test:hosting ;;
             verifier) deno task test:verifier ;;
             hosting) deno task test:hosting ;;
+            wallet) deno task test:wallet ;;
           esac
 
       - name: test package tooling
@@ -115,11 +122,12 @@ jobs:
           case "$PACKAGE" in
             cesr) (cd packages/cesr && deno task build:npm) ;;
             keri) (cd packages/keri && deno task build:npm) ;;
-            tufa|verifier|hosting)
+            tufa|verifier|hosting|wallet)
               (cd packages/cesr && deno run -A scripts/build_npm.ts)
               (cd packages/keri && deno run -A scripts/build_npm.ts)
               (cd packages/verifier && deno run -A scripts/build_npm.ts)
               (cd packages/hosting && deno run -A scripts/build_npm.ts)
+              (cd packages/wallet && deno run -A scripts/build_npm.ts)
               (cd packages/tufa && deno run -A scripts/build_npm.ts)
               ;;
           esac
@@ -155,7 +163,7 @@ jobs:
               cd ../../..
               bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
               ;;
-            tufa|verifier|hosting)
+            tufa|verifier|hosting|wallet)
               cd packages/cesr/npm
               CESR_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../keri/npm
@@ -164,6 +172,8 @@ jobs:
               VERIFIER_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../hosting/npm
               HOSTING_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../wallet/npm
+              WALLET_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../tufa/npm
               TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../..
@@ -172,9 +182,11 @@ jobs:
                 "packages/cesr/npm/$CESR_TARBALL" \
                 "packages/keri/npm/$KERI_TARBALL" \
                 "packages/verifier/npm/$VERIFIER_TARBALL" \
-                "packages/hosting/npm/$HOSTING_TARBALL"
+                "packages/hosting/npm/$HOSTING_TARBALL" \
+                "packages/wallet/npm/$WALLET_TARBALL"
               if [[ "$PACKAGE" == verifier ]]; then TARBALL="$VERIFIER_TARBALL"; fi
               if [[ "$PACKAGE" == hosting ]]; then TARBALL="$HOSTING_TARBALL"; fi
+              if [[ "$PACKAGE" == wallet ]]; then TARBALL="$WALLET_TARBALL"; fi
               ;;
           esac
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
