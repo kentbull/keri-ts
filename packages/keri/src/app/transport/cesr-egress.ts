@@ -164,7 +164,8 @@ function openFrameResponse(
 /**
  * Prepare finite request bytes before opening any network attempt.
  * Ordinary POSTs put normalized text attachments in CESR-ATTACHMENT and send the
- * original body. Requests retain
+ * original body. CESR-Genus retains the observed counter context when stream framing is removed.
+ * Requests retain
  * caller authentication headers; sender-owned framing/destination headers replace
  * conflicting caller values. The fallback shares the prepared bytes.
  *
@@ -184,6 +185,8 @@ function* frameRequests(frame: CesrFrame, options: EgressOptions): Operation<Htt
     headers.set("Content-Type", contentType);
     headers.delete(CESR_DESTINATION_HEADER);
     headers.delete(CESR_ATTACHMENT_HEADER);
+    headers.delete("CESR-Genus");
+    if (frame.gvrsn) headers.set("CESR-Genus", String(frame.gvrsn.major));
     if (options.destination) headers.set(CESR_DESTINATION_HEADER, options.destination);
     headers.set(CESR_ATTACHMENT_HEADER, header);
     return {
