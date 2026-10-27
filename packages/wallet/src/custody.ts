@@ -80,15 +80,15 @@ function record(value: unknown): value is Record<string, unknown> {
 function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo): Secret {
   const payload: unknown = JSON.parse(t(raw));
   if (
-    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt" ||
-    !record(payload.info) || typeof payload.salt !== "string"
+    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt"
+    || !record(payload.info) || typeof payload.salt !== "string"
   ) throw new Error("Invalid custody payload");
   const info = payload.info;
   if (typeof info.controller !== "string" || typeof info.discloser !== "string") throw new Error("Invalid bindings");
   const canonical = expected ?? metadata(registry, info.controller, info.discloser);
   if (
-    Object.keys(info).length !== Object.keys(canonical).length ||
-    Object.entries(canonical).some(([key, value]) => info[key] !== value)
+    Object.keys(info).length !== Object.keys(canonical).length
+    || Object.entries(canonical).some(([key, value]) => info[key] !== value)
   ) throw new Error("Invalid profile");
   new Salter({ qb64: payload.salt });
   return { info: canonical, salt: payload.salt };
@@ -96,8 +96,8 @@ function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo):
 /** File protections are a POSIX contract; no weaker platform fallback is offered. */
 function requirePosix(): void {
   if (
-    process.platform === "win32" || typeof process.geteuid !== "function" ||
-    constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
+    process.platform === "win32" || typeof process.geteuid !== "function"
+    || constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
   ) {
     throw new ValidationError("Protected plaintext custody handoff requires POSIX file protections");
   }

@@ -43,7 +43,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const [published] = parseBytes(b(evidence.publicUpdate));
     assertEquals(BoundState.qb64(envelopeFromFrame(published).bsss[0]), BoundState.qb64(blinder));
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const handler = createProtocolHandler(runtime);
@@ -69,7 +69,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
         yield* hby.close();
       }
     });
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -112,7 +112,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
-    const evidence = await run(function* () {
+    const evidence = await run(function*() {
       const hby = yield* createHabery({ name: "native-author", temp: true, skipConfig: true });
       try {
         const issuer = hby.makeHab("issuer");
@@ -175,7 +175,7 @@ Deno.test({
       future: string;
     };
     try {
-      await run(function* () {
+      await run(function*() {
         const hby = yield* createHabery(options);
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
@@ -253,7 +253,7 @@ Deno.test({
           yield* hby.close();
         }
       });
-      await run(function* () {
+      await run(function*() {
         const hby = yield* createHabery(options);
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });

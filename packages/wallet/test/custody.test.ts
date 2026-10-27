@@ -37,7 +37,7 @@ Deno.test({
   async fn() {
     const root = await Deno.makeTempDir({ prefix: "wallet-custody-" });
     try {
-      await run(function* () {
+      await run(function*() {
         const source = yield* createHabery({
           name: "custody-issuer",
           headDirPath: root,
@@ -203,7 +203,7 @@ Deno.test({
 });
 
 Deno.test("ordinary inventory needs no private capability; lost opaque custody is never regenerated", async () => {
-  await run(function* () {
+  await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
     const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
