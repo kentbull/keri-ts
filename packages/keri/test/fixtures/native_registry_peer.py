@@ -2,7 +2,7 @@
 
 The proof controls parse foreign KELs and call the candidate's read-only native
 proof APIs. The POSIX custody control also uses its actual wallet/registry owners
-to export a protected operator handoff.
+to exchange protected operator handoffs and reopen the receiving stores.
 """
 import argparse
 import hashlib
@@ -68,6 +68,8 @@ def verify(evidence):
 
 def custody_handoff(request):
     """Export one protected operator file; return wire and selected test openings, never its salt."""
+    if request.get("receive"):
+        return custody_receive(request)
     import os
     if os.name != "posix":
         raise RuntimeError("protected custody handoff fixture requires POSIX")
@@ -76,13 +78,11 @@ def custody_handoff(request):
     from keri.app.configing import Configer
     from keri.app.credentialing import Wallet, WalletBaser
     from keri.app.registry_custody import RegistryCustody
-    from keri.core import Signer
 
     root = Path(request["root"])
-    key = Signer(transferable=False)
     with openHby(name="custody-python", temp=False, headDirPath=str(root),
-                 cf=Configer(name="custody-python", temp=True), seed=key.qb64,
-                 aeid=key.verfer.qb64, version=Vrsn_2_0) as hby:
+                 cf=Configer(name="custody-python", temp=True), bran="PythonCustodyFixtureSecret",
+                 version=Vrsn_2_0) as hby:
         issuer = hby.makeHab(name="issuer", version=Vrsn_2_0)
         Parser(version=Vrsn_2_0, kvy=Kevery(db=hby.db, lax=False, local=False)).parse(
             ims=bytearray(request["kel"].encode()))
@@ -128,6 +128,68 @@ def custody_handoff(request):
                         opening=proofs[0].crew._asdict(),
                         future=custody.derive(registry.regk, 17, credential.said, "revoked").qb64,
                         kel=b"".join(hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)).decode())
+        finally:
+            wallet.close()
+            rgy.close()
+
+
+def custody_receive(request):
+    """Import TS custody through its protected API, then derive again in a fresh process."""
+    from dataclasses import asdict
+    from keri.acdc import Regery
+    from keri.acdc.regbasing import RegBaser
+    from keri.acdc.regeventing import Rever
+    from keri.app.configing import Configer
+    from keri.app.credentialing import Wallet, WalletBaser
+    from keri.app.evidencing import EvidenceProcessor
+    from keri.app.registry_custody import RegistryCustody
+    from keri.kering import ConfigurationError, ValidationError
+
+    root = Path(request["root"])
+    with openHby(name="custody-python", temp=False, headDirPath=str(root),
+                 cf=Configer(name="custody-python", temp=True), bran="PythonCustodyFixtureSecret",
+                 version=Vrsn_2_0) as hby:
+        rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=str(root), temp=False))
+        wallet = Wallet(hby, rgy, db=WalletBaser(name=hby.name, headDirPath=str(root), temp=False))
+        custody = RegistryCustody(hby, rgy, db=wallet.db)
+        try:
+            info = request["info"]
+            credential = SerderACDC(raw=request["credential"].encode())
+            if request["receive"] == "import":
+                processor = EvidenceProcessor(hby, kvy=Kevery(db=hby.db, lax=False, local=False),
+                                              rever=Rever(db=hby.db, reger=rgy.baser))
+                result = processor.ingest((request["kel"] + request["tel"]).encode())
+                assert not result["pending"] and not result["rejected"], result
+                try:
+                    custody.derive(info["registry"], 1, credential.said, "issued")
+                except ConfigurationError:
+                    pass
+                else:
+                    raise AssertionError("reverse receiver unexpectedly had custody before import")
+                try:
+                    custody.importCustody(request["handoff"], regid=info["registry"],
+                                          controller=info["discloser"], discloser=info["discloser"])
+                except ValidationError:
+                    pass
+                else:
+                    raise AssertionError("reverse import accepted a wrong controller")
+                imported = custody.importCustody(request["handoff"], regid=info["registry"],
+                                                controller=info["controller"], discloser=info["discloser"])
+                assert asdict(imported) == info
+            else:
+                assert request["receive"] == "reopen"
+            rip = rgy.store.seqEvent(info["registry"], 0)
+            update = rgy.store.seqEvent(info["registry"], 1)
+            assert rip is not None and update is not None
+            assert update.said == request["update"] and rgy.store.head(info["registry"]).qb64 == update.said
+            proof = custody.derive(info["registry"], 1, credential.said, "issued",
+                                   bound=True, bsn=request["bsn"], bd=request["bd"])
+            assert wallet.publicOpening(update) is None
+            state = vet(rip, [update], db=hby.db, acdc=credential, blinder=proof)
+            assert state.state == "issued" and state.said == update.said
+            return dict(opening=proof.qb64,
+                        future=custody.derive(info["registry"], 17, credential.said, "revoked").qb64,
+                        update=update.said, state=state.state)
         finally:
             wallet.close()
             rgy.close()
