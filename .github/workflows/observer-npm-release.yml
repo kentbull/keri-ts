@@ -1,0 +1,23 @@
+name: Observer npm release
+
+on:
+  push:
+    tags: ["observer-v*"]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish to npm
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    uses: ./.github/workflows/npm-release.yml
+    with:
+      package: observer
+      publish: ${{ github.event_name == 'push' || inputs.publish }}

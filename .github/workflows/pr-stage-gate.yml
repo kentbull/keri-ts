@@ -178,6 +178,7 @@ jobs:
         uses: ./.github/actions/setup-keripy-main-peer
         with:
           profile: candidate
+          services: ${{ matrix.target == 'interop-native-registry' }}
 
       - name: run selected KERIpy interop owner
         shell: bash
@@ -231,6 +232,8 @@ jobs:
           echo "wallet=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
           cd ../../registrar/npm
           echo "registrar=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../observer/npm
+          echo "observer=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: smoke test exact packages on the minimum Node version
         env:
@@ -243,7 +246,8 @@ jobs:
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
-            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}"
+            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
 
       - name: smoke test exact packages on Alpine
         env:
@@ -256,7 +260,8 @@ jobs:
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
-            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}"
+            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
 
       - name: smoke test exact packages on pointer-compressed Node
         env:
@@ -274,7 +279,8 @@ jobs:
             "packages/verifier/npm/${{ steps.pack.outputs.verifier }}" \
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
-            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}"
+            "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
 
       - name: retain packages on failure
         if: ${{ failure() }}
@@ -289,6 +295,7 @@ jobs:
             packages/hosting/npm/${{ steps.pack.outputs.hosting }}
             packages/wallet/npm/${{ steps.pack.outputs.wallet }}
             packages/registrar/npm/${{ steps.pack.outputs.registrar }}
+            packages/observer/npm/${{ steps.pack.outputs.observer }}
           if-no-files-found: ignore
           retention-days: 3
 

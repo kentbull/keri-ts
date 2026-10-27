@@ -4,7 +4,7 @@
     "applications": {
       "dolly": { "repository": "kentbull/dolly", "commit": "e23604a3494c4270bf887d8eb109548b6cf3bb64" },
       "registrar": { "repository": "kentbull/kf-registrar", "commit": "7e9346682701154a7098d41ea6c5b556f999d241" },
-      "observer": { "repository": "kentbull/kf-observer", "commit": "dcd65ab717d6ea39419f8d7fcda6500b870f5215" },
+      "observer": { "repository": "kentbull/kf-observer", "commit": "feec9004bc642b0a3edf372f4e4969c9c2d03a4e" },
       "witness": { "repository": "kentbull/witness-hk", "commit": "179fc5592ff71e52b5b0df49c91ad38bc44b378c" },
       "locksmith": { "repository": "kentbull/locksmith", "commit": "3d5ef0c7b789bd5f543aa08bec7e42071c5106ec" }
     },

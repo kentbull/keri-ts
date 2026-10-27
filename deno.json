@@ -5,10 +5,10 @@
     "fmt:check": "deno task fmt:dprint:check",
     "fmt:dprint": "deno run -A npm:dprint@0.49.0 fmt --config dprint.json",
     "fmt:dprint:check": "deno run -A npm:dprint@0.49.0 check --config dprint.json",
-    "lint": "cd packages/registrar && deno task lint && cd ../.. && cd packages/wallet && deno task lint && cd ../.. && cd packages/hosting && deno task lint && cd ../.. && cd packages/verifier && deno task lint && cd ../.. && cd packages/tufa && deno task lint && cd ../keri && deno task lint && cd ../cesr && deno task lint && cd ../.. && deno lint scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "lint": "cd packages/observer && deno task lint && cd ../.. && cd packages/registrar && deno task lint && cd ../.. && cd packages/wallet && deno task lint && cd ../.. && cd packages/hosting && deno task lint && cd ../.. && cd packages/verifier && deno task lint && cd ../.. && cd packages/tufa && deno task lint && cd ../keri && deno task lint && cd ../cesr && deno task lint && cd ../.. && deno lint scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
     "docs:check": "deno run --allow-read scripts/check_class_docstrings.ts",
     "inline-code:check": "deno run --allow-read scripts/check_no_inline_code.ts",
-    "check": "cd packages/registrar && deno task check && cd ../.. && cd packages/wallet && deno task check && cd ../.. && cd packages/hosting && deno task check && cd ../.. && cd packages/verifier && deno task check && cd ../.. && cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
+    "check": "cd packages/observer && deno task check && cd ../.. && cd packages/registrar && deno task check && cd ../.. && cd packages/wallet && deno task check && cd ../.. && cd packages/hosting && deno task check && cd ../.. && cd packages/verifier && deno task check && cd ../.. && cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
     "quality:check": "deno task docs:check && deno task inline-code:check && deno task check && deno task version:check",
     "quality": "deno task fmt:check && deno task lint && deno task quality:check && deno task test:quality",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
@@ -37,7 +37,7 @@
     "start": "cd packages/tufa && deno task start",
     "dev": "cd packages/tufa && deno task dev",
     "tufa": "cd packages/tufa && deno task tufa",
-    "test": "cd packages/tufa && deno task test && cd ../keri && deno task test && cd ../cesr && deno task test && cd ../.. && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar",
+    "test": "cd packages/tufa && deno task test && cd ../keri && deno task test && cd ../cesr && deno task test && cd ../.. && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar && deno task test:observer",
     "test:quality": "deno task test:unit && deno task test:interop",
     "test:ci-tools": "deno test -A scripts/ci/pr-test-scope.test.ts",
     "test:quality:tufa": "cd packages/tufa && deno task test:quality",
@@ -48,15 +48,15 @@
     "tephra:annotate": "cd packages/cesr && deno task annotate",
     "tephra:validate": "cd packages/cesr && deno task validate",
     "tephra:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
-    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task verifier:build:npm && deno task hosting:build:npm && deno task wallet:build:npm && deno task registrar:build:npm && deno task tufa:build:npm",
+    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task verifier:build:npm && deno task hosting:build:npm && deno task wallet:build:npm && deno task registrar:build:npm && deno task observer:build:npm && deno task tufa:build:npm",
     "docker:did-webs-ts:build": "bash scripts/docker/did-webs-ts.sh build",
     "docker:did-webs-ts:test": "bash scripts/docker/did-webs-ts.sh test",
     "docker:did-webs-ts:push": "bash scripts/docker/did-webs-ts.sh push",
     "docker:did-webs-ts:build-push": "bash scripts/docker/did-webs-ts.sh build-push",
-    "test:unit": "deno run -A scripts/ci/run-keri-test-group.ts ci && deno task test:quality:tufa && deno task test:cesr && deno task test:ci-tools && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar",
+    "test:unit": "deno run -A scripts/ci/run-keri-test-group.ts ci && deno task test:quality:tufa && deno task test:cesr && deno task test:ci-tools && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar && deno task test:observer",
     "test:interop": "deno run -A scripts/ci/run-keri-test-group.ts interop-parity",
     "test:audit": "deno run -A scripts/ci/run-keri-test-group.ts audit",
-    "test:qualification": "deno run -A scripts/ci/run-keri-test-group.ts qualification && deno task test:quality:tufa && deno task test:cesr && deno task test:ci-tools && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar",
+    "test:qualification": "deno run -A scripts/ci/run-keri-test-group.ts qualification && deno task test:quality:tufa && deno task test:cesr && deno task test:ci-tools && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar && deno task test:observer",
     "test:package-tools": "deno test -A scripts/npm/vendor-sodium.test.ts scripts/sync_manifest_versions.test.ts",
     "test:quality:keri:app-fast-parallel": "deno run -A scripts/ci/run-keri-test-group.ts app-fast-parallel",
     "test:quality:keri:interop-essr-exchange": "deno run -A scripts/ci/run-keri-test-group.ts interop-essr-exchange",
@@ -99,7 +99,9 @@
     "wallet:build:npm": "cd packages/wallet && deno task build:npm",
     "test:wallet": "cd packages/wallet && deno task test",
     "registrar:build:npm": "cd packages/registrar && deno task build:npm",
-    "test:registrar": "cd packages/registrar && deno task test"
+    "test:registrar": "cd packages/registrar && deno task test",
+    "observer:build:npm": "cd packages/observer && deno task build:npm",
+    "test:observer": "cd packages/observer && deno task test"
   },
   "fmt": {
     "include": [
@@ -136,7 +138,8 @@
     "@keri-ts/verifier": "./packages/verifier/mod.ts",
     "@keri-ts/hosting": "./packages/hosting/mod.ts",
     "@keri-ts/wallet": "./packages/wallet/mod.ts",
-    "@keri-ts/registrar": "./packages/registrar/mod.ts"
+    "@keri-ts/registrar": "./packages/registrar/mod.ts",
+    "@keri-ts/observer": "./packages/observer/mod.ts"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {

@@ -14,7 +14,8 @@
     "packages/verifier",
     "packages/hosting",
     "packages/wallet",
-    "packages/registrar"
+    "packages/registrar",
+    "packages/observer"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",

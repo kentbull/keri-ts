@@ -133,12 +133,76 @@ def custody_handoff(request):
             rgy.close()
 
 
+def service(request, observer=False):
+    """Serve the selected real Falcon/HIO app over TLS with ordinary bootstrap ingress."""
+    import signal
+    import falcon
+    from hio.base import doing
+    from hio.core import http
+    from keri.acdc import Regery
+    from keri.acdc.regbasing import RegBaser
+    from keri.app.configing import Configer
+    from keri.app.indirecting import createHttpServer
+    from kfregistrar.core.serving import Context as RegistrarContext, DEFAULT_KRAM_CONFIG, loadExternalEnds
+    from kfobserver.core.evidence import Context as ObserverContext
+    from kfobserver.core.evidence_observing import ObservationBaser, RegistrarPuller
+
+    root = Path(request["root"])
+    cf = Configer(name="service", headDirPath=str(root), temp=False, reopen=True)
+    with openHby(name="service", temp=False, headDirPath=str(root), cf=cf, version=Vrsn_2_0) as hby:
+        hab = hby.makeHab(name="service", version=Vrsn_2_0)
+        reger = RegBaser(name=hby.name, headDirPath=str(root), temp=False)
+        if observer:
+            import kfobserver.core.evidence as selected
+            observations = ObservationBaser(name=hby.name, headDirPath=str(root), temp=False)
+            source = dict(url=request["source"], cafilepath=request["certificate"], certedhost="localhost")
+            ctx = ObserverContext(hby, reger=reger, observations=observations, sources=[source],
+                                  readers=request["readers"], maximumAge=5, config=DEFAULT_KRAM_CONFIG)
+            app = ctx.app
+            workers = [RegistrarPuller(hab, ctx, ctx.sources, interval=.1, timeout=1)]
+        else:
+            import kfregistrar.core.serving as selected
+            rgy = Regery(hby, baser=reger)
+            ctx = RegistrarContext(hby, hab, rgy, observers=request["observers"],
+                                   publishers=request["publishers"], fullEvidence=True,
+                                   config=DEFAULT_KRAM_CONFIG)
+            app = falcon.App()
+            loadExternalEnds(app, ctx)
+            workers = []
+        server = None
+        try:
+            result = ctx.ingest(request["bootstrap"].encode())
+            assert not result["rejected"] and not result["pending"], result
+            server = createHttpServer(host="127.0.0.1", port=request["port"], app=app,
+                                      keypath=request["certificate"], certpath=request["certificate"],
+                                      cafilepath=request["certificate"])
+            assert server.reopen()
+            Path(request["ready"]).write_text(json.dumps(dict(
+                pre=hab.pre, kel=b"".join(hby.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_2_0)).decode(),
+                module=str(Path(selected.__file__).resolve()))))
+            def stop(_signum, _frame):
+                raise KeyboardInterrupt
+            signal.signal(signal.SIGTERM, stop)
+            try:
+                doing.Doist(real=True, tock=.01).do(doers=[ctx, http.ServerDoer(server=server), *workers])
+            except KeyboardInterrupt:
+                pass
+        finally:
+            if server is not None:
+                server.close()
+            ctx.close()
+            cf.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("author", "verify", "custody"))
+    parser.add_argument("mode", choices=("author", "verify", "custody", "registrar", "observer"))
     parser.add_argument("evidence", nargs="?")
     args = parser.parse_args()
     evidence = json.loads(Path(args.evidence).read_text()) if args.evidence else None
+    if args.mode in ("registrar", "observer"):
+        service(evidence, observer=args.mode == "observer")
+        return
     result = author() if args.mode == "author" else (custody_handoff(evidence) if args.mode == "custody" else verify(evidence))
     print(json.dumps(result))
 

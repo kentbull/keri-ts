@@ -7,6 +7,7 @@ import {
   type Indexer,
   Matter,
   parseSerder,
+  reapSerder,
   type Serder,
   SerderKERI,
   Signer,
@@ -1309,8 +1310,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
     if (val === null) {
       return null;
     }
-    const { smellage } = smell(val);
-    const serder = parseSerder(val, smellage);
+    const { serder } = reapSerder(val);
     if (!(serder instanceof this.ctor)) {
       throw new TypeError(
         `Expected ${this.ctor.name}, got ${serder.constructor.name}.`,
