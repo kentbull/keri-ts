@@ -35,6 +35,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const update = new SerderACDC({ raw: b(evidence.update) });
     const acdc = new SerderACDC({ raw: b(evidence.credential) });
     const blinder = BlindState.fromSad(evidence.opening);
+    assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
     await run(function*() {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);

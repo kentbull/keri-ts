@@ -45,7 +45,9 @@ Pather's 256-component resolution default is deployment policy, not a wire depth
 Construction/disclosure helpers supply no issuer authentication.
 
 Fixed-field commitments hash actual primitive qb64 tuple bytes with d dummied,
-not SAD strings. Noncer placeholders must remain representable. Unblind helpers
+not SAD strings. Opening `d` must equal the anchored canonical 44-character E-I
+BLID, whose code selects the digest. Preserve carried text/number encodings and
+public-mode empty `u` during verification. Noncer placeholders remain representable. Unblind helpers
 search candidates; they do not decrypt. Semantic verbs live in disclosure.ts,
 record schemas in structing.ts and counted transport in wrappers.
 
