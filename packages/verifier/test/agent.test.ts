@@ -17,7 +17,7 @@ import {
   Tevery,
   Verifier,
 } from "keri-ts/runtime";
-import { createVerifierCueBaser, VerifierAgent, type VerifierCueBaser } from "../../runtime.ts";
+import { createVerifierCueBaser, VerifierAgent, type VerifierCueBaser } from "../mod.ts";
 import { httpClient, manualClock } from "./fixtures.ts";
 
 function schemaSed(): Record<string, unknown> {

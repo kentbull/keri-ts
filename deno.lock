@@ -655,6 +655,12 @@
           "jsr:@deno/dnt@~0.42.3",
           "npm:effection@^3.6.0"
         ]
+      },
+      "packages/verifier": {
+        "dependencies": [
+          "jsr:@deno/dnt@~0.42.3",
+          "npm:effection@^3.6.0"
+        ]
       }
     }
   }

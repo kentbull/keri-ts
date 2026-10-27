@@ -2,9 +2,10 @@
 
 Credential workflows borrow one Regery for its coherent Habery, Reger, Tevery and
 Verifier; delivery borrows Poster and import borrows ProtocolProcessor/Reger. Finite import
-and grant artifact intake own their parser/input-specific Kevery; Tufa's VerifierAgent
+and grant artifact intake own their parser/input-specific Kevery. VerifierAgent
 borrows public protocol operations directly. Its policy, webhook formatting and
-workflow records live in Tufa; protocol Verifier/IPEX/evidence remain in keri-ts. Recurring artifact intake retains its
+workflow records live in `@keri-ts/verifier`; Tufa retains CLI composition.
+Protocol Verifier/IPEX/evidence remain in keri-ts. Recurring artifact intake retains its
 single escrow pass; it does not start runtime workers. Finite import dispatches each
 frame once, lets protocol escrows recover dependencies, and observes saved markers,
 accepted KEL/TEL digests and accepted EXNs. It retains identities, not frames or

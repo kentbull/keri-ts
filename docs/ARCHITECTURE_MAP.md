@@ -25,7 +25,8 @@ reference material and historical reports.
 ## Top-Level Boundaries
 
 - Dependency graph:
-  - `tufa -> keri-ts -> cesr-ts`
+  - `tufa -> @keri-ts/verifier -> keri-ts -> cesr-ts`
+  - Tufa and the verifier also borrow the public lower-package operations directly.
 - `mod.ts`
   - Repo-root runner for the `tufa` application package.
 - `packages/keri/mod.ts`
@@ -35,7 +36,9 @@ reference material and historical reports.
 - `packages/keri/db.ts`
   - Explicit LMDB-backed persistence surface for `keri-ts`.
 - `packages/tufa/**`
-  - CLI/application package boundary.
+  - CLI/application package boundary and verifier command composition.
+- `packages/verifier/**`
+  - Verifier application policy, workflow cue storage and webhook package.
 - `packages/tufa/src/host/**`
   - Active shared host kernel plus Deno/Node/TCP listener ownership.
 - `packages/tufa/src/http/**`
@@ -88,6 +91,14 @@ reference material and historical reports.
   - Internal CLI runtime, command registration, dispatch helpers, and active
     long-lived host commands.
 
+### `@keri-ts/verifier`
+
+- `packages/verifier/mod.ts`
+  - Supported verifier agent, cue-store, policy configuration and webhook data API.
+- `packages/verifier/src/*`
+  - Internal application implementation over public KERI runtime/DB and CESR APIs.
+  - CLI registration and listener/runtime composition remain in Tufa.
+
 ### CESR Package
 
 - `packages/cesr/mod.ts`
@@ -106,6 +117,8 @@ reference material and historical reports.
     plumbing, and long-lived host commands live in `packages/tufa/src/cli/*`.
 - `packages/tufa/test/*`
   - Canonical package-surface CLI, server, host, and HTTP edge validation.
+- `packages/verifier/test/*`
+  - Verifier agent/webhook validation with application-owned peers and clocks.
 - `packages/keri/test/*`
   - Canonical library/runtime/DB/protocol validation, even when some tests use
     Tufa helpers as scaffolding.
@@ -191,11 +204,13 @@ reference material and historical reports.
   - `packages/cesr/src/annotate`
 - Runtime persistence/LMDB:
   - `packages/keri/src/db/core`, `packages/keri/src/db/basing.ts`
-- ACDC/TEL/IPEX/verifier behavior:
+- ACDC/TEL/IPEX protocol behavior:
   - `packages/keri/src/vdr`, `packages/keri/src/app/ipex/ipexing.ts`,
     `packages/keri/src/app/ipex/ipex-credentialing.ts`,
-    `packages/keri/src/app/credentials/verifying.ts`,
-    `packages/keri/src/app/verifier-agent.ts`
+    `packages/keri/src/app/credentials/verifying.ts`
+- Verifier application policy, workflow records and webhooks:
+  - `packages/verifier/src`
+  - Tufa keeps `src/cli/commands/verifier.ts` and its real CLI workflow test.
 - Delegation, multisig, and endpoint-role workflow:
   - `packages/keri/src/app/identity/delegating.ts`,
     `packages/keri/src/app/multisig/grouping.ts`,

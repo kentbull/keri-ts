@@ -1,8 +1,8 @@
 /** Operator validation belongs to the Tufa-owned verifier command. */
+import { VerifierAgent, VerifierCueBaser } from "@keri-ts/verifier";
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createHabery, ValidationError } from "keri-ts/runtime";
-import { VerifierAgent, VerifierCueBaser } from "../../runtime.ts";
 import { verifierRunCommand } from "../../src/cli/commands/verifier.ts";
 
 Deno.test({

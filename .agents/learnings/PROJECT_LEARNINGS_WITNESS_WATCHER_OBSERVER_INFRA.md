@@ -95,7 +95,9 @@ mirrors and npm workspace-lock entries; manifest:check must reject either drift.
 Sync workspace versions without re-resolving or changing npm dependency metadata. Build helpers are real source files, not multiline JS/TS in
 shell/workflow strings. Keep inline-code:check and export docstring checks honest.
 
-The package graph is tufa → keri-ts → cesr-ts. KERI's general entrypoints are root,
+The package graph is tufa → @keri-ts/verifier → keri-ts → cesr-ts. The verifier
+application owns policy, cue storage and webhooks; Tufa retains CLI/host composition.
+KERI's general entrypoints are root,
 runtime and db; cli is the separate Tufa command-helper boundary. Runtime exports
 are deliberate, not module wildcards. Do not publish app/core/db/vdr deep-import
 patterns to expose implementation internals. Installed probes use named surfaces.
@@ -113,7 +115,7 @@ Install compiler tools after runtime smoke so they cannot mask missing dependenc
 The packed consumer must actually read/reopen a >16 MiB native LMDB row and retain
 owned bytes across later writes, sign/refuse altered data and transmit/close real
 TCP. Module loading alone does not qualify those installed runtime paths.
-Install all three local tarballs once per runtime
+Install all four local tarballs once per runtime
 image (including macOS); run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
 all generated manifests; qualify the declared floor and current runtime without

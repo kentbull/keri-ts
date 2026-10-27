@@ -4,6 +4,7 @@
 # Optional additional args:
 # - a locally built `cesr-ts` tarball
 # - a locally built `keri-ts` tarball
+# - a locally built `@keri-ts/verifier` tarball
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,6 +15,7 @@ SAMPLE_STREAM_REL="${SAMPLE_STREAM_REL:-cesr-streams/CESR_1_0-oor-auth-vc.cesr}"
 TARBALL_PATH="${1:-}"
 CESR_TARBALL_PATH="${2:-}"
 KERI_TARBALL_PATH="${3:-}"
+VERIFIER_TARBALL_PATH="${4:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -22,6 +24,11 @@ if [[ -z "${TARBALL_PATH}" ]]; then
   )
   TARBALL_NAME="$(cd "${PACKAGE_DIR}" && npm pack --silent | tail -n1)"
   TARBALL_PATH="${PACKAGE_DIR}/${TARBALL_NAME}"
+  if [[ -z "${VERIFIER_TARBALL_PATH}" ]]; then
+    (cd "${ROOT_DIR}/packages/verifier" && deno task build:npm)
+    VERIFIER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/verifier/npm" && npm pack --silent | tail -n1)"
+    VERIFIER_TARBALL_PATH="${ROOT_DIR}/packages/verifier/npm/${VERIFIER_TARBALL_NAME}"
+  fi
 fi
 
 if [[ ! -f "${TARBALL_PATH}" ]]; then
@@ -69,6 +76,17 @@ if [[ -n "${KERI_TARBALL_PATH}" ]]; then
   KERI_TARBALL_NAME="$(basename "${KERI_TARBALL_PATH}")"
   DOCKER_ARGS+=(-v "${KERI_TARBALL_DIR}:/keri-pkg")
   INSTALL_TARGETS=("/keri-pkg/${KERI_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
+fi
+
+if [[ -n "${VERIFIER_TARBALL_PATH}" ]]; then
+  if [[ ! -f "${VERIFIER_TARBALL_PATH}" ]]; then
+    echo "Verifier tarball not found: ${VERIFIER_TARBALL_PATH}" >&2
+    exit 1
+  fi
+  VERIFIER_TARBALL_DIR="$(cd "$(dirname "${VERIFIER_TARBALL_PATH}")" && pwd)"
+  VERIFIER_TARBALL_NAME="$(basename "${VERIFIER_TARBALL_PATH}")"
+  DOCKER_ARGS+=(-v "${VERIFIER_TARBALL_DIR}:/verifier-pkg")
+  INSTALL_TARGETS=("/verifier-pkg/${VERIFIER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 fi
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"

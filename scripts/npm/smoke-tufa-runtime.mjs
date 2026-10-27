@@ -1,5 +1,6 @@
 /** Verify the installed Tufa runtime embedding subpath loads and exports its contract. */
 import { createRequire } from "node:module";
+import * as verifier from "@keri-ts/verifier";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { readFileSync } from "node:fs";
@@ -26,13 +27,13 @@ if (typeof protocolTarget !== "string") throw new Error("Tufa protocol handler e
 const protocol = await import(pathToFileURL(join(packageRoot, protocolTarget)).href);
 if (typeof protocol.createProtocolHandler !== "function") throw new Error("Tufa protocol handler subpath is missing");
 
-if (typeof runtime.VerifierAgent !== "function") throw new Error("Tufa runtime missing verifier application");
 const require = createRequire(join(packageRoot, "package.json"));
+if (typeof verifier.VerifierAgent !== "function") throw new Error("Verifier package missing application");
 const { run } = await import(pathToFileURL(require.resolve("effection")).href);
 const root = await mkdtemp(join(tmpdir(), "tufa-verifier-runtime-"));
 try {
   await run(function*() {
-    const store = yield* runtime.createVerifierCueBaser({ name: "installed", headDirPath: root });
+    const store = yield* verifier.createVerifierCueBaser({ name: "installed", headDirPath: root });
     try {
       if (Object.values(store.getCounts()).some(count => count !== 0)) throw new Error("Fresh verifier store is not empty");
       yield* store.close();
@@ -41,4 +42,4 @@ try {
     } finally { yield* store.close(true); }
   });
 } finally { await rm(root, { recursive: true, force: true }); }
-console.error("Installed Tufa verifier runtime and owned cue-store lifecycle passed.");
+console.error("Installed verifier package and owned cue-store lifecycle passed.");

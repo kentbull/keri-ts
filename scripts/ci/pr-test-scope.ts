@@ -1,7 +1,7 @@
 /** Select PR checks from explicit maintainer scope, reusing the maintained suite inventory. */
 import { interop as interopOwners, required } from "./keri-test-suites.ts";
 
-const allUnits = ["ci", "tufa", "cesr", "ci-tools"] as const;
+const allUnits = ["ci", "tufa", "verifier", "cesr", "ci-tools"] as const;
 const unitOwners = [...allUnits, ...required] as const;
 type UnitTarget = typeof unitOwners[number];
 type InteropTarget = typeof interopOwners[number];
@@ -129,7 +129,9 @@ function currentBody(value: unknown, head: string): string {
 async function runUnit(): Promise<void> {
   const selected = unitTargets(JSON.parse(Deno.env.get("UNIT_TARGETS") ?? "[]"));
   for (const target of selected) {
-    const args = target === "tufa" ? ["task", "test:quality:tufa"] : target === "cesr"
+    const args = target === "tufa" ? ["task", "test:quality:tufa"] : target === "verifier"
+      ? ["task", "test:verifier"]
+      : target === "cesr"
       ? ["task", "test:cesr"]
       : target === "ci-tools"
       ? ["task", "test:ci-tools"]

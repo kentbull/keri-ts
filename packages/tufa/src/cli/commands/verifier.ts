@@ -1,10 +1,8 @@
+import { createVerifierCueBaser, validatorsFromVerifierConfig, VerifierAgent } from "@keri-ts/verifier";
 import type { Versionage } from "cesr-ts";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import { ValidationError } from "keri-ts/runtime";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import { VerifierAgent } from "../../verifier/agent.ts";
-import { createVerifierCueBaser } from "../../verifier/cue-store.ts";
-import { validatorsFromVerifierConfig } from "../../verifier/policy.ts";
 import { withAgentRuntime } from "../support/context.ts";
 
 interface VerifierRunArgs {
