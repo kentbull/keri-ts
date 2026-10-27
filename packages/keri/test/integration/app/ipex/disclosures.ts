@@ -7,12 +7,8 @@ import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 
-/** Build a full commitment and its status-only partial with identical SAIDs. */
-function disclosure(
-  issuer: string,
-  options: { issuee?: string; edge?: MapperMap; edgeSchema?: MapperMap } = {},
-): { full: SerderACDC; partial: SerderACDC } {
-  const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+/** The shared concrete status/private fixture schema, before role-specific edge constraints. */
+function disclosureSchema(edgeSchema?: MapperMap): Schemer {
   const scalar = { type: "string" };
   const valueBlock = {
     oneOf: [scalar, {
@@ -22,7 +18,7 @@ function disclosure(
       additionalProperties: false,
     }],
   };
-  const schema = new Schemer({
+  return new Schemer({
     sed: {
       $id: "",
       $schema: "https://json-schema.org/draft/2020-12/schema",
@@ -59,11 +55,20 @@ function disclosure(
             additionalProperties: false,
           }],
         },
-        e: options.edgeSchema ?? { oneOf: [scalar, { type: "object" }] },
+        e: edgeSchema ?? { oneOf: [scalar, { type: "object" }] },
       },
       additionalProperties: false,
     },
   });
+}
+
+/** Build a full commitment and its status-only partial with identical SAIDs. */
+function disclosure(
+  issuer: string,
+  options: { issuee?: string; edge?: MapperMap; edgeSchema?: MapperMap; schema?: MapperMap } = {},
+): { full: SerderACDC; partial: SerderACDC } {
+  const nonce = () => new Noncer({ code: NonceDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64;
+  const schema = options.schema ? new Schemer({ sed: options.schema }) : disclosureSchema(options.edgeSchema);
   const full = acdcmap(issuer, {
     issuee: options.issuee,
     edge: options.edge,
@@ -115,7 +120,17 @@ export type EdgeRefusalCase =
   | "edge-schema"
   | "inherited-schema"
   | "malformed-schema";
-export type GraphCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "multi-hop" | "branching" | EdgeRefusalCase;
+export type PathShapeCase = "fixed-path" | "optional-path";
+export type GraphCase =
+  | PathShapeCase
+  | "I2I"
+  | "NI2I"
+  | "E1E"
+  | "AND"
+  | "OR"
+  | "multi-hop"
+  | "branching"
+  | EdgeRefusalCase;
 /** Concrete credential bodies, issuer keys and the deliberately missing proof. */
 export interface DisclosureGraph {
   fullNodes: SerderACDC[];
@@ -131,6 +146,7 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     const { full, partial } = disclosure(hab.pre);
     return { fullNodes: [full], nodes: [partial], badNodes: [], issuers: [hab], unsigned: null };
   }
+  if (graphCase === "fixed-path" || graphCase === "optional-path") return pathShapeGraph(hby, hab, graphCase);
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
   switch (graphCase) {
     case "I2I":
@@ -142,6 +158,50 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     default:
       return edgeRefusalGraph(hby, hab, graphCase);
   }
+}
+
+/** Same two-node authority graph; only schema-requiredness controls positional admissibility. */
+function pathShapeGraph(hby: Habery, hab: Hab, shape: PathShapeCase): DisclosureGraph {
+  const authority = hby.makeHab("authority");
+  const terminalSchema = structuredClone(disclosureSchema().sed) as MapperMap;
+  terminalSchema.$id = "";
+  delete (terminalSchema.properties as MapperMap).e;
+  const far = disclosure(authority.pre, { issuee: hab.pre, schema: terminalSchema });
+  const rootSchema = structuredClone(disclosureSchema().sed) as MapperMap;
+  rootSchema.$id = "";
+  (rootSchema.required as string[]).push("e");
+  (rootSchema.properties as MapperMap).e = {
+    type: "object",
+    additionalProperties: false,
+    required: shape === "fixed-path" ? ["authority"] : [],
+    properties: {
+      d: { type: "string" },
+      authority: {
+        type: "object",
+        required: ["n"],
+        properties: { n: { type: "string" }, o: { type: "string" } },
+      },
+    },
+  };
+  const near = disclosure(hab.pre, {
+    schema: rootSchema,
+    edge: { d: "", authority: { n: far.partial.said, o: "I2I" } },
+  });
+  for (const node of [near.full, near.partial, far.full, far.partial]) {
+    assertEquals(validateSchema(node, hby.db), { kind: "valid" }, "path selection is not own-schema rejection");
+  }
+  assertEquals(
+    (near.partial.sad!.e as MapperMap).authority
+      && ((near.partial.sad!.e as MapperMap).authority as MapperMap).n,
+    far.partial.said,
+  );
+  assertEquals(
+    (near.full.schema as MapperMap).$id === (far.full.schema as MapperMap).$id,
+    false,
+    "root and terminal schemas are distinct",
+  );
+  const nodes = [near.partial, far.partial];
+  return { fullNodes: [near.full, far.full], nodes, badNodes: nodes, issuers: [hab, authority], unsigned: null };
 }
 
 /** Root → authority → ancestor, optionally sharing the ancestor with an audit branch. */
@@ -300,14 +360,15 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
 }
 
 /** Paths describe the disclosed graph, while each node retains only its status field. */
-export function disclosurePlan(schema: string, graph?: GraphCase): DisclosurePlan {
-  const paths = ["/"];
-  if (graph) {
+export function disclosurePlan(schemas: readonly string[], graph?: GraphCase): DisclosurePlan {
+  const paths = graph === "fixed-path" || graph === "optional-path" ? ["", ""] : ["/"];
+  if (graph && graph !== "fixed-path" && graph !== "optional-path") {
     paths.push(
       graph === "AND" || graph === "OR" || graph === "inherited-schema" ? "/e/authority/link/_/" : "/e/authority/_/",
     );
   }
   if (graph === "branching") paths.push("/e/audit/_/");
   if (graph === "multi-hop" || graph === "branching") paths.push("/e/authority/_/e/authority/_/");
-  return paths.map((path) => [schema, path, ["a/status/"]]);
+  assertEquals(schemas.length, paths.length, "every selected node supplies its own actual schema ID");
+  return paths.map((path, i) => [schemas[i], path, ["a/status/"]]);
 }

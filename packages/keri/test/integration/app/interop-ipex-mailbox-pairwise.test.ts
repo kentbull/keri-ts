@@ -197,10 +197,10 @@ for (const tsDiscloser of [true, false]) {
                     const ts: PeerInfo = {
                       pre: hab.pre,
                       url: urls[0],
-                      schema: (graph.fullNodes[0].sad!.s as { $id: string }).$id,
+                      schemas: graph.fullNodes.map((node) => (node.schema as { $id: string }).$id),
                       commitment: graph.fullNodes[0].said!,
                     };
-                    const plan = disclosurePlan(tsDiscloser ? ts.schema : py.schema, graphCase);
+                    const plan = disclosurePlan(tsDiscloser ? ts.schemas : py.schemas, graphCase);
                     // Exchange actual public KEL evidence through both production HTTP intake paths.
                     for (
                       const [owner, pre] of [

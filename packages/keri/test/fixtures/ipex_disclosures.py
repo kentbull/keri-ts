@@ -9,15 +9,15 @@ from keri.core import Compactor, Noncer, SerderACDC
 from keri.core.scheming import Schemer
 
 
-def disclosure(issuer, *, issuee=None, edge=None, edge_schema=None):
-    """Build a full commitment and its status-only partial with identical SAIDs."""
+def disclosure_schema(edge_schema=None):
+    """Shared concrete status/private schema before role-specific edge constraints."""
     scalar = {"type": "string"}
     value_block = {"oneOf": [scalar, {
         "type": "object", "required": ["d", "u", "value"],
         "properties": {"d": scalar, "u": scalar, "value": scalar},
         "additionalProperties": False,
     }]}
-    schema = Schemer(sed={
+    return Schemer(sed={
         "$id": "", "$schema": "https://json-schema.org/draft/2020-12/schema",
         "version": "1.0.0", "type": "object",
         "required": ["v", "t", "d", "u", "i", "s", "a"],
@@ -43,6 +43,11 @@ def disclosure(issuer, *, issuee=None, edge=None, edge_schema=None):
         },
         "additionalProperties": False,
     })
+
+
+def disclosure(issuer, *, issuee=None, edge=None, edge_schema=None, schema=None):
+    """Build a full commitment and its status-only partial with identical SAIDs."""
+    schema = Schemer(sed=schema) if schema is not None else disclosure_schema(edge_schema)
     full = acdcmap(issuer, uuid=Noncer().qb64, iseaid=issuee, edge=edge, schema=schema.sed, attribute=dict(
         d="", u=Noncer().qb64,
         status=dict(d="", u=Noncer().qb64, value="citizen"),
@@ -82,6 +87,8 @@ def graph_disclosures(hby, hab, graph_case):
     if graph_case is None:
         full, partial = disclosure(hab.pre)
         return DisclosureGraph([full], [partial], [], [hab], None)
+    if graph_case in ("fixed-path", "optional-path"):
+        return path_shape_graph(hby, hab, graph_case)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
     if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
@@ -89,6 +96,30 @@ def graph_disclosures(hby, hab, graph_case):
     if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "simple-edge", "edge-schema", "inherited-schema", "malformed-schema"):
         return edge_refusal_graph(hby, hab, graph_case)
     raise ValueError(f"Unknown fixture graph: {graph_case}")
+
+
+def path_shape_graph(hby, hab, shape):
+    """Same two-node authority graph; requiredness alone controls positional use."""
+    authority = hby.makeHab(name="authority")
+    terminal_schema = copy.deepcopy(disclosure_schema().sed)
+    terminal_schema["$id"] = ""
+    del terminal_schema["properties"]["e"]
+    far_full, far = disclosure(authority.pre, issuee=hab.pre, schema=terminal_schema)
+    root_schema = copy.deepcopy(disclosure_schema().sed)
+    root_schema["$id"] = ""
+    root_schema["required"].append("e")
+    root_schema["properties"]["e"] = dict(type="object", additionalProperties=False,
+        required=["authority"] if shape == "fixed-path" else [],
+        properties=dict(d=dict(type="string"), authority=dict(type="object", required=["n"],
+            properties=dict(n=dict(type="string"), o=dict(type="string")))))
+    full, partial = disclosure(hab.pre, schema=root_schema,
+                               edge=dict(d="", authority=dict(n=far.said, o="I2I")))
+    for node in (full, partial, far_full, far):
+        scheming.validateSchema(acdc=node, db=hby.db)  # selection is not own-schema rejection
+    assert partial.sad["e"]["authority"]["n"] == far.said
+    assert full.schema["$id"] != far.schema["$id"], "root and terminal schemas are distinct"
+    nodes = [partial, far]
+    return DisclosureGraph([full, far_full], nodes, nodes, [hab, authority], None)
 
 
 def deep_graph(hby, hab, graph_case):

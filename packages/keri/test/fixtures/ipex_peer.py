@@ -56,7 +56,7 @@ class IpexPeer:
 
     def info(self):
         return dict(pre=self.hab.pre, url=f"http://127.0.0.1:{self.server.servant.ha[1]}/",
-                    schema=self.graph.full_nodes[0].sad["s"]["$id"], commitment=self.graph.full_nodes[0].said)
+                    schemas=[node.sad["s"]["$id"] for node in self.graph.full_nodes], commitment=self.graph.full_nodes[0].said)
 
     def stop(self):
         self.running = False
@@ -139,6 +139,9 @@ class IpexPeer:
             return admit(self.hab, "accepted", prior)
         if verb == "grant":
             nodes = self.disclosed(invalid)
+            if self.graph_case in ("fixed-path", "optional-path"):
+                assert [schema for schema, _, _ in self.plan] == [node.schema["$id"] for node in nodes]
+                assert [node.raw for node in nodes] == [node.raw for node in self.graph.nodes], "prefix selection preserves exact credential bytes"
             proofs = [node if invalid and node.said == self.graph.unsigned else
                       self.signed(node, self.disclosed()[0] if invalid == "altered" and i == 0 else node)
                       for i, node in enumerate(nodes)]
