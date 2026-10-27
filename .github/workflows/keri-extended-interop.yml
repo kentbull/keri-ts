@@ -40,7 +40,7 @@ concurrency:
 
 env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.8.2"
+  DENO_VERSION: "2.9.8"
   KERIPY_GIT_URL: https://github.com/kentbull/keripy.git
   KERIPY_INTEROP_ROOT: ${{ github.workspace }}/.cache/keripy-mailbox-main
   KERIPY_INTEROP_PYTHON: ${{ github.workspace }}/.cache/keripy-venv/bin/python

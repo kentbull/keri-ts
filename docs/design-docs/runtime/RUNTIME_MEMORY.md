@@ -56,14 +56,13 @@ these checks qualify arbitrary legacy V8/NAN addons or untested worker use.
 
 ## Deno and process settings
 
-The pinned Deno 2.8.2 workspace selects rusty_v8 149.2.0 with only `simdutf` enabled
-and default features disabled. That rusty_v8 build leaves pointer compression off
-unless its build feature is enabled. There is no supported runtime flag in this
-configuration that turns it on. See the pinned
-[Deno dependency](https://github.com/denoland/deno/blob/v2.8.2/Cargo.toml) and
-[rusty_v8 build](https://github.com/denoland/rusty_v8/blob/v149.2.0/build.rs).
-Recheck source and actual release artifacts when changing Deno; do not turn this
-observation into a claim about every future release or custom build.
+The selected [Deno 2.9.8 release](https://github.com/denoland/deno/releases/tag/v2.9.8)
+uses the in-tree `deno_v8` 0.5.0 dependency with default features disabled and
+`simdutf` enabled in its [workspace manifest](https://github.com/denoland/deno/blob/v2.9.8/Cargo.toml).
+That dependency selection does not establish pointer compression or the release
+artifact's heap limit. The earlier Deno 2.8.2/rusty_v8 149.2.0 source observation
+is historical and does not describe the selected runtime. Verify actual release
+artifacts before making build-feature or memory-benefit claims.
 
 KERI test owners retain their measured isolation/concurrency policy. CESR's
 `CESR_TEST_JOBS` / `DENO_JOBS` controls test concurrency, with its existing automatic

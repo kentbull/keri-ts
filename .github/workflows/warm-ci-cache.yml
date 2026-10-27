@@ -16,7 +16,7 @@ concurrency:
 
 env:
   DENO_DIR: ${{ github.workspace }}/.deno-cache
-  DENO_VERSION: "2.8.2"
+  DENO_VERSION: "2.9.8"
   NODE_VERSION: "25.9.0"
   PYTHON_VERSION: "3.14"
   LMDB_DATA_V1: "true"

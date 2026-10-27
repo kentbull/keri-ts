@@ -1,7 +1,7 @@
 ARG NODE_IMAGE_TAG=25.9.0-bookworm-slim
 FROM node:${NODE_IMAGE_TAG} AS base
 
-ARG DENO_VERSION=2.8.2
+ARG DENO_VERSION=2.9.8
 ENV DENO_INSTALL=/usr/local \
   DENO_DIR=/deno-dir \
   XDG_CACHE_HOME=/root/.cache \

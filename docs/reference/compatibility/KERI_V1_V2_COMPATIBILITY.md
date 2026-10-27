@@ -116,6 +116,13 @@ selector before the unchanged body and detached attachments. Full-body mode is a
 not a universally portable replacement for the Python detached convention.
 Evidence: [CESR HTTP framing tests](../../../packages/keri/test/unit/app/transport/cesr-http.test.ts).
 
+Configured HTTPS source acquisition selects [Deno 2.9.8](https://github.com/denoland/deno/releases/tag/v2.9.8).
+The unchanged [observer TLS controls](../../../packages/observer/test/observer.test.ts)
+accept valid TLS and reject wrong CA/name on 2.9.8. The same-request comparison
+on 2.8.2 accepted a wrong CA after a valid connection; that runtime does not
+qualify the configured-source trust claim. This selection changes no signed
+protocol bytes or issuer-proof authority.
+
 ### COMP-03 — Independent body and attachment versions
 
 **Coexistence and guard.** [Complete decoding](../../../packages/cesr/src/parser/complete.ts)
