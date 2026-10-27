@@ -56,6 +56,12 @@ jobs:
               echo "artifact=tufa-npm" >> "$GITHUB_OUTPUT"
               echo "title=@keri-ts/tufa" >> "$GITHUB_OUTPUT"
               ;;
+            verifier)
+              echo "path=packages/verifier/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=@keri-ts/verifier" >> "$GITHUB_OUTPUT"
+              echo "artifact=verifier-npm" >> "$GITHUB_OUTPUT"
+              echo "title=@keri-ts/verifier" >> "$GITHUB_OUTPUT"
+              ;;
             *) exit 2 ;;
           esac
 
@@ -86,7 +92,8 @@ jobs:
           case "$PACKAGE" in
             cesr) deno task test:cesr ;;
             keri) deno task test:quality:keri:fast ;;
-            tufa) deno task test:quality:tufa ;;
+            tufa) deno task test:quality:tufa && deno task test:verifier ;;
+            verifier) deno task test:verifier ;;
           esac
 
       - name: test package tooling
@@ -101,9 +108,10 @@ jobs:
           case "$PACKAGE" in
             cesr) (cd packages/cesr && deno task build:npm) ;;
             keri) (cd packages/keri && deno task build:npm) ;;
-            tufa)
+            tufa|verifier)
               (cd packages/cesr && deno run -A scripts/build_npm.ts)
               (cd packages/keri && deno run -A scripts/build_npm.ts)
+              (cd packages/verifier && deno run -A scripts/build_npm.ts)
               (cd packages/tufa && deno run -A scripts/build_npm.ts)
               ;;
           esac
@@ -115,6 +123,8 @@ jobs:
           CESR_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['cesr-ts']")
           npm view "keri-ts@${KERI_DEP}" version >/dev/null
           npm view "cesr-ts@${CESR_DEP}" version >/dev/null
+          VERIFIER_DEP=$(node -p "require('./packages/tufa/npm/package.json').dependencies['@keri-ts/verifier']")
+          npm view "@keri-ts/verifier@${VERIFIER_DEP}" version >/dev/null
 
       - name: pack and smoke the primary tarball
         id: pack
@@ -135,18 +145,22 @@ jobs:
               cd ../../..
               bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
               ;;
-            tufa)
+            tufa|verifier)
               cd packages/cesr/npm
               CESR_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../keri/npm
               KERI_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../verifier/npm
+              VERIFIER_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../tufa/npm
               TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../..
               bash scripts/smoke-test-tufa-npm.sh \
                 "packages/tufa/npm/$TARBALL" \
                 "packages/cesr/npm/$CESR_TARBALL" \
-                "packages/keri/npm/$KERI_TARBALL"
+                "packages/keri/npm/$KERI_TARBALL" \
+                "packages/verifier/npm/$VERIFIER_TARBALL"
+              if [[ "$PACKAGE" == verifier ]]; then TARBALL="$VERIFIER_TARBALL"; fi
               ;;
           esac
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"

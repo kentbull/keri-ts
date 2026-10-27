@@ -28,7 +28,8 @@ To run selected maintained owners in CI instead:
 
 Unit choices are the existing `required` owners in
 [suite inventory](../../scripts/ci/keri-test-suites.ts), plus `ci` (all KERI
-required owners), `tufa`, `cesr` and `ci-tools` (the scope contract tests). Interop choices are the concrete owners in
+required owners), `tufa`, `verifier` (the verifier package tests), `cesr` and
+`ci-tools` (the scope contract tests). Interop choices are the concrete owners in
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
@@ -56,7 +57,7 @@ For the periodic broad run, use:
 ```
 ````
 
-Full mode runs all required KERI owners, Tufa, CESR, every maintained extended
+Full mode runs all required KERI owners, Tufa, verifier, CESR, every maintained extended
 interop owner and installed-package smoke tests. Interop owners run in separate
 jobs with their existing 25-minute PR cap. This is the broad PR battery; manual
 endurance and final clean-source release qualification remain separate gates.

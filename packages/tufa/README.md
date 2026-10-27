@@ -37,6 +37,8 @@ Licensed under the Apache License, Version 2.0 (`Apache-2.0`). See the top-level
 `src/cli/commands` holds effectful command adapters; `src/cli/command-definitions`
 holds lazy Commander registration by subject. The CLI driver, dispatch contracts,
 version display and Node executable stay beside them, with shared command support
-in `src/cli/support`. Listener composition, HTTP policies, operator planning and
-verifier application state retain their separate `host`, `http`, `operator` and
-`verifier` directories.
+in `src/cli/support`. Listener composition, HTTP policies and operator
+planning retain their separate `host`, `http` and `operator` directories. Verifier
+application policy, cue storage and webhook work live in `@keri-ts/verifier`;
+Tufa retains command registration and runtime composition. Import verifier APIs
+from `@keri-ts/verifier` directly; `@keri-ts/tufa/runtime` exposes Tufa hosts.

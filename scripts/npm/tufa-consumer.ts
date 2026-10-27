@@ -1,5 +1,5 @@
 /** Compile-only installed application composition through supported public package declarations. */
-import { VerifierAgent, type VerifierCueBaser, createVerifierCueBaser } from "@keri-ts/tufa/runtime";
+import { VerifierAgent, type VerifierCueBaser, createVerifierCueBaser } from "@keri-ts/verifier";
 import type { AgentRuntime } from "keri-ts/runtime";
 
 /** Compose the application without a private protocol import or dependency-discovery container. */

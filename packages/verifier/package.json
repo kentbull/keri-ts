@@ -1,0 +1,11 @@
+{
+  "name": "@keri-ts/verifier",
+  "version": "2.0.0",
+  "description": "Credential verifier application policy, workflow storage and webhooks",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kentbull/keri-ts.git",
+    "directory": "packages/verifier"
+  }
+}

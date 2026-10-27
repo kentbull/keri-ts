@@ -1,9 +1,9 @@
-# ADR-0011: Three-Package Architecture
+# ADR-0011: Package Architecture
 
 - Status: Accepted
 - Date: 2026-04-09
-- Scope: repo-level package boundaries across `packages/tufa`, `packages/keri`,
-  and `packages/cesr`
+- Scope: repo-level package boundaries across `packages/tufa`, `packages/verifier`,
+  `packages/keri`, and `packages/cesr`
 - Related:
   - `docs/ARCHITECTURE_MAP.md`
   - `docs/archived-plan-docs/packaging/layers-and-libs-reorg.md`
@@ -32,10 +32,11 @@ records the split as a durable architectural rule.
 
 ## Decision
 
-The repo standardizes on a three-package architecture with a one-way dependency
-graph:
+The repo uses concrete package boundaries with a one-way dependency graph:
 
-- `tufa -> keri-ts -> cesr-ts`
+- `tufa -> @keri-ts/verifier -> keri-ts -> cesr-ts`
+- Tufa also uses KERI and CESR public operations directly; the verifier package
+  also uses CESR primitives directly.
 
 Package ownership is:
 
@@ -56,10 +57,20 @@ Package ownership is:
   - `./db`
 - must not own Hono, listener startup, or runnable CLI entrypoints
 
+### `@keri-ts/verifier`
+
+- owns the credential verifier application, business validators, webhook
+  projection and local workflow cue sidecar
+- borrows public KERI runtime/DB and CESR operations without owning CLI registration,
+  host/listener composition or protocol acceptance
+- exposes its supported application API through `packages/verifier/mod.ts`
+
 ### `tufa`
 
 - owns application composition, CLI UX, long-lived host/kernel lifecycle, HTTP
   edge, middleware, and operator-facing role hosting
+- retains `tufa verifier run` registration, runtime composition and the full CLI
+  workflow test, consuming `@keri-ts/verifier` directly
 - is an application package, not a generic host framework abstraction for other
   packages
 
@@ -73,6 +84,8 @@ The supported package entrypoints are:
 - `packages/keri/db.ts`
 - `packages/keri/cli.ts` (separate command-helper boundary consumed by Tufa)
 - `packages/tufa/mod.ts`
+- `packages/tufa/runtime.ts` (host embedding operations)
+- `packages/verifier/mod.ts` (verifier application operations and data)
 
 The runtime barrel names supported operations and data explicitly; module
 wildcards must not silently expand that contract. npm exposes the named root,
@@ -90,11 +103,14 @@ Internal implementation zones remain internal unless deliberately exported:
 
 - `keri-ts` must not regain CLI entry ownership
 - `keri-ts` must not regain listener startup or Hono ownership
-- `tufa` may depend on `keri-ts`, but `keri-ts` may not depend on `tufa`
+- `tufa` may depend on `@keri-ts/verifier` and `keri-ts`; the verifier package
+  depends on public KERI/CESR surfaces and never on Tufa
+- `keri-ts` may not depend on either application package
 - `keri-ts` may depend on `cesr-ts`, but `cesr-ts` must remain independent of
   KERI or application hosting concerns
 - package-surface tests should validate behavior at the owning package boundary:
-  - `packages/tufa/test/**` for CLI, host, HTTP edge, and app-package behavior
+  - `packages/tufa/test/**` for CLI, host, HTTP edge, and composed CLI workflows
+  - `packages/verifier/test/**` for verifier workflow, policy and webhook behavior
   - `packages/keri/test/**` for library, runtime, and DB behavior
   - `packages/cesr/test/**` for CESR behavior
 

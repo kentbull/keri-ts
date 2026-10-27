@@ -10,7 +10,8 @@
   "workspaces": [
     "packages/tufa",
     "packages/keri",
-    "packages/cesr"
+    "packages/cesr",
+    "packages/verifier"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",

@@ -62,7 +62,7 @@ const RUNTIME_ENTRYPOINT_MARKER = "npm subpath entrypoint for `@keri-ts/tufa/run
 const BIN_ENTRYPOINT_MARKER = "run(() => tufa(argv.slice(2)))";
 const HOST_KERNEL_MARKER = "runHostKernel(";
 const PROTOCOL_HANDLER_MARKER = "Build the shared protocol handler used by the Deno and Node HTTP hosts.";
-const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/"];
+const BUNDLED_WORKSPACE_SOURCE_PATTERNS = ["/keri/src/", "/cesr/src/", "/verifier/src/"];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
   "libsodium-wrappers-sumo",
@@ -86,8 +86,10 @@ function resolveWorkspacePackageVersion(path: string): string {
 function dntPackageMappings(
   keriVersion: string,
   cesrVersion: string,
+  verifierVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
     "../keri/db.ts": { name: "keri-ts", version: keriVersion, subPath: "db" },
@@ -250,6 +252,8 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
   "../cesr/package.json",
 );
 
+const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
+
 await build({
   entryPoints: [ENTRYPOINT, RUNTIME_ENTRYPOINT, NODE_CLI_ENTRYPOINT],
   outDir: OUT_DIR,
@@ -257,7 +261,7 @@ await build({
     deno: true,
   },
   configFile: DENO_CONFIG_PATH,
-  mappings: dntPackageMappings(keriPackageVersion, cesrPackageVersion),
+  mappings: dntPackageMappings(keriPackageVersion, cesrPackageVersion, verifierPackageVersion),
   typeCheck: false,
   test: false,
   skipNpmInstall: true,
@@ -298,6 +302,7 @@ await build({
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
       "@deno/shim-deno": "~0.18.0",
+      "@keri-ts/verifier": verifierPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
@@ -323,6 +328,7 @@ await build({
     // assert no workspace sources remain in the artifact.
     removeIfExistsSync(`${OUT_DIR}/esm/keri`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/cesr`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);

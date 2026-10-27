@@ -223,6 +223,8 @@ jobs:
           echo "cesr=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
           cd ../../tufa/npm
           echo "tufa=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../verifier/npm
+          echo "verifier=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: smoke test exact packages on the minimum Node version
         env:
@@ -231,7 +233,8 @@ jobs:
           bash scripts/smoke-test-pr-packages-npm.sh \
             "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
-            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
+            "packages/verifier/npm/${{ steps.pack.outputs.verifier }}"
 
       - name: smoke test exact packages on Alpine
         env:
@@ -240,7 +243,8 @@ jobs:
           bash scripts/smoke-test-pr-packages-npm.sh \
             "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
-            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
+            "packages/verifier/npm/${{ steps.pack.outputs.verifier }}"
 
       - name: smoke test exact packages on pointer-compressed Node
         env:
@@ -254,7 +258,8 @@ jobs:
           bash scripts/smoke-test-pr-packages-npm.sh \
             "packages/keri/npm/${{ steps.pack.outputs.keri }}" \
             "packages/cesr/npm/${{ steps.pack.outputs.cesr }}" \
-            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}"
+            "packages/tufa/npm/${{ steps.pack.outputs.tufa }}" \
+            "packages/verifier/npm/${{ steps.pack.outputs.verifier }}"
 
       - name: retain packages on failure
         if: ${{ failure() }}
@@ -265,6 +270,7 @@ jobs:
             packages/keri/npm/${{ steps.pack.outputs.keri }}
             packages/cesr/npm/${{ steps.pack.outputs.cesr }}
             packages/tufa/npm/${{ steps.pack.outputs.tufa }}
+            packages/verifier/npm/${{ steps.pack.outputs.verifier }}
           if-no-files-found: ignore
           retention-days: 3
 

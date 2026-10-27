@@ -2,7 +2,7 @@
 import { resource, run } from "effection";
 import { assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { FetchHttpClient, type HttpStreamResponse } from "keri-ts/runtime";
-import { postWebhook } from "../../src/verifier/webhook.ts";
+import { postWebhook } from "../src/webhook.ts";
 
 Deno.test("webhook HTTP success cannot hide response cleanup failure", async () => {
   const failure = new Error("webhook response cleanup fault");

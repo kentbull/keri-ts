@@ -20,12 +20,17 @@ interface WorkspaceLock {
 }
 
 interface SyncTarget {
-  name: "tufa" | "keri" | "cesr";
+  name: "tufa" | "keri" | "cesr" | "verifier";
   packagePath: URL;
   denoPath: URL;
 }
 
 const TARGETS: SyncTarget[] = [
+  {
+    name: "verifier",
+    packagePath: new URL("../packages/verifier/package.json", import.meta.url),
+    denoPath: new URL("../packages/verifier/deno.json", import.meta.url),
+  },
   {
     name: "tufa",
     packagePath: new URL("../packages/tufa/package.json", import.meta.url),
