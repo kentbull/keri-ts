@@ -1139,13 +1139,24 @@ export class Baser {
 
   /**
    * Return whether an accepted event has its governing establishment's receipts.
-   * Unlike KERIpy Baser.fullyWitnessed's current-Kever lookup, later rotations
-   * cannot raise or lower this historical event's required witness threshold.
+   * Later rotations cannot raise or lower this historical event's required
+   * witness threshold.
+   * Reverify retained signatures against that event and count distinct witnesses;
+   * early event escrows may have stored attachments before witness verification.
    */
   fullyWitnessed(serder: SerderKERI): boolean {
     const establishment = this.acceptedEventEstablishment(serder);
-    return establishment !== null
-      && BigInt(this.wigs.get(dgKey(serder.pre!, serder.said!)).length) >= establishment.bner!.num;
+    if (!establishment) return false;
+    const witnesses = this.wits.get(dgKey(establishment.pre!, establishment.said!));
+    const threshold = establishment.bner!.num;
+    if (threshold === 0n) return witnesses.length === 0;
+    if (threshold < 1n || threshold > BigInt(witnesses.length)) return false;
+    const verified = Kever.verifyIndexedSignatures(
+      serder.raw,
+      this.wigs.get(dgKey(serder.pre!, serder.said!)),
+      witnesses.map((witness) => new Verfer({ qb64: witness.qb64 })),
+    );
+    return BigInt(verified.indices.length) >= threshold;
   }
 
   /**

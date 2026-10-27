@@ -9,6 +9,7 @@ import {
   Dater,
   Diger,
   FirstSeen,
+  IdrDex,
   Labeler,
   Noncer,
   NumberPrimitive,
@@ -534,6 +535,17 @@ for (const remaining of [0, 1]) {
         const anchor = issuer.kever!.serder;
         for (const event of [inception, anchor]) {
           witnessReceipt(hby, witnesses[0], event);
+          const signature = witnesses[0].sign(event.raw, true)[0];
+          hby.kevery.processReceipt({
+            serder: receipt(event.pre!, event.sn!, event.said!),
+            cigars: [],
+            wigers: [new Siger({ code: IdrDex.Ed25519_Crt_Sig, raw: signature.raw, index: 0 })],
+            tsgs: [],
+            local: false,
+          });
+          const stored = hby.db.wigs.get([event.pre!, event.said!]);
+          assertEquals(stored.map((sig) => sig.code), [IdrDex.Ed25519_Sig, IdrDex.Ed25519_Crt_Sig]);
+          assertEquals(stored.map((sig) => sig.index), [0, 0]);
           assertEquals(hby.db.fullyWitnessed(event), false);
         }
         issuer.rotate({ cuts: witnesses.slice(remaining).map((w) => w.pre), toad: remaining });
