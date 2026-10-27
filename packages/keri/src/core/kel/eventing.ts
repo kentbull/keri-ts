@@ -2743,7 +2743,9 @@ export class Kevery {
    *
    * Stored artifacts mirror the KERIpy event escrow model:
    * - `dtss.` for local escrow insertion time
-   * - `sigs.` / `wigs.` / `wits.` for verified attachment state
+   * - `sigs.` / `wigs.` for retained attachment candidates; early escrows may
+   *   precede their verification
+   * - `wits.` for the derived witness cohort when available
    * - `evts.` for the escrowed event body
    * - `udes.` for delegation or source-seal context when present
    * - `esrs.` for local/remote source provenance
