@@ -11,6 +11,12 @@ Deno.test("tholder: parses KERIpy numeric threshold vector", () => {
   assertEquals(typeof tholder.sith, "string");
   assertEquals(tholder.weighted, false);
   assertEquals(tholder.num !== null, true);
+
+  const threshold = new Tholder({ sith: 2 });
+  assertEquals(threshold.satisfy([0, 0]), false);
+  assertEquals(threshold.satisfy([1, 0]), true);
+  assertEquals(threshold.satisfy([0, 1, 0]), true);
+  assertEquals(new Tholder({ sith: 0 }).satisfy([0, 1]), false);
 });
 
 Deno.test("tholder: txt/qb2 parity", () => {

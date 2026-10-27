@@ -705,11 +705,10 @@ export class Tholder extends Matter {
   }
 
   /**
-   * Test whether the provided signer indices satisfy this threshold.
+   * Test whether already-verified signer indices satisfy this threshold.
    *
    * Maintainer model:
-   * - numeric thresholds are pure cardinality checks after deduplication is
-   *   handled by the caller or irrelevant to the count
+   * - numeric thresholds count distinct verified signer indices
    * - weighted thresholds project indices onto consecutive signer slots from
    *   left to right across clauses and nested-group members
    * - each clause must accumulate at least weight `1`
@@ -718,7 +717,7 @@ export class Tholder extends Matter {
     if (!this._weighted) {
       return this._num !== null
         && this._num > 0n
-        && BigInt(indices.length) >= this._num;
+        && BigInt(new Set(indices).size) >= this._num;
     }
     if (indices.length === 0) {
       return false;
