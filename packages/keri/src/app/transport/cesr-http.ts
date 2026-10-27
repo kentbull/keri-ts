@@ -7,7 +7,7 @@
  * - default behavior is one CESR message per HTTP request with the message body
  *   in the request body and attachments in `CESR-ATTACHMENT`
  */
-import { parseBytes, parseSerder, requireFlatFrame, SerderKERI, smell } from "cesr-ts";
+import { Counter, parseBytes, parseSerder, requireFlatFrame, SerderKERI, smell } from "cesr-ts";
 import { ValidationError } from "../../core/errors.ts";
 import { collectBytes, streamBytes } from "./byte-source.ts";
 
@@ -89,8 +89,8 @@ export function buildCesrStreamRequest(bytes: Uint8Array, { destination }: {
 /**
  * Reconstruct one logical CESR payload from an incoming HTTP request.
  *
- * In header mode this reattaches `CESR-ATTACHMENT` bytes to the parsed message
- * body so downstream parsing always sees the canonical CESR byte stream.
+ * Header mode restores the declared `CESR-Genus` before the unchanged body and
+ * appends `CESR-ATTACHMENT`; body protocol version does not select that context.
  */
 export function requestBytes(
   req: Request,
@@ -99,8 +99,17 @@ export function requestBytes(
   return read();
   /** Acquire the body lazily, then append detached attachments in their original order. */
   async function* read(): AsyncGenerator<Uint8Array> {
+    const cesr = isCesrContentType(req.headers.get("content-type"));
+    const genus = cesr ? req.headers.get("CESR-Genus") : null;
+    if (genus !== null) {
+      if (genus !== "1" && genus !== "2") {
+        throw new ValidationError("CESR-Genus must be 1 or 2");
+      }
+      (options.signal ?? req.signal).throwIfAborted();
+      yield Counter.makeGVC({ major: genus === "1" ? 1 : 2, minor: 0 });
+    }
     const attachment = req.headers.get(CESR_ATTACHMENT_HEADER);
-    const tail = attachment && isCesrContentType(req.headers.get("content-type"))
+    const tail = attachment && cesr
       ? textEncoder.encode(attachment)
       : null;
     yield* streamBytes(req.body, { signal: req.signal, ...options });

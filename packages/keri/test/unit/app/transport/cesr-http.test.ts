@@ -4,10 +4,11 @@
  * These scenarios pin the mailbox and exchange framing behavior that must stay
  * aligned with ordinary signed POSTs and specialized finite raw-body requests.
  */
-import { attachmentPayload, collectPayload, parseBytes } from "cesr-ts";
+import { attachmentPayload, collectPayload, Counter, parseBytes } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { concatBytes } from "../../../../../cesr/mod.ts";
+import { KERIPY_V1_JSON_ICP_BODY } from "../../../../../cesr/test/fixtures/external-vectors.ts";
 import { acdcatt } from "../../../../src/acdc/messaging.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import {
@@ -20,6 +21,7 @@ import {
   readCesrRequestBytes,
   readRequiredCesrRequestBytes,
 } from "../../../../src/app/transport/cesr-http.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 
 function makeEmbeddedExchangeMessage(
@@ -103,6 +105,48 @@ Deno.test("CESR HTTP - header mode splits attachments into the CESR header", asy
       }),
     ),
     message,
+  );
+
+  // Detached counters follow the declared genus independently of the signed body.
+  const body = new TextEncoder().encode(KERIPY_V1_JSON_ICP_BODY);
+  for (const major of [2, 1] as const) {
+    const version = { major, minor: 0 } as const;
+    const tail = major === 2
+      ? Counter.enclose({ code: "ESSRPayloadGroup", qb64: "4BABYWJj4BABeHl6", version })
+      : new Uint8Array();
+    const bytes = await readCesrRequestBytes(
+      new Request("https://peer.test/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/cesr",
+          "CESR-Genus": String(major),
+          [CESR_ATTACHMENT_HEADER]: new TextDecoder().decode(tail),
+        },
+        body,
+      }),
+    );
+    assertEquals(bytes, concatBytes(Counter.makeGVC(version), body, tail));
+    const frames = [];
+    for await (const frame of parseBytes(bytes)) frames.push(frame);
+    assertEquals(frames.length, 1);
+    assertEquals(frames[0].body.pvrsn, { major: 1, minor: 0 });
+    assertEquals(frames[0].gvrsn, version);
+    assertEquals(
+      concatBytes(...frames[0].essrs?.map((part) => part.raw) ?? []),
+      new TextEncoder().encode(major === 2 ? "abcxyz" : ""),
+    );
+  }
+  await assertRejects(
+    () =>
+      readCesrRequestBytes(
+        new Request("https://peer.test/", {
+          method: "POST",
+          headers: { "Content-Type": "application/cesr", "CESR-Genus": "3" },
+          body,
+        }),
+      ),
+    ValidationError,
+    "CESR-Genus must be 1 or 2",
   );
 });
 
