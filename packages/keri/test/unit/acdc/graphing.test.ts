@@ -1,9 +1,11 @@
+import { type MapperMap, SerderACDC } from "cesr-ts";
 /** ACDC identity relations use independently verified KELs, including witness exemptions. */
 import { ensure, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { type AcdcGraph, evaluateAcdcRelations } from "../../../src/acdc/graphing.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 import { delegationChain, graph, learn, witnessed } from "../../fixtures/acdc-delegation.ts";
 
 /** These relation fixtures are unregistered; signed grants exercise authentication separately. */
@@ -145,7 +147,7 @@ Deno.test("IPEX identity operators use wire order and targeted defaults", async 
         [["I2I", "NI2I"], true],
         [["NI2I", "I2I"], false],
         [[], false],
-        [["unsupported"], false],
+        [["unsupported"], null],
       ] as const
     ) assertEquals(evaluateRelations(graph(issuer, issuee, [...ops]), validator.db), result, ops.join(","));
     assertEquals(evaluateRelations(graph(issuer, undefined, []), validator.db), true);
@@ -179,6 +181,140 @@ Deno.test("E1E keeps entity matching independent from explicit issuer identity c
         dependencyOrder: [far.said!, near.said!],
       };
       assertEquals(evaluateRelations(evidence, validator.db), expected);
+    }
+    for (const aggregate of [false, true]) {
+      const full = acdcmap(
+        issuer,
+        aggregate
+          ? { aggregate: ["", { d: "", i: issuee, name: "far" }] }
+          : { issuee, attribute: { d: "", name: "far" } },
+      );
+      const block = aggregate ? (full.sad!.A as MapperMap[])[1] : full.sad!.a as MapperMap;
+      const hidden = new SerderACDC({
+        sad: {
+          ...full.sad!,
+          ...(aggregate
+            ? { A: [(full.sad!.A as unknown[])[0], block.d] }
+            : { a: block.d }),
+        },
+        makify: true,
+      });
+      assertEquals(hidden.said, full.said, "visibility changes do not change the credential commitment");
+      const malformed = acdcmap(
+        issuer,
+        aggregate
+          ? { aggregate: ["", { d: "", i: 42, name: "far" }] }
+          : { attribute: { d: "", i: 42, name: "far" } },
+      );
+      assertEquals(malformed.verify(), true, "malformed visible identity is representable");
+      for (const view of [hidden, malformed]) {
+        for (
+          const [op, expected] of [[[], null], [["I2I"], null], [["DI2I"], null], [["NI2I"], true], [
+            ["NOT", "NI2I"],
+            false,
+          ], [["E1E"], null]] as const
+        ) {
+          const near = acdcmap(issuer, {
+            ...(view === malformed
+              ? { attribute: { d: "", i: 42, name: "near" } }
+              : { issuee, attribute: { d: "", name: "near" } }),
+            edge: { d: "", link: { n: view.said, o: [...op] } },
+          });
+          const evidence: AcdcGraph = {
+            nodes: new Map([[near.said!, { body: near }], [view.said!, { body: view }]]),
+            order: [near.said!, view.said!],
+            dependencyOrder: [view.said!, near.said!],
+          };
+          assertEquals(
+            evaluateRelations(evidence, validator.db),
+            expected,
+            `${view === hidden ? "hidden" : "malformed"} Issuee ${aggregate ? "aggregate" : "attribute"}: ${op}`,
+          );
+          if (op.some((operator) => operator === "E1E")) {
+            const hiddenNear = new SerderACDC({ sad: { ...near.sad!, a: (near.sad!.a as MapperMap).d }, makify: true });
+            assertEquals(
+              evaluateRelations({
+                ...evidence,
+                nodes: new Map([[near.said!, { body: hiddenNear }], [view.said!, {
+                  body: view === hidden ? full : view,
+                }]]),
+              }, validator.db),
+              null,
+              "hidden near Issuee is unresolved too",
+            );
+          }
+        }
+      }
+    }
+  });
+});
+
+Deno.test("ACDC groups accumulate every schema pin and preserve unresolved Boolean members", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const issuer = hby.makeHab("issuer"), other = hby.makeHab("other");
+    const far = acdcmap(issuer.pre, { issuee: other.pre, attribute: { d: "", name: "authority" } });
+    const evaluate = (edge: MapperMap) => {
+      const near = acdcmap(issuer.pre, { attribute: { d: "", name: "near" }, edge });
+      return evaluateRelations({
+        nodes: new Map([[near.said!, { body: near }], [far.said!, { body: far }]]),
+        order: [near.said!, far.said!],
+        dependencyOrder: [far.said!, near.said!],
+      }, hby.db);
+    };
+    const pin = (name: string) =>
+      new Schemer({
+        sed: {
+          $id: "",
+          version: "1.0.0",
+          type: "object",
+          properties: { a: { properties: { name: { const: name } } } },
+        },
+      });
+    const allow = pin("authority"), refuse = pin("another"), missing = pin("uncached");
+    for (
+      const [ancestor, expected] of [[allow.sed as MapperMap, true], [refuse.sed as MapperMap, false], [missing.said, {
+        kind: "missing",
+        said: missing.said,
+      }], [false, null]] as const
+    ) {
+      assertEquals(
+        evaluate({
+          d: "",
+          group: {
+            s: ancestor,
+            nested: { s: allow.sed as MapperMap, link: { n: far.said, s: allow.sed as MapperMap, o: "NI2I" } },
+          },
+        }),
+        expected,
+        "local pins cannot replace ancestor constraints",
+      );
+    }
+    assertEquals(
+      evaluate({ d: "", link: { n: far.said, s: (far.schema as MapperMap).$id, o: "NI2I" } }),
+      true,
+      "an inline own schema is available but still validates the payload",
+    );
+    for (const op of ["AND", "OR", "NAND", "NOR"]) {
+      for (const allTrue of [false, true]) {
+        const member = { n: far.said, o: allTrue ? "NI2I" : "I2I" };
+        const expected = op === "AND" || op === "OR" ? allTrue : !allTrue;
+        assertEquals(evaluate({ d: "", o: op, left: member, right: member }), expected, `${op} uniform operands`);
+      }
+      assertEquals(
+        evaluate({ d: "", o: op, left: { n: far.said, o: "I2I" }, right: { n: far.said, o: "NI2I" } }),
+        op === "OR" || op === "NAND",
+      );
+      for (const reverse of [false, true]) {
+        const members = [{ n: far.said, o: "NI2I" }, { n: far.said, o: "UNKNOWN" }];
+        if (reverse) members.reverse();
+        assertEquals(
+          evaluate({ d: "", o: op, first: members[0], second: members[1] }),
+          null,
+          `${op} cannot hide unknown in either order`,
+        );
+      }
     }
   });
 });

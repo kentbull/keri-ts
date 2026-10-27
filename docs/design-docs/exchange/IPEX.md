@@ -5,7 +5,7 @@ retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
 supply an independent issuer proof for every child. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
-signatures. Parent proofs never authenticate children. TS supports DI2I and NOT
+signatures. Parent proofs never authenticate children. The separate ACDC evaluator supports I2I/NI2I/DI2I, E1E and NOT
 under the profiles below. Selected-candidate operator interoperability remains
 separately qualified in the later graph work. The
 [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
@@ -57,11 +57,11 @@ still require the endorser's current establishment keys. This matches main
 `c7e74ad`; rotation does not erase a permanent KEL commitment.
 The selected candidate validates every carried metadata-offer node without
 withheld issuer proofs. Grants verify disclosure and Offer fulfillment, then
-every issuer, own-node schemas, edge semantics/schema pins, and presentation
-obligations in that order. Explicit/inherited edge schemas validate decoded far
-credentials; equal schema IDs never waive constraints. Missing local resources
-use schema EXN escrow; invalid schemas reject, infrastructure/resource failures
-propagate. Operator-specific interoperability remains separately qualified; hidden aggregate
+every issuer, own-node schemas and presentation obligations in that order. IPEX
+retention makes no relation or application-use verdict. Own/disclosure schema
+resources use schema EXN escrow; invalid own schemas reject and infrastructure
+failures propagate. Semantic pin/delegation dependencies belong to the separate
+evaluator and never require EXN replay. Operator-specific interoperability remains separately qualified; hidden aggregate
 and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
 are separate work. The existing wire generator now records the selected candidate
 pin and its flat-plan decisions; independent historical primitive references stay frozen.
@@ -99,9 +99,11 @@ depth. Every hop needs the delegator's accepted approval of the delegated incept
 local/witness-held `delpre` alone is no authority. Read DND from each delegator's
 inception, independently of protected KEL acceptance. Later delegate rotations do
 not renew the inception relationship. Missing KEL/approval evidence is a typed
-proof dependency, not a permanent invalidity verdict; lookup never repairs storage.
+evaluator dependency, not an EXN escrow or permanent invalidity verdict; lookup never repairs storage.
 Identity operators I2I/NI2I/DI2I conflict in wire order, with the last operative one
-winning. Without one, targeted far nodes default to I2I and untargeted nodes to NI2I.
+winning. Without one, visible targeted far nodes default to I2I and visible
+untargeted nodes to NI2I. A hidden attribute/first-aggregate-member Issuee cannot
+prove that default or E1E equality and stays unresolved.
 E1E remains the reference entity-comparison extension: on its own it does not
 imply I2I; an explicit identity operator adds that separate requirement.
 This profile follows the [operator specification](https://trustoverip.github.io/kswg-acdc-specification/#operator-o-field)
@@ -115,15 +117,24 @@ including shared ancestors. All nodes must first authenticate and pass their own
 schemas. A disproved far-node edge relationship or authenticated revoked issuance
 can supply false; missing/forged evidence, malformed graphs/operators/schemas and
 unknown state cannot. Valid edge schemas may disprove a payload constraint;
-invalid schema resources remain refusal, distinguished by typed validation facts.
-AND/OR reductions never hide malformed input or dependencies behind a sibling.
+malformed semantic schema resources remain unresolved, distinct from false.
+Every ancestor and local pin is an additional constraint; inline own-schema IDs
+still validate the far payload. AND/OR/NAND/NOR never hide an unresolved member
+behind a decisive sibling. `evaluateAcdcRelations` returns Boolean, null or an
+existing typed issue; applications must require an explicit true result.
 
 The issuance vocabulary is only `issued`/`revoked`, from the receiver's accepted
-RegistryObserver evidence at each fresh validation, including escrow retries.
+RegistryObserver evidence at each explicit policy evaluation.
 This is local accepted knowledge, not a global freshness guarantee. Obsolete
 blinders against a newer accepted head fail authentication before negation.
 The origin's own issuance status is not a wallet-acceptance gate for transporting
 that disclosed message; referenced far nodes carry the validity requirement.
+Current consuming TS CLI/group/credentialing and Tufa verifier flows use legacy
+e.acdc/iss/anc artifacts; native nested Grants are refused or skipped there. There
+is no native action workflow to retrofit in this cut. Runtime composition, EXN
+completion and retained presentation evidence do not substitute for explicit
+semantic approval; later native wallet/verifier actions must call the evaluator.
+
 Later updates do not rewrite accepted conversation history. New grants and
 explicit validation re-evaluate current evidence; no background invalidation,
 policy scheduler or new persistence is implied. Presentation checks retain their

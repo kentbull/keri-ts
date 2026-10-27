@@ -178,9 +178,10 @@ After disclosure checks, a Grant must fulfill its exact accepted Offer: identica
 root, or metadata with matching issuer, promised registry and every nonempty
 section commitment. Compare only Serder-verified d/$id/AGID claims; missing named
 metadata uses proof escrow, known contradictions reject. Then verify each node's
-independent issuer proof, own schema, edge pins and presentation obligations.
-The edge evaluator lives in `acdc/graphing.ts`; IPEX passes its borrowed frame-valued
-graph structurally at this same point. The single IPEX walker still owns flat nested
+independent issuer proof, own schema and presentation obligations.
+The separate `acdc/graphing.ts` evaluator reads borrowed authenticated evidence;
+IPEX does not call it or escrow its semantic dependencies. A retained Grant may
+have false or unresolved relations; consuming actions require explicit true. The single IPEX walker still owns flat nested
 frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Shared
 edge block/label syntax belongs to ACDC, without moving conversation policy.
 `ipex-node-authentication` reads only Baser/RegistryStore and returns authenticated
@@ -192,17 +193,19 @@ Same-schema identity never bypasses payload constraints; missing schema is a
 typed dependency, while infrastructure/resource failures propagate.
 DI2I permits identity or an approved inception chain at any depth. Read each
 delegator's inception DND and accepted approval; protected/witness-held delpre is
-not authority. Missing KEL/approval evidence stays in proof escrow. Later rotations
+not authority. Missing KEL/approval for DI2I is an evaluator dependency, without EXN replay or escrow. Later rotations
 or witness changes do not renew the relationship, and lookup does not write hints.
-The last explicit I2I/NI2I/DI2I wins. Targeted far nodes default to I2I, untargeted
-to NI2I; the reference E1E extension retains entity-only matching when identity is
+Every ancestor and local schema pin accumulates; a child cannot release a parent constraint.
+The last explicit I2I/NI2I/DI2I wins. Visible targeted far nodes default to I2I, visible untargeted
+to NI2I; hidden Issuees cannot establish that default or E1E equality; the reference E1E extension retains entity-only matching when identity is
 not explicit. NOT inverts authenticated far-node validity after all issuer/own
 schema prerequisites, in dependency order independent of BFS disclosure order.
 Near identity/extra schema constraints are not inverted. Issued/revoked is the
 only supported issuer-state vocabulary, evaluated from accepted observer state
-at each fresh validation/retry. Missing/stale/forged proofs, malformed schemas or
-operators and unknown custom states cannot satisfy negation. Own schema failure
-is refusal; a valid edge schema can disprove a relationship. Historical accepted
+at each explicit policy evaluation. Missing/stale/forged proofs, malformed schemas or
+operators and unknown custom states cannot satisfy negation. Malformed semantic pins and hidden
+identity return unresolved, not false. AND/OR/NAND/NOR cannot hide unresolved members behind
+a decisive sibling. Own schema failure rejects intake; a valid edge schema can disprove a relationship. Historical accepted
 grants remain evidence; no automatic revalidation or global freshness is implied.
 Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require

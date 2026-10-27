@@ -14,8 +14,7 @@ import {
   SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { evaluateAcdcRelations } from "../../acdc/graphing.ts";
-import { type RegistryState, validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
+import { validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
@@ -164,7 +163,6 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     const fulfilled = this.offerFulfilled(previous, origin, graph);
     if (fulfilled !== true) return fulfilled;
-    const registrations = new Map<string, RegistryState>();
     for (const said of graph.order) {
       const frame = graph.nodes.get(said)!;
       const envelope = envelopeFromFrame(frame);
@@ -172,17 +170,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       const result = authenticateIpexNode(frame.body, envelope, this.hby.db, this.registry);
       if (result.kind === "missing") return missing(result.reason);
       if (result.kind === "reject") return false;
-      if (result.registration) registrations.set(said, result.registration);
     }
     const schemas = this.nodeSchemas(graph);
     if (schemas !== true) return schemas;
-    const relations = evaluateAcdcRelations(graph, this.hby.db, registrations);
-    if (typeof relations === "object") {
-      if (relations.kind === "unknownState") return false;
-      if (relations.kind === "missingKel") return missing(`Missing delegation KEL approval for ${relations.pre}.`);
-      return { kind: "escrow", reason: "Missing edge schema.", schema: relations.said };
-    }
-    if (!relations) return false;
     if (!evidence) return false; // Exchanger must supply its selected supplemental factor set.
     const tethered = new Set<string>();
     for (const said of graph.order) {
