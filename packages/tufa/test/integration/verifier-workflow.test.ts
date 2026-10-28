@@ -1,4 +1,4 @@
-import { createProtocolHandler, SourceTrust } from "@keri-ts/hosting";
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
 import { AcdcV2Verifier, createVerifierCueBaser, VerifierAgent } from "@keri-ts/verifier";
 import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
@@ -34,8 +34,10 @@ import {
   systemClock,
 } from "keri-ts/runtime";
 import { createObservationBaser, Observer } from "../../../observer/mod.ts";
-import { certificate, framed, kel, serveTls } from "../../../observer/test/fixtures/service.ts";
+import { framed, kel, serveTls, wrongCertificate } from "../../../observer/test/fixtures/service.ts";
 import { startStaticHttpHost } from "../verifier/fixtures.ts";
+
+const certificate = new URL("../verifier/localhost.pem", import.meta.url).pathname;
 
 interface CmdResult {
   code: number;
@@ -166,6 +168,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
   const env = {
     ...Deno.env.toObject(),
     KERI_LMDB_MAP_SIZE: "134217728",
+    DENO_CERT: certificate,
   };
   const passcode = "MyPasscodeARealSecret";
   const issuerName = `issuer-${crypto.randomUUID().slice(0, 8)}`;
@@ -482,17 +485,24 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         });
         let sourceQueries = 0;
         observerServer = yield* call(() =>
-          serveTls(pem, request => {
+          serveTls(pem, async request => {
             sourceQueries++;
-            return observer.handle(request);
+            const path = new URL(request.url).pathname;
+            let response: Response;
+            if (path === "/redirect") {
+              response = new Response(null, { status: 302, headers: { Location: "/" } });
+            } else if (path === "/slow") {
+              await new Promise(resolve => setTimeout(resolve, 50));
+              response = await observer.handle(new Request(new URL("/", request.url), request));
+            } else {
+              response = await observer.handle(request);
+            }
+            response.headers.set("Connection", "close");
+            return response;
           })
         );
         assertEquals(yield* observer.pullOnce(observerHab), 1);
-        const sourceTrust = new SourceTrust({
-          url: `https://127.0.0.1:${observerServer.addr.port}/`,
-          caFile: certificate,
-          certName: "localhost",
-        });
+        const observationUrl = `https://localhost:${observerServer.addr.port}/`;
         const exn = ipexExnBody(holder.pre, "/ipex/grant", [partial], {
           recipient: verifierPre,
           xid: new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64,
@@ -504,18 +514,40 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         const wire = yield* call(() => collectPayload(framePayload(outer)));
         yield* receiver.reactor.processBytes(wire);
         assertEquals(receiver.exc.complete(exn.said!), true);
-        const options = { source: sourceTrust, maximumAgeMs: 15000, requestTimeoutMs: 5000, now: () => now };
+        const options = { source: observationUrl, maximumAgeMs: 15000, requestTimeoutMs: 5000, now: () => now };
         let acdcV2 = new AcdcV2Verifier(
           verifierHby,
           verifierHby.habByName("verifier")!,
           receiver.exc,
           new Registrar(receiver.protocol, receiver.acdc!.store),
+          http,
           options,
         );
         const beforeInspection = { sourceQueries, cues: receiver.cues.length, counts: cues.getCounts() };
         const historical = acdcV2.inspectHistorical(exn.said!);
         assertEquals({ sourceQueries, cues: receiver.cues.length, counts: cues.getCounts() }, beforeInspection);
         assertEquals(historical.credential!.sad, partial.sad);
+        for (
+          const [endpoint, timeout, expected] of [
+            [observationUrl.replace("localhost", "127.0.0.1"), 5000, "missing"],
+            [observationUrl + "redirect", 5000, "missing"],
+            [observationUrl + "slow", 5000, "issued"],
+            [observationUrl + "slow", 1.5, "missing"],
+          ] as const
+        ) {
+          const queryCount = sourceQueries;
+          const refusedSource = new AcdcV2Verifier(
+            verifierHby,
+            verifierHby.habByName("verifier")!,
+            receiver.exc,
+            new Registrar(receiver.protocol, receiver.acdc!.store),
+            http,
+            { ...options, source: endpoint, requestTimeoutMs: timeout },
+          );
+          assertEquals((yield* refusedSource.verifyCurrent(exn.said!)).kind, expected);
+          if (endpoint.includes("127.0.0.1")) assertEquals(sourceQueries, queryCount);
+          if (endpoint.endsWith("redirect")) assertEquals(sourceQueries, queryCount + 1, "redirect is not followed");
+        }
         assertEquals((yield* acdcV2.verifyCurrent(exn.said!)).kind, "issued");
         const agent = () =>
           new VerifierAgent(
@@ -532,27 +564,34 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         yield* cues.close();
         yield* receiver.close();
         yield* verifierHby.close();
-        const acdcV2Run = yield* call(() =>
-          runTufa([
-            "verifier",
-            "run",
-            ...storeArgs(verifierName, headDirPath, passcode),
-            "--acdc-v2",
-            "--alias",
-            "verifier",
-            "--observer",
-            sourceTrust.url,
-            "--observer-ca",
-            certificate,
-            "--observer-cert-name",
-            "localhost",
-            "--maximum-age-ms",
-            "60000",
-            "--hook",
-            `${hook.origin}/hook`,
-            "--once",
-          ], env)
+        const observationConfig = `${headDirPath}/verifier-policy.json`;
+        yield* call(() =>
+          Deno.writeTextFile(
+            observationConfig,
+            JSON.stringify({
+              observation: { url: observationUrl, maximumAgeMs: 60000 },
+            }),
+          )
         );
+        const acdcV2Args = [
+          "verifier",
+          "run",
+          ...storeArgs(verifierName, headDirPath, passcode),
+          "--acdc-v2",
+          "--alias",
+          "verifier",
+          "--config",
+          observationConfig,
+          "--hook",
+          `${hook.origin}/hook`,
+          "--once",
+        ];
+        const hooksBeforeTrust = webhookBodies.length;
+        const untrusted = yield* call(() => runTufa(acdcV2Args, { ...env, DENO_CERT: wrongCertificate }));
+        assertEquals(untrusted.code, 0, untrusted.stdout + untrusted.stderr);
+        assertEquals((parseJsonLine(untrusted.stdout).result as Record<string, unknown>).webhooksSent, 0);
+        assertEquals(webhookBodies.length, hooksBeforeTrust, "untrusted HTTPS cannot approve current use");
+        const acdcV2Run = yield* call(() => runTufa(acdcV2Args, env));
         assertEquals(acdcV2Run.code, 0, acdcV2Run.stdout + acdcV2Run.stderr);
         assertEquals((parseJsonLine(acdcV2Run.stdout).result as Record<string, unknown>).webhooksSent, 1);
         verifierHby = yield* createHabery({ name: verifierName, headDirPath, bran: passcode, skipConfig: true });
@@ -563,6 +602,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
           verifierHby.habByName("verifier")!,
           receiver.exc,
           new Registrar(receiver.protocol, receiver.acdc!.store),
+          http,
           options,
         );
         assertEquals([
@@ -613,6 +653,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
           verifierHby.habByName("verifier")!,
           receiver.exc,
           new Registrar(receiver.protocol, receiver.acdc!.store),
+          http,
           options,
         );
         assertEquals(acdcV2.inspectHistorical(exn.said!), historical);

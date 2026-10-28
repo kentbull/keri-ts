@@ -16,8 +16,7 @@
     "keri-ts/db": "../keri/db.ts",
     "keri-ts/runtime": "../keri/runtime.ts",
     "effection": "npm:effection@^3.6.0",
-    "@keri-ts/registrar": "../registrar/mod.ts",
-    "@keri-ts/hosting": "../hosting/mod.ts"
+    "@keri-ts/registrar": "../registrar/mod.ts"
   },
   "compilerOptions": {
     "lib": [

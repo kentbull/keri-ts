@@ -1,4 +1,3 @@
-import { SourceTrust } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
 import { AcdcV2Verifier, createVerifierCueBaser, validatorsFromVerifierConfig, VerifierAgent } from "@keri-ts/verifier";
 import type { Versionage } from "cesr-ts";
@@ -45,18 +44,11 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
   const hook = runArgs.hook!;
   const acdcV2 = parseBooleanOption(args.acdcV2, "acdc-v2") ?? false;
   const alias = parseStringOption(args.alias, "alias");
-  const maximumAgeMs = numberArg(args.maximumAgeMs, 15000, "maximumAgeMs")!;
-  const requestTimeoutMs = numberArg(args.sourceTimeoutMs, 5000, "sourceTimeoutMs")!;
-  if (acdcV2 && (!alias || maximumAgeMs <= 0 || requestTimeoutMs <= 0)) {
-    throw new ValidationError("ACDC v2 verifier requires alias and positive source age/timeouts.");
+  if (acdcV2 && !alias) {
+    throw new ValidationError("ACDC v2 verifier requires alias.");
   }
-  const source = acdcV2
-    ? new SourceTrust({
-      url: requireOption(args.observer, "observer"),
-      caFile: parseStringOption(args.observerCa, "observer-ca"),
-      certName: parseStringOption(args.observerCertName, "observer-cert-name"),
-    })
-    : undefined;
+  const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
+  const observation = acdcV2 ? observationConfig(config) : undefined;
 
   const completed = yield* withAgentRuntime(
     runArgs,
@@ -77,18 +69,22 @@ export function* verifierRunCommand(args: Record<string, unknown>): Operation<vo
       });
       let failure: { error: unknown } | undefined;
       try {
-        const config = runArgs.config ? JSON.parse(Deno.readTextFileSync(runArgs.config)) : {};
         const acdcV2Hab = alias ? hby.habByName(alias) : null;
         if (acdcV2 && (!acdcV2Hab || !runtime.acdc)) {
           throw new ValidationError("ACDC v2 verifier identity or registry store is unavailable.");
         }
         const acdcV2Verifier = acdcV2
-          ? new AcdcV2Verifier(hby, acdcV2Hab!, runtime.exc, new Registrar(runtime.protocol, runtime.acdc!.store), {
-            source: source!,
-            maximumAgeMs,
-            requestTimeoutMs,
-            now: () => runtime.clock.now(),
-          })
+          ? new AcdcV2Verifier(
+            hby,
+            acdcV2Hab!,
+            runtime.exc,
+            new Registrar(runtime.protocol, runtime.acdc!.store),
+            runtime.http,
+            {
+              ...observation!,
+              now: () => runtime.clock.now(),
+            },
+          )
           : undefined;
         const agent = new VerifierAgent(
           hby,
@@ -167,9 +163,19 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Strict source configuration is parsed before opening application stores. */
-function requireOption(value: unknown, label: string): string {
-  const text = parseStringOption(value, label);
-  if (!text) throw new ValidationError(`--${label} is required.`);
-  return text;
+/** Application observation policy shares the existing schema-policy config and validates before stores open. */
+function observationConfig(config: unknown): { source: string; maximumAgeMs: number; requestTimeoutMs: number } {
+  const observation = isRecord(config) && isRecord(config.observation) ? config.observation : {};
+  const source = parseStringOption(observation.url, "observation.url");
+  if (!source) throw new ValidationError("observation.url is required for ACDC v2 verification.");
+  const url = new URL(source);
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+    throw new ValidationError("observation.url must be HTTPS without credentials, query or fragment.");
+  }
+  const maximumAgeMs = numberArg(observation.maximumAgeMs, 15000, "observation.maximumAgeMs")!;
+  const requestTimeoutMs = numberArg(observation.requestTimeoutMs, 5000, "observation.requestTimeoutMs")!;
+  if (maximumAgeMs <= 0 || requestTimeoutMs <= 0) {
+    throw new ValidationError("Observation age and timeout must be positive.");
+  }
+  return { source, maximumAgeMs, requestTimeoutMs };
 }

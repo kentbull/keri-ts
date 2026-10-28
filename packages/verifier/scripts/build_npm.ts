@@ -13,7 +13,6 @@ import {
 const OUT_DIR = "./npm";
 const ROOT_MARKER = "Verifier application package entrypoint.";
 const keriVersion = readPackageVersionSync("../keri/package.json");
-const hostingVersion = readPackageVersionSync("../hosting/package.json");
 const registrarVersion = readPackageVersionSync("../registrar/package.json");
 const cesrVersion = readPackageVersionSync("../cesr/package.json");
 
@@ -25,7 +24,6 @@ await build({
   shims: { deno: true },
   configFile: new URL("../deno.json", import.meta.url).href,
   mappings: {
-    "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
     "../keri/db.ts": { name: "keri-ts", version: keriVersion, subPath: "db" },
@@ -55,7 +53,6 @@ await build({
     files: ["esm", "types", "README.md", "LICENSE"],
     dependencies: {
       "@deno/shim-deno": "~0.18.0",
-      "@keri-ts/hosting": hostingVersion,
       "@keri-ts/registrar": registrarVersion,
       "cesr-ts": cesrVersion,
       "keri-ts": keriVersion,

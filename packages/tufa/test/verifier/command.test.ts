@@ -15,16 +15,12 @@ Deno.test({
       hook: "http://unused.test/",
       acdcV2: true,
       alias: "verifier",
-      observer: "https://observer.test/",
     };
     await assertRejects(
-      () => run(() => verifierRunCommand({ ...acdcV2, observer: "http://observer.test/" })),
+      () => run(() => verifierRunCommand(acdcV2)),
       ValidationError,
-      "HTTPS",
+      "observation.url",
     );
-    for (const key of ["maximumAgeMs", "sourceTimeoutMs"] as const) {
-      await assertRejects(() => run(() => verifierRunCommand({ ...acdcV2, [key]: 0 })), ValidationError, "positive");
-    }
     for (const intervalMs of [null, "", false, [], Infinity, -1]) {
       await assertRejects(() => run(() => verifierRunCommand({ intervalMs })), ValidationError, "intervalMs");
     }
@@ -38,6 +34,34 @@ Deno.test("verifier command preserves owned-close failures and reports success o
     const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
     yield* hby.close();
   });
+  const config = `${headDirPath}/verifier.json`;
+  for (
+    const observation of [
+      {},
+      { url: "http://observer.test/" },
+      { url: "https://user@observer.test/" },
+      { url: "https://observer.test/?query=1" },
+      { url: "https://observer.test/#fragment" },
+      { url: "https://observer.test/", maximumAgeMs: 0 },
+      { url: "https://observer.test/", requestTimeoutMs: -1 },
+    ]
+  ) {
+    await Deno.writeTextFile(config, JSON.stringify({ observation }));
+    await assertRejects(
+      () =>
+        run(() =>
+          verifierRunCommand({
+            name,
+            headDirPath,
+            hook: "http://unused.test/",
+            acdcV2: true,
+            alias: "verifier",
+            config,
+          })
+        ),
+      ValidationError,
+    );
+  }
   const close = VerifierCueBaser.prototype.close, processOnce = VerifierAgent.prototype.processOnce;
   const log = console.log, lines: unknown[][] = [];
   const closeFailure = new Error("cue store close fault"), operationFailure = new Error("verifier operation fault");

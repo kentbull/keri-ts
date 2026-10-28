@@ -312,6 +312,11 @@ states. Known revoked far nodes remain Boolean False; opaque/malformed/missing
 material cannot authorize use. Public source openings are current proof inputs,
 never fuller credential-view substitution. Failed ready webhooks recheck standing
 before another attempt; source observation never proves global latest state.
+Verifier observation URL/age/deadline belong in its existing application JSON config.
+It borrows `runtime.http` with ordinary HTTPS certificate/hostname trust, refuses
+redirects and clears its finite request timer. Only its own deadline or transport
+failure becomes missing observation; unrelated cancellation, cleanup and storage
+failures propagate. Observer-to-registrar source trust remains a separate owner.
 
 ## Interoperability traps
 
