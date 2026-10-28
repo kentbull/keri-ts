@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/wallet",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Explicit local ACDC credential inventory and admission",
   "license": "Apache-2.0",
   "repository": {

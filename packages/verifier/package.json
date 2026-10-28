@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/verifier",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Credential verifier application policy, workflow storage and webhooks",
   "license": "Apache-2.0",
   "repository": {

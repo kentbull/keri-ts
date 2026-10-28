@@ -1,5 +1,13 @@
 # cesr-ts
 
+## 2.0.1
+
+### Patch Changes
+
+- 11fd64b: Count distinct verified signer indices when satisfying numeric thresholds so duplicate signatures from one key cannot supply multiple votes.
+- f7d9ed4: Verify native registry openings against their declared digest and exact carried primitive bytes. Preserve primitive encodings when committing disclosure records, and require deterministic material while selecting the target digest for recovery.
+- fb61e01: Verify exposed ACDC v2 section and aggregate commitments independently of the enclosing credential SAID, and author nested sections with the same compact-form commitments while preserving disclosure exposure.
+
 ## 2.0.0
 
 ### Breaking changes

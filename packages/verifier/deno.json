@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/verifier",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "exports": "./mod.ts",
   "tasks": {
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
