@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/hosting",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "HTTP host lifecycle, application middleware and protocol route composition",
   "license": "Apache-2.0",
   "repository": {

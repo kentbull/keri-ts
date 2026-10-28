@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/registrar",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Signed public ACDC registry publication and bulk evidence queries",
   "license": "Apache-2.0",
   "repository": {

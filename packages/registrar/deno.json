@@ -1,6 +1,6 @@
 {
   "name": "@keri-ts/registrar",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "exports": "./mod.ts",
   "tasks": {
     "check": "deno check mod.ts scripts/build_npm.ts test/*.ts",

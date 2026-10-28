@@ -1,5 +1,53 @@
 # keri-ts
 
+## 2.1.0
+
+### Minor Changes
+
+- bba5279: Compose ACDC v2 group registry authoring and exact IPEX member approvals with the existing threshold, registry, graph and wallet owners. Keep protocol acceptance distinct from current-use authorization and explicit holder consent, and preserve approved disclosure bytes across retries and reopen.
+
+  Preserve same-state BUP advances, explicit HTTP attachment genus, and raw CESR opening files at the CLI boundary.
+
+- aaaef7e: Add wallet inventory with explicit consent to exact accepted Grant/Admit pairs, original issuance bytes, and retained disclosure reads across reopen. Export the existing protocol owners required by the separately installed wallet package.
+
+### Patch Changes
+
+- f94a164: Move ACDC relation evaluation to its protocol owner over borrowed graph indexes, preserving existing verdicts and IPEX call order. Keep IPEX frame traversal and negotiated disclosure policy in place, and move the pure evaluator tests with their unchanged participant setup.
+- 5f2109c: Separate authenticated IPEX evidence retention from ACDC relation policy, preserving unresolved verdicts, cumulative schema pins and hidden Issuee knowledge while adding strict NAND/NOR evaluation.
+- 3582dba: Verify retained ACDC v2 Grant views against current authenticated observer evidence and shared graph policy, with read-only historical inspection and exact Grant-keyed reporting through existing cue stores.
+- 99829fe: Compose ACDC v2 wallet IPEX negotiation, explicit unblinding and exact-view presentation through the existing CLI family. Gather required source-anchor receipts before returning Grant/Admit wire, preserve separate presenter authorization and holder consent, and select witness attachment genus independently of message body version.
+
+  Forward explicit operator KRAM configuration through finite and hosted operations, and preserve registry aliases across installed Node command invocations.
+
+- 74084ba: Require canonical native registry ordinals and valid microsecond timestamps, reject nonpositive blindable update authoring, and explicitly refuse historical public updates at live dispatch while preserving their decoding.
+- d057490: Select registry history by an exact authenticated TEL head, verify bound openings against the Issuee's accepted historical KEL evidence, and use verified Issuee sources for presentation history instead of timestamps. Qualify the selected Python candidate and regenerated registry vectors at the same core revision.
+- f7d9ed4: Verify native registry openings against their declared digest and exact carried primitive bytes. Preserve primitive encodings when committing disclosure records, and require deterministic material while selecting the target digest for recovery.
+- 18df53a: Authenticate exact registry seal coordinates on the current accepted KEL branch under historical witness quorum, reject resolvable false source locators before publication, and retain the first valid anchor pair. Revalidate pending anchors after recovery while allowing authentic resealing without rewriting accepted history.
+- ab28c9a: Align v2 IPEX disclosure plans with the selected Python candidate's flat q.dp grammar and prior-only empty-list inheritance.
+- a0faf2b: Derive a self-addressing (Blake3-256) prefix for a group identifier even when it has a
+  single signing key, matching KERIpy's `GroupHab.make` (whose `code` defaults to
+  Blake3_256). Previously `makeGroupHab` left `incept` to choose a basic, key-derived
+  prefix for a 1-of-1 group. This is a prefix-derivation parity fix: it changes the
+  derived prefix of single-signing-key groups, so a 1-of-1 group with the member's exact
+  inception parameters now shares the member's SAID (as in KERIpy), and distinct groups
+  use a distinguishing threshold or seal.
+- 0f57335: Require bounded authenticated schema closure for whole-node and subtree IPEX disclosures, sharing static resource validation and preserving scalar-SAID data, explicit leaf requests, and missing-schema retries.
+- 612a94c: Require Grants to fulfill accepted Offer commitments, keep proof attachments off Offer nodes, and refuse metadata as Grant credentials while preserving public fixed-field credentials and negotiated dittos.
+- 8577495: Verify schema-proven simple edges and ordered labeled leaves through shared IPEX traversal, path and relation handling; support explicit disclosure omissions and schema-proven fixed positional selection without rewriting received nodes.
+- 4f7eef3: Skip an unparseable frame returned by a mailbox poll instead of crashing the agent
+  runtime. `settleMailboxPollBatch` now catches a `WireParseError` (malformed wire input) from
+  `reactor.processBytes`, logs it and continues, so the batch completes and the
+  provider cursor advances past the bad frame. A dispatch-side `ParserError` from a valid
+  frame (e.g. corrupt stored state) and every non-parse error still propagate. This
+  matches KERIpy's parser, which logs and continues on a malformed frame.
+- f01f811: Add scheduled HTTPS source observation and signed cache-only registry queries, with exact accepted heads and explicit freshness. Preserve CESR-v2 framing across full evidence replay and native query storage.
+- eaeb8d1: Compose native registry inception, issuance, BUP state advances and revocation through exact witnessed acceptance, with explicit public openings or protected derived custody and thin CLI operations.
+- 03de604: Prepare native wallet Admit signatures only after explicit consent and current authenticated root truth, with thin CLI admission and exact Grant-keyed inventory/read commands.
+- 367a3be: Add optional encrypted registry custody with protected Python-compatible operator handoff and exact event-specific opening derivation after reopen.
+- 4e2a0aa: Retain deliberately published event-specific registry openings after preflight and exact-body authentication. Replay accepted TEL events as framed CESR evidence with retained public openings or an empty attachment foot, without publishing private material or mutating storage on reads.
+- 6792ddb: Reauthenticate retained IPEX evidence through its exact route without side effects, preserving accepted child views and explicit historical issuer proof selection.
+- 4377641: Verify distinct witness receipts against an accepted event and its historical witness quorum before treating it as fully witnessed, including signatures retained through event escrows.
+
 ## 2.0.0
 
 ### Breaking changes
