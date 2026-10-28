@@ -1,5 +1,4 @@
 /** Exact retained IPEX views and current configured-source policy; no credential-view enrichment. */
-import { sourceRequest, SourceTrust } from "@keri-ts/hosting";
 import type { Registrar } from "@keri-ts/registrar";
 import { BlindState, BoundState, bytesEqual, concatBytes, Counter, Diger, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation } from "effection";
@@ -12,6 +11,7 @@ import {
   type Exchanger,
   type Hab,
   type Habery,
+  type HttpClient,
   isCesrContentType,
   query,
   type RegistryDisclosure,
@@ -46,7 +46,7 @@ export interface AcdcV2Verification {
   observations: AcdcV2Observation[];
 }
 export interface AcdcV2VerifierOptions {
-  source: SourceTrust;
+  source: string;
   maximumAgeMs: number;
   requestTimeoutMs: number;
   now: () => number;
@@ -59,6 +59,7 @@ export class AcdcV2Verifier {
     readonly hab: Hab,
     readonly exc: Exchanger,
     readonly evidence: Registrar,
+    readonly http: HttpClient,
     readonly options: AcdcV2VerifierOptions,
   ) {
     if (exc.hby !== hby || hab.db !== hby.db || evidence.processor.kvy.db !== hby.db) {
@@ -66,6 +67,10 @@ export class AcdcV2Verifier {
     }
     if (![options.maximumAgeMs, options.requestTimeoutMs].every(value => Number.isFinite(value) && value > 0)) {
       throw new ValidationError("Source age and request timeout must be finite and positive.");
+    }
+    const source = new URL(options.source);
+    if (source.protocol !== "https:" || source.username || source.password || source.search || source.hash) {
+      throw new ValidationError("Observation source must be HTTPS without credentials, query or fragment.");
     }
   }
 
@@ -98,28 +103,39 @@ export class AcdcV2Verifier {
   /** Authenticate one complete source response and its exact accepted head, never infer global latest state. */
   private *observe(regid: string): Operation<AcdcV2Observation | null> {
     const { source, maximumAgeMs, requestTimeoutMs, now } = this.options;
+    const wire = this.hab.endorse(query("tels", { i: regid }, { pre: this.hab.pre, version: Vrsn_2_0 }), {
+      gvrsn: Vrsn_2_0,
+    });
+    const deadline = new AbortController(), expired = new Error("Observation request deadline expired");
+    const timer = setTimeout(() => deadline.abort(expired), requestTimeoutMs);
+    let response;
     try {
-      const wire = this.hab.endorse(query("tels", { i: regid }, { pre: this.hab.pre, version: Vrsn_2_0 }), {
-        gvrsn: Vrsn_2_0,
+      response = yield* this.http.request(source, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: wire,
+        redirect: "error",
+        signal: deadline.signal,
       });
-      const response = yield* sourceRequest(source, wire, requestTimeoutMs);
-      const stamp = response.headers.get("Observer-Observed-At"), head = response.headers.get("Observer-Registry-Head");
-      const micros = timestampMicros(stamp), age = micros === null ? NaN : now() - Number(micros) / 1000;
-      if (
-        response.status !== 200 || !isCesrContentType(response.headers.get("content-type"))
-        || response.headers.get("Observer-Evidence-State") !== "fresh" || !stamp || !Number.isFinite(age) || age < 0
-        || age > maximumAgeMs || !head
-      ) return null;
-      const result = yield* call(() => this.evidence.ingest(concatBytes(Counter.makeGVC(Vrsn_2_0), response.body)));
-      if (
-        Object.keys(result.pending).length || Object.keys(result.rejected).length || result.heads[regid] !== head
-        || this.evidence.store.head(regid)?.qb64 !== head
-      ) return null;
-      return { registry: regid, source: source.url, head, observedAt: stamp };
     } catch (error) {
-      if (error instanceof TransportError) return null;
+      if (error instanceof TransportError || (deadline.signal.aborted && error === expired)) return null;
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
+    const stamp = response.headers.get("Observer-Observed-At"), head = response.headers.get("Observer-Registry-Head");
+    const micros = timestampMicros(stamp), age = micros === null ? NaN : now() - Number(micros) / 1000;
+    if (
+      response.status !== 200 || !isCesrContentType(response.headers.get("content-type"))
+      || response.headers.get("Observer-Evidence-State") !== "fresh" || !stamp || !Number.isFinite(age) || age < 0
+      || age > maximumAgeMs || !head
+    ) return null;
+    const result = yield* call(() => this.evidence.ingest(concatBytes(Counter.makeGVC(Vrsn_2_0), response.body)));
+    if (
+      Object.keys(result.pending).length || Object.keys(result.rejected).length || result.heads[regid] !== head
+      || this.evidence.store.head(regid)?.qb64 !== head
+    ) return null;
+    return { registry: regid, source, head, observedAt: stamp };
   }
 
   /** Require shared graph approval and full current standing over the exact retained credential views. */
