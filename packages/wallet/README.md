@@ -84,8 +84,8 @@ original issuance reference after later state advances or revocation.
 
 ## Optional protected custody
 
-`RegistryCustody({hby, registry, db})` is an explicit capability over the existing
-wallet environment. Ordinary inventory never creates it or reads its encrypted
+`RegistryCustody({hby, registry, db?})` borrows the existing Keeper for salts.
+The optional wallet `db` is used only for nonsecret derived-update coordinates. Ordinary inventory never creates it or reads its encrypted
 rows. `createCustody(registry, discloser)` requires an accepted locally controlled
 inception and the designated discloser's known KEL. Secrets use the authenticated
 encrypted Keeper AEID; plaintext fallback and salt regeneration after undisclosed
@@ -98,11 +98,28 @@ processing/anchoring. `derivedOpening(event)` requires that exact accepted event
 and verifies the reconstructed commitment after reopen; a later public successor
 never selects another credential's inputs or publishes private openings.
 
-`exportCustody` and `importCustody` implement the Python-compatible protected
-operator handoff on POSIX only. Export exclusively creates a mode0600 file;
-import refuses symlinks, non-regular/multiply-linked files, another owner, loose
-permissions and mismatched bindings/profile. Transfer is an explicit authenticated
-private operator step: file mode does not authenticate the sender or secure the
-channel, and the file contains plaintext secret material. Keeper AEID replacement
-leaves custody unusable until explicit import with `rewrap: true` under the current
-authenticated Keeper; there is no automatic migration or key distribution.
+`RegistrySaltService(custody, rvy)` registers the provisional `/registry/salt` reply
+route on the caller's existing parser Revery; its database must match the custody
+Habery. `makeReply` returns one recipient-encrypted
+salt for caller-owned signing and delivery. Receipt uses normal reply signature
+and threshold verification before decrypting and retaining the addressed copy.
+The issuer may disclose; a local recipient group may replicate to its current
+members. There is no separate assignment, delivery ledger, acknowledgement or
+application replay escrow. Missing registry evidence is an error.
+
+`sealRoot` and `openRoot` remain cryptographic operations; they confer no sender
+authority by themselves. Single-signature signed receipt is covered by the custody
+regression. Group composition, CLI integration and Python interoperability require
+separate qualification before claiming the complete salt-sharing workflow.
+For group registry proposals, `sealMembers` creates ciphertexts for current signing
+members. `openMemberCopy` checks the local member's copy before approval;
+`retainMemberCopy` requires accepted inception before storing it. The two-of-three
+regression exercises real group KEL/TEL acceptance, swapped-copy rejection and
+reopen. These helpers create no candidate records, acknowledgements or workers.
+Tufa native `multisig join --v2` composes these helpers with explicit member
+approval and accepted TEL evidence; its subprocess regression checks HTTP return
+delivery and reopened custody.
+
+There is no plaintext custody file handoff or explicit rewrap operation. Keeper
+AEID changes re-encrypt registry salts through the existing lifecycle. Removing
+Keeper encryption while registry salts remain is refused.

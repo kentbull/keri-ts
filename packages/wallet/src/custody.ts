@@ -15,10 +15,17 @@ import {
   Verfer,
 } from "cesr-ts";
 import { Komer, type RegistryStore } from "keri-ts/db";
-import { type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
-import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
-import process from "node:process";
+import {
+  groupSigningMembers,
+  type Hab,
+  type Habery,
+  isLocalGroupHab,
+  localGroupMember,
+  RawRecord,
+  type RegistryDisclosure,
+  ValidationError,
+  vetBlind,
+} from "keri-ts/runtime";
 import type { WalletBaser } from "./storing.ts";
 
 /** Python-compatible public bindings and the fixed derivation profile. */
@@ -42,7 +49,7 @@ interface EncryptedCustody {
   aeid: string;
   cipher: string;
 }
-/** Ciphertext and the exact previous record for retention in the caller's wallet writer. */
+/** Ciphertext and the exact previous record for retention in the caller's Keeper writer. */
 export interface PreparedCustody {
   readonly registry: string;
   readonly expected: Readonly<EncryptedCustody> | null;
@@ -54,11 +61,6 @@ interface DerivedUpdate {
   bound: { bn: string; bd: string } | null;
 }
 
-/** Only the Keeper AEID and authenticated ciphertext are stored at rest. */
-class CustodyRecord extends RawRecord<EncryptedCustody> implements EncryptedCustody {
-  declare aeid: string;
-  declare cipher: string;
-}
 /** Public event-specific inputs; neither a salt nor a derived opening is retained here. */
 class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
   declare credential: string;
@@ -101,50 +103,48 @@ function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo):
   new Salter({ qb64: payload.salt });
   return { info: canonical, salt: payload.salt };
 }
-/** File protections are a POSIX contract; no weaker platform fallback is offered. */
-function requirePosix(): void {
-  if (
-    process.platform === "win32" || typeof process.geteuid !== "function" ||
-    constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
-  ) {
-    throw new ValidationError("Protected plaintext custody handoff requires POSIX file protections");
+/** Authenticate hby's existing encrypted Keeper for optional salt custody.
+ *
+ * Returns its current AEID and CESR box primitives without changing Keeper policy.
+ * This direct-module helper is used by encrypted root custody;
+ * it is not part of the wallet package barrel or ordinary inventory operations.
+ */
+export function authenticatedCustodyKeeper(hby: Habery) {
+  const mgr = hby.mgr;
+  if (!mgr.aeid || !mgr.seed) {
+    throw new ValidationError("Private credential custody requires an authenticated encrypted Keeper");
   }
+  const encrypter = new Encrypter({ verkey: mgr.aeid });
+  if (!encrypter.verifySeed(mgr.seed)) throw new ValidationError("Keeper authentication does not match its AEID");
+  return { aeid: mgr.aeid, encrypter, decrypter: new Decrypter({ seed: mgr.seed }) };
 }
 
-/** Explicit capability over an existing wallet environment and accepted public registry evidence. */
+/** Explicit capability over Keeper secrets and accepted public registry evidence. */
 export class RegistryCustody {
   private env: WalletBaser["env"] = null;
-  private custody?: Komer<CustodyRecord>;
   private derivations?: Komer<DerivedRecord>;
 
   /** Borrow owners only; construction opens no table and loads no encrypted row. */
-  constructor(readonly options: { hby: Habery; registry: RegistryStore; db: WalletBaser }) {}
+  constructor(readonly options: { hby: Habery; registry: RegistryStore; db?: WalletBaser }) {}
 
   /** Rebind optional tables after the caller reopens the same wallet owner. */
   private tables() {
     const { db } = this.options;
-    if (!db.opened || !db.env) throw new ValidationError("Wallet inventory is closed");
+    if (!db?.opened || !db.env) throw new ValidationError("Wallet inventory is closed");
     if (this.env !== db.env) {
-      this.custody = new Komer(db, { subkey: "custody.", recordClass: CustodyRecord });
       this.derivations = new Komer(db, { subkey: "derived-updates.", recordClass: DerivedRecord });
       this.env = db.env;
     }
-    return { custody: this.custody!, derivations: this.derivations! };
+    return { derivations: this.derivations! };
   }
 
   /** Authenticate the current Keeper before any secret-bearing operation. */
   private box() {
-    const mgr = this.options.hby.mgr;
-    if (!mgr.aeid || !mgr.seed) {
-      throw new ValidationError("Private credential custody requires an authenticated encrypted Keeper");
-    }
-    const encrypter = new Encrypter({ verkey: mgr.aeid });
-    if (!encrypter.verifySeed(mgr.seed)) throw new ValidationError("Keeper authentication does not match its AEID");
-    return { aeid: mgr.aeid, encrypter, decrypter: new Decrypter({ seed: mgr.seed }) };
+    return authenticatedCustodyKeeper(this.options.hby);
   }
 
   /** Bind explicit participants to the accepted inception; salt possession is not delegation. */
-  private binding(registry: string, controller: string, discloser: string, importing = false, rewrap = false): void {
+  private binding(registry: string, controller: string, discloser: string): void {
     new Prefixer({ qb64: controller });
     new Prefixer({ qb64: discloser });
     const rip = this.options.registry.seqEvent(registry, 0);
@@ -152,7 +152,7 @@ export class RegistryCustody {
       throw new ValidationError("Custody must match the accepted registry controller");
     }
     const local = this.options.hby.habs;
-    if (!local.has(importing ? discloser : controller) && !(rewrap && local.has(controller))) {
+    if (!local.has(controller)) {
       throw new ValidationError("Custody operation requires the intended local identifier");
     }
     if (!this.options.hby.db.getKever(discloser)) {
@@ -162,10 +162,10 @@ export class RegistryCustody {
 
   /** Decrypt exactly one provisioned row under its original Keeper AEID. */
   private load(registry: string): Secret {
-    const box = this.box(), stored = this.tables().custody.get(registry);
+    const box = this.box(), stored = this.options.hby.ks.custody.get(registry);
     if (!stored) throw new ValidationError("Registry custody is not provisioned");
     if (stored.aeid !== box.aeid) {
-      throw new ValidationError("Custody encryption AEID changed; explicit operator rewrap is required");
+      throw new ValidationError("Custody encryption AEID changed; original Keeper is required");
     }
     try {
       return parseSecret(box.decrypter.decrypt({ qb64: stored.cipher, bare: true }) as Uint8Array, registry);
@@ -174,12 +174,12 @@ export class RegistryCustody {
     }
   }
 
-  /** Encrypt supplied private data outside the writer; explicit rewrap never opens an old-AEID row. */
-  private prepare(secret: Secret, rewrap = false): PreparedCustody {
-    if (this.options.db.inWriteTransaction) {
-      throw new ValidationError("Custody preparation must precede the wallet write transaction");
+  /** Encrypt supplied private data outside the writer under the existing Keeper. */
+  private prepare(secret: Secret): PreparedCustody {
+    if (this.options.hby.ks.custody.db.inWriteTransaction) {
+      throw new ValidationError("Custody preparation must precede the Keeper write transaction");
     }
-    const box = this.box(), rows = this.tables().custody, key = secret.info.registry;
+    const box = this.box(), rows = this.options.hby.ks.custody, key = secret.info.registry;
     const previous = rows.get(key);
     const expected = previous ? Object.freeze({ aeid: previous.aeid, cipher: previous.cipher }) : null;
     if (previous?.aeid === box.aeid) {
@@ -188,10 +188,9 @@ export class RegistryCustody {
       }
       return Object.freeze({ registry: key, expected, encrypted: expected! });
     }
-    if (previous && !rewrap) {
-      throw new ValidationError("Custody encryption AEID changed; explicit operator rewrap is required");
+    if (previous) {
+      throw new ValidationError("Custody encryption AEID changed; original Keeper is required");
     }
-    if (!previous && rewrap) throw new ValidationError("Rewrap requires an existing custody record under a prior AEID");
     const encrypted = Object.freeze({
       aeid: box.aeid,
       cipher: box.encrypter.encrypt({ ser: b(JSON.stringify(secret)) }).qb64,
@@ -199,12 +198,12 @@ export class RegistryCustody {
     return Object.freeze({ registry: key, expected, encrypted });
   }
 
-  /** Prepare a supplied Salt_128 root; the caller first authenticates assignment and membership.
+  /** Prepare a supplied Salt_128 root; the caller first authenticates the sender and authorizes the recipient.
    *
    * info retains the original fixed-profile parties, including for later recipients.
    * root is the established root, never generated here. Returns ciphertext only,
    * without retaining it. Structural binding checks establish no network authority.
-   * KERIpy reference: RegistryCustody.prepareRoot at qualified core 23f526b4.
+   * KERIpy reference: RegistryCustody.prepareRoot at core 5cece6c2.
    */
   prepareRoot(info: CustodyInfo, root: Salter): PreparedCustody {
     this.box();
@@ -232,16 +231,16 @@ export class RegistryCustody {
     return this.prepare({ info: canonical, salt: root.qb64 });
   }
 
-  /** CAS-retain prepared ciphertext inside this wallet's already-active write transaction.
+  /** CAS-retain prepared ciphertext inside the Keeper's already-active write transaction.
    *
    * prepared comes from prepareRoot before the writer. Returns whether the row
    * changed. No encryption, decryption, owned commit, flush or receipt is performed;
    * the owner commits related records together and awaits env.flushed afterward.
    */
   retainPrepared(prepared: PreparedCustody): boolean {
-    const { db } = this.options;
-    if (!db.inWriteTransaction) throw new ValidationError("Prepared custody requires the caller's wallet writer");
-    const box = this.box(), rows = this.tables().custody;
+    const db = this.options.hby.ks.custody.db;
+    if (!db.inWriteTransaction) throw new ValidationError("Prepared custody requires the caller's Keeper writer");
+    const box = this.box(), rows = this.options.hby.ks.custody;
     if (prepared.encrypted.aeid !== box.aeid) {
       throw new ValidationError("Prepared custody does not match the authenticated Keeper");
     }
@@ -256,18 +255,82 @@ export class RegistryCustody {
     return true;
   }
 
-  /** Retain the explicit file/create adapter through the same prepared CAS path, without a flush claim. */
-  private retain(secret: Secret, rewrap = false): CustodyInfo {
-    const prepared = this.prepare(secret, rewrap);
-    this.options.db.env!.transactionSync(() => this.retainPrepared(prepared));
+  /** Retain a newly created salt in the existing store transaction. */
+  private retain(secret: Secret): CustodyInfo {
+    const prepared = this.prepare(secret);
+    this.options.hby.ks.custody.db.env!.transactionSync(() => this.retainPrepared(prepared));
     return secret.info;
+  }
+
+  /** Seal an issuer-generated salt for existing signing members, without persisting candidates.
+   * Mirrors KERIpy RegistryCustody.sealMembers; the enclosing RIP/BUP EXN carries
+   * these ciphertexts separately from any public event-specific opening.
+   */
+  sealMembers(group: Hab, root: Salter): Record<string, string> {
+    const { hby } = this.options;
+    if (
+      hby.habs.get(group.pre) !== group || !isLocalGroupHab(hby, group) ||
+      !group.kever || root.code !== MtrDex.Salt_128
+    ) {
+      throw new ValidationError("Salt copies require a local accepted group and Salt_128 root");
+    }
+    const copies: Record<string, string> = {};
+    for (const aid of groupSigningMembers(hby, group.pre)) {
+      const kever = hby.db.getKever(aid);
+      if (!kever || kever.verfers.length !== 1) {
+        throw new ValidationError("Salt copy requires a known individual member key");
+      }
+      copies[aid] = new Encrypter({ verkey: kever.verfers[0].qb64 }).encrypt({ prim: root }).qb64;
+    }
+    return copies;
+  }
+
+  /** Decrypt this member's exact proposal copy before approving its event.
+   * The caller authenticates the enclosing EXN and owns explicit consent.
+   * No registry or custody record is accepted by this operation.
+   */
+  openMemberCopy(group: Hab, copies: Readonly<Record<string, string>>): Salter {
+    const { hby } = this.options;
+    if (hby.habs.get(group.pre) !== group || !isLocalGroupHab(hby, group)) {
+      throw new ValidationError("Salt copy requires a local signing group");
+    }
+    const members = groupSigningMembers(hby, group.pre), member = localGroupMember(hby, group.pre);
+    if (
+      !members.includes(member.pre) || !copies[member.pre] ||
+      Object.keys(copies).some((aid) => !members.includes(aid))
+    ) {
+      throw new ValidationError("Registry proposal has no valid salt copy for this member");
+    }
+    return this.openRoot(copies[member.pre], member.kever!.verfers[0]);
+  }
+
+  /** Retain an explicitly approved member copy only after accepted RIP evidence exists. */
+  retainMemberCopy(registry: string, group: Hab, copies: Readonly<Record<string, string>>): void {
+    const root = this.openMemberCopy(group, copies);
+    const rip = this.options.registry.seqEvent(registry, 0);
+    if (rip?.issuer !== group.pre) throw new ValidationError("Registry belongs to another controller");
+    this.receiveRoot(registry, group.pre, root);
+  }
+
+  /** Retain an authenticated delivered root, preserving existing local metadata.
+   * The reply handler establishes sender and recipient authority before calling.
+   * A different root is refused; no delivery or acknowledgement record is written.
+   */
+  receiveRoot(registry: string, recipient: string, root: Salter): void {
+    const rip = this.options.registry.seqEvent(registry, 0);
+    if (!rip?.issuer) throw new ValidationError("Accepted registry inception is required");
+    const info = this.options.hby.ks.custody.get(registry)
+      ? this.load(registry).info
+      : metadata(registry, rip.issuer, recipient);
+    const prepared = this.prepareRoot(info, root);
+    this.options.hby.ks.custody.db.env!.transactionSync(() => this.retainPrepared(prepared));
   }
 
   /** Seal one existing root to the caller-authenticated X25519 recipient, returning qualified Cipher_Salt.
    *
    * regid selects retained custody; encrypter selects the exact recipient key.
    * Existing CESR Encrypter uses libsodium sealed boxes; confidentiality grants no
-   * sender authority. The caller binds assignment, member and key coordinates.
+   * sender authority. The caller binds the recipient and encryption key.
    */
   sealRoot(regid: string, encrypter: Encrypter): Cipher {
     if (!(encrypter instanceof Encrypter) || encrypter.code !== MtrDex.X25519) {
@@ -318,7 +381,7 @@ export class RegistryCustody {
     if (!rip?.issuer) throw new ValidationError("Accepted registry inception is required before custody");
     const info = metadata(registry, rip.issuer, discloser);
     this.binding(registry, info.controller, discloser);
-    if (this.tables().custody.get(registry)) {
+    if (this.options.hby.ks.custody.get(registry)) {
       const current = this.load(registry);
       if (JSON.stringify(current.info) !== JSON.stringify(info)) {
         throw new ValidationError("Registry custody has different designated bindings");
@@ -335,7 +398,7 @@ export class RegistryCustody {
       if (!event) throw new ValidationError("Accepted registry history is incomplete");
       if (event.ilk === "bup" && !this.options.registry.opening(event.said!)) {
         throw new ValidationError(
-          "Blinded registry history requires explicit custody import; salt cannot be recreated",
+          "Blinded registry history requires the existing encrypted salt; salt cannot be recreated",
         );
       }
     }
@@ -410,72 +473,5 @@ export class RegistryCustody {
       throw new ValidationError("Derived opening does not match the exact accepted event");
     }
     return opening;
-  }
-
-  /** Create one exclusive mode0600 plaintext artifact for authenticated private operator transfer. */
-  async exportCustody(registry: string, path: string): Promise<string> {
-    requirePosix();
-    const secret = this.load(registry);
-    const file = await open(
-      path,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      try {
-        await file.chmod(0o600);
-        await file.writeFile(b(JSON.stringify(secret)));
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-    } catch (error) {
-      await unlink(path);
-      throw error;
-    }
-    return path;
-  }
-
-  /** Import only a protected exact Python-profile handoff, optionally rewrapping an existing old-AEID row. */
-  async importCustody(
-    path: string,
-    { registry, controller, discloser, rewrap = false }: {
-      registry: string;
-      controller: string;
-      discloser: string;
-      rewrap?: boolean;
-    },
-  ): Promise<CustodyInfo> {
-    requirePosix();
-    if (typeof rewrap !== "boolean") throw new ValidationError("Explicit rewrap must be a boolean");
-    this.box();
-    this.binding(registry, controller, discloser, true, rewrap);
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    let raw: Uint8Array;
-    try {
-      const info = await file.stat();
-      if (!info.isFile() || (info.mode & 0o7777) !== 0o600 || info.uid !== process.geteuid!() || info.nlink !== 1) {
-        throw new ValidationError("Custody file must be a regular owner-only mode0600 file");
-      }
-      const buffer = new Uint8Array(16385);
-      let offset = 0;
-      while (offset < buffer.length) {
-        const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, null);
-        if (!bytesRead) break;
-        offset += bytesRead;
-      }
-      if (offset > 16384) throw new ValidationError("Custody file exceeds the supported size");
-      raw = buffer.subarray(0, offset);
-    } finally {
-      await file.close();
-    }
-    let secret: Secret;
-    try {
-      secret = parseSecret(raw, registry, metadata(registry, controller, discloser));
-    } catch {
-      throw new ValidationError("Custody file does not match the expected bindings and derivation profile");
-    }
-    this.binding(registry, controller, discloser, true, rewrap);
-    return this.retain(secret, rewrap);
   }
 }

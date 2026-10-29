@@ -2,7 +2,7 @@
 import { b, BlindState, BoundState, Cipher, Encrypter, makeBlindState, MtrDex, Salter, Signer } from "cesr-ts";
 import { parseBytes } from "cesr-ts";
 import { call, type Operation, run } from "effection";
-import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { openRegistry, RegistryStore } from "keri-ts/db";
 import {
   acdcmap,
@@ -13,13 +13,12 @@ import {
   type Habery,
   regcept,
   RegistryObserver,
+  reply,
   ValidationError,
   vetBlind,
 } from "keri-ts/runtime";
-import { chmod, link, readFile, stat, symlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol/parsering.ts";
-import { createWalletBaser, Wallet } from "../mod.ts";
+import { createWalletBaser, RegistrySaltService, Wallet } from "../mod.ts";
 import { type CustodyInfo, RegistryCustody } from "../src/custody.ts";
 
 /** Feed real KEL replay to the ordinary receiver; never copy accepted native markers. */
@@ -32,7 +31,7 @@ function* introduce(source: Habery, recipient: Habery, hab: Hab): Operation<void
 }
 
 Deno.test({
-  name: "custody protected handoff preserves exact derivation through reopen, AEID replacement and public successor",
+  name: "encrypted custody preserves exact derivation through reopen and public successor",
   ignore: Deno.build.os === "windows",
   async fn() {
     const root = await Deno.makeTempDir({ prefix: "wallet-custody-" });
@@ -83,12 +82,28 @@ Deno.test({
             BoundState.qb64(custody.derivedOpening(update) as BoundState),
             BoundState.qb64(proof as BoundState),
           );
-          const path = join(root, "private-custody.json");
-          yield* call(() => custody.exportCustody(rip.said!, path));
-          assertEquals((yield* call(() => stat(path))).mode & 0o7777, 0o600);
-          const secret = JSON.parse(yield* call(() => readFile(path, "utf8")));
-          assert(!(yield* call(() => readFile(join(sourceDb.path!, "data.mdb")))).includes(secret.salt));
-          assertEquals(yield* call(() => receiving.importCustody(path, info)), info);
+          const sending = new RegistrySaltService(custody, source.rvy);
+          const reception = new RegistrySaltService(receiving, holder.rvy);
+          reception.register();
+          // An ordinary signed reply authenticates delivery; no assignment or receipt exchange.
+          const saltReply = sending.makeReply(issuer, rip.said!, disclosee.pre);
+          assertEquals(holder.rvy.processReply({ serder: saltReply }).kind, "unverified");
+          assertThrows(() => receiving.derive(rip.said!, 1, credential.said!, "issued"), ValidationError);
+          const selfAuthorized = reply("/registry/salt", saltReply.ked!.a as Record<string, unknown>, {
+            pre: disclosee.pre,
+            version: { major: 2, minor: 0 },
+          });
+          assertThrows(
+            () => holder.rvy.processReply({ serder: selfAuthorized }),
+            ValidationError,
+            "Individual recipient requires issuer authorization",
+          );
+          const framed = parseBytes(issuer.endorse(saltReply));
+          for (const frame of framed) {
+            const envelope = envelopeFromFrame(frame);
+            assertEquals(holder.rvy.processReply(envelope).kind, "accept");
+            assertEquals(holder.rvy.processReply(envelope).kind, "accept");
+          }
           assertEquals(
             BoundState.qb64(
               receiving.derive(rip.said!, 1, credential.said!, "issued", {
@@ -137,57 +152,25 @@ Deno.test({
           assertEquals(registry.head(rip.said!)!.qb64, successor.said);
           const lost = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
           try {
-            assertThrows(
-              () => new RegistryCustody({ hby: source, registry, db: lost }).createCustody(rip.said!, disclosee.pre),
-              ValidationError,
-              "cannot be recreated",
+            // Credential inventory loss does not lose Keeper-owned registry salts.
+            assertEquals(
+              new RegistryCustody({ hby: source, registry, db: lost }).createCustody(rip.said!, disclosee.pre),
+              info,
             );
           } finally {
             yield* lost.close(true);
           }
           assertThrows(() => receiving.createCustody(rip.said!, disclosee.pre), ValidationError, "local identifier");
-          yield* call(() =>
-            assertRejects(
-              () => receiving.importCustody(path, { ...info, controller: disclosee.pre }),
-              ValidationError,
-              "controller",
-            )
-          );
-          yield* call(() =>
-            assertRejects(() => receiving.importCustody(path, { ...info, discloser: issuer.pre }), ValidationError)
-          );
-          yield* call(() => chmod(path, 0o644));
-          yield* call(() => assertRejects(() => receiving.importCustody(path, info), ValidationError, "mode0600"));
-          yield* call(() => chmod(path, 0o600));
-          const symbolic = path + ".symlink", hard = path + ".hardlink";
-          yield* call(() => symlink(path, symbolic));
-          yield* call(() => assertRejects(() => receiving.importCustody(symbolic, info)));
-          yield* call(() => link(path, hard));
-          yield* call(() => assertRejects(() => receiving.importCustody(path, info), ValidationError, "mode0600"));
-          yield* call(() => Deno.remove(hard));
-          yield* call(() => assertRejects(() => custody.exportCustody(rip.said!, path)));
           const replacement = new Signer({
             code: MtrDex.Ed25519_Seed,
             raw: crypto.getRandomValues(new Uint8Array(32)),
             transferable: false,
           });
           holder.mgr.updateAeid(replacement.verfer.qb64, replacement.qb64);
-          assertThrows(
-            () => receiving.derive(rip.said!, 17, credential.said!, "revoked"),
-            ValidationError,
-            "AEID changed",
-          );
-          yield* call(() => assertRejects(() => receiving.importCustody(path, info), ValidationError, "AEID changed"));
-          yield* call(() => receiving.importCustody(path, { ...info, rewrap: true }));
-          yield* holderDb.close();
-          yield* holderDb.reopen();
           assertEquals(
-            BlindState.qb64(receiving.derive(rip.said!, 17, credential.said!, "revoked") as BlindState),
-            BlindState.qb64(future as BlindState),
+            receiving.derive(rip.said!, 17, credential.said!, "revoked"),
+            future,
           );
-          const oversized = path + ".large";
-          yield* call(() => writeFile(oversized, new Uint8Array(16385), { mode: 0o600 }));
-          yield* call(() => assertRejects(() => receiving.importCustody(oversized, info), ValidationError, "size"));
         } finally {
           yield* holderDb.close();
           yield* sourceDb.close();
@@ -274,29 +257,33 @@ Deno.test("prepared custody joins only the caller writer; immutable roots, Keepe
       assertEquals(prepared.expected, null);
       assert(!JSON.stringify(prepared).includes(root.qb64));
       assertThrows(() => custody.derive(rip.said!, 1, "", ""), ValidationError, "not provisioned");
-      assertThrows(() => custody.retainPrepared(prepared), ValidationError, "caller's wallet writer");
-      assertThrows(() => db.env!.transactionSync(() => custody.prepareRoot(info, root)), ValidationError, "precede");
+      assertThrows(() => custody.retainPrepared(prepared), ValidationError, "caller's Keeper writer");
+      assertThrows(
+        () => hby.ks.custody.db.env!.transactionSync(() => custody.prepareRoot(info, root)),
+        ValidationError,
+        "precede",
+      );
       assertThrows(
         () =>
-          db.env!.transactionSync(() => {
+          hby.ks.custody.db.env!.transactionSync(() => {
             assertEquals(custody.retainPrepared(prepared), true);
-            db.credentials.pin("agreement", "confirmed");
+            hby.ks.gbls.pin("transaction-test", "confirmed");
             throw new Error("caller aborts");
           }),
         Error,
         "caller aborts",
       );
-      assertEquals(db.credentials.get("agreement"), null);
+      assertEquals(hby.ks.gbls.get("transaction-test"), null);
       assertThrows(() => custody.derive(rip.said!, 1, "", ""), ValidationError, "not provisioned");
-      db.env!.transactionSync(() => {
+      hby.ks.custody.db.env!.transactionSync(() => {
         assertEquals(custody.retainPrepared(prepared), true);
-        db.credentials.pin("agreement", "confirmed");
+        hby.ks.gbls.pin("transaction-test", "confirmed");
       });
-      yield* call(() => db.env!.flushed); // Only the outer owner can claim durable completion.
-      assert(db.credentials.get("agreement"));
+      yield* call(() => hby.ks.custody.db.env!.flushed); // Only the outer owner can claim durable completion.
+      assert(hby.ks.gbls.get("transaction-test"));
       const identical = custody.prepareRoot(info, root);
       assertEquals(identical.encrypted, prepared.encrypted);
-      assertEquals(db.env!.transactionSync(() => custody.retainPrepared(identical)), false);
+      assertEquals(hby.ks.custody.db.env!.transactionSync(() => custody.retainPrepared(identical)), false);
       assertThrows(
         () => custody.prepareRoot(info, new Salter({ code: MtrDex.Salt_128, raw: new Uint8Array(16).fill(2) })),
         ValidationError,
@@ -304,14 +291,14 @@ Deno.test("prepared custody joins only the caller writer; immutable roots, Keepe
       );
       assertThrows(
         () =>
-          db.env!.transactionSync(() => {
-            db.credentials.pin("unrelated", "must roll back");
+          hby.ks.custody.db.env!.transactionSync(() => {
+            hby.ks.gbls.pin("unrelated", "must roll back");
             custody.retainPrepared(competing);
           }),
         ValidationError,
         "changed during",
       );
-      assertEquals(db.credentials.get("unrelated"), null);
+      assertEquals(hby.ks.gbls.get("unrelated"), null);
 
       // Existing CESR sealed boxes and Keeper lookup keep private seeds inside their owner.
       const verfer = recipient.kever!.verfers[0];
@@ -352,11 +339,15 @@ Deno.test("prepared custody joins only the caller writer; immutable roots, Keepe
       });
       hby.mgr.updateAeid(replacement.verfer.qb64, replacement.qb64);
       assertThrows(
-        () => db.env!.transactionSync(() => custody.retainPrepared(oldPolicy)),
+        () => hby.ks.custody.db.env!.transactionSync(() => custody.retainPrepared(oldPolicy)),
         ValidationError,
         "authenticated Keeper",
       );
-      assertThrows(() => custody.prepareRoot(info, root), ValidationError, "AEID changed");
+      assertEquals(custody.prepareRoot(info, root).encrypted.aeid, replacement.verfer.qb64);
+      assertEquals(
+        custody.openRoot(custody.sealRoot(rip.said!, new Encrypter({ verkey: verfer.qb64 })), verfer).qb64,
+        root.qb64,
+      );
     } finally {
       yield* db.close(true);
       yield* baser.close(true);
