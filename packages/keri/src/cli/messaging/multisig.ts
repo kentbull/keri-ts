@@ -13,13 +13,15 @@ import { resolveDelegationCommunicationHab } from "../../app/identity/delegating
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
   endpointRoleAccepted,
-  groupSigningMembers,
-  isLocalGroupHab,
-  localGroupMember,
   proposeGroupEndpointRole,
 } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
-import { uniqueMembers } from "../../app/multisig/group-members.ts";
+import {
+  groupSigningMembers,
+  isLocalGroupHab,
+  localGroupMember,
+  uniqueMembers,
+} from "../../app/multisig/group-members.ts";
 import {
   MULTISIG_ICP_ROUTE,
   MULTISIG_IXN_ROUTE,

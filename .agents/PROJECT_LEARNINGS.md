@@ -92,7 +92,7 @@ The [2.0.0 preparation report](../docs/reports/parity/V2_PREPARATION_2026-10-21.
 owns the later completed implementation/organization and unpublished qualification.
 Publication waits for separate native-registry/wallet completion and affected
 requalification. ProtocolProcessor remains a shared dispatch/reply-capture/escrow
-owner without a mutex; ESSR uses pinned-main LMDB sets and authenticated owned bytes.
+owner without a mutex; multisig replay borrows its concrete matching KEL/reply owners; ESSR uses pinned-main LMDB sets and authenticated owned bytes.
 
 ## Maintenance and handoff
 

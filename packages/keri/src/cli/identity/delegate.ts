@@ -20,8 +20,8 @@ import { dgKey } from "../../db/core/keys.ts";
 import { parseBooleanOption, parseStringListOption, parseStringOption } from "../common/parsing.ts";
 
 import { createExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
-import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
+import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../../app/multisig/group-members.ts";
 import { MULTISIG_IXN_ROUTE } from "../../app/multisig/grouping.ts";
 import { SeqNoQuerier } from "../../app/queries/querying.ts";
 import { runtimeTurn } from "../../app/runtime/runtime-turn.ts";

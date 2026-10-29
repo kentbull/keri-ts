@@ -298,7 +298,7 @@ export function* createAgentRuntime(
   loadChallengeHandlers(hby.db, exc);
   loadDelegationHandlers(hby, exc, notifier);
   loadOobiHandlers(hby, exc, notifier);
-  loadMultisigHandlers(hby, exc, { notifier, registry: protocol.registry, messageKevery: protocol.kvy });
+  loadMultisigHandlers(hby, exc, { notifier, registry: protocol.registry, kvy: protocol.kvy, rvy: protocol.rvy });
   loadIpexHandlers(hby, exc, {
     notifier,
     registry: acdc?.store ?? null,

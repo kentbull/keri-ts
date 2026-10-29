@@ -94,7 +94,9 @@ Composition routes query to WitnessInquisitor, stream to MailboxDirector, and re
 receipt/replay work to Respondant/Hab interpretation. A Deck is not broadcast.
 See the [cue graph](../../docs/design-docs/runtime/CUES.md).
 
-Composition shares one Revery between Tevery and ProtocolProcessor. Tevery registers its
+Composition shares one Revery between Tevery, ProtocolProcessor and multisig replay.
+Multiplexor borrows that Revery together with its matching runtime Kevery; it does
+not replace application routes with a basic reply router. Tevery registers its
 own TSN routes and advances their retries; ProtocolProcessor knows only its protocol
 operations, not separate registry/credential receivers.
 

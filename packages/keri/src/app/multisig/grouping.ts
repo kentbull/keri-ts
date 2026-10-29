@@ -28,6 +28,7 @@ import {
 import { call, ensure, type Operation } from "effection";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import { matchesRegistrySeal } from "../../acdc/regeventing.ts";
+import { ValidationError } from "../../core/errors.ts";
 import { exchange, nestedMultisigIlks } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
@@ -165,7 +166,8 @@ export interface MultisigHandlerOptions {
   mux?: Multiplexor;
   notifier?: Notifier | null;
   registry?: RegistryObserver | null;
-  messageKevery?: Kevery;
+  kvy?: Kevery;
+  rvy?: Revery;
 }
 
 /** Validate the exact ACDC v2 TEL/KEL pair without granting member approval or writing evidence. */
@@ -476,7 +478,8 @@ export function loadMultisigHandlers(
       notifier: options.notifier ?? null,
       exchanger,
       registry: options.registry ?? undefined,
-      messageKevery: options.messageKevery,
+      kvy: options.kvy,
+      rvy: options.rvy,
     });
   for (const route of MULTISIG_ROUTES) {
     exchanger.addHandler(new MultisigNotificationHandler(route, mux));
@@ -492,37 +495,44 @@ export function loadMultisigHandlers(
 export class Multiplexor {
   readonly hby: Habery;
   readonly notifier: Notifier | null;
-  /** Approval replay owns separate processors, as in frozen KERIpy Multiplexor. */
+  /** Approved children use the borrowed pair, or the standalone fallback pair. */
   readonly kvy: Kevery;
   readonly rvy: Revery;
   private readonly replay: Exchanger;
   private readonly exchanger?: Exchanger;
   private readonly registry?: RegistryObserver;
-  private readonly messageKevery: Kevery;
 
-  /** Reuse durable group membership and separate child processors without sharing parent proof state. */
+  /** Borrow matching semantic owners; standalone callers get the existing basic pair. */
   constructor(
     hby: Habery,
-    { notifier, exchanger, registry, messageKevery }: {
+    { notifier, exchanger, registry, kvy, rvy }: {
       notifier?: Notifier | null;
       exchanger?: Exchanger;
       registry?: RegistryObserver;
-      messageKevery?: Kevery;
+      kvy?: Kevery;
+      rvy?: Revery;
     } = {},
   ) {
     this.hby = hby;
     this.notifier = notifier ?? null;
     this.exchanger = exchanger;
     this.registry = registry;
-    const router = new Router();
-    this.rvy = new Revery(hby.db, { rtr: router });
-    new BasicReplyRouteHandler(this.rvy).registerReplyRoutes(router);
-    this.kvy = new Kevery(hby.db, { lax: false, local: false, rvy: this.rvy });
-    this.messageKevery = messageKevery ?? this.kvy;
-    if (this.messageKevery.db !== hby.db) {
-      throw new TypeError("Multisig message intake must share the group evidence store.");
+    if ((kvy === undefined) !== (rvy === undefined)) {
+      throw new TypeError("Multisig replay requires both Kevery and Revery, or neither.");
     }
-    this.kvy.registerReplyRoutes(router);
+    if (kvy && rvy) {
+      if (kvy.db !== hby.db || rvy.db !== hby.db || kvy.rvy !== rvy) {
+        throw new TypeError("Multisig replay owners must share the group store and reply verifier.");
+      }
+      this.kvy = kvy;
+      this.rvy = rvy;
+    } else {
+      const router = new Router();
+      this.rvy = new Revery(hby.db, { rtr: router });
+      new BasicReplyRouteHandler(this.rvy).registerReplyRoutes(router);
+      this.kvy = new Kevery(hby.db, { lax: false, local: false, rvy: this.rvy });
+      this.kvy.registerReplyRoutes(router);
+    }
     this.replay = new Exchanger(hby);
   }
   /** Index an authenticated proposal; child acceptance still requires local approval and its own proofs. */
@@ -585,7 +595,7 @@ export class Multiplexor {
         undefined,
         undefined,
         undefined,
-        this.messageKevery,
+        this.kvy,
         this.registry,
       );
     }
@@ -774,6 +784,15 @@ export function multisigChild(hby: Habery, wrapper: SerderKERI, label: string): 
   }
   const event = new SerderKERI({ sad });
   return { event, ...multisigChildEvidence(hby, wrapper, label, event) };
+}
+
+/** Reuse a recorded member's child proof; never sign a replacement during resume. */
+export function storedMultisigContribution(hby: Habery, wrapper: SerderKERI, label: string, said: string): Uint8Array {
+  const child = multisigChild(hby, wrapper, label);
+  if (!child || child.event.said !== said || child.attachment.length === 0) {
+    throw new ValidationError(`Stored multisig approval ${wrapper.said} lacks its ${label} contribution.`);
+  }
+  return concatBytes(child.event.raw, child.attachment);
 }
 
 /** Resolve the stored proof and signed genus independently of the child protocol. */

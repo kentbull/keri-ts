@@ -94,6 +94,10 @@ completion are separate from local processing policy and worker ownership.
 Publication exposes recipient wrapper SAIDs and the shared Multiplexor index key:
 v1 embedded-bundle SAID or v2 signed-child SAID. Extraction is not authentication;
 Multiplexor owns commitment validation and accepted proposal/submitter indexes.
+Composed replay borrows the matching runtime Kevery/Revery pair, preserving the
+application router and message policy. Reject partial or mismatched owner injection;
+standalone callers omit both. Generic group endorsement and retained-contribution
+reuse belong to multisig, while endpoint-role policy stays in endpoint-roleing.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed

@@ -26,6 +26,7 @@ import {
   assertInstanceOf,
   assertNotEquals,
   assertRejects,
+  assertStrictEquals,
   assertThrows,
 } from "jsr:@std/assert";
 import {
@@ -36,7 +37,6 @@ import {
 import { deliverCredentialRevocation, revokeCredential } from "../../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../../src/app/credentials/credential-workflows.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
@@ -48,9 +48,11 @@ import {
   sendCompletedGroupIpex,
 } from "../../../../src/app/ipex/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
+import { groupEndorseReply } from "../../../../src/app/multisig/group-signing.ts";
 import {
   acdcV2RegistryProposal,
   loadMultisigHandlers,
+  Multiplexor,
   type MultisigEventProposal,
   multisigExnBody,
   multisigInceptExn,
@@ -77,6 +79,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
 import { interact as interactEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 import {
@@ -84,6 +87,7 @@ import {
   issue as issueCredential,
   revoke as revokeCredentialEvent,
 } from "../../../../src/core/protocol-vdr-eventing.ts";
+import { Revery } from "../../../../src/core/routing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import { Reger } from "../../../../src/db/reger.ts";
@@ -146,7 +150,7 @@ async function learn(target: Habery, member: Hab): Promise<void> {
 
 /** Keep two independent participant stores and one real notifier for each scenario. */
 async function participants(
-  test: (left: Habery, right: Habery, alice: Hab, bob: Hab, notifier: Notifier) => Promise<void>,
+  test: (left: Habery, right: Habery, alice: Hab, bob: Hab, notifier: Notifier) => void | Promise<void>,
 ) {
   await run(function*() {
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -165,6 +169,73 @@ async function participants(
     }
   });
 }
+
+Deno.test("multisig replay borrows the configured reply owner and its application routes", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
+          local: true,
+        });
+        yield* call(() => learn(right, local.hab));
+        const { kvy, rvy } = runtime.protocol;
+        const accepted: string[] = [];
+        rvy.rtr.addRoute("/test/group-reply", {
+          processReply(args: Parameters<Revery["processReply"]>[0] & { diger: Diger; route: string }) {
+            const result = rvy.acceptReply({ ...args, saider: args.diger, aid: local.hab.pre });
+            if (result.kind === "accept") accepted.push(args.serder.said!);
+            return result;
+          },
+        });
+        const routes = [...rvy.rtr.routes];
+        const mux = new Multiplexor(left, { notifier, kvy, rvy });
+        assertStrictEquals(mux.kvy, kvy);
+        assertStrictEquals(mux.rvy, rvy);
+        assertEquals(rvy.rtr.routes, routes);
+        const reply = replyEvent("/test/group-reply", { exact: "application data" }, { version: Vrsn_2_0 });
+        const leftProof = envelopeFromFrame(parseBytes(groupEndorseReply(left, local.hab.pre, reply, Vrsn_2_0))[0]);
+        const rightProof = envelopeFromFrame(parseBytes(groupEndorseReply(right, remote.hab.pre, reply, Vrsn_2_0))[0]);
+        const group = leftProof.tsgs[0];
+        const wire = messagize(reply, {
+          sigers: [...group.sigers, ...rightProof.tsgs[0].sigers],
+          seal: { i: group.prefixer, s: group.seqner, d: group.diger },
+          gvrsn: Vrsn_2_0,
+        });
+        const child = parseBytes(wire)[0];
+        yield* runtime.exc.processEvent(proposal(alice, "/multisig/rpy", child, { gid: local.hab.pre }));
+        assertEquals(accepted, []);
+        yield* runtime.exc.processEvent(proposal(bob, "/multisig/rpy", child, { gid: local.hab.pre }));
+        assertEquals(accepted, [reply.said]);
+        assertExists(left.db.rpys.get([reply.said!]));
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("multisig replay requires a matching semantic owner pair", async () => {
+  await participants((left, right) => {
+    const kvy = left.kevery;
+    const rvy = left.rvy;
+    assertThrows(() => new Multiplexor(left, { kvy }), TypeError, "both Kevery and Revery");
+    assertThrows(() => new Multiplexor(left, { rvy }), TypeError, "both Kevery and Revery");
+    assertThrows(() => new Multiplexor(left, { kvy, rvy: new Revery(left.db) }), TypeError, "share the group store");
+    assertThrows(
+      () => new Multiplexor(left, { kvy: right.kevery, rvy: right.rvy }),
+      TypeError,
+      "share the group store",
+    );
+    const standalone = new Multiplexor(left);
+    assertStrictEquals(standalone.kvy.db, left.db);
+    assertStrictEquals(standalone.kvy.rvy, standalone.rvy);
+    assertThrows(() => new Multiplexor(left, { kvy: new Kevery(left.db), rvy }), TypeError, "reply verifier");
+  });
+});
 
 Deno.test("multisig publication records its actual local proposal before delivery and accepts a later peer proof", async () => {
   await participants(async (left, right, alice, bob, notifier) => {

@@ -47,20 +47,19 @@ import {
   validateRegistryProposal,
 } from "../credentials/credential-proposals.ts";
 import type { Poster } from "../delivery/forwarding.ts";
-import {
-  endpointRoleAccepted,
-  groupEndorseReply,
-  groupEventKeys,
-  groupSigningMembers,
-  localGroupMember,
-  signLocalGroupEvent,
-} from "../identity/endpoint-roleing.ts";
+import { endpointRoleAccepted } from "../identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { collectBytes } from "../transport/byte-source.ts";
-import { findLocalGroupMember as findLocalMember, uniqueMembers } from "./group-members.ts";
+import {
+  findLocalGroupMember as findLocalMember,
+  groupSigningMembers,
+  localGroupMember,
+  uniqueMembers,
+} from "./group-members.ts";
+import { groupEndorseReply, groupEventKeys, signLocalGroupEvent } from "./group-signing.ts";
 import {
   acdcV2RegistryProposal,
   MULTISIG_ICP_ROUTE,
@@ -81,6 +80,7 @@ import {
   prepareAcdcV2RegistryExn,
   prepareMultisigEventExn,
   prepareMultisigVdrExn,
+  storedMultisigContribution,
 } from "./grouping.ts";
 import {
   admitAndSendGroupMessage,
@@ -458,7 +458,7 @@ function* approveRpyProposal(
   );
 
   let localRpy: Uint8Array;
-  if (prior) localRpy = storedContribution(hby, prior, "rpy", embeddedSaid);
+  if (prior) localRpy = storedMultisigContribution(hby, prior, "rpy", embeddedSaid);
   else localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localRpy), { local: true });
   yield* runtime.protocol.processEscrowsOnce();
@@ -523,7 +523,7 @@ function* approveKelProposal(
   const members = kelApprovalMembers(approval);
   let localMessage: Uint8Array;
   if (prior) {
-    localMessage = storedContribution(hby, prior, kelProposalLabel(route), serder.said!);
+    localMessage = storedMultisigContribution(hby, prior, kelProposalLabel(route), serder.said!);
   } else {
     if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
       return null;
@@ -652,7 +652,7 @@ function* approveVdrProposal(
   const smids = groupSigningMembers(hby, groupPre);
   let localAnchor: Uint8Array;
   if (prior) {
-    localAnchor = storedContribution(hby, prior, "anc", anchorSerder.said!);
+    localAnchor = storedMultisigContribution(hby, prior, "anc", anchorSerder.said!);
   } else {
     const keys = groupEventKeys(hby, groupPre, anchorSerder);
     const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
@@ -720,15 +720,6 @@ function* approveVdrProposal(
 function kelApprovalMembers({ proposal }: KelApproval): string[] {
   if (proposal.route === MULTISIG_IXN_ROUTE) return [...proposal.attrs.smids];
   return uniqueMembers([...proposal.attrs.smids, ...proposal.attrs.rmids]);
-}
-
-/** Reuse a recorded member's child proof; never sign a replacement during resume. */
-function storedContribution(hby: Habery, wrapper: SerderKERI, label: string, said: string): Uint8Array {
-  const child = multisigChild(hby, wrapper, label);
-  if (!child || child.event.said !== said || child.attachment.length === 0) {
-    throw new ValidationError(`Stored multisig approval ${wrapper.said} lacks its ${label} contribution.`);
-  }
-  return concatBytes(child.event.raw, child.attachment);
 }
 
 /** VDR coordination keeps KERIpy's named child for each legacy route. */

@@ -20,6 +20,14 @@ approval replay, so a peer wrapper arriving during replay sees that approval and
 processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
+Runtime composition lends Multiplexor its matching Kevery/Revery pair, including
+application reply routes and message policy. A supplied pair must share the Habery
+store and Kevery's reply verifier; supplying only one owner is an error. Standalone
+callers may omit both to construct the basic KEL/reply pair. Replay does not register
+or replace routes on borrowed owners. Group key selection and endorsement live in
+the multisig signing module; endpoint-role construction and acceptance remain in
+the endpoint module.
+
 Legacy `/multisig/exn` coordination indexes the embedded-section SAID in meids
 and submitters in maids. Joining adds a member's group-index signature to the
 business EXN; completion and external lead delivery remain separate decisions.
