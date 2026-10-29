@@ -20,7 +20,7 @@ import { publicOpeningAttachment } from "../../../keri/src/acdc/registering.ts";
 import { ipexExnBody } from "../../../keri/src/app/ipex/ipex-building.ts";
 import { acdcV2RegistryProposal } from "../../../keri/src/app/multisig/grouping.ts";
 import { loadNests } from "../../../keri/src/db/exchange/exchange-nests.ts";
-import { signed } from "../../../keri/test/integration/app/ipex-witness-helpers.ts";
+import { nonce, signed } from "../../../keri/test/integration/app/ipex-witness-helpers.ts";
 import { reserveTcpPort, runTufa, spawnTufa, waitForServer } from "../test-helpers.ts";
 
 /** Exercise manual reply approval and the application-triggered rotation handoff. */
@@ -295,7 +295,13 @@ async function groupSaltFlow(automatic: boolean) {
               try {
                 const credential = acdcmap(groups[0].hab.pre, {
                   regid: rip.said!,
-                  attribute: { d: "", i: foreign?.holder ?? members[1].pre, name: "Newcomer issuance" },
+                  attribute: {
+                    d: "",
+                    u: nonce(),
+                    i: foreign?.holder ?? members[1].pre,
+                    status: { d: "", u: nonce(), value: "active" },
+                    private: { d: "", u: nonce(), value: "revealed in full disclosure" },
+                  },
                 });
                 const opening = new RegistryCustody({ hby: recipient, registry: recipientRuntime.acdc!.store })
                   .derive(rip.said!, 1, credential.said!, "issued");
