@@ -6,6 +6,7 @@
  * users rely on after installing the packed tarball.
  */
 import { Signer } from "cesr-ts";
+import { replicationTargets } from "@keri-ts/multisync/v2";
 import { run } from "effection";
 import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
@@ -58,6 +59,14 @@ assert(typeof runtime.credential === "function", "keri-ts/runtime missing creden
 assert(typeof runtime.credentialSaidFromGrant === "function", "runtime missing grant credential selection");
 assert(typeof runtime.storedGrantArtifacts === "function", "runtime missing stored grant reconstruction");
 assert(runtime.IPEX_GRANT_ROUTE === "/ipex/grant", "runtime grant route does not match the protocol");
+assert(
+  replicationTargets({
+    accepted: true,
+    previousSigningMembers: ["lead", "departed"],
+    signingMembers: ["lead", "newcomer"],
+  }, "lead").join(",") === "newcomer",
+  "installed multisync/v2 did not select the accepted rotation newcomer",
+);
 const selectedGenus = parseGvrsn("2.0");
 assert(selectedGenus.major === 2 && selectedGenus.minor === 0, "installed CLI genus parser changed selection");
 assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algorithm selection");

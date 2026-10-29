@@ -16,13 +16,14 @@ HOSTING_TARBALL_PATH="${5:-}"
 WALLET_TARBALL_PATH="${6:-}"
 REGISTRAR_TARBALL_PATH="${7:-}"
 OBSERVER_TARBALL_PATH="${8:-}"
+MULTISYNC_TARBALL_PATH="${9:-}"
 
-if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" || -z "${WALLET_TARBALL_PATH}" || -z "${REGISTRAR_TARBALL_PATH}" || -z "${OBSERVER_TARBALL_PATH}" ]]; then
-  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz> <keri-ts-registrar.tgz> <keri-ts-observer.tgz>" >&2
+if [[ -z "${KERI_TARBALL_PATH}" || -z "${CESR_TARBALL_PATH}" || -z "${TUFA_TARBALL_PATH}" || -z "${VERIFIER_TARBALL_PATH}" || -z "${HOSTING_TARBALL_PATH}" || -z "${WALLET_TARBALL_PATH}" || -z "${REGISTRAR_TARBALL_PATH}" || -z "${OBSERVER_TARBALL_PATH}" || -z "${MULTISYNC_TARBALL_PATH}" ]]; then
+  echo "Usage: $0 <keri-ts.tgz> <cesr-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz> <keri-ts-registrar.tgz> <keri-ts-observer.tgz> <keri-ts-multisync.tgz>" >&2
   exit 1
 fi
 
-for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}" "${HOSTING_TARBALL_PATH}" "${WALLET_TARBALL_PATH}" "${REGISTRAR_TARBALL_PATH}" "${OBSERVER_TARBALL_PATH}"; do
+for tarball in "${KERI_TARBALL_PATH}" "${CESR_TARBALL_PATH}" "${TUFA_TARBALL_PATH}" "${VERIFIER_TARBALL_PATH}" "${HOSTING_TARBALL_PATH}" "${WALLET_TARBALL_PATH}" "${REGISTRAR_TARBALL_PATH}" "${OBSERVER_TARBALL_PATH}" "${MULTISYNC_TARBALL_PATH}"; do
   if [[ ! -f "${tarball}" ]]; then
     echo "Tarball not found: ${tarball}" >&2
     exit 1
@@ -41,6 +42,7 @@ deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-ta
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${WALLET_TARBALL_PATH}"
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${REGISTRAR_TARBALL_PATH}"
 deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${OBSERVER_TARBALL_PATH}"
+deno run --allow-run=tar --allow-read "${ROOT_DIR}/scripts/npm/assert-tarball-targets.ts" "${MULTISYNC_TARBALL_PATH}"
 
 KERI_TARBALL_DIR="$(cd "$(dirname "${KERI_TARBALL_PATH}")" && pwd)"
 KERI_TARBALL_NAME="$(basename "${KERI_TARBALL_PATH}")"
@@ -58,6 +60,8 @@ REGISTRAR_TARBALL_DIR="$(cd "$(dirname "${REGISTRAR_TARBALL_PATH}")" && pwd)"
 REGISTRAR_TARBALL_NAME="$(basename "${REGISTRAR_TARBALL_PATH}")"
 OBSERVER_TARBALL_DIR="$(cd "$(dirname "${OBSERVER_TARBALL_PATH}")" && pwd)"
 OBSERVER_TARBALL_NAME="$(basename "${OBSERVER_TARBALL_PATH}")"
+MULTISYNC_TARBALL_DIR="$(cd "$(dirname "${MULTISYNC_TARBALL_PATH}")" && pwd)"
+MULTISYNC_TARBALL_NAME="$(basename "${MULTISYNC_TARBALL_PATH}")"
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 
 echo "Running combined Docker smoke test on ${SMOKE_NODE_IMAGE}"
@@ -72,6 +76,7 @@ docker run --rm \
   -v "${WALLET_TARBALL_DIR}:/wallet-pkg" \
   -v "${REGISTRAR_TARBALL_DIR}:/registrar-pkg" \
   -v "${OBSERVER_TARBALL_DIR}:/observer-pkg" \
+  -v "${MULTISYNC_TARBALL_DIR}:/multisync-pkg" \
   -v "${SAMPLES_DIR}:/samples" \
   -v "${ROOT_DIR}/scripts/npm:/smoke-scripts:ro" \
   "${SMOKE_NODE_IMAGE}" /bin/sh /smoke-scripts/smoke-pr-packages-container.sh \
@@ -82,4 +87,5 @@ docker run --rm \
     "/hosting-pkg/${HOSTING_TARBALL_NAME}" \
     "/wallet-pkg/${WALLET_TARBALL_NAME}" \
     "/registrar-pkg/${REGISTRAR_TARBALL_NAME}" \
-    "/observer-pkg/${OBSERVER_TARBALL_NAME}"
+    "/observer-pkg/${OBSERVER_TARBALL_NAME}" \
+    "/multisync-pkg/${MULTISYNC_TARBALL_NAME}"

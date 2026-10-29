@@ -116,8 +116,8 @@ Install compiler tools after runtime smoke so they cannot mask missing dependenc
 The packed consumer must actually read/reopen a >16 MiB native LMDB row and retain
 owned bytes across later writes, sign/refuse altered data and transmit/close real
 TCP. Module loading alone does not qualify those installed runtime paths.
-Install all five local tarballs once per runtime
-image (including macOS); run the installed Tufa bin without npx fallback. Source
+Install the complete local tarball graph once per runtime
+image (including macOS), including the versioned multisync application package; run the installed Tufa bin without npx fallback. Source
 tests do not qualify package resolution or Node hosting. Require Node >=20.3 in
 all generated manifests; qualify the declared floor and current runtime without
 compatibility flags. Node 18 is a historical target, not a release gate.
