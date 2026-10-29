@@ -1,7 +1,7 @@
 /** Real member processes approve one salt reply through the existing mailbox. */
 import { startServer } from "@keri-ts/hosting";
 import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
-import { concatBytes, Counter, Vrsn_2_0 } from "cesr-ts";
+import { collectPayload, concatBytes, Counter, framePayload, parseBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
@@ -16,12 +16,18 @@ import {
   systemClock,
 } from "keri-ts/runtime";
 import { acdcmap, blindate } from "../../../keri/src/acdc/messaging.ts";
+import { publicOpeningAttachment } from "../../../keri/src/acdc/registering.ts";
+import { ipexExnBody } from "../../../keri/src/app/ipex/ipex-building.ts";
 import { acdcV2RegistryProposal } from "../../../keri/src/app/multisig/grouping.ts";
 import { loadNests } from "../../../keri/src/db/exchange/exchange-nests.ts";
+import { signed } from "../../../keri/test/integration/app/ipex-witness-helpers.ts";
 import { reserveTcpPort, runTufa, spawnTufa, waitForServer } from "../test-helpers.ts";
 
 /** Exercise manual reply approval and the application-triggered rotation handoff. */
 async function groupSaltFlow(automatic: boolean) {
+  // Optional external scenario handoff carries public evidence only.
+  const receiverRequest = automatic && Deno.env.get("MULTISYNC_RECEIVER_REQUEST");
+  const foreign = receiverRequest ? JSON.parse(await Deno.readTextFile(receiverRequest)) : undefined;
   const root = await Deno.makeTempDir({ prefix: "salt-group-processes-" });
   const passcode = "GroupRegistrySaltCliPasscode";
   try {
@@ -52,6 +58,7 @@ async function groupSaltFlow(automatic: boolean) {
         ];
         for (const runtime of [provider, ...runtimes]) {
           for (const wire of bootstrap) yield* runtime.reactor.processBytes(wire);
+          if (foreign) yield* runtime.reactor.processBytes(new TextEncoder().encode(foreign.kel));
         }
         const allMembers = members.map((member) => member.pre);
         const mids = automatic ? allMembers.slice(0, 2) : allMembers;
@@ -288,7 +295,7 @@ async function groupSaltFlow(automatic: boolean) {
               try {
                 const credential = acdcmap(groups[0].hab.pre, {
                   regid: rip.said!,
-                  attribute: { d: "", i: members[1].pre, name: "Newcomer issuance" },
+                  attribute: { d: "", i: foreign?.holder ?? members[1].pre, name: "Newcomer issuance" },
                 });
                 const opening = new RegistryCustody({ hby: recipient, registry: recipientRuntime.acdc!.store })
                   .derive(rip.said!, 1, credential.said!, "issued");
@@ -314,6 +321,40 @@ async function groupSaltFlow(automatic: boolean) {
                 for (const runtime of [leadRuntime, recipientRuntime]) {
                   yield* runtime.protocol.processEscrowsOnce();
                   assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, update.said);
+                }
+                if (foreign) {
+                  const grant = ipexExnBody(groups[0].hab.pre, "/ipex/grant", [credential], {
+                    recipient: foreign.holder,
+                    xid: credential.said!,
+                    message: "Newcomer issuance",
+                  });
+                  const node = parseBytes(messagize(credential, publicOpeningAttachment(opening), {
+                    gvrsn: Vrsn_2_0,
+                    genusify: true,
+                  }))[0];
+                  const grantWire = yield* call(() =>
+                    collectPayload(framePayload(signed(grant, [
+                      lead.habByName("issuer")!,
+                      recipient.habByName("issuer")!,
+                    ], [node])))
+                  );
+                  const kel = concatBytes(
+                    Counter.makeGVC(Vrsn_2_0),
+                    ...[...allMembers, groups[0].hab.pre].flatMap((pre) => [...lead.db.clonePreIter(pre, 0, Vrsn_2_0)]),
+                  );
+                  yield* call(() =>
+                    Deno.writeTextFile(
+                      foreign.output,
+                      JSON.stringify({
+                        registry: rip.said,
+                        credential: credential.said,
+                        grant: grant.said,
+                        kel: t(kel),
+                        tel: t(leadRuntime.acdc!.store.cloneTel(rip.said!)),
+                        wire: t(grantWire),
+                      }),
+                    )
+                  );
                 }
               } finally {
                 yield* leadRuntime.close();
