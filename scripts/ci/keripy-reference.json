@@ -20,7 +20,7 @@
       },
       "locksmith": {
         "repository": "kentbull/locksmith",
-        "commit": "cea262824a9797b7aa2715cb5f4dd63c107608a3"
+        "commit": "7ab61ecff2dc4794c02171f94330dc132d1a74b4"
       }
     },
     "decisionRegister": "https://github.com/kentbull/enctx/blob/aced46824ad3d5b142e2cb5e7755effb7fb1d6f7/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance",
