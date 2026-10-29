@@ -149,6 +149,7 @@ export {
   type EssrDecision,
   type EssrMessage,
   EssrRecipient,
+  essrEnvelope,
 } from "../app/exchanges/essr.ts";
 export {
   createExchangeMessage,

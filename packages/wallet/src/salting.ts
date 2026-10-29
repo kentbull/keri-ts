@@ -2,8 +2,16 @@
  * Ordinary Revery owns signature thresholds and its existing proof escrow.
  * This application adds no assignment protocol, acknowledgement or retry state.
  */
-import { Cipher, Diger, Encrypter, MtrDex, Prefixer, type SerderKERI } from "cesr-ts";
-import { type Hab, type Habery, reply, ValidationError } from "keri-ts/runtime";
+import { Cipher, Diger, Encrypter, MtrDex, parseBytes, Prefixer, SerderKERI } from "cesr-ts";
+import {
+  EssrRecipient,
+  type Exchanger,
+  type Hab,
+  type Habery,
+  type Reactor,
+  reply,
+  ValidationError,
+} from "keri-ts/runtime";
 import { RegistryCustody } from "./custody.ts";
 
 const ROUTE = "/registry/salt";
@@ -26,6 +34,29 @@ export class RegistrySaltService {
   /** Register only this application route; the caller owns parsing and scheduling. */
   register(): void {
     this.rvy.rtr.addRoute(ROUTE, this, "RegistrySalt");
+  }
+
+  /** Dispatch one decrypted salt reply through the caller's ordinary parser.
+   * Exchanger has already authenticated and retained the outer envelope. The
+   * inner reply still passes Revery; an envelope cannot grant issuer authority.
+   */
+  registerEnvelope(member: Hab, exc: Exchanger, reactor: Reactor): void {
+    const recipient = new EssrRecipient(member);
+    exc.addHandler({
+      resource: "/essr/req",
+      *handle({ serder }) {
+        const opened = recipient.decrypt(serder.said!);
+        if (opened.kind !== "accept") throw new ValidationError("Invalid encrypted salt envelope");
+        const frames = parseBytes(opened.message.body);
+        if (
+          frames.length !== 1 || !(frames[0].body instanceof SerderKERI) || frames[0].body.ilk !== "rpy" ||
+          frames[0].body.route !== ROUTE
+        ) {
+          throw new ValidationError("Encrypted salt envelope requires one registry salt reply");
+        }
+        yield* reactor.processBytes(opened.message.body);
+      },
+    });
   }
 
   /** Validate public bindings independently of the reply's signatures. */

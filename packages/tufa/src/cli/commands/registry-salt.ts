@@ -2,8 +2,16 @@
 import { startServer } from "@keri-ts/hosting";
 import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
 import { call, type Operation, scoped, spawn } from "effection";
-import { parseNumberOption, parseStringOption } from "keri-ts/cli";
-import { chunkBytes, postCesr, runAgentRuntime, ValidationError } from "keri-ts/runtime";
+import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import {
+  chunkBytes,
+  essrEnvelope,
+  isLocalGroupHab,
+  localGroupMember,
+  postCesr,
+  runAgentRuntime,
+  ValidationError,
+} from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { walletStoreArgs } from "../support/wallet.ts";
@@ -22,6 +30,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
   const target = parseStringOption(args.target, "target");
   const input = parseStringOption(args.input, "input");
   const output = parseStringOption(args.output, "output");
+  const essr = parseBooleanOption(args.essr, "essr") ?? false;
   const endpoint = parseStringOption(args.endpoint, "endpoint");
   const host = parseStringOption(args.host, "host") ?? "127.0.0.1";
   const port = parseNumberOption(args.port, "port") ?? 7723;
@@ -51,6 +60,8 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
       const custody = new RegistryCustody({ hby, registry: runtime.acdc.store });
       const service = new RegistrySaltService(custody, runtime.protocol.rvy);
       service.register();
+      const member = isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
+      service.registerEnvelope(member, runtime.exc, runtime.reactor);
       for (const path of evidence) {
         yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(path)));
       }
@@ -66,7 +77,13 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
       }
       if (operation === "send") {
         const body = service.makeReply(hab, registry, party!, target);
-        const wire = hab.endorse(body);
+        let wire = hab.endorse(body);
+        if (essr) {
+          const destination = target ?? party!;
+          const key = hby.db.getKever(destination)?.verfers[0];
+          if (!key) throw new ValidationError("ESSR requires a known individual recipient key");
+          wire = essrEnvelope(member, wire, destination, key);
+        }
         if (output) yield* call(() => Deno.writeFile(output, wire, { createNew: true, mode: 0o600 }));
         if (endpoint) {
           yield* postCesr(endpoint, (signal) => chunkBytes(wire, { signal }), runtime.http, {

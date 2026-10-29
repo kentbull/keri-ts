@@ -94,6 +94,7 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
         ...args("issuer", "send"),
         "--party",
         fixture.recipient,
+        "--essr",
         "--endpoint",
         `http://127.0.0.1:${port}/`,
         "--timeout",
