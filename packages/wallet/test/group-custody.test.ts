@@ -1,5 +1,5 @@
 /** Real member ciphertexts follow ordinary two-of-three registry approval. */
-import { concatBytes, MtrDex, Salter } from "cesr-ts";
+import { concatBytes, Counter, MtrDex, Salter, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import {
@@ -16,11 +16,11 @@ import {
 } from "keri-ts/runtime";
 import { acdcV2RegistryProposal } from "../../keri/src/app/multisig/grouping.ts";
 import { loadNests } from "../../keri/src/db/exchange/exchange-nests.ts";
-import { createWalletBaser, RegistryCustody, type WalletBaser } from "../mod.ts";
+import { RegistryCustody, RegistrySaltService } from "../mod.ts";
 
 Deno.test("group salt copies remain private and follow two-of-three accepted registry inception", async () => {
   await run(function* () {
-    const identities: Habery[] = [], runtimes: AgentRuntime[] = [], stores: WalletBaser[] = [];
+    const identities: Habery[] = [], runtimes: AgentRuntime[] = [];
     try {
       for (let index = 0; index < 3; index++) {
         identities.push(
@@ -47,9 +47,8 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       );
       const inception = messagize(groups[0].serder, { sigers: [...groups[0].sigers, ...groups[1].sigers] });
       for (const runtime of runtimes) yield* runtime.reactor.processBytes(inception, { local: true });
-      for (const hby of identities) stores.push(yield* createWalletBaser({ name: hby.name, temp: true }));
       const custody = identities.map((hby, index) =>
-        new RegistryCustody({ hby, registry: runtimes[index].acdc!.store, db: stores[index] })
+        new RegistryCustody({ hby, registry: runtimes[index].acdc!.store })
       );
       const root = new Salter({ code: MtrDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) });
       const copies = custody[0].sealMembers(groups[0].hab, root);
@@ -87,11 +86,31 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       assertEquals(runtimes[2].acdc!.store.seqEvent(rip.said!, 0), null);
       const future = custody[0].derive(rip.said!, 17, rip.said!, "revoked");
       assertEquals(custody[1].derive(rip.said!, 17, rip.said!, "revoked"), future);
-      yield* stores[1].close();
-      yield* stores[1].reopen();
+      yield* identities[1].ks.close();
+      yield* identities[1].ks.reopen();
       assertEquals(custody[1].derive(rip.said!, 17, rip.said!, "revoked"), future);
+
+      // A nonapproving member can accept quorum-authorized evidence and later
+      // receive its salt. No inception approval or delivery receipt is invented.
+      for (const wire of identities[0].db.clonePreIter(groups[0].hab.pre, 0, Vrsn_2_0)) {
+        yield* runtimes[2].reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire), { local: true });
+      }
+      yield* runtimes[2].reactor.processBytes(
+        concatBytes(Counter.makeGVC(Vrsn_2_0), runtimes[0].acdc!.store.cloneTel(rip.said!)),
+      );
+      assertEquals(runtimes[2].acdc!.store.seqEvent(rip.said!, 0)?.said, rip.said);
+      const services = custody.map((owner, index) => new RegistrySaltService(owner, runtimes[index].protocol.rvy));
+      for (const service of services) service.register();
+      const reply = services[0].makeReply(groups[0].hab, rip.said!, groups[0].hab.pre, members[2].pre);
+      yield* runtimes[2].reactor.processBytes(groups[0].hab.endorse(reply));
+      assertEquals(identities[2].ks.custody.get([rip.said!]), null);
+      yield* runtimes[2].reactor.processBytes(groups[1].hab.endorse(reply));
+      yield* runtimes[2].protocol.processEscrowsOnce();
+      assertEquals(custody[2].derive(rip.said!, 17, rip.said!, "revoked"), future);
+      yield* identities[2].ks.close();
+      yield* identities[2].ks.reopen();
+      assertEquals(custody[2].derive(rip.said!, 17, rip.said!, "revoked"), future);
     } finally {
-      for (const store of stores.reverse()) yield* store.close(true);
       for (const runtime of runtimes.reverse()) yield* runtime.close();
       for (const hby of identities.reverse()) yield* hby.close(true);
     }
