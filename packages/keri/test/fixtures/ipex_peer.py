@@ -47,7 +47,7 @@ class IpexPeer:
         self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc, framed=False)
         self.received = []
         self.running = True
-        self.wallet = None
+        self.reger = None
         app = falcon.App()
         app.add_route("/", HttpEnd(rxbs=self.parser.ims))
         app.add_route("/_fixture", PeerControl(self))
@@ -73,7 +73,7 @@ class IpexPeer:
         if not self.parser.ims:
             return
         arrived = bytearray(self.parser.ims)
-        if self.wallet is not None:
+        if self.reger is not None:
             self.parser.ims.clear()
             self.native.ingest(arrived)
         else:
@@ -82,7 +82,7 @@ class IpexPeer:
         self.received.extend(frame.serder.said for frame in decoded or ())
 
     def post(self, wire):
-        if self.wallet is not None:
+        if self.reger is not None:
             wire = Counter.makeGVC(version=Vrsn_2_0) + bytes(wire)
         req = Request(self.remote["url"], data=bytes(wire), method="POST",
                       headers={"Content-Type": "application/cesr"})
@@ -93,7 +93,7 @@ class IpexPeer:
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
         for issuer in self.graph.issuers:
-            if self.wallet is not None:
+            if self.reger is not None:
                 self.post(b"".join(self.hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)))
                 continue
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
@@ -134,7 +134,7 @@ class IpexPeer:
         self.post(serializeMessage(self.hby, said))
 
     def message(self, verb, prior, invalid):
-        if self.wallet is not None and not invalid:
+        if self.reger is not None and not invalid:
             return self.wallet_message(verb, prior)
         recipient = self.remote["pre"]
         if verb == "apply":
@@ -166,7 +166,7 @@ class IpexPeer:
         previous = self.hby.db.exns.get(keys=(prior,)) if prior else None
         assert prior is None or previous is not None, f"Missing prior exchange: {prior}"
         body, attachments = self.message(verb, previous, invalid)
-        if self.wallet is not None and not invalid:
+        if self.reger is not None and not invalid:
             return self.wallet_deliver(body, bytes(body.raw + attachments), prior if verb == "admit" else None)
         semantic = invalid is True and self.graph_case in (
             "I2I", "E1E", "AND", "OR", "NAND", "NOR", "unknown-leaf", "unknown-group",
@@ -193,10 +193,10 @@ class IpexPeer:
             clock.exit()
 
     def enable_wallet(self, witnesses):
-        """Compose native wallet owners and real three-witness/quorum-two issuance for the positive application case."""
+        """Compose native evidence owners and real three-witness/quorum-two issuance for the positive application case."""
         from keri.acdc import Regery, Registrar
         from keri.acdc.sectioning import SectionBaser
-        from keri.app.credentialing import Wallet
+        from keri.vdr.eventing import Reger
         from keri.cli.common.acdc_v2_ipex import Peer
         from keri.app.oobiing import Oobiery
         from keri.help import helping
@@ -221,7 +221,9 @@ class IpexPeer:
         from keri.acdc import RegBaser
         self.rgy = Regery(self.hby, name="wallet-peer",
                           baser=RegBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
-        self.wallet = Wallet(self.hby, self.rgy)
+        self.reger = Reger(name=self.hby.name, base=self.hby.base,
+                           temp=self.hby.db.temp, headDirPath=self.hby.db.headDirPath)
+        self.registrar = Registrar(self.rgy)
         self.sections = SectionBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath)
         self.native = Peer(self.hby, self.rgy, self.sections)
         self.native.parser.ims = self.parser.ims  # Keep HttpEnd's existing borrowed intake buffer.
@@ -242,8 +244,8 @@ class IpexPeer:
         self.hab.interact(data=[dict(i=registry.regk, s="1", d=update.said)], gvrsn=Vrsn_2_0)
         self.receipt()
         assert registry.anchorMsg(update.said)
-        self.wallet.recordIssued(full, update.said, blinder=opening)
-        self.wallet.retainPublicOpening(update, opening)
+        self.registrar.recordIssued(self.reger, full, update.said, blinder=opening)
+        self.rgy.store.retainOpening(update, opening)
         self.issued_opening = opening
         self.graph.full_nodes, self.graph.nodes = [full], [partial_disclosure(full, ["a/status/"])]
         return self.info()
@@ -255,7 +257,7 @@ class IpexPeer:
             return apply(self.hab, self.remote["pre"], "status", modifiers=dict(dp=self.plan), ax=[True])
         if verb in ("offer", "grant"):
             if held is None:
-                full = self.wallet.issuedCredential(self.graph.full_nodes[0].said)
+                full = self.registrar.issuedCredential(self.reger, self.graph.full_nodes[0].said)
                 node = partial_disclosure(full, self.plan[0][2])
             else:
                 view = self.native.verification.heldCredential(held)
@@ -299,8 +301,8 @@ class IpexPeer:
         return self.wallet_deliver(body, bytes(body.raw + attachments))
 
     def reopen_wallet(self):
-        """Reopen the same independent public and wallet environments without replacing retained views."""
-        for db in (self.wallet.reger, self.rgy.baser, self.hby.ks, self.hby.db):
+        """Reopen the same independent registry and credential environments without replacing retained views."""
+        for db in (self.reger, self.rgy.baser, self.hby.ks, self.hby.db):
             db.close()
             db.reopen(reuse=True)
 
@@ -362,7 +364,7 @@ class IpexPeer:
             nests=len(db.enst.get(keys=(inspect,))))
         verdict = self.verification.evaluateGrant(inspect) if selected and selected.route == "/ipex/grant" else None
         return dict(verdict=verdict, messages=[body.sad for body in messages], received=self.received,
-                    known=list(self.kvy.kevers), **({} if self.wallet else dict(notifications=len(self.recorder.items))), inspected=inspected,
+                    known=list(self.kvy.kevers), **({} if self.reger else dict(notifications=len(self.recorder.items))), inspected=inspected,
                     nodes=[dict(said=nest.serder.said, attributes=nest.serder.sad["a"],
                                 raw=nest.serder.raw.decode(),
                                 proof=serializeParsedSubstream(nest).decode(),
@@ -425,7 +427,7 @@ def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None):
             finally:
                 peer.doist.exit()
                 peer.server.close()
-                if peer.wallet is not None:
-                    peer.wallet.close()
+                if peer.reger is not None:
+                    peer.reger.close()
                     peer.rgy.close()
                     peer.sections.close()
