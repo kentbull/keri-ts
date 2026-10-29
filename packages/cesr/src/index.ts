@@ -38,7 +38,6 @@ export * from "./primitives/crypto/siger.ts";
 export * from "./primitives/crypto/signer.ts";
 export * from "./primitives/crypto/tholder.ts";
 export * from "./primitives/crypto/verfer.ts";
-export { deriveX25519SharedSecret, generateX25519KeyPair } from "./primitives/crypto/x25519.ts";
 export * from "./primitives/structuring/aggor.ts";
 export * from "./primitives/structuring/blinder.ts";
 export * from "./primitives/structuring/compactor.ts";
