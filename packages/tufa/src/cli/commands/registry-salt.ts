@@ -90,7 +90,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
               if (peer === member.pre) continue;
               yield* spawn(function* () {
                 try {
-                  yield* publishProposal(
+                  const published = yield* publishProposal(
                     hby,
                     runtime.protocol,
                     runtime.postman,
@@ -100,6 +100,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
                     hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0 }),
                     { childGvrsn: Vrsn_2_0, pvrsn: Vrsn_2_0 },
                   );
+                  writeJsonLine({ proposals: published.messages });
                 } catch (error) {
                   // A failed member transport is not an extra signature requirement.
                   // Ordinary reply proofs still decide success; no retry is scheduled.
