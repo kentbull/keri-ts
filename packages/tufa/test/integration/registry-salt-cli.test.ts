@@ -143,3 +143,61 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
     await Deno.remove(directory, { recursive: true });
   }
 });
+
+Deno.test("tufa group salt send emits a threshold-verified reply", async () => {
+  const directory = await Deno.makeTempDir({ prefix: "group-salt-cli-" });
+  const passcode = "GroupRegistrySaltCliPasscode";
+  try {
+    const fixture = await run(function* () {
+      const hby = yield* createHabery({ name: "group", headDirPath: directory, bran: passcode, skipConfig: true });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      try {
+        const member = hby.makeHab("member"), holder = hby.makeHab("holder");
+        // One current signer is a valid group threshold. The separate wallet
+        // fixture covers insufficient and sufficient two-of-three signatures.
+        const group = hby.makeGroupHab("issuer", member, [member.pre], [member.pre], undefined, {
+          isith: "1",
+          nsith: "1",
+        });
+        const registry = runtime.acdc!.makeRegistry("shared", group.hab.pre);
+        const rip = runtime.acdc!.store.event(registry.regk!)!;
+        hby.interactGroupHab("issuer", undefined, { data: [{ i: registry.regk, s: "0", d: rip.said }] });
+        assertEquals(registry.anchorMsg(rip.said!).kind, "accept");
+        const custody = new RegistryCustody({ hby, registry: runtime.acdc!.store });
+        custody.createCustody(registry.regk!, holder.pre);
+        return { registry: registry.regk!, recipient: holder.pre };
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+    const output = `${directory}/group-reply.cesr`;
+    const sent = await runTufa([
+      "vc",
+      "registry",
+      "salt",
+      "send",
+      "--name",
+      "group",
+      "--alias",
+      "issuer",
+      "--head-dir",
+      directory,
+      "--passcode",
+      passcode,
+      "--registry",
+      fixture.registry,
+      "--party",
+      fixture.recipient,
+      "--output",
+      output,
+      "--timeout",
+      "2",
+    ]);
+    assertEquals(sent.code, 0, sent.stderr);
+    assertEquals(JSON.parse(sent.stdout).submitted, false);
+    assertEquals((await Deno.readFile(output)).length > 0, true);
+  } finally {
+    await Deno.remove(directory, { recursive: true });
+  }
+});

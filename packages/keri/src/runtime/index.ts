@@ -309,6 +309,7 @@ export type {
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
 export { acdcV2RegistryProposal } from "../app/multisig/grouping.ts";
+export { loadStoredReply } from "../app/delivery/stored-replies.ts";
 export { inspectReplyProposal, endorseReply } from "../app/multisig/reply-approval.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry, publishProposal } from "../app/multisig/multisig-workflows.ts";
 export {

@@ -2,14 +2,16 @@
 import { Vrsn_2_0 } from "cesr-ts";
 import { startServer } from "@keri-ts/hosting";
 import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
-import { call, type Operation, scoped, spawn } from "effection";
+import { call, type Operation, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   chunkBytes,
   essrEnvelope,
+  groupSigningMembers,
   isLocalGroupHab,
   localGroupMember,
   postCesr,
+  publishProposal,
   runAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
@@ -19,9 +21,9 @@ import { walletStoreArgs } from "../support/wallet.ts";
 
 /** Create, ingest, or inspect one registry's salt without opening inventory.
  * Evidence files are ordinary public CESR streams. Output files contain signed
- * recipient ciphertext, never plaintext custody. Group output is a member's
- * signature contribution; this command does not claim threshold completion or
- * remote delivery. Existing Revery escrows own partial reply signatures.
+ * recipient ciphertext, never plaintext custody. Group output requires verified
+ * threshold signatures; submission does not claim remote acceptance. Existing
+ * Revery escrows own partial reply signatures.
  */
 export function* registrySaltCommand(args: Record<string, unknown>): Operation<void> {
   const operation = parseStringOption(args.operation, "operation");
@@ -80,6 +82,43 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
         const body = service.makeReply(hab, registry, party!, target);
         // ESSR supplies the stream genus outside the exact signed inner reply.
         let wire = hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0, genusify: !essr });
+        if (isLocalGroupHab(hby, hab)) {
+          wire = yield* scoped(function* () {
+            yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+            yield* runtime.reactor.processBytes(wire, { local: true });
+            for (const peer of groupSigningMembers(hby, hab.pre)) {
+              if (peer === member.pre) continue;
+              yield* spawn(function* () {
+                try {
+                  yield* publishProposal(
+                    hby,
+                    runtime.protocol,
+                    runtime.postman,
+                    member,
+                    [peer],
+                    { route: "/multisig/rpy", attrs: { gid: hab.pre } },
+                    hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0 }),
+                    { childGvrsn: Vrsn_2_0, pvrsn: Vrsn_2_0 },
+                  );
+                } catch (error) {
+                  // A failed member transport is not an extra signature requirement.
+                  // Ordinary reply proofs still decide success; no retry is scheduled.
+                  console.error(`Salt proposal to ${peer} did not complete: ${error}`);
+                }
+              });
+            }
+            const deadline = performance.now() + timeout * 1000;
+            while (true) {
+              yield* runtime.protocol.processEscrowsOnce();
+              const complete = service.verifiedReply(body);
+              if (complete) return complete;
+              if (performance.now() >= deadline) {
+                throw new ValidationError("Registry salt reply awaits the group signing threshold");
+              }
+              yield* sleep(100);
+            }
+          });
+        }
         if (essr) {
           const destination = target ?? party!;
           const key = hby.db.getKever(destination)?.verfers[0];

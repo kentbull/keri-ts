@@ -2,14 +2,27 @@
  * Ordinary Revery owns signature thresholds and its existing proof escrow.
  * This application adds no assignment protocol, acknowledgement or retry state.
  */
-import { Cipher, Diger, Encrypter, MtrDex, parseBytes, Prefixer, SerderKERI } from "cesr-ts";
+import {
+  Cipher,
+  concatBytes,
+  Counter,
+  Diger,
+  Encrypter,
+  MtrDex,
+  parseBytes,
+  Prefixer,
+  SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import {
   endorseReply,
+  envelopeFromFrame,
   EssrRecipient,
   type Exchanger,
   type Hab,
   type Habery,
   inspectReplyProposal,
+  loadStoredReply,
   type Reactor,
   reply,
   ValidationError,
@@ -141,6 +154,26 @@ export class RegistrySaltService {
       proposer: proposal.wrapper.pre!,
       reply,
     };
+  }
+
+  /** Reconstruct ordinary reply proofs and require their actual signing threshold.
+   * An escrowed body alone is not approval. No separate completion marker or
+   * signature cache is created; Revery owns the retained proof rows.
+   */
+  verifiedReply(body: SerderKERI): Uint8Array | null {
+    this.validate(body);
+    const wire = loadStoredReply(this.custody.options.hby.db, body.said!, Vrsn_2_0);
+    if (!wire.length) return null;
+    const proof = envelopeFromFrame(parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire))[0]);
+    const decision = this.rvy.acceptReply({
+      serder: body,
+      saider: new Diger({ qb64: body.said! }),
+      route: ROUTE,
+      aid: body.pre!,
+      tsgs: proof.tsgs,
+      cigars: proof.cigars,
+    });
+    return decision.kind === "accept" ? wire : null;
   }
 
   /** Read existing local group membership, without storing a second roster. */

@@ -105,6 +105,7 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       const reply = services[0].makeReply(groups[0].hab, rip.said!, groups[0].hab.pre, members[2].pre);
       yield* runtimes[2].reactor.processBytes(groups[0].hab.endorse(reply));
       assertEquals(identities[2].ks.custody.get([rip.said!]), null);
+      assertEquals(services[2].verifiedReply(reply), null);
       const [saltProposal, attachments] = yield* prepareMultisigEventExn(
         members[0].pre,
         { route: "/multisig/rpy", attrs: { gid: groups[0].hab.pre } },
@@ -127,6 +128,7 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       assertEquals(approved.proposer, members[0].pre);
       yield* runtimes[2].reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), approved.wire));
       yield* runtimes[2].protocol.processEscrowsOnce();
+      assertEquals(services[2].verifiedReply(reply) instanceof Uint8Array, true);
       assertEquals(custody[2].derive(rip.said!, 17, rip.said!, "revoked"), future);
       yield* identities[2].ks.close();
       yield* identities[2].ks.reopen();
