@@ -2,11 +2,11 @@
   "commit": "331f32e4de13cc5cb699587c5b1f1e5bc4468035",
   "candidate": {
     "applications": {
-      "dolly": { "repository": "kentbull/dolly", "commit": "06a37fbb154aec83f09d46c162becac663d9f1e9" },
-      "registrar": { "repository": "kentbull/kf-registrar", "commit": "bb0355e61b63be25b0705794bbf14b0a16d0d0a2" },
-      "observer": { "repository": "kentbull/kf-observer", "commit": "30a74263d504fe8c642115a0ef66677383e47b9e" },
-      "witness": { "repository": "kentbull/witness-hk", "commit": "d59da0d2c3ed6d1b82d89b4496a2176e4dde1b27" },
-      "locksmith": { "repository": "kentbull/locksmith", "commit": "7e4798fb9d2136690aad01c125cfdd0b450efa02" }
+      "dolly": { "repository": "kentbull/dolly", "commit": "8ef81d218b4fc05245d7f62855189e037c28d375" },
+      "registrar": { "repository": "kentbull/kf-registrar", "commit": "e8ef3ff47f865e7032fca322840477dc0a223a42" },
+      "observer": { "repository": "kentbull/kf-observer", "commit": "c95f04b114d3d85328cff0985d11382be21cffad" },
+      "witness": { "repository": "kentbull/witness-hk", "commit": "bad836c08750308e46377a143b293d08f1bfa688" },
+      "locksmith": { "repository": "kentbull/locksmith", "commit": "9184af3c9abd4a6803a9a7713c12bcd293aec811" }
     },
     "decisionRegister": "https://github.com/kentbull/enctx/blob/aced46824ad3d5b142e2cb5e7755effb7fb1d6f7/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance",
     "specificationRoadmap": "https://github.com/kentbull/enctx/blob/ee9f9b861f256b02fb208d08e84fcd5594ce2079/plans/keri/acdc-v2/keri-acdc-v2-spec-v1.1-gap-closure-roadmap.md",
@@ -27,7 +27,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "4db8cdbd0907b27d78347f5d8c4f9cd9a72d1039",
+      "commit": "d5639ae105663115217afa2b7f0801bb4ff16c19",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",
