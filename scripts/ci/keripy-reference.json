@@ -3,8 +3,8 @@
   "candidate": {
     "applications": {
       "dolly": { "repository": "kentbull/dolly", "commit": "06a37fbb154aec83f09d46c162becac663d9f1e9" },
-      "registrar": { "repository": "kentbull/kf-registrar", "commit": "eae74c1378652c4088ddfc215c25d9e987b14257" },
-      "observer": { "repository": "kentbull/kf-observer", "commit": "61fc4285ccf7c6e034ac74a8d3faf052c5ca394f" },
+      "registrar": { "repository": "kentbull/kf-registrar", "commit": "bb0355e61b63be25b0705794bbf14b0a16d0d0a2" },
+      "observer": { "repository": "kentbull/kf-observer", "commit": "30a74263d504fe8c642115a0ef66677383e47b9e" },
       "witness": { "repository": "kentbull/witness-hk", "commit": "d59da0d2c3ed6d1b82d89b4496a2176e4dde1b27" },
       "locksmith": { "repository": "kentbull/locksmith", "commit": "7e4798fb9d2136690aad01c125cfdd0b450efa02" }
     },
@@ -27,7 +27,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "aea8fbc6f4bc449843e01e96848bbe50612963e4",
+      "commit": "26e14d999d66cf940fe0566892a7945f7539649c",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",

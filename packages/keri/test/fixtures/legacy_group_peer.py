@@ -303,7 +303,7 @@ class AcdcV2Role:
         from keri.acdc import Regery, loadHandlers
         from keri.acdc.regbasing import RegBaser
         from keri.acdc.regeventing import Rever
-        from keri.app.credentialing import Wallet, WalletBaser
+        from keri.app.credentialing import Wallet
         from keri.core import Parser
         self.hby, self.version = hby, Vrsn_2_0
         self.member = hby.makeHab('member', version=Vrsn_1_0)
@@ -311,8 +311,7 @@ class AcdcV2Role:
         self.exc = exchanging.Exchanger(hby, handlers=[])
         self.notifier = notifying.Notifier(hby)
         self.verification = loadHandlers(hby, self.exc, self.notifier, rgy=self.rgy)
-        self.wallet = Wallet(hby, self.rgy, exc=self.exc, verification=self.verification,
-            db=WalletBaser(name=hby.name, headDirPath=root, temp=False))
+        self.wallet = Wallet(hby, self.rgy, exc=self.exc, verification=self.verification)
         self.rever = Rever(db=hby.db, reger=self.rgy.baser)
         self.psr = Parser(kvy=hby.kvy, rgy=self.rever, exc=self.exc, version=Vrsn_2_0)
         self.group = self.owner = None
@@ -399,7 +398,7 @@ class AcdcV2Role:
 
     def reopen(self):
         """Reopen every persistent application, registry, identity and configuration environment."""
-        for store in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
+        for store in (self.wallet.reger, self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
             store.close()
             assert store.reopen()
         self.hby.db.reload()

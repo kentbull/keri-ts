@@ -196,7 +196,7 @@ class IpexPeer:
         """Compose native wallet owners and real three-witness/quorum-two issuance for the positive application case."""
         from keri.acdc import Regery, Registrar
         from keri.acdc.sectioning import SectionBaser
-        from keri.app.credentialing import Wallet, WalletBaser
+        from keri.app.credentialing import Wallet
         from keri.cli.common.acdc_v2_ipex import Peer
         from keri.app.oobiing import Oobiery
         from keri.help import helping
@@ -221,7 +221,7 @@ class IpexPeer:
         from keri.acdc import RegBaser
         self.rgy = Regery(self.hby, name="wallet-peer",
                           baser=RegBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
-        self.wallet = Wallet(self.hby, self.rgy, db=WalletBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
+        self.wallet = Wallet(self.hby, self.rgy)
         self.sections = SectionBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath)
         self.native = Peer(self.hby, self.rgy, self.wallet, self.sections)
         self.native.parser.ims = self.parser.ims  # Keep HttpEnd's existing borrowed intake buffer.
@@ -300,7 +300,7 @@ class IpexPeer:
 
     def reopen_wallet(self):
         """Reopen the same independent public and wallet environments without replacing retained views."""
-        for db in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db):
+        for db in (self.wallet.reger, self.rgy.baser, self.hby.ks, self.hby.db):
             db.close()
             db.reopen(reuse=True)
 
