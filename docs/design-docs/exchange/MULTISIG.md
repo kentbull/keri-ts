@@ -20,6 +20,14 @@ approval replay, so a peer wrapper arriving during replay sees that approval and
 processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
+Runtime composition lends Multiplexor its matching Kevery/Revery pair, including
+application reply routes and message policy. A supplied pair must share the Habery
+store and Kevery's reply verifier; supplying only one owner is an error. Standalone
+callers may omit both to construct the basic KEL/reply pair. Replay does not register
+or replace routes on borrowed owners. Group key selection and endorsement live in
+the multisig signing module; endpoint-role construction and acceptance remain in
+the endpoint module.
+
 Legacy `/multisig/exn` coordination indexes the embedded-section SAID in meids
 and submitters in maids. Joining adds a member's group-index signature to the
 business EXN; completion and external lead delivery remain separate decisions.
@@ -73,6 +81,26 @@ complete parent bytes and supplemental bytes after removing KERIpy's separately
 owned parent endorsement. This proves encoding parity, not complete bidirectional
 approval interoperability; the receiving workflow remains a separate audit.
 
+## Reply approval policy
+
+`inspectReplyProposal` reauthenticates the retained member wrapper and checks its
+existing local group membership, exact reply commitment, group attribution and
+signature-only child enclosure. The application supplies a required domain
+validator before any consent prompt. Endpoint approval admits only its group's
+endpoint-role add/cut intent with valid role and canonical endpoint identifiers.
+A wrapper cannot select a foreign controller or substitute an unrelated route.
+
+`endorseReply` rechecks the local group and application policy immediately before
+signing. It preserves peer signature factors without mutating retained evidence;
+partial proof and parent acceptance still do not establish reply acceptance. The
+caller records consent through the existing signed wrapper and Multiplexor.
+The endpoint workflow rejects a group establishment change during its approval
+prompt; no separate roster snapshot is persisted or configured.
+Resume revalidates the exact retained local contribution and reuses its signatures
+and wrapper identity. Publication preserves the incoming outer protocol version
+and child's attachment genus; native and legacy proposal indexes stay distinct.
+These helpers create no processor, mailbox, custody store or background worker.
+
 ## CLI approval lifetime
 
 `approvePendingMultisigProposal` approves one matching stored proposal. It has
@@ -109,4 +137,21 @@ business signing and mutation. Normal store loading still occurs.
 
 Revocation and IPEX completion remain implementation work. Selected VCP/ISS
 checks do not replace the final interoperability matrix.
-Native-v2 ACDC/registry authoring remains in its deferred roadmap.
+Native-v2 registry proposals use `/multisig/rip` and `/multisig/bup`. Each
+commits to exactly one matching TEL event and its KEL anchor. Optional `salts`
+attributes map current member AIDs to CESR encrypted salt copies. Those copies
+are separate from event-specific public opening attachments and confer no group
+signing authority. The ordinary member threshold still determines acceptance.
+The protocol coordinator validates and preserves ciphertexts; the application
+owns decryption and local custody retention. `multisig join --v2 --group NAME --said EXN` selects one retained authenticated proposal. Tufa opens optional
+custody only when encrypted copies are present, decrypts its member copy before
+approval, and retains it after exact TEL acceptance. The command uses ordinary
+runtime workers and finite transport; it adds no replay store or delivery ledger.
+
+Fresh group inception with custody carries member ciphertexts. Reinvoking that
+creation path for pending or accepted inception refuses new salt generation;
+use the original EXN with `join --v2` instead. The native join subprocess has a
+real HTTP/reopen regression. A separate fresh-inception subprocess regression
+uses ordinary mailbox return delivery, compares reopened derivation at both
+members, and rejects salt recreation. The full multisig interoperability and
+member-rotation matrix still require separate qualification.

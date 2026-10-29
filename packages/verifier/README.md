@@ -28,13 +28,12 @@ Licensed under Apache-2.0; see the repository's `LICENSE`.
 
 `AcdcV2Verifier(hby, hab, exc, registrar, http, options)` borrows the actual Exchanger,
 public evidence acceptor, local query signer and ordinary runtime HTTP client.
-Options select one HTTPS observer cache URL (`source`), maximum observation age,
-finite request deadline and a clock. The runtime's normal certificate trust and
+Options select one HTTPS observer cache URL (`source`), finite request deadline and a clock. The runtime's normal certificate trust and
 URL hostname verification authenticate HTTPS; requests refuse redirects. The URL
 must have no credentials, query or fragment. Queries never trigger registrar acquisition.
 KEL/TEL proof authentication remains
-independent of response-source authentication. Matching source/head/age establishes
-only recent observation from that configured endpoint, never global latest state.
+independent of response-source authentication. The verifier records local receipt time but imposes no custom freshness
+header or observation-age rule. Returned evidence does not establish global latest state.
 
 `inspectHistorical(grant)` authenticates the retained exact-route Grant through
 historical inspection, returning its unchanged origin and view references without
@@ -55,14 +54,13 @@ Transport failures retain ordinary pending webhook work; genuine cleanup/storage
 failures remain visible. No exactly-once delivery is claimed.
 
 `tufa verifier run --acdc-v2 --alias NAME --config verifier.json --hook URL`
-composes this owner with `runtime.http`. Observation selection and freshness are
-application policy in the existing schema-policy configuration:
+composes this owner with `runtime.http`. Source selection and request timeout are
+application settings in the existing schema-policy configuration:
 
 ```json
 {
   "observation": {
     "url": "https://observer.example/",
-    "maximumAgeMs": 15000,
     "requestTimeoutMs": 5000
   },
   "requireKnownSchemas": false,
@@ -70,8 +68,8 @@ application policy in the existing schema-policy configuration:
 }
 ```
 
-ACDC v2 requires `observation.url`. Omitted durations retain the 15,000 ms age
-and 5,000 ms deadline defaults; supplied durations must be finite and positive.
-Configure HTTPS trust through the runtime/platform trust settings. A missing or
-expired observation cannot approve current use; unrelated cancellation, cleanup
+ACDC v2 requires `observation.url`. The request deadline defaults to 5,000 ms
+and must be finite and positive.
+Configure HTTPS trust through the runtime/platform trust settings. Missing or invalid
+evidence cannot approve current use; unrelated cancellation, cleanup
 and storage failures remain visible. Omitting `--acdc-v2` preserves the legacy lane.

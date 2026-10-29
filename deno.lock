@@ -656,19 +656,13 @@
           "npm:effection@^3.6.0"
         ]
       },
-      "packages/tufa": {
+      "packages/multisync": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
-          "npm:effection@^3.6.0"
+          "jsr:@std/assert@0.217"
         ]
       },
-      "packages/verifier": {
-        "dependencies": [
-          "jsr:@deno/dnt@~0.42.3",
-          "npm:effection@^3.6.0"
-        ]
-      },
-      "packages/wallet": {
+      "packages/observer": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",
@@ -682,7 +676,19 @@
           "npm:effection@^3.6.0"
         ]
       },
-      "packages/observer": {
+      "packages/tufa": {
+        "dependencies": [
+          "jsr:@deno/dnt@~0.42.3",
+          "npm:effection@^3.6.0"
+        ]
+      },
+      "packages/verifier": {
+        "dependencies": [
+          "jsr:@deno/dnt@~0.42.3",
+          "npm:effection@^3.6.0"
+        ]
+      },
+      "packages/wallet": {
         "dependencies": [
           "jsr:@deno/dnt@~0.42.3",
           "jsr:@std/assert@0.217",

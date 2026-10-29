@@ -144,20 +144,24 @@ body after non-refusal. Pending material is not acceptance. Accepted cloneTel re
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
-RegistryCustody is an explicit capability over the existing wallet environment.
+RegistryCustody stores encrypted salts in Keeper, matching KERIpy 5cece6c2.
 Keeper AEID and authenticated ciphertext own the secret; ordinary inventory never
-loads it. Protected POSIX handoff matches the Python profile. The nonsecret
+loads it. Protocol callers prepare encrypted custody before the Keeper writer,
+retain it inside that writer. No custom retention receipt is required. Keeper failures propagate separately from
+sealed-box authentication rejection. This seam supplies no entitlement policy.
+Plaintext export/import and operator rewrap are removed. Encrypted sharing uses
+existing CESR encryption and ordinary authenticated messages. The nonsecret
 event-SAID index retains exact target/state/bound coordinates before derived BUP
 processing so reopen and later public successors cannot select different inputs.
 Reconstructed openings must match the exact accepted event; AEID replacement
-requires explicit operator reimport, and missing private history never regenerates salt.
+re-encrypts salts through the existing Keeper lifecycle; missing private history never regenerates salt.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
 reuse pending BUP/opening bytes and the current branch's already signed KEL seal.
 Public proof retention uses RegistryStore's decoder; private derivation retains
 nonsecret event-specific coordinates before processing and never publishes implicitly.
-Tufa owns only argument/configuration, protected operator handoff and final output
+Tufa owns only argument/configuration and final output
 following joined cleanup; native update means BUP state advance, never historical upd.
 Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
 checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied

@@ -269,8 +269,10 @@ export function serializeMessage(
 /** Selected ACDC v2 multisig routes; exact child relationships remain the coordinator's obligation. */
 export function nestedMultisigIlks(route: string): readonly string[] | null {
   switch (route) {
-    case "/multisig/registry":
-      return ["rip", "bup", "ixn", "rot", "drt"];
+    case "/multisig/rip":
+      return ["rip", "ixn", "rot", "drt"];
+    case "/multisig/bup":
+      return ["bup", "ixn", "rot", "drt"];
     case "/multisig/exn":
       return ["exn"];
     case "/multisig/icp":

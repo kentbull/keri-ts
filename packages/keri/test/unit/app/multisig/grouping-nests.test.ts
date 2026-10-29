@@ -6,12 +6,15 @@ import {
   concatBytes,
   Counter,
   Diger,
+  Encrypter,
   framePayload,
   makeBlindState,
+  MtrDex,
   nestedPayload,
   NumberPrimitive,
   parseBytes,
   Prefixer,
+  Salter,
   SerderACDC,
   SerderKERI,
   Siger,
@@ -21,11 +24,13 @@ import {
 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import {
+  assert,
   assertEquals,
   assertExists,
   assertInstanceOf,
   assertNotEquals,
   assertRejects,
+  assertStrictEquals,
   assertThrows,
 } from "jsr:@std/assert";
 import {
@@ -36,7 +41,6 @@ import {
 import { deliverCredentialRevocation, revokeCredential } from "../../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../../src/app/credentials/credential-workflows.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
@@ -48,9 +52,11 @@ import {
   sendCompletedGroupIpex,
 } from "../../../../src/app/ipex/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
+import { groupEndorseReply } from "../../../../src/app/multisig/group-signing.ts";
 import {
   acdcV2RegistryProposal,
   loadMultisigHandlers,
+  Multiplexor,
   type MultisigEventProposal,
   multisigExnBody,
   multisigInceptExn,
@@ -69,6 +75,7 @@ import {
   approvePendingMultisigProposal,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
+import { endorseReply, inspectReplyProposal, replyContribution } from "../../../../src/app/multisig/reply-approval.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -77,6 +84,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { Kevery } from "../../../../src/core/kel/eventing.ts";
 import { interact as interactEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 import {
@@ -84,6 +92,7 @@ import {
   issue as issueCredential,
   revoke as revokeCredentialEvent,
 } from "../../../../src/core/protocol-vdr-eventing.ts";
+import { Revery } from "../../../../src/core/routing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import { Reger } from "../../../../src/db/reger.ts";
@@ -146,7 +155,7 @@ async function learn(target: Habery, member: Hab): Promise<void> {
 
 /** Keep two independent participant stores and one real notifier for each scenario. */
 async function participants(
-  test: (left: Habery, right: Habery, alice: Hab, bob: Hab, notifier: Notifier) => Promise<void>,
+  test: (left: Habery, right: Habery, alice: Hab, bob: Hab, notifier: Notifier) => void | Promise<void>,
 ) {
   await run(function*() {
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -163,6 +172,367 @@ async function participants(
       yield* right.close(true);
       yield* left.close(true);
     }
+  });
+}
+
+Deno.test("multisig replay borrows the configured reply owner and its application routes", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
+          local: true,
+        });
+        yield* call(() => learn(right, local.hab));
+        const { kvy, rvy } = runtime.protocol;
+        const accepted: string[] = [];
+        rvy.rtr.addRoute("/test/group-reply", {
+          processReply(args: Parameters<Revery["processReply"]>[0] & { diger: Diger; route: string }) {
+            const result = rvy.acceptReply({ ...args, saider: args.diger, aid: local.hab.pre });
+            if (result.kind === "accept") accepted.push(args.serder.said!);
+            return result;
+          },
+        });
+        const routes = [...rvy.rtr.routes];
+        const mux = new Multiplexor(left, { notifier, kvy, rvy });
+        assertStrictEquals(mux.kvy, kvy);
+        assertStrictEquals(mux.rvy, rvy);
+        assertEquals(rvy.rtr.routes, routes);
+        const reply = replyEvent("/test/group-reply", { exact: "application data" }, { version: Vrsn_2_0 });
+        const leftProof = envelopeFromFrame(parseBytes(groupEndorseReply(left, local.hab.pre, reply, Vrsn_2_0))[0]);
+        const rightProof = envelopeFromFrame(parseBytes(groupEndorseReply(right, remote.hab.pre, reply, Vrsn_2_0))[0]);
+        const group = leftProof.tsgs[0];
+        const wire = messagize(reply, {
+          sigers: [...group.sigers, ...rightProof.tsgs[0].sigers],
+          seal: { i: group.prefixer, s: group.seqner, d: group.diger },
+          gvrsn: Vrsn_2_0,
+        });
+        const child = parseBytes(wire)[0];
+        yield* runtime.exc.processEvent(proposal(alice, "/multisig/rpy", child, { gid: local.hab.pre }));
+        assertEquals(accepted, []);
+        yield* runtime.exc.processEvent(proposal(bob, "/multisig/rpy", child, { gid: local.hab.pre }));
+        assertEquals(accepted, [reply.said]);
+        assertExists(left.db.rpys.get([reply.said!]));
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+Deno.test("multisig replay requires a matching semantic owner pair", async () => {
+  await participants((left, right) => {
+    const kvy = left.kevery;
+    const rvy = left.rvy;
+    assertThrows(() => new Multiplexor(left, { kvy }), TypeError, "both Kevery and Revery");
+    assertThrows(() => new Multiplexor(left, { rvy }), TypeError, "both Kevery and Revery");
+    assertThrows(() => new Multiplexor(left, { kvy, rvy: new Revery(left.db) }), TypeError, "share the group store");
+    assertThrows(
+      () => new Multiplexor(left, { kvy: right.kevery, rvy: right.rvy }),
+      TypeError,
+      "share the group store",
+    );
+    const standalone = new Multiplexor(left);
+    assertStrictEquals(standalone.kvy.db, left.db);
+    assertStrictEquals(standalone.kvy.rvy, standalone.rvy);
+    assertThrows(() => new Multiplexor(left, { kvy: new Kevery(left.db), rvy }), TypeError, "reply verifier");
+  });
+});
+
+Deno.test("group reply inspection gates policy and preserves the exact retained peer contribution", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
+          local: true,
+        });
+        yield* call(() => learn(right, local.hab));
+        const reply = replyEvent("/test/reply-policy", { exact: "application data" }, {
+          pre: local.hab.pre,
+          version: Vrsn_2_0,
+        });
+        const child = parseBytes(groupEndorseReply(right, remote.hab.pre, reply, Vrsn_2_0))[0];
+        const incoming = proposal(bob, "/multisig/rpy", child, { gid: local.hab.pre });
+        yield* runtime.exc.processEvent(incoming);
+        let validated = 0;
+        const validate = (candidate: SerderKERI) => {
+          assertEquals(candidate.raw, reply.raw);
+          validated++;
+        };
+        const group = local.hab.pre;
+        const inspected = inspectReplyProposal(left, runtime.exc, incoming.serder.said!, { group, validate });
+        assertEquals(validated, 1);
+        const peerBefore = replyContribution(inspected);
+        const originalSign = alice.mgr.sign;
+        let signatures = 0;
+        alice.mgr.sign = () => {
+          signatures++;
+          throw new Error("Rejected policy reached the signer.");
+        };
+        try {
+          assertThrows(
+            () => endorseReply(left, inspected.child, { group, validate: () => false }),
+            ValidationError,
+            "policy declined",
+          );
+          assertThrows(
+            () => endorseReply(left, { ...inspected.child, nests: [inspected.child] }, { group, validate }),
+            ValidationError,
+            "signature attachments",
+          );
+          assertThrows(
+            () => endorseReply(left, inspected.child, { group: bob.pre, validate }),
+            ValidationError,
+          );
+        } finally {
+          alice.mgr.sign = originalSign;
+        }
+        assertEquals(signatures, 0);
+        assertEquals(left.db.maids.get([reply.said!]).map((member) => member.qb64), [bob.pre]);
+        const signed = endorseReply(left, inspected.child, { group, validate });
+        const endorsed = envelopeFromFrame(parseBytes(signed)[0]);
+        assertEquals(
+          new Set(endorsed.tsgs.flatMap((group) => group.sigers.map((siger) => siger.index))),
+          new Set([0, 1]),
+        );
+        assertEquals(replyContribution(inspected), peerBefore);
+        assertEquals(
+          envelopeFromFrame(inspected.child).tsgs.flatMap((group) => group.sigers.map((siger) => siger.index)),
+          [
+            1,
+          ],
+        );
+        assertEquals(validated, 2);
+        assertEquals(left.db.maids.get([reply.said!]).map((member) => member.qb64), [bob.pre]);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
+for (const version of [Vrsn_1_0, Vrsn_2_0]) {
+  Deno.test(`endpoint reply approval validates before consent and signing (wrapper v${version.major})`, async () => {
+    await participants(async (left, right, alice, bob, notifier) => {
+      const mids = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      await run(function*() {
+        const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+        try {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            {
+              local: true,
+            },
+          );
+          yield* call(() => learn(right, local.hab));
+          const outsider = right.makeHab("outsider");
+          yield* call(() => learn(left, outsider));
+          const cases = [
+            {
+              label: "foreign controller",
+              route: "/end/role/add",
+              attrs: { cid: bob.pre, role: "mailbox", eid: alice.pre },
+            },
+            {
+              label: "foreign route",
+              route: "/test/unrelated",
+              attrs: { cid: local.hab.pre, role: "mailbox", eid: bob.pre },
+            },
+            {
+              label: "invalid role",
+              route: "/end/role/add",
+              attrs: { cid: local.hab.pre, role: "invented", eid: bob.pre },
+            },
+            { label: "missing endpoint", route: "/end/role/add", attrs: { cid: local.hab.pre, role: "mailbox" } },
+            {
+              label: "foreign reply author",
+              route: "/end/role/add",
+              attrs: { cid: local.hab.pre, role: "mailbox", eid: bob.pre },
+              author: bob.pre,
+            },
+            {
+              label: "nonmember wrapper",
+              route: "/end/role/add",
+              attrs: { cid: local.hab.pre, role: "mailbox", eid: bob.pre },
+              sender: outsider,
+            },
+            {
+              label: "non-signature footer",
+              route: "/end/role/add",
+              attrs: { cid: local.hab.pre, role: "mailbox", eid: bob.pre },
+              footer: true,
+            },
+          ];
+          for (const candidate of cases) {
+            const reply = replyEvent(candidate.route, candidate.attrs, {
+              pre: candidate.author ?? local.hab.pre,
+              version: Vrsn_2_0,
+            });
+            let wire = groupEndorseReply(right, remote.hab.pre, reply, Vrsn_2_0);
+            if (candidate.footer) {
+              wire = messagize(reply, {
+                tsgs: envelopeFromFrame(parseBytes(wire)[0]).tsgs,
+                wigers: remote.sigers.map((siger) => new Siger({ qb64: siger.qb64 })),
+                gvrsn: Vrsn_2_0,
+              });
+            }
+            const prepared = yield* prepareMultisigEventExn(
+              (candidate.sender ?? bob).pre,
+              {
+                route: "/multisig/rpy",
+                attrs: { gid: local.hab.pre },
+              },
+              wire,
+              { pvrsn: version, childGvrsn: Vrsn_2_0 },
+            );
+            const signed = signGroupMessage(candidate.sender ?? bob, alice.pre, prepared);
+            yield* runtime.reactor.processBytes(signed.message, { local: true });
+            assert(runtime.exc.complete(prepared[0].said!), candidate.label);
+            const before = left.db.maids.get([
+              version.major === 2 ? reply.said! : String((prepared[0].ked!.e as { d: string }).d),
+            ])
+              .map((member) => member.qb64);
+            let prompted = 0;
+            const originalSign = alice.mgr.sign;
+            let signatures = 0;
+            alice.mgr.sign = () => {
+              signatures++;
+              throw new Error("Malformed proposal reached the signer.");
+            };
+            try {
+              yield* call(() =>
+                assertRejects(() =>
+                  run(() =>
+                    approvePendingMultisigProposal(left, runtime, {
+                      said: prepared[0].said!,
+                      callbacks: {
+                        approveProposal: () => {
+                          prompted++;
+                          return true;
+                        },
+                        chooseGroupAlias: () => "group",
+                        chooseRegistryName: () => "unused",
+                      },
+                    })
+                  ), ValidationError)
+              );
+            } finally {
+              alice.mgr.sign = originalSign;
+            }
+            assertEquals(prompted, 0, candidate.label);
+            assertEquals(signatures, 0, candidate.label);
+            assertEquals(
+              left.db.maids.get([version.major === 2 ? reply.said! : String((prepared[0].ked!.e as { d: string }).d)])
+                .map((member) => member.qb64),
+              before,
+              candidate.label,
+            );
+            assertEquals(left.db.ends.get([bob.pre, "mailbox", alice.pre]), null);
+          }
+        } finally {
+          yield* runtime.close();
+        }
+      });
+    });
+  });
+
+  Deno.test(`endpoint reply approval reuses its exact prior contribution after reopen (wrapper v${version.major})`, async () => {
+    await participants(async (left, right, alice, bob, notifier) => {
+      const mids = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+      await run(function*() {
+        const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+        try {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            {
+              local: true,
+            },
+          );
+          yield* call(() => learn(right, local.hab));
+          const reply = replyEvent("/end/role/add", { cid: local.hab.pre, role: "mailbox", eid: bob.pre }, {
+            pre: local.hab.pre,
+            version: Vrsn_2_0,
+          });
+          const prepared = yield* prepareMultisigEventExn(
+            bob.pre,
+            {
+              route: "/multisig/rpy",
+              attrs: { gid: local.hab.pre },
+            },
+            groupEndorseReply(right, remote.hab.pre, reply, Vrsn_2_0),
+            { pvrsn: version, childGvrsn: Vrsn_2_0 },
+          );
+          yield* runtime.reactor.processBytes(signGroupMessage(bob, alice.pre, prepared).message, { local: true });
+          const sent: Uint8Array[] = [];
+          runtime.postman.send = function(evt) {
+            sent.push(evt.msg!);
+            return { ...evt, kin: "msg" };
+          };
+          runtime.postman.wait = function*(evt) {
+            return { kin: "sent", evt, deliveries: ["test-transmission"] };
+          };
+          let prompted = 0;
+          const options = {
+            said: prepared[0].said!,
+            callbacks: {
+              approveProposal: () => {
+                prompted++;
+                return true;
+              },
+              chooseGroupAlias: () => "group",
+              chooseRegistryName: () => "unused",
+            },
+          };
+          const first = yield* approvePendingMultisigProposal(left, runtime, options);
+          assertEquals(first?.accepted, true);
+          assertEquals(prompted, 1);
+          assertEquals(new SerderKERI({ raw: sent[0] }).pvrsn, version);
+          yield* left.db.reopen();
+          const originalSign = alice.mgr.sign;
+          alice.mgr.sign = () => {
+            throw new Error("Resume must not create another signature.");
+          };
+          try {
+            const resumed = yield* approvePendingMultisigProposal(left, runtime, options);
+            assertEquals(resumed?.messages, first?.messages);
+            assertEquals(resumed?.accepted, true);
+          } finally {
+            alice.mgr.sign = originalSign;
+          }
+          assertEquals(prompted, 1);
+          assertEquals(sent.length, 2);
+          const firstFrame = parseBytes(sent[0])[0], resumedFrame = parseBytes(sent[1])[0];
+          assertEquals(resumedFrame.body.raw, firstFrame.body.raw);
+          assertEquals(
+            resumedFrame.attachments.map((group) => group.raw),
+            firstFrame.attachments.map((group) => group.raw),
+          );
+          assertEquals(
+            resumedFrame.nests?.map((frame) => ({
+              body: frame.body.raw,
+              proofs: frame.attachments.map((group) => group.raw),
+            })),
+            firstFrame.nests?.map((frame) => ({
+              body: frame.body.raw,
+              proofs: frame.attachments.map((group) => group.raw),
+            })),
+          );
+        } finally {
+          yield* runtime.close();
+        }
+      });
+    });
   });
 }
 
@@ -284,7 +654,7 @@ for (const localSender of [false, true]) {
           yield* runtime.close();
           yield* left.db.reopen();
           runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
-          runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+          runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
           runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
           };
@@ -332,7 +702,7 @@ for (const localSender of [false, true]) {
             assertEquals(result.embedded, child.serder.said);
             assertEquals(result.accepted, !localSender);
             assertEquals(prompts, localSender ? 0 : 1);
-            assertEquals(left.db.meids.get([signed.payloadSaid]).some(index => index.qb64 === signed.exnSaid), true);
+            assertEquals(left.db.meids.get([signed.payloadSaid]).some((index) => index.qb64 === signed.exnSaid), true);
             if (localSender) assertEquals(result.messages[0].exnSaid, signed.exnSaid);
           } finally {
             alice.mgr.sign = sign;
@@ -865,7 +1235,7 @@ Deno.test("nested multisig builders and public normalization preserve all four r
         const sent = signGroupMessage(bob, alice.pre, [serder, nested]);
         assertEquals(sent.exnSaid, serder.said);
         assertEquals(sent.payloadSaid, body.said);
-        assertEquals(left.db.meids.get([sent.payloadSaid]).map(value => value.qb64), [sent.exnSaid]);
+        assertEquals(left.db.meids.get([sent.payloadSaid]).map((value) => value.qb64), [sent.exnSaid]);
       }
     }
   });
@@ -1537,7 +1907,7 @@ Deno.test("group TEL publication retains the original pending anchor across reop
           local: true,
         });
         yield* call(() => learn(right, local.hab));
-        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
@@ -1635,7 +2005,7 @@ Deno.test("group establishment-only registry inception, issuance and revocation 
     await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
-        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
@@ -1702,7 +2072,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
     await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
-        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
@@ -2003,7 +2373,7 @@ Deno.test("group credential producers publish typed evidence and usable proposal
           const identity = (wrapper.ked!.e as { d: string }).d;
           yield* peerRuntime.reactor.processBytes(wire, { local: true });
           assertEquals(peerRuntime.exc.complete(wrapper.said!), true);
-          assertEquals(right.db.meids.get([identity]).map(said => said.qb64), [wrapper.said]);
+          assertEquals(right.db.meids.get([identity]).map((said) => said.qb64), [wrapper.said]);
         }
       } finally {
         yield* peerRuntime.close();
@@ -2029,7 +2399,19 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           );
         }
         const rip = acdcV2Regcept(local.hab.pre);
-        const anchor = right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }] }).serder;
+        const anchor =
+          right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }], version: Vrsn_2_0 })
+            .serder;
+        const legacyAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, 1, [{ s: "0", d: rip.said! }], {
+          version: Vrsn_1_0,
+        });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approveAcdcV2Registry(left, receiver.protocol, local.hab, rip, { anchor: legacyAnchor })),
+            ValidationError,
+            "exclusively seal",
+          )
+        );
         const telFrame = parseBytes(
           concatBytes(
             rip.raw,
@@ -2037,13 +2419,34 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           ),
         )[0];
         const kelFrame =
-          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
-        const wrapper = exchange("/multisig/registry", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
+          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_2_0 }))[0];
+        const root = new Salter({ code: MtrDex.Salt_128, raw: new Uint8Array(16).fill(37) });
+        const salts = Object.fromEntries(
+          [alice, bob].map(
+            (member) => [
+              member.pre,
+              new Encrypter({ verkey: member.kever!.verfers[0].qb64 }).encrypt({ prim: root }).qb64,
+            ],
+          ),
+        );
+        const wrapper = exchange("/multisig/rip", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said!, salts }, {
           sender: bob.pre,
           version: Vrsn_2_0,
         })[0];
         const candidate = { serder: wrapper, nests: [telFrame, kelFrame], tsgs: proof(bob, wrapper) };
         assertEquals((yield* receiver.exc.processEvent(candidate)).kind, "accept");
+        assertEquals(acdcV2RegistryProposal(wrapper, candidate.nests)!.salts, salts);
+        const invalidCopies = exchange("/multisig/rip", {
+          gid: local.hab.pre,
+          tel: rip.said!,
+          anc: anchor.said!,
+          salts: { [local.hab.pre]: salts[alice.pre] },
+        }, { sender: bob.pre, version: Vrsn_2_0 })[0];
+        assertEquals(
+          (yield* receiver.exc.processEvent({ ...candidate, serder: invalidCopies, tsgs: proof(bob, invalidCopies) }))
+            .kind,
+          "reject",
+        );
         assertEquals(receiver.acdc!.store.head(rip.said!), null, "peer proposal is not member consent");
         assertEquals(
           yield* approvePendingMultisigProposal(left, receiver, {
@@ -2085,16 +2488,20 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           const event = acdcV2Blindate(rip.said!, prior, opening.d.nonce, { sn: index + 1 });
           const [first, firstFoot] = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, event, {
             opening,
+            salts,
           });
+          assertEquals(first.route, "/multisig/bup");
           assertEquals(receiver.acdc!.store.head(rip.said!)?.qb64, prior, "a local share is not threshold acceptance");
           yield* sender.reactor.processBytes(concatBytes(first.raw, firstFoot));
           assertEquals(sender.acdc!.store.head(rip.said!)?.qb64, prior, "receipt is not explicit peer consent");
           const nests = loadNests(right.db, first.said!), selected = acdcV2RegistryProposal(first, nests)!;
           const disclosed = envelopeFromFrame(nests[0]).bsqs[0];
           assertEquals(selected.tel.raw, event.raw);
+          assertEquals(selected.salts, salts);
           const [second, secondFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, selected.tel, {
             anchor: selected.anchor,
             opening: disclosed,
+            salts: selected.salts,
           });
           yield* receiver.reactor.processBytes(concatBytes(second.raw, secondFoot));
           yield* receiver.protocol.processEscrowsOnce();
@@ -2116,7 +2523,7 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           "old proposal replay cannot lower accepted history",
         );
 
-        const wrong = exchange("/multisig/registry", { gid: local.hab.pre, tel: alice.pre, anc: anchor.said! }, {
+        const wrong = exchange("/multisig/rip", { gid: local.hab.pre, tel: alice.pre, anc: anchor.said! }, {
           sender: bob.pre,
           version: Vrsn_2_0,
         })[0];
@@ -2165,7 +2572,7 @@ for (const verdict of ["true", "false", "unresolved"] as const) {
             attribute: { d: "", i: local.hab.pre },
             edge: { d: "", authority: { n: far.said! } },
           });
-          const nodes = [near, far].map(body => ({
+          const nodes = [near, far].map((body) => ({
             body,
             gvrsn: Vrsn_2_0,
             attachments: messageAttachmentGroups({ tsgs: proof(bob, body) }, Vrsn_2_0),

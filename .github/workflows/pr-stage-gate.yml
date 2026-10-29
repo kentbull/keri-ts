@@ -234,6 +234,8 @@ jobs:
           echo "registrar=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
           cd ../../observer/npm
           echo "observer=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
+          cd ../../multisync/npm
+          echo "multisync=$(npm pack --silent | tail -n 1)" >> "$GITHUB_OUTPUT"
 
       - name: smoke test exact packages on the minimum Node version
         env:
@@ -247,7 +249,8 @@ jobs:
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
             "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
-            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}" \
+            "packages/multisync/npm/${{ steps.pack.outputs.multisync }}"
 
       - name: smoke test exact packages on Alpine
         env:
@@ -261,7 +264,8 @@ jobs:
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
             "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
-            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}" \
+            "packages/multisync/npm/${{ steps.pack.outputs.multisync }}"
 
       - name: smoke test exact packages on pointer-compressed Node
         env:
@@ -280,7 +284,8 @@ jobs:
             "packages/hosting/npm/${{ steps.pack.outputs.hosting }}" \
             "packages/wallet/npm/${{ steps.pack.outputs.wallet }}" \
             "packages/registrar/npm/${{ steps.pack.outputs.registrar }}" \
-            "packages/observer/npm/${{ steps.pack.outputs.observer }}"
+            "packages/observer/npm/${{ steps.pack.outputs.observer }}" \
+            "packages/multisync/npm/${{ steps.pack.outputs.multisync }}"
 
       - name: retain packages on failure
         if: ${{ failure() }}
@@ -296,6 +301,7 @@ jobs:
             packages/wallet/npm/${{ steps.pack.outputs.wallet }}
             packages/registrar/npm/${{ steps.pack.outputs.registrar }}
             packages/observer/npm/${{ steps.pack.outputs.observer }}
+            packages/multisync/npm/${{ steps.pack.outputs.multisync }}
           if-no-files-found: ignore
           retention-days: 3
 

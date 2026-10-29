@@ -1,15 +1,15 @@
 """Live native registry builders and read-only vetting against independently parsed KELs.
 
 The proof controls parse foreign KELs and call the candidate's read-only native
-proof APIs. The POSIX custody control also uses its actual wallet/registry owners
-to exchange protected operator handoffs and reopen the receiving stores.
+proof APIs. Salt sharing uses ordinary signed replies and independently encrypted
+stores, with reciprocal derivation checks after reopening.
 """
 import argparse
 import hashlib
 import json
 from pathlib import Path
 
-from keri import Vrsn_2_0
+from keri import Vrsn_1_0, Vrsn_2_0
 from keri.acdc.messaging import acdcmap, blindate, regcept
 from keri.acdc.regeventing import vet, vetBinds
 from keri.app import openHby
@@ -67,16 +67,14 @@ def verify(evidence):
 
 
 def custody_handoff(request):
-    """Export one protected operator file; return wire and selected test openings, never its salt."""
+    """Author an encrypted issuer-signed reply for the independent TS receiver."""
     if request.get("receive"):
         return custody_receive(request)
-    import os
-    if os.name != "posix":
-        raise RuntimeError("protected custody handoff fixture requires POSIX")
+    from keri.core import Revery
+    from keri.app.registry_salt_service import RegistrySaltService
     from keri.acdc import Regery, Registrar
     from keri.acdc.regbasing import RegBaser
     from keri.app.configing import Configer
-    from keri.app.credentialing import Wallet, WalletBaser
     from keri.app.registry_custody import RegistryCustody
 
     root = Path(request["root"])
@@ -88,8 +86,7 @@ def custody_handoff(request):
             ims=bytearray(request["kel"].encode()))
         issuee = hby.db.kevers[request["discloser"]]
         rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=str(root), temp=False))
-        wallet = Wallet(hby, rgy, db=WalletBaser(name=hby.name, headDirPath=str(root), temp=False))
-        custody = RegistryCustody(hby, rgy, db=wallet.db)
+        custody = RegistryCustody(hby, rgy)
         try:
             registry = Registrar(rgy).makeRegistry(name="handoff", prefix=issuer.pre)
             rip = rgy.store.event(registry.regk)
@@ -108,7 +105,6 @@ def custody_handoff(request):
                 proof = custody.derive(registry.regk, sn, credential.said, state,
                                        bound=True, bsn=issuee.sn, bd=issuee.serder.said)
                 update = blindate(registry.regk, prior, proof.said, sn=sn)
-                wallet.retainDerivedUpdate(update, proof)  # F02 ordering: before processing/anchor.
                 registry.processEvent(update)
                 accept(update)
                 proofs.append(proof)
@@ -118,40 +114,44 @@ def custody_handoff(request):
             successor = blindate(registry.regk, prior, public.said, sn=3)
             registry.processEvent(successor)
             accept(successor)
-            wallet.retainPublicOpening(successor, public)
-            custody.exportCustody(registry.regk, request["handoff"])
+            rgy.store.retainOpening(successor, public)
+            service = RegistrySaltService(hby, rgy, custody, Revery(db=hby.db))
+            salt_reply = service.makeReply(issuer, registry.regk, request["discloser"])
+            salt_wire = issuer.endorse(salt_reply, last=False, framed=False, gvrsn=Vrsn_2_0)
+            if request.get("essr"):
+                from keri.app.essring import envelope
+                salt_wire = envelope(issuer, salt_wire, request["discloser"],
+                                     issuee.verfers[0], version=Vrsn_1_0)
             published = bytes(successor.raw) + bytes(Counter.enclose(
                 qb64=Blinder.enclose([public]), code=Codens.AttachmentGroup, version=Vrsn_2_0))
-            return dict(registry=registry.regk, controller=issuer.pre, discloser=request["discloser"],
+            return dict(saltReply=bytes(salt_wire).decode(), registry=registry.regk, controller=issuer.pre, discloser=request["discloser"],
                         rip=rip.raw.decode(), credential=credential.raw.decode(),
                         updates=[update.raw.decode() for update in updates], publicUpdate=published.decode(),
                         opening=proofs[0].crew._asdict(),
                         future=custody.derive(registry.regk, 17, credential.said, "revoked").qb64,
                         kel=b"".join(hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)).decode())
         finally:
-            wallet.close()
             rgy.close()
 
 
 def custody_receive(request):
-    """Import TS custody through its protected API, then derive again in a fresh process."""
-    from dataclasses import asdict
+    """Verify the TS signed reply normally, retain its salt, and derive after reopening."""
     from keri.acdc import Regery
     from keri.acdc.regbasing import RegBaser
     from keri.acdc.regeventing import Rever
     from keri.app.configing import Configer
-    from keri.app.credentialing import Wallet, WalletBaser
     from keri.app.evidencing import EvidenceProcessor
+    from keri.app.registry_salt_service import RegistrySaltService
+    from keri.core import Revery
     from keri.app.registry_custody import RegistryCustody
-    from keri.kering import ConfigurationError, ValidationError
+    from keri.kering import ConfigurationError
 
     root = Path(request["root"])
     with openHby(name="custody-python", temp=False, headDirPath=str(root),
                  cf=Configer(name="custody-python", temp=True), bran="PythonCustodyFixtureSecret",
                  version=Vrsn_2_0) as hby:
         rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=str(root), temp=False))
-        wallet = Wallet(hby, rgy, db=WalletBaser(name=hby.name, headDirPath=str(root), temp=False))
-        custody = RegistryCustody(hby, rgy, db=wallet.db)
+        custody = RegistryCustody(hby, rgy)
         try:
             info = request["info"]
             credential = SerderACDC(raw=request["credential"].encode())
@@ -166,16 +166,16 @@ def custody_receive(request):
                     pass
                 else:
                     raise AssertionError("reverse receiver unexpectedly had custody before import")
-                try:
-                    custody.importCustody(request["handoff"], regid=info["registry"],
-                                          controller=info["discloser"], discloser=info["discloser"])
-                except ValidationError:
-                    pass
-                else:
-                    raise AssertionError("reverse import accepted a wrong controller")
-                imported = custody.importCustody(request["handoff"], regid=info["registry"],
-                                                controller=info["controller"], discloser=info["discloser"])
-                assert asdict(imported) == info
+                rvy = Revery(db=hby.db)
+                RegistrySaltService(hby, rgy, custody, rvy).register()
+                parser = Parser(version=Vrsn_2_0, rvy=rvy)
+                if request.get("essr"):
+                    from keri.app.essring import EssrReplyHandler
+                    from keri.peer import Exchanger
+                    member = hby.habByPre(info["discloser"])
+                    parser.exc = Exchanger(hby, handlers=[EssrReplyHandler(
+                        hby, member, parser, {'/registry/salt'})])
+                parser.parse(ims=bytearray(request["saltReply"].encode()))
             else:
                 assert request["receive"] == "reopen"
             rip = rgy.store.seqEvent(info["registry"], 0)
@@ -184,14 +184,13 @@ def custody_receive(request):
             assert update.said == request["update"] and rgy.store.head(info["registry"]).qb64 == update.said
             proof = custody.derive(info["registry"], 1, credential.said, "issued",
                                    bound=True, bsn=request["bsn"], bd=request["bd"])
-            assert wallet.publicOpening(update) is None
+            assert rgy.store.opening(update.said) is None
             state = vet(rip, [update], db=hby.db, acdc=credential, blinder=proof)
             assert state.state == "issued" and state.said == update.said
             return dict(opening=proof.qb64,
                         future=custody.derive(info["registry"], 17, credential.said, "revoked").qb64,
                         update=update.said, state=state.state)
         finally:
-            wallet.close()
             rgy.close()
 
 
@@ -219,7 +218,7 @@ def service(request, observer=False):
             observations = ObservationBaser(name=hby.name, headDirPath=str(root), temp=False)
             source = dict(url=request["source"], cafilepath=request["certificate"], certedhost="localhost")
             ctx = ObserverContext(hby, reger=reger, observations=observations, sources=[source],
-                                  readers=request["readers"], maximumAge=5, config=DEFAULT_KRAM_CONFIG)
+                                  readers=request["readers"], config=DEFAULT_KRAM_CONFIG)
             app = ctx.app
             workers = [RegistrarPuller(hab, ctx, ctx.sources, interval=.1, timeout=1)]
         else:

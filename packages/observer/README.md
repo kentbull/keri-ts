@@ -2,7 +2,7 @@
 
 The observer borrows its actual ProtocolProcessor, ACDC v2 RegistryStore and a
 separately owned ObservationBaser. Supply fixed HTTPS sources, allowed reader
-AIDs and an explicit observation age. Callers own store and host lifetime.
+AIDs. Callers own store and host lifetime.
 
 `pullOnce` makes signed bulk requests to those fixed sources. `run` repeats that
 operation on a fixed cadence; incoming queries never initiate or accelerate it.
@@ -13,9 +13,9 @@ Only complete, clean source responses renew URL-keyed accepted heads and local
 completed time. Returned membership includes prior successful membership; unresolved
 ordinals affect only their registry/scope. Old records/evidence survive failure or
 restart, but an old prefix cannot renew a newer cached head. Cache-only signed
-`tels`/`tels/head` responses require an exact current head and sufficiently recent
-configured-source observation. The existing Observer-* headers report that local
-fact; they make no global-latest or absence-of-withheld-updates claim.
+`tels`/`tels/head` responses serve accepted local evidence without custom freshness
+headers or an observation-age gate. KRAM authenticates signed queries; serving
+evidence makes no global-latest or absence-of-withheld-updates claim.
 
 Selected Python service: kf-observer feec9004, declaring KERIpy 7ea525ba. Its dedicated
 public TLS test fixtures are reused here; no sibling Python checkout is needed for

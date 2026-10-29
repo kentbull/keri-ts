@@ -18,6 +18,12 @@ import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { Komer } from "./koming.ts";
 import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
+/** Encrypted registry salt payload; mirrors KERIpy Keeper at 5cece6c2. */
+export class RegistrySaltRecord extends RawRecord<{ aeid: string; cipher: string }> {
+  declare aeid: string;
+  declare cipher: string;
+}
+
 /** Options for opening a keeper LMDB environment and its named subdb surface. */
 export interface KeeperOptions extends LMDBerOptions {
   compat?: boolean;
@@ -194,9 +200,7 @@ export class PubSet extends RawRecord<PubSetShape> implements PubSetShape {
 
 /** Convert one stored salt between the current and replacement at-rest policy. */
 function reencryptSalt(salt: string, encrypter: Encrypter | null, decrypter: Decrypter | null): string {
-  const salter = decrypter
-    ? decrypter.decrypt({ qb64: salt, ctor: Salter }) as Salter
-    : new Salter({ qb64: salt });
+  const salter = decrypter ? decrypter.decrypt({ qb64: salt, ctor: Salter }) as Salter : new Salter({ qb64: salt });
   return encrypter ? encrypter.encrypt({ prim: salter }).qb64 : salter.qb64;
 }
 
@@ -220,6 +224,8 @@ export class Keeper {
 
   /** Keeper-global parameters shared across all managed prefixes. */
   public gbls!: Suber;
+  /** Optional registry secrets use the existing Keeper encryption lifecycle. */
+  public custody!: Komer<RegistrySaltRecord>;
   /** Public-key to private-key secret store. */
   public pris!: CryptSignerSuber;
   /** Group signing member tuples for one multisig prefix. */
@@ -251,9 +257,7 @@ export class Keeper {
     this.lmdber = new LMDBer(options, {
       tailDirPath: Keeper.TailDirPath,
       cleanTailDirPath: "keri/clean/ks",
-      altTailDirPath: compat
-        ? Keeper.CompatAltTailDirPath
-        : Keeper.AltTailDirPath,
+      altTailDirPath: compat ? Keeper.CompatAltTailDirPath : Keeper.AltTailDirPath,
       altCleanTailDirPath: compat ? ".keri/clean/ks" : ".tufa/clean/ks",
       tempPrefix: Keeper.TempPrefix,
       maxNamedDBs: Keeper.MaxNamedDBs,
@@ -308,6 +312,7 @@ export class Keeper {
       // private keys, while `pidx`, `algo`, `salt`, and `tier` capture the
       // default root key-management settings.
       this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
+      this.custody = new Komer(this.lmdber, { subkey: "registry-salts.", recordClass: RegistrySaltRecord });
 
       // Public-key to private-key secret material store.
       // Keys are fully qualified public keys and values are the corresponding
@@ -428,6 +433,9 @@ export class Keeper {
       }
       if (storedAeid === aeid) return;
 
+      if (!aeid && !this.custody.getTopItemIter().next().done) {
+        throw new DatabaseOperationError("Retained registry salts require Keeper encryption");
+      }
       const root = this.getGbls("salt");
       if (root !== null) {
         const value = reencryptSalt(root, encrypter, decrypter);
@@ -437,6 +445,13 @@ export class Keeper {
         if (!data.salt) continue;
         data.salt = reencryptSalt(data.salt, encrypter, decrypter);
         if (!this.prms.pin(keys, data)) throw new DatabaseOperationError("Keeper prefix salt write failed");
+      }
+      for (const [keys, data] of this.custody.getTopItemIter()) {
+        if (!decrypter || !encrypter || data.aeid !== currentAeid) {
+          throw new DatabaseOperationError("Registry salt does not match the current Keeper");
+        }
+        const raw = decrypter.decrypt({ qb64: data.cipher, bare: true }) as Uint8Array;
+        this.custody.pin(keys, { aeid, cipher: encrypter.encrypt({ ser: raw }).qb64 });
       }
       for (const [keys, signer] of this.pris.getTopItemIter("", decrypter ?? undefined)) {
         if (!this.pris.pin(keys, signer, encrypter ?? undefined)) {

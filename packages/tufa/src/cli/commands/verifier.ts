@@ -164,7 +164,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Application observation policy shares the existing schema-policy config and validates before stores open. */
-function observationConfig(config: unknown): { source: string; maximumAgeMs: number; requestTimeoutMs: number } {
+function observationConfig(config: unknown): { source: string; requestTimeoutMs: number } {
   const observation = isRecord(config) && isRecord(config.observation) ? config.observation : {};
   const source = parseStringOption(observation.url, "observation.url");
   if (!source) throw new ValidationError("observation.url is required for ACDC v2 verification.");
@@ -172,10 +172,9 @@ function observationConfig(config: unknown): { source: string; maximumAgeMs: num
   if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
     throw new ValidationError("observation.url must be HTTPS without credentials, query or fragment.");
   }
-  const maximumAgeMs = numberArg(observation.maximumAgeMs, 15000, "observation.maximumAgeMs")!;
   const requestTimeoutMs = numberArg(observation.requestTimeoutMs, 5000, "observation.requestTimeoutMs")!;
-  if (maximumAgeMs <= 0 || requestTimeoutMs <= 0) {
-    throw new ValidationError("Observation age and timeout must be positive.");
+  if (requestTimeoutMs <= 0) {
+    throw new ValidationError("Request timeout must be positive.");
   }
-  return { source, maximumAgeMs, requestTimeoutMs };
+  return { source, requestTimeoutMs };
 }

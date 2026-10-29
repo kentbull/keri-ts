@@ -1,7 +1,7 @@
 /** Actual TLS sources and signed cache queries preserve the selected observation boundary. */
 import { createTufaApp, sourceRequest, SourceTrust } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
-import { b, concatBytes, makeBlindState } from "cesr-ts";
+import { b, concatBytes, makeBlindState, parseBytes } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import {
@@ -17,7 +17,7 @@ import { createObservationBaser, Observer } from "../mod.ts";
 
 import { author, certificate, framed, kel, serveTls, signed, wrongCertificate } from "./fixtures/service.ts";
 
-Deno.test("observer isolates source scopes and serves only exact recent cached heads over TLS", async () => {
+Deno.test("observer isolates source scopes and serves accepted cached heads over TLS", async () => {
   await run(function*() {
     const issuer = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const host = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -78,7 +78,6 @@ Deno.test("observer isolates source scopes and serves only exact recent cached h
     const service = new Observer(cached.protocol, cached.acdc!.store, records, {
       sources,
       readers: [readerHab.pre],
-      maximumAgeMs: 1000,
       now: () => now,
     });
     const app = createTufaApp({ protocolHandler: service.handle });
@@ -100,8 +99,10 @@ Deno.test("observer isolates source scopes and serves only exact recent cached h
       assertEquals(yield* service.pullOnce(observerHab, { timeoutMs: 1000 }), 2);
       const fresh = yield* read(first.rip.said!);
       assertEquals(fresh.status, 200);
-      assertEquals(fresh.headers.get("Observer-Registry-Head"), first.update.said);
-      assertEquals(fresh.headers.get("Observer-Observed-At"), new Date(now).toISOString());
+      assert(
+        parseBytes(fresh.body)
+          .some(frame => frame.body.said === first.update.said),
+      );
       const beforeQueries = [requestsA, requestsB];
       assertEquals((yield* read(other.rip.said!)).status, 200);
       assertEquals([requestsA, requestsB], beforeQueries, "cache queries cannot cause a registrar pull");
@@ -142,16 +143,20 @@ Deno.test("observer isolates source scopes and serves only exact recent cached h
       yield* cached.protocol.processEscrowsOnce();
       assertEquals(service.pendingInScope([first.rip.said!]), false);
       assertEquals(cached.acdc!.store.head(first.rip.said!)?.qb64, successor.said);
-      assertEquals((yield* read(first.rip.said!)).status, 503, "ordinary acceptance alone cannot renew an observation");
+      assertEquals((yield* read(first.rip.said!)).status, 200, "ordinary protocol acceptance permits serving evidence");
       overrideA = first.raw;
       now += 10;
       yield* service.pullOnce(observerHab, { timeoutMs: 1000 });
       assertEquals(records.observations.get([urlA]), old, "old prefix cannot renew a newer local head");
-      assertEquals((yield* read(first.rip.said!)).status, 503);
+      assertEquals((yield* read(first.rip.said!)).status, 200);
       overrideA = complete;
       now += 10;
       assertEquals(yield* service.pullOnce(observerHab, { timeoutMs: 1000 }), 2);
-      assertEquals((yield* read(first.rip.said!)).headers.get("Observer-Registry-Head"), successor.said);
+      const advanced = yield* read(first.rip.said!);
+      assert(
+        parseBytes(advanced.body)
+          .some(frame => frame.body.said === successor.said),
+      );
       bodyB = concatBytes(other.raw, complete);
       now += 10;
       yield* service.pullOnce(observerHab, { timeoutMs: 1000 });
@@ -179,10 +184,10 @@ Deno.test("observer isolates source scopes and serves only exact recent cached h
       assertEquals(requestsA, aBeforeRedirect + 1, "redirect must not reach another source");
       assertEquals(records.observations.get([urlB]), membership);
       now += 1001;
-      const beforeStale = [requestsA, requestsB];
-      assertEquals((yield* read(first.rip.said!)).status, 503);
-      assertEquals((yield* read(other.rip.said!)).status, 503);
-      assertEquals([requestsA, requestsB], beforeStale);
+      const beforeQueriesAfterWait = [requestsA, requestsB];
+      assertEquals((yield* read(first.rip.said!)).status, 200);
+      assertEquals((yield* read(other.rip.said!)).status, 200);
+      assertEquals([requestsA, requestsB], beforeQueriesAfterWait);
       scheduledAfter = requestsA + 2;
       let timer: ReturnType<typeof setTimeout>;
       const observedTwice = new Promise<void>((resolve, reject) => {

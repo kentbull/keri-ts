@@ -127,12 +127,10 @@ for the known v2 witness profile; the default remains 1.0. Legacy commands retai
 their existing defaults.
 
 Provision explicitly with inception's `--with-custody` and optional `--discloser`.
-An encrypted authenticated Keeper is required. `vc registry custody export` writes
-an exclusive protected `--file`; `import` requires explicit `--controller` and
-`--discloser`, and optionally `--rewrap` after Keeper AEID replacement. Select a
-local `--registry-name` or accepted `--registry` SAID for a remote designated
-discloser. Transfer the plaintext artifact over an authenticated private operator
-channel; the CLI does not distribute secrets. Derived state commands accept
+An encrypted authenticated Keeper is required for custody. Plaintext custody
+export/import and explicit rewrap are not supported. Encrypted sharing must
+validate ordinary message signatures and recipient authorization.
+Derived state commands accept
 `--bound-event` for an exact witnessed Issuee event. Groups remain a separate
 approval workflow.
 

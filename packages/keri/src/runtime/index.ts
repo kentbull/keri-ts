@@ -145,8 +145,10 @@ export {
   type PosterOutcome,
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
+export { loadStoredReply } from "../app/delivery/stored-replies.ts";
 export {
   type EssrDecision,
+  essrEnvelope,
   type EssrMessage,
   EssrRecipient,
 } from "../app/exchanges/essr.ts";
@@ -286,7 +288,7 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailbox/mailboxing.ts";
-export { isLocalGroupHab } from "../app/multisig/group-members.ts";
+export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../app/multisig/group-members.ts";
 export {
   Multiplexor,
   MULTISIG_ROUTES,
@@ -303,11 +305,13 @@ export {
   type MultisigRoute,
   multisigRpyExn,
 } from "../app/multisig/grouping.ts";
+export { acdcV2RegistryProposal } from "../app/multisig/grouping.ts";
 export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
-export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
+export { approveAcdcV2Registry, publishAcdcV2Registry, publishProposal } from "../app/multisig/multisig-workflows.ts";
+export { endorseReply, inspectReplyProposal } from "../app/multisig/reply-approval.ts";
 export {
   Notifier,
 } from "../app/notifications/notifying.ts";

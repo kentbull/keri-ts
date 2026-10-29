@@ -303,7 +303,6 @@ class AcdcV2Role:
         from keri.acdc import Regery, loadHandlers
         from keri.acdc.regbasing import RegBaser
         from keri.acdc.regeventing import Rever
-        from keri.app.credentialing import Wallet, WalletBaser
         from keri.core import Parser
         self.hby, self.version = hby, Vrsn_2_0
         self.member = hby.makeHab('member', version=Vrsn_1_0)
@@ -311,8 +310,6 @@ class AcdcV2Role:
         self.exc = exchanging.Exchanger(hby, handlers=[])
         self.notifier = notifying.Notifier(hby)
         self.verification = loadHandlers(hby, self.exc, self.notifier, rgy=self.rgy)
-        self.wallet = Wallet(hby, self.rgy, exc=self.exc, verification=self.verification,
-            db=WalletBaser(name=hby.name, headDirPath=root, temp=False))
         self.rever = Rever(db=hby.db, reger=self.rgy.baser)
         self.psr = Parser(kvy=hby.kvy, rgy=self.rever, exc=self.exc, version=Vrsn_2_0)
         self.group = self.owner = None
@@ -392,14 +389,14 @@ class AcdcV2Role:
         result = dict(head=head.qb64 if head else None,
                       complete=self.exc.complete(exchange) if exchange else False)
         if grant:
-            held = self.wallet.heldCredential(grant)
+            held = self.verification.heldCredential(grant)
             result.update(credential=held['credential'].said, proof=held['proof'].decode(),
                           grant=held['grant'].said, admit=held['admit'])
         return result
 
     def reopen(self):
         """Reopen every persistent application, registry, identity and configuration environment."""
-        for store in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
+        for store in (self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
             store.close()
             assert store.reopen()
         self.hby.db.reload()
@@ -451,7 +448,7 @@ class AcdcV2Control:
             elif action == 'reopen':
                 rep.media = role.reopen()
             elif action == 'admission':
-                record = role.wallet.recordAdmission(data['grant'], data['admit'], consent=data['consent'])
+                record = role.verification.validateAdmission(data['grant'], data['admit'], consent=data['consent'])
                 rep.media = dict(grant=record.grant, admit=record.admit)
             elif action == 'snapshot':
                 rep.media = role.snapshot(**data)
@@ -475,7 +472,6 @@ def run_acdc_v2(port, root):
                 temp=False, cf=cf, version=Vrsn_2_0))
             roles[label] = AcdcV2Role(hby, root)
             stack.callback(roles[label].rgy.close)
-            stack.callback(roles[label].wallet.close)
         control = AcdcV2Control(roles)
         app = falcon.App()
         app.add_route('/', HttpEnd(rxbs=roles['issuer'].psr.ims))

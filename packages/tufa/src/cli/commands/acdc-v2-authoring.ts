@@ -1,7 +1,7 @@
 /** Tufa parses/configures ACDC v2 authoring; wallet owns state transitions and acceptance. */
 import { RegistryCustody, WalletAuthor } from "@keri-ts/wallet";
-import { type MapperMap, type SerderACDC } from "cesr-ts";
-import { call, type Operation, race, scoped, sleep, spawn } from "effection";
+import { type MapperMap, MtrDex, Salter, type SerderACDC, type SerderKERI } from "cesr-ts";
+import { type Operation, race, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
@@ -45,8 +45,9 @@ export function* approveAcdcV2RegistryEvent(
   receiptor: Receiptor,
   event: SerderACDC,
   opening?: RegistryDisclosure,
+  proposal: { anchor?: SerderKERI; salts?: Readonly<Record<string, string>> } = {},
 ): Operation<void> {
-  const approved = yield* approveAcdcV2Registry(hby, runtime.protocol, hab, event, { opening });
+  const approved = yield* approveAcdcV2Registry(hby, runtime.protocol, hab, event, { opening, ...proposal });
   yield* publishAcdcV2Registry(hby, runtime.postman, hab, approved);
   const anchor = (approved[0].sad!.a as { anc: string }).anc;
   const sealing = hby.db.getEvtSerder(hab.pre, anchor)!;
@@ -114,11 +115,26 @@ export function* acdcV2AuthorCommand(
                 throw new ValidationError("Registry belongs to a different controller.");
               }
               const event = reg ? reg.store.event(reg.regk!)! : yield* author.incept(name, hab.pre);
-              if (group) yield* approve(event);
-              const info = custody?.createCustody(
-                event.said!,
-                parseStringOption(args.discloser, "discloser") ?? hab.pre,
-              );
+              const discloser = parseStringOption(args.discloser, "discloser") ?? hab.pre;
+              if (group && custody) {
+                // Resume the original signed proposal via join rather than generating
+                // another salt for an already proposed or accepted inception.
+                if (
+                  runtime.acdc.store.seqEvent(event.said!, 0)
+                  || hby.db.pses.getLast(hab.pre, hab.kever!.sn + 1)
+                ) {
+                  throw new ValidationError(
+                    "Registry inception already exists; use multisig join --v2 --said for its retained proposal",
+                  );
+                }
+                const root = new Salter({ code: MtrDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) });
+                const salts = custody.sealMembers(hab, root);
+                yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, undefined, { salts });
+                custody.receiveRoot(event.said!, discloser, root);
+              } else if (group) {
+                yield* approve(event);
+              }
+              const info = custody?.createCustody(event.said!, discloser);
               return {
                 registry: event.said,
                 controller: hab.pre,
@@ -186,47 +202,4 @@ export function* acdcV2AuthorCommand(
 /** ACDC v2 state advance shares the same finite operation, not the historical upd builder. */
 export function* acdcV2UpdateCommand(args: Record<string, unknown>): Operation<void> {
   yield* acdcV2AuthorCommand(args, "update");
-}
-
-/** Operator-selected protected artifact I/O; no automatic salt distribution. */
-function* handoff(args: Record<string, unknown>, importing: boolean): Operation<void> {
-  const name = parseStringOption(args.registryName, "registry-name"),
-    registry = parseStringOption(args.registry, "registry"),
-    file = required(args.file, "file");
-  if (!registry && !name) throw new ValidationError("--registry or --registry-name is required.");
-  const result = yield* withHabAndAgentRuntime(walletStoreArgs(args), required(args.alias, "alias"), {
-    skipConfig: true,
-  }, function*({ hby, runtime, hab }) {
-    return yield* scoped(function*() {
-      if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
-      const regid = registry ?? runtime.acdc.registryByName(name!)?.regk;
-      if (!regid) throw new ValidationError("Unknown ACDC v2 registry alias.");
-      const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
-      const custody = new RegistryCustody({ hby, registry: wallet.registry, db: wallet.db });
-      if (importing) {
-        return yield* call(() =>
-          custody.importCustody(file, {
-            registry: regid,
-            controller: required(args.controller, "controller"),
-            discloser: required(args.discloser, "discloser"),
-            rewrap: parseBooleanOption(args.rewrap, "rewrap") ?? false,
-          })
-        );
-      }
-      if (wallet.registry.seqEvent(regid, 0)?.issuer !== hab.pre) {
-        throw new ValidationError("Registry is controlled by another identifier.");
-      }
-      yield* call(() => custody.exportCustody(regid, file));
-      return { registry: regid, file };
-    });
-  });
-  writeJsonLine(result);
-}
-/** Import authentic protected custody under explicit participant bindings. */
-export function* custodyImportCommand(args: Record<string, unknown>): Operation<void> {
-  yield* handoff(args, true);
-}
-/** Export one exclusive protected plaintext artifact after explicit operator selection. */
-export function* custodyExportCommand(args: Record<string, unknown>): Operation<void> {
-  yield* handoff(args, false);
 }

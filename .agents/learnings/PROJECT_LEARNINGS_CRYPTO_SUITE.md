@@ -29,6 +29,11 @@ Salter and sealed boxes share one initialized sodium backend. Wrapper and raw
 distribution identity both matter for the private wasm32 ABI. The frozen Deno lock
 and generated npm vendor hashes bind the exact distribution; do not rely on an
 upstream semver range or instantiate a second heap as an identity check.
+Registry salts use existing recipient sealed-box encryption. The discarded
+interactive DH ceremony, transcript KDF and dedicated agreement helpers are not
+part of this profile. Never log private Matter objects: TypeScript inspection
+is not redacted.
+
 The npm loader supplies native Web Crypto only when its global is absent,
 before evaluating either pinned distribution. Existing globals and browser randomness
 remain authoritative. Record the loader hash separately; wrapper/raw cryptographic bytes stay pinned.

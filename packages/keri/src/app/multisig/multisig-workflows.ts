@@ -47,27 +47,27 @@ import {
   validateRegistryProposal,
 } from "../credentials/credential-proposals.ts";
 import type { Poster } from "../delivery/forwarding.ts";
-import {
-  endpointRoleAccepted,
-  groupEndorseReply,
-  groupEventKeys,
-  groupSigningMembers,
-  localGroupMember,
-  signLocalGroupEvent,
-} from "../identity/endpoint-roleing.ts";
+import { endpointRoleAccepted, validateEndpointRoleReply } from "../identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { collectBytes } from "../transport/byte-source.ts";
-import { findLocalGroupMember as findLocalMember, uniqueMembers } from "./group-members.ts";
+import {
+  findLocalGroupMember as findLocalMember,
+  groupSigningMembers,
+  localGroupMember,
+  uniqueMembers,
+} from "./group-members.ts";
+import { groupEventKeys, signLocalGroupEvent } from "./group-signing.ts";
 import {
   acdcV2RegistryProposal,
+  MULTISIG_BUP_ROUTE,
   MULTISIG_ICP_ROUTE,
   MULTISIG_ISS_ROUTE,
   MULTISIG_IXN_ROUTE,
-  MULTISIG_REGISTRY_ROUTE,
   MULTISIG_REV_ROUTE,
+  MULTISIG_RIP_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
@@ -81,6 +81,8 @@ import {
   prepareAcdcV2RegistryExn,
   prepareMultisigEventExn,
   prepareMultisigVdrExn,
+  storedMultisigContribution,
+  validateRegistrySalts,
 } from "./grouping.ts";
 import {
   admitAndSendGroupMessage,
@@ -93,6 +95,7 @@ import {
   signGroupMessage,
   storedGroupMessage,
 } from "./multisig-messaging.ts";
+import { endorseReply, inspectReplyProposal, replyContribution } from "./reply-approval.ts";
 
 /** Approve one exact ACDC v2 TEL/anchor through existing member signing and ordinary processors.
  * A returned wrapper records consent, not quorum/witness/TEL completion; retry the accepted-state owners.
@@ -102,12 +105,17 @@ export function* approveAcdcV2Registry(
   protocol: ProtocolProcessor,
   group: Hab,
   event: SerderACDC,
-  { anchor, opening }: { anchor?: SerderKERI; opening?: RegistryDisclosure } = {},
+  { anchor, opening, salts }: {
+    anchor?: SerderKERI;
+    opening?: RegistryDisclosure;
+    salts?: Readonly<Record<string, string>>;
+  } = {},
 ): Operation<MultisigMessage> {
   const registry = protocol.registry, member = localGroupMember(hby, group.pre);
   if (!registry || group.db !== hby.db || registry.db !== hby.db) {
     throw new ValidationError("ACDC v2 group registry owner is unavailable.");
   }
+  validateRegistrySalts(salts, groupSigningMembers(hby, group.pre));
   const checked = event.ilk === "rip" ? validateRip(event) : validateUpdate(event, event.regid ?? "");
   const rip = event.ilk === "rip" ? event : registry.store.seqEvent(event.regid ?? "", 0);
   if (checked.kind !== "valid" || !rip || rip.issuer !== group.pre) {
@@ -129,12 +137,13 @@ export function* approveAcdcV2Registry(
     if (pending) anchor = hby.db.getEvtSerder(group.pre, pending) ?? undefined;
     if (!anchor) {
       anchor = (group.kever!.estOnly
-        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal] })
-        : hby.interactGroupHab(group.name, undefined, { data: [seal] })).serder;
+        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal], version: Vrsn_2_0 })
+        : hby.interactGroupHab(group.name, undefined, { data: [seal], version: Vrsn_2_0 })).serder;
     }
   }
   if (
-    anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
+    anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0
+    || anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
     || JSON.stringify(anchor.sad!.a) !== JSON.stringify([seal])
   ) throw new ValidationError("Group anchor must exclusively seal the exact proposed TEL.");
   const keys = groupEventKeys(hby, group.pre, anchor);
@@ -151,7 +160,7 @@ export function* approveAcdcV2Registry(
   const input = new Reactor(protocol);
   yield* input.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), tel), { local: true });
   yield* input.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), own), { local: true });
-  const proposal = yield* prepareAcdcV2RegistryExn(member.pre, tel, own);
+  const proposal = yield* prepareAcdcV2RegistryExn(member.pre, tel, own, { salts });
   const signed = signGroupMessage(member, "", proposal);
   yield* input.processBytes(signed.message, { local: true });
   yield* protocol.processEscrowsOnce();
@@ -193,7 +202,8 @@ export type MultisigProposalRoute =
   | MultisigKelRoute
   | MultisigVdrRoute
   | MultisigRpyRoute
-  | typeof MULTISIG_REGISTRY_ROUTE;
+  | typeof MULTISIG_RIP_ROUTE
+  | typeof MULTISIG_BUP_ROUTE;
 
 /** Decoded child and membership fields consumed by KEL approval policy; child proofs are verified during intake. */
 type KelApproval = MultisigChild & {
@@ -244,7 +254,7 @@ interface NoticeLike {
  * @param recipients Member AIDs; local recipients are skipped.
  * @param proposal Route-correlated group proposal with its named business fields.
  * @param embeddedMessage Signed child wire to include under the route-derived label.
- * @param childGvrsn Optional explicit attachment genus for the child.
+ * @param options Exact child attachment genus and outer proposal version; omission retains legacy publication.
  * @returns Stable proposal/wrapper identities and completed deliveries, independent of group acceptance.
  */
 export function* publishProposal(
@@ -255,7 +265,7 @@ export function* publishProposal(
   recipients: readonly string[],
   proposal: MultisigEventProposal,
   embeddedMessage: Uint8Array,
-  childGvrsn?: Versionage,
+  options: { childGvrsn?: Versionage; pvrsn?: Versionage } = {},
 ): Operation<GroupSendResult> {
   const input = new Reactor(protocol);
   const outcomes: GroupDelivery[] = [];
@@ -263,7 +273,7 @@ export function* publishProposal(
     const destination = new Organizer(hby.db, hby.signator).resolveRecipient(recipient);
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
-      childGvrsn,
+      ...options,
     });
     const signed = yield* prepareGroupMessage(protocol.exc, member, destination, prepared);
     outcomes.push(yield* admitAndSendGroupMessage(input, postman, signed));
@@ -328,7 +338,7 @@ function pendingMultisigProposals(
   notices: readonly NoticeLike[],
   options: MultisigApprovalOptions,
 ): { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] {
-  const candidates = options.said ? [options.said] : notices.map(note => note.attrs.d);
+  const candidates = options.said ? [options.said] : notices.map((note) => note.attrs.d);
   const group = options.group && (hby.habByName(options.group)?.pre ?? options.group);
   const selected: { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] = [];
   for (const said of new Set(candidates)) {
@@ -336,12 +346,15 @@ function pendingMultisigProposals(
     const exn = hby.db.exns.get([said]);
     if (!exn?.ked) continue;
     const route = exn.route ?? "";
-    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && route !== MULTISIG_REGISTRY_ROUTE) {
+    if (
+      !isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && route !== MULTISIG_RIP_ROUTE
+      && route !== MULTISIG_BUP_ROUTE
+    ) {
       continue;
     }
     const payloadSaid = multisigPayloadSaid(exn);
     if (!payloadSaid) continue;
-    const indexed = hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said);
+    const indexed = hby.db.meids.get([payloadSaid]).some((index) => index.qb64 === said);
     if (!indexed && !options.said) continue;
     const proposalGroup = isKelRoute(route)
       ? kelApproval(hby, exn, route)?.group
@@ -373,10 +386,10 @@ export function* approvePendingMultisigProposal(
     if (!indexed) {
       // Acceptance commits before the asynchronous handler. Resume that ordinary
       // authenticated intake after interruption; never synthesize approval indexes.
-      const message = yield* abortable(signal => collectBytes(runtime.exc.replay(exn.said!, signal)));
+      const message = yield* abortable((signal) => collectBytes(runtime.exc.replay(exn.said!, signal)));
       yield* runtime.reactor.processBytes(message, { local: true });
       const payloadSaid = multisigPayloadSaid(exn)!;
-      if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === exn.said)) continue;
+      if (!hby.db.meids.get([payloadSaid]).some((index) => index.qb64 === exn.said)) continue;
     }
     const rgy = isVdrRoute(route) ? runtime.vdr : null;
     let result: ApprovalResult | null;
@@ -384,7 +397,7 @@ export function* approvePendingMultisigProposal(
       result = yield* approveKelProposal(hby, runtime, exn, route, options);
     } else if (isVdrRoute(route)) {
       result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
-    } else if (route === MULTISIG_REGISTRY_ROUTE) {
+    } else if ((route === MULTISIG_RIP_ROUTE || route === MULTISIG_BUP_ROUTE)) {
       const nests = loadNests(hby.db, exn.said!), proposal = acdcV2RegistryProposal(exn, nests);
       const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
       if (!proposal || !group) continue;
@@ -394,6 +407,7 @@ export function* approvePendingMultisigProposal(
       const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
         anchor: proposal.anchor,
         opening: opening[0],
+        salts: proposal.salts,
       });
       const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
       const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
@@ -442,28 +456,35 @@ function* approveRpyProposal(
   if (!groupHab) {
     throw new ValidationError(`Group ${groupPre} must be joined before approving ${route}.`);
   }
-  const member = localGroupMember(hby, groupPre);
-  const child = multisigChild(hby, exn, "rpy");
-  if (!child) return null;
-  const { event: rpySerder, attachment, genus } = child;
-  const embeddedSaid = rpySerder.said ?? "";
+  const validate = (reply: SerderKERI) => {
+    validateEndpointRoleReply(reply, groupPre);
+  };
+  const proposal = inspectReplyProposal(hby, runtime.exc, wrapperSaid, { group: groupPre, validate });
+  const member = proposal.member;
+  const rpySerder = proposal.child.body as SerderKERI;
+  const embeddedSaid = rpySerder.said!;
   const prior = storedGroupMessage(hby.db, member.pre, exn);
-  if (!prior && !options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
-    return null;
+  const retained = prior ? inspectReplyProposal(hby, runtime.exc, prior.said!, { group: groupPre, validate }) : null;
+  if (retained && retained.child.body.said !== embeddedSaid) {
+    throw new ValidationError("Stored reply approval does not match this exact reply.");
+  }
+  const establishment = hby.db.getKever(groupPre)?.lastEst.d;
+  if (!prior && !options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid })) return null;
+  if (hby.db.getKever(groupPre)?.lastEst.d !== establishment) {
+    throw new ValidationError("Group establishment changed during reply approval.");
   }
 
-  yield* runtime.reactor.processBytes(
-    concatBytes(Counter.makeGVC(genus), rpySerder.raw, attachment),
-    { local: true },
-  );
-
-  let localRpy: Uint8Array;
-  if (prior) localRpy = storedContribution(hby, prior, "rpy", embeddedSaid);
-  else localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
+  const localRpy = retained
+    ? replyContribution(retained)
+    : endorseReply(hby, proposal.child, { group: groupPre, validate });
+  const genus = proposal.genus;
+  yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), replyContribution(proposal)), {
+    local: true,
+  });
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localRpy), { local: true });
   yield* runtime.protocol.processEscrowsOnce();
 
-  const attrs = rpyAttrs(rpySerder);
+  const attrs = validateEndpointRoleReply(rpySerder, groupPre);
   const publication = yield* publishProposal(
     hby,
     runtime.protocol,
@@ -472,7 +493,7 @@ function* approveRpyProposal(
     groupSigningMembers(hby, groupPre),
     { route, attrs: { gid: groupPre } },
     localRpy,
-    genus,
+    { childGvrsn: genus, pvrsn: exn.pvrsn },
   );
   const accepted = endpointRoleAccepted(hby, attrs.cid, attrs.role, attrs.eid);
 
@@ -523,7 +544,7 @@ function* approveKelProposal(
   const members = kelApprovalMembers(approval);
   let localMessage: Uint8Array;
   if (prior) {
-    localMessage = storedContribution(hby, prior, kelProposalLabel(route), serder.said!);
+    localMessage = storedMultisigContribution(hby, prior, kelProposalLabel(route), serder.said!);
   } else {
     if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
       return null;
@@ -554,7 +575,7 @@ function* approveKelProposal(
     members,
     proposal,
     localMessage,
-    approval.genus,
+    { childGvrsn: approval.genus },
   );
   const accepted = eventAccepted(hby, serder);
   // Replaying an older approval must not restore historical group membership.
@@ -652,7 +673,7 @@ function* approveVdrProposal(
   const smids = groupSigningMembers(hby, groupPre);
   let localAnchor: Uint8Array;
   if (prior) {
-    localAnchor = storedContribution(hby, prior, "anc", anchorSerder.said!);
+    localAnchor = storedMultisigContribution(hby, prior, "anc", anchorSerder.said!);
   } else {
     const keys = groupEventKeys(hby, groupPre, anchorSerder);
     const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
@@ -720,15 +741,6 @@ function* approveVdrProposal(
 function kelApprovalMembers({ proposal }: KelApproval): string[] {
   if (proposal.route === MULTISIG_IXN_ROUTE) return [...proposal.attrs.smids];
   return uniqueMembers([...proposal.attrs.smids, ...proposal.attrs.rmids]);
-}
-
-/** Reuse a recorded member's child proof; never sign a replacement during resume. */
-function storedContribution(hby: Habery, wrapper: SerderKERI, label: string, said: string): Uint8Array {
-  const child = multisigChild(hby, wrapper, label);
-  if (!child || child.event.said !== said || child.attachment.length === 0) {
-    throw new ValidationError(`Stored multisig approval ${wrapper.said} lacks its ${label} contribution.`);
-  }
-  return concatBytes(child.event.raw, child.attachment);
 }
 
 /** VDR coordination keeps KERIpy's named child for each legacy route. */
@@ -910,19 +922,6 @@ function requireCredentialSaid(creder: SerderACDC): string {
 
 function telAccepted(reger: Reger, pre: string, sn: number, eventSaid: string): boolean {
   return reger.tels.getOn(pre, sn)?.qb64 === eventSaid;
-}
-
-function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string } {
-  const attrs: unknown = serder.ked?.a;
-  if (
-    !attrs || typeof attrs !== "object"
-    || !("cid" in attrs) || typeof attrs.cid !== "string" || !attrs.cid
-    || !("role" in attrs) || typeof attrs.role !== "string" || !attrs.role
-    || !("eid" in attrs) || typeof attrs.eid !== "string" || !attrs.eid
-  ) {
-    throw new ValidationError("Multisig reply is missing cid, role, or eid.");
-  }
-  return { cid: attrs.cid, role: attrs.role, eid: attrs.eid };
 }
 
 function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {

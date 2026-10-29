@@ -1,5 +1,6 @@
 /** Compile-only installed consumer of public manager, host, ingress and storage contracts. */
 import { createBaser, type Keeper } from "keri-ts/db";
+import { type AcceptedRotation, replicationTargets } from "@keri-ts/multisync/v2";
 import {
   type AgentRuntime,
   type AgentCue,
@@ -93,4 +94,9 @@ export function queries(runtime: AgentRuntime, hab: Hab, pre: string, sn: number
     sequence: new SeqNoQuerier(runtime.hby.db, sender, pre, sn, { signer: hab.pre }).queryDo(),
     state: new KeyStateNoticer(runtime.hby.db, sender, pre, queryCues, { signer: hab.pre }).queryDo(),
   };
+}
+
+/** Select newcomers through the versioned installed application contract. */
+export function newcomers(rotation: AcceptedRotation, member: string): string[] {
+  return replicationTargets(rotation, member);
 }

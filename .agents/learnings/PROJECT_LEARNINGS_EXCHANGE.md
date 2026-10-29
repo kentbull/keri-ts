@@ -66,6 +66,9 @@ TMSC opener plus lifetime differs from the receiver receipt. Equality is eligibl
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
+ESSR envelope body version and stream genus are distinct. A v1 outer EXN
+carrying a native v2 reply declares genus 2; the exact inner reply starts at its
+body, without another genus prefix. KERIpy reply dispatch inherits stream genus.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
@@ -94,6 +97,10 @@ completion are separate from local processing policy and worker ownership.
 Publication exposes recipient wrapper SAIDs and the shared Multiplexor index key:
 v1 embedded-bundle SAID or v2 signed-child SAID. Extraction is not authentication;
 Multiplexor owns commitment validation and accepted proposal/submitter indexes.
+Composed replay borrows the matching runtime Kevery/Revery pair, preserving the
+application router and message policy. Reject partial or mismatched owner injection;
+standalone callers omit both. Generic group endorsement and retained-contribution
+reuse belong to multisig, while endpoint-role policy stays in endpoint-roleing.
 
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
@@ -263,8 +270,13 @@ selection, joining or signing. Bind the selected group to the KEL child prefix o
 VDR anchor prefix before prompting: shared participants do not make group identities
 interchangeable. A mismatched wrapper must not authorize another group's event. Interaction does not carry rotation members.
 The same decoded proposal drives approval and KEL re-publication; unknown peer
-attributes are not endorsed into a fresh local wrapper. RPY/VDR publication input
-contracts remain separate follow-up work.
+attributes are not endorsed into a fresh local wrapper. Reply approval reauthenticates
+retained evidence and validates exact group attribution, signature-only child factors,
+the existing local group and required domain policy before consent. Recheck group
+and policy before signing; preserve peer factors and reuse exact local contributions
+on resume. Endpoint policy stays with the endpoint caller. Preserve the incoming outer
+version and child genus instead of crossing native and legacy proposal indexes.
+VDR publication input contracts remain separate follow-up work.
 Multisig publication prepares and endorses its recipient-specific EXN at the
 workflow owner. Poster borrows that exact body and wire for delivery and durable
 retry; its optional TCP dependency is the reply receiver contract. Preparation
@@ -362,3 +374,11 @@ publication correlates registry/issuance routes with their required named childr
 and known gid/usage fields. Derive the signed genus hint from the local anchor,
 and serialize the credential source proof in that genus too; a valid local
 credential does not prove the outgoing embedded proof is parseable.
+
+Accepted group rotation must commit member configuration when threshold approval
+arrives after local proposal creation, including on the initiating member. CLI
+results may carry transient before/after membership for application composition;
+they do not establish a second persistent roster. Tufa selects newcomer salt
+provisioning through `@keri-ts/multisync/v2`, using ordinary threshold-approved
+encrypted replies and Poster routing. Interrupted provisioning remains an explicit
+operator action; there is no salt delivery ledger or automatic retry service.

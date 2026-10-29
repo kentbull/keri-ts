@@ -21,7 +21,6 @@ import { acdcmap, blindate as acdcBlindate } from "../../../src/acdc/messaging.t
 import type { RegistryDisclosure } from "../../../src/acdc/regeventing.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
-import { groupEndorseReply } from "../../../src/app/identity/endpoint-roleing.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex/ipex-credentialing.ts";
 import {
@@ -31,6 +30,7 @@ import {
   sendCompletedGroupIpex,
 } from "../../../src/app/ipex/ipex-grouping.ts";
 import { ipexOfferExn, ipexSpurnExn } from "../../../src/app/ipex/ipexing.ts";
+import { groupEndorseReply } from "../../../src/app/multisig/group-signing.ts";
 import { approveAcdcV2Registry, approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
 import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";

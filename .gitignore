@@ -25,3 +25,6 @@ data.mdb*
 # Python fixture bytecode is generated test output
 __pycache__/
 *.pyc
+
+# Generated multisync package output
+packages/multisync/npm

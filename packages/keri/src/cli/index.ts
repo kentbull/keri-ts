@@ -74,6 +74,8 @@ export { rotateCommand } from "./identity/rotate.ts";
 export { exchangeSendCommand } from "./messaging/exchange.ts";
 export {
   type GroupEventResult,
+  type GroupJoinResult,
+  type GroupRotationResult,
   multisigInceptCommand,
   multisigInteractCommand,
   multisigJoinCommand,

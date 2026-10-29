@@ -2,9 +2,9 @@ import { call, type Operation, spawn } from "npm:effection@^3.6.0";
 import {
   endpointRoleAccepted,
   type GroupRoleResult,
-  isLocalGroupHab,
   proposeGroupEndpointRole,
 } from "../../app/identity/endpoint-roleing.ts";
+import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { settleRuntimeIngress } from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { isEndpointRole } from "../../core/roles.ts";

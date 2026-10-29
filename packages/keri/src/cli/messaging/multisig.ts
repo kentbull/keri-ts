@@ -13,13 +13,15 @@ import { resolveDelegationCommunicationHab } from "../../app/identity/delegating
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
   endpointRoleAccepted,
-  groupSigningMembers,
-  isLocalGroupHab,
-  localGroupMember,
   proposeGroupEndpointRole,
 } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
-import { uniqueMembers } from "../../app/multisig/group-members.ts";
+import {
+  groupSigningMembers,
+  isLocalGroupHab,
+  localGroupMember,
+  uniqueMembers,
+} from "../../app/multisig/group-members.ts";
 import {
   MULTISIG_ICP_ROUTE,
   MULTISIG_IXN_ROUTE,
@@ -75,6 +77,24 @@ export interface GroupEventResult extends GroupSendResult {
   accepted: boolean;
   state: KeyStateRecord | null;
   delegationPhase: string | null;
+}
+
+/** Transient membership comparison for application post-rotation work. */
+export interface GroupRotationResult extends GroupEventResult {
+  previousSigningMembers: string[];
+  signingMembers: string[];
+  rotation: string;
+}
+
+/** Join output optionally carries transient accepted-rotation membership. */
+export interface GroupJoinResult extends ApprovalResult {
+  rotation?: {
+    accepted: boolean;
+    previousSigningMembers: string[];
+    signingMembers: string[];
+    rotation: string;
+    alias: string;
+  };
 }
 
 interface MultisigBaseArgs {
@@ -259,7 +279,7 @@ export function* multisigInceptCommand(
 /** Poll for and approve one pending group multisig event. */
 export function* multisigJoinCommand(
   args: Record<string, unknown>,
-): Operation<ApprovalResult> {
+): Operation<GroupJoinResult> {
   const commandArgs: MultisigJoinArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),
@@ -281,6 +301,25 @@ export function* multisigJoinCommand(
   const name = requireText(commandArgs.name, "Name");
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const before = new Map(
+      [...hby.habs.values()]
+        .filter((hab) => isLocalGroupHab(hby, hab))
+        .map((hab) => [hab.pre, [...groupSigningMembers(hby, hab.pre)]]),
+    );
+    const completed = (result: ApprovalResult): GroupJoinResult => {
+      const prior = before.get(result.group), hab = hby.habs.get(result.group);
+      if (!result.accepted || result.route !== MULTISIG_ROT_ROUTE || !prior || !hab) return result;
+      return {
+        ...result,
+        rotation: {
+          accepted: true,
+          previousSigningMembers: prior,
+          signingMembers: [...groupSigningMembers(hby, hab.pre)],
+          rotation: result.embedded,
+          alias: hab.name,
+        },
+      };
+    };
     const approval = multisigApprovalOptions(hby, commandArgs);
     const result = yield* waitForOneApproval(hby, runtime, approval);
     if (!result) {
@@ -294,7 +333,7 @@ export function* multisigJoinCommand(
           yield* completeDelegationIfNeeded(hby, runtime, local.group, commandArgs.proxy);
         }
       }
-      return local;
+      return completed(local);
     }
     if (result.tel) {
       const { publication, reger } = runtime.vdr!;
@@ -323,7 +362,7 @@ export function* multisigJoinCommand(
         );
       }
     }
-    return result;
+    return completed(result);
   });
 }
 
@@ -394,7 +433,7 @@ export function* multisigInteractCommand(
 /** Rotate or begin rotation of one group identifier. */
 export function* multisigRotateCommand(
   args: Record<string, unknown>,
-): Operation<GroupEventResult> {
+): Operation<GroupRotationResult> {
   const commandArgs: MultisigRotateArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),
@@ -429,6 +468,9 @@ export function* multisigRotateCommand(
   const options = mergeRotateOptions(commandArgs);
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
+    const prior = groupHabByAliasOrPrefix(hby, group);
+    if (!prior) throw new ValidationError("Group identifier is unavailable");
+    const previousSigningMembers = [...groupSigningMembers(hby, prior.pre)];
     const rotated = hby.rotateGroupHab(
       group,
       commandArgs.smids,
@@ -465,6 +507,12 @@ export function* multisigRotateCommand(
     );
     let delegationPhase: string | null = null;
     if (accepted) {
+      // A threshold rotation commonly completes after rotateGroupHab returns.
+      // Persist its accepted membership just as the joining member does, so
+      // reopening the initiator does not retain the previous signing roster.
+      if (hby.db.getKever(rotated.hab.pre)?.lastEst.d === rotated.serder.said) {
+        hby.commitGroupHabMembers(rotated.hab.pre, smids, rmids);
+      }
       yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs, runtime);
       delegationPhase = yield* completeDelegationIfNeeded(
         hby,
@@ -475,6 +523,9 @@ export function* multisigRotateCommand(
     }
     return {
       route: MULTISIG_ROT_ROUTE,
+      previousSigningMembers,
+      signingMembers: [...smids],
+      rotation: rotated.serder.said!,
       group: rotated.hab.pre,
       accepted,
       messages,

@@ -16,18 +16,18 @@ import {
   query,
   type RegistryDisclosure,
   type RegistryState,
-  timestampMicros,
   TransportError,
   ValidationError,
   vetBinds,
   walkIpexGraph,
 } from "keri-ts/runtime";
 
-/** Recent observation of an exact locally authenticated head from one configured TLS endpoint. */
+/** Local receipt of authenticated registry evidence from one configured TLS endpoint. */
 export interface AcdcV2Observation {
   registry: string;
   source: string;
   head: string;
+  /** Local receive time, not a source freshness assertion or acceptance deadline. */
   observedAt: string;
 }
 /** Historical proof validity carries no current-standing, business-policy or delivery claim. */
@@ -47,7 +47,6 @@ export interface AcdcV2Verification {
 }
 export interface AcdcV2VerifierOptions {
   source: string;
-  maximumAgeMs: number;
   requestTimeoutMs: number;
   now: () => number;
 }
@@ -65,8 +64,8 @@ export class AcdcV2Verifier {
     if (exc.hby !== hby || hab.db !== hby.db || evidence.processor.kvy.db !== hby.db) {
       throw new ValidationError("ACDC v2 verifier requires its actual local evidence owners.");
     }
-    if (![options.maximumAgeMs, options.requestTimeoutMs].every(value => Number.isFinite(value) && value > 0)) {
-      throw new ValidationError("Source age and request timeout must be finite and positive.");
+    if (!Number.isFinite(options.requestTimeoutMs) || options.requestTimeoutMs <= 0) {
+      throw new ValidationError("Request timeout must be finite and positive.");
     }
     const source = new URL(options.source);
     if (source.protocol !== "https:" || source.username || source.password || source.search || source.hash) {
@@ -102,7 +101,7 @@ export class AcdcV2Verifier {
 
   /** Authenticate one complete source response and its exact accepted head, never infer global latest state. */
   private *observe(regid: string): Operation<AcdcV2Observation | null> {
-    const { source, maximumAgeMs, requestTimeoutMs, now } = this.options;
+    const { source, requestTimeoutMs, now } = this.options;
     const wire = this.hab.endorse(query("tels", { i: regid }, { pre: this.hab.pre, version: Vrsn_2_0 }), {
       gvrsn: Vrsn_2_0,
     });
@@ -123,19 +122,14 @@ export class AcdcV2Verifier {
     } finally {
       clearTimeout(timer);
     }
-    const stamp = response.headers.get("Observer-Observed-At"), head = response.headers.get("Observer-Registry-Head");
-    const micros = timestampMicros(stamp), age = micros === null ? NaN : now() - Number(micros) / 1000;
-    if (
-      response.status !== 200 || !isCesrContentType(response.headers.get("content-type"))
-      || response.headers.get("Observer-Evidence-State") !== "fresh" || !stamp || !Number.isFinite(age) || age < 0
-      || age > maximumAgeMs || !head
-    ) return null;
+    if (response.status !== 200 || !isCesrContentType(response.headers.get("content-type"))) return null;
     const result = yield* call(() => this.evidence.ingest(concatBytes(Counter.makeGVC(Vrsn_2_0), response.body)));
+    const head = result.heads[regid];
     if (
-      Object.keys(result.pending).length || Object.keys(result.rejected).length || result.heads[regid] !== head
+      !head || Object.keys(result.pending).length || Object.keys(result.rejected).length
       || this.evidence.store.head(regid)?.qb64 !== head
     ) return null;
-    return { registry: regid, source, head, observedAt: stamp };
+    return { registry: regid, source, head, observedAt: new Date(now()).toISOString() };
   }
 
   /** Require shared graph approval and full current standing over the exact retained credential views. */
@@ -199,11 +193,7 @@ export class AcdcV2Verifier {
     }
     const truth = evaluateAcdcRelations(graph, this.hby.db, registrations);
     if (
-      observations.some(observation => {
-        const age = this.options.now() - Number(timestampMicros(observation.observedAt)!) / 1000;
-        return age < 0 || age > this.options.maximumAgeMs
-          || this.evidence.store.head(observation.registry)?.qb64 !== observation.head;
-      })
+      observations.some(observation => this.evidence.store.head(observation.registry)?.qb64 !== observation.head)
     ) return result("missing");
     // The shared evaluator deliberately excludes the origin's own standing; this consumer requires an issued root.
     const rootState = registrations.get(inspected.credential.said!)?.state;

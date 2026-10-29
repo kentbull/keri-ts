@@ -1,7 +1,7 @@
 /** Commander registrations for vc operations; command adapters own effects. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
+import { addHabOption, addStoreOptions, collectOption, dispatchArgs } from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
 
 /**
@@ -47,6 +47,38 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   );
 
   const registry = vc.command("registry").description("Credential registry operations");
+  const salt = registry.command("salt").description("Encrypted ACDC v2 registry salt replies");
+  for (const operation of ["send", "receive", "status", "serve"] as const) {
+    const command = addHabOption(addStoreOptions(salt.command(operation)))
+      .requiredOption("--registry <said>", "Accepted registry inception SAID")
+      .option("--evidence <file>", "Public CESR evidence file", collectOption, []);
+    if (operation === "send") {
+      command.requiredOption("--party <aid>", "Logical salt recipient")
+        .option("--target <aid>", "Individual recipient member")
+        .option(
+          "--output <file>",
+          "New signed encrypted reply file (group output is a signature contribution)",
+        )
+        .option("--endpoint <url>", "HTTP(S) CESR intake endpoint")
+        .option("--deliver", "Use the recipient endpoint or witness mailbox")
+        .option("--essr", "Wrap the signed reply in an ESSR envelope for the individual recipient")
+        .option("--timeout <seconds>", "Finite transport deadline (default: 30)");
+    }
+    if (operation === "serve") {
+      command.option("--host <host>", "Listen host (default: 127.0.0.1)").option(
+        "--port <port>",
+        "HTTP port (default: 7723)",
+      );
+    }
+    if (operation === "receive") command.requiredOption("--input <file>", "Signed encrypted reply file");
+    registerDispatchedCommand(command, dispatch, {
+      name: `vc.registry.salt.${operation}`,
+      load: () => import("../commands/registry-salt.ts"),
+      exportName: "registrySaltCommand",
+      args: (options) => ({ ...dispatchArgs(options), operation }),
+    });
+  }
+
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
@@ -146,27 +178,6 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       args: dispatchArgs,
     },
   );
-  const custody = registry.command("custody").description("Explicit protected custody operator handoff");
-  for (const operation of ["import", "export"] as const) {
-    const command = addHabOption(addStoreOptions(
-      custody.command(operation)
-        .option("--registry-name <name>", "ACDC v2 registry alias")
-        .option("--registry <said>", "Accepted registry SAID for a designated remote discloser")
-        .requiredOption("--file <path>", "Protected mode0600 plaintext handoff artifact"),
-    ));
-    if (operation === "import") {
-      command.requiredOption("--controller <aid>", "Expected registry controller").requiredOption(
-        "--discloser <aid>",
-        "Expected designated discloser",
-      ).option("--rewrap", "Explicitly rewrap an existing custody record under this Keeper");
-    }
-    registerDispatchedCommand(command, dispatch, {
-      name: `vc.registry.custody.${operation}`,
-      load: () => import("../commands/acdc-v2-authoring.ts"),
-      exportName: operation === "import" ? "custodyImportCommand" : "custodyExportCommand",
-      args: dispatchArgs,
-    });
-  }
 
   registerKeriCliCommand(
     addStoreOptions(

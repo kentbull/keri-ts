@@ -4,8 +4,55 @@
  * this module reads that accepted evidence for one explicitly selected local Hab.
  * Protocol authentication is independent of storage and plaintext is not saved.
  */
-import { Diger, MtrDex, parseBexter, parsePrefixer, ParserError, parseTagger } from "cesr-ts";
+import {
+  Bexter,
+  concatBytes,
+  Diger,
+  Encrypter,
+  essrChunks,
+  MtrDex,
+  parseBexter,
+  parsePrefixer,
+  ParserError,
+  parseTagger,
+  Tagger,
+  Texter,
+  type Verfer,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "cesr-ts";
+import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import type { Hab } from "../identity/habbing.ts";
+
+/** Seal an ordinary CESR stream with KERIpy StreamPoster's SCS framing.
+ * The caller authenticates the selected individual recipient key. The outer
+ * sender authenticates transport provenance; inner messages retain their own
+ * signatures and authority. No sender state or delivery record is created.
+ */
+export function essrEnvelope(sender: Hab, body: Uint8Array, recipient: string, key: Verfer): Uint8Array {
+  const plaintext = concatBytes(
+    new Tagger({ qb64: "XSCS" }).qb64b,
+    sender.kever!.prefixer.qb64b,
+    new Bexter({ qb64: "4AAA" }).qb64b,
+    body,
+  );
+  const ciphertext = new Encrypter({ verkey: key.qb64 }).encrypt({
+    ser: plaintext,
+    code: MtrDex.X25519_Cipher_L0,
+  }).raw;
+  const [outer] = exchange("/essr/req", {}, {
+    sender: sender.pre,
+    pvrsn: Vrsn_1_0,
+    diger: new Diger({ raw: Diger.digest(ciphertext, MtrDex.Blake3_256), code: MtrDex.Blake3_256 }),
+    modifiers: { src: sender.pre, dest: recipient },
+  });
+  // The v1 envelope body can carry a v2 reply; declare its attachment genus
+  // so KERIpy keeps v2 parsing active when dispatching the decrypted reply.
+  return concatBytes(
+    sender.endorse(outer, { pipelined: false, gvrsn: Vrsn_2_0, genusify: true }),
+    ...essrChunks([new Texter({ raw: ciphertext, code: MtrDex.Bytes_L0 })], { gvrsn: Vrsn_2_0 }),
+  );
+}
 
 /** Expected recipient outcomes; acceptance returns ordinary authenticated data. */
 export type EssrDecision =
