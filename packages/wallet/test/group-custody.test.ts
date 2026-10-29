@@ -110,6 +110,61 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       yield* identities[2].ks.close();
       yield* identities[2].ks.reopen();
       assertEquals(custody[2].derive(rip.said!, 17, rip.said!, "revoked"), future);
+
+      // Replace the original lead using the remaining prior-next quorum. The
+      // newcomer learns accepted evidence before joining the local group.
+      const joining = yield* createHabery({
+        name: "salt-new-member",
+        temp: true,
+        skipConfig: true,
+        bran: "PrivateNewMemberPasscode",
+      });
+      identities.push(joining);
+      const joinedRuntime = yield* createAgentRuntime(joining, new FetchHttpClient(), systemClock);
+      runtimes.push(joinedRuntime);
+      const newMember = joining.makeHab("new-member");
+      for (const runtime of runtimes) {
+        for (const wire of joining.db.clonePreIter(newMember.pre)) yield* runtime.reactor.processBytes(wire);
+      }
+      for (const index of [1, 2]) {
+        members[index].rotate();
+        for (const runtime of runtimes) {
+          for (const wire of identities[index].db.clonePreIter(members[index].pre)) {
+            yield* runtime.reactor.processBytes(wire, { local: true });
+          }
+        }
+      }
+      for (const wire of identities[1].db.clonePreIter(groups[1].hab.pre, 0, Vrsn_2_0)) {
+        yield* joinedRuntime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
+      }
+      const replacement = [members[1].pre, members[2].pre, newMember.pre];
+      const rotations = [1, 2].map((index) =>
+        identities[index].rotateGroupHab("issuer", replacement, replacement, { isith: "2", nsith: "2" })
+      );
+      assertEquals(rotations[0].serder.said, rotations[1].serder.said);
+      const rotated = messagize(rotations[0].serder, { sigers: [...rotations[0].sigers, ...rotations[1].sigers] });
+      for (const index of [1, 2, 3]) {
+        yield* runtimes[index].reactor.processBytes(rotated, { local: true });
+        assertEquals(identities[index].db.getKever(groups[0].hab.pre)?.serder.said, rotations[0].serder.said);
+      }
+      for (const index of [1, 2]) {
+        identities[index].commitGroupHabMembers(groups[index].hab.pre, replacement, replacement);
+      }
+      joining.joinGroupHab(groups[0].hab.pre, "issuer", newMember, replacement, replacement);
+      yield* joinedRuntime.reactor.processBytes(
+        concatBytes(Counter.makeGVC(Vrsn_2_0), runtimes[1].acdc!.store.cloneTel(rip.said!)),
+      );
+      const joinedCustody = new RegistryCustody({ hby: joining, registry: joinedRuntime.acdc!.store });
+      new RegistrySaltService(joinedCustody, joinedRuntime.protocol.rvy).register();
+      const newReply = services[1].makeReply(groups[1].hab, rip.said!, groups[1].hab.pre, newMember.pre);
+      yield* joinedRuntime.reactor.processBytes(groups[1].hab.endorse(newReply));
+      assertEquals(joining.ks.custody.get([rip.said!]), null);
+      yield* joinedRuntime.reactor.processBytes(groups[2].hab.endorse(newReply));
+      yield* joinedRuntime.protocol.processEscrowsOnce();
+      assertEquals(joinedCustody.derive(rip.said!, 17, rip.said!, "revoked"), future);
+      yield* joining.ks.close();
+      yield* joining.ks.reopen();
+      assertEquals(joinedCustody.derive(rip.said!, 17, rip.said!, "revoked"), future);
     } finally {
       for (const runtime of runtimes.reverse()) yield* runtime.close();
       for (const hby of identities.reverse()) yield* hby.close(true);
