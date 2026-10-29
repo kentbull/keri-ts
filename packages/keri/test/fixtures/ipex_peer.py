@@ -223,10 +223,10 @@ class IpexPeer:
                           baser=RegBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
         self.wallet = Wallet(self.hby, self.rgy)
         self.sections = SectionBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath)
-        self.native = Peer(self.hby, self.rgy, self.wallet, self.sections)
+        self.native = Peer(self.hby, self.rgy, self.sections)
         self.native.parser.ims = self.parser.ims  # Keep HttpEnd's existing borrowed intake buffer.
         self.doist.extend([self.native.evidence])
-        self.exc, self.kvy, self.parser, self.verification = self.native.exc, self.native.evidence.kvy, self.native.parser, self.wallet.verification
+        self.exc, self.kvy, self.parser, self.verification = self.native.exc, self.native.evidence.kvy, self.native.parser, self.native.verification
         registry = Registrar(self.rgy).makeRegistry(name="wallet", prefix=self.hab.pre)
         rip = self.rgy.store.event(registry.regk)
         self.hab.interact(data=[dict(i=registry.regk, s="0", d=rip.said)], gvrsn=Vrsn_2_0)
@@ -258,7 +258,7 @@ class IpexPeer:
                 full = self.wallet.issuedCredential(self.graph.full_nodes[0].said)
                 node = partial_disclosure(full, self.plan[0][2])
             else:
-                view = self.wallet.heldCredential(held)
+                view = self.native.verification.heldCredential(held)
                 node = view["credential"]
             if verb == "offer":
                 return offer(self.hab, "status", origin=node, apply=prior, recp=self.remote["pre"], ax=[True],
@@ -290,7 +290,7 @@ class IpexPeer:
         if body.route == "/ipex/grant":
             assert self.verification.evaluateGrant(body.said) is True
         if admission:
-            self.wallet.recordAdmission(admission, body.said, consent=True)
+            self.native.verification.validateAdmission(admission, body.said, consent=True)
         self.post(support + wire)
         return body.said
 

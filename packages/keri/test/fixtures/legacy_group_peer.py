@@ -391,7 +391,7 @@ class AcdcV2Role:
         result = dict(head=head.qb64 if head else None,
                       complete=self.exc.complete(exchange) if exchange else False)
         if grant:
-            held = self.wallet.heldCredential(grant)
+            held = self.wallet.verification.heldCredential(grant)
             result.update(credential=held['credential'].said, proof=held['proof'].decode(),
                           grant=held['grant'].said, admit=held['admit'])
         return result
@@ -450,7 +450,7 @@ class AcdcV2Control:
             elif action == 'reopen':
                 rep.media = role.reopen()
             elif action == 'admission':
-                record = role.wallet.recordAdmission(data['grant'], data['admit'], consent=data['consent'])
+                record = role.wallet.verification.validateAdmission(data['grant'], data['admit'], consent=data['consent'])
                 rep.media = dict(grant=record.grant, admit=record.admit)
             elif action == 'snapshot':
                 rep.media = role.snapshot(**data)
