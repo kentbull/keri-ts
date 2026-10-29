@@ -4,23 +4,23 @@
     "applications": {
       "dolly": {
         "repository": "kentbull/dolly",
-        "commit": "ab036fb30207ba121c809223fe45d03284df97e7"
+        "commit": "f007892b3a62c8ff427b9570278da5beb5803dbe"
       },
       "registrar": {
         "repository": "kentbull/kf-registrar",
-        "commit": "c7c948da05e0666ad8cfb3ea773cb74207c1586c"
+        "commit": "666b2c7239e993a93e74c7424c716e94e50a6452"
       },
       "observer": {
         "repository": "kentbull/kf-observer",
-        "commit": "94d3ee8f4981f1029ae1c0362d5ad3e2d81de58e"
+        "commit": "bf56f2a654f9ef4e1d861facb004e747a62f2434"
       },
       "witness": {
         "repository": "kentbull/witness-hk",
-        "commit": "f5e771fc3c9b599c2dee0c403e2ac86e11747d95"
+        "commit": "6b138fd6320243b1344ee335d04f726d46997ad6"
       },
       "locksmith": {
         "repository": "kentbull/locksmith",
-        "commit": "f4fa9eae255324bb0697d9d83146b8da1170be64"
+        "commit": "50dd9b3a4d75312d06f9ff7c289a6b35356e3fc5"
       }
     },
     "decisionRegister": "https://github.com/kentbull/enctx/blob/aced46824ad3d5b142e2cb5e7755effb7fb1d6f7/plans/keri/acdc-v2/python-mvp-and-typescript-plan.md#wire-profile-posture-and-conceptual-provenance",
@@ -42,7 +42,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "d23112ad62282b1c3643faf9851a4a5e18501972",
+      "commit": "6326cacb0729476c7a4eab87f349c537d11010ef",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",
