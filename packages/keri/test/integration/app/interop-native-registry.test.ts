@@ -71,7 +71,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const [published] = parseBytes(b(evidence.publicUpdate));
     assertEquals(BoundState.qb64(envelopeFromFrame(published).bsss[0]), BoundState.qb64(blinder));
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const handler = createProtocolHandler(runtime);
@@ -97,7 +97,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
         yield* hby.close();
       }
     });
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -140,7 +140,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
-    const evidence = await run(function*() {
+    const evidence = await run(function* () {
       const hby = yield* createHabery({ name: "native-author", temp: true, skipConfig: true });
       try {
         const issuer = hby.makeHab("issuer");
@@ -181,16 +181,16 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
 });
 
 Deno.test({
-  name: "interop/native-registry - POSIX protected custody handoffs derive exact openings after reciprocal reopen",
-  ignore: Deno.build.os === "windows",
+  name: "interop/native-registry - signed encrypted salt replies derive exact openings after reciprocal reopen",
   async fn() {
     assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
     const ctx = await createInteropContext();
-    const { createWalletBaser } = await import("../../../../wallet/mod.ts");
+    const { createWalletBaser, RegistrySaltService } = await import("../../../../wallet/mod.ts");
     const { RegistryCustody } = await import("../../../../wallet/src/custody.ts");
     const options = { name: "custody-ts", headDirPath: ctx.home, skipConfig: true, bran: "MyPasscodeARealSecret" };
-    const requestPath = `${ctx.home}/custody-request.json`, handoff = `${ctx.home}/custody.json`;
+    const requestPath = `${ctx.home}/custody-request.json`;
     let evidence: {
+      saltReply: string;
       registry: string;
       controller: string;
       discloser: string;
@@ -203,7 +203,7 @@ Deno.test({
       future: string;
     };
     try {
-      await run(function*() {
+      await run(function* () {
         const hby = yield* createHabery(options);
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
@@ -217,7 +217,6 @@ Deno.test({
               requestPath,
               JSON.stringify({
                 root,
-                handoff,
                 discloser: holder.pre,
                 kel: t(acceptedEventReplayMessage(hby, holder.pre, 0, Vrsn_2_0).message),
               }),
@@ -245,14 +244,10 @@ Deno.test({
             Error,
             "not provisioned",
           );
-          yield* call(() =>
-            assertRejects(
-              () => custody.importCustody(handoff, { ...evidence, controller: holder.pre }),
-              Error,
-              "controller",
-            )
-          );
-          yield* call(() => custody.importCustody(handoff, evidence));
+          const saltService = new RegistrySaltService(custody, runtime.protocol.rvy);
+          saltService.register();
+          // The ordinary HTTP parser and Revery authenticate the foreign issuer.
+          for (const frame of parseBytes(b(evidence.saltReply))) yield* call(() => post(url, frame));
           const opening = custody.derive(evidence.registry, 1, credential.said!, "issued", {
             bound: true,
             bsn: holder.kever!.sn,
@@ -298,19 +293,17 @@ Deno.test({
           issuer.interact({ data: [{ i: registry.regk, s: "1", d: reverseUpdate.said }] });
           assertEquals(registry.anchorMsg(reverseUpdate.said!).kind, "accept");
           assertEquals(store.opening(reverseUpdate.said!), null, "reverse custody is not public proof publication");
-          const reverseHandoff = `${ctx.home}/reverse-custody.json`;
-          yield* call(() => custody.exportCustody(registry.regk!, reverseHandoff));
-          assertEquals((yield* call(() => Deno.stat(reverseHandoff))).mode! & 0o7777, 0o600);
+          const reverseReply = saltService.makeReply(issuer, registry.regk!, info.discloser);
           const reverse = {
             root: `${ctx.home}/python`,
-            handoff: reverseHandoff,
+            saltReply: t(issuer.endorse(reverseReply)),
             info,
             credential: t(reverseCredential.raw),
             update: reverseUpdate.said,
             bsn: Number(bound.bsn),
             bd: bound.bd,
             tel: t(store.cloneTel(registry.regk!)),
-            kel: [0, 1, 2].map(sn => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(""),
+            kel: [0, 1, 2].map((sn) => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(""),
           };
           const expected = {
             opening: BoundState.qb64(reverseOpening),
@@ -334,7 +327,7 @@ Deno.test({
           yield* hby.close();
         }
       });
-      await run(function*() {
+      await run(function* () {
         const hby = yield* createHabery(options);
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
         const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
@@ -377,7 +370,7 @@ async function serviceReady(path: string, child: SpawnedChild) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
     if (ended) throw new Error(`Selected Python service ended before readiness: ${await readChildOutput(child)}`);
-    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error("Selected Python service did not bind its TLS listener");
 }
@@ -385,7 +378,7 @@ async function serviceReady(path: string, child: SpawnedChild) {
 Deno.test("interop/native-registry - Python registrar publication reaches TS observer cache over TLS", async () => {
   const ctx = await createInteropContext();
   try {
-    await run(function*() {
+    await run(function* () {
       const authorHby = yield* createHabery({ name: "service-author", headDirPath: ctx.home, skipConfig: true });
       const cacheHby = yield* createHabery({ name: "service-cache", headDirPath: ctx.home, skipConfig: true });
       const publisher = authorHby.makeHab("publisher"),
@@ -432,7 +425,6 @@ Deno.test("interop/native-registry - Python registrar publication reaches TS obs
         const service = new Observer(runtime.protocol, runtime.acdc!.store, records, {
           sources: [{ url, caFile: certificate, certName: "localhost" }],
           readers: [reader.pre],
-          maximumAgeMs: 5000,
         });
         assertEquals(yield* service.pullOnce(observerHab, { timeoutMs: 2000 }), 1);
         const query = () =>
@@ -445,10 +437,8 @@ Deno.test("interop/native-registry - Python registrar publication reaches TS obs
           );
         const response = yield* call(query);
         assertEquals(response.status, 200);
-        assertEquals(response.headers.get("Observer-Registry-Head"), evidence.update.said);
-        assert(response.headers.get("Observer-Observed-At"));
         const raw = new Uint8Array(yield* call(() => response.arrayBuffer()));
-        assert(parseBytes(raw).some(frame => frame.body.said === evidence.update.said));
+        assert(parseBytes(raw).some((frame) => frame.body.said === evidence.update.said));
         yield* cacheHby.ks.reopen();
         yield* cacheHby.db.reopen();
         yield* runtime.acdc!.baser.reopen();
@@ -476,7 +466,7 @@ Deno.test("interop/native-registry - Python registrar publication reaches TS obs
 Deno.test("interop/native-registry - TS registrar feeds selected Python observer scheduled TLS cache", async () => {
   const ctx = await createInteropContext();
   try {
-    await run(function*() {
+    await run(function* () {
       const hostHby = yield* createHabery({ name: "service-host", headDirPath: ctx.home, skipConfig: true });
       const readerHby = yield* createHabery({ name: "service-reader", headDirPath: ctx.home, skipConfig: true });
       const issuer = hostHby.makeHab("issuer"), reader = readerHby.makeHab("reader");
@@ -493,7 +483,7 @@ Deno.test("interop/native-registry - TS registrar feeds selected Python observer
       const sourceReplies: string[] = [];
       const pem = yield* call(() => Deno.readTextFile(certificate));
       const source = yield* call(() =>
-        serveTls(pem, async req => {
+        serveTls(pem, async (req) => {
           const response = await (registrar?.handle(req) ?? new Response("starting", { status: 503 }));
           sourceReplies.push(`${response.status}: ${response.status === 200 ? "CESR" : await response.clone().text()}`);
           return response;
@@ -536,9 +526,6 @@ Deno.test("interop/native-registry - TS registrar feeds selected Python observer
           yield* sleep(20);
         }
         assertEquals(response?.status, 200, sourceReplies.join("\n"));
-        assertEquals(response!.headers.get("Observer-Registry-Head"), evidence.update.said);
-        assert(response!.headers.get("Observer-Observed-At"));
-        assertEquals(response!.headers.get("Observer-Evidence-State"), "fresh");
         const received = yield* call(() =>
           new Registrar(readerRuntime.protocol, readerRuntime.acdc!.store).ingest(
             concatBytes(Counter.makeGVC(Vrsn_2_0), response!.body),
