@@ -15,6 +15,7 @@ import {
   runAgentRuntime,
   systemClock,
 } from "keri-ts/runtime";
+import { acdcmap, blindate } from "../../../keri/src/acdc/messaging.ts";
 import { acdcV2RegistryProposal } from "../../../keri/src/app/multisig/grouping.ts";
 import { loadNests } from "../../../keri/src/db/exchange/exchange-nests.ts";
 import { reserveTcpPort, runTufa, spawnTufa, waitForServer } from "../test-helpers.ts";
@@ -274,6 +275,51 @@ async function groupSaltFlow(automatic: boolean) {
                 .derive(rip.said!, 17, rip.said!, "revoked"),
               expected,
             );
+            if (automatic) {
+              // Member 1 stays offline. Issuance requires member 0 plus the
+              // newcomer at signing index 2; salt receipt alone is insufficient.
+              const lead = yield* createHabery({
+                name: "member-0",
+                headDirPath: root,
+                bran: passcode,
+                skipConfig: true,
+              });
+              const leadRuntime = yield* createAgentRuntime(lead, new FetchHttpClient(), systemClock);
+              try {
+                const credential = acdcmap(groups[0].hab.pre, {
+                  regid: rip.said!,
+                  attribute: { d: "", i: members[1].pre, name: "Newcomer issuance" },
+                });
+                const opening = new RegistryCustody({ hby: recipient, registry: recipientRuntime.acdc!.store })
+                  .derive(rip.said!, 1, credential.said!, "issued");
+                const update = blindate(rip.said!, rip.said!, opening.d.nonce);
+                const proposed = yield* approveAcdcV2Registry(
+                  lead,
+                  leadRuntime.protocol,
+                  lead.habByName("issuer")!,
+                  update,
+                  { opening },
+                );
+                assertEquals(leadRuntime.acdc!.store.head(rip.said!)?.qb64, rip.said);
+                yield* recipientRuntime.reactor.processBytes(concatBytes(proposed[0].raw, proposed[1]));
+                const exact = acdcV2RegistryProposal(proposed[0], loadNests(recipient.db, proposed[0].said!))!;
+                const approved = yield* approveAcdcV2Registry(
+                  recipient,
+                  recipientRuntime.protocol,
+                  recipient.habByName("issuer")!,
+                  update,
+                  { anchor: exact.anchor, opening },
+                );
+                yield* leadRuntime.reactor.processBytes(concatBytes(approved[0].raw, approved[1]));
+                for (const runtime of [leadRuntime, recipientRuntime]) {
+                  yield* runtime.protocol.processEscrowsOnce();
+                  assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, update.said);
+                }
+              } finally {
+                yield* leadRuntime.close();
+                yield* lead.close();
+              }
+            }
           } finally {
             yield* recipientRuntime.close();
             yield* recipient.close();
