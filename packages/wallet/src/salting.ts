@@ -4,10 +4,12 @@
  */
 import { Cipher, Diger, Encrypter, MtrDex, parseBytes, Prefixer, SerderKERI } from "cesr-ts";
 import {
+  endorseReply,
   EssrRecipient,
   type Exchanger,
   type Hab,
   type Habery,
+  inspectReplyProposal,
   type Reactor,
   reply,
   ValidationError,
@@ -111,6 +113,34 @@ export class RegistrySaltService {
       throw new ValidationError("Replication target is not a current group member");
     }
     return body;
+  }
+
+  /** Approve the exact retained group reply through ordinary multisig helpers.
+   * Consent receives public routing fields only. A declined or changed group
+   * creates no contribution; this method neither sends nor records delivery.
+   */
+  approveProposal(
+    group: Hab,
+    exc: Exchanger,
+    said: string,
+    approve: (reply: SerderKERI) => boolean,
+  ): { wire: Uint8Array; proposer: string; reply: SerderKERI } {
+    const { hby } = this.custody.options;
+    const validate = (reply: SerderKERI) => {
+      this.validate(reply);
+    };
+    const proposal = inspectReplyProposal(hby, exc, said, { group: group.pre, validate });
+    const reply = proposal.child.body as SerderKERI;
+    const establishment = group.kever!.lastEst.d;
+    if (!approve(reply)) throw new ValidationError("Registry salt reply approval declined");
+    if (group.kever!.lastEst.d !== establishment) {
+      throw new ValidationError("Group establishment changed during reply approval");
+    }
+    return {
+      wire: endorseReply(hby, proposal.child, { group: group.pre, validate }),
+      proposer: proposal.wrapper.pre!,
+      reply,
+    };
   }
 
   /** Read existing local group membership, without storing a second roster. */

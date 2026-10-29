@@ -1,5 +1,6 @@
 /** Application-owned custody for an explicitly selected native group proposal. */
-import { RegistryCustody } from "@keri-ts/wallet";
+import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
+import { concatBytes, Counter, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, race, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import { loadNests } from "keri-ts/db";
@@ -8,6 +9,8 @@ import {
   envelopeFromFrame,
   groupSigningMembers,
   isLocalGroupHab,
+  localGroupMember,
+  publishProposal,
   Receiptor,
   runAgentRuntime,
   ValidationError,
@@ -16,7 +19,7 @@ import { withHabAndAgentRuntime } from "../support/context.ts";
 import { walletStoreArgs } from "../support/wallet.ts";
 import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
 
-/** Join one retained authenticated RIP/BUP EXN using normal group and TEL owners.
+/** Join one retained RIP/BUP or salt-reply EXN using ordinary group owners.
  * --said fixes the user's selected proposal; there is no inventory-wide replay.
  * Cancellation or timeout closes the command's ordinary workers and stores.
  */
@@ -25,7 +28,8 @@ export function* nativeRegistryJoinCommand(args: Record<string, unknown>): Opera
   group: string;
   said: string;
   registry: string;
-  accepted: true;
+  accepted?: true;
+  approved?: true;
 }> {
   const group = parseStringOption(args.group, "group"), said = parseStringOption(args.said, "said");
   const seconds = parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60;
@@ -48,6 +52,41 @@ export function* nativeRegistryJoinCommand(args: Record<string, unknown>): Opera
             const wrapper = hby.db.exns.get([said]);
             if (!wrapper || !runtime.exc.verifyAccepted(said, wrapper.route!)) {
               throw new ValidationError("Registry proposal is not an authenticated exchange");
+            }
+            if (wrapper.route === "/multisig/rpy") {
+              const custody = new RegistryCustody({ hby, registry: runtime.acdc.store });
+              const service = new RegistrySaltService(custody, runtime.protocol.rvy);
+              service.register();
+              const approved = service.approveProposal(hab, runtime.exc, said, (reply) => {
+                if (auto) return true;
+                const { registry, recipient, target } = service.validate(reply).data;
+                console.log(
+                  JSON.stringify({ group: hab.pre, reply: reply.said, registry, recipient, target }, null, 2),
+                );
+                return prompt("Approve this exact encrypted salt reply? [y/N]")?.toLowerCase() === "y";
+              });
+              yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), approved.wire), {
+                local: true,
+              });
+              // Return this contribution to the proposer. Offline nonapproving
+              // members are not extra quorum requirements or delivery targets.
+              yield* publishProposal(
+                hby,
+                runtime.protocol,
+                runtime.postman,
+                localGroupMember(hby, hab.pre),
+                [approved.proposer],
+                { route: "/multisig/rpy", attrs: { gid: hab.pre } },
+                approved.wire,
+                { childGvrsn: Vrsn_2_0, pvrsn: Vrsn_2_0 },
+              );
+              return {
+                route: wrapper.route,
+                group: hab.pre,
+                said,
+                registry: service.validate(approved.reply).data.registry,
+                approved: true as const,
+              };
             }
             const nests = loadNests(hby.db, said), selected = acdcV2RegistryProposal(wrapper, nests);
             if (

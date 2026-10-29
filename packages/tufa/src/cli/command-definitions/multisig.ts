@@ -108,7 +108,7 @@ function registerMultisigJoinCmd(multisig: Command, dispatch: CommandDispatch): 
     addWitnessAuthOptions(
       addStoreOptions(
         multisig.command("join")
-          .option("--v2", "Approve an exact native RIP/BUP proposal and its optional encrypted salt copy")
+          .option("--v2", "Approve an exact native RIP/BUP or encrypted salt reply proposal")
           .description("Join one pending group multisig proposal")
           .option(
             "-g, --group <group>",
