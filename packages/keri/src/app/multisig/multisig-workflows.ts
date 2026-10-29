@@ -137,11 +137,12 @@ export function* approveAcdcV2Registry(
     if (pending) anchor = hby.db.getEvtSerder(group.pre, pending) ?? undefined;
     if (!anchor) {
       anchor = (group.kever!.estOnly
-        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal] })
-        : hby.interactGroupHab(group.name, undefined, { data: [seal] })).serder;
+        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal], version: Vrsn_2_0 })
+        : hby.interactGroupHab(group.name, undefined, { data: [seal], version: Vrsn_2_0 })).serder;
     }
   }
   if (
+    anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0 ||
     anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") ||
     JSON.stringify(anchor.sad!.a) !== JSON.stringify([seal])
   ) throw new ValidationError("Group anchor must exclusively seal the exact proposed TEL.");

@@ -72,6 +72,9 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       });
       yield* runtimes[1].reactor.processBytes(concatBytes(first[0].raw, first[1]));
       const proposal = acdcV2RegistryProposal(first[0], loadNests(identities[1].db, first[0].said!))!;
+      // Native registry proposals require v2 KEL anchors even when the group's
+      // inception used legacy KERI framing, matching KERIpy RegistryApproval.
+      assertEquals(proposal.anchor.pvrsn, Vrsn_2_0);
       assertEquals(custody[1].openMemberCopy(groups[1].hab, proposal.salts!).qb64, root.qb64);
       const second = yield* approveAcdcV2Registry(identities[1], runtimes[1].protocol, groups[1].hab, rip, {
         anchor: proposal.anchor,

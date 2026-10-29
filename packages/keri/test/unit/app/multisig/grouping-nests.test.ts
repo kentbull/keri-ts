@@ -2399,7 +2399,12 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           );
         }
         const rip = acdcV2Regcept(local.hab.pre);
-        const anchor = right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }] }).serder;
+        const anchor = right.interactGroupHab("acdc-v2-group", undefined,
+          { data: [{ s: "0", d: rip.said! }], version: Vrsn_2_0 }).serder;
+        const legacyAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, 1,
+          [{ s: "0", d: rip.said! }], { version: Vrsn_1_0 });
+        yield* call(() => assertRejects(() => run(() => approveAcdcV2Registry(left, receiver.protocol, local.hab, rip,
+          { anchor: legacyAnchor })), ValidationError, "exclusively seal"));
         const telFrame = parseBytes(
           concatBytes(
             rip.raw,
@@ -2407,7 +2412,7 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           ),
         )[0];
         const kelFrame =
-          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
+          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_2_0 }))[0];
         const root = new Salter({ code: MtrDex.Salt_128, raw: new Uint8Array(16).fill(37) });
         const salts = Object.fromEntries(
           [alice, bob].map(

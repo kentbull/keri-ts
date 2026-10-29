@@ -1771,6 +1771,8 @@ export class Habery {
       cuts?: string[];
       adds?: string[];
       data?: unknown[];
+      /** Explicit wire version for native workflows; omission preserves legacy authoring. */
+      version?: Versionage;
     } = {},
   ): GroupHabRotation {
     const hab = this.habByName(group);
@@ -1808,6 +1810,7 @@ export class Habery {
         cuts: args.cuts,
         adds: args.adds,
         data: args.data,
+        version: args.version,
       },
     );
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1845,7 +1848,7 @@ export class Habery {
   interactGroupHab(
     group: string,
     smids?: string[],
-    args: { data?: unknown[] } = {},
+    args: { data?: unknown[]; version?: Versionage } = {},
   ): GroupHabInteraction {
     const hab = this.habByName(group);
     if (!hab?.pre || !hab.kever) {
@@ -1869,6 +1872,7 @@ export class Habery {
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
+      { version: args.version },
     );
     const keys = kever.verfers.map((verfer) => verfer.qb64);
     const sigers = this.signGroupEventWithLocalMembers(
