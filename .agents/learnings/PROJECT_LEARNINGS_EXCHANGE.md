@@ -374,3 +374,11 @@ publication correlates registry/issuance routes with their required named childr
 and known gid/usage fields. Derive the signed genus hint from the local anchor,
 and serialize the credential source proof in that genus too; a valid local
 credential does not prove the outgoing embedded proof is parseable.
+
+Accepted group rotation must commit member configuration when threshold approval
+arrives after local proposal creation, including on the initiating member. CLI
+results may carry transient before/after membership for application composition;
+they do not establish a second persistent roster. Tufa selects newcomer salt
+provisioning through `@keri-ts/multisync/v2`, using ordinary threshold-approved
+encrypted replies and Poster routing. Interrupted provisioning remains an explicit
+operator action; there is no salt delivery ledger or automatic retry service.

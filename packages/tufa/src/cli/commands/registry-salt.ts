@@ -1,10 +1,11 @@
 /** Operator-selected encrypted salt replies using ordinary protocol owners. */
-import { Vrsn_2_0 } from "cesr-ts";
 import { startServer } from "@keri-ts/hosting";
 import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
-import { call, type Operation, scoped, sleep, spawn } from "effection";
+import { Counter, Vrsn_2_0 } from "cesr-ts";
+import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
+  acceptedEventReplayMessage,
   chunkBytes,
   essrEnvelope,
   groupSigningMembers,
@@ -34,6 +35,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
   const input = parseStringOption(args.input, "input");
   const output = parseStringOption(args.output, "output");
   const essr = parseBooleanOption(args.essr, "essr") ?? false;
+  const deliver = parseBooleanOption(args.deliver, "deliver") ?? false;
   const endpoint = parseStringOption(args.endpoint, "endpoint");
   const host = parseStringOption(args.host, "host") ?? "127.0.0.1";
   const port = parseNumberOption(args.port, "port") ?? 7723;
@@ -45,8 +47,8 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
   if (!Array.isArray(evidence) || evidence.some((path) => typeof path !== "string")) {
     throw new ValidationError("Registry evidence must be CESR file paths");
   }
-  if (operation === "send" && (!party || (!output && !endpoint))) {
-    throw new ValidationError("Salt send requires --party and --output or --endpoint");
+  if (operation === "send" && (!party || (!output && !endpoint && !deliver))) {
+    throw new ValidationError("Salt send requires --party and --output, --endpoint or --deliver");
   }
   if (endpoint && !["http:", "https:"].includes(new URL(endpoint).protocol)) {
     throw new ValidationError("Salt endpoint must use HTTP or HTTPS");
@@ -58,7 +60,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
     walletStoreArgs(args),
     alias,
     { skipConfig: true },
-    function* ({ hby, runtime, hab }) {
+    function*({ hby, runtime, hab }) {
       if (!runtime.acdc) throw new ValidationError("ACDC v2 registry processing is unavailable");
       const custody = new RegistryCustody({ hby, registry: runtime.acdc.store });
       const service = new RegistrySaltService(custody, runtime.protocol.rvy);
@@ -69,7 +71,7 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
         yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(path)));
       }
       if (operation === "serve") {
-        yield* scoped(function* () {
+        yield* scoped(function*() {
           yield* spawn(() => runAgentRuntime(runtime, { hab }));
           yield* startServer(port, undefined, runtime, {
             hostname: host,
@@ -83,12 +85,12 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
         // ESSR supplies the stream genus outside the exact signed inner reply.
         let wire = hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0, genusify: !essr });
         if (isLocalGroupHab(hby, hab)) {
-          wire = yield* scoped(function* () {
+          wire = yield* scoped(function*() {
             yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
             yield* runtime.reactor.processBytes(wire, { local: true });
             for (const peer of groupSigningMembers(hby, hab.pre)) {
               if (peer === member.pre) continue;
-              yield* spawn(function* () {
+              yield* spawn(function*() {
                 try {
                   const published = yield* publishProposal(
                     hby,
@@ -133,7 +135,38 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
             destination: target ?? party,
           });
         }
-        return { registry, said: body.said, submitted: !!endpoint };
+        if (deliver) {
+          yield* scoped(function*() {
+            yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+            const issuer = runtime.acdc!.store.seqEvent(registry, 0)!.issuer!;
+            const msgs: Uint8Array[] = [Counter.makeGVC(Vrsn_2_0)];
+            for (const aid of new Set([issuer, hab.pre])) {
+              const state = hby.db.getKever(aid);
+              if (!state) throw new ValidationError("Salt delivery requires accepted author keys");
+              for (let sn = 0; sn <= state.sn; sn++) {
+                msgs.push(acceptedEventReplayMessage(hby, aid, sn, Vrsn_2_0).message);
+              }
+            }
+            msgs.push(runtime.acdc!.store.cloneTel(registry), wire);
+            const evt = runtime.postman.sendStream({
+              src: member.pre,
+              dest: target ?? party!,
+              topic: "credential",
+              msgs,
+            }, { notify: true });
+            yield* race([
+              (function*() {
+                const outcome = yield* runtime.postman.wait(evt);
+                if (outcome.kin === "failed") throw outcome.error;
+              })(),
+              (function*() {
+                yield* sleep(timeout * 1000);
+                throw new ValidationError("Salt transport submission timed out");
+              })(),
+            ]);
+          });
+        }
+        return { registry, said: body.said, submitted: !!endpoint || deliver };
       }
       if (operation === "receive") {
         yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(input!)));

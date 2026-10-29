@@ -90,15 +90,15 @@ function record(value: unknown): value is Record<string, unknown> {
 function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo): Secret {
   const payload: unknown = JSON.parse(t(raw));
   if (
-    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt" ||
-    !record(payload.info) || typeof payload.salt !== "string"
+    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt"
+    || !record(payload.info) || typeof payload.salt !== "string"
   ) throw new Error("Invalid custody payload");
   const info = payload.info;
   if (typeof info.controller !== "string" || typeof info.discloser !== "string") throw new Error("Invalid bindings");
   const canonical = expected ?? metadata(registry, info.controller, info.discloser);
   if (
-    Object.keys(info).length !== Object.keys(canonical).length ||
-    Object.entries(canonical).some(([key, value]) => info[key] !== value)
+    Object.keys(info).length !== Object.keys(canonical).length
+    || Object.entries(canonical).some(([key, value]) => info[key] !== value)
   ) throw new Error("Invalid profile");
   new Salter({ qb64: payload.salt });
   return { info: canonical, salt: payload.salt };
@@ -160,6 +160,19 @@ export class RegistryCustody {
     }
   }
 
+  /** Select retained salts explicitly bound to this logical issuer or discloser.
+   * Returns registry identifiers only; private roots never leave this owner.
+   */
+  registriesFor(party: string): string[] {
+    const result: string[] = [];
+    for (const [keys] of this.options.hby.ks.custody.getTopItemIter()) {
+      const registry = keys[0];
+      const { info } = this.load(registry);
+      if (info.controller === party || info.discloser === party) result.push(registry);
+    }
+    return result;
+  }
+
   /** Decrypt exactly one provisioned row under its original Keeper AEID. */
   private load(registry: string): Secret {
     const box = this.box(), stored = this.options.hby.ks.custody.get(registry);
@@ -209,8 +222,8 @@ export class RegistryCustody {
     this.box();
     const canonical = metadata(info.registry, info.controller, info.discloser);
     if (
-      Object.keys(info).length !== Object.keys(canonical).length ||
-      Object.entries(canonical).some(([key, value]) => info[key as keyof CustodyInfo] !== value)
+      Object.keys(info).length !== Object.keys(canonical).length
+      || Object.entries(canonical).some(([key, value]) => info[key as keyof CustodyInfo] !== value)
     ) {
       throw new ValidationError("Registry root requires the fixed custody profile");
     }
@@ -269,8 +282,8 @@ export class RegistryCustody {
   sealMembers(group: Hab, root: Salter): Record<string, string> {
     const { hby } = this.options;
     if (
-      hby.habs.get(group.pre) !== group || !isLocalGroupHab(hby, group) ||
-      !group.kever || root.code !== MtrDex.Salt_128
+      hby.habs.get(group.pre) !== group || !isLocalGroupHab(hby, group)
+      || !group.kever || root.code !== MtrDex.Salt_128
     ) {
       throw new ValidationError("Salt copies require a local accepted group and Salt_128 root");
     }
@@ -296,8 +309,8 @@ export class RegistryCustody {
     }
     const members = groupSigningMembers(hby, group.pre), member = localGroupMember(hby, group.pre);
     if (
-      !members.includes(member.pre) || !copies[member.pre] ||
-      Object.keys(copies).some((aid) => !members.includes(aid))
+      !members.includes(member.pre) || !copies[member.pre]
+      || Object.keys(copies).some((aid) => !members.includes(aid))
     ) {
       throw new ValidationError("Registry proposal has no valid salt copy for this member");
     }
@@ -351,9 +364,9 @@ export class RegistryCustody {
     try {
       sealed = typeof cipher === "string" ? new Cipher({ qb64: cipher }) : cipher;
       if (
-        !(sealed instanceof Cipher) || sealed.code !== MtrDex.X25519_Cipher_Salt ||
-        (typeof cipher === "string" && sealed.qb64 !== cipher) ||
-        !(verfer instanceof Verfer) || (verfer.code !== MtrDex.Ed25519 && verfer.code !== MtrDex.Ed25519N)
+        !(sealed instanceof Cipher) || sealed.code !== MtrDex.X25519_Cipher_Salt
+        || (typeof cipher === "string" && sealed.qb64 !== cipher)
+        || !(verfer instanceof Verfer) || (verfer.code !== MtrDex.Ed25519 && verfer.code !== MtrDex.Ed25519N)
       ) throw new Error();
     } catch {
       throw new ValidationError("Registry root cipher or recipient key is unsupported");

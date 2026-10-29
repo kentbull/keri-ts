@@ -83,8 +83,10 @@ function dntPackageMappings(
   hostingVersion: string,
   walletVersion: string,
   registrarVersion: string,
+  multisyncVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../multisync/v2/mod.ts": { name: "@keri-ts/multisync", version: multisyncVersion, subPath: "v2" },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
@@ -207,6 +209,7 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
 const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
 const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
+const multisyncPackageVersion = resolveWorkspacePackageVersion("../multisync/package.json");
 const registrarPackageVersion = resolveWorkspacePackageVersion("../registrar/package.json");
 
 await build({
@@ -223,6 +226,7 @@ await build({
     hostingPackageVersion,
     walletPackageVersion,
     registrarPackageVersion,
+    multisyncPackageVersion,
   ),
   typeCheck: false,
   test: false,
@@ -263,6 +267,7 @@ await build({
       "@keri-ts/verifier": verifierPackageVersion,
       "@keri-ts/hosting": hostingPackageVersion,
       "@keri-ts/wallet": walletPackageVersion,
+      "@keri-ts/multisync": multisyncPackageVersion,
       "@keri-ts/registrar": registrarPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
@@ -292,6 +297,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/hosting`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/wallet`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/multisync`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/registrar`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);

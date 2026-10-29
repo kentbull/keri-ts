@@ -3,20 +3,30 @@ import { RegistryCustody } from "@keri-ts/wallet";
 import { concatBytes, Counter, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { createAgentRuntime, createHabery, FetchHttpClient, systemClock } from "keri-ts/runtime";
-import { runTufa, spawnTufa } from "../test-helpers.ts";
+import { createAgentRuntime, createHabery, EndpointRoles, FetchHttpClient, systemClock } from "keri-ts/runtime";
+import { reserveTcpPort, runTufa, spawnTufa } from "../test-helpers.ts";
 
-Deno.test("tufa salt replies retain matching derivation across separate commands", async () => {
+/** Exercise both explicit endpoints and ordinary recipient routing with the same assertions. */
+async function saltReplyRoundtrip(routed: boolean) {
+  const listeningPort = reserveTcpPort();
   const directory = await Deno.makeTempDir({ prefix: "salt-cli-" });
   const passcode = "RegistrySaltCliPasscode";
   try {
-    const fixture = await run(function* () {
+    const fixture = await run(function*() {
       const issuer = yield* createHabery({ name: "issuer", headDirPath: directory, bran: passcode, skipConfig: true });
       const holder = yield* createHabery({ name: "holder", headDirPath: directory, bran: passcode, skipConfig: true });
       const runtime = yield* createAgentRuntime(issuer, new FetchHttpClient(), systemClock);
       try {
         const author = issuer.makeHab("issuer"), recipient = holder.makeHab("holder");
         for (const wire of holder.db.clonePreIter(recipient.pre)) yield* runtime.reactor.processBytes(wire);
+        for (
+          const wire of [
+            recipient.makeEndRole(recipient.pre, EndpointRoles.controller, true),
+            recipient.makeLocScheme(`http://127.0.0.1:${listeningPort}/`, recipient.pre, "http"),
+          ]
+        ) {
+          yield* runtime.reactor.processBytes(wire);
+        }
         const registry = runtime.acdc!.makeRegistry("shared", author.pre);
         const rip = runtime.acdc!.store.event(registry.regk!)!;
         author.interact({ data: [{ i: registry.regk, s: "0", d: rip.said }] });
@@ -72,7 +82,13 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
     ]);
     assertEquals(sent.code, 0, sent.stderr);
     assertEquals(JSON.parse(sent.stdout).submitted, false);
-    const server = spawnTufa([...args("holder", "serve"), "--port", "0", "--evidence", `${directory}/evidence.cesr`]);
+    const server = spawnTufa([
+      ...args("holder", "serve"),
+      "--port",
+      String(listeningPort),
+      "--evidence",
+      `${directory}/evidence.cesr`,
+    ]);
     const errors = new Response(server.stderr).text();
     const reader = server.stdout.pipeThrough(new TextDecoderStream()).getReader();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +102,7 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
         if (chunk.done) throw new Error(`Salt listener stopped: ${text}`);
         text += chunk.value;
         for (const line of text.split("\n")) {
-          if (line.startsWith('{"listening":') && line.endsWith("}")) port = JSON.parse(line).listening.port;
+          if (line.startsWith("{\"listening\":") && line.endsWith("}")) port = JSON.parse(line).listening.port;
         }
       }
       clearTimeout(timer);
@@ -95,8 +111,7 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
         "--party",
         fixture.recipient,
         "--essr",
-        "--endpoint",
-        `http://127.0.0.1:${port}/`,
+        ...(routed ? ["--deliver"] : ["--endpoint", `http://127.0.0.1:${port}/`]),
         "--timeout",
         "5",
       ]);
@@ -128,7 +143,7 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
     assertEquals(JSON.parse(status.stdout).custody_present, true);
     const refused = await runTufa([...args("issuer", "send"), "--party", fixture.recipient, "--output", reply]);
     assertEquals(refused.code === 0, false);
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({ name: "holder", headDirPath: directory, bran: passcode, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -142,13 +157,19 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
   } finally {
     await Deno.remove(directory, { recursive: true });
   }
-});
+}
+for (const routed of [false, true]) {
+  Deno.test(
+    `tufa salt replies retain matching derivation across separate commands (routed=${routed})`,
+    () => saltReplyRoundtrip(routed),
+  );
+}
 
 Deno.test("tufa group salt send emits a threshold-verified reply", async () => {
   const directory = await Deno.makeTempDir({ prefix: "group-salt-cli-" });
   const passcode = "GroupRegistrySaltCliPasscode";
   try {
-    const fixture = await run(function* () {
+    const fixture = await run(function*() {
       const hby = yield* createHabery({ name: "group", headDirPath: directory, bran: passcode, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {

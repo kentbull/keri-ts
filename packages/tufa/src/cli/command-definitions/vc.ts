@@ -60,6 +60,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
           "New signed encrypted reply file (group output is a signature contribution)",
         )
         .option("--endpoint <url>", "HTTP(S) CESR intake endpoint")
+        .option("--deliver", "Use the recipient endpoint or witness mailbox")
         .option("--essr", "Wrap the signed reply in an ESSR envelope for the individual recipient")
         .option("--timeout <seconds>", "Finite transport deadline (default: 30)");
     }

@@ -1,8 +1,8 @@
 /** Real member processes approve one salt reply through the existing mailbox. */
 import { startServer } from "@keri-ts/hosting";
-import { RegistryCustody } from "@keri-ts/wallet";
+import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
 import { concatBytes, Counter, Vrsn_2_0 } from "cesr-ts";
-import { call, run, spawn } from "effection";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import {
   approveAcdcV2Registry,
@@ -19,11 +19,12 @@ import { acdcV2RegistryProposal } from "../../../keri/src/app/multisig/grouping.
 import { loadNests } from "../../../keri/src/db/exchange/exchange-nests.ts";
 import { reserveTcpPort, runTufa, spawnTufa, waitForServer } from "../test-helpers.ts";
 
-Deno.test("tufa group salt reply collects two of three approvals over the mailbox", async () => {
+/** Exercise manual reply approval and the application-triggered rotation handoff. */
+async function groupSaltFlow(automatic: boolean) {
   const root = await Deno.makeTempDir({ prefix: "salt-group-processes-" });
   const passcode = "GroupRegistrySaltCliPasscode";
   try {
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery({ name: "mailbox", headDirPath: root, skipConfig: true });
       const provider = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { enableMailboxStore: true });
       const mailbox = hby.makeHab("mailbox", undefined, { transferable: false });
@@ -51,7 +52,9 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
         for (const runtime of [provider, ...runtimes]) {
           for (const wire of bootstrap) yield* runtime.reactor.processBytes(wire);
         }
-        const mids = members.map((member) => member.pre);
+        const allMembers = members.map((member) => member.pre);
+        const mids = automatic ? allMembers.slice(0, 2) : allMembers;
+        const recipientPort = reserveTcpPort();
         const groups = identities.slice(0, 2).map((owner, index) =>
           owner.makeGroupHab("issuer", members[index], mids, mids, undefined, { isith: "2", nsith: "2" })
         );
@@ -75,6 +78,25 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
           runtimes[0].acdc!.store.cloneTel(rip.said!),
         );
         yield* call(() => Deno.writeFile(`${root}/evidence.cesr`, evidence));
+        if (automatic) {
+          // Fixture RIP approvals were already performed explicitly above. Clear
+          // only their notices so ordinary join selects the new rotation.
+          for (const runtime of runtimes.slice(0, 2)) {
+            for (const notice of runtime.notifier!.list(0, 100)) {
+              if ([first[0].said, second[0].said].includes(notice.attrs.d as string)) {
+                runtime.notifier!.remove(notice.rid);
+              }
+            }
+          }
+          for (const index of [0, 1]) {
+            members[index].rotate();
+            for (const runtime of [provider, ...runtimes]) {
+              for (const wire of identities[index].db.clonePreIter(members[index].pre)) {
+                yield* runtime.reactor.processBytes(wire, { local: true });
+              }
+            }
+          }
+        }
         // Independent CLI owners reopen the actual stores; the third member stays offline.
         for (const runtime of runtimes) yield* runtime.close();
         for (const owner of identities) yield* owner.close();
@@ -84,27 +106,96 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
         yield* waitForServer(port);
         const worker = yield* spawn(() => runAgentRuntime(provider, { hab: mailbox }));
         const storeArgs = (index: number) => ["--name", `member-${index}`, "--head-dir", root, "--passcode", passcode];
-        const child = spawnTufa([
-          "vc",
-          "registry",
-          "salt",
-          "send",
+        const rotationArgs = [
+          "multisig",
+          "rotate",
           ...storeArgs(0),
-          "--alias",
+          "--group",
           "issuer",
-          "--registry",
-          rip.said!,
-          "--party",
-          members[2].pre,
-          "--output",
-          `${root}/reply.cesr`,
-          "--timeout",
-          "15",
-        ]);
+          ...allMembers.flatMap((member) => ["--smids", member]),
+          ...allMembers.flatMap((member) => ["--rmids", member]),
+          "--isith",
+          "2",
+          "--nsith",
+          "2",
+        ];
+        const child = spawnTufa(
+          automatic ? rotationArgs : [
+            "vc",
+            "registry",
+            "salt",
+            "send",
+            ...storeArgs(0),
+            "--alias",
+            "issuer",
+            "--registry",
+            rip.said!,
+            "--party",
+            members[2].pre,
+            "--output",
+            `${root}/reply.cesr`,
+            "--timeout",
+            "15",
+          ],
+        );
         const stderr = new Response(child.stderr).text();
         const reader = child.stdout.pipeThrough(new TextDecoderStream()).getReader();
         let timer: ReturnType<typeof setTimeout> | undefined;
+        let recipientServer: import("effection").Task<void> | undefined;
+        let recipientWorker: import("effection").Task<void> | undefined;
         try {
+          if (automatic) {
+            const rotationApproval = yield* call(() =>
+              runTufa([
+                "multisig",
+                "join",
+                ...storeArgs(1),
+                "--group",
+                "issuer",
+                "--auto",
+                "--approval-timeout",
+                "12",
+              ])
+            );
+            assertEquals(rotationApproval.code, 0, rotationApproval.stderr);
+            const joined = JSON.parse(rotationApproval.stdout.trim().split("\n").at(-1)!);
+            assertEquals(joined.route, "/multisig/rot");
+            assertEquals(joined.accepted, true);
+            const approver = yield* createHabery({
+              name: "member-1",
+              headDirPath: root,
+              bran: passcode,
+              skipConfig: true,
+            });
+            const newcomer = yield* createHabery({
+              name: "member-2",
+              headDirPath: root,
+              bran: passcode,
+              skipConfig: true,
+            });
+            identities.push(newcomer);
+            const receiver = yield* createAgentRuntime(newcomer, new FetchHttpClient(), systemClock);
+            runtimes.push(receiver);
+            try {
+              for (const wire of approver.db.clonePreIter(groups[0].hab.pre, 0, Vrsn_2_0)) {
+                yield* receiver.reactor.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire));
+              }
+            } finally {
+              yield* approver.close();
+            }
+            const member = newcomer.habByName("member")!;
+            newcomer.joinGroupHab(groups[0].hab.pre, "issuer", member, allMembers, allMembers);
+            const salts = new RegistrySaltService(
+              new RegistryCustody({ hby: newcomer, registry: receiver.acdc!.store }),
+              receiver.protocol.rvy,
+            );
+            salts.register();
+            salts.registerEnvelope(member, receiver.exc, receiver.reactor);
+            assertEquals(newcomer.ks.custody.get(rip.said!), null);
+            recipientServer = yield* spawn(() => startServer(recipientPort, undefined, receiver));
+            yield* waitForServer(recipientPort);
+            recipientWorker = yield* spawn(() => runAgentRuntime(receiver, { hab: member, pollMailbox: true }));
+          }
           const deadline = new Promise<never>((_, reject) => {
             timer = setTimeout(() => reject(new Error("No salt proposal")), 15000);
           });
@@ -114,7 +205,7 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
             if (next.done) throw new Error(`Sender exited before proposal: ${text} ${yield* call(() => stderr)}`);
             text += next.value;
             for (const line of text.split("\n")) {
-              if (!line.startsWith('{"proposals":') || !line.endsWith("}")) continue;
+              if (!line.startsWith("{\"proposals\":") || !line.endsWith("}")) continue;
               selected = JSON.parse(line).proposals.find((entry: { recipient: string }) =>
                 entry.recipient === members[1].pre
               )?.exnSaid;
@@ -141,7 +232,18 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
           assertEquals(JSON.parse(approved.stdout.trim().split("\n").at(-1)!).approved, true);
           while (!(yield* call(() => reader.read())).done) { /* Drain ordinary progress output. */ }
           assertEquals((yield* call(() => child.status)).code, 0, yield* call(() => stderr));
-          const received = yield* call(() =>
+          if (automatic) {
+            const until = performance.now() + 12000;
+            while (!identities[0].ks.custody.get(rip.said!) && performance.now() < until) yield* sleep(100);
+            assertEquals(identities[0].ks.custody.get(rip.said!) !== null, true);
+            // Close the real receiver before proving durable custody by reopening below.
+            yield* recipientWorker!.halt();
+            yield* recipientServer!.halt();
+            recipientWorker = recipientServer = undefined;
+            yield* runtimes.pop()!.close();
+            yield* identities.pop()!.close();
+          }
+          const received = automatic ? { code: 0, stderr: "" } : yield* call(() =>
             runTufa([
               "vc",
               "registry",
@@ -184,6 +286,8 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
           yield* call(() => child.status);
           yield* call(() => stderr);
           reader.releaseLock();
+          if (recipientWorker) yield* recipientWorker.halt();
+          if (recipientServer) yield* recipientServer.halt();
           yield* worker.halt();
           yield* server.halt();
         }
@@ -197,4 +301,6 @@ Deno.test("tufa group salt reply collects two of three approvals over the mailbo
   } finally {
     await Deno.remove(root, { recursive: true });
   }
-});
+}
+Deno.test("tufa group salt reply collects two of three approvals over the mailbox", () => groupSaltFlow(false));
+Deno.test("tufa accepted rotation automatically provisions a newcomer through multisync v2", () => groupSaltFlow(true));

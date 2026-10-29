@@ -17,10 +17,11 @@ import {
 import { acdcV2RegistryProposal, prepareMultisigEventExn } from "../../keri/src/app/multisig/grouping.ts";
 import { signGroupMessage } from "../../keri/src/app/multisig/multisig-messaging.ts";
 import { loadNests } from "../../keri/src/db/exchange/exchange-nests.ts";
+import { replicationRequests } from "../../multisync/v2/mod.ts";
 import { RegistryCustody, RegistrySaltService } from "../mod.ts";
 
 Deno.test("group salt copies remain private and follow two-of-three accepted registry inception", async () => {
-  await run(function* () {
+  await run(function*() {
     const identities: Habery[] = [], runtimes: AgentRuntime[] = [];
     try {
       for (let index = 0; index < 3; index++) {
@@ -86,6 +87,8 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
         assertEquals(runtimes[index].acdc!.store.seqEvent(rip.said!, 0)?.said, rip.said);
         custody[index].retainMemberCopy(rip.said!, groups[index].hab, copies);
       }
+      assertEquals(custody[0].registriesFor(groups[0].hab.pre), [rip.said]);
+      assertEquals(custody[0].registriesFor(members[2].pre), []);
       // The third signer never approved. Its absence does not block the ordinary threshold.
       assertEquals(runtimes[2].acdc!.store.seqEvent(rip.said!, 0), null);
       const future = custody[0].derive(rip.said!, 17, rip.said!, "revoked");
@@ -182,7 +185,23 @@ Deno.test("group salt copies remain private and follow two-of-three accepted reg
       );
       const joinedCustody = new RegistryCustody({ hby: joining, registry: joinedRuntime.acdc!.store });
       new RegistrySaltService(joinedCustody, joinedRuntime.protocol.rvy).register();
-      const newReply = services[1].makeReply(groups[1].hab, rip.said!, groups[1].hab.pre, newMember.pre);
+      const completion = {
+        accepted: true,
+        previousSigningMembers: mids,
+        signingMembers: replacement,
+        rotation: rotations[0].serder.said!,
+      };
+      const requests = replicationRequests(custody[1], groups[1].hab, completion);
+      assertEquals(requests, [{ registry: rip.said, recipient: groups[1].hab.pre, target: newMember.pre }]);
+      assertEquals(replicationRequests(custody[2], groups[2].hab, completion), []);
+      assertEquals(replicationRequests(custody[1], groups[1].hab, { ...completion, accepted: false }), []);
+      assertThrows(
+        () => replicationRequests(custody[1], groups[1].hab, { ...completion, rotation: groups[0].serder.said! }),
+        ValidationError,
+        "changed",
+      );
+      const request = requests[0];
+      const newReply = services[1].makeReply(groups[1].hab, request.registry, request.recipient, request.target);
       yield* joinedRuntime.reactor.processBytes(groups[1].hab.endorse(newReply));
       assertEquals(joining.ks.custody.get([rip.said!]), null);
       yield* joinedRuntime.reactor.processBytes(groups[2].hab.endorse(newReply));
