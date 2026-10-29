@@ -2,6 +2,7 @@
 import {
   b,
   bytesEqual,
+  Cipher,
   Decrypter,
   Encrypter,
   makeBlindState,
@@ -11,6 +12,7 @@ import {
   Salter,
   type SerderACDC,
   t,
+  Verfer,
 } from "cesr-ts";
 import { Komer, type RegistryStore } from "keri-ts/db";
 import { type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
@@ -39,6 +41,12 @@ interface Secret {
 interface EncryptedCustody {
   aeid: string;
   cipher: string;
+}
+/** Ciphertext and the exact previous record for retention in the caller's wallet writer. */
+export interface PreparedCustody {
+  readonly registry: string;
+  readonly expected: Readonly<EncryptedCustody> | null;
+  readonly encrypted: Readonly<EncryptedCustody>;
 }
 interface DerivedUpdate {
   credential: string;
@@ -80,15 +88,15 @@ function record(value: unknown): value is Record<string, unknown> {
 function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo): Secret {
   const payload: unknown = JSON.parse(t(raw));
   if (
-    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt"
-    || !record(payload.info) || typeof payload.salt !== "string"
+    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt" ||
+    !record(payload.info) || typeof payload.salt !== "string"
   ) throw new Error("Invalid custody payload");
   const info = payload.info;
   if (typeof info.controller !== "string" || typeof info.discloser !== "string") throw new Error("Invalid bindings");
   const canonical = expected ?? metadata(registry, info.controller, info.discloser);
   if (
-    Object.keys(info).length !== Object.keys(canonical).length
-    || Object.entries(canonical).some(([key, value]) => info[key] !== value)
+    Object.keys(info).length !== Object.keys(canonical).length ||
+    Object.entries(canonical).some(([key, value]) => info[key] !== value)
   ) throw new Error("Invalid profile");
   new Salter({ qb64: payload.salt });
   return { info: canonical, salt: payload.salt };
@@ -96,8 +104,8 @@ function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo):
 /** File protections are a POSIX contract; no weaker platform fallback is offered. */
 function requirePosix(): void {
   if (
-    process.platform === "win32" || typeof process.geteuid !== "function"
-    || constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
+    process.platform === "win32" || typeof process.geteuid !== "function" ||
+    constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
   ) {
     throw new ValidationError("Protected plaintext custody handoff requires POSIX file protections");
   }
@@ -166,33 +174,141 @@ export class RegistryCustody {
     }
   }
 
-  /** Retain only authenticated ciphertext; explicit reimport never decrypts an old-AEID row. */
-  private retain(secret: Secret, rewrap = false): CustodyInfo {
+  /** Encrypt supplied private data outside the writer; explicit rewrap never opens an old-AEID row. */
+  private prepare(secret: Secret, rewrap = false): PreparedCustody {
+    if (this.options.db.inWriteTransaction) {
+      throw new ValidationError("Custody preparation must precede the wallet write transaction");
+    }
     const box = this.box(), rows = this.tables().custody, key = secret.info.registry;
     const previous = rows.get(key);
+    const expected = previous ? Object.freeze({ aeid: previous.aeid, cipher: previous.cipher }) : null;
     if (previous?.aeid === box.aeid) {
       if (JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
         throw new ValidationError("Different registry custody is already retained");
       }
-      return secret.info;
+      return Object.freeze({ registry: key, expected, encrypted: expected! });
     }
     if (previous && !rewrap) {
       throw new ValidationError("Custody encryption AEID changed; explicit operator rewrap is required");
     }
     if (!previous && rewrap) throw new ValidationError("Rewrap requires an existing custody record under a prior AEID");
-    const value = { aeid: box.aeid, cipher: box.encrypter.encrypt({ ser: b(JSON.stringify(secret)) }).qb64 };
-    if (rewrap) {
-      this.options.db.env!.transactionSync(() => {
-        const current = rows.get(key);
-        if (!current || current.aeid !== previous!.aeid || current.cipher !== previous!.cipher) {
-          throw new ValidationError("Custody changed during explicit operator rewrap");
-        }
-        rows.pin(key, value);
-      });
-    } else if (!rows.put(key, value) && JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
-      throw new ValidationError("Different registry custody was concurrently retained");
+    const encrypted = Object.freeze({
+      aeid: box.aeid,
+      cipher: box.encrypter.encrypt({ ser: b(JSON.stringify(secret)) }).qb64,
+    });
+    return Object.freeze({ registry: key, expected, encrypted });
+  }
+
+  /** Prepare a supplied Salt_128 root; the caller first authenticates assignment and membership.
+   *
+   * info retains the original fixed-profile parties, including for later recipients.
+   * root is the established root, never generated here. Returns ciphertext only,
+   * without retaining it. Structural binding checks establish no network authority.
+   * KERIpy reference: RegistryCustody.prepareRoot at qualified core 23f526b4.
+   */
+  prepareRoot(info: CustodyInfo, root: Salter): PreparedCustody {
+    this.box();
+    const canonical = metadata(info.registry, info.controller, info.discloser);
+    if (
+      Object.keys(info).length !== Object.keys(canonical).length ||
+      Object.entries(canonical).some(([key, value]) => info[key as keyof CustodyInfo] !== value)
+    ) {
+      throw new ValidationError("Registry root requires the fixed custody profile");
     }
+    try {
+      for (const aid of [info.controller, info.discloser]) {
+        if (new Prefixer({ qb64: aid }).qb64 !== aid) throw new Error();
+      }
+    } catch {
+      throw new ValidationError("Invalid original custody party");
+    }
+    const rip = this.options.registry.seqEvent(info.registry, 0);
+    if (!rip || rip.ilk !== "rip" || rip.issuer !== info.controller) {
+      throw new ValidationError("Registry root must match the accepted registry controller");
+    }
+    if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128 || root.raw.length !== 16) {
+      throw new ValidationError("Registry root must be one Salt_128 Salter");
+    }
+    return this.prepare({ info: canonical, salt: root.qb64 });
+  }
+
+  /** CAS-retain prepared ciphertext inside this wallet's already-active write transaction.
+   *
+   * prepared comes from prepareRoot before the writer. Returns whether the row
+   * changed. No encryption, decryption, owned commit, flush or receipt is performed;
+   * the owner commits related records together and awaits env.flushed afterward.
+   */
+  retainPrepared(prepared: PreparedCustody): boolean {
+    const { db } = this.options;
+    if (!db.inWriteTransaction) throw new ValidationError("Prepared custody requires the caller's wallet writer");
+    const box = this.box(), rows = this.tables().custody;
+    if (prepared.encrypted.aeid !== box.aeid) {
+      throw new ValidationError("Prepared custody does not match the authenticated Keeper");
+    }
+    const current = rows.get(prepared.registry)?.asDict() ?? null;
+    if (JSON.stringify(current) !== JSON.stringify(prepared.expected)) {
+      throw new ValidationError("Custody changed during prepared retention");
+    }
+    if (JSON.stringify(prepared.expected) === JSON.stringify(prepared.encrypted)) return false;
+    // Komer's synchronous write joins the already-active native writer; an outer
+    // abort still rolls back this row together with the caller's related records.
+    rows.pin(prepared.registry, prepared.encrypted);
+    return true;
+  }
+
+  /** Retain the explicit file/create adapter through the same prepared CAS path, without a flush claim. */
+  private retain(secret: Secret, rewrap = false): CustodyInfo {
+    const prepared = this.prepare(secret, rewrap);
+    this.options.db.env!.transactionSync(() => this.retainPrepared(prepared));
     return secret.info;
+  }
+
+  /** Seal one existing root to the caller-authenticated X25519 recipient, returning qualified Cipher_Salt.
+   *
+   * regid selects retained custody; encrypter selects the exact recipient key.
+   * Existing CESR Encrypter uses libsodium sealed boxes; confidentiality grants no
+   * sender authority. The caller binds assignment, member and key coordinates.
+   */
+  sealRoot(regid: string, encrypter: Encrypter): Cipher {
+    if (!(encrypter instanceof Encrypter) || encrypter.code !== MtrDex.X25519) {
+      throw new ValidationError("Registry root requires an accepted X25519 recipient key");
+    }
+    return encrypter.encrypt({ prim: new Salter({ qb64: this.load(regid).salt }) });
+  }
+
+  /** Open Cipher_Salt using the exact retained Ed25519 key through Keeper Manager.
+   *
+   * cipher is one complete qualified primitive; verfer is selected and authorized
+   * by the caller. Returns Salt_128 for commitment validation before prepareRoot;
+   * neither private seeds nor root values may be logged. Decryption grants no entitlement.
+   */
+  openRoot(cipher: Cipher | string, verfer: Verfer): Salter {
+    this.box();
+    let sealed: Cipher;
+    try {
+      sealed = typeof cipher === "string" ? new Cipher({ qb64: cipher }) : cipher;
+      if (
+        !(sealed instanceof Cipher) || sealed.code !== MtrDex.X25519_Cipher_Salt ||
+        (typeof cipher === "string" && sealed.qb64 !== cipher) ||
+        !(verfer instanceof Verfer) || (verfer.code !== MtrDex.Ed25519 && verfer.code !== MtrDex.Ed25519N)
+      ) throw new Error();
+    } catch {
+      throw new ValidationError("Registry root cipher or recipient key is unsupported");
+    }
+    // Only null is a sealed-box authentication failure. Key lookup and backend
+    // failures keep their identity so the owning service can recover correctly.
+    const raw = this.options.hby.mgr.open(sealed.raw, verfer);
+    if (raw === null) throw new ValidationError("Unable to authenticate encrypted registry root");
+    if (raw.length !== Salter.fullSizeForCode(MtrDex.Salt_128)) {
+      throw new ValidationError("Encrypted registry root has invalid salt encoding");
+    }
+    try {
+      const root = new Salter({ qb64b: raw });
+      if (root.code !== MtrDex.Salt_128 || !bytesEqual(root.qb64b, raw)) throw new Error();
+      return root;
+    } catch {
+      throw new ValidationError("Encrypted registry root has invalid salt encoding");
+    }
   }
 
   /** Provision once, refusing replacement salt after any undisclosed accepted blinded history. */

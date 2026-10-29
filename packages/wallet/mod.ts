@@ -1,6 +1,6 @@
 /** Wallet application entrypoint; public protocol owners remain borrowed from keri-ts. */
 export { type AcdcV2UpdateOptions, WalletAuthor } from "./src/authoring.ts";
-export { type CustodyInfo, RegistryCustody } from "./src/custody.ts";
+export { type CustodyInfo, type PreparedCustody, RegistryCustody } from "./src/custody.ts";
 export {
   type DisclosureSelection,
   type PreparedDisclosure,

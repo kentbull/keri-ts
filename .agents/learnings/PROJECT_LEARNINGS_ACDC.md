@@ -146,7 +146,11 @@ event/seqEvent remain raw access. Replay validates without writing, including re
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
 RegistryCustody is an explicit capability over the existing wallet environment.
 Keeper AEID and authenticated ciphertext own the secret; ordinary inventory never
-loads it. Protected POSIX handoff matches the Python profile. The nonsecret
+loads it. Protocol callers prepare encrypted custody before the wallet writer,
+CAS-retain it with related records inside that writer, then await the real environment
+flush before sending a retention receipt. Keeper failures propagate separately from
+sealed-box authentication rejection. This seam supplies no entitlement policy.
+Protected POSIX handoff matches the Python profile. The nonsecret
 event-SAID index retains exact target/state/bound coordinates before derived BUP
 processing so reopen and later public successors cannot select different inputs.
 Reconstructed openings must match the exact accepted event; AEID replacement
