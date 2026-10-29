@@ -42,7 +42,6 @@ Deno.test("verifier command preserves owned-close failures and reports success o
       { url: "https://user@observer.test/" },
       { url: "https://observer.test/?query=1" },
       { url: "https://observer.test/#fragment" },
-      { url: "https://observer.test/", maximumAgeMs: 0 },
       { url: "https://observer.test/", requestTimeoutMs: -1 },
     ]
   ) {

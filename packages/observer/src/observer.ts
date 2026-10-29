@@ -1,4 +1,4 @@
-/** Configured-source freshness over ordinary native acceptance; queries never acquire evidence. */
+/** Configured-source acquisition and ordinary native acceptance; queries never acquire evidence. */
 import { type ProtocolHandler, type SourceConfig, sourceRequest, SourceTrust } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
 import { concatBytes, Counter, parseBytes, ParserError, SerderKERI, Vrsn_2_0 } from "cesr-ts";
@@ -18,11 +18,10 @@ import {
 } from "keri-ts/runtime";
 import { ObservationBaser } from "./storing.ts";
 
-/** Only source authority, local age and reader policy belong to the application. */
+/** Configure acquisition sources and authorized readers. */
 export interface ObserverOptions {
   sources: readonly SourceConfig[];
   readers: readonly string[];
-  maximumAgeMs?: number;
   now?: () => number;
 }
 /** Finite positive deployment durations, not protocol constants or automatic lifetime caps. */
@@ -49,7 +48,6 @@ function unavailable(message: string, status = 503): Response {
 export class Observer {
   readonly sources: readonly SourceTrust[];
   private readonly readers: ReadonlySet<string>;
-  private readonly maximumAgeMs: number;
   private readonly now: () => number;
   private readonly evidence: Registrar;
 
@@ -67,7 +65,6 @@ export class Observer {
       throw new ValidationError("Duplicate observer source URL.");
     }
     this.readers = new Set(options.readers);
-    this.maximumAgeMs = duration(options.maximumAgeMs ?? 15000);
     this.now = options.now ?? Date.now;
     this.evidence = new Registrar(processor, store);
   }
@@ -137,7 +134,7 @@ export class Observer {
     }
   }
 
-  /** Authenticate a reader and serve only an exact, sufficiently recent observation of this cache head. */
+  /** Authenticate a reader and serve accepted registry evidence from the local cache. */
   readonly handle: ProtocolHandler = async req => {
     const path = new URL(req.url).pathname;
     if (path === "/health" && req.method === "GET") return Response.json({ status: "ok" });
@@ -175,11 +172,6 @@ export class Observer {
     if (this.pendingInScope([regid])) return unavailable("Registry dependencies are pending");
     const head = this.store.head(regid);
     if (!head) return unavailable("Unknown registry in local cache", 404);
-    const completed = this.sources.map(source => this.observations.observations.get([source.url]))
-      .filter(record => record?.heads[regid] === head.qb64).map(record => record!.completed).sort().at(-1);
-    if (!completed) return unavailable("No completed source observation for accepted head");
-    const age = this.now() - Date.parse(completed);
-    if (!Number.isFinite(age) || age < 0 || age > this.maximumAgeMs) return unavailable("Cached observation is stale");
     const rip = this.store.seqEvent(regid, 0)!, issuer = this.processor.kvy.db.getKever(rip.issuer!);
     if (!issuer) return unavailable("Supporting controller evidence unavailable");
     const evidence = concatBytes(
@@ -191,9 +183,6 @@ export class Observer {
     return new Response(new Uint8Array(evidence).buffer, {
       headers: {
         "Content-Type": CESR_CONTENT_TYPE,
-        "Observer-Observed-At": completed,
-        "Observer-Evidence-State": "fresh",
-        "Observer-Registry-Head": head.qb64,
       },
     });
   };

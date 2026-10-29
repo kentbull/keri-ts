@@ -485,7 +485,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         });
         let sourceQueries = 0;
         observerServer = yield* call(() =>
-          serveTls(pem, async request => {
+          serveTls(pem, async (request) => {
             sourceQueries++;
             const path = new URL(request.url).pathname;
             let response: Response;
@@ -514,7 +514,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         const wire = yield* call(() => collectPayload(framePayload(outer)));
         yield* receiver.reactor.processBytes(wire);
         assertEquals(receiver.exc.complete(exn.said!), true);
-        const options = { source: observationUrl, maximumAgeMs: 15000, requestTimeoutMs: 5000, now: () => now };
+        const options = { source: observationUrl, requestTimeoutMs: 5000, now: () => now };
         let acdcV2 = new AcdcV2Verifier(
           verifierHby,
           verifierHby.habByName("verifier")!,
@@ -569,7 +569,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
           Deno.writeTextFile(
             observationConfig,
             JSON.stringify({
-              observation: { url: observationUrl, maximumAgeMs: 60000 },
+              observation: { url: observationUrl },
             }),
           )
         );
@@ -702,8 +702,13 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
           assertEquals((yield* acdcV2.verifyCurrent(grant.said!)).kind, operator === "NOR" ? "issued" : "refused");
           assertEquals((yield* agent().processOnce()).webhooksSent, operator === "NOR" ? 1 : 0);
         }
+        assertEquals((yield* acdcV2.verifyCurrent(exn.said!)).kind, "refused");
         now += 16000;
-        assertEquals((yield* acdcV2.verifyCurrent(exn.said!)).kind, "missing");
+        assertEquals(
+          (yield* acdcV2.verifyCurrent(exn.said!)).kind,
+          "refused",
+          "elapsed observation time must not hide authenticated revocation behind a custom freshness rule",
+        );
       } finally {
         if (observerServer) yield* call(() => observerServer!.shutdown());
         if (registrarServer) yield* call(() => registrarServer!.shutdown());
