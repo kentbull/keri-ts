@@ -3,8 +3,8 @@
   "candidate": {
     "applications": {
       "dolly": { "repository": "kentbull/dolly", "commit": "06a37fbb154aec83f09d46c162becac663d9f1e9" },
-      "registrar": { "repository": "kentbull/kf-registrar", "commit": "5e6e8503d845df4cbf206787ad734b14ba66b9f0" },
-      "observer": { "repository": "kentbull/kf-observer", "commit": "b85de54537236cc12e526e0ba59e69f8a23dbf28" },
+      "registrar": { "repository": "kentbull/kf-registrar", "commit": "eae74c1378652c4088ddfc215c25d9e987b14257" },
+      "observer": { "repository": "kentbull/kf-observer", "commit": "61fc4285ccf7c6e034ac74a8d3faf052c5ca394f" },
       "witness": { "repository": "kentbull/witness-hk", "commit": "d59da0d2c3ed6d1b82d89b4496a2176e4dde1b27" },
       "locksmith": { "repository": "kentbull/locksmith", "commit": "7e4798fb9d2136690aad01c125cfdd0b450efa02" }
     },
