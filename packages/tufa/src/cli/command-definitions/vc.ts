@@ -1,7 +1,7 @@
 /** Commander registrations for vc operations; command adapters own effects. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
+import { addHabOption, addStoreOptions, collectOption, dispatchArgs } from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
 
 /**
@@ -47,6 +47,28 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   );
 
   const registry = vc.command("registry").description("Credential registry operations");
+  const salt = registry.command("salt").description("Encrypted ACDC v2 registry salt replies");
+  for (const operation of ["send", "receive", "status"] as const) {
+    const command = addHabOption(addStoreOptions(salt.command(operation)))
+      .requiredOption("--registry <said>", "Accepted registry inception SAID")
+      .option("--evidence <file>", "Public CESR evidence file", collectOption, []);
+    if (operation === "send") {
+      command.requiredOption("--party <aid>", "Logical salt recipient")
+        .option("--target <aid>", "Individual recipient member")
+        .requiredOption(
+          "--output <file>",
+          "New signed encrypted reply file (group output is a signature contribution)",
+        );
+    }
+    if (operation === "receive") command.requiredOption("--input <file>", "Signed encrypted reply file");
+    registerDispatchedCommand(command, dispatch, {
+      name: `vc.registry.salt.${operation}`,
+      load: () => import("../commands/registry-salt.ts"),
+      exportName: "registrySaltCommand",
+      args: (options) => ({ ...dispatchArgs(options), operation }),
+    });
+  }
+
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
@@ -146,7 +168,6 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       args: dispatchArgs,
     },
   );
-
 
   registerKeriCliCommand(
     addStoreOptions(
