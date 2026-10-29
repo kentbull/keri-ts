@@ -1,8 +1,9 @@
+import { Prefixer, type SerderKERI } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import { reply as replyEvent } from "../../core/protocol-eventing.ts";
-import { Roles } from "../../core/roles.ts";
+import { isRole, Roles } from "../../core/roles.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import { groupSigningMembers, localGroupMember } from "../multisig/group-members.ts";
 import { groupEndorseReply } from "../multisig/group-signing.ts";
@@ -41,6 +42,25 @@ export function endpointRoleAccepted(
   eid: string,
 ): boolean {
   return hby.db.ends.get([cid, role, eid])?.allowed === true;
+}
+
+/** Validate this group's exact endpoint-role intent before any member consent or signature. */
+export function validateEndpointRoleReply(
+  serder: SerderKERI,
+  group: string,
+): { cid: string; role: string; eid: string } {
+  const attrs = serder.ked?.a;
+  if (
+    (serder.route !== "/end/role/add" && serder.route !== "/end/role/cut")
+    || !attrs || typeof attrs !== "object" || Array.isArray(attrs)
+    || !("cid" in attrs) || typeof attrs.cid !== "string" || attrs.cid !== group
+    || !("role" in attrs) || typeof attrs.role !== "string" || !isRole(attrs.role)
+    || !("eid" in attrs) || typeof attrs.eid !== "string" || !attrs.eid
+  ) throw new ValidationError("Multisig endpoint reply must name its group, a supported role, and an endpoint.");
+  if (new Prefixer({ qb64: attrs.cid }).qb64 !== attrs.cid || new Prefixer({ qb64: attrs.eid }).qb64 !== attrs.eid) {
+    throw new ValidationError("Multisig endpoint reply requires canonical controller and endpoint identifiers.");
+  }
+  return { cid: attrs.cid, role: attrs.role, eid: attrs.eid };
 }
 
 /** Load an accepted endpoint-role reply or throw a command-facing error. */
@@ -88,6 +108,7 @@ export function* proposeGroupEndpointRole(
     { cid: groupHab.pre, role, eid: args.eid },
     { pre: groupHab.pre },
   );
+  validateEndpointRoleReply(rpySerder, groupHab.pre);
   const localRpy = groupEndorseReply(hby, groupHab.pre, rpySerder);
   yield* input.processBytes(localRpy, { local: true });
   yield* protocol.processEscrowsOnce();

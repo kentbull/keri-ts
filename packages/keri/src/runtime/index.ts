@@ -286,7 +286,7 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailbox/mailboxing.ts";
-export { isLocalGroupHab } from "../app/multisig/group-members.ts";
+export { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../app/multisig/group-members.ts";
 export {
   Multiplexor,
   MULTISIG_ROUTES,
@@ -307,6 +307,7 @@ export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
+export { acdcV2RegistryProposal } from "../app/multisig/grouping.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
   Notifier,

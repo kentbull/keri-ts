@@ -52,7 +52,7 @@ export interface GroupSendResult {
 
 /** Select unique remote member AIDs, preserving the supplied member order. */
 export function remoteGroupMembers(hby: Habery, member: Hab, recipients: readonly string[]): string[] {
-  return uniqueMembers(recipients).filter(recipient => recipient !== member.pre && !hby.habs.has(recipient));
+  return uniqueMembers(recipients).filter((recipient) => recipient !== member.pre && !hby.habs.has(recipient));
 }
 
 /**
@@ -68,7 +68,9 @@ export function multisigPayloadSaid(serder: SerderKERI): string | null {
     return typeof said === "string" && said.length > 0 ? said : null;
   }
   const route = serder.route ?? "";
-  const said = payloadSection(ked)[route === "/multisig/registry" ? "anc" : route.slice(route.lastIndexOf("/") + 1)];
+  const said = payloadSection(
+    ked,
+  )[(route === "/multisig/rip" || route === "/multisig/bup") ? "anc" : route.slice(route.lastIndexOf("/") + 1)];
   return typeof said === "string" && said.length > 0 ? said : null;
 }
 
@@ -107,8 +109,8 @@ export function storedGroupMessage(
   for (const indexed of db.meids.get([payloadSaid])) {
     const stored = db.exns.get([indexed.qb64]);
     if (
-      !stored || stored.pre !== member || stored.route !== proposal.route
-      || multisigPayloadSaid(stored) !== payloadSaid
+      !stored || stored.pre !== member || stored.route !== proposal.route ||
+      multisigPayloadSaid(stored) !== payloadSaid
     ) continue;
     const destination = stored.pvrsn.major === 1 ? stored.ked?.rp : stored.ked?.ri;
     if (recipient !== undefined && destination !== recipient) continue;
@@ -132,7 +134,7 @@ export function* prepareGroupMessage(
 ): Operation<SignedGroupMessage> {
   const stored = storedGroupMessage(exchanger.hby.db, member.pre, prepared[0], recipient);
   if (!stored) return signGroupMessage(member, recipient, prepared);
-  const message = yield* abortable(signal => collectBytes(exchanger.replay(stored.said!, signal)));
+  const message = yield* abortable((signal) => collectBytes(exchanger.replay(stored.said!, signal)));
   return {
     src: member.pre,
     recipient,
@@ -210,7 +212,7 @@ export function* sendGroupMessage(
 export function groupSendResult(outcomes: readonly GroupDelivery[]): GroupSendResult {
   return {
     messages: outcomes.map(({ recipient, exnSaid, payloadSaid }) => ({ recipient, exnSaid, payloadSaid })),
-    deliveries: outcomes.flatMap(outcome => outcome.deliveries),
+    deliveries: outcomes.flatMap((outcome) => outcome.deliveries),
   };
 }
 

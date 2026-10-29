@@ -8,10 +8,12 @@
  */
 import {
   type CesrFrame,
+  Cipher,
   collectPayload,
   concatBytes,
   Counter,
   type Kind,
+  MtrDex,
   nestedPayload,
   parse,
   parseBytes,
@@ -43,7 +45,8 @@ import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messagi
 export const MULTISIG_ICP_ROUTE = "/multisig/icp";
 export const MULTISIG_ROT_ROUTE = "/multisig/rot";
 export const MULTISIG_IXN_ROUTE = "/multisig/ixn";
-export const MULTISIG_REGISTRY_ROUTE = "/multisig/registry";
+export const MULTISIG_RIP_ROUTE = "/multisig/rip";
+export const MULTISIG_BUP_ROUTE = "/multisig/bup";
 export const MULTISIG_VCP_ROUTE = "/multisig/vcp";
 export const MULTISIG_ISS_ROUTE = "/multisig/iss";
 export const MULTISIG_REV_ROUTE = "/multisig/rev";
@@ -52,7 +55,8 @@ export const MULTISIG_RPY_ROUTE = "/multisig/rpy";
 
 /** Ordered route list used for handler registration. */
 export const MULTISIG_ROUTES = [
-  MULTISIG_REGISTRY_ROUTE,
+  MULTISIG_RIP_ROUTE,
+  MULTISIG_BUP_ROUTE,
   MULTISIG_ICP_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_IXN_ROUTE,
@@ -173,17 +177,42 @@ export interface MultisigHandlerOptions {
 /** Validate the exact ACDC v2 TEL/KEL pair without granting member approval or writing evidence. */
 export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly CesrFrame[]) {
   const payload = wrapper.sad?.a;
-  if (wrapper.route !== MULTISIG_REGISTRY_ROUTE || !isRecord(payload) || nests.length !== 2) return null;
-  const [tel, anchor] = nests.map(child => child.body);
   if (
-    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI)
-    || !["rip", "bup"].includes(tel.ilk ?? "") || tel.pvrsn.major !== 2
-    || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid
-    || nests.some(child => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc
-    || !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre)
-    || !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some(seal => matchesRegistrySeal(seal, tel))
+    ![MULTISIG_RIP_ROUTE, MULTISIG_BUP_ROUTE].includes(wrapper.route ?? "") || !isRecord(payload) || nests.length !== 2
   ) return null;
-  return { tel, anchor };
+  const [tel, anchor] = nests.map((child) => child.body);
+  if (
+    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI) ||
+    wrapper.route !== `/multisig/${tel.ilk}` || tel.pvrsn.major !== 2 ||
+    !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid ||
+    nests.some((child) => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc ||
+    !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre) ||
+    !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some((seal) => matchesRegistrySeal(seal, tel))
+  ) return null;
+  try {
+    validateRegistrySalts(payload.salts, isRecord(payload.salts) ? Object.keys(payload.salts) : []);
+  } catch {
+    return null;
+  }
+  return { tel, anchor, salts: payload.salts };
+}
+
+/** Check optional encrypted member copies separately from public event openings.
+ * Mirrors KERIpy validateRegistrySalts. Ciphertexts grant no signing authority.
+ */
+export function validateRegistrySalts(
+  value: unknown,
+  members: readonly string[],
+): asserts value is Record<string, string> | undefined {
+  if (value === undefined) return;
+  if (!isRecord(value) || !Object.keys(value).length) throw new ValidationError("Invalid registry salt copies");
+  for (const [member, encoded] of Object.entries(value)) {
+    if (!members.includes(member) || typeof encoded !== "string") throw new ValidationError("Invalid salt recipient");
+    const cipher = new Cipher({ qb64: encoded });
+    if (cipher.code !== MtrDex.X25519_Cipher_Salt || cipher.qb64 !== encoded) {
+      throw new ValidationError("Invalid registry salt cipher");
+    }
+  }
 }
 
 /** Commit one exact ACDC v2 registry/anchor pair using the ordinary nested-wire serializer. */
@@ -191,23 +220,27 @@ export function* prepareAcdcV2RegistryExn(
   sender: string,
   tel: Uint8Array,
   anchor: Uint8Array,
-  options: MultisigBuilderOptions = {},
+  options: MultisigBuilderOptions & { salts?: Readonly<Record<string, string>> } = {},
 ): Operation<MultisigMessage> {
-  const children = [tel, anchor].map(wire => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire)));
-  if (children.some(frames => frames.length !== 1)) {
+  const children = [tel, anchor].map((wire) => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire)));
+  if (children.some((frames) => frames.length !== 1)) {
     throw new Error("ACDC v2 registry proposal requires one TEL and one KEL event.");
   }
-  const nests = children.map(frames => frames[0]);
+  const nests = children.map((frames) => frames[0]);
   if (!(nests[1].body instanceof SerderKERI)) throw new Error("ACDC v2 registry anchor must be KERI.");
-  const wrapper =
-    exchange(MULTISIG_REGISTRY_ROUTE, { gid: nests[1].body.pre, tel: nests[0].body.said, anc: nests[1].body.said }, {
-      ...options,
-      sender,
-      version: Vrsn_2_0,
-    })[0];
+  const wrapper = exchange(`/multisig/${nests[0].body.ilk}`, {
+    gid: nests[1].body.pre,
+    tel: nests[0].body.said,
+    anc: nests[1].body.said,
+    ...(options.salts ? { salts: options.salts } : {}),
+  }, {
+    ...options,
+    sender,
+    version: Vrsn_2_0,
+  })[0];
   if (!acdcV2RegistryProposal(wrapper, nests)) throw new Error("Invalid ACDC v2 registry proposal.");
-  const parts = yield* abortable(signal =>
-    Promise.all(nests.map(child => collectPayload(nestedPayload(child, Vrsn_2_0), signal)))
+  const parts = yield* abortable((signal) =>
+    Promise.all(nests.map((child) => collectPayload(nestedPayload(child, Vrsn_2_0), signal)))
   );
   return [wrapper, concatBytes(...parts)] as const;
 }
@@ -473,8 +506,8 @@ export function loadMultisigHandlers(
   exchanger: Exchanger,
   options: MultisigHandlerOptions = {},
 ): Multiplexor {
-  const mux = options.mux
-    ?? new Multiplexor(hby, {
+  const mux = options.mux ??
+    new Multiplexor(hby, {
       notifier: options.notifier ?? null,
       exchanger,
       registry: options.registry ?? undefined,
@@ -619,7 +652,7 @@ export class Multiplexor {
   private replayApproved(said: string): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    return call(function*() {
+    return call(function* () {
       const controller = new AbortController();
       const signal = controller.signal;
       try {
@@ -627,7 +660,7 @@ export class Multiplexor {
         const frames = parse(self.replay.replay(said, signal));
         let pending: ReturnType<typeof frames.next> | undefined;
         // The earlier resource joins the read after processing children stop.
-        yield* ensure(function*() {
+        yield* ensure(function* () {
           try {
             if (pending) {
               try {
@@ -685,9 +718,17 @@ export class Multiplexor {
         return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
       embeddedSaid = commitment;
-    } else if (route === MULTISIG_REGISTRY_ROUTE) {
+    } else if ((route === MULTISIG_RIP_ROUTE || route === MULTISIG_BUP_ROUTE)) {
       const children = acdcV2RegistryProposal(serder, nests);
       if (!children) return { ok: false, said, reason: "Invalid ACDC v2 registry/anchor proposal." };
+      const payload = serder.sad!.a as Record<string, unknown>;
+      const gid = children.anchor.pre!;
+      const members = this.hby.ks.getSmids(gid).map((tuple) => tuple[0].qb64);
+      try {
+        validateRegistrySalts(payload.salts, members.length ? members : this.hby.db.getHab(gid)?.smids ?? []);
+      } catch {
+        return { ok: false, said, reason: "Invalid encrypted registry salt copies." };
+      }
       embeddedSaid = children.anchor.said!;
     } else {
       const allowed = nestedMultisigIlks(route);
@@ -697,8 +738,8 @@ export class Multiplexor {
       const child = nests[0];
       const signed = multisigPayloadSaid(serder);
       if (
-        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
-        || !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
+        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "") ||
+        !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }
@@ -867,9 +908,9 @@ function childGenusHint(attrs: unknown): Versionage | null | undefined {
   if (!isRecord(attrs) || attrs.cgvrsn === undefined) return undefined;
   const hint = attrs.cgvrsn;
   if (
-    !Array.isArray(hint) || hint.length !== 2
-    || (hint[0] !== 1 && hint[0] !== 2)
-    || typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
+    !Array.isArray(hint) || hint.length !== 2 ||
+    (hint[0] !== 1 && hint[0] !== 2) ||
+    typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
   ) {
     return null;
   }

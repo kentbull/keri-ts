@@ -267,8 +267,13 @@ selection, joining or signing. Bind the selected group to the KEL child prefix o
 VDR anchor prefix before prompting: shared participants do not make group identities
 interchangeable. A mismatched wrapper must not authorize another group's event. Interaction does not carry rotation members.
 The same decoded proposal drives approval and KEL re-publication; unknown peer
-attributes are not endorsed into a fresh local wrapper. RPY/VDR publication input
-contracts remain separate follow-up work.
+attributes are not endorsed into a fresh local wrapper. Reply approval reauthenticates
+retained evidence and validates exact group attribution, signature-only child factors,
+the existing local group and required domain policy before consent. Recheck group
+and policy before signing; preserve peer factors and reuse exact local contributions
+on resume. Endpoint policy stays with the endpoint caller. Preserve the incoming outer
+version and child genus instead of crossing native and legacy proposal indexes.
+VDR publication input contracts remain separate follow-up work.
 Multisig publication prepares and endorses its recipient-specific EXN at the
 workflow owner. Poster borrows that exact body and wire for delivery and durable
 retry; its optional TCP dependency is the reply receiver contract. Preparation
