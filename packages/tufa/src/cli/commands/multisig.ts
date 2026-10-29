@@ -14,7 +14,9 @@ import {
   multisigJoinCommand as join,
   multisigRotateCommand as rotate,
   multisigRpyCommand as rpy,
+  parseBooleanOption,
 } from "keri-ts/cli";
+import { nativeRegistryJoinCommand } from "./native-registry-join.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 
@@ -52,7 +54,11 @@ export function* multisigRotateCommand(args: Record<string, unknown>): Operation
 
 /** Join the selected outer EXN; sending alone does not report group acceptance. */
 export function* multisigJoinCommand(args: Record<string, unknown>): Operation<void> {
-  writeJsonLine(yield* join(args));
+  if (parseBooleanOption(args.v2, "v2")) {
+    writeJsonLine(yield* nativeRegistryJoinCommand(args));
+  } else {
+    writeJsonLine(yield* join(args));
+  }
 }
 
 /** Render the endpoint-role proposal's typed identities and delivery outcomes. */

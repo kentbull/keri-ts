@@ -146,27 +146,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       args: dispatchArgs,
     },
   );
-  const custody = registry.command("custody").description("Explicit protected custody operator handoff");
-  for (const operation of ["import", "export"] as const) {
-    const command = addHabOption(addStoreOptions(
-      custody.command(operation)
-        .option("--registry-name <name>", "ACDC v2 registry alias")
-        .option("--registry <said>", "Accepted registry SAID for a designated remote discloser")
-        .requiredOption("--file <path>", "Protected mode0600 plaintext handoff artifact"),
-    ));
-    if (operation === "import") {
-      command.requiredOption("--controller <aid>", "Expected registry controller").requiredOption(
-        "--discloser <aid>",
-        "Expected designated discloser",
-      ).option("--rewrap", "Explicitly rewrap an existing custody record under this Keeper");
-    }
-    registerDispatchedCommand(command, dispatch, {
-      name: `vc.registry.custody.${operation}`,
-      load: () => import("../commands/acdc-v2-authoring.ts"),
-      exportName: operation === "import" ? "custodyImportCommand" : "custodyExportCommand",
-      args: dispatchArgs,
-    });
-  }
+
 
   registerKeriCliCommand(
     addStoreOptions(
