@@ -19,6 +19,7 @@ import {
   Texter,
   type Verfer,
   Vrsn_1_0,
+  Vrsn_2_0,
 } from "cesr-ts";
 import { exchange } from "../../core/exchange/protocol-exchanging.ts";
 import type { Hab } from "../identity/habbing.ts";
@@ -45,9 +46,11 @@ export function essrEnvelope(sender: Hab, body: Uint8Array, recipient: string, k
     diger: new Diger({ raw: Diger.digest(ciphertext, MtrDex.Blake3_256), code: MtrDex.Blake3_256 }),
     modifiers: { src: sender.pre, dest: recipient },
   });
+  // The v1 envelope body can carry a v2 reply; declare its attachment genus
+  // so KERIpy keeps v2 parsing active when dispatching the decrypted reply.
   return concatBytes(
-    sender.endorse(outer, { pipelined: false, gvrsn: Vrsn_1_0 }),
-    ...essrChunks([new Texter({ raw: ciphertext, code: MtrDex.Bytes_L0 })], { gvrsn: Vrsn_1_0 }),
+    sender.endorse(outer, { pipelined: false, gvrsn: Vrsn_2_0, genusify: true }),
+    ...essrChunks([new Texter({ raw: ciphertext, code: MtrDex.Bytes_L0 })], { gvrsn: Vrsn_2_0 }),
   );
 }
 

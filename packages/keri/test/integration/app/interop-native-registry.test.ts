@@ -29,6 +29,7 @@ import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../../src/acdc/registering.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
+import { essrEnvelope } from "../../../src/app/exchanges/essr.ts";
 import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
@@ -180,184 +181,202 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   }
 });
 
-Deno.test({
-  name: "interop/native-registry - signed encrypted salt replies derive exact openings after reciprocal reopen",
-  async fn() {
-    assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
-    const ctx = await createInteropContext();
-    const { createWalletBaser, RegistrySaltService } = await import("../../../../wallet/mod.ts");
-    const { RegistryCustody } = await import("../../../../wallet/src/custody.ts");
-    const options = { name: "custody-ts", headDirPath: ctx.home, skipConfig: true, bran: "MyPasscodeARealSecret" };
-    const requestPath = `${ctx.home}/custody-request.json`;
-    let evidence: {
-      saltReply: string;
-      registry: string;
-      controller: string;
-      discloser: string;
-      rip: string;
-      credential: string;
-      updates: string[];
-      publicUpdate: string;
-      kel: string;
-      opening: NativeEvidence["opening"];
-      future: string;
-    };
-    try {
-      await run(function* () {
-        const hby = yield* createHabery(options);
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-        const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
-        const handler = createProtocolHandler(runtime);
-        const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
-        try {
-          const holder = hby.makeHab("holder"), root = `${ctx.home}/python`;
-          yield* call(() => Deno.mkdir(root));
-          yield* call(() =>
-            Deno.writeTextFile(
-              requestPath,
-              JSON.stringify({
-                root,
-                discloser: holder.pre,
-                kel: t(acceptedEventReplayMessage(hby, holder.pre, 0, Vrsn_2_0).message),
-              }),
-            )
-          );
-          const result = yield* call(() => runCmd(ctx.pythonCommand, [peer, "custody", requestPath], ctx.env));
-          assertEquals(result.code, 0, result.stderr);
-          evidence = JSON.parse(result.stdout);
-          const url = `http://127.0.0.1:${server.addr.port}/`;
-          for (const frame of parseBytes(b(evidence.kel))) yield* call(() => post(url, frame));
-          for (const raw of [evidence.rip, ...evidence.updates, evidence.publicUpdate]) {
-            const frame = raw === evidence.publicUpdate ? parseBytes(b(raw))[0] : {
-              body: new SerderACDC({ raw: b(raw) }),
-              attachments: [],
-              gvrsn: Vrsn_2_0,
-            };
-            yield* call(() => post(url, frame));
-          }
-          const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
-          const credential = new SerderACDC({ raw: b(evidence.credential) });
-          const update = new SerderACDC({ raw: b(evidence.updates[0]) });
-          assertEquals(store.head(evidence.registry)!.qb64, parseBytes(b(evidence.publicUpdate))[0].body.said);
-          assertThrows(
-            () => custody.derive(evidence.registry, 1, credential.said!, "issued"),
-            Error,
-            "not provisioned",
-          );
-          const saltService = new RegistrySaltService(custody, runtime.protocol.rvy);
-          saltService.register();
-          // The ordinary HTTP parser and Revery authenticate the foreign issuer.
-          for (const frame of parseBytes(b(evidence.saltReply))) yield* call(() => post(url, frame));
-          const opening = custody.derive(evidence.registry, 1, credential.said!, "issued", {
-            bound: true,
-            bsn: holder.kever!.sn,
-            bd: holder.kever!.serder.said!,
-          });
-          assertEquals(BoundState.qb64(opening as BoundState), BoundState.qb64(BoundState.fromSad(evidence.opening)));
-          custody.retainDerivedUpdate(update, opening);
-          assertEquals(store.opening(update.said!), null, "custody never publishes its derived opening");
-          const state = vet({
-            db: hby.db,
-            rip: store.seqEvent(evidence.registry, 0)!,
-            updates: [update],
-            acdc: credential,
-            blinder: opening,
-          });
-          assertEquals(state.kind, "verified");
-          assertEquals(
-            BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
-            evidence.future,
-          );
-          const issuer = holder;
-          const registry = runtime.acdc!.makeRegistry("reverse-handoff", issuer.pre);
-          const rip = store.event(registry.regk!)!;
-          issuer.interact({ data: [{ i: registry.regk, s: "0", d: rip.said }] });
-          assertEquals(registry.anchorMsg(rip.said!).kind, "accept");
-          const info = custody.createCustody(registry.regk!, evidence.controller);
-          const reverseCredential = acdcmap(issuer.pre, {
-            regid: registry.regk!,
-            attribute: { d: "", i: info.discloser, role: "reverse-custody-holder" },
-          });
-          const issuee = hby.db.getKever(info.discloser)!;
-          const bound = { bound: true, bsn: issuee.sn, bd: issuee.serder.said! };
-          const reverseOpening = custody.derive(
-            registry.regk!,
-            1,
-            reverseCredential.said!,
-            "issued",
-            bound,
-          ) as BoundState;
-          const reverseUpdate = blindate(registry.regk!, rip.said!, reverseOpening.d.nonce);
-          custody.retainDerivedUpdate(reverseUpdate, reverseOpening);
-          assertEquals(registry.processEvent(reverseUpdate).kind, "escrow");
-          issuer.interact({ data: [{ i: registry.regk, s: "1", d: reverseUpdate.said }] });
-          assertEquals(registry.anchorMsg(reverseUpdate.said!).kind, "accept");
-          assertEquals(store.opening(reverseUpdate.said!), null, "reverse custody is not public proof publication");
-          const reverseReply = saltService.makeReply(issuer, registry.regk!, info.discloser);
-          const reverse = {
-            root: `${ctx.home}/python`,
-            saltReply: t(issuer.endorse(reverseReply)),
-            info,
-            credential: t(reverseCredential.raw),
-            update: reverseUpdate.said,
-            bsn: Number(bound.bsn),
-            bd: bound.bd,
-            tel: t(store.cloneTel(registry.regk!)),
-            kel: [0, 1, 2].map((sn) => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(""),
-          };
-          const expected = {
-            opening: BoundState.qb64(reverseOpening),
-            future: BlindState.qb64(
-              custody.derive(registry.regk!, 17, reverseCredential.said!, "revoked") as BlindState,
-            ),
-            update: reverseUpdate.said,
-            state: "issued",
-          };
-          for (const receive of ["import", "reopen"]) {
-            yield* call(() => Deno.writeTextFile(requestPath, JSON.stringify({ ...reverse, receive })));
+for (const essr of [false, true]) {
+  Deno.test({
+    name:
+      `interop/native-registry - signed encrypted salt replies derive exact openings after reciprocal reopen (ESSR=${essr})`,
+    async fn() {
+      assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
+      const ctx = await createInteropContext();
+      const { createWalletBaser, RegistrySaltService } = await import("../../../../wallet/mod.ts");
+      const { RegistryCustody } = await import("../../../../wallet/src/custody.ts");
+      const options = { name: "custody-ts", headDirPath: ctx.home, skipConfig: true, bran: "MyPasscodeARealSecret" };
+      const requestPath = `${ctx.home}/custody-request.json`;
+      let evidence: {
+        saltReply: string;
+        registry: string;
+        controller: string;
+        discloser: string;
+        rip: string;
+        credential: string;
+        updates: string[];
+        publicUpdate: string;
+        kel: string;
+        opening: NativeEvidence["opening"];
+        future: string;
+      };
+      try {
+        await run(function* () {
+          const hby = yield* createHabery(options);
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+          const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
+          const handler = createProtocolHandler(runtime);
+          const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
+          try {
+            const holder = hby.makeHab("holder"), root = `${ctx.home}/python`;
+            yield* call(() => Deno.mkdir(root));
+            yield* call(() =>
+              Deno.writeTextFile(
+                requestPath,
+                JSON.stringify({
+                  root,
+                  essr,
+                  discloser: holder.pre,
+                  kel: t(acceptedEventReplayMessage(hby, holder.pre, 0, Vrsn_2_0).message),
+                }),
+              )
+            );
             const result = yield* call(() => runCmd(ctx.pythonCommand, [peer, "custody", requestPath], ctx.env));
             assertEquals(result.code, 0, result.stderr);
-            assertEquals(JSON.parse(result.stdout), expected, `TS custody survives Python ${receive}`);
+            evidence = JSON.parse(result.stdout);
+            const url = `http://127.0.0.1:${server.addr.port}/`;
+            for (const frame of parseBytes(b(evidence.kel))) yield* call(() => post(url, frame));
+            for (const raw of [evidence.rip, ...evidence.updates, evidence.publicUpdate]) {
+              const frame = raw === evidence.publicUpdate ? parseBytes(b(raw))[0] : {
+                body: new SerderACDC({ raw: b(raw) }),
+                attachments: [],
+                gvrsn: Vrsn_2_0,
+              };
+              yield* call(() => post(url, frame));
+            }
+            const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
+            const credential = new SerderACDC({ raw: b(evidence.credential) });
+            const update = new SerderACDC({ raw: b(evidence.updates[0]) });
+            assertEquals(store.head(evidence.registry)!.qb64, parseBytes(b(evidence.publicUpdate))[0].body.said);
+            assertThrows(
+              () => custody.derive(evidence.registry, 1, credential.said!, "issued"),
+              Error,
+              "not provisioned",
+            );
+            const saltService = new RegistrySaltService(custody, runtime.protocol.rvy);
+            saltService.register();
+            saltService.registerEnvelope(holder, runtime.exc, runtime.reactor);
+            // The ordinary HTTP parser and Revery authenticate the foreign issuer.
+            for (const frame of parseBytes(b(evidence.saltReply))) yield* call(() => post(url, frame));
+            const opening = custody.derive(evidence.registry, 1, credential.said!, "issued", {
+              bound: true,
+              bsn: holder.kever!.sn,
+              bd: holder.kever!.serder.said!,
+            });
+            assertEquals(BoundState.qb64(opening as BoundState), BoundState.qb64(BoundState.fromSad(evidence.opening)));
+            custody.retainDerivedUpdate(update, opening);
+            assertEquals(store.opening(update.said!), null, "custody never publishes its derived opening");
+            const state = vet({
+              db: hby.db,
+              rip: store.seqEvent(evidence.registry, 0)!,
+              updates: [update],
+              acdc: credential,
+              blinder: opening,
+            });
+            assertEquals(state.kind, "verified");
+            assertEquals(
+              BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
+              evidence.future,
+            );
+            const issuer = holder;
+            const registry = runtime.acdc!.makeRegistry("reverse-handoff", issuer.pre);
+            const rip = store.event(registry.regk!)!;
+            issuer.interact({ data: [{ i: registry.regk, s: "0", d: rip.said }] });
+            assertEquals(registry.anchorMsg(rip.said!).kind, "accept");
+            const info = custody.createCustody(registry.regk!, evidence.controller);
+            const reverseCredential = acdcmap(issuer.pre, {
+              regid: registry.regk!,
+              attribute: { d: "", i: info.discloser, role: "reverse-custody-holder" },
+            });
+            const issuee = hby.db.getKever(info.discloser)!;
+            const bound = { bound: true, bsn: issuee.sn, bd: issuee.serder.said! };
+            const reverseOpening = custody.derive(
+              registry.regk!,
+              1,
+              reverseCredential.said!,
+              "issued",
+              bound,
+            ) as BoundState;
+            const reverseUpdate = blindate(registry.regk!, rip.said!, reverseOpening.d.nonce);
+            custody.retainDerivedUpdate(reverseUpdate, reverseOpening);
+            assertEquals(registry.processEvent(reverseUpdate).kind, "escrow");
+            issuer.interact({ data: [{ i: registry.regk, s: "1", d: reverseUpdate.said }] });
+            assertEquals(registry.anchorMsg(reverseUpdate.said!).kind, "accept");
+            assertEquals(store.opening(reverseUpdate.said!), null, "reverse custody is not public proof publication");
+            const reverseReply = saltService.makeReply(issuer, registry.regk!, info.discloser);
+            const reverse = {
+              root: `${ctx.home}/python`,
+              essr,
+              saltReply: t(
+                essr
+                  ? essrEnvelope(
+                    issuer,
+                    issuer.endorse(reverseReply, { pipelined: false, gvrsn: Vrsn_2_0 }),
+                    info.discloser,
+                    hby.db.getKever(info.discloser)!.verfers[0],
+                  )
+                  : issuer.endorse(reverseReply),
+              ),
+              info,
+              credential: t(reverseCredential.raw),
+              update: reverseUpdate.said,
+              bsn: Number(bound.bsn),
+              bd: bound.bd,
+              tel: t(store.cloneTel(registry.regk!)),
+              kel: [0, 1, 2].map((sn) => t(acceptedEventReplayMessage(hby, issuer.pre, sn, Vrsn_2_0).message)).join(""),
+            };
+            const expected = {
+              opening: BoundState.qb64(reverseOpening),
+              future: BlindState.qb64(
+                custody.derive(registry.regk!, 17, reverseCredential.said!, "revoked") as BlindState,
+              ),
+              update: reverseUpdate.said,
+              state: "issued",
+            };
+            for (const receive of ["import", "reopen"]) {
+              yield* call(() => Deno.writeTextFile(requestPath, JSON.stringify({ ...reverse, receive })));
+              const result = yield* call(() => runCmd(ctx.pythonCommand, [peer, "custody", requestPath], ctx.env));
+              assertEquals(result.code, 0, result.stderr);
+              assertEquals(JSON.parse(result.stdout), expected, `TS custody survives Python ${receive}`);
+            }
+          } finally {
+            yield* call(() => server.shutdown());
+            yield* call(() => handler.close?.());
+            yield* db.close();
+            yield* runtime.close();
+            yield* hby.close();
           }
-        } finally {
-          yield* call(() => server.shutdown());
-          yield* call(() => handler.close?.());
-          yield* db.close();
-          yield* runtime.close();
-          yield* hby.close();
-        }
-      });
-      await run(function* () {
-        const hby = yield* createHabery(options);
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-        const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
-        try {
-          const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
-          const update = new SerderACDC({ raw: b(evidence.updates[0]) });
-          assertEquals(
-            BoundState.qb64(custody.derivedOpening(update) as BoundState),
-            BoundState.qb64(BoundState.fromSad(evidence.opening)),
-          );
-          assertEquals(store.opening(update.said!), null);
-          const successor = parseBytes(b(evidence.publicUpdate))[0];
-          assertEquals(store.head(evidence.registry)!.qb64, successor.body.said);
-          assert(store.opening(successor.body.said!) !== null, "separately published public successor survives reopen");
-          const credential = new SerderACDC({ raw: b(evidence.credential) });
-          assertEquals(
-            BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
-            evidence.future,
-          );
-        } finally {
-          yield* db.close();
-          yield* runtime.close();
-          yield* hby.close();
-        }
-      });
-    } finally {
-      await Deno.remove(ctx.home, { recursive: true });
-    }
-  },
-});
+        });
+        await run(function* () {
+          const hby = yield* createHabery(options);
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+          const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
+          try {
+            const store = runtime.acdc!.store, custody = new RegistryCustody({ hby, registry: store, db });
+            const update = new SerderACDC({ raw: b(evidence.updates[0]) });
+            assertEquals(
+              BoundState.qb64(custody.derivedOpening(update) as BoundState),
+              BoundState.qb64(BoundState.fromSad(evidence.opening)),
+            );
+            assertEquals(store.opening(update.said!), null);
+            const successor = parseBytes(b(evidence.publicUpdate))[0];
+            assertEquals(store.head(evidence.registry)!.qb64, successor.body.said);
+            assert(
+              store.opening(successor.body.said!) !== null,
+              "separately published public successor survives reopen",
+            );
+            const credential = new SerderACDC({ raw: b(evidence.credential) });
+            assertEquals(
+              BlindState.qb64(custody.derive(evidence.registry, 17, credential.said!, "revoked") as BlindState),
+              evidence.future,
+            );
+          } finally {
+            yield* db.close();
+            yield* runtime.close();
+            yield* hby.close();
+          }
+        });
+      } finally {
+        await Deno.remove(ctx.home, { recursive: true });
+      }
+    },
+  });
+}
 
 /** The selected service sources are explicit candidate inputs, separate from their declared core pins. */
 async function serviceReady(path: string, child: SpawnedChild) {

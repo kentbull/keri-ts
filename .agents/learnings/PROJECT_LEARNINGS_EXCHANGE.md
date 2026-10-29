@@ -66,6 +66,9 @@ TMSC opener plus lifetime differs from the receiver receipt. Equality is eligibl
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
+ESSR envelope body version and stream genus are distinct. A v1 outer EXN
+carrying a native v2 reply declares genus 2; the exact inner reply starts at its
+body, without another genus prefix. KERIpy reply dispatch inherits stream genus.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership

@@ -9,7 +9,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from keri import Vrsn_2_0
+from keri import Vrsn_1_0, Vrsn_2_0
 from keri.acdc.messaging import acdcmap, blindate, regcept
 from keri.acdc.regeventing import vet, vetBinds
 from keri.app import openHby
@@ -118,6 +118,10 @@ def custody_handoff(request):
             service = RegistrySaltService(hby, rgy, custody, Revery(db=hby.db))
             salt_reply = service.makeReply(issuer, registry.regk, request["discloser"])
             salt_wire = issuer.endorse(salt_reply, last=False, framed=False, gvrsn=Vrsn_2_0)
+            if request.get("essr"):
+                from keri.app.essring import envelope
+                salt_wire = envelope(issuer, salt_wire, request["discloser"],
+                                     issuee.verfers[0], version=Vrsn_1_0)
             published = bytes(successor.raw) + bytes(Counter.enclose(
                 qb64=Blinder.enclose([public]), code=Codens.AttachmentGroup, version=Vrsn_2_0))
             return dict(saltReply=bytes(salt_wire).decode(), registry=registry.regk, controller=issuer.pre, discloser=request["discloser"],
@@ -164,7 +168,14 @@ def custody_receive(request):
                     raise AssertionError("reverse receiver unexpectedly had custody before import")
                 rvy = Revery(db=hby.db)
                 RegistrySaltService(hby, rgy, custody, rvy).register()
-                Parser(version=Vrsn_2_0, rvy=rvy).parse(ims=bytearray(request["saltReply"].encode()))
+                parser = Parser(version=Vrsn_2_0, rvy=rvy)
+                if request.get("essr"):
+                    from keri.app.essring import EssrReplyHandler
+                    from keri.peer import Exchanger
+                    member = hby.habByPre(info["discloser"])
+                    parser.exc = Exchanger(hby, handlers=[EssrReplyHandler(
+                        hby, member, parser, {'/registry/salt'})])
+                parser.parse(ims=bytearray(request["saltReply"].encode()))
             else:
                 assert request["receive"] == "reopen"
             rip = rgy.store.seqEvent(info["registry"], 0)

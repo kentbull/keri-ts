@@ -1,4 +1,5 @@
 /** Operator-selected encrypted salt replies using ordinary protocol owners. */
+import { Vrsn_2_0 } from "cesr-ts";
 import { startServer } from "@keri-ts/hosting";
 import { RegistryCustody, RegistrySaltService } from "@keri-ts/wallet";
 import { call, type Operation, scoped, spawn } from "effection";
@@ -77,7 +78,8 @@ export function* registrySaltCommand(args: Record<string, unknown>): Operation<v
       }
       if (operation === "send") {
         const body = service.makeReply(hab, registry, party!, target);
-        let wire = hab.endorse(body);
+        // ESSR supplies the stream genus outside the exact signed inner reply.
+        let wire = hab.endorse(body, { pipelined: false, gvrsn: Vrsn_2_0, genusify: !essr });
         if (essr) {
           const destination = target ?? party!;
           const key = hby.db.getKever(destination)?.verfers[0];
