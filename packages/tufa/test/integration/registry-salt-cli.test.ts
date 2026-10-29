@@ -4,7 +4,7 @@ import { concatBytes, Counter, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { createAgentRuntime, createHabery, FetchHttpClient, systemClock } from "keri-ts/runtime";
-import { runTufa } from "../test-helpers.ts";
+import { runTufa, spawnTufa } from "../test-helpers.ts";
 
 Deno.test("tufa salt replies retain matching derivation across separate commands", async () => {
   const directory = await Deno.makeTempDir({ prefix: "salt-cli-" });
@@ -72,6 +72,47 @@ Deno.test("tufa salt replies retain matching derivation across separate commands
     ]);
     assertEquals(sent.code, 0, sent.stderr);
     assertEquals(JSON.parse(sent.stdout).submitted, false);
+    const server = spawnTufa([...args("holder", "serve"), "--port", "0", "--evidence", `${directory}/evidence.cesr`]);
+    const errors = new Response(server.stderr).text();
+    const reader = server.stdout.pipeThrough(new TextDecoderStream()).getReader();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("Salt listener did not start")), 15000);
+      });
+      let text = "", port: number | undefined;
+      while (port === undefined) {
+        const chunk = await Promise.race([reader.read(), timeout]);
+        if (chunk.done) throw new Error(`Salt listener stopped: ${text}`);
+        text += chunk.value;
+        for (const line of text.split("\n")) {
+          if (line.startsWith('{"listening":') && line.endsWith("}")) port = JSON.parse(line).listening.port;
+        }
+      }
+      clearTimeout(timer);
+      const submitted = await runTufa([
+        ...args("issuer", "send"),
+        "--party",
+        fixture.recipient,
+        "--endpoint",
+        `http://127.0.0.1:${port}/`,
+        "--timeout",
+        "5",
+      ]);
+      assertEquals(submitted.code, 0, submitted.stderr);
+      assertEquals(JSON.parse(submitted.stdout).submitted, true);
+    } finally {
+      clearTimeout(timer);
+      server.kill("SIGTERM");
+      // Drain output while the existing server owner joins listener/worker cleanup.
+      while (!(await reader.read()).done) { /* diagnostic output only */ }
+      reader.releaseLock();
+      assertEquals((await server.status).code, 0, await errors);
+    }
+    // Reopen after HTTP delivery: successful submission alone is not acceptance.
+    const delivered = await runTufa(args("holder", "status"));
+    assertEquals(delivered.code, 0, delivered.stderr);
+    assertEquals(JSON.parse(delivered.stdout).custody_present, true);
     const received = await runTufa([
       ...args("holder", "receive"),
       "--evidence",

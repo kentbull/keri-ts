@@ -48,17 +48,25 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
 
   const registry = vc.command("registry").description("Credential registry operations");
   const salt = registry.command("salt").description("Encrypted ACDC v2 registry salt replies");
-  for (const operation of ["send", "receive", "status"] as const) {
+  for (const operation of ["send", "receive", "status", "serve"] as const) {
     const command = addHabOption(addStoreOptions(salt.command(operation)))
       .requiredOption("--registry <said>", "Accepted registry inception SAID")
       .option("--evidence <file>", "Public CESR evidence file", collectOption, []);
     if (operation === "send") {
       command.requiredOption("--party <aid>", "Logical salt recipient")
         .option("--target <aid>", "Individual recipient member")
-        .requiredOption(
+        .option(
           "--output <file>",
           "New signed encrypted reply file (group output is a signature contribution)",
-        );
+        )
+        .option("--endpoint <url>", "HTTP(S) CESR intake endpoint")
+        .option("--timeout <seconds>", "Finite transport deadline (default: 30)");
+    }
+    if (operation === "serve") {
+      command.option("--host <host>", "Listen host (default: 127.0.0.1)").option(
+        "--port <port>",
+        "HTTP port (default: 7723)",
+      );
     }
     if (operation === "receive") command.requiredOption("--input <file>", "Signed encrypted reply file");
     registerDispatchedCommand(command, dispatch, {
