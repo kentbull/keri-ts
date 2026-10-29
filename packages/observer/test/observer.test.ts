@@ -99,8 +99,10 @@ Deno.test("observer isolates source scopes and serves accepted cached heads over
       assertEquals(yield* service.pullOnce(observerHab, { timeoutMs: 1000 }), 2);
       const fresh = yield* read(first.rip.said!);
       assertEquals(fresh.status, 200);
-      assert(parseBytes(fresh.body)
-        .some(frame => frame.body.said === first.update.said));
+      assert(
+        parseBytes(fresh.body)
+          .some(frame => frame.body.said === first.update.said),
+      );
       const beforeQueries = [requestsA, requestsB];
       assertEquals((yield* read(other.rip.said!)).status, 200);
       assertEquals([requestsA, requestsB], beforeQueries, "cache queries cannot cause a registrar pull");
@@ -151,8 +153,10 @@ Deno.test("observer isolates source scopes and serves accepted cached heads over
       now += 10;
       assertEquals(yield* service.pullOnce(observerHab, { timeoutMs: 1000 }), 2);
       const advanced = yield* read(first.rip.said!);
-      assert(parseBytes(advanced.body)
-        .some(frame => frame.body.said === successor.said));
+      assert(
+        parseBytes(advanced.body)
+          .some(frame => frame.body.said === successor.said),
+      );
       bodyB = concatBytes(other.raw, complete);
       now += 10;
       yield* service.pullOnce(observerHab, { timeoutMs: 1000 });

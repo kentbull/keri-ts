@@ -105,10 +105,10 @@ export class EssrRecipient {
     if (serder.said !== said) throw new Error("Stored ESSR exchange SAID does not match its key");
     const modifiers = serder.ked?.q as Record<string, unknown> | undefined;
     if (
-      serder.ilk !== "exn" || serder.route !== "/essr/req" ||
-      !serder.pre || modifiers?.src !== serder.pre ||
-      modifiers?.dest !== this.hab.pre || !this.hab.db.prefixes.has(this.hab.pre) ||
-      typeof serder.a !== "string"
+      serder.ilk !== "exn" || serder.route !== "/essr/req"
+      || !serder.pre || modifiers?.src !== serder.pre
+      || modifiers?.dest !== this.hab.pre || !this.hab.db.prefixes.has(this.hab.pre)
+      || typeof serder.a !== "string"
     ) return { kind: "reject", reason: "envelope" };
     const verfer = this.hab.kever?.verfers[0];
     if (!verfer) throw new Error("ESSR recipient has no accepted verification key");

@@ -143,8 +143,7 @@ attributes map current member AIDs to CESR encrypted salt copies. Those copies
 are separate from event-specific public opening attachments and confer no group
 signing authority. The ordinary member threshold still determines acceptance.
 The protocol coordinator validates and preserves ciphertexts; the application
-owns decryption and local custody retention. `multisig join --v2 --group NAME
---said EXN` selects one retained authenticated proposal. Tufa opens optional
+owns decryption and local custody retention. `multisig join --v2 --group NAME --said EXN` selects one retained authenticated proposal. Tufa opens optional
 custody only when encrypted copies are present, decrypts its member copy before
 approval, and retains it after exact TEL acceptance. The command uses ordinary
 runtime workers and finite transport; it adds no replay store or delivery ledger.

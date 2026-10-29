@@ -127,8 +127,8 @@ export function* approveAcdcV2Registry(
   const seal = { s: event.sad!.n, d: event.said! };
   const retained = registry.store.anchor(event.said!);
   if (
-    !anchor && retained &&
-    verifyRegistryAnchor(checked.event, { db: hby.db, issuer: group.pre, number: retained[0], diger: retained[1] })
+    !anchor && retained
+    && verifyRegistryAnchor(checked.event, { db: hby.db, issuer: group.pre, number: retained[0], diger: retained[1] })
   ) {
     anchor = hby.db.getEvtSerder(group.pre, retained[1].qb64) ?? undefined;
   }
@@ -142,9 +142,9 @@ export function* approveAcdcV2Registry(
     }
   }
   if (
-    anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0 ||
-    anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") ||
-    JSON.stringify(anchor.sad!.a) !== JSON.stringify([seal])
+    anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0
+    || anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
+    || JSON.stringify(anchor.sad!.a) !== JSON.stringify([seal])
   ) throw new ValidationError("Group anchor must exclusively seal the exact proposed TEL.");
   const keys = groupEventKeys(hby, group.pre, anchor);
   const sigers = signLocalGroupEvent(hby, anchor, groupSigningMembers(hby, group.pre), keys);
@@ -347,8 +347,8 @@ function pendingMultisigProposals(
     if (!exn?.ked) continue;
     const route = exn.route ?? "";
     if (
-      !isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && route !== MULTISIG_RIP_ROUTE &&
-      route !== MULTISIG_BUP_ROUTE
+      !isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && route !== MULTISIG_RIP_ROUTE
+      && route !== MULTISIG_BUP_ROUTE
     ) {
       continue;
     }
@@ -847,8 +847,8 @@ function approveCredentialIssue(
   vry.processEscrows();
 
   rgy.publication.track(iserder, anchorSerder);
-  return credentialer.complete(requireCredentialSaid(creder)) ||
-    reger.saved.get([requireCredentialSaid(creder)]) !== null;
+  return credentialer.complete(requireCredentialSaid(creder))
+    || reger.saved.get([requireCredentialSaid(creder)]) !== null;
 }
 
 function registerRegistry(

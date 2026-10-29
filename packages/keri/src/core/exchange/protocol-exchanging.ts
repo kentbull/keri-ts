@@ -25,12 +25,12 @@ export type IpexVerb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn"
 
 /** Narrow a wire route component before consulting version-specific policy. */
 export function isIpexVerb(value: string): value is IpexVerb {
-  return value === "apply" ||
-    value === "offer" ||
-    value === "agree" ||
-    value === "grant" ||
-    value === "admit" ||
-    value === "spurn";
+  return value === "apply"
+    || value === "offer"
+    || value === "agree"
+    || value === "grant"
+    || value === "admit"
+    || value === "spurn";
 }
 
 /** KERIpy acdc.ipexing PreviousRoutes, shared by v2 construction and accepted-conversation verification. */

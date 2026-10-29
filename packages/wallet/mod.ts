@@ -7,6 +7,6 @@ export {
   type PreparedGrantBody,
   WalletDiscloser,
 } from "./src/disclosing.ts";
+export { RegistrySaltService } from "./src/salting.ts";
 export { type AdmittedCredential, createWalletBaser, type IssuedCredential, WalletBaser } from "./src/storing.ts";
 export { type HeldCredential, type PreparedAdmit, Wallet, type WalletOptions } from "./src/wallet.ts";
-export { RegistrySaltService } from "./src/salting.ts";

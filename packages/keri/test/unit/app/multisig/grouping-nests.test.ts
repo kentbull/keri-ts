@@ -157,7 +157,7 @@ async function learn(target: Habery, member: Hab): Promise<void> {
 async function participants(
   test: (left: Habery, right: Habery, alice: Hab, bob: Hab, notifier: Notifier) => void | Promise<void>,
 ) {
-  await run(function* () {
+  await run(function*() {
     const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const right = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(left);
@@ -180,7 +180,7 @@ Deno.test("multisig replay borrows the configured reply owner and its applicatio
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
         yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
@@ -247,7 +247,7 @@ Deno.test("group reply inspection gates policy and preserves the exact retained 
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
         yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
@@ -324,7 +324,7 @@ for (const version of [Vrsn_1_0, Vrsn_2_0]) {
       const mids = [alice.pre, bob.pre];
       const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-      await run(function* () {
+      await run(function*() {
         const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
         try {
           yield* runtime.reactor.processBytes(
@@ -450,7 +450,7 @@ for (const version of [Vrsn_1_0, Vrsn_2_0]) {
       const mids = [alice.pre, bob.pre];
       const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-      await run(function* () {
+      await run(function*() {
         const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
         try {
           yield* runtime.reactor.processBytes(
@@ -475,11 +475,11 @@ for (const version of [Vrsn_1_0, Vrsn_2_0]) {
           );
           yield* runtime.reactor.processBytes(signGroupMessage(bob, alice.pre, prepared).message, { local: true });
           const sent: Uint8Array[] = [];
-          runtime.postman.send = function (evt) {
+          runtime.postman.send = function(evt) {
             sent.push(evt.msg!);
             return { ...evt, kin: "msg" };
           };
-          runtime.postman.wait = function* (evt) {
+          runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test-transmission"] };
           };
           let prompted = 0;
@@ -541,14 +541,14 @@ Deno.test("multisig publication records its actual local proposal before deliver
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {
         let delivered: SerderKERI | undefined;
         // Only transmission is substituted; preparation, signing, intake and replay use real owners.
-        runtime.postman.send = function (evt) {
+        runtime.postman.send = function(evt) {
           const serder = new SerderKERI({ raw: evt.msg });
           assertEquals(evt.src, alice.pre);
           assertEquals(evt.dest, bob.pre);
@@ -563,7 +563,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
           delivered = serder;
           return { ...evt, kin: "msg" };
         };
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test-transmission"] };
         };
         const publication = yield* publishProposal(left, runtime.protocol, runtime.postman, alice, mids, {
@@ -619,7 +619,7 @@ for (const localSender of [false, true]) {
       const mids = [alice.pre, bob.pre];
       const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
       const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-      await run(function* () {
+      await run(function*() {
         let runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
         try {
           const sender = localSender ? alice : bob;
@@ -638,7 +638,7 @@ for (const localSender of [false, true]) {
           const handler = runtime.exc.routes.get("/multisig/icp")!;
           const handle = handler.handle;
           const fault = new Error("interrupted before Multiplexor indexing");
-          handler.handle = function* () {
+          handler.handle = function*() {
             throw fault;
           };
           try {
@@ -655,7 +655,7 @@ for (const localSender of [false, true]) {
           yield* left.db.reopen();
           runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
           runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
-          runtime.postman.wait = function* (evt) {
+          runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
           };
           let prompts = 0;
@@ -720,12 +720,12 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
       try {
-        runtime.postman.send = function (evt) {
+        runtime.postman.send = function(evt) {
           const serder = new SerderKERI({ raw: evt.msg });
           if (serder.route === "/multisig/icp") {
             assertEquals(serder.ked!.a, {
@@ -758,7 +758,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
           }
           return { ...evt, kin: "msg" };
         };
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const [peer, paths] = exchange("/multisig/icp", {
@@ -1041,7 +1041,7 @@ Deno.test("multisig peer evidence arriving during approval replay needs no secon
       resume = resolve;
     });
     const replay = Exchanger.prototype.replay;
-    Exchanger.prototype.replay = async function* (said, signal) {
+    Exchanger.prototype.replay = async function*(said, signal) {
       if (said === first.serder.said) {
         entered();
         await gate;
@@ -1093,7 +1093,7 @@ for (const remoteFirst of [false, true]) {
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, remoteFirst ? 1 : 0);
         // No in-memory approval or child cache may be required after the database closes.
-        await run(function* () {
+        await run(function*() {
           yield* left.db.reopen();
         });
         exchanger = new Exchanger(left);
@@ -1282,7 +1282,7 @@ Deno.test("nested multisig sender escrow survives reopen and rejects invalid com
         assertExists(left.db.epse.get([input.serder.said!]));
         assertEquals(left.db.enst.get([input.serder.said!]).length, 1);
       }
-      await run(function* () {
+      await run(function*() {
         yield* left.db.reopen();
       });
       left.db.evts.pin([bob.pre, establishment.said!], establishment);
@@ -1441,15 +1441,15 @@ for (const route of ["ixn", "vcp"] as const) {
           ? { vcp: registry.raw, anc: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) }
           : { ixn: messagize(event.serder, { sigers: event.sigers, gvrsn: Vrsn_1_0 }) },
       });
-      await run(function* () {
+      await run(function*() {
         const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
           notifier,
         });
         try {
-          runtime.postman.send = function (evt) {
+          runtime.postman.send = function(evt) {
             return { ...evt, kin: "msg" };
           };
-          runtime.postman.wait = function* (evt) {
+          runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
           };
           yield* runtime.reactor.processBytes(concatBytes(bob.endorse(wrapper, { pipelined: false }), attachments), {
@@ -1490,7 +1490,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
       sender: bob.pre,
       embeds: { iss: issuance.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
     });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
@@ -1527,7 +1527,7 @@ for (const kind of ["apply", "grant"] as const) {
         const mids = [alice.pre, bob.pre];
         const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
         const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-        await run(function* () {
+        await run(function*() {
           const runtime = yield* createAgentRuntime(
             left,
             new FetchHttpClient(),
@@ -1588,7 +1588,7 @@ for (const kind of ["apply", "grant"] as const) {
             const partial = groupIpexPartial(right, remote.hab, embedded, attachments, genus);
             const hint = genus.major === 2 ? { cgvrsn: [2, 0] } : {};
             let initial: { serder: SerderKERI; message: Uint8Array } | undefined;
-            peerRuntime.postman.sendStream = function (evt) {
+            peerRuntime.postman.sendStream = function(evt) {
               const message = concatBytes(...evt.msgs), serder = new SerderKERI({ raw: message });
               assertEquals(
                 right.db.exns.get([serder.said!])?.raw,
@@ -1600,7 +1600,7 @@ for (const kind of ["apply", "grant"] as const) {
             };
             let refuse = kind === "apply" && genus.major === 1;
             const refusal = new Error("initial IPEX delivery failed");
-            peerRuntime.postman.wait = function* (evt) {
+            peerRuntime.postman.wait = function*(evt) {
               if (refuse) {
                 refuse = false;
                 return { kin: "failed", evt, error: refusal, deliveries: [] };
@@ -1648,7 +1648,7 @@ for (const kind of ["apply", "grant"] as const) {
             yield* runtime.reactor.processBytes(initial.message, { local: true });
             let outgoing: { serder: SerderKERI; message: Uint8Array } | undefined;
             // Substitute transmission only; the peer admits the actual signed outgoing bytes below.
-            runtime.postman.send = function (evt) {
+            runtime.postman.send = function(evt) {
               const serder = new SerderKERI({ raw: evt.msg });
               assertEquals(serder.ked!.a, { gid: local.hab.pre, ...hint, i: bob.pre });
               assertEquals(
@@ -1659,7 +1659,7 @@ for (const kind of ["apply", "grant"] as const) {
               outgoing = { serder: serder, message: evt.msg };
               return { ...evt, kin: "msg" };
             };
-            runtime.postman.wait = function* (evt) {
+            runtime.postman.wait = function*(evt) {
               return { kin: "sent", evt, deliveries: ["test"] };
             };
             if (kind === "grant") {
@@ -1739,7 +1739,7 @@ for (const kind of ["apply", "grant"] as const) {
               const handler = runtime.exc.routes.get("/multisig/exn")!, handle = handler.handle;
               const fault = new Error("interrupted before IPEX approval indexing");
               let interrupted: SerderKERI | undefined;
-              handler.handle = function* (args) {
+              handler.handle = function*(args) {
                 if (args.serder.pre === alice.pre) {
                   interrupted = args.serder;
                   throw fault;
@@ -1846,7 +1846,7 @@ Deno.test("group IPEX reuses a verified pending contribution after reopen instea
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
       try {
         yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
@@ -1900,7 +1900,7 @@ Deno.test("group TEL publication retains the original pending anchor across reop
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
         yield* runtime.reactor.processBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }), {
@@ -1908,7 +1908,7 @@ Deno.test("group TEL publication retains the original pending anchor across reop
         });
         yield* call(() => learn(right, local.hab));
         runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const result = yield* inceptCredentialRegistry(runtime.vdr!, runtime.reactor, runtime.postman, local.hab, {
@@ -2002,11 +2002,11 @@ Deno.test("group establishment-only registry inception, issuance and revocation 
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
     right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
         runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         // Participants advance their own KELs before a group establishment adopts those keys.
@@ -2069,11 +2069,11 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
     const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
       try {
         runtime.postman.send = (evt) => ({ ...evt, kin: "msg" });
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
         const rgy = runtime.vdr!;
@@ -2117,7 +2117,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         });
 
         /** Store an authenticated peer wrapper without lending its signature to the group anchor. */
-        const submit = function* (creder: SerderACDC, wrongSource = false, wrongPredecessor = false) {
+        const submit = function*(creder: SerderACDC, wrongSource = false, wrongPredecessor = false) {
           const issued = issueCredential(creder.said!, registry.registry!);
           const predecessor = wrongPredecessor ? bob.kever!.said : local.hab.kever!.said;
           const anchor = interactEvent(local.hab.pre, predecessor, local.hab.kever!.sn + 1, [{
@@ -2275,7 +2275,7 @@ Deno.test("VDR approval without a registry preserves decline and fails before ac
       sender: bob.pre,
       embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_1_0 }) },
     });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, {
         notifier,
       });
@@ -2316,17 +2316,17 @@ Deno.test("group credential producers publish typed evidence and usable proposal
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
     right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
-    await run(function* () {
+    await run(function*() {
       const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
       const peerRuntime = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
       try {
         const wires: Uint8Array[] = [];
-        runtime.postman.send = function (evt) {
+        runtime.postman.send = function(evt) {
           assertEquals(evt.dest, bob.pre);
           wires.push(evt.msg);
           return { ...evt, kin: "msg" };
         };
-        runtime.postman.wait = function* (evt) {
+        runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["peer"] };
         };
         const registry = yield* inceptCredentialRegistry(runtime.vdr!, runtime.reactor, runtime.postman, local.hab, {
@@ -2388,7 +2388,7 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
     const members = [alice.pre, bob.pre];
     const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "2", nsith: "2" });
     const remote = right.makeGroupHab("acdc-v2-group", bob, members, members, undefined, { isith: "2", nsith: "2" });
-    await run(function* () {
+    await run(function*() {
       const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
       const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
       try {
@@ -2399,12 +2399,19 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           );
         }
         const rip = acdcV2Regcept(local.hab.pre);
-        const anchor = right.interactGroupHab("acdc-v2-group", undefined,
-          { data: [{ s: "0", d: rip.said! }], version: Vrsn_2_0 }).serder;
-        const legacyAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, 1,
-          [{ s: "0", d: rip.said! }], { version: Vrsn_1_0 });
-        yield* call(() => assertRejects(() => run(() => approveAcdcV2Registry(left, receiver.protocol, local.hab, rip,
-          { anchor: legacyAnchor })), ValidationError, "exclusively seal"));
+        const anchor =
+          right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }], version: Vrsn_2_0 })
+            .serder;
+        const legacyAnchor = interactEvent(local.hab.pre, local.hab.kever!.said, 1, [{ s: "0", d: rip.said! }], {
+          version: Vrsn_1_0,
+        });
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approveAcdcV2Registry(left, receiver.protocol, local.hab, rip, { anchor: legacyAnchor })),
+            ValidationError,
+            "exclusively seal",
+          )
+        );
         const telFrame = parseBytes(
           concatBytes(
             rip.raw,
@@ -2538,7 +2545,7 @@ for (const verdict of ["true", "false", "unresolved"] as const) {
       const mids = [alice.pre, bob.pre];
       const local = left.makeGroupHab("acdc-v2-signing", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
       const remote = right.makeGroupHab("acdc-v2-signing", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
-      await run(function* () {
+      await run(function*() {
         const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
         const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
         try {

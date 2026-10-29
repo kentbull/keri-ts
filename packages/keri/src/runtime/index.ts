@@ -145,11 +145,12 @@ export {
   type PosterOutcome,
   type PosterStream,
 } from "../app/delivery/forwarding.ts";
+export { loadStoredReply } from "../app/delivery/stored-replies.ts";
 export {
   type EssrDecision,
+  essrEnvelope,
   type EssrMessage,
   EssrRecipient,
-  essrEnvelope,
 } from "../app/exchanges/essr.ts";
 export {
   createExchangeMessage,
@@ -304,14 +305,13 @@ export {
   type MultisigRoute,
   multisigRpyExn,
 } from "../app/multisig/grouping.ts";
+export { acdcV2RegistryProposal } from "../app/multisig/grouping.ts";
 export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
-export { acdcV2RegistryProposal } from "../app/multisig/grouping.ts";
-export { loadStoredReply } from "../app/delivery/stored-replies.ts";
-export { inspectReplyProposal, endorseReply } from "../app/multisig/reply-approval.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry, publishProposal } from "../app/multisig/multisig-workflows.ts";
+export { endorseReply, inspectReplyProposal } from "../app/multisig/reply-approval.ts";
 export {
   Notifier,
 } from "../app/notifications/notifying.ts";

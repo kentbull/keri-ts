@@ -182,12 +182,12 @@ export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly Cesr
   ) return null;
   const [tel, anchor] = nests.map((child) => child.body);
   if (
-    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI) ||
-    wrapper.route !== `/multisig/${tel.ilk}` || tel.pvrsn.major !== 2 ||
-    !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid ||
-    nests.some((child) => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc ||
-    !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre) ||
-    !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some((seal) => matchesRegistrySeal(seal, tel))
+    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI)
+    || wrapper.route !== `/multisig/${tel.ilk}` || tel.pvrsn.major !== 2
+    || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid
+    || nests.some((child) => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc
+    || !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre)
+    || !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some((seal) => matchesRegistrySeal(seal, tel))
   ) return null;
   try {
     validateRegistrySalts(payload.salts, isRecord(payload.salts) ? Object.keys(payload.salts) : []);
@@ -506,8 +506,8 @@ export function loadMultisigHandlers(
   exchanger: Exchanger,
   options: MultisigHandlerOptions = {},
 ): Multiplexor {
-  const mux = options.mux ??
-    new Multiplexor(hby, {
+  const mux = options.mux
+    ?? new Multiplexor(hby, {
       notifier: options.notifier ?? null,
       exchanger,
       registry: options.registry ?? undefined,
@@ -652,7 +652,7 @@ export class Multiplexor {
   private replayApproved(said: string): Operation<void> {
     // deno-lint-ignore no-this-alias -- Generator callbacks have no lexical this.
     const self = this;
-    return call(function* () {
+    return call(function*() {
       const controller = new AbortController();
       const signal = controller.signal;
       try {
@@ -660,7 +660,7 @@ export class Multiplexor {
         const frames = parse(self.replay.replay(said, signal));
         let pending: ReturnType<typeof frames.next> | undefined;
         // The earlier resource joins the read after processing children stop.
-        yield* ensure(function* () {
+        yield* ensure(function*() {
           try {
             if (pending) {
               try {
@@ -738,8 +738,8 @@ export class Multiplexor {
       const child = nests[0];
       const signed = multisigPayloadSaid(serder);
       if (
-        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "") ||
-        !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
+        typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
+        || !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }
@@ -908,9 +908,9 @@ function childGenusHint(attrs: unknown): Versionage | null | undefined {
   if (!isRecord(attrs) || attrs.cgvrsn === undefined) return undefined;
   const hint = attrs.cgvrsn;
   if (
-    !Array.isArray(hint) || hint.length !== 2 ||
-    (hint[0] !== 1 && hint[0] !== 2) ||
-    typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
+    !Array.isArray(hint) || hint.length !== 2
+    || (hint[0] !== 1 && hint[0] !== 2)
+    || typeof hint[1] !== "number" || !Number.isInteger(hint[1]) || hint[1] < 0 || hint[1] > 4095
   ) {
     return null;
   }

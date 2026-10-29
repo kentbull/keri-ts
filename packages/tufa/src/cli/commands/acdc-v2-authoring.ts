@@ -78,13 +78,13 @@ export function* acdcV2AuthorCommand(
     throw new ValidationError("ACDC v2 authoring --timeout must be positive.");
   }
   const result = yield* race([
-    (function* () {
+    (function*() {
       return yield* withHabAndAgentRuntime(
         walletStoreArgs(args),
         alias,
         { skipConfig: false },
-        function* ({ hby, runtime, hab }) {
-          return yield* scoped(function* () {
+        function*({ hby, runtime, hab }) {
+          return yield* scoped(function*() {
             if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
             const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
             const custody = withCustody || (operation !== "incept" && !publicOpening)
@@ -120,8 +120,8 @@ export function* acdcV2AuthorCommand(
                 // Resume the original signed proposal via join rather than generating
                 // another salt for an already proposed or accepted inception.
                 if (
-                  runtime.acdc.store.seqEvent(event.said!, 0) ||
-                  hby.db.pses.getLast(hab.pre, hab.kever!.sn + 1)
+                  runtime.acdc.store.seqEvent(event.said!, 0)
+                  || hby.db.pses.getLast(hab.pre, hab.kever!.sn + 1)
                 ) {
                   throw new ValidationError(
                     "Registry inception already exists; use multisig join --v2 --said for its retained proposal",
@@ -191,7 +191,7 @@ export function* acdcV2AuthorCommand(
         },
       );
     })(),
-    (function* () {
+    (function*() {
       yield* sleep(timeout * 1000);
       throw new ValidationError("ACDC v2 authoring timed out before authenticated acceptance.");
     })(),

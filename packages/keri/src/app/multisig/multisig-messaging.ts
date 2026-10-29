@@ -109,8 +109,8 @@ export function storedGroupMessage(
   for (const indexed of db.meids.get([payloadSaid])) {
     const stored = db.exns.get([indexed.qb64]);
     if (
-      !stored || stored.pre !== member || stored.route !== proposal.route ||
-      multisigPayloadSaid(stored) !== payloadSaid
+      !stored || stored.pre !== member || stored.route !== proposal.route
+      || multisigPayloadSaid(stored) !== payloadSaid
     ) continue;
     const destination = stored.pvrsn.major === 1 ? stored.ked?.rp : stored.ked?.ri;
     if (recipient !== undefined && destination !== recipient) continue;

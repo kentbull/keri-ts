@@ -64,8 +64,8 @@ export class RegistrySaltService {
         if (opened.kind !== "accept") throw new ValidationError("Invalid encrypted salt envelope");
         const frames = parseBytes(opened.message.body);
         if (
-          frames.length !== 1 || !(frames[0].body instanceof SerderKERI) || frames[0].body.ilk !== "rpy" ||
-          frames[0].body.route !== ROUTE
+          frames.length !== 1 || !(frames[0].body instanceof SerderKERI) || frames[0].body.ilk !== "rpy"
+          || frames[0].body.route !== ROUTE
         ) {
           throw new ValidationError("Encrypted salt envelope requires one registry salt reply");
         }
@@ -78,9 +78,9 @@ export class RegistrySaltService {
   validate(body: SerderKERI): { issuer: string; data: SaltPayload } {
     const attrs = body.ked?.a;
     if (
-      body.route !== ROUTE || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0 ||
-      !attrs || typeof attrs !== "object" || Array.isArray(attrs) ||
-      Object.keys(attrs).sort().join(",") !== "cipher,recipient,registry,target"
+      body.route !== ROUTE || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0
+      || !attrs || typeof attrs !== "object" || Array.isArray(attrs)
+      || Object.keys(attrs).sort().join(",") !== "cipher,recipient,registry,target"
     ) {
       throw new ValidationError("Invalid registry salt reply");
     }

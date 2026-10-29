@@ -4,6 +4,7 @@ import { createWalletBaser, RegistryCustody } from "@keri-ts/wallet";
 import { concatBytes, MtrDex, Salter } from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { loadNests } from "keri-ts/db";
 import {
   acdcV2RegistryProposal,
   approveAcdcV2Registry,
@@ -17,14 +18,13 @@ import {
   runAgentRuntime,
   systemClock,
 } from "keri-ts/runtime";
-import { loadNests } from "keri-ts/db";
 import { runTufa } from "../test-helpers.ts";
 
 Deno.test("tufa native registry join decrypts the selected proposal and persists custody after approval", async () => {
   const directory = await Deno.makeTempDir({ prefix: "native-registry-join-" });
   const passcode = "NativeRegistryJoinPasscode";
   try {
-    await run(function* () {
+    await run(function*() {
       const left = yield* createHabery({
         name: "issuer-left",
         headDirPath: directory,
@@ -128,7 +128,7 @@ Deno.test("tufa native group inception distributes one salt and refuses recreati
   const directory = await Deno.makeTempDir({ prefix: "native-registry-author-" });
   const passcode = "NativeRegistryAuthorPasscode";
   try {
-    await run(function* () {
+    await run(function*() {
       const left = yield* createHabery({ name: "author", headDirPath: directory, skipConfig: true, bran: passcode });
       const right = yield* createHabery({ name: "peer", headDirPath: directory, skipConfig: true, bran: passcode });
       const local = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);

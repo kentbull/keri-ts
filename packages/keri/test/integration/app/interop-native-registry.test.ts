@@ -27,9 +27,9 @@ import { Registrar } from "../../../../registrar/mod.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { vet, vetBinds } from "../../../src/acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../../src/acdc/registering.ts";
+import { essrEnvelope } from "../../../src/app/exchanges/essr.ts";
 import { acceptedEventReplayMessage, createHabery } from "../../../src/app/identity/habbing.ts";
 import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
-import { essrEnvelope } from "../../../src/app/exchanges/essr.ts";
 import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
@@ -72,7 +72,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
     const [published] = parseBytes(b(evidence.publicUpdate));
     assertEquals(BoundState.qb64(envelopeFromFrame(published).bsss[0]), BoundState.qb64(blinder));
     assertEquals(blinder.d.code, "I", "Python author exercises the SHA-256 opening boundary");
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       const handler = createProtocolHandler(runtime);
@@ -98,7 +98,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
         yield* hby.close();
       }
     });
-    await run(function* () {
+    await run(function*() {
       const hby = yield* createHabery(options);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -141,7 +141,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
-    const evidence = await run(function* () {
+    const evidence = await run(function*() {
       const hby = yield* createHabery({ name: "native-author", temp: true, skipConfig: true });
       try {
         const issuer = hby.makeHab("issuer");
@@ -206,7 +206,7 @@ for (const essr of [false, true]) {
         future: string;
       };
       try {
-        await run(function* () {
+        await run(function*() {
           const hby = yield* createHabery(options);
           const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
           const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
@@ -342,7 +342,7 @@ for (const essr of [false, true]) {
             yield* hby.close();
           }
         });
-        await run(function* () {
+        await run(function*() {
           const hby = yield* createHabery(options);
           const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
           const db = yield* createWalletBaser({ name: options.name, headDirPath: ctx.home });
@@ -397,7 +397,7 @@ async function serviceReady(path: string, child: SpawnedChild) {
 Deno.test("interop/native-registry - Python registrar publication reaches TS observer cache over TLS", async () => {
   const ctx = await createInteropContext();
   try {
-    await run(function* () {
+    await run(function*() {
       const authorHby = yield* createHabery({ name: "service-author", headDirPath: ctx.home, skipConfig: true });
       const cacheHby = yield* createHabery({ name: "service-cache", headDirPath: ctx.home, skipConfig: true });
       const publisher = authorHby.makeHab("publisher"),
@@ -485,7 +485,7 @@ Deno.test("interop/native-registry - Python registrar publication reaches TS obs
 Deno.test("interop/native-registry - TS registrar feeds selected Python observer scheduled TLS cache", async () => {
   const ctx = await createInteropContext();
   try {
-    await run(function* () {
+    await run(function*() {
       const hostHby = yield* createHabery({ name: "service-host", headDirPath: ctx.home, skipConfig: true });
       const readerHby = yield* createHabery({ name: "service-reader", headDirPath: ctx.home, skipConfig: true });
       const issuer = hostHby.makeHab("issuer"), reader = readerHby.makeHab("reader");

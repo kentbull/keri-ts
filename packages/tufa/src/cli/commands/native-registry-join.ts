@@ -37,13 +37,13 @@ export function* nativeRegistryJoinCommand(args: Record<string, unknown>): Opera
   if (!group || !said) throw new ValidationError("Native registry join requires --group and --said");
   if (!Number.isFinite(seconds) || seconds <= 0) throw new ValidationError("Approval timeout must be positive");
   return yield* race([
-    (function* () {
+    (function*() {
       return yield* withHabAndAgentRuntime(
         walletStoreArgs(args),
         group,
         { skipConfig: false },
-        function* ({ hby, runtime, hab }) {
-          return yield* scoped(function* () {
+        function*({ hby, runtime, hab }) {
+          return yield* scoped(function*() {
             if (!isLocalGroupHab(hby, hab) || !runtime.acdc) {
               throw new ValidationError("Native registry join requires an existing local group and registry owner");
             }
@@ -90,8 +90,8 @@ export function* nativeRegistryJoinCommand(args: Record<string, unknown>): Opera
             }
             const nests = loadNests(hby.db, said), selected = acdcV2RegistryProposal(wrapper, nests);
             if (
-              !selected || selected.anchor.pre !== hab.pre ||
-              !groupSigningMembers(hby, hab.pre).includes(wrapper.pre!)
+              !selected || selected.anchor.pre !== hab.pre
+              || !groupSigningMembers(hby, hab.pre).includes(wrapper.pre!)
             ) {
               throw new ValidationError("Registry proposal does not belong to this signing group");
             }
@@ -127,7 +127,7 @@ export function* nativeRegistryJoinCommand(args: Record<string, unknown>): Opera
         },
       );
     })(),
-    (function* (): Operation<never> {
+    (function*(): Operation<never> {
       yield* sleep(seconds * 1000);
       throw new ValidationError("Native registry approval timed out before authenticated acceptance");
     })(),

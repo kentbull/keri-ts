@@ -3,9 +3,9 @@ import { build, emptyDir } from "@deno/dnt";
 import {
   assertPackagePathExists,
   findGeneratedEntrypoint,
+  listFilesSync,
   readPackageVersionSync,
   removeIfExistsSync,
-  listFilesSync,
   setIgnoreScriptsDefault,
   writeJsonFileSync,
 } from "../../../scripts/npm/dnt-helpers.ts";
