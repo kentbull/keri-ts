@@ -9,7 +9,8 @@ limit. Neither interface depends on a filesystem or database.
 sink returns an owner. Memory disposal releases its slabs; file disposal removes
 its file. Views become invalid when their owner is discarded.
 
-`PayloadStore` stages files using private permissions and generated IDs. Each
+`PayloadStore` uses Deno filesystem APIs and `@std/path`. It stages files using
+private permissions and temporary Web Crypto UUID names. Each
 write must be awaited; a sink rejects concurrent operations instead of growing
 an internal write queue. It handles partial writes and closes its descriptor on
 completion or abort. Cancellation waits for the current bounded file operation
@@ -20,8 +21,13 @@ The ownership sequence is:
 1. `store.stage(maxBytes, signal)` returns an unfinished sink owned by the caller.
 2. `sink.finish()` flushes and closes the file, transferring ownership to the
    returned `FilePayload`. The caller must promote or discard that result.
-3. `payload.promote()` atomically moves the file into the store's object directory.
-   Its generated ID can then be retained and reopened with `store.open(id)`.
+3. `payload.promote(id)` publishes under a caller-supplied SAID or scoped digest
+   name, then removes the temporary stage. A hard link makes the complete file
+   visible atomically and rejects an existing name instead of overwriting it.
+   `payload.id` becomes that final identity, reopened with `store.open(id)`.
+   Prefix separate representations such as `essr.<EXN SAID>` and `plain.<EXN SAID>`
+   to keep their ownership independent. A byte digest is appropriate when no
+   protocol SAID exists; it does not make arbitrary bytes a self-addressed document.
 4. `payload.discard()` explicitly deletes the owned stage or object. It is
    idempotent on that handle. All readers must be finished before discarding or
    promoting their file.
@@ -37,8 +43,74 @@ implementations that await external input must themselves honor that signal.
 Calling `return()` on an async generator alone cannot interrupt its pending
 `next()` call.
 
+Final IDs are flat, at most 240 characters, and contain ASCII letters, digits,
+underscores, hyphens, and nonempty dot-separated scopes. The caller supplies and
+verifies the identity; the file store does not interpret protocol content or
+introduce shared-content reference counting. Temporary names are discarded at
+promotion because an incomplete stream has no final digest yet.
+
 This module does not publish database references, sweep orphan files, or claim a
 transaction spanning file promotion and LMDB. Those operations require explicit
 storage ownership and crash recovery. It does not modify KERIpy-readable tables
 such as `.essrs` or mailbox `msgs.`. Decryption, verification, and the choice to
 retain ciphertext or plaintext belong to runtime consumers.
+
+## Durable references
+
+`PayloadArchive.open(db, root)` recovers a private directory before admitting
+work. The host must own that directory exclusively across processes. The archive
+also rejects duplicate owners within one process, including path aliases. This
+is an explicit host requirement, not a PID-file lock or a lease.
+
+`publish(key, payload, commit)` stores immutable bytes under an application key.
+A local file transfers ownership through `PayloadStore.adopt`; stale readers
+remain usable, stale disposal is harmless, and stale promotion rejects. Other
+sources copy through awaited bounded writes. The synchronous `commit` callback
+runs in the same LMDB transaction as the reference, after file contents and
+all required directory entries have been flushed. Identical duplicate bytes
+reuse the reference; conflicting bytes reject. Reference keys are nonempty ASCII segments separated by `/`, at most 240 characters.
+Final filenames replace separators with dots, so `essr/SAID` becomes `essr.SAID`
+and `plain/SAID` becomes `plain.SAID`. Dots are forbidden in reference keys to keep
+this mapping unambiguous. These names identify immutable owners; they are not
+independent hashes of the qualified wire or plaintext. Equal bytes under distinct
+keys keep separate lifetimes. Random UUIDs identify staging files only.
+
+The private `payload.refs.` and `payload.owners.` tables belong together. They
+must not be edited independently. Recovery scans files and records incrementally,
+deletes unfinished stages and unreferenced objects, and fails closed on a missing
+referenced object or inconsistent ownership. A failure after promotion but before
+reference commit can leave a recoverable orphan. Removal commits reference
+absence before unlinking its file. Mutations reject concurrent admission, and
+close waits for already admitted work before releasing the runtime owner.
+
+Archive views expose only reads. Existing readers must finish before reference
+removal; removal does not provide reader leases. KERIpy-readable wire tables
+remain separate from private file references and retain their protocol schema.
+
+## Exchange integration
+
+`Baser.openPayloads()` shares one archive with parser staging and exchange
+admission. Before the first admission, it scans `.essrs` keys and removes rows
+with neither an accepted `exns.` owner nor an `epse.` escrow owner. This repairs
+interrupted evidence writes without collecting payload values or requiring
+private metadata on KERIpy-origin rows. `Exchanger.processEvent` is an Effection operation: signature checks,
+bounded wire validation, durable publication, and route handling finish before
+its caller advances. A request snapshot is disposed on rejection or cancellation;
+published ownership transfers to the archive. Direct overlapping admissions
+reject, so runtime ingress must serialize them with bounded backpressure.
+
+An exchange's `essr/SAID` reference owns canonical qualified Texter wire.
+`exchange.meta.` stores only its count, decoded size, genus, and mailbox
+provenance. `.essrs` continues storing individual qualified Texters for KERIpy
+inspection; it contains no private file pointers or plaintext. Since that table
+has set semantics, the private canonical wire is the authority for exact order
+and repeated fragments. Escrow retries and `Exchanger.replay` reopen this wire
+instead of collecting all fragments.
+
+A recipient's authenticated result can be published with
+`Baser.savePlaintext(said, plaintext, offset, signal)`. The caller must supply
+validated recipient output; exchange acceptance alone does not authenticate an
+arbitrary plaintext argument. `plain/SAID` and `plaintext.meta.` retain its
+independent file and inner-stream offset. `getPlaintext` reopens a non-owning body
+view for progressive parsing. Wire evidence and plaintext have separate owners,
+so relay/replay flows retain ciphertext without running recipient decryption.

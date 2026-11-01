@@ -7,17 +7,21 @@ and KERIpy interoperability.
 
 ## Current State
 
-`db/payload-store.ts` provides bounded file staging and explicitly owned payload
-references without altering KERIpy tables. Finishing a sink transfers its file to
-the caller; store close only aborts unfinished sinks. Database publication and
-orphan recovery must be integrated separately before these files become durable
-accepted application state. See `packages/keri/src/db/payload-store.md`.
+`PayloadArchive` publishes immutable private file references after file and
+directory flushes, and recovers orphan files before admission. Startup also
+removes `.essrs` rows lacking both accepted and escrow ownership, using a key-only scan. `Baser` owns its
+lifetime. `Exchanger` carries reopenable ESSR wire through acceptance, escrow,
+and replay while `.essrs` retains individual KERIpy-readable Texters. Private
+canonical wire preserves order and repeated fragments despite `.essrs` set
+semantics. See `packages/keri/src/db/payload-store.md`.
 
-`EssrRecipient` binds one explicitly hosted habitat and reloads accepted EXNs
-before decrypting their committed raw ESSR bytes. It checks source/destination,
-digest, authentication, and SCS framing before plaintext staging. Ciphertext
-evidence remains in `.essrs`; the returned body is a non-owning file view.
-See `packages/keri/src/app/essr.md` for ownership and admission limits.
+`Exchanger` and `EssrRecipient` expose Effection operations; Promise file leaves
+observe an AbortSignal and are joined before cancellation completes. Recipient
+processing binds one explicitly hosted habitat and checks the accepted EXN,
+digest, sealed-box authentication, and SCS framing before plaintext staging.
+`Baser.savePlaintext` stores caller-authenticated output separately from wire
+evidence; its reopened body view keeps no full plaintext buffer. See
+`packages/keri/src/app/essr.md` for ownership and admission limits.
 
 Mailbox `mbx` queries authorize recipient-private bytes: requester identity must
 match the recipient and its signatures must satisfy the current accepted signing

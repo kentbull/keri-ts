@@ -12,7 +12,9 @@ retained in a queue. Aggregate transfer size can exceed the message limit: the
 limit applies to one logical sealed message, potentially split across several
 Texters.
 
-Call `decrypt(said, ciphertext, signal)` after `Exchanger` accepts the exchange.
+Run `yield* recipient.decrypt(said, ciphertext, signal)` after `Exchanger` accepts
+the exchange. It is an Effection operation that aborts pending reads and joins
+file cleanup before cancellation completes.
 The service reloads the accepted EXN from `exns`, checks the `/essr/req` route,
 matches signed `q.src` to the sender and `q.dest` to the hosted habitat, and
 verifies the digest in `a` against the concatenated raw ciphertext. The supplied
@@ -34,13 +36,15 @@ result has one owning `plaintext` file and a non-owning `body` view that skips
 the SCS header on each read. Feed `body.open(signal)` into a new parser; it
 reopens the file in bounded chunks and retains no full plaintext byte array.
 Promoting the owner preserves the view; discarding it invalidates the view.
-The caller must promote or discard the owner after processing.
+The caller must publish or discard the owner after processing.
+`Baser.savePlaintext(said, plaintext, plaintext.size - body.size, signal)` publishes
+its file and inner-stream offset; `getPlaintext(said)` reopens both views.
 
 Ciphertext evidence remains separately owned by the accepted exchange. This
 service neither deletes `.essrs` nor replaces its KERIpy-readable qualified
 values with plaintext or pointers. Relays and replay consumers need not invoke
-recipient decryption. Database publication of plaintext references and transport
-route wiring belong to subsequent integration steps.
+recipient decryption. Transport route wiring selects whether to invoke this
+recipient operation for a hosted habitat.
 
 Working memory includes one admitted ciphertext, one authenticated plaintext,
 and crypto-library temporaries. This is bounded by message and concurrency

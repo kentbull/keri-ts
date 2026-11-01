@@ -14,3 +14,5 @@ export * from "./outboxing.ts";
 export { type FilePayload, type FilePayloadSink, PayloadStore } from "./payload-store.ts";
 export * from "./reger.ts";
 export * from "./subing.ts";
+
+export { PayloadArchive } from "./payload-archive.ts";
