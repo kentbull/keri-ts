@@ -110,6 +110,10 @@ requires full evidence; processing before EOF does not imply artifact success.
 Close adoption through default library/host/CLI callers, not only engine tests.
 Every finite exception needs a semantic reason, ceiling, admission owner and
 joined response lifetime; audit newly introduced I/O on the final release head.
+Audit producer preparation and retained output as well as the shared engine:
+history collection before sending and uncharged copies after reading bypass the
+contract. Finite JSON/proofs may require whole-document semantics, with admission
+before avoidable allocation and ownership through consumption or explicit transfer.
 The finite and streamed messenger entry points share two engines. Parsed
 frames bypass parsing; borrowed owners outlive joined transport cleanup. HTTP
 `postCesr` means successive POSTs, even when each frame body streams. Local drain,

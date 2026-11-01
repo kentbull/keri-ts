@@ -59,7 +59,7 @@ admitted with root lifetime. Untagged scanner-known decoder boundaries and local
 created root-map validation errors permit opaque fallback. Complete-input unsupported
 simple values, codec semantic failures and tag failures preserve identity; their malformed-error classification
 is unqualified in this base-token unit. CBOR-B
-remains open for BigInt/fraction arithmetic, packed/record/shared/bundle expansion,
+remains open for BigInt/fraction arithmetic and standard shared-reference work,
 global extension callbacks/native extractors and native residency. Base-token
 admission is not all-tag allocation closure.
 
@@ -74,6 +74,31 @@ injected payload methods; cleanup failures are foreign, and concurrent primary
 and cleanup failures retain identity inside AggregateError. Core standalone
 helpers also reset, but their allocations remain unadmitted. Injected tables/
 callbacks, native extractors/residency and encoder caches remain unqualified.
+
+CBOR-B2 refuses actual unqualified JS extension allocators before codec entry with
+`CborAdmissionError` (`reason: unqualified-format`, tag only). This is an intentional
+runtime support/admission boundary, not malformed CBOR or invalid KERI proof; more
+byte credit does not enable these formats. Standalone/store hydration keeps existing
+unqualified codec behavior. Definitions are blocked and the private codec configures
+no tables/getShared, so record IDs (including higher masked lookups) and 6/14/15
+necessarily fall back to bounded unknown Tag values and remain admitted. Payload
+bytes are skipped rather than interpreted as tags; all six packed combination
+ranges are guarded at their inclusive boundaries.
+
+714 pins `cbor2==6.1.4`. Its verified imported decoder and Rust switchboard treat the
+JS extensions below as unknown CBORTag, not expansion requirements. Primary
+[source archive](https://files.pythonhosted.org/packages/c6/14/b02446bacfe44351b1689c04937ade007588f44570431880a6937e525e6c/cbor2-6.1.4.tar.gz)
+SHA256: `01ecc79a28f33d17331943ce508fc1e21f4b06553c73f874f4c77120d72b2ef9`;
+`rust/decoder.rs` switchboard 913–970. Unknown payloads become immutable tuple/
+frozendict forms upstream, so current TS Tag/expanded shapes are explicit divergence.
+
+| Tags                            | 714 cbor2                                             | Existing cbor-x / admitted runtime                                      |
+| ------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------------------- |
+| 51 and six prefix/suffix ranges | Unknown CBORTag                                       | Packed tables/combinations; refused                                     |
+| 105, dffe/dfff                  | Unknown CBORTag                                       | Record schema/readers; refused                                          |
+| dff9, 0x53687264                | Unknown CBORTag                                       | Bundles/table snapshots; refused                                        |
+| 27, 259                         | Unknown CBORTag                                       | Generic native object/forced Map; refused                               |
+| 2/3, 4/5, 28/29, 258, 55799     | Standard bignum, Decimal, sharing, Set, self-describe | Existing shapes retained; arithmetic/share allocation gates remain open |
 
 ESSR Texters stream into an awaited sink, with separate `maxEssrBytes` (8 MiB
 concatenated decoded bytes) and `maxEssrItems` (16,384) defaults per owned tree. `maxTreeNodes` defaults to 256 including the root;

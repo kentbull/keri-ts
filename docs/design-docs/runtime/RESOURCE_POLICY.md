@@ -129,11 +129,16 @@ shared request: an impossible tree is `limit`; competing owners cause `busy`.
 MGPK declared container capacity and pinned decoder work use the same root owner;
 shared key caching/global custom extensions are excluded from admitted MGPK.
 CBOR-A shares root decoded/stage credit for declared/base tokens and documented
-standard view/record work. CBOR-B still owns BigInt/fraction and packed/record/shared/
-bundle expansion and global extensions/extractors. CBOR-B1 now clears the configured
+standard view/record work. CBOR-B still owns BigInt/fraction, standard sharing work
+and global extensions/extractors. CBOR-B1 now clears the configured
 decoder's message-bearing globals before return, using a captured native null decode
 and admitted fixed reset work. Its instance configures no cached structures/shared
 values; injected tables, encoder caches and native residency remain unqualified.
+CBOR-B2 refuses actual JS-only packed/record/bundle/generic-object/forced-Map/table
+export handlers and combination ranges before decoding. CborAdmissionError signals
+unqualified format ownership, not invalid proof or busy contention; standalone
+hydration remains unqualified. Empty-schema record IDs and 6/14/15 retain bounded
+Tag fallback. The CESR contract records cbor2 6.1.4 unknown-tag divergence.
 
 This does not admit wrapped Matter preparation, CBOR tag expansion/external retention and native hydration, standalone
 verification, storage/cache copies or every JavaScript/native allocation.
