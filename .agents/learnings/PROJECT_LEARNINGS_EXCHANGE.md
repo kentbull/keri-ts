@@ -201,8 +201,14 @@ and edges together. IPEX’s local evaluator uses strong AND/OR, inherited conju
 pins, default/last delegative I2I/NI2I and E1E. Unsupported operators and compact Edge
 blocks are permanent unknown; malformed shape aborts globally even in an unused OR
 branch. A dependent retryable unknown uses existing schema/proof escrow. IPEX records
-no application-use verdict or revocation policy; authenticated state persistence remains
-R13d. The separate `acdc/graphing.ts` application evaluator stays unchanged. NOT/DI2I
+no application-use verdict or revocation policy. Successful verification returns typed
+registry facts; Exchanger atomically pins exact5-field exrs observations only on
+acceptance. Later successful delivery may refresh them without replacing the first
+IPEX enst/epath. Optional unauthenticated children fabricate no observation and do
+not erase an earlier one. verifyAccepted and historical inspection are read-only;
+recordedRegistryStates are labeled observations, never current authority. Empty state
+text remains empty; do not manufacture authenticated nulls or backfill old exchanges.
+Source fixtures retain future-opening refusal/escrow differences for later auth alignment. The separate `acdc/graphing.ts` application evaluator stays unchanged. NOT/DI2I
 application support does not make those operators admissible in IPEX; consuming actions
 still require explicit true. The single IPEX walker still owns flat nested
 frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Generic edge block syntax stays shared; strict IPEX leaf/group labels belong to its admission profile.
@@ -323,9 +329,9 @@ fixed signature-pool cap. Native decoding and authentication still reject bad ev
 Only a fresh foreign last group known at receipt clears its earlier unresolved
 marker; later KEL recovery alone cannot reinterpret unknown saved signatures.
 
-Do not invent xip/pro/bar processing: frozen upstream has stubs. Native outer EXN
-empty-field construction remains unqualified; JSON/CBOR/MGPK route evidence does
-not prove that path. Full resource qualification and presentation cutoffs remain open.
+XIP uses ordinary Exchanger/KRAM processing with the selected public XIP/EXN vectors.
+Selected upstream still leaves pro/bar unimplemented; do not invent their processing.
+Full resource qualification remains separate from the focused route checks.
 
 KRAM time plans are read-only: cached multi partials reuse original windows; receipt
 time freezes on completion. Recheck plans atomically with current keys and replay

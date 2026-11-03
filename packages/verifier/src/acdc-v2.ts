@@ -2,7 +2,7 @@
 import type { Registrar } from "@keri-ts/registrar";
 import { BlindState, BoundState, bytesEqual, concatBytes, Counter, Diger, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation } from "effection";
-import { loadNests } from "keri-ts/db";
+import { type ExchangeRegistryStateShape, loadNests } from "keri-ts/db";
 import {
   acceptedRegistryEvidence,
   authenticateIpexNode,
@@ -38,6 +38,8 @@ export interface HistoricalInspection {
   grant: string;
   credential: SerderACDC | null;
   views: { credential: string; view: string }[];
+  /** Last authenticated per-node observation; optional omissions can retain earlier facts. Never current authority. */
+  recordedRegistryStates: (ExchangeRegistryStateShape & { node: string })[];
 }
 /** Unavailable evidence remains separate from a known policy refusal or public revocation. */
 export interface AcdcV2Verification {
@@ -93,6 +95,9 @@ export class AcdcV2Verifier {
       currentStanding: "not-evaluated",
       grant,
       credential: credential as SerderACDC | null,
+      recordedRegistryStates: [...this.hby.db.exrs.getTopItemIter([grant])]
+        .filter(([keys]) => nodes.some((node) => node.body.said === keys[1]))
+        .map(([keys, { regid, said, sn, state, stamp }]) => ({ node: keys[1], regid, said, sn, state, stamp })),
       views: nodes.map(node => ({
         credential: node.body.said!,
         view: new Diger({ raw: Diger.digest(node.body.raw, "E"), code: "E" }).qb64,

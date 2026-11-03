@@ -38,6 +38,7 @@ import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
+import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { groupMemberHasKey } from "../multisig/group-members.ts";
@@ -66,7 +67,10 @@ export interface ExchangeAttachment {
 }
 
 /** Typed proof/schema dependencies follow authentication; schema is a complete missing resource SAID. */
-export type ExchangeRouteVerification = boolean | { kind: "escrow"; reason: string; schema?: string };
+export type ExchangeRouteVerification =
+  | boolean
+  | { kind: "accept"; registryStates: readonly (readonly [node: string, record: ExchangeRegistryStateShape])[] }
+  | { kind: "escrow"; reason: string; schema?: string };
 
 /** Historical coordinates are frozen before escrow; unresolved last groups cannot be persisted. */
 interface ResolvedExchangeFactors {
@@ -437,6 +441,7 @@ export class Exchanger {
     ) {
       return { decision: { kind: "reject", said, reason: "Nested exchange route is not implemented." }, cues };
     }
+    let registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"] = [];
     let missingSchema: string | undefined;
     let needsProof = false;
     const handling = {
@@ -463,7 +468,8 @@ export class Exchanger {
           cues,
         };
       }
-      if (typeof verified === "object") {
+      if (typeof verified === "object" && verified.kind === "accept") registryStates = verified.registryStates;
+      if (typeof verified === "object" && verified.kind === "escrow") {
         pending = { ...verified, said };
         missingSchema = verified.schema;
         if (missingSchema !== undefined && new Diger({ qb64: missingSchema }).qb64 !== missingSchema) {
@@ -479,6 +485,7 @@ export class Exchanger {
     let newEscrow = false;
     if (!pending && approved) {
       this.clearEscrow(said, true);
+      for (const [node, record] of registryStates) this.hby.db.exrs.pin([said, node], record);
       this.logAcceptedEvent({
         serder: args.serder,
         ...approved.retained,
@@ -662,7 +669,7 @@ export class Exchanger {
     const approved = this.authenticate(serder, this.resolveProofs(args), handler, new Deck<AgentCue>());
     if (approved.kind !== "verified") return false;
     const meta = this.hby.db.exchangeMeta.get([said]);
-    return handler.verify({
+    const verified = handler.verify({
       serder,
       attachments: normalizeAttachments(args.ptds ?? []),
       essrs: args.essrs,
@@ -672,7 +679,8 @@ export class Exchanger {
       historical,
       ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
       ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
-    }) === true;
+    });
+    return verified === true || (typeof verified === "object" && verified.kind === "accept");
   }
 
   /**
@@ -1116,10 +1124,11 @@ export class Exchanger {
       }
       this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
     }
-    this.hby.db.epath.pin(
-      [said],
-      args.ptds.map((group) => textDecoder.decode(group.raw)),
-    );
+    const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
+      && this.complete(said);
+    if (!retainedIpex) {
+      this.hby.db.epath.pin([said], args.ptds.map((group) => textDecoder.decode(group.raw)));
+    }
     for (const seal of args.sourceSeals) this.hby.db.ests.add([said, seal.i.qb64], [seal.s, seal.d]);
     const endorsers = new Set([
       ...args.supplemental.tsgs.map((group) => group.pre),
@@ -1185,7 +1194,9 @@ export class Exchanger {
       this.hby.db.ecigs.rem([said]);
       this.hby.db.ests.trim([said, ""], { topive: false });
     }
-    this.hby.db.epath.rem([said]);
+    const accepted = keepEvidence ? this.hby.db.exns.get([said]) : null;
+    const retainedIpex = accepted?.pvrsn.major === 2 && nestedIpexRoute(accepted.route ?? "");
+    if (!retainedIpex) this.hby.db.epath.rem([said]);
     if (!keepEvidence) {
       this.hby.db.essrs.rem([said]);
       this.hby.db.enst.rem([said]);

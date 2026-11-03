@@ -15,6 +15,7 @@ export * from "./basing.ts";
 export * from "./core/index.ts";
 export * from "./escrowing.ts";
 export { loadNests } from "./exchange/exchange-nests.ts";
+export { ExchangeRegistryStateRecord, type ExchangeRegistryStateShape } from "./exchange/exchange-records.ts";
 export * from "./keeping.ts";
 export * from "./koming.ts";
 export * from "./mailbox/mailboxing.ts";

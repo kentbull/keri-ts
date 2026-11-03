@@ -562,8 +562,8 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
           attachments: [],
           evidence: { tsgs: [], cigars: [], sourceSeals: [] },
         }),
-        true,
-        "the identical accepted response remains eligible for retained verification",
+        { kind: "accept", registryStates: [] },
+        "the identical accepted response returns read-only verification facts",
       );
       assertEquals(receiving.verifyAccepted(grant.said!, "/ipex/grant"), false, "escrow is not accepted evidence");
       assertEquals(sending.verifyAccepted(grant.said!, "/ipex/grant"), true);
@@ -797,7 +797,11 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
           receiverTime: cutoff,
           historical,
         });
-      assertEquals(verify(), true, "Issuee presentation proof alone satisfies permitted ax anchoring");
+      assertEquals(
+        (verify() as { kind: string }).kind,
+        "accept",
+        "Issuee presentation proof alone satisfies permitted ax anchoring",
+      );
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }), true);
       assertEquals(
@@ -811,16 +815,20 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         "completed receiver-time acceptance remains required without selecting TEL history",
       );
       assertEquals(
-        verify(child, receipt.replace("123000", "122999")),
-        true,
+        (verify(child, receipt.replace("123000", "122999")) as { kind: string }).kind,
+        "accept",
         "receiver time does not select TEL history",
       );
-      assertEquals(verify(child, makeNowIso8601(new Date(now))), true, "later receipt retains the same exact source");
+      assertEquals(
+        (verify(child, makeNowIso8601(new Date(now))) as { kind: string }).kind,
+        "accept",
+        "later receipt retains the same exact source",
+      );
       const continued = yield* node([iblind, pblind, vacant], [source, vacantSource]);
       {
         assertEquals(
-          verify(continued, vacantTime),
-          true,
+          (verify(continued, vacantTime) as { kind: string }).kind,
+          "accept",
           "one authentic vacuous disclosure preserves the preceding binding",
         );
       }
@@ -879,15 +887,19 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         "retained BLID selects its exact authenticated issuer prefix behind an opaque successor",
       );
       const disclosedRevocation = yield* node([opaque, pblind]);
-      assertEquals(verify(disclosedRevocation), true, "authenticated revocation is not a policy approval");
+      assertEquals(
+        (verify(disclosedRevocation) as { kind: string }).kind,
+        "accept",
+        "authenticated revocation is not a policy approval",
+      );
       const vacantIssuer = makeBlindState({ sn: 3 });
       const issuerVacuous = blindate(irip.said!, newerIssuer.said!, vacantIssuer.d.nonce, { sn: 3, stamp: earlier });
       anchor(issuer, issuerVacuous);
       assertEquals(observer.processEvent(issuerVacuous).kind, "accept");
       const retainedWithVacuity = yield* node([iblind, vacantIssuer, pblind]);
       assertEquals(
-        verify(retainedWithVacuity, receipt, grant, true),
-        true,
+        (verify(retainedWithVacuity, receipt, grant, true) as { kind: string }).kind,
+        "accept",
         "vacuous opening cannot advance historical selection past a hidden successor",
       );
       assertEquals(verify(noIssuer, receipt, grant, true), false);
