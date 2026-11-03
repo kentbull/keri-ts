@@ -240,14 +240,11 @@ s is their root ID. Serder checks commitments, while S1 checks each resource and
 its profile. Verification never repairs stale explicit schema claims. Frozen
 default/unbound format-specific schema construction remains separately qualified.
 One private SchemaResources owner authenticates roots, bundled IDs and static
-references for ordinary validation, bounded disclosure closure and static edge-shape queries. Whole
-`[""]`, relative `d/` and trailing-separator subtree claims use the selected
-explicit-acm schema proof: declared closed objects or schema-valued additional
-properties, unambiguous typed oneOf, and static refs without constraint siblings.
-Open/ambiguous schemas and whole aggregates refuse; scalar-only SAID strings are
-data, while compact-or-object positions must expose the object. Ordinary schema
-validation and issuer authentication remain separate. Missing resources retain
-the existing schema retry; closure never expands borrowed received credentials.
+references for ordinary validation. IPEX disclosure uses literal paths and the
+canonical Compactor view; it adds no private schema-closure profile. A sole empty
+relative path requests expanded top-level a/e/r sections and an A list. Open
+schemas and whole aggregates retain ordinary schema validity checks. Missing own
+schemas use existing retry; no received credential is expanded or rewritten.
 Chaining accepts expanded leaves with the selected reserved labels; compact
 strings identify Edge blocks, not far credentials. Schema validation remains
 independent of that graph shape and retains nested resource scopes.

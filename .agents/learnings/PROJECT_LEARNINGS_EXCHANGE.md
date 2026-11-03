@@ -179,14 +179,16 @@ The selected candidate's `q.dp` is a one-DAG outer list containing the flat
 disclosure triples. An empty inner plan is accepted-prior inheritance or no
 disclosure for an opener. Agree stays empty, solicited Offer/linked Grant default
 to ditto, and a bare one-node Grant states its explicit root selection. Builders,
-handler and resolver share this wire boundary without rewriting signed bytes. Whole-node and subtree
-claims require the bounded schema closure proof owned by acdc/scheming.ts; missing
-schema resources use the existing EXN schema escrow. Presence and explicit leaf
-paths retain their separate meaning. Empty graph prefixes select by tuple BFS position;
-nonorigin positional selection requires a gapless plan and schema-proven closed,
-required edge hierarchy for every node. Optional members remain optional even when
-present. Explicit /e/.../_/ selectors may omit unrequested plan entries, preserve
-strict origin-first BFS order, and restart at e after each intermediate hop. The IPEX walker admits strict expanded leaves; compact strings name undereferenceable Edge blocks, not ACDCs. Grant still carries every selected far node.
+handler and resolver share this wire boundary without rewriting signed bytes.
+Disclosure selects all carried nodes in exact BFS order using `/` or rooted
+literal map/list paths ending at `_/`; a hop follows the carried map's n and need
+not start/restart at e. Edge graph morphology remains strict and independent.
+Empty DAG prefixes are invalid. [] permits any valid compaction level; [""]
+requires present top-level a/e/r maps and an A list. Relative field paths require
+the canonical Compactor view, not an extra closed-schema proof. Whole aggregates
+and open schemas still pass ordinary own-schema validation; no receiver expands
+missing data. Empty-plan ditto/no-disclosure remains separate from path selection.
+
 V2 IPEX Offers carry body-only reachable subgraphs and validate carried schemas;
 child proof attachments belong to Grants. Grants refuse field-map metadata with
 explicit empty `u`, while public fixed-field `act`/`acg` UUID slots remain valid.

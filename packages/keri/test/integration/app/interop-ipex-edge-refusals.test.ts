@@ -68,34 +68,17 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
         await assertRefused(issuer, holder, bad);
       }));
   }
-  for (const graph of ["fixed-path", "optional-path"] as const satisfies readonly PathShapeCase[]) {
-    Deno.test(`IPEX ${implementation} discloser: ${graph === "fixed-path" ? "fixed positional success" : "optional positional refusal then explicit success"}`, () =>
+  for (const graph of ["required-edge", "optional-edge"] as const satisfies readonly PathShapeCase[]) {
+    Deno.test(`IPEX ${implementation} discloser: ${graph} uses the complete explicit disclosure plan`, () =>
       withIpexPeers({ issuer: implementation, graph }, async ({ issuer, holder, plan }) => {
         assertEquals(plan.map(([schema]) => schema), issuer.info.schemas);
-        assertEquals(plan.map(([, prefix]) => prefix), ["", ""]);
-        let apply = await exchange(holder, issuer, "apply");
-        let offer = await exchange(issuer, holder, "offer", apply);
-        let agree = await exchange(holder, issuer, "agree", offer);
+        assertEquals(plan.map(([, prefix]) => prefix), ["/", "/e/authority/_/"]);
+        const apply = await exchange(holder, issuer, "apply");
+        const offer = await exchange(issuer, holder, "offer", apply);
+        const agree = await exchange(holder, issuer, "agree", offer);
         for (const peer of [issuer, holder]) {
           const negotiated = (await peer.snapshot()).messages.find((message) => message.d === apply)!;
-          assertEquals(negotiated.q.dp, plan, "both stores accepted the exact positional plan");
-        }
-        let refused: string | undefined;
-        if (graph === "optional-path") {
-          const rejected = await issuer.send("grant", agree, true);
-          refused = rejected;
-          await observed(
-            "optional positional Grant crossed ordinary ingress",
-            async () => (await holder.snapshot()).received.includes(rejected) ? true : undefined,
-          );
-          await assertRefused(issuer, holder, refused);
-          const explicit = plan.map(([schema, , fields], i) => [schema, i ? "/e/authority/_/" : "/", fields] as const);
-          await issuer.connect(holder.info, explicit);
-          await holder.connect(issuer.info, explicit);
-          // A fresh lineage changes only selection; both peers assert identical carried credential bytes.
-          apply = await exchange(holder, issuer, "apply");
-          offer = await exchange(issuer, holder, "offer", apply);
-          agree = await exchange(holder, issuer, "agree", offer);
+          assertEquals(negotiated.q.dp, [plan], "both stores accepted the exact one-DAG plan");
         }
         const grant = await exchange(issuer, holder, "grant", agree);
         await exchange(holder, issuer, "admit", grant);
@@ -103,7 +86,7 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
           const snapshot = await peer.snapshot(grant);
           assertEquals(snapshot.inspected?.accepted, true);
           assertEquals(snapshot.inspected?.escrowed, false);
-          assertEquals(snapshot.messages.length, refused ? 8 : 5);
+          assertEquals(snapshot.messages.length, 5);
           assertEquals(snapshot.nodes.length, 2);
           assertEquals(snapshot.nodes[0].said, issuer.info.commitment);
           for (const node of snapshot.nodes) {
@@ -113,10 +96,8 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
             assertEquals(node.raw.includes("hidden-value"), false);
           }
           const acceptedPlan = snapshot.messages.find((message) => message.d === apply)!.q.dp!;
-          assertEquals(acceptedPlan.map(([schema]) => schema), issuer.info.schemas);
-          assertEquals(acceptedPlan.map(([, prefix]) => prefix), refused ? ["/", "/e/authority/_/"] : ["", ""]);
+          assertEquals(acceptedPlan, [plan]);
         }
-        if (refused) await assertRefused(issuer, holder, refused);
       }));
   }
 }

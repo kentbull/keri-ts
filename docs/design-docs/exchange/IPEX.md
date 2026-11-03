@@ -45,8 +45,8 @@ source pin and all imported module hashes. Relative to the historical fixture, t
 current owner validates every own schema and presentation/ax before reduction,
 repairs constructor section claims and imports its inline-pin Schemer. Minimal
 inline pins are covered; schemas whose properties include d retain the reference’s
-separate generic Compactor limitation and are not qualified by these cases. The separate empty graph-prefix
-extension and authentication differences below remain outside the matched profile;
+separate generic Compactor limitation and are not qualified by these cases. Disclosure vectors separately pin `550f401489488a5fec6e1b847e74bf8312f647ca`.
+Authentication differences below remain outside the matched profile;
 these checks do not establish full IPEX or application-use interoperability.
 
 An Offer's carried nodes contain bodies without proof attachments; empty counted
@@ -124,30 +124,30 @@ The source state vectors explicitly retain two authentication differences: Pytho
 1f0f68a6 refuses a future proof at a RIP-only or older BUP head while TS escrows.
 Both preserve prior observations. Reconciliation with subsequent Python issuer-opening
 and bound-Issuee repairs remains separate; this is not full authentication parity.
-Whole-node `[""]` and relative `d/`, and trailing-separator subtree paths, require
-schema-proven closure under the selected explicit-acm profile. Static resources
-are authenticated by the same private owner as ordinary node validation; no
-received value is resolved or expanded. A string-only schema position remains
-ordinary scalar data even for SAID-shaped values, while a compact-or-object
-position must expose the map. Only closed typed objects or schema-valued additional
-properties, unambiguous typed oneOf and static refs without constraint siblings
-are supported; open/ambiguous schema forms and whole aggregates refuse. Missing
-schema resources use the existing retry path. Node presence `[]` and explicit
-leaf requests retain their independent meanings.
+Disclosure plans select every disclosed node in exactly the graph's BFS order.
+The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.
+Maps and list indexes are traversed as carried; `_` follows that map's `n` to an
+already-disclosed node. A path may traverse attributes or another SAD map, and a
+hop need not restart at e. Graph reachability still comes from the strict Edge
+walk, whose expanded leaves admit only reserved d/u/n/s/o/w labels. Compact Edge
+strings name undereferenceable blocks, not far credentials. Section and nested
+group s pins remain reserved and inherited.
 
-IPEX traversal and virtual `_` hops accept expanded leaves with exactly the
-reserved d/u/n/s/o/w labels; compact member strings name Edge blocks, not far
-credentials. Section and nested group s pins are both reserved and inherited.
-The same edge shapes apply to application evaluation.
+Empty DAG prefixes have no positional meaning. Every node must be selected once,
+including nodes reached through an optional edge; omitted, duplicated and
+reordered selections refuse. A shared far node may be selected through either
+literal path, once at its BFS position. This does not change `[]` presence,
+`[""]` whole-node relative selection, or an empty plan's ditto/no-disclosure meaning.
 
-An empty graph prefix uses its tuple's BFS position. A nonorigin positional tuple
-requires the full gapless BFS plan and a schema-proven closed, required edge hierarchy
-for every disclosed node. Present optional members, ancestor unions and expanded
-arrays cannot prove that fixed shape and require explicit prefixes. Explicit
-/e/.../_/ selectors may omit unrequested plan entries, but selections remain unique,
-origin-first and strictly BFS ordered; intermediate `_` hops restart at e. Relative
-empty fields under an empty prefix request nothing; d/ still requests whole closure.
-These bounded rules do not claim universal shorthand or whole-node interoperability.
+`[]` permits any valid compaction level. `[""]` requires each present top-level
+a/e/r section to be an expanded map and A to be an expanded list. It does not
+infer additional hidden maps from a schema. Default/open schemas and whole
+expanded aggregates retain ordinary schema validation. Other relative paths
+resolve through Pather and must match the canonical Compactor view of each
+selected section; a trailing hop cannot traverse a primitive SAID. The removed
+private closed-schema proof and positional-shape policy impose no extra gate.
+Own-node schema validity, exposed section commitments and independent issuer
+authentication remain required. Received bytes are never rewritten or enriched.
 
 `acdc/chaining.ts` reduces the complete graph over caller-provided node verdicts.
 IPEX maps issuer authentication to those verdicts without imposing an issued-state

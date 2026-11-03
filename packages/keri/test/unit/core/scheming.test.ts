@@ -2,9 +2,7 @@ import { Diger, dumps, type MapperMap, ParserError } from "cesr-ts";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import {
-  fixedEdgeOrder,
   validateSchema,
-  verifyDisclosureClosure,
 } from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import type { Baser } from "../../../src/db/basing.ts";
@@ -183,49 +181,18 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
   cache.set(external.said, simple);
   expect(make({ $ref: external.said }), "invalid");
   assertEquals(new TextDecoder().decode(simple.raw), unchanged, "validation never changes cache or borrowed schemas");
-  // Whole disclosure shares these authenticated static resources, not a second resolver.
+  // Ordinary schema applicators and reference siblings retain standard validation semantics.
   const closedAttribute = {
     type: "object",
     properties: { d: { type: "string" }, name: { type: "string" } },
     additionalProperties: false,
   };
-  const closed = make(closedAttribute);
-  assertEquals(verifyDisclosureClosure(credential(closed.sed), db, ["d/", "a/"]), { kind: "valid" });
-  assertEquals(
-    verifyDisclosureClosure(credential(closed.sed), db, ["a//"]).kind,
-    "invalid",
-    "malformed paths still refuse",
-  );
-  assertEquals(
-    verifyDisclosureClosure(credential(simple.sed), db, ["d/"]).kind,
-    "invalid",
-    "open object refuses closure",
-  );
-  const referenced = make({ $ref: closed.said + "#/properties/a" });
-  assertEquals(verifyDisclosureClosure(credential(referenced.sed), db, ["d/"]), { kind: "missing", said: closed.said });
-  cache.set(closed.said, closed);
-  assertEquals(verifyDisclosureClosure(credential(referenced.sed), db, ["d/"]), { kind: "valid" });
-  assertEquals(
-    verifyDisclosureClosure(rebound, db, ["d/"]).kind,
-    "invalid",
-    "closure authenticates stale bundled IDs too",
-  );
   for (const applicator of ["anyOf", "allOf"] as const) {
     const composed = make({ [applicator]: [closedAttribute] });
     assertEquals(validateSchema(credential(composed.sed), db).kind, "valid");
-    assertEquals(verifyDisclosureClosure(credential(composed.sed), db, ["a/"]).kind, "invalid");
   }
-  const branched = make({ oneOf: [{ type: "string" }, closedAttribute] });
-  assertEquals(verifyDisclosureClosure(credential(branched.sed), db, ["d/"]), { kind: "valid" });
-  const ambiguousClosure = make({ oneOf: [closedAttribute, closedAttribute] });
-  assertEquals(verifyDisclosureClosure(credential(ambiguousClosure.sed), db, ["a/"]).kind, "invalid");
   const sibling = make({ $ref: "#/$defs/attribute", type: "object" }, { $defs: { attribute: closedAttribute } });
   assertEquals(validateSchema(credential(sibling.sed), db).kind, "valid");
-  assertEquals(
-    verifyDisclosureClosure(credential(sibling.sed), db, ["a/"]).kind,
-    "invalid",
-    "ref siblings need intersections",
-  );
   // Own-schema validation preserves nested $id reference scope independently of edge interpretation.
   const edgeResource: Record<string, unknown> = {
     $id: "did:keri:" + "#".repeat(44),
@@ -250,21 +217,15 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     });
   const scoped = edgeCredential(edgeSchema.sed);
   assertEquals(validateSchema(scoped, db), { kind: "valid" });
-  assertEquals(fixedEdgeOrder(scoped, db), true, "nested resource local ref cannot bind the root's object definition");
   const missingEdge = edgeCredential(edgeSchema.said);
   assertEquals(validateSchema(missingEdge, db), { kind: "missing", said: edgeSchema.said });
-  assertEquals(fixedEdgeOrder(missingEdge, db), { kind: "missing", said: edgeSchema.said });
   const unionEdgeSchema = make({}, {
     properties: { e: { oneOf: [{ type: "string" }, { $ref: edgeResource.$id }] } },
     required: ["e"],
     $defs: { edge: edgeResource },
   });
   assertEquals(validateSchema(edgeCredential(unionEdgeSchema.sed), db), { kind: "valid" });
-  assertEquals(
-    fixedEdgeOrder(edgeCredential(unionEdgeSchema.sed), db),
-    false,
-    "ancestor unions require explicit selectors",
-  );
+
   for (const failure of [new Error("schema database unavailable"), new ParserError("cached schema decode failed")]) {
     const failed = {
       schema: {
@@ -274,8 +235,6 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
       },
     } as unknown as Baser;
     assertEquals(assertThrows(() => validateSchema(credential(simple.said), failed)), failure);
-    assertEquals(assertThrows(() => verifyDisclosureClosure(credential(closed.said), failed, ["d/"])), failure);
-    assertEquals(assertThrows(() => fixedEdgeOrder(missingEdge, failed)), failure);
   }
   expect(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }), "valid");
   expect(make({}, { annotation: Array.from({ length: 5000 }, (_, i) => i) }), "valid");

@@ -79,7 +79,7 @@ export interface PeerInfo {
 
 /** The same observations from each implementation, without sharing persistence internals. */
 export interface PeerSnapshot {
-  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: DisclosurePlan } }[];
+  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: [DisclosurePlan] } }[];
   received: string[];
   known: string[];
   notifications?: number;
@@ -256,7 +256,7 @@ class TypeScriptPeer implements IpexPeer {
     let carried: SerderACDC[] = [];
     if (verb === "grant") carried = this.disclosed(invalid);
     if (verb === "offer" && !this.graphCase) carried = this.disclosed(false);
-    if (verb === "grant" && (this.graphCase === "fixed-path" || this.graphCase === "optional-path")) {
+    if (verb === "grant" && (this.graphCase === "required-edge" || this.graphCase === "optional-edge")) {
       assertEquals(this.plan.map(([schema]) => schema), carried.map((node) => (node.schema as { $id: string }).$id));
       assertEquals(
         carried.map((node) => node.raw),

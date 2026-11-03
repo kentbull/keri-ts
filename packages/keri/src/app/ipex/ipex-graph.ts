@@ -1,8 +1,6 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
 import { acdcEdgeBlocks as blocks, acdcEdgeTarget, type AcdcGraph, acdcGroupLabels } from "../../acdc/chaining.ts";
-import { fixedEdgeOrder, type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
-import type { Baser } from "../../db/basing.ts";
 
 /** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -38,12 +36,11 @@ export function validDisclosurePlan(value: unknown): value is DisclosurePlan {
     if (!Array.isArray(item) || item.length !== 3) return false;
     const [schema, path, fields] = item;
     if (typeof schema !== "string" || typeof path !== "string") return false;
-    if (path !== "" && path !== "/") {
-      if (!path.startsWith("/e/") || !path.endsWith("/_/")) return false;
+    if (path !== "/") {
+      if (!path.startsWith("/") || !path.endsWith("/")) return false;
       const parts = path.replace(/^\/+|\/+$/g, "").split("/");
       if (
-        parts.some((part) => !part)
-        || parts.some((part, i) => part === "_" && i < parts.length - 1 && parts[i + 1] !== "e")
+        parts.some((part) => !part) || parts.at(-1) !== "_"
       ) return false;
     }
     if (!Array.isArray(fields)) return false;
@@ -151,28 +148,24 @@ function equal(a: unknown, b: unknown): boolean {
   return false;
 }
 
-/** Explicit selectors may omit unrequested nodes; positional selectors require fixed, gapless BFS shape. */
+/** Select every disclosed node in exact BFS order using literal SAD paths and virtual far-node hops. */
 export function verifyIpexDisclosure(
   plan: DisclosurePlan,
   origin: string,
   graph: IpexGraph,
-  db: Baser,
-): boolean | Extract<SchemaValidation, { kind: "missing" }> {
+): boolean {
   if (!plan.length || graph.order[0] !== origin) return false;
   const selected: string[] = [];
-  let lastIndex = -1, positional = false;
-  for (const [position, [schema, prefix, fields]] of plan.entries()) {
-    if (prefix === "" && position >= graph.order.length) return false;
-    let said = prefix === "" ? graph.order[position] : origin;
-    positional ||= prefix === "" && position > 0;
+  for (const [schema, prefix, fields] of plan) {
+    let said = origin;
     let node = graph.nodes.get(said);
     if (!node) return false;
     let value: unknown = node.body.sad;
-    if (prefix !== "" && prefix !== "/") {
+    if (prefix !== "/") {
       for (const part of prefix.replace(/^\/+|\/+$/g, "").split("/")) {
         if (part === "_") {
-          const target = acdcEdgeTarget(value);
-          if (typeof target !== "string") return false;
+          if (!record(value) || typeof value.n !== "string") return false;
+          const target = value.n;
           said = target;
           node = graph.nodes.get(said);
           if (!node) return false;
@@ -185,26 +178,20 @@ export function verifyIpexDisclosure(
         }
       }
     }
-    const index = graph.order.indexOf(said);
-    if (index <= lastIndex) return false;
-    lastIndex = index;
     selected.push(said);
     const serder = node.body;
     const nodeSchema = serder.schema;
     if ((record(nodeSchema) ? nodeSchema.$id : nodeSchema) !== schema) return false;
-    if ((prefix !== "" && fields.includes("")) || fields.includes("d/")) {
+    if (fields.length === 1 && fields[0] === "") {
       for (const label of ["a", "e", "r"]) {
         const section = serder.sad![label];
         if (present(section) && !record(section)) return false;
       }
       if (present(serder.sad!.A) && !Array.isArray(serder.sad!.A)) return false;
-      const closure = verifyDisclosureClosure(serder, db, ["d/"]);
-      if (closure.kind !== "valid") return closure.kind === "missing" ? closure : false;
       continue;
     }
     const sections = new Map<string, string[]>();
     for (const field of fields) {
-      if (!field) continue;
       try {
         const pather = makePather(field, { relative: true });
         pather.resolve(serder.sad);
@@ -233,19 +220,6 @@ export function verifyIpexDisclosure(
         return false;
       }
     }
-    const wholePaths = fields.filter((field) => field.endsWith("/"));
-    if (wholePaths.length) {
-      const closure = verifyDisclosureClosure(serder, db, wholePaths);
-      if (closure.kind !== "valid") return closure.kind === "missing" ? closure : false;
-    }
   }
-  if (selected[0] !== origin) return false;
-  if (positional) {
-    if (!equal(selected, graph.order)) return false;
-    for (const said of graph.order) {
-      const fixed = fixedEdgeOrder(graph.nodes.get(said)!.body, db);
-      if (fixed !== true) return fixed;
-    }
-  }
-  return true;
+  return equal(selected, graph.order);
 }
