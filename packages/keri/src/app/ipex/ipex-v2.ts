@@ -29,7 +29,7 @@ import {
   hasIpexNodeAttachments,
   type IpexGraph,
   isIpexMetadata,
-  validDisclosurePlan,
+  singleDagDisclosurePlan,
   verifyIpexDisclosure,
   walkIpexGraph,
 } from "./ipex-graph.ts";
@@ -113,10 +113,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const priorSaid = serder.sad!.p;
     if (!record(attrs) || !Object.hasOwn(attrs, "m") || !record(q)) return false;
     if (Object.hasOwn(attrs, "ax") && !single(attrs.ax, "boolean")) return false;
-    if (["apply", "offer", "agree", "grant"].includes(verb)) {
-      if (!validDisclosurePlan(q.dp) || (!q.dp.length && !priorSaid)) return false;
-    }
-    if (verb === "agree" && (q.dp as DisclosurePlan).length) return false;
+    const messagePlan = singleDagDisclosurePlan(q.dp);
+    if (["apply", "offer", "agree", "grant"].includes(verb) && messagePlan === null) return false;
+    if (verb === "agree" && messagePlan?.length) return false;
     if (verb === "offer") {
       if (Object.hasOwn(attrs, "o")) {
         if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0])) return false;
@@ -124,13 +123,12 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     } else if (verb !== "grant" && nests.length) return false;
     let previous: SerderKERI | null = null;
     if (!priorSaid) {
-      if (!["apply", "offer", "grant"].includes(verb) || !serder.sad!.ri || !serder.sad!.x) return false;
+      if (serder.ilk !== "xip" || !["apply", "offer", "grant"].includes(verb) || !serder.sad!.ri) return false;
     } else {
-      if (verb === "apply" || typeof priorSaid !== "string") return false;
+      if (serder.ilk !== "exn" || verb === "apply" || typeof priorSaid !== "string") return false;
       previous = this.prior(verb, serder, priorSaid);
       if (!previous) return false;
     }
-    if (verb === "offer" && !(q.dp as DisclosurePlan).length && (!previous || !this.plan(previous))) return false;
     const requiresAnchor = (attrs.ax as boolean[] | undefined)?.[0] === true;
     const priorAttrs = previous?.sad?.a;
     const priorAnchor = record(priorAttrs) && (priorAttrs.ax as boolean[] | undefined)?.[0] === true;
@@ -153,6 +151,10 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (previous) {
       const priorPlan = this.plan(previous);
       if (!priorPlan || !samePlan(plan, priorPlan)) return false;
+    }
+    if (!plan.length) {
+      if (!Array.isArray(attrs.o) || attrs.o.length || nests.length) return false;
+      return requiresAnchor ? (sscs.length ? this.sourceAnchor(serder, serder.pre!, sscs.at(-1)!) : false) : true;
     }
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
@@ -286,10 +288,15 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       !prior || previous?.length !== 3 || previous[0] !== "" || previous[1] !== "ipex"
       || !IPEX_V2_PREDECESSORS[verb].some((allowed) => allowed === previous[2])
     ) return null;
+    if (
+      prior.ilk === "xip"
+        ? !["apply", "offer", "grant"].includes(previous[2])
+        : prior.ilk !== "exn" || !prior.sad!.p
+    ) return null;
     if (verb === "spurn" && previous[2] === "grant" && prior.sad!.p) return null;
     if (
       current.sad!.ri !== prior.pre || !prior.sad!.ri || current.pre !== prior.sad!.ri
-      || current.sad!.x !== prior.sad!.x
+      || current.sad!.x !== (prior.ilk === "xip" ? prior.said : prior.sad!.x)
     ) return null;
     const response = this.hby.db.erpy.get(said);
     if (response && response.qb64 !== current.said && this.hby.db.exns.get(response.qb64)) return null;
@@ -307,10 +314,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       ) return null;
       seen.add(current.said);
       const q = current.sad!.q;
-      if (!record(q) || !validDisclosurePlan(q.dp)) return null;
-      if (q.dp.length) return q.dp;
+      const plan = record(q) ? singleDagDisclosurePlan(q.dp) : null;
+      if (plan === null) return null;
+      if (plan.length) return plan;
       const prior: unknown = current.sad!.p;
-      if (!prior) return null;
+      if (!prior) return [];
       current = typeof prior === "string" ? this.hby.db.exns.get(prior) : null;
     }
     return null;

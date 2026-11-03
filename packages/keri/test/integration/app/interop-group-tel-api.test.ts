@@ -536,8 +536,6 @@ Deno.test({
                 openingFile,
                 "--recipient",
                 holderGroup.pre,
-                "--xid",
-                issuance.said!,
                 "--plan",
                 JSON.stringify([[schema.said, "/", []]]),
                 "--approval-timeout",
@@ -565,7 +563,7 @@ Deno.test({
           }, {
             message: "group issuance",
             recipient: holderGroup.pre,
-            xid: issuance.said!,
+
             plan: [[schema.said, "/", []]],
           });
           assertEquals(selected.exn.sad!.ri, holderGroup.pre);
@@ -706,7 +704,7 @@ Deno.test({
             {
               message: "exact group-held presentation",
               recipient: verifier.member.pre,
-              xid: presentation.said!,
+
               plan: [[schema.said, "/", []]],
             },
           );
@@ -814,8 +812,6 @@ Deno.test({
           completed.grant,
           "--recipient",
           completed.recipient,
-          "--xid",
-          completed.registry,
           "--plan",
           JSON.stringify(completed.plan),
           "--approval-timeout",

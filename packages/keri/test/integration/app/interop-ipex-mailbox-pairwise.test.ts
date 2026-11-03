@@ -265,7 +265,7 @@ for (const tsDiscloser of [true, false]) {
                             message: invalid ? "invalid chain" : verb,
                             prior: previous ?? undefined,
                             recipient: py.pre,
-                            ...(!prior ? { xid: graph.fullNodes[0].said!, plan } : {}),
+                            ...(!prior ? { plan } : {}),
                           });
                           const nests = carried.map((node) => {
                             const issuer = graph.issuers.find((issuer) => issuer.pre === node.issuer);

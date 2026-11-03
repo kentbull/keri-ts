@@ -75,6 +75,11 @@ export function validDisclosurePlan(value: unknown): value is DisclosurePlan {
   return true;
 }
 
+/** Decode exactly one wire DAG without accepting the retired flat q.dp shape. */
+export function singleDagDisclosurePlan(value: unknown): DisclosurePlan | null {
+  return Array.isArray(value) && value.length === 1 && validDisclosurePlan(value[0]) ? value[0] : null;
+}
+
 /**
  * Index unique disclosed credential nodes and walk their reachable graph in BFS order.
  * Offers may omit far nodes; grants require every referenced node. Nested ownership

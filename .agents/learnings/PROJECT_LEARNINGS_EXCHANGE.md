@@ -73,9 +73,16 @@ Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 Generic XIP dispatch and Exchanger admission/retry use the same independent sender
 authentication and evidence stores as EXN. Selected v2-spec public vectors own
 the four-codec XIP/EXN body contract; an XIP uses its own SAID for transaction
-schema deadlines. The handler still owns route acceptance. IPEX opener/reply
-identity and the one-DAG disclosure shape must migrate together; generic XIP
-support does not qualify that separate conversation contract.
+schema deadlines. The handler still owns route acceptance. IPEX openers are XIP and derive their identity from their own SAID; EXN replies
+carry that identity in x and preserve the accepted prior chain. Only Offer/Grant
+XIP routes admit child trees. The selected wire uses exactly one outer DAG list,
+q.dp=[plan], while the graph owner retains one internal flat plan. Empty inner
+plans inherit with a prior or mean no disclosure at an opener; vacuous Grants
+carry o=[] and no nodes. Graph-policy and schema-query exceptions remain R13c work.
+The selected Python constructor preserves blank/stale exposed section claims while
+computing the top-level most-compact SAID; TS currently refuses those claims.
+Keep their raw fixtures visible as R05/R13d non-parity evidence. Wire-only positive
+fixtures prepare section commitments before signing, never during received-byte intake.
 
 CLI group selection is an authorization boundary. Ordinary interaction/rotation
 must direct operators to multisig commands before signing; generic exchange,
@@ -171,11 +178,11 @@ v1 retains its distinct prior-route rule (grant follows agree, not apply).
 Closed IPEX verbs and their guard belong to the protocol module; version-specific
 predecessor policies remain distinct. Application-defined IPEX payload fields
 match KERIpy extension semantics, while disclosure modifiers use a named dp field.
-The selected candidate's `q.dp` is the flat disclosure triple list. Empty `[]` is
-accepted-prior inheritance: reject empty Apply/unsolicited Offer/bare Grant, keep
-Agree empty, and default solicited Offer/linked Grant to ditto. Bare one-node Grant
-still states its explicit root selection. Builders, handler and resolver share this
-shape; never translate authenticated nested-plan bytes. Whole-node and subtree
+The selected candidate's `q.dp` is a one-DAG outer list containing the flat
+disclosure triples. An empty inner plan is accepted-prior inheritance or no
+disclosure for an opener. Agree stays empty, solicited Offer/linked Grant default
+to ditto, and a bare one-node Grant states its explicit root selection. Builders,
+handler and resolver share this wire boundary without rewriting signed bytes. Whole-node and subtree
 claims require the bounded schema closure proof owned by acdc/scheming.ts; missing
 schema resources use the existing EXN schema escrow. Presence and explicit leaf
 paths retain their separate meaning. Empty graph prefixes select by tuple BFS position;

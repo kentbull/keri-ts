@@ -319,7 +319,6 @@ function* acdcV2Disclosure(
           message,
           recipient,
           plan,
-          xid: parseStringOption(args.xid, "xid"),
           anchor: parseBooleanOption(args.anchor, "anchor"),
           priorSaid,
         };

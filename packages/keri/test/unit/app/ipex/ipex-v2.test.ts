@@ -40,7 +40,7 @@ import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { exincept } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
@@ -124,7 +124,7 @@ Deno.test("IPEX node authentication keeps missing KEL evidence distinct from ref
     }
   });
 });
-Deno.test("v2 IPEX preserves frozen wire evidence while separating historical policy refusals", async () => {
+Deno.test("v2 IPEX selected wire vectors retain explicit deferred schema, graph and section differences", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
@@ -133,8 +133,10 @@ Deno.test("v2 IPEX preserves frozen wire evidence while separating historical po
     const exchanger = new Exchanger(hby);
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
-      assertEquals(fixture.reference, "7ea525bab2a7f673041f793b31908aa29d0a6f1b");
-      const historicalPolicyRefusals = new Set(["edge operator E1E", "edge group AND"]);
+      assertEquals(fixture.reference, "ae8284995486855809e7f4988fa1579b63e1ff91");
+      const deferredGraphRefusals = new Set(["edge operator E1E", "edge group AND"]);
+      const deferredSchemaAcceptance = "apply empty schema identifier";
+      const deferredSectionClaims = new Set(["issuer proof under a different outer sender"]);
       let through = 0;
       let notifications = 0;
       const vry = runtime.vdr!.vry;
@@ -164,15 +166,43 @@ Deno.test("v2 IPEX preserves frozen wire evidence while separating historical po
             undefined,
             vry,
           );
-          const historicalPolicyRefusal = historicalPolicyRefusals.has(row.name);
-          const currentOutcome = historicalPolicyRefusal ? "accept" : row.outcome;
-          assertEquals(decision?.kind, currentOutcome, row.name);
+          const deferredGraphRefusal = deferredGraphRefusals.has(row.name);
+          const deferredSchemaRefusal = row.name === deferredSchemaAcceptance;
+          const deferredSectionRefusal = deferredSectionClaims.has(row.name);
+          const currentOutcome = deferredGraphRefusal
+            ? "accept"
+            : deferredSchemaRefusal || deferredSectionRefusal
+            ? "reject"
+            : row.outcome;
+          assertEquals(decision?.kind, currentOutcome, `${row.name}: ${JSON.stringify(decision)}`);
           assertEquals(childDispatches, 0, "nested nodes are not independent credential intake");
-          if (historicalPolicyRefusal) {
-            assertEquals(row.outcome, "reject", "historical Python policy outcome is preserved verbatim");
+          if (deferredGraphRefusal) {
+            assertEquals(row.outcome, "reject", "selected Python graph intake rejects; R13c owns this TS policy gap");
             const graph = walkIpexGraph(frames[0].nests![0].body.said!, frames[0].nests!, true, hby.db);
             assert(graph && !("kind" in graph));
             assertEquals(evaluateRelations(graph, hby.db), false, row.name);
+          }
+          if (deferredSchemaRefusal) {
+            assertEquals(
+              row.outcome,
+              "accept",
+              "selected Python allows string-only Apply schema queries; R13c remains open",
+            );
+          }
+          if (deferredSectionRefusal || row.name === "stale exposed section claim") {
+            assertEquals(
+              row.outcome,
+              deferredSectionRefusal ? "accept" : "reject",
+              "record the actual IPEX outcome independently of Serder verification",
+            );
+            assertEquals(
+              row.pythonSectionVerifies,
+              true,
+              "selected Python Serder accepts the exposed claim; R05/R13d remains open",
+            );
+            const child = frames[0].nests![0].body;
+            assert(child instanceof SerderACDC);
+            assertEquals(child.verify(), false, "TS retains its exposed-section commitment check");
           }
           if (currentOutcome === "accept") {
             notifications++;
@@ -227,7 +257,7 @@ Deno.test("v2 IPEX competing nested offers share one synchronous conversation de
         kind: Kinds.json,
         message: "apply",
         recipient: sender.pre,
-        xid: reference.body.said!,
+
         plan: [[schema.$id, "/", []]],
       });
       const frame = (hab: typeof sender, body: SerderKERI, nests: readonly CesrFrame[] = []): CesrFrame => ({
@@ -292,7 +322,7 @@ Deno.test("v2 IPEX competing nested offers share one synchronous conversation de
   });
 });
 
-Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation preserves frozen commitments", async () => {
+Deno.test("v2 IPEX construction keeps parsed commitments while generating XIP transaction identities", async () => {
   const row = fixture.cases[0];
   const [frame] = await parseBytes(b(row.wire));
   {
@@ -302,19 +332,17 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
       kind: parent.kind,
       message: row.name,
       recipient: parent.sad!.ri as string,
-      xid: parent.sad!.x as string,
+
       stamp: parent.sad!.dt as string,
     };
     const built = ipexExnBody(parent.pre!, parent.route as IpexRoute, nodes, opts);
-    assertEquals(built.raw, parent.raw);
+    assertEquals({ ...built.sad, d: "", u: "" }, { ...parent.sad, d: "", u: "" });
     const plan = [[(nodes[0].schema as { $id: string }).$id, "/", []]] as const;
-    assertEquals(built.sad!.q, { dp: plan }, "a bare one-node Grant states its root selection");
+    assertEquals(built.sad!.q, { dp: [plan] }, "a bare one-node Grant states its root selection");
     for (const route of ["/ipex/apply", "/ipex/offer", "/ipex/grant"] as const) {
-      assertThrows(
-        () => ipexExnBody(parent.pre!, route, [], { ...opts, plan: [] }),
-        Error,
-        "opener requires a non-empty disclosure plan",
-      );
+      const empty = ipexExnBody(parent.pre!, route, [], { ...opts, plan: [] });
+      assertEquals(empty.ilk, "xip");
+      assertEquals(empty.sad!.q, { dp: [[]] });
     }
     assertThrows(
       () => ipexExnBody(parent.pre!, "/ipex/apply", [], { ...opts, plan: [["", "/", []]] }),
@@ -322,10 +350,10 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
       "valid disclosure plan",
     );
     for (const dp of [[], { invalid: "plan" }, [["", "/", []]]]) {
-      const [prior] = exchange("/ipex/apply", { m: "invalid prior plan" }, {
+      const prior = exincept("/ipex/apply", {
+        attributes: { m: "invalid prior plan" },
         sender: opts.recipient,
-        recipient: parent.pre!,
-        xid: opts.xid,
+        receiver: parent.pre!,
         modifiers: { dp },
         kind: parent.kind,
         pvrsn: Vrsn_2_0,
@@ -333,7 +361,7 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
       assertThrows(
         () => ipexExnBody(parent.pre!, "/ipex/offer", nodes, { message: "offer", prior }),
         Error,
-        "cannot inherit an invalid or empty Apply plan",
+        "cannot inherit an invalid Apply plan",
       );
     }
     // No frame payload is touched by the ordinary body constructor.
@@ -351,7 +379,7 @@ Deno.test("v2 IPEX construction uses parsed bodies directly and byte preparation
       "must not carry attachments",
     );
     const [prepared, nested] = await run(() => prepareIpexExn(parent.pre!, "/ipex/grant", childWire, opts));
-    assertEquals(prepared.raw, built.raw);
+    assertEquals({ ...prepared.sad, d: "", u: "" }, { ...built.sad, d: "", u: "" });
     assertEquals(nested.length > 0, true);
     assertEquals(prepared.gvrsn, Vrsn_2_0);
     const childAgain = await parseBytes(nested);
@@ -379,7 +407,7 @@ for (const foreign of [false, true]) {
           };
         };
         const childSeal = anchor(credential.said!);
-        const options = { message: "historical grant", recipient: recipient.pre, xid: credential.said!, anchor: true };
+        const options = { message: "historical grant", recipient: recipient.pre, anchor: true };
         const grant = ipexExnBody(sender.pre, "/ipex/grant", [credential], options);
         const oldEndorsement = new TransIdxSigGroup(
           new Prefixer({ qb64: issuer.pre }),
@@ -496,7 +524,7 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
         ...common,
         message: "apply",
         recipient: sender.pre,
-        xid: reference.body.said!,
+
         plan: [[schema.$id, "/", []]],
       });
       const offer = ipexExnBody(sender.pre, "/ipex/offer", [node.body as SerderACDC], {
@@ -510,8 +538,13 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
         message: "grant",
         prior: agree,
       });
-      assertEquals(apply.sad!.q, { dp: [[schema.$id, "/", []]] });
-      for (const reply of [offer, agree, grant]) assertEquals(reply.sad!.q, { dp: [] });
+      assertEquals(apply.sad!.q, { dp: [[[schema.$id, "/", []]]] });
+      assertEquals(apply.ilk, "xip");
+      for (const reply of [offer, agree, grant]) {
+        assertEquals(reply.ilk, "exn");
+        assertEquals(reply.sad!.x, apply.said);
+        assertEquals(reply.sad!.q, { dp: [[]] });
+      }
       for (const body of [apply, offer, agree, grant]) {
         const hab = body.pre === sender.pre ? sender : receiver;
         const establishment = hab.db.getEvtSerder(hab.pre, hab.kever!.lastEst.d)!;
@@ -576,7 +609,6 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
         ...common,
         message: "generic retention",
         recipient: receiver.pre,
-        xid: node.body.said!,
       });
       const genericProof = new TransIdxSigGroup(
         new Prefixer({ qb64: sender.pre }),
@@ -707,7 +739,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       kind: Kinds.json,
       message: "presentation",
       recipient: issuee.pre,
-      xid: credential.said!,
+
       date: receipt,
       anchor: true,
     });
@@ -818,7 +850,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         kind: Kinds.json,
         message: "other target",
         recipient: issuee.pre,
-        xid: credential.said!,
+
         date: receipt,
         anchor: true,
       });
@@ -933,7 +965,6 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
         kind: Kinds.json,
         message: "registry-backed",
         recipient: sender.pre,
-        xid: credential.said!,
       });
       const establishment = sender.kever!.serder;
       const tsgs = [
@@ -1016,7 +1047,6 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
         kind: Kinds.json,
         message: "missing node disclosure",
         recipient: sender.pre,
-        xid: credential.said!,
       });
       const groups = [
         new TransIdxSigGroup(
@@ -1075,7 +1105,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       const serder = ipexExnBody(sender.pre, verb, bodies, {
         message: crypto.randomUUID(),
         recipient: recipient.pre,
-        xid: schema.said,
+
         plan: bodies.map((body, i) => [schema.said, i ? "/e/link/_/" : "/", []]),
       });
       return {
@@ -1152,7 +1182,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         const apply = ipexExnBody(recipient.pre, "/ipex/apply", [], {
           message: "request",
           recipient: sender.pre,
-          xid: crypto.randomUUID(),
+
           plan: [[schema.said, "/", []]],
         });
         const offered = ipexExnBody(sender.pre, "/ipex/offer", [metadata], { message: "promise", prior: apply });
@@ -1171,11 +1201,11 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       }
       // Bypass authoring validation: an issuer signature cannot turn metadata into a Grant credential.
       const metadata = acdcmap(issuer.pre, { uuid: "", schema: schema.said, attribute: { d: "", name: "Ada" } });
-      const [metadataGrant] = exchange("/ipex/grant", { m: "metadata is not a credential", o: [metadata.said] }, {
+      const metadataGrant = exincept("/ipex/grant", {
+        attributes: { m: "metadata is not a credential", o: [metadata.said] },
         sender: sender.pre,
-        recipient: recipient.pre,
-        xid: crypto.randomUUID(),
-        modifiers: { dp: [[schema.said, "/", []]] },
+        receiver: recipient.pre,
+        modifiers: { dp: [[[schema.said, "/", []]]] },
         pvrsn: Vrsn_2_0,
       });
       assertEquals((yield* submit(metadataGrant, [node(metadata)])).kind, "reject");
@@ -1194,7 +1224,6 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         const grant = ipexExnBody(sender.pre, "/ipex/grant", [publicNode], {
           message: "public fixed-field credential",
           recipient: recipient.pre,
-          xid: crypto.randomUUID(),
         });
         assertEquals((yield* submit(grant, [node(publicNode)])).kind, "accept");
       }
@@ -1227,7 +1256,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         const grant = ipexExnBody(sender.pre, "/ipex/grant", [body], {
           message: crypto.randomUUID(),
           recipient: recipient.pre,
-          xid: crypto.randomUUID(),
+
           plan: [[body.schema as string, "/", fields]],
         });
         return submit(grant, [node(body)]);
@@ -1284,16 +1313,16 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         return acdcmap(issuer.pre, { schema: schema.sed as MapperMap, attribute: { d: "", name: "Near" }, edge });
       };
       const edgeIntake = (bodies: SerderACDC[], prefixes: string[]) => {
-        const [body] = exchange("/ipex/grant", { m: crypto.randomUUID(), o: [bodies[0].said] }, {
+        const body = exincept("/ipex/grant", {
+          attributes: { m: crypto.randomUUID(), o: [bodies[0].said] },
           sender: sender.pre,
-          recipient: recipient.pre,
-          xid: crypto.randomUUID(),
+          receiver: recipient.pre,
           pvrsn: Vrsn_2_0,
           modifiers: {
-            dp: prefixes.map((prefix, i) => {
+            dp: [prefixes.map((prefix, i) => {
               const source = bodies[i].schema;
               return [typeof source === "string" ? source : (source as MapperMap).$id, prefix, []];
-            }),
+            })],
           },
         });
         return submit(body, bodies.map((body) => node(body)));
@@ -1489,6 +1518,100 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         hby.db.schema.get = get;
       }
       assertEquals(hby.db.exns.get(valid.said!), null, "conversation acceptance does not accept a credential");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("v2 IPEX binds EXN continuations to the XIP SAID and enforces one wire DAG", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const requester = hby.makeHab("requester"), responder = hby.makeHab("responder");
+    const exchanger = new Exchanger(hby);
+    loadIpexHandlers(hby, exchanger);
+    const submit = (body: SerderKERI, signer: typeof requester) =>
+      exchanger.processEvent({
+        serder: body,
+        tsgs: [
+          new TransIdxSigGroup(
+            signer.kever!.prefixer,
+            signer.kever!.sner,
+            new Diger({ qb64: signer.kever!.said }),
+            signer.sign(body.raw, true),
+          ),
+        ],
+      });
+    try {
+      const apply = ipexExnBody(requester.pre, "/ipex/apply", [], {
+        message: "no disclosure",
+        recipient: responder.pre,
+        plan: [],
+      });
+      for (const dp of [[], [[], []], [null]]) {
+        const malformed = new SerderKERI({ sad: { ...apply.sad, q: { dp } }, makify: true });
+        assertEquals((yield* submit(malformed, requester)).kind, "reject");
+        assertEquals(exchanger.complete(malformed.said!), false);
+      }
+      const exnOpener = new SerderKERI({
+        sad: {
+          t: "exn",
+          i: requester.pre,
+          ri: responder.pre,
+          x: apply.said,
+          p: "",
+          dt: apply.stamp,
+          r: "/ipex/apply",
+          q: { dp: [[]] },
+          a: { m: "invalid opener ilk" },
+        },
+        pvrsn: Vrsn_2_0,
+        makify: true,
+      });
+      assertEquals((yield* submit(exnOpener, requester)).kind, "reject");
+      assertEquals((yield* submit(apply, requester)).kind, "accept");
+      const offer = ipexExnBody(responder.pre, "/ipex/offer", [], { message: "offer", prior: apply });
+      const wrong = new SerderKERI({ sad: { ...offer.sad, x: offer.said }, makify: true });
+      assertEquals((yield* submit(wrong, responder)).kind, "reject");
+      assertEquals(hby.db.erpy.get(apply.said!), null, "a refused transaction ID cannot consume the response");
+      assertEquals((yield* submit(offer, responder)).kind, "accept");
+      const agree = ipexExnBody(requester.pre, "/ipex/agree", [], { message: "agree", prior: offer });
+      const grant = ipexExnBody(responder.pre, "/ipex/grant", [], { message: "vacuous grant", prior: agree });
+      const admit = ipexExnBody(requester.pre, "/ipex/admit", [], { message: "admit", prior: grant });
+      for (const [body, signer] of [[agree, requester], [grant, responder], [admit, requester]] as const) {
+        assertEquals(body.ilk, "exn");
+        assertEquals(body.sad!.x, apply.said);
+        assertEquals((yield* submit(body, signer)).kind, "accept");
+      }
+      assertEquals(grant.sad!.a, { m: "vacuous grant", o: [] });
+      assertEquals(grant.sad!.q, { dp: [[]] });
+      for (const verb of ["offer", "grant"] as const) {
+        const opener = ipexExnBody(responder.pre, `/ipex/${verb}`, [], {
+          message: `empty ${verb}`,
+          recipient: requester.pre,
+          plan: [],
+        });
+        assertEquals(opener.ilk, "xip");
+        assertEquals((yield* submit(opener, responder)).kind, "accept");
+      }
+      const anchored = ipexExnBody(responder.pre, "/ipex/grant", [], {
+        message: "anchored vacuous grant",
+        recipient: requester.pre,
+        plan: [],
+        anchor: true,
+      });
+      assertEquals((yield* submit(anchored, responder)).kind, "reject", "empty disclosure cannot waive ax");
+      responder.interact({ data: [{ d: anchored.said! }] });
+      assertEquals(
+        (yield* exchanger.processEvent({
+          serder: anchored,
+          sscs: [{
+            s: responder.kever!.sner,
+            d: new Diger({ qb64: responder.kever!.said }),
+          }],
+        })).kind,
+        "accept",
+      );
     } finally {
       yield* hby.close(true);
     }

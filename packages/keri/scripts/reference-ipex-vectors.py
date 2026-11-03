@@ -1,26 +1,52 @@
-"""Independent flat-plan IPEX wire and decisions from the pinned, unmodified candidate."""
+"""Independent XIP/EXN and one-DAG IPEX wire and decisions from pinned v2-spec."""
+import copy
+import hashlib
 import json
 import pathlib
 import subprocess
 import sys
 from keri import Kinds, Vrsn_2_0
 from keri.app import openHby
-from keri.core import Diger, Number, Parser, Salter, Schemer, SealSource, exchange, messagize
+from keri.core import Compactor, Diger, Noncer, Number, Parser, Salter, Schemer, SealSource, SerderACDC, exchange, exchept, messagize
 from keri.acdc import acdcmap, ipexing
 from keri.peer import Exchanger
 
-REFERENCE = "7ea525bab2a7f673041f793b31908aa29d0a6f1b"
+REFERENCE = "ae8284995486855809e7f4988fa1579b63e1ff91"
 root = pathlib.Path(ipexing.__file__).resolve().parents[3]
 
 
 def verify_source():
     """Check actual imported modules, including imports triggered by execution."""
-    assert subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip() == REFERENCE
+    modules = {}
     for name, module in list(sys.modules.items()):
         if (name == "keri" or name.startswith("keri.")) and getattr(module, "__file__", None):
             path = pathlib.Path(module.__file__).resolve()
             if path.suffix == ".py":
-                assert path.read_bytes() == subprocess.check_output(["git", "-C", str(root), "show", f"{REFERENCE}:{path.relative_to(root)}"]), str(path)
+                imported = path.read_bytes()
+                assert imported == subprocess.check_output(["git", "-c", f"safe.directory={root}", "-C", str(root), "show", f"{REFERENCE}:{path.relative_to(root)}"]), str(path)
+                modules[str(path.relative_to(root))] = hashlib.sha256(imported).hexdigest()
+    return dict(sorted(modules.items()))
+
+
+def committed_acdcmap(**kwa):
+    """Prepare disclosed section claims using Python owners before any signature.
+
+    acdcmap currently preserves supplied empty/stale section claims. Wire/chain
+    positives prepare those claims explicitly; separate cases retain the common
+    constructor output verbatim so this unresolved interoperability gap stays visible.
+    """
+    node = acdcmap(**kwa)
+    sad = copy.deepcopy(node.sad)
+    for label in ("a", "e", "r"):
+        section = sad.get(label)
+        if isinstance(section, dict) and section:
+            compactor = Compactor(mad=section, makify=True, kind=node.kind)
+            compactor.compact()
+            compactor.expand()
+            sad[label] = list(compactor.partials.values())[-1].mad
+    prepared = SerderACDC(sad=sad, makify=True)
+    assert prepared.said == node.said, "preparing section claims must preserve credential identity"
+    return prepared
 
 
 class Recorder:
@@ -61,7 +87,7 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
             leaf["o"] = op
         return dict(d="", **{label: leaf})
 
-    origin = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
+    origin = committed_acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
     schema = origin.schema["$id"]
     plan = [[schema, "/", []]]
 
@@ -73,20 +99,32 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
         elif verb == "offer" and nodes:
             data["o"] = [ipexing._streamSerder(nodes[0]).said]
         data.update(attrs or {})
-        q = dict(dp=plan if dp is None else dp) if verb in ("apply", "offer", "agree", "grant") else {}
-        body = exchange(sender=sender.pre, receiver=to or (prior.pre if prior else recipient.pre),
-                        xid=prior.sad["x"] if prior else Diger(ser=name.encode()).qb64,
-                        prior=prior.said if prior else "", route=f"/ipex/{verb}", modifiers=q,
-                        stamp=stamp, attributes=data, pvrsn=Vrsn_2_0, gvrsn=Vrsn_2_0, kind=Kinds.json)
+        q = dict(dp=[plan if dp is None else dp]) if verb in ("apply", "offer", "agree", "grant") else {}
+        arguments = dict(sender=sender.pre, receiver=to or (prior.pre if prior else recipient.pre),
+                         route=f"/ipex/{verb}", modifiers=q,
+                         stamp=stamp, attributes=data, pvrsn=Vrsn_2_0, gvrsn=Vrsn_2_0, kind=Kinds.json)
+        if prior:
+            xid = prior.said if prior.ilk == "xip" else prior.sad["x"]
+            body = exchange(xid=xid, prior=prior.said, **arguments)
+        else:
+            body = exchept(nonce=Noncer(raw=Diger(ser=name.encode()).raw[:16]).qb64, **arguments)
         wire = ipexing._sign(sender, body, nests=[ipexing._normalizeNodeStream(n) for n in nodes or []], endorsers=endorsers)
         parsed = Parser().parse(ims=bytearray(wire), framed=False, processive=False)
         assert parsed is not None and len(parsed) == 1, name
         Parser().parse(ims=bytearray(wire), framed=False, exc=exc)
         outcome = "accept" if hby.db.exns.get(keys=(body.said,)) else "escrow" if hby.db.epse.get(keys=(body.said,)) else "reject"
-        cases.append(dict(name=name, through=len(wires), wire=bytes(wire).decode(), said=body.said, outcome=outcome))
+        case = dict(name=name, through=len(wires), wire=bytes(wire).decode(), said=body.said, outcome=outcome)
+        if name in ("issuer proof under a different outer sender", "stale exposed section claim"):
+            case["pythonSectionVerifies"] = ipexing._streamSerder(nodes[0]).verify()
+        cases.append(case)
         return body
 
-    emit("issuer proof under a different outer sender", nodes=[signed(origin)])
+    emit("prepared issuer proof under a different outer sender", nodes=[signed(origin)])
+    raw_origin = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
+    emit("issuer proof under a different outer sender", nodes=[signed(raw_origin)])
+    stale = copy.deepcopy(raw_origin.sad)
+    stale["a"]["d"] = Diger(ser=b"unrelated section claim").qb64
+    emit("stale exposed section claim", nodes=[signed(SerderACDC(sad=stale, makify=True))])
     emit("outer signatures do not authenticate unsigned children", nodes=[origin])
     emit("tampered child signature", nodes=[signed(origin, data=b"different credential")])
     emit("foreign child signer", nodes=[signed(origin, holder)])
@@ -107,25 +145,24 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
         },
         "additionalProperties": False,
     })
-    whole = acdcmap(israid=issuer.pre, iseaid=holder.pre, schema=whole_schema.sed,
+    whole = committed_acdcmap(israid=issuer.pre, iseaid=holder.pre, schema=whole_schema.sed,
                     attribute=dict(d="", role="member"))
     emit("whole disclosure", nodes=[signed(whole)], dp=[[whole_schema.said, "/", [""]]])
     assert cases[-1]["outcome"] == "accept", "closed typed whole disclosure remains positive"
     emit("requested canonical attribute path", nodes=[signed(origin)], dp=[[schema, "/", ["a/role"]]])
-    nontrans_node = acdcmap(israid=nontrans.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
+    nontrans_node = committed_acdcmap(israid=nontrans.pre, iseaid=holder.pre, attribute=dict(d="", role="member"))
     emit("nontransferable child issuer", nodes=[signed(nontrans_node, nontrans)], dp=[[nontrans_node.schema["$id"], "/", []]])
     emit("requested missing field", nodes=[signed(origin)], dp=[[schema, "/", ["a/missing"]]])
     emit("wrong schema obligation", nodes=[signed(origin)], dp=[[issuer.pre, "/", []]])
     emit("vacuous grant", dp=[])
-    assert cases[-1]["outcome"] == "reject", "an empty plan cannot open a Grant"
+    assert cases[-1]["outcome"] == "accept", "an explicitly empty opener discloses nothing"
     emit("empty plan cannot carry a child", nodes=[signed(origin)], dp=[])
     emit("grant optional foreign evidence", nodes=[signed(origin)], endorsers=[issuer])
     emit("apply rejects foreign evidence", verb="apply", endorsers=[issuer])
-    emit("apply rejects empty schema identifier", verb="apply", dp=[["", "/", []]])
-    assert cases[-1]["outcome"] == "reject", "Apply schema identifiers must be qualified SAIDs"
+    emit("apply empty schema identifier", verb="apply", dp=[["", "/", []]])
 
-    far = acdcmap(israid=issuer.pre, iseaid=issuer.pre, attribute=dict(d="", role="authority"))
-    near = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, "I2I"))
+    far = committed_acdcmap(israid=issuer.pre, iseaid=issuer.pre, attribute=dict(d="", role="authority"))
+    near = committed_acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, "I2I"))
     graph_plan = [[near.schema["$id"], "/", []], [far.schema["$id"], "/e/authority/_/", []]]
     emit("closed graph with per-node issuer proofs", nodes=[signed(near), signed(far)], dp=graph_plan)
     emit("closed graph cannot omit far node", nodes=[signed(near)], dp=graph_plan)
@@ -136,13 +173,13 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
     emit("disclosure order follows breadth first graph", nodes=[signed(near), signed(far)], dp=list(reversed(graph_plan)))
     # Unevaluated reference stubs are not parity requirements for TS operator support.
     for op in ("E1E", "NI2I"):
-        node = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, op))
+        node = committed_acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edge("authority", far, op))
         dp = [[node.schema["$id"], "/", []], [far.schema["$id"], "/e/authority/_/", []]]
         emit(f"edge operator {op}", nodes=[signed(node), signed(far)], dp=dp)
 
     for operator in ("AND", "OR"):
         edges = dict(d="", o=operator, good=dict(d="", n=far.said, o="I2I"), mismatch=dict(d="", n=origin.said, o="I2I"))
-        grouped = acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edges)
+        grouped = committed_acdcmap(israid=issuer.pre, iseaid=holder.pre, attribute=dict(d="", role="member"), edge=edges)
         dp = [[grouped.schema["$id"], "/", []], [far.schema["$id"], "/e/good/_/", []], [schema, "/e/mismatch/_/", []]]
         emit(f"edge group {operator}", nodes=[signed(grouped), signed(far), signed(origin)], dp=dp)
 
@@ -172,5 +209,5 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
 
 assert cases[0]["outcome"] == "accept"
 assert any(row["outcome"] == "reject" for row in cases)
-verify_source()
-pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(reference=REFERENCE, wires=wires, cases=cases), indent=2) + "\n")
+modules = verify_source()
+pathlib.Path(sys.argv[1]).write_text(json.dumps(dict(reference=REFERENCE, modules=modules, wires=wires, cases=cases), indent=2) + "\n")

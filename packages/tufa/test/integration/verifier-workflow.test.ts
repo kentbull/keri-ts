@@ -505,7 +505,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         const observationUrl = `https://localhost:${observerServer.addr.port}/`;
         const exn = ipexExnBody(holder.pre, "/ipex/grant", [partial], {
           recipient: verifierPre,
-          xid: new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64,
+
           message: "ACDC v2 retained partial",
           plan: [[(partial.schema as { $id: string }).$id, "/", []]],
         });
@@ -616,7 +616,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         );
         const fuller = ipexExnBody(holder.pre, "/ipex/grant", [full], {
           recipient: verifierPre,
-          xid: new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64,
+
           message: "explicit full view",
           plan: [[(full.schema as { $id: string }).$id, "/", []]],
         });
@@ -681,7 +681,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
           );
           const grant = ipexExnBody(holder.pre, "/ipex/grant", [near, far], {
             recipient: verifierPre,
-            xid: new Diger({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "E" }).qb64,
+
             message: operator,
             plan: [[(near.schema as { $id: string }).$id, "/", []], [
               (far.schema as { $id: string }).$id,
