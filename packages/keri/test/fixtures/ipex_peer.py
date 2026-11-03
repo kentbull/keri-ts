@@ -168,10 +168,7 @@ class IpexPeer:
         body, attachments = self.message(verb, previous, invalid)
         if self.wallet is not None and not invalid:
             return self.wallet_deliver(body, bytes(body.raw + attachments), prior if verb == "admit" else None)
-        semantic = invalid is True and self.graph_case in (
-            "I2I", "E1E", "AND", "OR", "NAND", "NOR", "unknown-leaf", "unknown-group",
-            "edge-schema", "inherited-schema", "malformed-schema")
-        return self.deliver(body, bytes(body.raw + attachments), not invalid or semantic)
+        return self.deliver(body, bytes(body.raw + attachments), not invalid)
 
     def receipt(self):
         """Use the actual receipt owner; no witness signature or quorum is manufactured."""
@@ -360,8 +357,7 @@ class IpexPeer:
             accepted=db.exns.get(keys=(inspect,)) is not None,
             escrowed=db.epse.get(keys=(inspect,)) is not None,
             nests=len(db.enst.get(keys=(inspect,))))
-        verdict = self.verification.evaluateGrant(inspect) if selected and selected.route == "/ipex/grant" else None
-        return dict(verdict=verdict, messages=[body.sad for body in messages], received=self.received,
+        return dict(messages=[body.sad for body in messages], received=self.received,
                     known=list(self.kvy.kevers), **({} if self.wallet else dict(notifications=len(self.recorder.items))), inspected=inspected,
                     nodes=[dict(said=nest.serder.said, attributes=nest.serder.sad["a"],
                                 raw=nest.serder.raw.decode(),

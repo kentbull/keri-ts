@@ -93,49 +93,16 @@ and which implementation verified it. Keep cases named by direction and concern.
 expectation. An operator/schema failure is distinct from a missing dependency.
 Preserve actual escrow semantics and positive controls.
 
-## TypeScript operator support, separate from interop
+## Shared operator profile
 
-The DI2I and NOT evidence below comes from dedicated keri-ts tests. Their earlier
-interop exclusion followed operator stubs in historical KERIpy `71438328` and
-inspected main `c102367e`; those limitations are not expected-refusal contracts
-for candidate `7ea525ba`, which implements both operators. Source support alone
-does not establish bilateral qualification. Claim candidate pairwise operator
-coverage only after successful independent peer tests; the TS-only results below
-do not supply that evidence.
-
-The [ACDC operator specification](https://trustoverip.github.io/kswg-acdc-specification/)
-defines delegation and negation. [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559)
-and [open #1564](https://github.com/WebOfTrust/keripy/pull/1564) clarify DI2I at any
-delegation depth. Test identity, multiple approved hops, unrelated issuers, absent
-approvals and DND-forbidden hops with a disinterested verifier. Each hop needs the
-delegator's anchored approval, not just the delegate's delpre assertion. Include
-a witness-held KEL whose delegated inception precedes delegator approval. Avoid
-an arbitrary depth cap or requiring approval of a later rotation to prove the
-inception relationship.
-
-The TS v2 graph now implements this DI2I profile. Seventeen dedicated cases cover
-identity, approved depths one through three, an ordinary disinterested validator,
-each missing approval in a witness-held chain, DND at root/intermediate hops,
-missing KELs, unrelated/untargeted cases, aggregate issuees, an unapproved later
-delegate rotation, the delegator's later witness change and a signed wrong-ordinal
-approval followed by the valid counterpart. A signed grant stays
-in proof escrow until its actual approval arrives. Read-only accepted-history
-lookup neither repairs hints nor imposes a depth cap. Identity operator precedence
-and targeted/untargeted defaults are also covered; the reference E1E entity-only
-extension remains explicit. These are TS tests, not Python DI2I interop.
-
-Node issuer authentication returns concrete authenticated evidence, a missing
-dependency or refusal independently of conversation policy. TS NOT uses a
-separate far-before-parent node-validity pass after every issuer and own schema
-passes. Its accepted issuance vocabulary is `issued`/`revoked`, using receiver-
-accepted observer evidence at each fresh validation. Known false relationships
-and revoked far nodes may satisfy NOT; missing/stale/forged evidence, malformed
-operators/schema resources and custom states cannot. Identity and additional
-schema constraints remain independent. Dedicated TS tests cover both truth
-values, nested AND/OR and NOT, actual observer state changes, missing KEL/schema/
-TEL retry across reopen, stale disclosure refusal and retained historical grants.
-This does not add Python NOT parity or imply global registry freshness. See the
-[IPEX contract](../../design-docs/exchange/IPEX.md) for the precise boundaries.
+The selected Python chaining profile owns operator behavior for both IPEX and
+application graph evaluation. Strong AND/OR reduces valid, invalid and unknown
+node verdicts with explicit retryability. NOT/DI2I and unsupported m-ary operators
+remain unknown. Current-source wire vectors cover these limits and malformed
+optional branches; there is no separate TS operator profile to qualify. Application
+issued/revoked policy is supplied as node verdicts, including the origin, while
+protocol authentication retains actual registry evidence without imposing that
+vocabulary. Preserve current/historical, exact-view, signing and consent controls.
 
 Kent's execution priority is complete disclosure/operator acceptance first, then
 KRAM/composed mailbox acceptance, then residual architecture cleanup, before
@@ -244,12 +211,21 @@ operator a negative case proves; include a valid counterpart so missing setup
 cannot masquerade as a security refusal. Reopen/replay assertions must inspect the
 actual stored representation, not a separately retained producer object.
 
+## Current-source qualification boundary
+
+The maintained Python `ipex_peer.py` wallet scenario still calls donor-only
+`NativeHaberyRuntime`, wallet and verification APIs. Its replacement against the
+current Python owner is required by R15 before claiming bilateral qualification.
+Source-pinned Python wire vectors and real TypeScript wallet/multisig/verifier
+checks are separate scoped evidence. Preserve actor/witness topology and accepted
+raw/proof observations when replacing that fixture; do not restore the private
+EGF verdict adapter or silently skip the scenario.
+
 ## Qualified baseline and regression floor
 
 The maintained pairwise owner covers the requested conversation, graph/operator,
-multiple/nested attribute, progressive, failure and spurn families. The DI2I and
-NOT results remain TS-only; candidate bilateral operator qualification is not
-established by this matrix. Preserve these cases rather than rebuilding the matrix.
+multiple/nested attribute, progressive, failure and spurn families. Use the selected
+upstream chaining profile and preserve its source-backed refusal/unknown cases.
 
 The composed KRAM/mailbox, residual architecture, complete maintained/manual and
 clean installed Node minimum/current gates pass for the published 1.0.0 baseline.

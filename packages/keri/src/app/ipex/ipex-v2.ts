@@ -6,6 +6,7 @@ import {
 } from "../../core/exchange/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
 import { type CesrFrame, Diger, ParserError, Prefixer, type SealSource, SerderACDC, type SerderKERI } from "cesr-ts";
+import { evaluateChain } from "../../acdc/chaining.ts";
 import { validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
@@ -16,7 +17,6 @@ import type { ExchangeRouteHandler, ExchangeRouteVerification } from "../exchang
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
-import { evaluateIpexChain } from "./ipex-chaining.ts";
 import {
   type DisclosurePlan,
   hasIpexNodeAttachments,
@@ -28,6 +28,7 @@ import {
 } from "./ipex-graph.ts";
 import {
   acceptedRegistryEvidence,
+  authenticatedNodeVerdict,
   authenticateIpexNode,
   type IpexNodeAuthentication,
 } from "./ipex-node-authentication.ts";
@@ -206,7 +207,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         ),
       );
     }
-    const verdict = evaluateIpexChain(graph, authentications, this.hby.db);
+    const verdict = evaluateChain(
+      graph,
+      new Map([...authentications].map(([said, auth]) => [said, authenticatedNodeVerdict(auth)])),
+      this.hby.db,
+    );
     if (!verdict || verdict.kind === "invalid") return false;
     if (verdict.kind === "valid") {
       const registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"][number][] = [];

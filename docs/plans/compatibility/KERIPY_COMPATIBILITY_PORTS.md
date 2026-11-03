@@ -135,10 +135,9 @@ peer failure. Preserve participant topology and independently accepted state.
 - [ ] Define KRAM adoption, exemptions and receiver-observed replay/time behavior
       for the chosen deployment. A failed authentication must not retry via a less
       protected legacy path. Retain sender policy and downstream proof verification.
-- [ ] Track TS-specific RegistryObserver, DI2I and NOT integration gaps against
-      their existing [registry](../credentials/REGISTRY_PLAN.md) and
-      [disclosure](../qualification/GRADUATED_DISCLOSURE_INTEROP.md) owners. They are
-      separate forward-port candidates, not evidence of present Python support.
+- [ ] Track RegistryObserver integration gaps against its existing
+      [registry](../credentials/REGISTRY_PLAN.md) owner. Operator behavior follows
+      selected upstream chaining, with application state policy supplied separately.
 
 Acceptance: legacy credential verification/revocation/replay, version-specific
 IPEX conversations and refusal graphs, missing issuer/registry/schema evidence,

@@ -25,17 +25,18 @@ import {
   acceptedRegistryEvidence,
   type AcdcV2Registry,
   authenticateIpexNode,
+  type ChainVerdict,
   envelopeFromFrame,
-  evaluateAcdcRelations,
+  evaluateChain,
   type Hab,
   ipexExnBody,
   type IpexV2BodyOptions,
   isLocalGroupHab,
+  issuedNodeVerdict,
   matchesRegistrySeal,
   prepareIpexExn,
   type Receiptor,
   type RegistryDisclosure,
-  type RegistryState,
   ValidationError,
   vetBlind,
   vetBound,
@@ -185,13 +186,12 @@ export class WalletDiscloser {
   private requireGraph(origin: string, raw: Uint8Array): void {
     const graph = walkIpexGraph(origin, parseBytes(raw), true);
     if (!graph) throw new ValidationError("Selected credential graph is incomplete.");
-    const states = new Map<string, RegistryState>();
+    const verdicts = new Map<string, ChainVerdict>();
     for (const [said, node] of graph.nodes) {
       const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.wallet.hby.db, this.wallet.registry);
-      if (auth.kind !== "authenticated") throw new ValidationError("Selected issuer proof is unavailable or invalid.");
-      if (auth.registration) states.set(said, auth.registration);
+      verdicts.set(said, issuedNodeVerdict(auth));
     }
-    if (evaluateAcdcRelations(graph, this.wallet.hby.db, states) !== true) {
+    if (evaluateChain(graph, verdicts, this.wallet.hby.db)?.kind !== "valid") {
       throw new ValidationError("Current authenticated graph truth is required before use.");
     }
   }

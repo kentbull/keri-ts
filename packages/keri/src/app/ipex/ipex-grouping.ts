@@ -27,10 +27,8 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
-import { evaluateAcdcRelations } from "../../acdc/graphing.ts";
-import type { RegistryState } from "../../acdc/regeventing.ts";
+import { type ChainVerdict, evaluateChain } from "../../acdc/chaining.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
-import { validateSchema } from "../../acdc/scheming.ts";
 import { resolveAttachmentGvrsn } from "../../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -75,7 +73,7 @@ import {
   validateAdmitGrant,
 } from "./ipex-credentialing.ts";
 import { walkIpexGraph } from "./ipex-graph.ts";
-import { authenticateIpexNode } from "./ipex-node-authentication.ts";
+import { authenticateIpexNode, issuedNodeVerdict } from "./ipex-node-authentication.ts";
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexConversationReady, ipexRecipient } from "./ipexing.ts";
 
 /** Authenticate the exact disclosed graph; only the existing evaluator's explicit true authorizes new use. */
@@ -87,19 +85,13 @@ function acdcV2GraphUse(
 ): boolean | null {
   const graph = walkIpexGraph(origin, nests, true);
   if (!graph) throw new ValidationError("ACDC v2 group graph is malformed or incomplete.");
-  const states = new Map<string, RegistryState>();
+  const verdicts = new Map<string, ChainVerdict>();
   for (const [said, node] of graph.nodes) {
-    const schema = validateSchema(node.body, hby.db);
-    if (schema.kind === "missing") return null;
-    if (schema.kind === "invalid") throw new ValidationError("ACDC v2 group node violates its own schema.");
-    const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry);
-    if (auth.kind === "missing") return null;
-    if (auth.kind !== "authenticated") throw new ValidationError("ACDC v2 group issuer proof is invalid.");
-    if (auth.registration) states.set(said, auth.registration);
+    verdicts.set(said, issuedNodeVerdict(authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry)));
   }
-  if (evaluateAcdcRelations(graph, hby.db, states) !== true) {
-    throw new ValidationError("ACDC v2 group graph is false or unresolved.");
-  }
+  const verdict = evaluateChain(graph, verdicts, hby.db);
+  if (verdict?.kind === "unknown" && verdict.retryable) return null;
+  if (verdict?.kind !== "valid") throw new ValidationError("ACDC v2 group graph is false or unresolved.");
   return true;
 }
 /** Current retained Grant authentication and graph truth are separate from protocol completion/history. */

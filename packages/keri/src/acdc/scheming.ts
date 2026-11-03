@@ -489,33 +489,6 @@ function staticEdgeSchema(schema: unknown, resources: SchemaResources, expanded 
   return schema;
 }
 
-/** Interpret only authenticated, declared string-only edge children; open/ambiguous values remain opaque. */
-export function simpleEdgeSchema(
-  acdc: SerderACDC,
-  db: Baser,
-  path: readonly string[],
-): boolean | Extract<SchemaValidation, { kind: "missing" }> {
-  const resources = new SchemaResources(db);
-  try {
-    const root = resources.admit(acdc.schema);
-    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : false;
-    let schema: unknown = root.schema, instance: unknown = acdc.sad;
-    for (const part of path) {
-      const selected = staticEdgeSchema(schema, resources, true);
-      if (
-        !selected || selected.type !== "object" || !object(instance) || "n" in instance
-        || !object(selected.properties) || !Object.hasOwn(selected.properties, part) || !Object.hasOwn(instance, part)
-      ) return false;
-      schema = selected.properties[part];
-      instance = instance[part];
-    }
-    return staticEdgeSchema(schema, resources)?.type === "string";
-  } catch (error) {
-    if (error instanceof InvalidSchema) return false;
-    throw error;
-  }
-}
-
 /** Positional far-node selectors require a closed, required hierarchy, never an instance-dependent shape. */
 export function fixedEdgeOrder(acdc: SerderACDC, db: Baser): boolean | Extract<SchemaValidation, { kind: "missing" }> {
   const resources = new SchemaResources(db);

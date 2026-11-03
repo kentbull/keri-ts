@@ -107,7 +107,7 @@ export {
 } from "../app/transport/tcp-egress.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
-export { type AcdcGraph, type AcdcRelationIssue, evaluateAcdcRelations } from "../acdc/graphing.ts";
+export { type AcdcGraph, type ChainVerdict, evaluateChain } from "../acdc/chaining.ts";
 export {
   Oobiery,
   oobiRequestExn,
@@ -243,6 +243,7 @@ export {
   acceptedRegistryEvidence,
   authenticateIpexNode,
   type IpexNodeAuthentication,
+  issuedNodeVerdict,
 } from "../app/ipex/ipex-node-authentication.ts";
 export {
   IPEX_GRANT_ROUTE,

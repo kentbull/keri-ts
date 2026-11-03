@@ -91,9 +91,9 @@ or all-group rollback promise; a complete enclosed message may progress before E
 | Qualification     | [References][pins], [battery][qualification], [disclosure matrix][disclosure] | Current imports, full inventory, maintained topology and installed packages |
 
 The [upstream registry review][gaps] distinguishes reference gaps from approved TS
-integrations. DI2I and NOT have separately qualified TS profiles; exclude them
-from Python interop while unsupported there. Missing/malformed/unknown evidence
-cannot satisfy negation. Do not seed accepted reference rows to manufacture parity.
+integrations. Chaining uses the selected upstream profile across IPEX and
+applications; unsupported operators remain unknown. Do not seed accepted reference
+rows to manufacture parity.
 Global TEL freshness, arbitrary nested-depth/topology cross-products and the broader
 unfinished protocol backlog are not activated by this completed release.
 

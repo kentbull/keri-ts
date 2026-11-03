@@ -6,13 +6,15 @@ import { type ExchangeRegistryStateShape, loadNests } from "keri-ts/db";
 import {
   acceptedRegistryEvidence,
   authenticateIpexNode,
+  type ChainVerdict,
   envelopeFromFrame,
-  evaluateAcdcRelations,
+  evaluateChain,
   type Exchanger,
   type Hab,
   type Habery,
   type HttpClient,
   isCesrContentType,
+  issuedNodeVerdict,
   query,
   type RegistryDisclosure,
   type RegistryState,
@@ -155,11 +157,13 @@ export class AcdcV2Verifier {
     const graph = walkIpexGraph(inspected.credential.said!, loadNests(this.hby.db, grant), true);
     if (!graph) return result("refused");
     const registrations = new Map<string, RegistryState>();
-    for (const [said, node] of graph.nodes) {
-      const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.hby.db, this.evidence.store, true);
-      if (auth.kind !== "authenticated") return result(auth.kind === "missing" ? "missing" : "refused");
-      if (auth.registration) registrations.set(said, auth.registration);
-    }
+    const verdicts = new Map<string, ChainVerdict>();
+    const missing = (): ChainVerdict => ({
+      kind: "unknown",
+      retryable: true,
+      reason: "Missing current registry evidence.",
+      schemas: [],
+    });
     const registries = new Set<string>();
     for (const { body } of graph.nodes.values()) {
       if (body.regid) registries.add(body.regid);
@@ -171,25 +175,40 @@ export class AcdcV2Verifier {
         && typeof (attrs as Record<string, unknown>).i === "string"
       ) registries.add((attrs as { rd: string }).rd);
     }
+    const unavailable = new Set<string>();
     for (const regid of registries) {
       const observation = yield* this.observe(regid);
-      if (!observation) return result("missing");
-      observations.push(observation);
+      if (observation) observations.push(observation);
+      else unavailable.add(regid);
     }
-    for (const node of graph.nodes.values()) {
-      if (!node.body.regid) continue;
+    for (const [said, node] of graph.nodes) {
+      const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.hby.db, this.evidence.store, true);
+      verdicts.set(said, issuedNodeVerdict(auth));
+      if (auth.kind !== "authenticated" || !node.body.regid) continue;
+      if (unavailable.has(node.body.regid)) {
+        verdicts.set(said, missing());
+        continue;
+      }
       const chain = acceptedRegistryEvidence(this.evidence.store, node.body.regid);
-      if (!chain) return result("missing");
+      if (!chain) {
+        verdicts.set(said, missing());
+        continue;
+      }
       const envelope = envelopeFromFrame(node), proofs = new Map<string, RegistryDisclosure>();
       for (const proof of [...envelope.bsqs, ...envelope.bsss]) proofs.set(proof.d.nonce, proof);
       const encoded = (proof: RegistryDisclosure) => "bn" in proof ? BoundState.qb64b(proof) : BlindState.qb64b(proof);
       // Public source proofs may establish current standing; retained node bytes and historical selection stay unchanged.
+      let conflict = false;
       for (const event of chain.updates) {
         const proof = this.evidence.store.publicOpening(event.said!);
         if (!proof) continue;
         const previous = proofs.get(proof.d.nonce);
-        if (previous && !bytesEqual(encoded(previous), encoded(proof))) return result("refused");
+        if (previous && !bytesEqual(encoded(previous), encoded(proof))) conflict = true;
         proofs.set(proof.d.nonce, proof);
+      }
+      if (conflict) {
+        verdicts.set(said, { kind: "invalid" });
+        continue;
       }
       const state = vetBinds({
         ...chain,
@@ -198,24 +217,41 @@ export class AcdcV2Verifier {
         target: node.body.said!,
         acdc: node.body,
       });
-      if (state.kind !== "verified") return result(state.kind === "missing" ? "missing" : "refused");
-      registrations.set(node.body.said!, state.state);
+      if (state.kind !== "verified") {
+        verdicts.set(said, state.kind === "missing" ? missing() : { kind: "invalid" });
+        continue;
+      }
+      registrations.set(said, state.state);
+      verdicts.set(said, issuedNodeVerdict({ kind: "authenticated", registration: state.state }));
     }
-    const truth = evaluateAcdcRelations(graph, this.hby.db, registrations);
-    if (
-      observations.some(observation => {
-        const age = this.options.now() - Number(timestampMicros(observation.observedAt)!) / 1000;
-        return age < 0 || age > this.options.maximumAgeMs
-          || this.evidence.store.head(observation.registry)?.qb64 !== observation.head;
-      })
-    ) return result("missing");
-    // The shared evaluator deliberately excludes the origin's own standing; this consumer requires an issued root.
+    // Freshness failures belong to their node, so an optional branch can remain unused.
+    for (const observation of observations) {
+      const age = this.options.now() - Number(timestampMicros(observation.observedAt)!) / 1000;
+      if (
+        age < 0 || age > this.options.maximumAgeMs
+        || this.evidence.store.head(observation.registry)?.qb64 !== observation.head
+      ) unavailable.add(observation.registry);
+    }
+    for (const [said, { body }] of graph.nodes) {
+      const attrs = body.attrib;
+      const presentation = attrs && typeof attrs === "object" && !Array.isArray(attrs)
+        ? (attrs as Record<string, unknown>).rd
+        : null;
+      if (
+        (body.regid && unavailable.has(body.regid))
+        || (typeof presentation === "string" && unavailable.has(presentation))
+      ) {
+        if (registrations.has(said) || verdicts.get(said)?.kind !== "invalid") verdicts.set(said, missing());
+      }
+    }
+    const truth = evaluateChain(graph, verdicts, this.hby.db);
     const rootState = registrations.get(inspected.credential.said!)?.state;
-    if (inspected.credential.regid && rootState !== "issued") {
-      return result(rootState === "revoked" ? "revoked" : "missing");
+    if (!truth) return result("refused");
+    if (rootState === "revoked" && verdicts.get(inspected.credential.said!)?.kind === "invalid") {
+      return result("revoked");
     }
-    if (truth === true) return result("issued");
-    if (truth !== false) return result("missing");
+    if (truth.kind === "valid") return result("issued");
+    if (truth.kind === "unknown") return result("missing");
     return result("refused");
   }
 }

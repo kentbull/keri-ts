@@ -5,10 +5,10 @@ retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
 supply node-local issuer evidence, reduced with each node’s own edges under the selected IPEX profile. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
-signatures. Parent proofs never authenticate children. The separate ACDC evaluator supports I2I/NI2I/DI2I, E1E and NOT
-under the profiles below. IPEX admission separately implements the selected reference’s AND/OR profile; application operators never silently extend that admission profile. The
+signatures. Parent proofs never authenticate children. The shared ACDC evaluator applies the selected upstream chaining profile
+with different caller-supplied node verdicts for protocol authentication and new application use. The
 [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-keeps TS operator qualification distinct from pairwise evidence.
+keeps source characterization distinct from pairwise evidence.
 Deeper child-owned nests are
 guarded until their processing is defined.
 
@@ -138,8 +138,7 @@ leaf requests retain their independent meanings.
 IPEX traversal and virtual `_` hops accept expanded leaves with exactly the
 reserved d/u/n/s/o/w labels; compact member strings name Edge blocks, not far
 credentials. Section and nested group s pins are both reserved and inherited.
-The application evaluator’s schema-proven simple-edge classifier and application
-leaf properties remain separate and unchanged.
+The same edge shapes apply to application evaluation.
 
 An empty graph prefix uses its tuple's BFS position. A nonorigin positional tuple
 requires the full gapless BFS plan and a schema-proven closed, required edge hierarchy
@@ -150,46 +149,19 @@ origin-first and strictly BFS ordered; intermediate `_` hops restart at e. Relat
 empty fields under an empty prefix request nothing; d/ still requests whole closure.
 These bounded rules do not claim universal shorthand or whole-node interoperability.
 
-The separate application TypeScript DI2I contract admits identity or an approved delegation chain at any
-depth. Every hop needs the delegator's accepted approval of the delegated inception;
-local/witness-held `delpre` alone is no authority. Read DND from each delegator's
-inception, independently of protected KEL acceptance. Later delegate rotations do
-not renew the inception relationship. Missing KEL/approval evidence is a typed
-evaluator dependency, not an EXN escrow or permanent invalidity verdict; lookup never repairs storage.
-Identity operators I2I/NI2I/DI2I conflict in wire order, with the last operative one
-winning. Without one, visible targeted far nodes default to I2I and visible
-untargeted nodes to NI2I. A hidden attribute/first-aggregate-member Issuee cannot
-prove that default or E1E equality and stays unresolved.
-E1E remains the reference entity-comparison extension: on its own it does not
-imply I2I; an explicit identity operator adds that separate requirement.
-This profile follows the [operator specification](https://trustoverip.github.io/kswg-acdc-specification/#operator-o-field)
-and the approval boundary clarified in [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559);
-it is not Python IPEX DI2I parity.
+`acdc/chaining.ts` reduces the complete graph over caller-provided node verdicts.
+IPEX maps issuer authentication to those verdicts without imposing an issued-state
+vocabulary. New wallet use, disclosure signing, group approval and current verifier
+reporting map authenticated issued state to valid, revoked state to invalid, and
+unsupported state to unknown. This applies to the origin as well as far nodes.
+Unregistered nodes require issuer authentication but no registry state.
 
-The separate application NOT evaluator inverts the authenticated far node's validity, independently of the near
-edge's identity and additional schema constraints. Evaluate far nodes before
-parents in dependency order; keep breadth-first disclosure order unchanged,
-including shared ancestors. All nodes must first authenticate and pass their own
-schemas. A disproved far-node edge relationship or authenticated revoked issuance
-can supply false; missing/forged evidence, malformed graphs/operators/schemas and
-unknown state cannot. Valid edge schemas may disprove a payload constraint;
-malformed semantic schema resources remain unresolved, distinct from false.
-Every ancestor and local pin is an additional constraint; inline own-schema IDs
-still validate the far payload. AND/OR/NAND/NOR never hide an unresolved member
-behind a decisive sibling. `evaluateAcdcRelations` returns Boolean, null or an
-existing typed issue; applications must require an explicit true result.
-
-The issuance vocabulary is only `issued`/`revoked`, from the receiver's accepted
-RegistryObserver evidence at each explicit policy evaluation.
-This is local accepted knowledge, not a global freshness guarantee. Obsolete
-blinders against a newer accepted head fail authentication before negation.
-The origin's own issuance status is not a wallet-acceptance gate for transporting
-that disclosed message; referenced far nodes carry the validity requirement.
-Current consuming TS CLI/group/credentialing and Tufa verifier flows use legacy
-e.acdc/iss/anc artifacts; native nested Grants are refused or skipped there. There
-is no native action workflow to retrofit in this cut. Runtime composition, EXN
-completion and retained presentation evidence do not substitute for explicit
-semantic approval; later native wallet/verifier actions must call the evaluator.
+Own schemas and malformed graph shape are global obligations. Strong AND/OR may
+reduce an unused false or unknown branch, while missing decisive dependencies
+remain retryable. Unsupported NOT/DI2I and m-ary operators remain unknown under
+the selected Python profile. There is no separate private EGF interpreter.
+Applications require a valid root before signatures or new consent records;
+historical inventory and exact retained disclosure remain unchanged.
 
 Later updates do not rewrite accepted conversation history. New grants and default
 inspection re-evaluate current issuer history. Explicit `{ historical: true }`

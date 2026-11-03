@@ -45,11 +45,9 @@ accept size-dependent memory use; bounded-memory qualification is not a gate.
    Python public foreign-registry intake remains a labeled reference gap.
 2. Keep unsupported deeper nests, registry compact-attribute cases and unfinished
    processing guarded. Label frozen edge/operator outcomes by reference rather
-   than preserving implementation gaps as requirements. TS DI2I's approval-chain
-   profile and authenticated-node NOT validity are implemented with dedicated TS
-   regressions. NOT uses receiver-accepted issued/revoked facts at fresh validation;
-   unknown or malformed evidence is never negative authorization. Exclude both
-   operators from Python interop until the reference supports them. Preserve the
+   than preserving private operator profiles. Share the selected upstream chaining
+   evaluator; application issued-state requirements supply node verdicts rather
+   than another interpreter. Preserve the
    qualified progressive/multiple/nested blinding and refusal controls in the
    [operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md)
    alongside the qualified KRAM/composed mailbox baseline.

@@ -54,16 +54,15 @@ record schemas in structing.ts and counted transport in wrappers.
 
 ## TEL, verifier and IPEX
 
-`acdc/graphing.ts` owns relation evaluation and edge block/label rules over borrowed
-`AcdcGraph` indexes. `evaluateAcdcRelations` reads accepted KEL, schemas and supplied
-registry states and returns true, false, null or a typed dependency/unknown-state
-issue. Applications require explicit true before use; retention is never that
-approval. Every ancestor and local pin remains an additional constraint. Visible
-untargeted Issuees differ from hidden attribute/first-aggregate-member blocks;
-hidden identity evidence stays unresolved. AND/OR/NAND/NOR require all operands
-resolved; NOT only inverts far-node truth, never identity or schema constraints.
-IPEX retains authenticated, schema-valid negotiated evidence without evaluating
-relations. Negotiated disclosure and Offer/Grant traversal remain IPEX policy.
+`acdc/chaining.ts` owns one read-only graph evaluator and shared edge shape.
+Callers supply node verdicts; own schemas and malformed shape remain global
+obligations before strong AND/OR reductions. Missing evidence on an unused OR
+branch does not defeat a valid alternative. IPEX supplies issuer authentication
+without interpreting authenticated registry state as validity. Wallet, discloser,
+group approval and current verifier use issued/revoked policy at every registered
+node, including the origin. Unsupported vocabulary remains unknown; applications
+require a valid root. Exact consented views and historical inventory remain
+separate from new-use decisions. Negotiated disclosure stays with IPEX.
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
 BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
@@ -249,12 +248,9 @@ Open/ambiguous schemas and whole aggregates refuse; scalar-only SAID strings are
 data, while compact-or-object positions must expose the object. Ordinary schema
 validation and issuer authentication remain separate. Missing resources retain
 the existing schema retry; closure never expands borrowed received credentials.
-The shared ACDC edge classifier admits a digest child only at a declared string-only
-edge/group schema position. Open/map-admitting leaf unions stay opaque even with a
-matching supplied node. An expanded ancestor may select exactly one object and one
-string oneOf branch; fixed positional shape admits no such union. Static refs retain
-nested resource scopes. Expanded n leaves require reserved labels before application
-properties in d,u,n,s,o,w order; properties never extend a leaf into further graph hops.
+Chaining accepts expanded leaves with the selected reserved labels; compact
+strings identify Edge blocks, not far credentials. Schema validation remains
+independent of that graph shape and retains nested resource scopes.
 
 Local blinded updates follow a unique staged frontier across both escrows after an
 accepted head. De-duplicate sightings, reject forks, and never equate staging with acceptance.

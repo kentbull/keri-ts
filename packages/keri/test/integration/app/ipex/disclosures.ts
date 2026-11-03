@@ -129,8 +129,6 @@ export type GraphCase =
   | "E1E"
   | "AND"
   | "OR"
-  | "NAND"
-  | "NOR"
   | "multi-hop"
   | "branching"
   | EdgeRefusalCase;
@@ -157,8 +155,6 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     case "E1E":
     case "AND":
     case "OR":
-    case "NAND":
-    case "NOR":
       return relationGraph(hby, hab, graphCase);
     default:
       return edgeRefusalGraph(hby, hab, graphCase);
@@ -245,18 +241,10 @@ function deepGraph(hby: Habery, hab: Hab, graphCase: "multi-hop" | "branching"):
   };
 }
 
-type RelationCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR" | "NAND" | "NOR";
+type RelationCase = "I2I" | "NI2I" | "E1E" | "AND" | "OR";
 
 /** Keep the nested AND/OR truth table separate from credential construction. */
 function relationEdge(graphCase: RelationCase, far: SerderACDC, invalid: boolean): MapperMap {
-  if (graphCase === "NAND" || graphCase === "NOR") {
-    return {
-      d: "",
-      o: graphCase,
-      first: { n: far.said, o: invalid ? "NI2I" : "I2I" },
-      second: { n: far.said, o: graphCase === "NAND" ? "NI2I" : "I2I" },
-    };
-  }
   if (graphCase !== "AND" && graphCase !== "OR") return { d: "", authority: { n: far.said, o: graphCase } };
   return {
     d: "",
@@ -282,7 +270,7 @@ function relationGraph(hby: Habery, hab: Hab, graphCase: RelationCase): Disclosu
   const { full, partial } = near(far.partial);
   const nodes = [partial, far.partial];
   let badNodes = nodes;
-  if (["AND", "OR", "NAND", "NOR"].includes(graphCase)) {
+  if (["AND", "OR"].includes(graphCase)) {
     badNodes = [near(far.partial, true).partial, far.partial];
   } else if (graphCase !== "NI2I") {
     const badFar = disclosure(authority.pre, { issuee: graphCase === "I2I" ? authority.pre : hab.pre });
@@ -377,9 +365,7 @@ export function disclosurePlan(schemas: readonly string[], graph?: GraphCase): D
   const paths = graph === "fixed-path" || graph === "optional-path" ? ["", ""] : ["/"];
   if (graph && graph !== "fixed-path" && graph !== "optional-path") {
     paths.push(
-      graph === "NAND" || graph === "NOR"
-        ? "/e/first/_/"
-        : graph === "AND" || graph === "OR" || graph === "inherited-schema"
+      graph === "AND" || graph === "OR" || graph === "inherited-schema"
         ? "/e/authority/link/_/"
         : "/e/authority/_/",
     );

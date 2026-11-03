@@ -1,9 +1,8 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
-import { acdcEdgeBlocks as blocks, type AcdcGraph } from "../../acdc/graphing.ts";
+import { acdcEdgeBlocks as blocks, acdcEdgeTarget, type AcdcGraph, acdcGroupLabels } from "../../acdc/chaining.ts";
 import { fixedEdgeOrder, type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
-import { ipexEdgeTarget, ipexGroupLabels } from "./ipex-chaining.ts";
 
 /** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -104,7 +103,7 @@ export function walkIpexGraph(
     const groups: unknown[] = [...edges];
     for (let g = 0; g < groups.length; g++) {
       const edge = groups[g];
-      const target = ipexEdgeTarget(edge);
+      const target = acdcEdgeTarget(edge);
       if (target === false) return null;
       if (typeof target === "string") {
         if (!nodes.has(target)) {
@@ -116,7 +115,7 @@ export function walkIpexGraph(
       } else {
         if (!record(edge)) return null;
         for (const [key, value] of Object.entries(edge)) {
-          if (ipexGroupLabels.has(key) || typeof value === "string") continue;
+          if (acdcGroupLabels.has(key) || typeof value === "string") continue;
           groups.push(value);
         }
       }
@@ -138,7 +137,7 @@ export function walkIpexGraph(
       if (!children.size) dependencyOrder.push(near);
     }
   }
-  return dependencyOrder.length === nodes.size ? { nodes, order, dependencyOrder } : null;
+  return dependencyOrder.length === nodes.size ? { nodes, order } : null;
 }
 
 /** Compare SAD values structurally while retaining list order; map insertion order is not semantic here. */
@@ -172,7 +171,7 @@ export function verifyIpexDisclosure(
     if (prefix !== "" && prefix !== "/") {
       for (const part of prefix.replace(/^\/+|\/+$/g, "").split("/")) {
         if (part === "_") {
-          const target = ipexEdgeTarget(value);
+          const target = acdcEdgeTarget(value);
           if (typeof target !== "string") return false;
           said = target;
           node = graph.nodes.get(said);
