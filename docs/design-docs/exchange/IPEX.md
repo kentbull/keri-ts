@@ -15,9 +15,12 @@ guarded until their processing is defined.
 
 The selected Python `v2-spec` wire at `ae8284995486855809e7f4988fa1579b63e1ff91`
 uses exactly one outer DAG entry: `q.dp = [plan]`, where `plan` is the flat list of
-`[schema SAID, graph prefix, relative paths]` triples. The internal graph owner
+`[schema query, graph prefix, relative paths]` triples. The internal graph owner
 continues to use that one flat plan; wire construction wraps it once and intake
 validates and unwraps it once. Empty/multiple outer DAG lists refuse.
+Schema query slots accept strings, including empty or opaque criteria, matching
+Python's query-shape contract. A query string does not establish a schema claim:
+Grant disclosure matching and actual Schemer validation remain required.
 An empty inner plan (`[[]]` on the wire) inherits through an accepted predecessor,
 or requests no disclosure at an opener. Agree uses that empty ditto. A vacuous
 Grant carries `a.o = []` and no nodes. A bare one-node Grant defaults to
@@ -32,11 +35,10 @@ not supply a transaction ID; Tufa's v2 IPEX commands no longer expose `--xid`.
 Only existing Offer/Grant handlers own nested XIP credential trees. Other XIP
 routes remain subject to the flat-frame boundary.
 
-Selected-source wire vectors record actual Python outcomes. Three policy selections
+Selected-source wire vectors record actual Python outcomes. Two graph-policy selections
 remain explicitly unaligned for R13c: Python refuses the E1E and AND graph
 examples during Grant intake while TypeScript retains their authenticated evidence
-for separate relation evaluation; Python accepts an empty string Apply schema
-query while TypeScript requires a qualified schema SAID. TypeScript also retains
+for separate relation evaluation. TypeScript also retains
 its separate empty graph-prefix extension. These exceptions prevent a claim of
 full IPEX or graph-policy parity; wire migration does not resolve acceptability.
 

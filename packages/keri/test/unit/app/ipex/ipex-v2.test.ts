@@ -124,7 +124,7 @@ Deno.test("IPEX node authentication keeps missing KEL evidence distinct from ref
     }
   });
 });
-Deno.test("v2 IPEX selected wire vectors retain explicit deferred schema, graph and section differences", async () => {
+Deno.test("v2 IPEX selected wire vectors retain explicit deferred graph and section differences", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
@@ -135,7 +135,6 @@ Deno.test("v2 IPEX selected wire vectors retain explicit deferred schema, graph 
     try {
       assertEquals(fixture.reference, "ae8284995486855809e7f4988fa1579b63e1ff91");
       const deferredGraphRefusals = new Set(["edge operator E1E", "edge group AND"]);
-      const deferredSchemaAcceptance = "apply empty schema identifier";
       const deferredSectionClaims = new Set(["issuer proof under a different outer sender"]);
       let through = 0;
       let notifications = 0;
@@ -167,11 +166,10 @@ Deno.test("v2 IPEX selected wire vectors retain explicit deferred schema, graph 
             vry,
           );
           const deferredGraphRefusal = deferredGraphRefusals.has(row.name);
-          const deferredSchemaRefusal = row.name === deferredSchemaAcceptance;
           const deferredSectionRefusal = deferredSectionClaims.has(row.name);
           const currentOutcome = deferredGraphRefusal
             ? "accept"
-            : deferredSchemaRefusal || deferredSectionRefusal
+            : deferredSectionRefusal
             ? "reject"
             : row.outcome;
           assertEquals(decision?.kind, currentOutcome, `${row.name}: ${JSON.stringify(decision)}`);
@@ -181,13 +179,6 @@ Deno.test("v2 IPEX selected wire vectors retain explicit deferred schema, graph 
             const graph = walkIpexGraph(frames[0].nests![0].body.said!, frames[0].nests!, true, hby.db);
             assert(graph && !("kind" in graph));
             assertEquals(evaluateRelations(graph, hby.db), false, row.name);
-          }
-          if (deferredSchemaRefusal) {
-            assertEquals(
-              row.outcome,
-              "accept",
-              "selected Python allows string-only Apply schema queries; R13c remains open",
-            );
           }
           if (deferredSectionRefusal || row.name === "stale exposed section claim") {
             assertEquals(
@@ -344,11 +335,10 @@ Deno.test("v2 IPEX construction keeps parsed commitments while generating XIP tr
       assertEquals(empty.ilk, "xip");
       assertEquals(empty.sad!.q, { dp: [[]] });
     }
-    assertThrows(
-      () => ipexExnBody(parent.pre!, "/ipex/apply", [], { ...opts, plan: [["", "/", []]] }),
-      Error,
-      "valid disclosure plan",
-    );
+    for (const query of ["", "not-a-qualified-said"]) {
+      const apply = ipexExnBody(parent.pre!, "/ipex/apply", [], { ...opts, plan: [[query, "/", []]] });
+      assertEquals(apply.sad!.q, { dp: [[[query, "/", []]]] });
+    }
     for (const dp of [[], { invalid: "plan" }, [["", "/", []]]]) {
       const prior = exincept("/ipex/apply", {
         attributes: { m: "invalid prior plan" },
@@ -1548,7 +1538,7 @@ Deno.test("v2 IPEX binds EXN continuations to the XIP SAID and enforces one wire
         recipient: responder.pre,
         plan: [],
       });
-      for (const dp of [[], [[], []], [null]]) {
+      for (const dp of [[], [[], []], [null], [[[42, "/", []]]]]) {
         const malformed = new SerderKERI({ sad: { ...apply.sad, q: { dp } }, makify: true });
         assertEquals((yield* submit(malformed, requester)).kind, "reject");
         assertEquals(exchanger.complete(malformed.said!), false);

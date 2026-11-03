@@ -206,6 +206,8 @@ with openHby(name="ipex-vectors", temp=True, salt=salt) as hby:
     wires.append(bytes(issuer.rotate()).decode())
     emit("stale explicit issuer keys", nodes=[old])
     emit("current issuer keys after rotation", nodes=[signed(origin)])
+    emit("apply opaque schema query", verb="apply", dp=[["not-a-qualified-said", "/", []]])
+    emit("opaque schema query cannot satisfy Grant", nodes=[signed(origin)], dp=[["not-a-qualified-said", "/", []]])
 
 assert cases[0]["outcome"] == "accept"
 assert any(row["outcome"] == "reject" for row in cases)

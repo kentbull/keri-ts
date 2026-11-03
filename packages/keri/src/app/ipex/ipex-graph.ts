@@ -1,5 +1,5 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
-import { type CesrFrame, Compactor, makePather, type MapperMap, Saider, SerderACDC } from "cesr-ts";
+import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
 import {
   acdcEdgeBlocks as blocks,
   acdcEdgeTarget,
@@ -10,7 +10,7 @@ import {
 import { fixedEdgeOrder, type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
 
-/** One node selection: schema SAID, graph path and relative disclosure paths. */
+/** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
 /** Graph indexes borrow the original frames and never transfer or dispose payload owners. */
 export interface IpexGraph extends AcdcGraph {
@@ -33,26 +33,17 @@ export function hasIpexNodeAttachments(frame: CesrFrame): boolean {
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-/** Required SAIDs must have valid digest-qualified CESR material. */
-function validSaid(value: unknown): value is string {
-  if (typeof value !== "string") return false;
-  try {
-    return new Saider({ qb64: value }).qb64 === value;
-  } catch {
-    return false;
-  }
-}
 /** Python's empty section containers carry no disclosed edge semantics. */
 function present(value: unknown): boolean {
   return Array.isArray(value) ? value.length > 0 : record(value) ? Object.keys(value).length > 0 : Boolean(value);
 }
-/** Validate flat disclosure triples and their schema SAIDs without parsing child bytes. */
+/** Validate disclosure-query shape; actual schema commitments are checked against disclosed nodes. */
 export function validDisclosurePlan(value: unknown): value is DisclosurePlan {
   if (!Array.isArray(value)) return false;
   for (const item of value) {
     if (!Array.isArray(item) || item.length !== 3) return false;
     const [schema, path, fields] = item;
-    if (!validSaid(schema) || typeof path !== "string") return false;
+    if (typeof schema !== "string" || typeof path !== "string") return false;
     if (path !== "" && path !== "/") {
       if (!path.startsWith("/e/") || !path.endsWith("/_/")) return false;
       const parts = path.replace(/^\/+|\/+$/g, "").split("/");
