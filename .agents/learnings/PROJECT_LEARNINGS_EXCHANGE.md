@@ -78,7 +78,9 @@ carry that identity in x and preserve the accepted prior chain. Only Offer/Grant
 XIP routes admit child trees. The selected wire uses exactly one outer DAG list,
 q.dp=[plan], while the graph owner retains one internal flat plan. Empty inner
 plans inherit with a prior or mean no disclosure at an opener; vacuous Grants
-carry o=[] and no nodes. Graph-policy and schema-query exceptions remain R13c work.
+carry o=[] and no nodes. Schema query slots accept strings, including empty/opaque criteria; Grant matching
+and actual schema validation still establish commitments. Graph-policy exceptions
+remain R13c work.
 The selected Python constructor preserves blank/stale exposed section claims while
 computing the top-level most-compact SAID; TS currently refuses those claims.
 Keep their raw fixtures visible as R05/R13d non-parity evidence. Wire-only positive
