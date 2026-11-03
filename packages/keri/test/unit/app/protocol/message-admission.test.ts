@@ -19,7 +19,7 @@ import { Revery } from "../../../../src/core/routing.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import fixture from "../../../fixtures/keripy-admission-vectors.json" with { type: "json" };
 import ipex from "../../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
-Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prerequisite refusals", async () => {
+Deno.test("v2 non-event dispatch preserves frozen delegation and selected XIP prerequisites", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
@@ -68,7 +68,14 @@ Deno.test("v2 non-event dispatch matches frozen processMsg delegation and prereq
           if (!row.observed.length) {
             assertEquals(result?.kind, "drop", row.name);
             if (result?.kind !== "drop") throw new Error(row.name);
-            if (row.name.endsWith("reference stub")) assertEquals(result.reason, "referenceStub", row.name);
+            if (row.name.endsWith("reference stub")) {
+              // XIP now follows selected v2-spec exchange admission; pro/bar remain stubs.
+              assertEquals(
+                result.reason,
+                frame.body.ilk === "xip" ? "missingAuthentication" : "referenceStub",
+                row.name,
+              );
+            }
             if (row.name.endsWith("denied") || row.name === "deny wins") {
               assertEquals(result.reason, "deniedSender", row.name);
             }
@@ -392,7 +399,7 @@ Deno.test("disabled, exempt, default and v1 exchange intake cannot confer KRAM r
   });
 });
 
-Deno.test("optional KRAM preserves actual OOBI verification and frozen processor stubs", async () => {
+Deno.test("optional KRAM preserves actual OOBI verification and current processor prerequisites", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const sender = hby.makeHab("sender"), wrong = hby.makeHab("wrong");
@@ -433,7 +440,10 @@ Deno.test("optional KRAM preserves actual OOBI verification and frozen processor
 
         {
           const { decision } = yield* disabled.protocol.dispatch(frame);
-          assertEquals(decision, { kind: "drop", reason: "referenceStub" });
+          assertEquals(decision, {
+            kind: "drop",
+            reason: frame.body.ilk === "xip" ? "missingAuthentication" : "referenceStub",
+          });
         }
       }
     } finally {

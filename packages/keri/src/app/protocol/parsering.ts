@@ -280,7 +280,7 @@ export function* dispatchEnvelope(
 }
 
 /**
- * Frozen processMsg boundary: sender policy precedes optional KRAM and proof
+ * processMsg boundary: sender policy precedes optional KRAM and proof
  * prerequisites and delegation. Downstream processors authenticate their own
  * evidence; this layer borrows the envelope and never owns its payloads.
  */
@@ -339,6 +339,7 @@ function* dispatchReadyMessage(
     case Ilks.rpy:
       if (!envelope.cigars.length && !envelope.tsgs.length) return { kind: "drop", reason: "missingAuthentication" };
       return revery.processReply({ serder, cigars: envelope.cigars, tsgs: envelope.tsgs });
+    case Ilks.xip:
     case Ilks.exn:
       if (!envelope.cigars.length && !envelope.tsgs.length && !envelope.sscs.length && !envelope.ssts.length) {
         return { kind: "drop", reason: "missingAuthentication" };
@@ -346,7 +347,7 @@ function* dispatchReadyMessage(
       if (!exchanger) return { kind: "drop", reason: "missingProcessor" };
       return yield* dispatchExchange(envelope, exchanger, mailboxAid, receiverTime);
     default:
-      // processXip/processPro/processBar are pass stubs at the frozen reference.
+      // processPro/processBar remain pass stubs at the selected reference.
       return { kind: "drop", reason: "referenceStub" };
   }
 }
