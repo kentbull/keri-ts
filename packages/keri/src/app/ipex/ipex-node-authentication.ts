@@ -109,9 +109,8 @@ export function authenticateIpexNode(
     if (!proofs.length || !registry) return { kind: "reject" };
     const chain = acceptedRegistryEvidence(registry, serder.regid);
     if (!chain) return { kind: "missing", reason: `Missing local TEL evidence for ${serder.regid}.` };
-    // RIP establishes the registry but cannot bind a credential. Ordinary ingress
-    // may retry this grant before the first BUP arrives; that is still a dependency.
-    if (!chain.updates.length) return { kind: "missing", reason: `Missing issuer TEL update for ${serder.regid}.` };
+    // A RIP alone authenticates ownership, never a disclosed credential state.
+    if (!chain.updates.length) return { kind: "reject" };
     let at: string | undefined;
     if (historical) {
       if (!serder.verify() || serder.issuer !== chain.rip.issuer || serder.regid !== chain.rip.said) {
@@ -155,30 +154,6 @@ export function authenticateIpexNode(
     });
     if (result.kind === "missing" && result.reason === "anchor") {
       return { kind: "missing", reason: `Missing issuer TEL anchor for ${serder.regid}.` };
-    }
-    if ((result.kind === "missing" || result.kind === "reject") && result.reason === "disclosure") {
-      // An unmatched self-valid target opening may be waiting for its TEL event.
-      // Known old proofs and unrelated node proofs do not establish that dependency.
-      if (!serder.verify() || serder.issuer !== chain.rip.issuer || serder.regid !== chain.rip.said) {
-        return { kind: "reject" };
-      }
-      const known = new Set(chain.updates.map((event) => event.sad!.b));
-      for (const proof of proofs) {
-        if (
-          !vetBlind(proof, proof.d.nonce)
-          || (known.has(proof.d.nonce) && proofs.filter((item) => item.d.nonce === proof.d.nonce).length !== 1)
-        ) return { kind: "reject" };
-      }
-      let unmatched = false;
-      for (const proof of proofs) {
-        if (proof.td.nonce !== serder.said) continue;
-        const bound = vetBound(proof, serder, db);
-        if (bound?.kind === "reject") return { kind: "reject" };
-        if (!known.has(proof.d.nonce)) unmatched = true;
-      }
-      return unmatched
-        ? { kind: "missing", reason: `Missing issuer TEL evidence for disclosed target ${serder.said}.` }
-        : { kind: "reject" };
     }
     return result.kind === "verified" && result.state.regid === serder.regid
       ? { kind: "authenticated", registration: result.state }

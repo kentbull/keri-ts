@@ -120,10 +120,23 @@ rows. Current/historical verifyAccepted and historical inspection remain read-on
 inspection reports labeled recordedRegistryStates as the last recorded per-node
 facts from successful accepted verifications, not first-acceptance facts or current standing. Wallet and
 current verifier authority still require fresh proof and application-policy checks.
-The source state vectors explicitly retain two authentication differences: Python
-1f0f68a6 refuses a future proof at a RIP-only or older BUP head while TS escrows.
-Both preserve prior observations. Reconciliation with subsequent Python issuer-opening
-and bound-Issuee repairs remains separate; this is not full authentication parity.
+Current-source state vectors pin Python 91769408 and assert node authentication
+separately from route outcomes. A RIP alone and an unmatched future opening cannot
+authenticate a node. Only actual missing accepted KEL/TEL evidence is a factor
+dependency. Before final reduction, a proofless fresh RIP can authorize pending
+issuer-to-issuee issuance only for the exact Grant parties; every other node must
+authenticate, even on an optional edge. An eligible candidate remains pending even
+when OR could otherwise succeed. Absent or ineligible RIPs are not candidates.
+
+Ordinary shared graph reduction runs first. Only after its refusal does the route
+validate every supplied opening against accepted issuer/presentation history,
+exact target and historical Issuee bound. Missing current or placeholder-suffix
+openings then become node-own retryable unknowns for the same evaluator. Duplicate,
+unmatched, malformed or wrong-target/bound supplied openings cannot create this
+pending authority. A successful ordinary OR does not need an unused child's authentication; malformed
+primitive/BLID encoding is still refused before candidate classification.
+No pending path invents state or publishes observations. The independent older
+1f0f68a6 fixture remains historical evidence, without runtime outcome overrides.
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.
 Maps and list indexes are traversed as carried; `_` follows that map's `n` to an

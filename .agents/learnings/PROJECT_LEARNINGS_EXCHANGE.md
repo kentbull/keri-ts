@@ -199,7 +199,12 @@ metadata uses proof escrow, known contradictions reject. Then validate all own s
 and edges together. IPEX’s local evaluator uses strong AND/OR, inherited conjunctive
 pins, default/last delegative I2I/NI2I and E1E. Unsupported operators and compact Edge
 blocks are permanent unknown; malformed shape aborts globally even in an unused OR
-branch. A dependent retryable unknown uses existing schema/proof escrow. IPEX records
+branch. Eligible proofless fresh-RIP issuance precedes final reduction and requires
+all noncandidate nodes authenticated. Otherwise ordinary reduction runs first;
+only after refusal may exact accepted-history openings classify missing current
+or placeholder-suffix proofs as node-own retryable unknown. Unmatched future proofs
+are refusals, not invented TEL dependencies. A dependent retryable unknown uses
+existing schema/proof escrow. IPEX records
 no application-use verdict or revocation policy. Successful verification returns typed
 registry facts; Exchanger atomically pins exact5-field exrs observations only on
 acceptance. Later successful delivery may refresh them without replacing the first

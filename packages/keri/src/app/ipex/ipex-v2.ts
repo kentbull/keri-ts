@@ -5,9 +5,25 @@ import {
   nestedIpexRoute,
 } from "../../core/exchange/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
-import { type CesrFrame, Diger, ParserError, Prefixer, type SealSource, SerderACDC, type SerderKERI } from "cesr-ts";
-import { evaluateChain } from "../../acdc/chaining.ts";
-import { validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
+import {
+  type CesrFrame,
+  Diger,
+  ParserError,
+  Prefixer,
+  type SealSource,
+  type SerderACDC,
+  type SerderKERI,
+} from "cesr-ts";
+import { type ChainVerdict, evaluateChain } from "../../acdc/chaining.ts";
+import {
+  type RegistryDisclosure,
+  validateUpdate,
+  verifyRegistryAnchor,
+  vet,
+  vetBinds,
+  vetBlind,
+  vetBound,
+} from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
@@ -204,12 +220,22 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         ),
       );
     }
+    const fresh = this.pendingIssuance(serder, graph, authentications);
+    if (fresh === null) return false;
+    if (fresh.size) return missing("Grant awaits issuance of its fresh registries.");
     const verdict = evaluateChain(
       graph,
       new Map([...authentications].map(([said, auth]) => [said, authenticatedNodeVerdict(auth)])),
       this.hby.db,
     );
-    if (!verdict || verdict.kind === "invalid") return false;
+    if (!verdict || verdict.kind === "invalid") {
+      const pending = this.pendingOpenings(serder, graph, authentications);
+      if (!pending?.size) return false;
+      const retry = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
+      return retry?.kind === "unknown" && retry.retryable
+        ? missing("Grant awaits current issuer-registry openings.")
+        : false;
+    }
     if (verdict.kind === "valid") {
       const registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"][number][] = [];
       for (const [node, authentication] of authentications) {
@@ -230,6 +256,117 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return verdict.schemas.length
       ? { kind: "escrow", reason: verdict.reason, schema: verdict.schemas[0] }
       : missing(verdict.reason);
+  }
+
+  /** Substitute node-own unknowns only; the shared evaluator still traverses every edge. */
+  private pendingVerdicts(
+    authentications: ReadonlyMap<string, IpexNodeAuthentication>,
+    pending: ReadonlySet<string>,
+  ): Map<string, ChainVerdict> {
+    return new Map([...authentications].map(([said, auth]) => [
+      said,
+      pending.has(said)
+        ? { kind: "unknown", retryable: true, reason: "Missing registry opening.", schemas: [] }
+        : authenticatedNodeVerdict(auth),
+    ]));
+  }
+
+  /** Fresh issuance is authorized by an accepted issuer RIP and exact Grant parties, before final reduction. */
+  private pendingIssuance(
+    grant: SerderKERI,
+    graph: IpexGraph,
+    authentications: ReadonlyMap<string, IpexNodeAuthentication>,
+  ): Set<string> | null {
+    const pending = new Set<string>();
+    if (!this.registry) return pending;
+    for (const [said, frame] of graph.nodes) {
+      const node = frame.body, envelope = envelopeFromFrame(frame);
+      // Python's BlindState parser verifies primitive integrity before candidate selection.
+      if (node.regid && [...envelope.bsqs, ...envelope.bsss].some((proof) => !vetBlind(proof, proof.d.nonce))) {
+        return null;
+      }
+      if (
+        !node.regid || envelope.bsqs.length || envelope.bsss.length
+        || node.issuer !== grant.pre || node.issuee !== grant.sad!.ri
+      ) continue;
+      const chain = acceptedRegistryEvidence(this.registry, node.regid);
+      if (
+        !chain || chain.updates.length || chain.rip.said !== node.regid || chain.rip.issuer !== grant.pre
+        || vet({ ...chain, db: this.hby.db }).kind !== "verified"
+      ) continue;
+      pending.add(said);
+    }
+    if (!pending.size) return pending;
+    for (const [said, auth] of authentications) {
+      if (!pending.has(said) && auth.kind !== "authenticated") return null;
+    }
+    const verdict = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
+    // A satisfied OR cannot authorize publishing a still proofless issuance.
+    return verdict && (verdict.kind === "valid" || (verdict.kind === "unknown" && verdict.retryable)) ? pending : null;
+  }
+
+  /** After ordinary refusal, validate every supplied opening before classifying absent current/suffix proofs. */
+  private pendingOpenings(
+    grant: SerderKERI,
+    graph: IpexGraph,
+    authentications: ReadonlyMap<string, IpexNodeAuthentication>,
+  ): Set<string> | null {
+    if (!this.registry) return null;
+    const pending = new Set<string>();
+    for (const [said, frame] of graph.nodes) {
+      const node = frame.body, envelope = envelopeFromFrame(frame);
+      const proofs: RegistryDisclosure[] = [...envelope.bsqs, ...envelope.bsss];
+      if (!node.regid) {
+        if (proofs.length || authentications.get(said)?.kind !== "authenticated") return null;
+        continue;
+      }
+      const chain = acceptedRegistryEvidence(this.registry, node.regid);
+      if (
+        !chain || !chain.updates.length || chain.rip.said !== node.regid || chain.rip.issuer !== node.issuer
+        || vet({ ...chain, db: this.hby.db }).kind !== "verified"
+      ) return null;
+      const allowed = new Map(
+        chain.updates.map((event) => [event.sad!.b as string, { target: said, acdc: node as SerderACDC | undefined }]),
+      );
+      if (proofs.some((proof) => !allowed.has(proof.d.nonce))) {
+        for (const [issuee, regid] of this.presentationRegistries(node) ?? []) {
+          const presentation = acceptedRegistryEvidence(this.registry, regid);
+          if (
+            !presentation || presentation.rip.said !== regid || presentation.rip.issuer !== issuee
+            || vet({ ...presentation, db: this.hby.db }).kind !== "verified"
+          ) return null;
+          for (const event of presentation.updates) {
+            const blid = event.sad!.b as string, prior = allowed.get(blid);
+            if (prior && (prior.target !== grant.said || prior.acdc !== undefined)) return null;
+            allowed.set(blid, { target: grant.said!, acdc: undefined });
+          }
+        }
+      }
+      const opened = new Map<string, RegistryDisclosure>();
+      for (const proof of proofs) {
+        const blid = proof.d.nonce, expected = allowed.get(blid);
+        if (
+          opened.has(blid) || !expected || !vetBlind(proof, blid) || vetBound(proof, expected.acdc, this.hby.db)
+          || ((proof.td.nonce || proof.ts.text) && proof.td.nonce !== expected.target)
+        ) return null;
+        opened.set(blid, proof);
+      }
+      let bound = false;
+      for (const update of [...chain.updates].reverse()) {
+        const proof = opened.get(update.sad!.b as string);
+        if (!proof) {
+          pending.add(said);
+          bound = true;
+          break;
+        }
+        if (proof.td.nonce || proof.ts.text) {
+          bound = true;
+          break;
+        }
+      }
+      if (!bound) return null; // A completely opened placeholder history binds no credential.
+    }
+    return pending;
   }
 
   /** Notify only after Exchanger has durably accepted the parent and its evidence. */
