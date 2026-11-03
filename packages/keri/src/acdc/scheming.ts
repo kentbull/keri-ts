@@ -1,5 +1,5 @@
-/** Authenticated local schemas and selected bounded v2 disclosure closure; no network resolution. */
-import { Diger, dumps, makePather, ParserError, type SerderACDC } from "cesr-ts";
+/** Authenticated local ACDC schema validation and static resource lookups; no network resolution. */
+import { Diger, dumps, ParserError, type SerderACDC } from "cesr-ts";
 import Ajv2020 from "npm:ajv@8.18.0/dist/2020.js";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
@@ -304,152 +304,6 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
   }
 }
 
-/** Select a declared JSON type without interpreting constraints or digest spelling. */
-function schemaTypeMatches(schema: unknown, value: unknown): boolean {
-  if (schema === true) return true;
-  if (!object(schema)) return false;
-  const type = schema.type;
-  if (object(value)) return type === "object";
-  if (Array.isArray(value)) return type === "array";
-  if (value === null) return type === "null";
-  if (typeof value === "number") return type === "number" || (Number.isInteger(value) && type === "integer");
-  if (typeof value === "string") return type === "string";
-  if (typeof value === "boolean") return type === "boolean";
-  return false;
-}
-
-/** Select one bounded, unambiguous branch; intersections and conditional reasoning stay unsupported. */
-function selectDisclosureSchema(
-  schema: unknown,
-  value: unknown,
-  resources: SchemaResources,
-  depth = 64,
-): Schema | false | null {
-  if (depth <= 0) return null;
-  if (typeof schema === "boolean") return schema === false ? false : null;
-  if (!object(schema)) return null;
-  if ("$ref" in schema) {
-    const annotations = new Set([
-      "$ref",
-      "$id",
-      "$schema",
-      "title",
-      "description",
-      "$comment",
-      "deprecated",
-      "readOnly",
-      "writeOnly",
-      "examples",
-      "default",
-    ]);
-    if (Object.keys(schema).some((key) => !annotations.has(key))) return null;
-    return selectDisclosureSchema(resources.resolve(schema), value, resources, depth - 1);
-  }
-  if (
-    ["anyOf", "allOf", "not", "if", "then", "else", "dependentSchemas", "patternProperties"].some((key) =>
-      key in schema
-    )
-  ) {
-    return null;
-  }
-  if ("oneOf" in schema) {
-    if (!Array.isArray(schema.oneOf) || schema.oneOf.length > 16) return null;
-    const matches = schema.oneOf.filter((branch) => schemaTypeMatches(branch, value));
-    return matches.length === 1 ? selectDisclosureSchema(matches[0], value, resources, depth - 1) : null;
-  }
-  return schema;
-}
-
-/** Detect a compact-or-expanded map position without classifying ordinary scalar SAID data as a hidden map. */
-function schemaMayMap(schema: unknown, resources: SchemaResources, depth = 64): boolean {
-  if (depth <= 0 || schema === true) return true;
-  if (!object(schema)) return false;
-  if (schema.type === "object") return true;
-  if ("$ref" in schema) return schemaMayMap(resources.resolve(schema), resources, depth - 1);
-  if (!("oneOf" in schema)) return false;
-  if (!Array.isArray(schema.oneOf) || schema.oneOf.length > 16) return true;
-  return schema.oneOf.some((branch) => schemaMayMap(branch, resources, depth - 1));
-}
-
-/** Prove each schema-declared field-map below the carried value is expanded, under selected bounded limits. */
-function closedBySchema(value: unknown, schema: unknown, resources: SchemaResources, depth = 64): boolean {
-  if (depth <= 0 || (typeof value === "string" && schemaMayMap(schema, resources, depth))) return false;
-  const selected = selectDisclosureSchema(schema, value, resources, depth);
-  if (selected === null) return false;
-  if (!object(value)) return schemaTypeMatches(selected, value);
-  if (!selected || selected.type !== "object" || !object(selected.properties)) return false;
-  const additional = selected.additionalProperties;
-  if (additional !== false && !object(additional)) return false;
-  for (const [label, child] of Object.entries(value)) {
-    const childSchema = selected.properties[label] ?? additional;
-    if (childSchema === false || !closedBySchema(child, childSchema, resources, depth - 1)) return false;
-  }
-  return true;
-}
-
-/** Locate the carried value and its authenticated subschema without resolving or expanding credential data. */
-function disclosureSubschema(schema: unknown, value: unknown, parts: readonly string[], resources: SchemaResources): {
-  value: unknown;
-  schema: unknown;
-} | null {
-  for (const part of parts) {
-    const selected = selectDisclosureSchema(schema, value, resources);
-    if (!selected || !object(value)) return null;
-    if (object(selected.properties) && Object.hasOwn(selected.properties, part)) schema = selected.properties[part];
-    else {
-      schema = selected.additionalProperties;
-      if (schema !== true && !object(schema)) return null;
-    }
-    if (!Object.hasOwn(value, part)) return null;
-    value = value[part];
-  }
-  return { value, schema };
-}
-
-/**
- * Prove requested whole/subtree disclosure under the selected explicit-acm profile.
- * Own-node schema validation remains separate. Missing static resources stay dependencies;
- * open/ambiguous schemas, reference intersections and whole aggregates refuse the closure claim.
- */
-export function verifyDisclosureClosure(acdc: SerderACDC, db: Baser, paths: readonly string[]): SchemaValidation {
-  const invalid = (): SchemaValidation => ({
-    kind: "invalid",
-    subject: "credential",
-    reason: "Unproved disclosure closure",
-  });
-  if (acdc.ilk !== "acm") return invalid();
-  const resources = new SchemaResources(db);
-  try {
-    const root = resources.admit(acdc.schema);
-    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : invalid();
-    for (const path of paths) {
-      let parts: string[];
-      try {
-        parts = [...makePather(path, { relative: true }).rparts];
-      } catch (error) {
-        if (error instanceof ParserError) return invalid();
-        throw error;
-      }
-      if (parts.at(-1) === "") parts.pop();
-      if (parts.length === 1 && parts[0] === "d") {
-        if (Object.hasOwn(acdc.sad!, "A")) return invalid();
-        for (const label of ["a", "e", "r"]) {
-          if (!Object.hasOwn(acdc.sad!, label)) continue;
-          const located = disclosureSubschema(root.schema, acdc.sad, [label], resources);
-          if (!located || !closedBySchema(located.value, located.schema, resources)) return invalid();
-        }
-      } else {
-        const located = disclosureSubschema(root.schema, acdc.sad, parts, resources);
-        if (!located || !closedBySchema(located.value, located.schema, resources)) return invalid();
-      }
-    }
-    return { kind: "valid" };
-  } catch (error) {
-    if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
-    throw error;
-  }
-}
-
 /** Resolve static edge types; only an expanded ancestor may select a string/object union. */
 function staticEdgeSchema(schema: unknown, resources: SchemaResources, expanded = false, depth = 64): Schema | null {
   if (depth <= 0 || !object(schema)) return null;
@@ -510,37 +364,6 @@ export function simpleEdgeSchema(
       instance = instance[part];
     }
     return staticEdgeSchema(schema, resources)?.type === "string";
-  } catch (error) {
-    if (error instanceof InvalidSchema) return false;
-    throw error;
-  }
-}
-
-/** Positional far-node selectors require a closed, required hierarchy, never an instance-dependent shape. */
-export function fixedEdgeOrder(acdc: SerderACDC, db: Baser): boolean | Extract<SchemaValidation, { kind: "missing" }> {
-  const resources = new SchemaResources(db);
-  const fixed = (schema: unknown, root = false, depth = 64): boolean => {
-    const selected = depth > 0 ? staticEdgeSchema(schema, resources) : null;
-    if (!selected) return false;
-    if (selected.type === "string") return !root;
-    if (selected.type !== "object") return false;
-    const props = object(selected.properties) ? selected.properties : {};
-    const required = Array.isArray(selected.required) ? selected.required : [];
-    if (required.includes("n") && "n" in props) return !root;
-    if (selected.additionalProperties !== false) return false;
-    const labels = root ? ["d", "u", "o", "w"] : ["d", "u", "s", "o", "w"];
-    const children = Object.keys(props).filter((key) => !labels.includes(key));
-    return children.every((key) => required.includes(key) && fixed(props[key], false, depth - 1));
-  };
-  try {
-    const root = resources.admit(acdc.schema);
-    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : false;
-    const schema = staticEdgeSchema(root.schema, resources);
-    if (!schema || schema.type !== "object") return false;
-    const props = object(schema.properties) ? schema.properties : {};
-    return "e" in props
-      ? Array.isArray(schema.required) && schema.required.includes("e") && fixed(props.e, true)
-      : schema.additionalProperties === false;
   } catch (error) {
     if (error instanceof InvalidSchema) return false;
     throw error;

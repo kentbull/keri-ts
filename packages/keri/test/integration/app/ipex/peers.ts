@@ -83,7 +83,7 @@ export interface PeerInfo {
 export interface PeerSnapshot {
   /** Explicit policy over the selected accepted Grant, separate from retained protocol state. */
   verdict?: ReturnType<typeof evaluateAcdcRelations>;
-  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: DisclosurePlan } }[];
+  messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: [DisclosurePlan] } }[];
   received: string[];
   known: string[];
   notifications?: number;
@@ -260,7 +260,7 @@ class TypeScriptPeer implements IpexPeer {
     let carried: SerderACDC[] = [];
     if (verb === "grant") carried = this.disclosed(invalid);
     if (verb === "offer" && !this.graphCase) carried = this.disclosed(false);
-    if (verb === "grant" && (this.graphCase === "fixed-path" || this.graphCase === "optional-path")) {
+    if (verb === "grant" && (this.graphCase === "required-edge" || this.graphCase === "optional-edge")) {
       assertEquals(this.plan.map(([schema]) => schema), carried.map((node) => (node.schema as { $id: string }).$id));
       assertEquals(
         carried.map((node) => node.raw),
