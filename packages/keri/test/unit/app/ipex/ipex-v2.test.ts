@@ -855,7 +855,11 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       const noIssuer = yield* node([pblind]);
       const duplicate = yield* node([iblind, pblind, pblind]);
       {
-        assertEquals(verify(noIssuer), false, "unrelated proofs cannot replace the child's issuer opening");
+        assertEquals(
+          (verify(noIssuer) as { kind: string }).kind,
+          "escrow",
+          "a valid presentation proof does not disclose the current issuer state",
+        );
         assertEquals(verify(duplicate), false, "exactly one disclosure must match each selected BLID");
       }
       for (const sn of [99n, 9007199254740993n]) {
@@ -867,15 +871,19 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       const opaque = makeBlindState({ acdc: credential.said!, state: "revoked", sn: 2 });
       const unmatched = yield* node([opaque, pblind]);
       assertEquals(
-        (verify(unmatched) as { kind: string }).kind,
-        "escrow",
-        "a self-valid unmatched target proof may await its TEL event",
+        verify(unmatched),
+        false,
+        "an unmatched supplied opening is refused against accepted TEL evidence",
       );
       const newerIssuer = blindate(irip.said!, ibup.said!, opaque.d.nonce, { sn: 2, stamp: earlier });
       anchor(issuer, newerIssuer);
       assertEquals(observer.processEvent(newerIssuer).kind, "accept");
       const oldIssuerSource = yield* node([iblind, pblind], [source, issuerSource]);
-      assertEquals(verify(oldIssuerSource), false, "generic issuer source cannot select old issuer standing");
+      assertEquals(
+        (verify(oldIssuerSource) as { kind: string }).kind,
+        "escrow",
+        "generic issuer source cannot disclose current issuer standing",
+      );
       assertEquals(
         runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"),
         false,
@@ -902,7 +910,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         "accept",
         "vacuous opening cannot advance historical selection past a hidden successor",
       );
-      assertEquals(verify(noIssuer, receipt, grant, true), false);
+      assertEquals((verify(noIssuer, receipt, grant, true) as { kind: string }).kind, "escrow");
       assertEquals(verify(duplicate, receipt, grant, true), false);
       const unavailable = makeBlindState({ acdc: credential.said!, state: "issued", sn: 9 });
       for (const proofs of [[unavailable, iblind, iblind, pblind], [iblind, iblind, unavailable, pblind]]) {
@@ -1066,7 +1074,7 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
       ];
       assertEquals(
         (yield* exchanger.processEvent({ serder: noProof, tsgs: groups, nests: [{ ...node, attachments: [] }] })).kind,
-        "reject",
+        "escrow",
       );
       assertEquals(hby.db.exns.get(noProof.said!), null);
       assertEquals(hby.db.exns.get(credential.said!), null);

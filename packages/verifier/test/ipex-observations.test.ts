@@ -10,8 +10,9 @@ import {
   RegistryObserver,
   systemClock,
 } from "keri-ts/runtime";
+import { authenticatedNodeVerdict, authenticateIpexNode } from "../../keri/src/app/ipex/ipex-node-authentication.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol/parsering.ts";
-import vectors from "../../keri/test/fixtures/keripy-ipex-state-vectors.json" with { type: "json" };
+import vectors from "../../keri/test/fixtures/keripy-ipex-current-state-vectors.json" with { type: "json" };
 import { AcdcV2Verifier } from "../mod.ts";
 
 Deno.test("accepted IPEX observations survive refresh and reopen without replacing first disclosures", async () => {
@@ -34,7 +35,7 @@ Deno.test("accepted IPEX observations survive refresh and reopen without replaci
     const views = new Map<string, { nests: string[]; paths: string[] }>();
     let through = 0;
     try {
-      assertEquals(vectors.reference, "1f0f68a6ad44a8d159cbbb2bab7bb243bc7a0337");
+      assertEquals(vectors.reference, "917694081b509f9bc4e875af939f2423fd856d0c");
       for (const row of vectors.cases) {
         while (through < row.through) {
           const item = vectors.support[through++];
@@ -67,8 +68,15 @@ Deno.test("accepted IPEX observations survive refresh and reopen without replaci
           assertEquals(hby.db.epath.get(row.said), []);
           assertEquals(observations(row.said), [], "publication failure rolls back evidence and observations together");
         }
+        const nodes = envelopeFromFrame(frame).nests;
+        for (const expected of row.authentications) {
+          const node = nodes.find((node) => node.body.said === expected.node)!;
+          assert(node.body instanceof SerderACDC);
+          const authentication = authenticateIpexNode(node.body, envelopeFromFrame(node), hby.db, registry);
+          assertEquals(authenticatedNodeVerdict(authentication).kind, expected.kind, `${row.name}: node factor`);
+        }
         const decision = yield* exchanger.processEvent(envelopeFromFrame(frame));
-        assertEquals(decision.kind, row.typescriptOutcome ?? row.outcome, `${row.name}: ${JSON.stringify(decision)}`);
+        assertEquals(decision.kind, row.outcome, `${row.name}: ${JSON.stringify(decision)}`);
         assertEquals(exchanger.complete(row.said), row.accepted);
         expectedObservations.set(row.said, row.observations);
         for (const [said, expected] of expectedObservations) assertEquals(observations(said), expected, row.name);

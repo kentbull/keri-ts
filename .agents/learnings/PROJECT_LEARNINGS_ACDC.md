@@ -173,15 +173,21 @@ head with missing accepted rows is corruption.
 Supplied chain authentication does not prove global freshness. IPEX presentations
 select the highest accepted BUP actually sealed by a verified Issuee SST, retaining
 the explicit binding-source requirement. Generic node source hints do not select
-issuer history. Missing selected presentation openings are refused. Issuer proof
-retry requires a self-valid target opening absent from accepted BUP commitments;
-known-old or unrelated proofs remain refused, and known bound contradictions win
-before unresolved proofs. Completed receiver-observed KRAM time remains required
+issuer history. Missing selected presentation openings are refused. Issuer factor
+authentication refuses RIP-only and unmatched future openings; only actual missing
+accepted KEL/TEL is a factor dependency. After ordinary graph refusal, the route
+can classify absent current/suffix openings as node-own retryable unknown only
+after every supplied proof matches accepted history, exact target and historical
+Issuee coordinates. Known old proofs can support that pending classification;
+unmatched, duplicate, malformed or contradictory supplied proofs cannot. Completed receiver-observed KRAM time remains required
 for presentation acceptance, independent of TEL selection,
 retained through dependency escrow and reopen. An accepted source naming a not-yet-accepted registry
 update stays retryable even when its RIP has arrived; intermediate ingress sweeps
 must not turn that missing dependency into a binding rejection. An issuer RIP
-without its first BUP likewise leaves registry-backed authentication pending. Partial group signatures do not complete that time;
+without its first BUP cannot authenticate a credential. Proofless fresh issuance
+is separately pending only for an accepted issuer RIP and the exact issuer-to-issuee
+Grant parties, with every other supplied node authenticated. A true candidate
+precedes final OR reduction; absent/ineligible RIPs are noncandidates. Partial group signatures do not complete that time;
 later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.
