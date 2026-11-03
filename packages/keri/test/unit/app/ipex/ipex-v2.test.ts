@@ -1239,7 +1239,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         });
         assertEquals((yield* submit(grant, [node(publicNode)])).kind, "accept");
       }
-      // Whole/subtree claims must expose schema-declared maps, not just their authentic digests.
+      // Whole-node requests require expanded top-level sections; relative requests use the carried canonical Compactor view.
       const scalar = { type: "string" };
       const profile = {
         type: "object",
@@ -1275,7 +1275,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       };
       const waiting = yield* disclose(full, [""]);
       assert(waiting.kind === "escrow");
-      assertEquals(waiting.reason, "Missing disclosure schema.");
+      assertEquals(waiting.reason, "Missing node schema.");
       assertExists(hby.db.emse!.get([waiting.said, closed.said]));
       hby.db.schema.pin(closed.said, closed);
       yield* exchanger.processEscrows();
@@ -1288,15 +1288,28 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       );
       const closureKinds = [];
       for (const fields of [[""], ["d/"], ["a/"]]) closureKinds.push((yield* disclose(hidden, fields)).kind);
-      assertEquals(closureKinds, ["reject", "reject", "reject"], "whole selectors cannot conceal nested maps");
-      for (const fields of [[""], ["d/"], ["a/"]]) {
-        assertEquals((yield* disclose(full, fields)).kind, "accept", "a scalar-only SAID is data, not a hidden map");
+      assertEquals(
+        closureKinds,
+        ["accept", "reject", "accept"],
+        "upstream checks top-level expansion and literal relative traversal",
+      );
+      for (const fields of [[""], ["a/"]]) {
+        assertEquals(
+          (yield* disclose(full, fields)).kind,
+          "accept",
+          "scalar-SAID data does not require schema closure",
+        );
       }
+      assertEquals(
+        (yield* disclose(full, ["d/"])).kind,
+        "reject",
+        "a relative trailing hop cannot traverse a primitive SAID",
+      );
       const wholeAggregate = acdcmap(issuer.pre, { schema: closed.said, aggregate: aggregate.sad!.A as string[] });
       assertEquals(
         (yield* disclose(wholeAggregate, [""])).kind,
-        "reject",
-        "whole aggregates remain outside this bounded profile",
+        "accept",
+        "an expanded aggregate is a whole disclosed section",
       );
       const { additionalProperties: _, ...openAttribute } = attribute;
       const open = new Schemer({
@@ -1304,7 +1317,11 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       });
       hby.db.schema.pin(open.said, open);
       const openNode = acdcmap(issuer.pre, { schema: open.said, attribute: fullAttribute });
-      assertEquals((yield* disclose(openNode, [""])).kind, "reject", "open schemas cannot prove whole disclosure");
+      assertEquals(
+        (yield* disclose(openNode, [""])).kind,
+        "accept",
+        "own schema validation does not impose a private closed-schema profile",
+      );
       // IPEX expanded leaves name ACDCs; compact Edge strings never name far ACDCs.
       const edgeNode = (properties: MapperMap, required: string[], edge: MapperMap, union = false) => {
         const shape = {
@@ -1368,12 +1385,10 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       const outcomes = [];
       outcomes.push((yield* edgeIntake([stringEdge, valid], ["/", "/e/link/_/"])).kind);
       outcomes.push((yield* edgeIntake([labeled, valid], ["/", "/e/link/_/"])).kind);
-      outcomes.push((yield* edgeIntake([fixed, fixedValid, sibling], ["", "", ""])).kind);
-      // Explicit selectors may leave a carried, unrequested BFS node out of the plan.
+      // An explicit plan cannot skip any carried BFS node.
       outcomes.push((yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/"])).kind);
-      outcomes.push((yield* edgeIntake([optional, valid], ["", ""])).kind);
       outcomes.push((yield* edgeIntake([optional, valid], ["/", "/e/link/_/"])).kind);
-      assertEquals(outcomes, ["reject", "reject", "reject", "reject", "reject", "reject"]);
+      assertEquals(outcomes, ["reject", "reject", "reject", "reject"]);
       assertEquals(
         (yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/", "/e/first/_/"])).kind,
         "reject",
@@ -1427,11 +1442,6 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         ["link"],
         { d: "", link: valid.said! },
       );
-      assertEquals(
-        (yield* edgeIntake([optionalGroup, valid], ["", ""])).kind,
-        "reject",
-        "an absent optional group also prevents fixed shape",
-      );
       assertEquals((yield* edgeIntake([optionalGroup, valid], ["/", "/e/link/_/"])).kind, "reject");
       const arraySchema = new Schemer({
         sed: {
@@ -1449,11 +1459,6 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         (yield* edgeIntake([arrayEdge, valid], ["/", "/e/0/link/_/"])).kind,
         "accept",
         "expanded arrays retain explicit-hop support",
-      );
-      assertEquals(
-        (yield* edgeIntake([arrayEdge, valid], ["", ""])).kind,
-        "reject",
-        "arrays do not establish positional shape",
       );
       for (const prefix of ["/a/link/_/", "/e/link/_/a/link/_/"]) {
         assertEquals((yield* edgeIntake([stringEdge, valid], ["/", prefix])).kind, "reject");

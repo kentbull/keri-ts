@@ -55,7 +55,7 @@ async function assertConversation(
       const message = current.find((message) => message.r === `/ipex/${verb}`);
       assertExists(message, verb);
       if (["apply", "offer", "agree", "grant"].includes(verb)) {
-        assertEquals(message.q.dp, verb === verbs[0] ? plan : [], `${verb}: exact flat plan or prior ditto`);
+        assertEquals(message.q.dp, verb === verbs[0] ? [plan] : [[]], `${verb}: exact one-DAG plan or prior ditto`);
       }
       return message;
     });

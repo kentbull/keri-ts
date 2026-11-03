@@ -121,7 +121,7 @@ export type EdgeRefusalCase =
   | "edge-schema"
   | "inherited-schema"
   | "malformed-schema";
-export type PathShapeCase = "fixed-path" | "optional-path";
+export type PathShapeCase = "required-edge" | "optional-edge";
 export type GraphCase =
   | PathShapeCase
   | "I2I"
@@ -149,7 +149,7 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     const { full, partial } = disclosure(hab.pre);
     return { fullNodes: [full], nodes: [partial], badNodes: [], issuers: [hab], unsigned: null };
   }
-  if (graphCase === "fixed-path" || graphCase === "optional-path") return pathShapeGraph(hby, hab, graphCase);
+  if (graphCase === "required-edge" || graphCase === "optional-edge") return pathShapeGraph(hby, hab, graphCase);
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
   switch (graphCase) {
     case "I2I":
@@ -165,7 +165,7 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
   }
 }
 
-/** Same two-node authority graph; only schema-requiredness controls positional admissibility. */
+/** Same two-node authority graph with either required or optional schema membership. */
 function pathShapeGraph(hby: Habery, hab: Hab, shape: PathShapeCase): DisclosureGraph {
   const authority = hby.makeHab("authority");
   const terminalSchema = structuredClone(disclosureSchema().sed) as MapperMap;
@@ -178,7 +178,7 @@ function pathShapeGraph(hby: Habery, hab: Hab, shape: PathShapeCase): Disclosure
   (rootSchema.properties as MapperMap).e = {
     type: "object",
     additionalProperties: false,
-    required: shape === "fixed-path" ? ["authority"] : [],
+    required: shape === "required-edge" ? ["authority"] : [],
     properties: {
       d: { type: "string" },
       authority: {
@@ -374,8 +374,8 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
 
 /** Paths describe the disclosed graph, while each node retains only its status field. */
 export function disclosurePlan(schemas: readonly string[], graph?: GraphCase): DisclosurePlan {
-  const paths = graph === "fixed-path" || graph === "optional-path" ? ["", ""] : ["/"];
-  if (graph && graph !== "fixed-path" && graph !== "optional-path") {
+  const paths = ["/"];
+  if (graph) {
     paths.push(
       graph === "NAND" || graph === "NOR"
         ? "/e/first/_/"
