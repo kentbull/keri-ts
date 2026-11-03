@@ -13,14 +13,43 @@ keeps TS operator qualification distinct from pairwise evidence.
 Deeper child-owned nests are
 guarded until their processing is defined.
 
-The selected `q.dp` is the flat list of `[schema SAID, graph prefix, relative paths]`
-triples from the [pinned disclosure-path text](https://github.com/trustoverip/kswg-acdc-specification/blob/2362e48a1e8668278575b4f5b239069b2c1a82ad/spec/spec-body.md#disclosure-paths).
-Apply, unsolicited Offer and bare Grant require a non-empty plan. A solicited Offer
-defaults to `[]` after checking its Apply's plan; Agree must use `[]`, and a linked
-Grant defaults to `[]`. Empty lists inherit only through accepted predecessors;
-they never authorize a vacuous opener. A bare one-node Grant still defaults to
-`[[schema, "/", []]]`, explicitly selecting that node without requesting additional
-fields. No historical nested-plan translation or signed-byte rewriting is supported.
+The selected Python `v2-spec` wire at `ae8284995486855809e7f4988fa1579b63e1ff91`
+uses exactly one outer DAG entry: `q.dp = [plan]`, where `plan` is the flat list of
+`[schema SAID, graph prefix, relative paths]` triples. The internal graph owner
+continues to use that one flat plan; wire construction wraps it once and intake
+validates and unwraps it once. Empty/multiple outer DAG lists refuse.
+An empty inner plan (`[[]]` on the wire) inherits through an accepted predecessor,
+or requests no disclosure at an opener. Agree uses that empty ditto. A vacuous
+Grant carries `a.o = []` and no nodes. A bare one-node Grant defaults to
+`[[[schema, "/", []]]]`, explicitly selecting the root. Signed bodies and child
+proof bytes remain unchanged during intake and replay.
+
+Apply, unsolicited Offer and unsolicited Grant open with `t = xip`; their own
+SAID identifies the transaction. Continuations use `t = exn`, `p` identifies the
+accepted predecessor, and `x` is the prior XIP's SAID or the prior EXN's `x`.
+Builders derive that identity and reciprocal parties from the prior. Callers do
+not supply a transaction ID; Tufa's v2 IPEX commands no longer expose `--xid`.
+Only existing Offer/Grant handlers own nested XIP credential trees. Other XIP
+routes remain subject to the flat-frame boundary.
+
+Selected-source wire vectors record actual Python outcomes. Three policy selections
+remain explicitly unaligned for R13c: Python refuses the E1E and AND graph
+examples during Grant intake while TypeScript retains their authenticated evidence
+for separate relation evaluation; Python accepts an empty string Apply schema
+query while TypeScript requires a qualified schema SAID. TypeScript also retains
+its separate empty graph-prefix extension. These exceptions prevent a claim of
+full IPEX or graph-policy parity; wire migration does not resolve acceptability.
+
+Two further raw-section observations remain explicitly unaligned for R05/R13d:
+Python's common `acdcmap(attribute={d: "", ...})` output and a stale exposed section
+claim both pass Python's top-level recomputation while TS refuses the inconsistent
+exposed section claim. The empty-claim IPEX example is accepted by Python and
+refused by TS; the stale-claim IPEX example is refused by both. Keep Serder and
+route outcomes distinct. Their original received bytes remain in the fixture; no
+receiver rewrites or weaker TS checks are used. Wire/chain positives separately
+prepare complete section claims with Python Compactor before signing, preserving
+the credential SAID. Common upstream constructor-flow interoperability remains
+unqualified until the owning serializer/section contract is resolved.
 
 An Offer's carried nodes contain bodies without proof attachments; empty counted
 feet carry no evidence. A Grant cannot use field-map metadata (explicit empty
@@ -36,7 +65,8 @@ contradiction rejects. Offers without an origin impose no credential promise.
 
 `ipexExnBody` synchronously accepts parsed credential bodies and explicit route
 options. It reads no payload or storage and authenticates no signatures. Opening
-callers supply an exchange id; replies preserve parties and the prior id.
+calls generate an XIP nonce and derive the transaction identity from its SAID;
+replies preserve parties and the derived prior identity.
 `nestedPayload`/`framePayload` serialize ordinary hydrated child values.
 `prepareIpexExn` is the byte convenience operation: decode finite input, construct
 the body and collect nested wire. Serialization observes cancellation; parsed

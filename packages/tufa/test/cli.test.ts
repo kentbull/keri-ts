@@ -961,7 +961,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
           const grant = ipexExnBody(target.pre, "/ipex/grant", nodes, {
             message: mode,
             recipient: holder.pre,
-            xid: root.said!,
+
             plan: nodes.map((node, i) => [(node.schema as MapperMap).$id as string, i ? "/e/proof/_/" : "/", []]),
           });
           const frame = parseBytes(target.endorse(grant, { gvrsn: Vrsn_2_0, genusify: true }))[0];
@@ -1059,7 +1059,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
           acdcV2: true,
           recipient,
           fromGrant: acdcV2Grants[0],
-          xid: admitted.admit,
+
           plan: JSON.stringify([[held.credential.s.$id, "/", []]]),
           out: presentationPath,
         })

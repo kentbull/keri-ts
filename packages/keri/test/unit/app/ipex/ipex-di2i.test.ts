@@ -39,7 +39,7 @@ Deno.test("IPEX retains signed DI2I evidence before separate delegator policy ap
     const grant = ipexExnBody(chain[1].pre, "/ipex/grant", nodes, {
       message: "approved issuer",
       recipient: recipient.pre,
-      xid: nodes[0].said!,
+
       // Request node presence; dedicated IPEX closure controls own whole-disclosure claims.
       plan: nodes.map((body, index) => [(body.schema as { $id: string }).$id, index ? "/e/link/_/" : "/", []]),
     });

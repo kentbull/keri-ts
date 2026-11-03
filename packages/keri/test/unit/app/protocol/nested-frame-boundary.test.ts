@@ -32,3 +32,16 @@ Deno.test("nested runtime boundaries reject unsupported trees before processing"
   );
   assertEquals(frame.nests![0].essrs[0].text, "abc");
 });
+
+Deno.test("XIP child normalization belongs only to the existing IPEX disclosure routes", async () => {
+  const { exincept } = await import("../../../../src/core/exchange/protocol-exchanging.ts");
+  const [reference] = parseBytes(b(vectors.rows[0].qb64));
+  for (const route of ["/fwd", "/multisig/icp", "/transaction", "/ipex/apply"]) {
+    const body = exincept(route);
+    assertThrows(() => envelopeFromFrame({ ...reference, body }), Error, "nested message trees");
+  }
+  for (const route of ["/ipex/offer", "/ipex/grant"]) {
+    const body = exincept(route);
+    assertEquals(envelopeFromFrame({ ...reference, body }).nests.length, reference.nests!.length);
+  }
+});

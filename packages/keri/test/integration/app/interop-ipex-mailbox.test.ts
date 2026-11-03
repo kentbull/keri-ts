@@ -244,7 +244,7 @@ for (const count of [1, 2]) {
               const apply = ipexExnBody(receiver.pre, "/ipex/apply", [], {
                 message: "apply",
                 recipient: holder.pre,
-                xid: credential.said!,
+
                 plan,
               });
               const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], { message: "offer", prior: apply });

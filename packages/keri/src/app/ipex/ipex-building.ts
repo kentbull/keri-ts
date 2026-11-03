@@ -1,16 +1,21 @@
 /** Pure v2 IPEX body construction and finite, cancellable byte-input preparation. */
 import { collectPayload, nestedPayload, parseBytes, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "effection";
-import { exchange, IPEX_V2_PREDECESSORS, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
+import { exchange, exincept, IPEX_V2_PREDECESSORS, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
 import { abortable } from "../runtime/abortable.ts";
-import { type DisclosurePlan, hasIpexNodeAttachments, isIpexMetadata, validDisclosurePlan } from "./ipex-graph.ts";
+import {
+  type DisclosurePlan,
+  hasIpexNodeAttachments,
+  isIpexMetadata,
+  singleDagDisclosurePlan,
+  validDisclosurePlan,
+} from "./ipex-graph.ts";
 import type { IpexBuilderOptions, IpexMessage, IpexRoute } from "./ipexing.ts";
 
-/** Explicit body inputs; opening a conversation requires a caller-supplied exchange id. */
+/** Explicit body inputs; openers derive their transaction identity from their XIP SAID. */
 export interface IpexV2BodyOptions extends Omit<IpexBuilderOptions, "version" | "pvrsn"> {
   message: string;
   recipient?: string;
-  xid?: string;
   prior?: SerderKERI;
   plan?: DisclosurePlan;
   anchor?: boolean;
@@ -19,7 +24,7 @@ export interface IpexV2BodyOptions extends Omit<IpexBuilderOptions, "version" | 
 }
 const nodeIlks = new Set([null, "acm", "ace", "act", "acg"]);
 /**
- * Construct an EXN body from parsed credential bodies, without reading or owning wire.
+ * Construct an XIP opener or EXN continuation from parsed credential bodies, without reading or owning wire.
  * The first node is the origin SAID commitment; offer callers may send just that
  * commitment or borrow the frames' nestedPayloads. A commitment authenticates no
  * child signature. Conversation storage, signing and anchoring belong to callers.
@@ -44,10 +49,13 @@ export function ipexExnBody(
   if (verb === "grant" && nodes.some(isIpexMetadata)) throw new Error("IPEX Grant requires credentials, not metadata.");
   const prior = options.prior;
   let recipient = options.recipient;
-  let xid = options.xid;
+  let xid: string | undefined;
   if (prior) {
     if (
       prior.pvrsn.major !== 2 || verb === "apply"
+      || (prior.ilk === "xip"
+        ? !["/ipex/apply", "/ipex/offer", "/ipex/grant"].includes(prior.route ?? "")
+        : prior.ilk !== "exn" || !prior.sad!.p)
       || !IPEX_V2_PREDECESSORS[verb].some((v) => prior.route === `/ipex/${v}`)
     ) {
       throw new Error("Unsupported IPEX prior route.");
@@ -59,10 +67,9 @@ export function ipexExnBody(
       throw new Error("Only an opening grant may be spurned.");
     }
     recipient = prior.pre!;
-    if (xid !== undefined && xid !== prior.sad!.x) throw new Error("IPEX reply exchange id differs from the prior.");
-    xid = prior.sad!.x as string;
-  } else if (!["apply", "offer", "grant"].includes(verb) || !recipient || !xid) {
-    throw new Error("An IPEX opener requires a recipient and exchange id; replies require a prior.");
+    xid = prior.ilk === "xip" ? prior.said! : prior.sad!.x as string;
+  } else if (!["apply", "offer", "grant"].includes(verb) || !recipient) {
+    throw new Error("An IPEX opener requires a recipient; replies require a prior.");
   }
   const attrs = { ...options.attrs };
   if (["m", "o", "ax"].some((key) => Object.hasOwn(attrs, key))) {
@@ -81,9 +88,9 @@ export function ipexExnBody(
   ) throw new Error("IPEX reply must preserve the anchoring requirement.");
   let plan = options.plan;
   if (verb === "offer" && prior && (plan === undefined || !plan.length)) {
-    const inherited = (prior.sad?.q as { dp?: unknown } | undefined)?.dp;
-    if (!validDisclosurePlan(inherited) || !inherited.length) {
-      throw new Error("IPEX offer cannot inherit an invalid or empty Apply plan.");
+    const inherited = singleDagDisclosurePlan((prior.sad?.q as { dp?: unknown } | undefined)?.dp);
+    if (inherited === null) {
+      throw new Error("IPEX offer cannot inherit an invalid Apply plan.");
     }
     plan ??= [];
   }
@@ -104,11 +111,10 @@ export function ipexExnBody(
       ]];
     } else throw new Error("A grant with multiple nodes requires an explicit disclosure plan.");
   }
-  const modifiers: { dp?: DisclosurePlan } = {};
+  const modifiers: { dp?: readonly [DisclosurePlan] } = {};
   if (["apply", "offer", "agree", "grant"].includes(verb)) {
     if (!validDisclosurePlan(plan)) throw new Error("IPEX requires a valid disclosure plan.");
-    if (!plan.length && !prior) throw new Error("An IPEX opener requires a non-empty disclosure plan.");
-    modifiers.dp = structuredClone(plan);
+    modifiers.dp = [structuredClone(plan)];
   } else if (plan !== undefined) throw new Error("This IPEX route does not negotiate disclosure.");
   if (verb === "grant") {
     if (!prior && Boolean(plan!.length) !== Boolean(nodes.length)) {
@@ -116,6 +122,17 @@ export function ipexExnBody(
     }
     attrs.o = nodes.length ? [nodes[0].said] : [];
   } else if (verb === "offer" && nodes.length) attrs.o = [nodes[0].said];
+  if (!prior) {
+    return exincept(route, {
+      sender,
+      receiver: recipient,
+      attributes: attrs,
+      modifiers,
+      stamp: options.date ?? options.stamp,
+      kind: options.kind,
+      gvrsn: options.gvrsn ?? Vrsn_2_0,
+    });
+  }
   return exchange(route, attrs, {
     sender,
     recipient,

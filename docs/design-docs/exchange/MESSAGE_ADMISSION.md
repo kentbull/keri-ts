@@ -6,8 +6,10 @@ selected KERIpy `v2-spec` commit `99a11d2a30beb0e23d294a9be58c7c3ccf7ef078`
 (`#1744`), including ordinary exchange authentication, aggregation and escrow
 retry. Other recorded boundaries below retain their explicitly labeled frozen
 references. KRAM is disabled by default and explicitly configurable at runtime.
-This generic XIP support does not qualify IPEX interoperability: IPEX opener,
-continuation and one-DAG disclosure-contract migration remains separate.
+IPEX XIP openers and EXN continuations share this admission path and the strict
+one-DAG wire contract in [IPEX](IPEX.md). Its documented graph/schema exceptions
+and reciprocal qualification remain separate; dispatch success does not establish
+full IPEX interoperability.
 
 ## Policy and responsibility
 

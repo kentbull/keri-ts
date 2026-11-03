@@ -272,7 +272,7 @@ class TypeScriptPeer implements IpexPeer {
       message: invalid ? "invalid chain" : verb,
       prior: previous ?? undefined,
       recipient: this.remote.pre,
-      ...(!prior ? { xid: this.graph.fullNodes[0].said!, plan: this.plan } : {}),
+      ...(!prior ? { plan: this.plan } : {}),
     });
     const frame = this.signed(body);
     frame.nests = carried.map((node, i) =>
@@ -341,7 +341,7 @@ class TypeScriptPeer implements IpexPeer {
       const options = {
         message: verb,
         recipient: this.remote!.pre,
-        xid: prior ? undefined : this.info.commitment,
+
         plan: prior ? undefined : this.plan,
         priorSaid: prior,
         anchor: true,
@@ -412,7 +412,7 @@ class TypeScriptPeer implements IpexPeer {
     const body = ipexExnBody(this.hab.pre, "/ipex/grant", [node], {
       message: "anchored before rotation",
       recipient: this.remote.pre,
-      xid: node.said!,
+
       plan: this.plan,
       anchor: true,
     });
@@ -466,9 +466,11 @@ class TypeScriptPeer implements IpexPeer {
           code: DigDex.Blake3_256,
           raw: Diger.digest(new TextEncoder().encode("other conversation"), DigDex.Blake3_256),
         }).qb64
+        : previous.ilk === "xip"
+        ? previous.said!
         : previous.sad!.x as string,
       dig: defect.kind === "prior" ? defect.said : prior,
-      modifiers: verb === "grant" ? { dp: [] } : {},
+      modifiers: verb === "grant" ? { dp: [[]] } : {},
       pvrsn: Vrsn_2_0,
       gvrsn: Vrsn_2_0,
     });

@@ -84,7 +84,7 @@ function* peers() {
     const bodies = nodes.map((node) => node.body as SerderACDC);
     const serder = ipexExnBody(sender.pre, "/ipex/grant", bodies, {
       recipient: recipient.pre,
-      xid: bodies[0].said!,
+
       message: crypto.randomUUID(),
       plan: bodies.map((body, i) => [
         (body.schema as { $id: string }).$id ?? body.schema as string,

@@ -224,7 +224,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           const offerOptions = {
             message: "status disclosure",
             recipient: receiver.pre,
-            xid: credential.said!,
+
             stamp: sent,
             plan: [[(credential.schema as { $id: string }).$id, "/", ["a/status/"]]] as [string, string, string[]][],
           };

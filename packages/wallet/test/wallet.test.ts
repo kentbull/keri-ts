@@ -108,7 +108,7 @@ function* grant(
   const grant = ipexExnBody(p.issuer.pre, "/ipex/grant", nodes, {
     message,
     recipient: p.holder.pre,
-    xid: new Diger({ raw: Diger.digest(b(message), "E"), code: "E" }).qb64,
+
     plan: nodes.map((node, i) => [(node.schema as { $id: string }).$id, i ? "/e/proof/_/" : "/", []]),
   });
   const frame = signed(grant, p.issuer, nodes.map((node) => signed(node, p.issuer)));
@@ -261,7 +261,7 @@ for (const operator of ["I2I", "UNKNOWN"]) {
                 discloser.prepareGrant(p.holder.pre, { fromGrant: g.said!, presenterAuthorized: true }, {
                   message: "refused use",
                   recipient: p.issuer.pre,
-                  xid: a.said!,
+
                   plan: [[(near.schema as MapperMap).$id as string, "/", []]],
                 })
               ),
@@ -372,7 +372,7 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       const apply = yield* holder.prepareApply(p.holder.pre, {
         message: "status",
         recipient: p.issuer.pre,
-        xid: credential.said!,
+
         plan,
         anchor: true,
       });
@@ -406,7 +406,7 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       const presented = yield* holder.prepareGrant(p.holder.pre, { fromGrant: grant.exn.said! }, {
         message: "exact view",
         recipient: p.issuer.pre,
-        xid: update.said!,
+
         plan,
       });
       yield* deliver(presented);
