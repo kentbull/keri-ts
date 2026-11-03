@@ -979,8 +979,20 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
               ],
             }, Vrsn_2_0),
           }));
-          yield* runtime.reactor.processBytes(yield* call(() => collectPayload(framePayload(frame))));
-          assertEquals(runtime.exc.complete(grant.said!), true);
+          const [received] = parseBytes(yield* call(() => collectPayload(framePayload(frame))));
+          const { decision } = yield* runtime.protocol.dispatch(received, {}, runtime.reactor.kvy);
+          const refused = mode === "false" || mode === "unknown";
+          // Native intake now refuses invalid graphs; they never become accepted history for CLI use.
+          assertEquals(decision?.kind, refused ? "reject" : "accept", mode);
+          if (refused) {
+            assertEquals(
+              decision && "reason" in decision ? decision.reason : null,
+              "Exchange route /ipex/grant failed handler verification.",
+              mode,
+            );
+            assertEquals(hby.db.exns.get([grant.said!]), null);
+          }
+          assertEquals(runtime.exc.complete(grant.said!), !refused, mode);
           acdcV2Grants.push(grant.said!);
         }
       } finally {
@@ -1031,10 +1043,10 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
         await assertRejects(
           () => run(() => ipexAdmitCommand({ ...acdcV2, said, consent: true })),
           ValidationError,
-          "graph",
+          "Accepted ACDC v2 exchange at the exact route is required.",
         );
       }
-      assertEquals(signatures, 0, "consent, false and unknown checks precede holder signing");
+      assertEquals(signatures, 0, "consent and native false/unknown refusal precede holder signing");
       closed = false;
       await run(() => walletListCommand({ name, headDirPath }));
       assertEquals(JSON.parse(records.pop()!).held, []);
