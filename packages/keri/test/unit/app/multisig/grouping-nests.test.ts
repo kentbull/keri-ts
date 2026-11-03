@@ -2172,7 +2172,6 @@ for (const verdict of ["true", "false", "unresolved"] as const) {
           }));
           const grant = ipexExnBody(local.hab.pre, "/ipex/grant", [near, far], {
             recipient: alice.pre,
-            xid: near.said!,
             message: "exact group view",
             plan: [[schema.said, "/", []], [schema.said, "/e/authority/_/", []]],
           });

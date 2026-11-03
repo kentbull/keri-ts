@@ -183,8 +183,8 @@ export class WalletDiscloser {
   }
   /** Authenticate every selected node, then authorize only the shared complete-root expression. */
   private requireGraph(origin: string, raw: Uint8Array): void {
-    const graph = walkIpexGraph(origin, parseBytes(raw), true, this.wallet.hby.db);
-    if (!graph || "kind" in graph) throw new ValidationError("Selected credential graph is incomplete.");
+    const graph = walkIpexGraph(origin, parseBytes(raw), true);
+    if (!graph) throw new ValidationError("Selected credential graph is incomplete.");
     const states = new Map<string, RegistryState>();
     for (const [said, node] of graph.nodes) {
       const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.wallet.hby.db, this.wallet.registry);

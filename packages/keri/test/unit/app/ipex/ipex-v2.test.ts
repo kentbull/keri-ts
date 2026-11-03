@@ -124,7 +124,7 @@ Deno.test("IPEX node authentication keeps missing KEL evidence distinct from ref
     }
   });
 });
-Deno.test("v2 IPEX selected wire vectors retain explicit deferred graph and section differences", async () => {
+Deno.test("v2 IPEX historical wire vectors retain the recorded section difference", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `ipex-vectors-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const noter = yield* openNoterForHabery(hby);
@@ -134,7 +134,6 @@ Deno.test("v2 IPEX selected wire vectors retain explicit deferred graph and sect
     loadIpexHandlers(hby, exchanger, { notifier });
     try {
       assertEquals(fixture.reference, "ae8284995486855809e7f4988fa1579b63e1ff91");
-      const deferredGraphRefusals = new Set(["edge operator E1E", "edge group AND"]);
       const deferredSectionClaims = new Set(["issuer proof under a different outer sender"]);
       let through = 0;
       let notifications = 0;
@@ -165,21 +164,10 @@ Deno.test("v2 IPEX selected wire vectors retain explicit deferred graph and sect
             undefined,
             vry,
           );
-          const deferredGraphRefusal = deferredGraphRefusals.has(row.name);
           const deferredSectionRefusal = deferredSectionClaims.has(row.name);
-          const currentOutcome = deferredGraphRefusal
-            ? "accept"
-            : deferredSectionRefusal
-            ? "reject"
-            : row.outcome;
+          const currentOutcome = deferredSectionRefusal ? "reject" : row.outcome;
           assertEquals(decision?.kind, currentOutcome, `${row.name}: ${JSON.stringify(decision)}`);
           assertEquals(childDispatches, 0, "nested nodes are not independent credential intake");
-          if (deferredGraphRefusal) {
-            assertEquals(row.outcome, "reject", "selected Python graph intake rejects; R13c owns this TS policy gap");
-            const graph = walkIpexGraph(frames[0].nests![0].body.said!, frames[0].nests!, true, hby.db);
-            assert(graph && !("kind" in graph));
-            assertEquals(evaluateRelations(graph, hby.db), false, row.name);
-          }
           if (deferredSectionRefusal || row.name === "stale exposed section claim") {
             assertEquals(
               row.outcome,
@@ -1005,7 +993,13 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
         const handler = new IpexV2Handler("/ipex/grant", hby, null, registry);
         registry.seqEvent = (regid, sn) => sn ? null : seqEvent.call(registry, regid, sn);
         assertThrows(
-          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          () =>
+            handler.verify({
+              serder: body,
+              nests: [node],
+              attachments: [],
+              evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+            }),
           Error,
           "missing sequence entry",
         );
@@ -1014,7 +1008,13 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
             ? blindate(rip.said!, issued.said!, disclosure.d.nonce)
             : seqEvent.call(registry, regid, sn);
         assertThrows(
-          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          () =>
+            handler.verify({
+              serder: body,
+              nests: [node],
+              attachments: [],
+              evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+            }),
           Error,
           "sequence is inconsistent",
         );
@@ -1022,7 +1022,13 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
           throw new Error("registry read unavailable");
         };
         assertThrows(
-          () => handler.verify({ serder: body, nests: [node], attachments: [] }),
+          () =>
+            handler.verify({
+              serder: body,
+              nests: [node],
+              attachments: [],
+              evidence: { tsgs: [], cigars: [], sourceSeals: [] },
+            }),
           Error,
           "registry read unavailable",
         );
@@ -1060,7 +1066,7 @@ Deno.test("registry-backed IPEX retries only after public observer intake accept
   });
 });
 
-Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every edge pin", async () => {
+Deno.test("IPEX schema gates precede issuer reduction and validate every edge pin", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = hby.makeHab("issuer"), sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
@@ -1118,11 +1124,10 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       assertEquals((yield* exchanger.processEvent(offer)).kind, "escrow");
       assertExists(hby.db.emse!.get([offer.serder.said!, schema.said]));
       const unsigned = args("/ipex/grant", [valid], false);
-      assertEquals((yield* exchanger.processEvent(unsigned)).kind, "reject");
-      assertEquals(
+      assertEquals((yield* exchanger.processEvent(unsigned)).kind, "escrow");
+      assertExists(
         hby.db.emse!.get([unsigned.serder.said!, schema.said]),
-        null,
-        "issuer proof precedes schema dependency",
+        "own schemas precede issuer proof reduction",
       );
       const grant = args("/ipex/grant", [valid]);
       assertEquals((yield* exchanger.processEvent(grant)).kind, "escrow");
@@ -1131,6 +1136,11 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(offer.serder.said!));
       assertExists(hby.db.exns.get(grant.serder.said!));
+      assertEquals(
+        hby.db.exns.get(unsigned.serder.said!),
+        null,
+        "schema arrival does not supply issuer authentication",
+      );
       for (const verb of ["/ipex/offer", "/ipex/grant"] as const) {
         const rejected = args(verb, [invalid], verb === "/ipex/grant");
         assertEquals((yield* exchanger.processEvent(rejected)).kind, "reject");
@@ -1283,7 +1293,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       hby.db.schema.pin(open.said, open);
       const openNode = acdcmap(issuer.pre, { schema: open.said, attribute: fullAttribute });
       assertEquals((yield* disclose(openNode, [""])).kind, "reject", "open schemas cannot prove whole disclosure");
-      // Schema-declared simple edges and explicit paths use the same authenticated ingress.
+      // IPEX expanded leaves name ACDCs; compact Edge strings never name far ACDCs.
       const edgeNode = (properties: MapperMap, required: string[], edge: MapperMap, union = false) => {
         const shape = {
           type: "object",
@@ -1351,7 +1361,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
       outcomes.push((yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/"])).kind);
       outcomes.push((yield* edgeIntake([optional, valid], ["", ""])).kind);
       outcomes.push((yield* edgeIntake([optional, valid], ["/", "/e/link/_/"])).kind);
-      assertEquals(outcomes, ["accept", "accept", "accept", "accept", "reject", "accept"]);
+      assertEquals(outcomes, ["reject", "reject", "reject", "reject", "reject", "reject"]);
       assertEquals(
         (yield* edgeIntake([fixed, sibling, fixedValid], ["/", "/e/second/_/", "/e/first/_/"])).kind,
         "reject",
@@ -1381,14 +1391,14 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         "leaf application properties never extend graph reachability",
       );
       const absentSchema = acdcmap(issuer.pre, {
-        schema: (stringEdge.schema as MapperMap).$id as string,
+        schema: (labeled.schema as MapperMap).$id as string,
         attribute: { d: "", name: "Near" },
-        edge: stringEdge.sad!.e as MapperMap,
+        edge: { d: "", link: { n: valid.said! } },
       });
       const waitingEdge = yield* edgeIntake([absentSchema, valid], ["/", "/e/link/_/"]);
       assert(waitingEdge.kind === "escrow");
-      assertEquals(waitingEdge.reason, "Missing edge schema.");
-      const cachedEdgeSchema = new Schemer({ sed: stringEdge.schema as MapperMap });
+      assertEquals(waitingEdge.reason, "Missing node schema.");
+      const cachedEdgeSchema = new Schemer({ sed: labeled.schema as MapperMap });
       hby.db.schema.pin(cachedEdgeSchema.said, cachedEdgeSchema);
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(waitingEdge.said), "schema arrival retries the unchanged signed Grant");
@@ -1410,7 +1420,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         "reject",
         "an absent optional group also prevents fixed shape",
       );
-      assertEquals((yield* edgeIntake([optionalGroup, valid], ["/", "/e/link/_/"])).kind, "accept");
+      assertEquals((yield* edgeIntake([optionalGroup, valid], ["/", "/e/link/_/"])).kind, "reject");
       const arraySchema = new Schemer({
         sed: {
           $id: "",
@@ -1448,7 +1458,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         credential("Near", { d: "", link: { n: far.said, s: pin } });
       const graph = (far: SerderACDC, pin: string | MapperMap) => {
         const root = near(far, pin);
-        const graph = walkIpexGraph(root.said!, [node(root), node(far)], true, hby.db);
+        const graph = walkIpexGraph(root.said!, [node(root), node(far)], true);
         assert(graph && !("kind" in graph));
         return graph;
       };
@@ -1470,7 +1480,7 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         },
         good: { n: valid.said },
       });
-      const alternativeGraph = walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true, hby.db);
+      const alternativeGraph = walkIpexGraph(alternative.said!, [node(alternative), node(valid)], true);
       assert(alternativeGraph && !("kind" in alternativeGraph));
       assertEquals(
         evaluateRelations(alternativeGraph, hby.db),
@@ -1485,15 +1495,15 @@ Deno.test("714 IPEX schema gates preserve issuer-first grants and validate every
         },
       });
       const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
-      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true, hby.db);
+      const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true);
       assert(inheritedGraph && !("kind" in inheritedGraph));
       assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
       const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
-      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "accept");
-      assertEquals(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]), null);
-      const retainedPolicyGrant = hby.db.exns.get(edgeGrant.serder.said!)!.raw.slice();
+      assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
+      assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
       hby.db.schema.pin(edgeSchema.said, edgeSchema);
-      assertEquals(hby.db.exns.get(edgeGrant.serder.said!)!.raw, retainedPolicyGrant);
+      yield* exchanger.processEscrows();
+      assertExists(hby.db.exns.get(edgeGrant.serder.said!), "the same Grant accepts after the decisive pin arrives");
       assertEquals(evaluateRelations(inheritedGraph, hby.db), true);
       assertEquals(evaluateRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
       assertEquals(evaluateRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);

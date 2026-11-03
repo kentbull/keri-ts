@@ -1,14 +1,9 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
-import {
-  acdcEdgeBlocks as blocks,
-  acdcEdgeTarget,
-  type AcdcGraph,
-  groupLabels,
-  sectionLabels,
-} from "../../acdc/graphing.ts";
+import { acdcEdgeBlocks as blocks, type AcdcGraph } from "../../acdc/graphing.ts";
 import { fixedEdgeOrder, type SchemaValidation, verifyDisclosureClosure } from "../../acdc/scheming.ts";
 import type { Baser } from "../../db/basing.ts";
+import { ipexEdgeTarget, ipexGroupLabels } from "./ipex-chaining.ts";
 
 /** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -80,8 +75,7 @@ export function walkIpexGraph(
   origin: string,
   nests: readonly CesrFrame[],
   closed: boolean,
-  db: Baser,
-): IpexGraph | null | Extract<SchemaValidation, { kind: "missing" }> {
+): IpexGraph | null {
   const nodes = new Map<string, CesrFrame & { body: SerderACDC }>();
   for (const [index, frame] of nests.entries()) {
     const body = frame.body;
@@ -107,16 +101,11 @@ export function walkIpexGraph(
     dependencies.set(said, farNodes);
     const edges = blocks(nodes.get(said)!.body.sad!.e);
     if (!edges) return null;
-    const groups = edges.map((edge, index) => ({
-      edge: edge as unknown,
-      nested: false,
-      path: Array.isArray(nodes.get(said)!.body.sad!.e) ? ["e", String(index)] : ["e"],
-    }));
+    const groups: unknown[] = [...edges];
     for (let g = 0; g < groups.length; g++) {
-      const { edge, nested, path } = groups[g];
-      const target = acdcEdgeTarget(nodes.get(said)!.body, path, edge, db);
+      const edge = groups[g];
+      const target = ipexEdgeTarget(edge);
       if (target === false) return null;
-      if (typeof target === "object" && target !== null) return target;
       if (typeof target === "string") {
         if (!nodes.has(target)) {
           if (closed) return null;
@@ -126,10 +115,9 @@ export function walkIpexGraph(
         }
       } else {
         if (!record(edge)) return null;
-        const labels = nested ? groupLabels : sectionLabels;
         for (const [key, value] of Object.entries(edge)) {
-          if (labels.has(key)) continue;
-          groups.push({ edge: value, nested: true, path: [...path, key] });
+          if (ipexGroupLabels.has(key) || typeof value === "string") continue;
+          groups.push(value);
         }
       }
     }
@@ -181,24 +169,20 @@ export function verifyIpexDisclosure(
     let node = graph.nodes.get(said);
     if (!node) return false;
     let value: unknown = node.body.sad;
-    let edgePath: string[] = [];
     if (prefix !== "" && prefix !== "/") {
       for (const part of prefix.replace(/^\/+|\/+$/g, "").split("/")) {
         if (part === "_") {
-          const target = acdcEdgeTarget(node.body, edgePath, value, db);
-          if (typeof target === "object" && target !== null) return target;
+          const target = ipexEdgeTarget(value);
           if (typeof target !== "string") return false;
           said = target;
           node = graph.nodes.get(said);
           if (!node) return false;
           value = node.body.sad;
-          edgePath = [];
         } else {
           if (record(value) && Object.hasOwn(value, part)) value = value[part];
           else if (Array.isArray(value) && /^\d+$/.test(part) && Number(part) < value.length) {
             value = value[Number(part)];
           } else return false;
-          edgePath.push(part);
         }
       }
     }

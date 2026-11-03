@@ -104,6 +104,7 @@ function* grant(
   p: Parameters<Parameters<typeof withPeers>[0]>[0],
   nodes: SerderACDC[],
   message: string,
+  accepted = true,
 ): Operation<SerderKERI> {
   const grant = ipexExnBody(p.issuer.pre, "/ipex/grant", nodes, {
     message,
@@ -114,7 +115,7 @@ function* grant(
   const frame = signed(grant, p.issuer, nodes.map((node) => signed(node, p.issuer)));
   yield* ingest(frame, p.source, p.sending);
   yield* ingest(frame, p.receiver, p.receiving);
-  assert(p.receiving.complete(grant.said!));
+  assertEquals(p.receiving.complete(grant.said!), accepted);
   return grant;
 }
 Deno.test("wallet keeps distinct partial/full consent and exact retained proofs across all-owner reopen", async () => {
@@ -214,16 +215,18 @@ Deno.test("wallet keeps distinct partial/full consent and exact retained proofs 
 });
 
 for (const operator of ["I2I", "UNKNOWN"]) {
-  Deno.test(`wallet retains authentic ${operator === "I2I" ? "false" : "unresolved"} graphs without creating consent`, async () => {
+  Deno.test(`wallet refuses ${operator === "I2I" ? "false" : "unsupported"} IPEX roots without signing or creating consent`, async () => {
     await withPeers(function*(p) {
       const far = acdcmap(p.issuer.pre, { issuee: p.holder.pre, attribute: { d: "", role: "authority" } });
       const near = acdcmap(p.issuer.pre, {
         attribute: { d: "", role: "near" },
         edge: { d: "", proof: { n: far.said!, o: operator } },
       });
-      const g = yield* grant(p, [near, far], operator);
-      assert(p.receiving.verifyAccepted(g.said!, "/ipex/grant"));
-      const graph = walkIpexGraph(near.said!, loadNests(p.receiver.db, g.said!), true, p.receiver.db);
+      const g = yield* grant(p, [near, far], operator, false);
+      assertEquals(p.receiving.verifyAccepted(g.said!, "/ipex/grant"), false);
+      assertEquals(p.receiver.db.exns.get(g.said!), null);
+      assertEquals(p.receiver.db.enst.get(g.said!), []);
+      const graph = walkIpexGraph(near.said!, [signed(near, p.issuer), signed(far, p.issuer)], true);
       assert(graph && !("kind" in graph));
       assertEquals(evaluateAcdcRelations(graph, p.receiver.db, new Map()), operator === "I2I" ? false : null);
       const sign = p.holder.sign;
@@ -236,7 +239,7 @@ for (const operator of ["I2I", "UNKNOWN"]) {
         assertRejects(
           () => run(() => p.wallet.prepareAdmit(g.said!, p.holder.pre, { consent: true })),
           ValidationError,
-          "graph",
+          "Accepted",
         )
       );
       assertEquals(signatures, 0, "false/unknown roots cannot cause a holder signature");
@@ -266,7 +269,7 @@ for (const operator of ["I2I", "UNKNOWN"]) {
                 })
               ),
             ValidationError,
-            "graph",
+            "Accepted",
           )
         );
         assertEquals(signatures, 0, "false/unknown transferred roots cannot cause a presenter signature");
@@ -275,7 +278,7 @@ for (const operator of ["I2I", "UNKNOWN"]) {
         yield* runtime.close();
       }
       yield* call(() =>
-        assertRejects(() => p.wallet.recordAdmission(g.said!, a.said!, { consent: true }), ValidationError, "graph")
+        assertRejects(() => p.wallet.recordAdmission(g.said!, a.said!, { consent: true }), ValidationError, "Accepted")
       );
       assertEquals(p.wallet.inventory().held, []);
     });
