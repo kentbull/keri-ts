@@ -5,15 +5,7 @@ import {
   nestedIpexRoute,
 } from "../../core/exchange/protocol-exchanging.ts";
 /** V2 IPEX route policy; v1 routing remains independently registered. */
-import {
-  type CesrFrame,
-  Diger,
-  ParserError,
-  Prefixer,
-  type SealSource,
-  SerderACDC,
-  type SerderKERI,
-} from "cesr-ts";
+import { type CesrFrame, Diger, ParserError, Prefixer, type SealSource, SerderACDC, type SerderKERI } from "cesr-ts";
 import { validateUpdate, verifyRegistryAnchor, vetBinds } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { validateSchema } from "../../acdc/scheming.ts";
@@ -24,6 +16,7 @@ import type { ExchangeRouteHandler, ExchangeRouteVerification } from "../exchang
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
+import { evaluateIpexChain } from "./ipex-chaining.ts";
 import {
   type DisclosurePlan,
   hasIpexNodeAttachments,
@@ -33,7 +26,11 @@ import {
   verifyIpexDisclosure,
   walkIpexGraph,
 } from "./ipex-graph.ts";
-import { acceptedRegistryEvidence, authenticateIpexNode } from "./ipex-node-authentication.ts";
+import {
+  acceptedRegistryEvidence,
+  authenticateIpexNode,
+  type IpexNodeAuthentication,
+} from "./ipex-node-authentication.ts";
 
 type VerifyArgs = Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0];
 type EvidenceArgs = Parameters<NonNullable<ExchangeRouteHandler["verifyEvidence"]>>[0];
@@ -141,8 +138,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (verb === "offer" && nests.length) {
       if (nests.some(hasIpexNodeAttachments)) return false;
-      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false, this.hby.db);
-      if (graph && "kind" in graph) return { kind: "escrow", reason: "Missing edge schema.", schema: graph.said };
+      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false);
       return graph ? this.nodeSchemas(graph) : false;
     }
     if (verb !== "grant") return true;
@@ -158,8 +154,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
-    const graph = walkIpexGraph(origin, nests, true, this.hby.db);
-    if (graph && "kind" in graph) return { kind: "escrow", reason: "Missing edge schema.", schema: graph.said };
+    const graph = walkIpexGraph(origin, nests, true);
     if (!graph || [...graph.nodes.values()].some((node) => isIpexMetadata(node.body))) return false;
     const disclosure = verifyIpexDisclosure(plan, origin, graph, this.hby.db);
     if (disclosure !== true) {
@@ -167,14 +162,6 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     const fulfilled = this.offerFulfilled(previous, origin, graph);
     if (fulfilled !== true) return fulfilled;
-    for (const said of graph.order) {
-      const frame = graph.nodes.get(said)!;
-      const envelope = envelopeFromFrame(frame);
-      if (!frame.body.regid && this.presentationRegistries(frame.body) === null) return false;
-      const result = authenticateIpexNode(frame.body, envelope, this.hby.db, this.registry, historical);
-      if (result.kind === "missing") return missing(result.reason);
-      if (result.kind === "reject") return false;
-    }
     const schemas = this.nodeSchemas(graph);
     if (schemas !== true) return schemas;
     if (!evidence) return false; // Exchanger must supply its selected supplemental factor set.
@@ -205,7 +192,27 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       const node = graph.nodes.get(origin)!.body;
       if (![serder.pre, node.issuee, node.issuer].some((aid) => aid && anchorers.has(aid))) return false;
     }
-    return true;
+    const authentications = new Map<string, IpexNodeAuthentication>();
+    for (const said of graph.order) {
+      const frame = graph.nodes.get(said)!;
+      authentications.set(
+        said,
+        authenticateIpexNode(
+          frame.body,
+          envelopeFromFrame(frame),
+          this.hby.db,
+          this.registry,
+          historical,
+        ),
+      );
+    }
+    const verdict = evaluateIpexChain(graph, authentications, this.hby.db);
+    if (!verdict || verdict.kind === "invalid") return false;
+    if (verdict.kind === "valid") return true;
+    if (!verdict.retryable) return false;
+    return verdict.schemas.length
+      ? { kind: "escrow", reason: verdict.reason, schema: verdict.schemas[0] }
+      : missing(verdict.reason);
   }
 
   /** Notify only after Exchanger has durably accepted the parent and its evidence. */
@@ -213,7 +220,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     this.notifier?.add({ r: `/exn${serder.route}`, d: serder.said, m: (serder.sad!.a as Record<string, unknown>).m });
   }
 
-  /** Metadata offers withhold issuer proofs; grants call this only after every issuer authenticates. */
+  /** Every disclosed own schema vets before presentation and issuer graph reduction. */
   private nodeSchemas(graph: IpexGraph): ExchangeRouteVerification {
     for (const said of graph.order) {
       const result = validateSchema(graph.nodes.get(said)!.body, this.hby.db);
@@ -237,8 +244,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (offeredOrigin === origin) return true;
     const nests = loadNests(this.hby.db, offerSaid);
     if (!nests.length) return missing(`Missing metadata ACDC for accepted Offer ${offerSaid}.`);
-    const offered = walkIpexGraph(offeredOrigin, nests, false, this.hby.db);
-    if (offered && "kind" in offered) return { kind: "escrow", reason: "Missing edge schema.", schema: offered.said };
+    const offered = walkIpexGraph(offeredOrigin, nests, false);
     if (!offered) return false;
     const metadata = offered.nodes.get(offeredOrigin)!.body;
     if (!isIpexMetadata(metadata)) return false;

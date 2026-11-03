@@ -1,7 +1,7 @@
-/** Signed DI2I grants retain their ordinary IPEX authentication and retry controls. */
+/** Application DI2I policy remains separate from the selected IPEX operator profile. */
 import { type CesrFrame, Diger, NumberPrimitive, Prefixer, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals } from "jsr:@std/assert";
 import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import type { Hab } from "../../../../src/app/identity/habbing.ts";
@@ -29,7 +29,7 @@ function signedNode(body: SerderACDC, hab: Hab): CesrFrame {
   };
 }
 
-Deno.test("IPEX retains signed DI2I evidence before separate delegator policy approval", async () => {
+Deno.test("IPEX refuses unsupported DI2I while application delegation policy remains independently evaluable", async () => {
   await run(function*() {
     const { validator, chain, approvals } = yield* delegationChain(1);
     const recipient = validator.makeHab("recipient");
@@ -53,13 +53,17 @@ Deno.test("IPEX retains signed DI2I evidence before separate delegator policy ap
         chain[1].sign(grant.raw, true),
       ),
     ];
-    assertEquals((yield* exchanger.processEvent({ serder: grant, tsgs, nests })).kind, "accept");
-    const retained = validator.db.exns.get(grant.said!)!.raw.slice();
+    assertEquals((yield* exchanger.processEvent({ serder: grant, tsgs, nests })).kind, "reject");
+    assertEquals(validator.db.exns.get(grant.said!), null);
     assertEquals(validator.db.epse.get(grant.said!), null);
     assertEquals(evaluateAcdcRelations(evidence, validator.db, new Map()), { kind: "missingKel", pre: chain[0].pre });
     yield* learn(validator, approvals[0]);
     assertEquals(evaluateAcdcRelations(evidence, validator.db, new Map()), true);
-    assertEquals(validator.db.exns.get(grant.said!)!.raw, retained, "KEL arrival changes policy without EXN replay");
+    assertEquals(
+      (yield* exchanger.processEvent({ serder: grant, tsgs, nests })).kind,
+      "reject",
+      "KEL arrival cannot implement an unsupported IPEX operator",
+    );
     for (const node of nodes) assertEquals(validator.db.exns.get(node.said!), null);
   });
 });

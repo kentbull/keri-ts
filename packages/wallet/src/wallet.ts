@@ -143,8 +143,8 @@ export class Wallet {
   /** New use requires current authentication and the single complete-root evaluator's explicit true. */
   private graphAccepted(grant: string, origin: string): boolean {
     if (!this.exc.verifyAccepted(grant, "/ipex/grant")) return false;
-    const graph = walkIpexGraph(origin, loadNests(this.hby.db, grant), true, this.hby.db);
-    if (!graph || "kind" in graph) return false;
+    const graph = walkIpexGraph(origin, loadNests(this.hby.db, grant), true);
+    if (!graph) return false;
     const registrations = new Map<string, RegistryState>();
     for (const [said, node] of graph.nodes) {
       const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.hby.db, this.registry);

@@ -147,9 +147,8 @@ export class AcdcV2Verifier {
       observations,
     });
     if (!inspected.credential) return result("refused");
-    const graph = walkIpexGraph(inspected.credential.said!, loadNests(this.hby.db, grant), true, this.hby.db);
+    const graph = walkIpexGraph(inspected.credential.said!, loadNests(this.hby.db, grant), true);
     if (!graph) return result("refused");
-    if ("kind" in graph) return result("missing");
     const registrations = new Map<string, RegistryState>();
     for (const [said, node] of graph.nodes) {
       const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.hby.db, this.evidence.store, true);

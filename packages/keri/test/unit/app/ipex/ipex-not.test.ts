@@ -35,7 +35,6 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
-import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 
 /** Introduce public evidence through the ordinary remote verifier, never accepted-row writes. */
 function* learn(receiver: Habery, wire: Uint8Array): Operation<void> {
@@ -102,11 +101,19 @@ function root(hab: Hab, far: SerderACDC, o: string | string[] = ["NOT", "NI2I"],
   return acdcmap(hab.pre, { attribute: { d: "", name: "root" }, edge: { d: "", link: { n: far.said, ...extra, o } } });
 }
 
-/** A consuming action evaluates retained authenticated evidence separately from EXN completion. */
-function policy(hby: Habery, said: string, registrations: ReadonlyMap<string, RegistryState> = new Map()) {
-  const frames = loadNests(hby.db, said);
-  const graph = walkIpexGraph(frames[0].body.said!, frames, true, hby.db);
-  assert(graph && !("kind" in graph));
+/** Application EGF evaluation borrows the original candidate, independently of IPEX retention. */
+function policy(
+  hby: Habery,
+  frames: readonly CesrFrame[],
+  registrations: ReadonlyMap<string, RegistryState> = new Map(),
+) {
+  const graph = walkIpexGraph(frames[0].body.said!, frames, true);
+  assert(graph);
+  for (const frame of frames) {
+    const auth = authenticateIpexNode(frame.body as SerderACDC, envelopeFromFrame(frame), hby.db, null);
+    // Registered cases supply independently authenticated registry facts explicitly.
+    if (!registrations.has(frame.body.said!) && auth.kind !== "authenticated") return null;
+  }
   return evaluateAcdcRelations(graph, hby.db, registrations);
 }
 
@@ -119,11 +126,11 @@ for (const negated of [false, true]) {
       const args = p.grant([signed(near, p.near), signed(far, p.far)]);
       assertEquals(
         (yield* p.exchanger.processEvent(args)).kind,
-        "accept",
-        "authenticated false relations remain retained evidence",
+        negated ? "reject" : "accept",
+        "IPEX refuses unsupported NOT; application evaluation remains separate",
       );
-      assertExists(p.receiver.db.exns.get(args.serder.said!));
-      assertEquals(policy(p.receiver, args.serder.said!), !negated, "only explicit true permits use");
+      assertEquals(Boolean(p.receiver.db.exns.get(args.serder.said!)), !negated);
+      assertEquals(policy(p.receiver, args.nests), !negated, "only explicit true permits use");
       assertEquals(p.receiver.db.exns.get(far.said!), null, "parent acceptance never publishes the child");
     });
   });
@@ -140,19 +147,18 @@ for (const negated of [false, true]) {
       });
       const near = root(p.near, far, negated ? ["NOT", "NI2I"] : "NI2I");
       const args = p.grant([signed(near, p.near), signed(far, p.far), signed(tail, p.tail)]);
-      assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-      assertExists(p.receiver.db.exns.get(args.serder.said!));
-      assertEquals(policy(p.receiver, args.serder.said!), negated);
+      assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+      assertEquals(Boolean(p.receiver.db.exns.get(args.serder.said!)), false);
+      assertEquals(policy(p.receiver, args.nests), negated);
       if (negated) {
         yield* p.receiver.db.reopen();
-        assertExists(p.receiver.db.exns.get(args.serder.said!));
-        assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-        assertEquals(p.receiver.db.exns.get(args.serder.said!)!.raw, args.serder.raw);
-        assertEquals(loadNests(p.receiver.db, args.serder.said!).map((frame) => frame.body.said), [
-          near.said,
-          far.said,
-          tail.said,
-        ]);
+        assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+        assertEquals(p.receiver.db.exns.get(args.serder.said!), null);
+        assertEquals(
+          policy(p.receiver, args.nests),
+          true,
+          "application NOT support is independent of protocol acceptance",
+        );
       }
     });
   });
@@ -174,12 +180,12 @@ Deno.test("NOT does not invert a missing node, missing proof or foreign signatur
     }
     assertEquals(
       (yield* p.exchanger.processEvent(p.grant([signed(near, p.near), signed(far, p.far), signed(tail, p.tail)]))).kind,
-      "accept",
+      "reject",
     );
   });
 });
 
-Deno.test("NOT retains a missing issuer dependency until actual KEL intake closes it", async () => {
+Deno.test("NOT remains unsupported after actual KEL intake closes an application dependency", async () => {
   await run(function*() {
     const p = yield* peers(), unknown = p.source.makeHab("unknown");
     const tail = acdcmap(p.tail.pre, { issuee: p.near.pre, attribute: { d: "", name: "tail" } });
@@ -189,14 +195,17 @@ Deno.test("NOT retains a missing issuer dependency until actual KEL intake close
     });
     const near = root(p.near, far);
     const args = p.grant([signed(near, p.near), signed(far, unknown), signed(tail, p.tail)]);
-    assertEquals((yield* p.exchanger.processEvent(args)).kind, "escrow");
-    assertExists(p.receiver.db.epse.get(args.serder.said!));
+    assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+    assertEquals(p.receiver.db.epse.get(args.serder.said!), null);
+    assertEquals(policy(p.receiver, args.nests), null);
     yield* p.receiver.db.reopen();
     yield* p.exchanger.processEscrows();
     assertEquals(p.receiver.db.exns.get(args.serder.said!), null);
     yield* learn(p.receiver, acceptedEventReplayMessage(p.source, unknown.pre, 0).message);
     yield* p.exchanger.processEscrows();
-    assertExists(p.receiver.db.exns.get(args.serder.said!));
+    assertEquals(p.receiver.db.exns.get(args.serder.said!), null);
+    assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+    assertEquals(policy(p.receiver, args.nests), true);
     assertEquals(p.receiver.db.epse.get(args.serder.said!), null);
   });
 });
@@ -219,14 +228,14 @@ for (const op of [["NOT", "I2I"], ["NOT", "NI2I"], ["NOT", "E1E"]]) {
           edge: { d: "", link: { n: far.said, o: op } },
         });
         const args = p.grant([signed(near, p.near), signed(far, p.far), signed(tail, p.tail)]);
-        assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-        assertEquals(policy(p.receiver, args.serder.said!), match || op.includes("NI2I"));
+        assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+        assertEquals(policy(p.receiver, args.nests), match || op.includes("NI2I"));
       }
     });
   });
 }
 
-Deno.test("NOT leaves malformed semantic evidence unresolved on a retained Grant", async () => {
+Deno.test("NOT leaves malformed semantic evidence unresolved for applications and refuses IPEX", async () => {
   await run(function*() {
     const p = yield* peers();
     const tail = acdcmap(p.tail.pre, { issuee: p.near.pre, attribute: { d: "", name: "tail" } });
@@ -238,9 +247,9 @@ Deno.test("NOT leaves malformed semantic evidence unresolved on a retained Grant
         edge: { d: "", link: { n: tail.said, o: "I2I" }, bad: { n: tail.said, ...bad } },
       });
       const args = p.grant([signed(root(p.near, far), p.near), signed(far, p.far), signed(tail, p.tail)]);
-      assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-      assertExists(p.receiver.db.exns.get(args.serder.said!));
-      assertEquals(policy(p.receiver, args.serder.said!), null);
+      assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+      assertEquals(Boolean(p.receiver.db.exns.get(args.serder.said!)), false);
+      assertEquals(policy(p.receiver, args.nests), null);
     }
   });
 });
@@ -269,8 +278,8 @@ for (const group of ["AND", "OR"]) {
         "/e/nested/link/_/",
         "/e/nested/link/_/e/link/_/",
       ]);
-      assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-      assertEquals(policy(p.receiver, args.serder.said!), group === "OR");
+      assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+      assertEquals(policy(p.receiver, args.nests), group === "OR");
     });
   });
 }
@@ -292,17 +301,17 @@ Deno.test("NOT rechecks missing edge schemas and cannot invert a failing own-nod
       edge: { d: "", link: { n: tail.said, s: schema.said, o: "NI2I" } },
     });
     const args = p.grant([signed(root(p.near, far), p.near), signed(far, p.far), signed(tail, p.tail)]);
-    assertEquals((yield* p.exchanger.processEvent(args)).kind, "accept");
-    const retained = p.receiver.db.exns.get(args.serder.said!)!.raw.slice();
+    assertEquals((yield* p.exchanger.processEvent(args)).kind, "reject");
+    assertEquals(p.receiver.db.exns.get(args.serder.said!), null);
     assertEquals(p.receiver.db.emse!.get([args.serder.said!, schema.said]), null);
-    assertEquals(policy(p.receiver, args.serder.said!), { kind: "missing", said: schema.said });
+    assertEquals(policy(p.receiver, args.nests), { kind: "missing", said: schema.said });
     p.receiver.db.schema.pin(schema.said, schema);
     assertEquals(
-      policy(p.receiver, args.serder.said!),
+      policy(p.receiver, args.nests),
       true,
       "schema arrival permits policy reevaluation without replay",
     );
-    assertEquals(p.receiver.db.exns.get(args.serder.said!)!.raw, retained);
+    assertEquals(p.receiver.db.exns.get(args.serder.said!), null);
     const extra = p.grant([
       signed(root(p.near, far, ["NOT", "NI2I"], { s: schema.said }), p.near),
       signed(far, p.far),
@@ -310,10 +319,10 @@ Deno.test("NOT rechecks missing edge schemas and cannot invert a failing own-nod
     ]);
     assertEquals(
       (yield* p.exchanger.processEvent(extra)).kind,
-      "accept",
-      "an edge constraint does not decide EXN retention",
+      "reject",
+      "a supported application constraint does not implement IPEX NOT",
     );
-    assertEquals(policy(p.receiver, extra.serder.said!), false, "NOT does not invert near edge constraints");
+    assertEquals(policy(p.receiver, extra.nests), false, "NOT does not invert near edge constraints");
     const invalid = acdcmap(p.far.pre, { schema: schema.said, attribute: { d: "", name: "other" } });
     const own = p.grant([signed(root(p.near, invalid), p.near), signed(invalid, p.far)]);
     assertEquals(
@@ -347,7 +356,7 @@ Deno.test("NOT uses current accepted issued/revoked facts on fresh validation, n
       if (!i) {
         for (const origin of [positive, near]) {
           const args = p.grant([signed(origin, p.near), node]);
-          assertEquals((yield* p.exchanger.processEvent(args)).kind, "escrow");
+          assertEquals((yield* p.exchanger.processEvent(args)).kind, origin === positive ? "escrow" : "reject");
           pending.push(args);
         }
         yield* p.store.reopen();
@@ -366,9 +375,9 @@ Deno.test("NOT uses current accepted issued/revoked facts on fresh validation, n
       if (!i) {
         yield* p.exchanger.processEscrows();
         assertExists(p.receiver.db.exns.get(pending[0].serder.said!));
-        assertExists(p.receiver.db.exns.get(pending[1].serder.said!));
+        assertEquals(p.receiver.db.exns.get(pending[1].serder.said!), null);
         assertEquals(
-          policy(p.receiver, pending[1].serder.said!, registrations),
+          policy(p.receiver, pending[1].nests, registrations),
           false,
           "issued evidence cannot satisfy NOT policy",
         );
@@ -386,16 +395,14 @@ Deno.test("NOT uses current accepted issued/revoked facts on fresh validation, n
         const args = p.grant([signed(rootNode, p.near), node]);
         assertEquals(
           (yield* p.exchanger.processEvent(args)).kind,
-          "accept",
-          `${state}: authenticated standing remains evidence`,
+          rootNode === positive ? "accept" : "reject",
+          `${state}: registry standing is evidence; NOT remains unsupported in IPEX`,
         );
         assertEquals(
-          policy(p.receiver, args.serder.said!, registrations),
-          state === "custom"
-            ? { kind: "unknownState", said: far.said!, state }
-            : expected,
+          policy(p.receiver, args.nests, registrations),
+          state === "custom" ? { kind: "unknownState", said: far.said!, state } : expected,
         );
-        if (expected && rootNode === near) accepted = args.serder.said!;
+        if (rootNode === positive && state === "issued") accepted = args.serder.said!;
       }
       if (accepted) {
         assertExists(
@@ -435,7 +442,6 @@ Deno.test("IPEX graph dependency order handles shared cross-links independently 
         gvrsn: Vrsn_2_0,
       })),
       true,
-      hby.db,
     );
     assertExists(graph);
     assert(!("kind" in graph));

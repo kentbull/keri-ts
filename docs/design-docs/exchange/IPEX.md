@@ -3,11 +3,10 @@
 Six v2 routes follow the manifest's selected Python candidate `acdc/ipexing.py`; the existing v1 handlers/builders
 retain their pathed protocol. Offer may disclose a reachable metadata subgraph.
 Grant must satisfy the negotiated single-DAG plan in breadth-first order and
-supply an independent issuer proof for every child. A declared registry takes
+supply node-local issuer evidence, reduced with each node’s own edges under the selected IPEX profile. A declared registry takes
 precedence over direct issuer anchors, which take precedence over current issuer
 signatures. Parent proofs never authenticate children. The separate ACDC evaluator supports I2I/NI2I/DI2I, E1E and NOT
-under the profiles below. Selected-candidate operator interoperability remains
-separately qualified in the later graph work. The
+under the profiles below. IPEX admission separately implements the selected reference’s AND/OR profile; application operators never silently extend that admission profile. The
 [operator acceptance plan](../../plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
 keeps TS operator qualification distinct from pairwise evidence.
 Deeper child-owned nests are
@@ -35,23 +34,20 @@ not supply a transaction ID; Tufa's v2 IPEX commands no longer expose `--xid`.
 Only existing Offer/Grant handlers own nested XIP credential trees. Other XIP
 routes remain subject to the flat-frame boundary.
 
-Selected-source wire vectors record actual Python outcomes. Two graph-policy selections
-remain explicitly unaligned for R13c: Python refuses the E1E and AND graph
-examples during Grant intake while TypeScript retains their authenticated evidence
-for separate relation evaluation. TypeScript also retains
-its separate empty graph-prefix extension. These exceptions prevent a claim of
-full IPEX or graph-policy parity; wire migration does not resolve acceptability.
-
-Two further raw-section observations remain explicitly unaligned for R05/R13d:
-Python's common `acdcmap(attribute={d: "", ...})` output and a stale exposed section
-claim both pass Python's top-level recomputation while TS refuses the inconsistent
-exposed section claim. The empty-claim IPEX example is accepted by Python and
-refused by TS; the stale-claim IPEX example is refused by both. Keep Serder and
-route outcomes distinct. Their original received bytes remain in the fixture; no
-receiver rewrites or weaker TS checks are used. Wire/chain positives separately
-prepare complete section claims with Python Compactor before signing, preserving
-the credential SAID. Common upstream constructor-flow interoperability remains
-unqualified until the owning serializer/section contract is resolved.
+Historical wire vectors remain pinned to `ae8284995486855809e7f4988fa1579b63e1ff91`.
+Their E1E and AND intake refusals now agree with TypeScript. Their original blank
+and stale section-claim bytes remain unchanged as historical non-parity evidence:
+that Python Serder accepted both while TS refused them, and only Python IPEX
+accepted the blank claim. Fresh graph vectors pin `1f0f68a6ad44a8d159cbbb2bab7bb243bc7a0337` and use ordinary current-Python
+`acdcmap(attribute={d: "", ...})` construction after its section repair, with no
+Compactor preparation or receiver rewriting. Each generator records its exact
+source pin and all imported module hashes. Relative to the historical fixture, the
+current owner validates every own schema and presentation/ax before reduction,
+repairs constructor section claims and imports its inline-pin Schemer. Minimal
+inline pins are covered; schemas whose properties include d retain the reference’s
+separate generic Compactor limitation and are not qualified by these cases. The separate empty graph-prefix
+extension and authenticated registry-state persistence remain outside this unit;
+these checks do not establish full IPEX or application-use interoperability.
 
 An Offer's carried nodes contain bodies without proof attachments; empty counted
 feet carry no evidence. A Grant cannot use field-map metadata (explicit empty
@@ -96,16 +92,21 @@ coordinates before route selection; the IPEX handler retains those seals and
 prefers them to signatures from the same AID. Supplemental transferable signatures
 still require the endorser's current establishment keys. This matches main
 `c7e74ad`; rotation does not erase a permanent KEL commitment.
-The selected candidate validates every carried metadata-offer node without
-withheld issuer proofs. Grants verify disclosure and Offer fulfillment, then
-every issuer, own-node schemas and presentation obligations in that order. IPEX
-retention makes no relation or application-use verdict. Own/disclosure schema
-resources use schema EXN escrow; invalid own schemas reject and infrastructure
-failures propagate. Semantic pin/delegation dependencies belong to the separate
-evaluator and never require EXN replay. Operator-specific interoperability remains separately qualified; hidden aggregate
-and deeper-nest guards remain. Schema fetching and full IPEX/resource qualification
-are separate work. The existing wire generator now records the selected candidate
-pin and its flat-plan decisions; independent historical primitive references stay frozen.
+The selected current Python contract validates every carried metadata-offer node
+without withheld issuer proofs. Grants check disclosure and Offer fulfillment,
+then every own schema, every presentation obligation and ax, then graph admission.
+Own/disclosure schema resources use schema EXN escrow; invalid own schemas reject
+and infrastructure failures propagate. Graph admission conjoins each node’s own
+authentication with its edges, and each leaf’s relation/pins with its far node.
+Strong AND and OR absorb outcome-irrelevant invalid or unknown branches, while
+all branches are still inspected for malformed structure. Only a valid root is
+accepted; a dependent retryable unknown uses existing proof/schema escrow, and
+invalid or permanent-unknown roots refuse. I2I/NI2I and E1E compose using the last
+delegative operator; DI2I, NOT, unsupported m-ary operators and undereferenceable
+compact Edge blocks are permanent unknowns. Every ancestor and leaf pin applies
+conjunctively. A satisfied OR can absorb unsupported semantics, never malformed
+input. Authenticated issued/revoked/custom registry states are not application-use
+verdicts. Persisting accepted per-node state observations remains separate R13d.
 Whole-node `[""]` and relative `d/`, and trailing-separator subtree paths, require
 schema-proven closure under the selected explicit-acm profile. Static resources
 are authenticated by the same private owner as ordinary node validation; no
@@ -117,14 +118,11 @@ are supported; open/ambiguous schema forms and whole aggregates refuse. Missing
 schema resources use the existing retry path. Node presence `[]` and explicit
 leaf requests retain their independent meanings.
 
-The same authenticated resource owner proves the bounded simple-edge profile:
-a digest at a declared nonreserved edge/group child is a far reference only when
-its statically resolved schema is string-only. Open, map-admitting and ambiguous
-leaf schemas remain opaque even if a matching node is supplied. Expanded ancestors
-may select the unique object branch of a string/object oneOf; digest-valued leaves
-never use that selection. Expanded n leaves allow application properties after the
-reserved d,u,n,s,o,w fields in that order; those properties never extend the graph.
-Traversal, virtual `_` hops and the existing relation evaluator share this classifier.
+IPEX traversal and virtual `_` hops accept expanded leaves with exactly the
+reserved d/u/n/s/o/w labels; compact member strings name Edge blocks, not far
+credentials. Section and nested group s pins are both reserved and inherited.
+The application evaluator’s schema-proven simple-edge classifier and application
+leaf properties remain separate and unchanged.
 
 An empty graph prefix uses its tuple's BFS position. A nonorigin positional tuple
 requires the full gapless BFS plan and a schema-proven closed, required edge hierarchy
@@ -135,7 +133,7 @@ origin-first and strictly BFS ordered; intermediate `_` hops restart at e. Relat
 empty fields under an empty prefix request nothing; d/ still requests whole closure.
 These bounded rules do not claim universal shorthand or whole-node interoperability.
 
-The TypeScript DI2I contract admits identity or an approved delegation chain at any
+The separate application TypeScript DI2I contract admits identity or an approved delegation chain at any
 depth. Every hop needs the delegator's accepted approval of the delegated inception;
 local/witness-held `delpre` alone is no authority. Read DND from each delegator's
 inception, independently of protected KEL acceptance. Later delegate rotations do
@@ -151,7 +149,7 @@ This profile follows the [operator specification](https://trustoverip.github.io/
 and the approval boundary clarified in [KERIpy #1559](https://github.com/WebOfTrust/keripy/issues/1559);
 it is not Python IPEX DI2I parity.
 
-NOT inverts the authenticated far node's validity, independently of the near
+The separate application NOT evaluator inverts the authenticated far node's validity, independently of the near
 edge's identity and additional schema constraints. Evaluate far nodes before
 parents in dependency order; keep breadth-first disclosure order unchanged,
 including shared ancestors. All nodes must first authenticate and pass their own

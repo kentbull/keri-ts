@@ -7,9 +7,7 @@ selected KERIpy `v2-spec` commit `99a11d2a30beb0e23d294a9be58c7c3ccf7ef078`
 retry. Other recorded boundaries below retain their explicitly labeled frozen
 references. KRAM is disabled by default and explicitly configurable at runtime.
 IPEX XIP openers and EXN continuations share this admission path and the strict
-one-DAG wire contract in [IPEX](IPEX.md). Its documented graph/schema exceptions
-and reciprocal qualification remain separate; dispatch success does not establish
-full IPEX interoperability.
+one-DAG wire contract in [IPEX](IPEX.md). Grant admission validates every own schema and presentation obligation before its IPEX-specific strong AND/OR reduction. Unsupported operators remain permanent unknown; malformed branches cannot be outvoted. Application EGF policy, authenticated state persistence and reciprocal qualification remain separate; dispatch success does not establish full IPEX interoperability.
 
 ## Policy and responsibility
 

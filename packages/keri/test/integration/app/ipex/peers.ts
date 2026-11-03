@@ -495,9 +495,8 @@ class TypeScriptPeer implements IpexPeer {
     let verdict: ReturnType<typeof evaluateAcdcRelations> | undefined;
     if (selected?.route === "/ipex/grant") {
       const frames = loadNests(db, selected.said!);
-      const graph = walkIpexGraph(frames[0].body.said!, frames, true, db);
+      const graph = walkIpexGraph(frames[0].body.said!, frames, true);
       assertExists(graph);
-      if ("kind" in graph) throw new Error(`Fixture policy requires schema ${graph.said}`);
       // These fixture graphs are unregistered; use only their exact accepted child views.
       verdict = evaluateAcdcRelations(graph, db, new Map());
     }

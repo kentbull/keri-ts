@@ -85,8 +85,7 @@ function acdcV2GraphUse(
   origin: string,
   nests: readonly CesrFrame[],
 ): boolean | null {
-  const graph = walkIpexGraph(origin, nests, true, hby.db);
-  if (graph && "kind" in graph) return null;
+  const graph = walkIpexGraph(origin, nests, true);
   if (!graph) throw new ValidationError("ACDC v2 group graph is malformed or incomplete.");
   const states = new Map<string, RegistryState>();
   for (const [said, node] of graph.nodes) {

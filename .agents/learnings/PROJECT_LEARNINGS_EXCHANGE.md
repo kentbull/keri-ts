@@ -79,12 +79,10 @@ XIP routes admit child trees. The selected wire uses exactly one outer DAG list,
 q.dp=[plan], while the graph owner retains one internal flat plan. Empty inner
 plans inherit with a prior or mean no disclosure at an opener; vacuous Grants
 carry o=[] and no nodes. Schema query slots accept strings, including empty/opaque criteria; Grant matching
-and actual schema validation still establish commitments. Graph-policy exceptions
-remain R13c work.
-The selected Python constructor preserves blank/stale exposed section claims while
-computing the top-level most-compact SAID; TS currently refuses those claims.
-Keep their raw fixtures visible as R05/R13d non-parity evidence. Wire-only positive
-fixtures prepare section commitments before signing, never during received-byte intake.
+and actual schema validation still establish commitments. IPEX graph admission uses its own strong AND/OR profile; application EGF operators remain separate.
+Historical ae828499 wire vectors preserve their raw blank/stale section observations.
+Current-reference graph vectors use ordinary repaired Python constructors and retain
+exact source/module hashes, with no section preparation or received-byte rewriting.
 
 CLI group selection is an authorization boundary. Ordinary interaction/rotation
 must direct operators to multisig commands before signing; generic exchange,
@@ -191,22 +189,23 @@ paths retain their separate meaning. Empty graph prefixes select by tuple BFS po
 nonorigin positional selection requires a gapless plan and schema-proven closed,
 required edge hierarchy for every node. Optional members remain optional even when
 present. Explicit /e/.../_/ selectors may omit unrequested plan entries, preserve
-strict origin-first BFS order, and restart at e after each intermediate hop. The
-shared ACDC classifier handles expanded leaves and schema-proven string-only edges;
-missing resources use schema escrow. Grant still carries every selected far node.
+strict origin-first BFS order, and restart at e after each intermediate hop. The IPEX walker admits strict expanded leaves; compact strings name undereferenceable Edge blocks, not ACDCs. Grant still carries every selected far node.
 V2 IPEX Offers carry body-only reachable subgraphs and validate carried schemas;
 child proof attachments belong to Grants. Grants refuse field-map metadata with
 explicit empty `u`, while public fixed-field `act`/`acg` UUID slots remain valid.
 After disclosure checks, a Grant must fulfill its exact accepted Offer: identical
 root, or metadata with matching issuer, promised registry and every nonempty
 section commitment. Compare only Serder-verified d/$id/AGID claims; missing named
-metadata uses proof escrow, known contradictions reject. Then verify each node's
-independent issuer proof, own schema and presentation obligations.
-The separate `acdc/graphing.ts` evaluator reads borrowed authenticated evidence;
-IPEX does not call it or escrow its semantic dependencies. A retained Grant may
-have false or unresolved relations; consuming actions require explicit true. The single IPEX walker still owns flat nested
-frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Shared
-edge block/label syntax belongs to ACDC, without moving conversation policy.
+metadata uses proof escrow, known contradictions reject. Then validate all own schemas and presentations/ax before reducing issuer authentication
+and edges together. IPEX’s local evaluator uses strong AND/OR, inherited conjunctive
+pins, default/last delegative I2I/NI2I and E1E. Unsupported operators and compact Edge
+blocks are permanent unknown; malformed shape aborts globally even in an unused OR
+branch. A dependent retryable unknown uses existing schema/proof escrow. IPEX records
+no application-use verdict or revocation policy; authenticated state persistence remains
+R13d. The separate `acdc/graphing.ts` application evaluator stays unchanged. NOT/DI2I
+application support does not make those operators admissible in IPEX; consuming actions
+still require explicit true. The single IPEX walker still owns flat nested
+frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Generic edge block syntax stays shared; strict IPEX leaf/group labels belong to its admission profile.
 `ipex-node-authentication` reads only Baser/RegistryStore and returns authenticated
 proof, a missing dependency or refusal. A verified registration retains its actual
 bound state; authentication alone does not interpret it as credential validity.
@@ -214,7 +213,7 @@ Conversation policy owns escrow and rejection. Issuer and presentation checks sh
 accepted-chain reads, preserving corruption failures and source-proof precedence.
 Same-schema identity never bypasses payload constraints; missing schema is a
 typed dependency, while infrastructure/resource failures propagate.
-DI2I permits identity or an approved inception chain at any depth. Read each
+The separate application EGF evaluator’s DI2I permits identity or an approved inception chain at any depth. Read each
 delegator's inception DND and accepted approval; protected/witness-held delpre is
 not authority. Missing KEL/approval for DI2I is an evaluator dependency, without EXN replay or escrow. Later rotations
 or witness changes do not renew the relationship, and lookup does not write hints.
