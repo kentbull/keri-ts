@@ -24,9 +24,10 @@ import { loadNests, openRegistry, RegistryStore } from "keri-ts/db";
 import {
   acdcmap,
   blindate,
+  type ChainVerdict,
   createAgentRuntime,
   createHabery,
-  evaluateAcdcRelations,
+  evaluateChain,
   Exchanger,
   FetchHttpClient,
   type Hab,
@@ -228,7 +229,14 @@ for (const operator of ["I2I", "UNKNOWN"]) {
       assertEquals(p.receiver.db.enst.get(g.said!), []);
       const graph = walkIpexGraph(near.said!, [signed(near, p.issuer), signed(far, p.issuer)], true);
       assert(graph && !("kind" in graph));
-      assertEquals(evaluateAcdcRelations(graph, p.receiver.db, new Map()), operator === "I2I" ? false : null);
+      assertEquals(
+        evaluateChain(
+          graph,
+          new Map(graph.order.map((said) => [said, { kind: "valid" } as ChainVerdict])),
+          p.receiver.db,
+        )?.kind,
+        operator === "I2I" ? "invalid" : "unknown",
+      );
       const sign = p.holder.sign;
       let signatures = 0;
       p.holder.sign = function(this: Hab, ...args: Parameters<typeof sign>) {
@@ -435,3 +443,53 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
     }
   });
 });
+
+for (const proof of ["missing", "refused"] as const) {
+  Deno.test(`wallet OR admits and presents exact views with an unused ${proof} issuer branch`, async () => {
+    await withPeers(function*(p) {
+      const outsider = p.source.makeHab("optional issuer");
+      const good = acdcmap(p.issuer.pre, { attribute: { d: "", name: "good" } });
+      const optional = acdcmap(outsider.pre, { attribute: { d: "", name: "optional" } });
+      const near = acdcmap(p.issuer.pre, {
+        attribute: { d: "", name: "root" },
+        edge: {
+          d: "",
+          o: "OR",
+          good: { n: good.said },
+          optional: { n: optional.said },
+        },
+      });
+      const nodes = [near, good, optional];
+      const plan = nodes.map((body, i) =>
+        [(body.schema as { $id: string }).$id, i === 0 ? "/" : i === 1 ? "/e/good/_/" : "/e/optional/_/", []] as const
+      );
+      const g = ipexExnBody(p.issuer.pre, "/ipex/grant", nodes, { message: proof, recipient: p.holder.pre, plan });
+      const optionalFrame = proof === "missing"
+        ? signed(optional, outsider)
+        : { body: optional, attachments: [], gvrsn: Vrsn_2_0 };
+      const frame = signed(g, p.issuer, [signed(near, p.issuer), signed(good, p.issuer), optionalFrame]);
+      yield* ingest(frame, p.source, p.sending);
+      yield* ingest(frame, p.receiver, p.receiving);
+      assertEquals(p.receiving.complete(g.said!), true);
+      const prepared = yield* p.wallet.prepareAdmit(g.said!, p.holder.pre, { consent: true });
+      yield* ingest(prepared.wire, p.receiver, p.receiving);
+      yield* call(() => p.wallet.recordAdmission(g.said!, prepared.admit.said!, { consent: true }));
+      const before = (yield* call(() => p.wallet.heldCredential(g.said!))).artifacts;
+      const runtime = yield* createAgentRuntime(p.receiver, new FetchHttpClient(), systemClock);
+      const discloser = new WalletDiscloser(
+        p.wallet,
+        new Receiptor(p.receiver, runtime.protocol, runtime.http, runtime.clock),
+      );
+      const presentation = yield* discloser.prepareGrant(p.holder.pre, {
+        fromGrant: g.said!,
+        presenterAuthorized: true,
+      }, { message: "present", recipient: p.issuer.pre, plan });
+      assertEquals(parseBytes(presentation.wire)[0].nests!.map(node => node.body.said), nodes.map(node => node.said));
+      assertEquals(
+        (yield* call(() => p.wallet.heldCredential(g.said!))).artifacts,
+        before,
+        "new presentation never enriches or replaces the consented view",
+      );
+    });
+  });
+}

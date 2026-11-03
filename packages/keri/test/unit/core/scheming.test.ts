@@ -2,7 +2,6 @@ import { Diger, dumps, type MapperMap, ParserError } from "cesr-ts";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import {
-  simpleEdgeSchema,
   validateSchema,
 } from "../../../src/acdc/scheming.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
@@ -194,7 +193,7 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
   }
   const sibling = make({ $ref: "#/$defs/attribute", type: "object" }, { $defs: { attribute: closedAttribute } });
   assertEquals(validateSchema(credential(sibling.sed), db).kind, "valid");
-  // Edge queries share resource authentication and preserve nested $id reference scope.
+  // Own-schema validation preserves nested $id reference scope independently of edge interpretation.
   const edgeResource: Record<string, unknown> = {
     $id: "did:keri:" + "#".repeat(44),
     version: "1.0.0",
@@ -218,28 +217,15 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
     });
   const scoped = edgeCredential(edgeSchema.sed);
   assertEquals(validateSchema(scoped, db), { kind: "valid" });
-  assertEquals(simpleEdgeSchema(scoped, db, ["e", "link"]), true);
   const missingEdge = edgeCredential(edgeSchema.said);
-  assertEquals(simpleEdgeSchema(missingEdge, db, ["e", "link"]), { kind: "missing", said: edgeSchema.said });
+  assertEquals(validateSchema(missingEdge, db), { kind: "missing", said: edgeSchema.said });
   const unionEdgeSchema = make({}, {
     properties: { e: { oneOf: [{ type: "string" }, { $ref: edgeResource.$id }] } },
     required: ["e"],
     $defs: { edge: edgeResource },
   });
-  assertEquals(simpleEdgeSchema(edgeCredential(unionEdgeSchema.sed), db, ["e", "link"]), true);
+  assertEquals(validateSchema(edgeCredential(unionEdgeSchema.sed), db), { kind: "valid" });
 
-  for (
-    const leaf of [{}, { type: ["string", "object"] }, { oneOf: [{ type: "string" }, { type: "object" }] }, {
-      $ref: edgeResource.$id + "#/$defs/target",
-      type: "string",
-    }]
-  ) {
-    const opaque = make({}, {
-      properties: { e: { type: "object", properties: { link: leaf } } },
-      $defs: { edge: edgeResource },
-    });
-    assertEquals(simpleEdgeSchema(edgeCredential(opaque.sed), db, ["e", "link"]), false);
-  }
   for (const failure of [new Error("schema database unavailable"), new ParserError("cached schema decode failed")]) {
     const failed = {
       schema: {
@@ -249,7 +235,6 @@ Deno.test("v2 schema validation applies the 71438328 profile and only local stat
       },
     } as unknown as Baser;
     assertEquals(assertThrows(() => validateSchema(credential(simple.said), failed)), failure);
-    assertEquals(assertThrows(() => simpleEdgeSchema(missingEdge, failed, ["e", "link"])), failure);
   }
   expect(make({}, { annotation: "x".repeat(8 * 1024 ** 2) }), "valid");
   expect(make({}, { annotation: Array.from({ length: 5000 }, (_, i) => i) }), "valid");

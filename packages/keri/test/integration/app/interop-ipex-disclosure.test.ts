@@ -144,64 +144,21 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
       ["E1E", "node issuees differ"],
       ["AND", "one required logical branch is false"],
       ["OR", "all logical alternatives are false"],
-      ["NAND", "every logical member is true"],
-      ["NOR", "one logical member is true"],
       ["multi-hop", "deep ancestor missing"],
       ["branching", "shared ancestor proof missing"],
     ] as const
   ) {
-    const semantic = ["I2I", "E1E", "AND", "OR", "NAND", "NOR"].includes(graph);
-    Deno.test(`IPEX ${issuer} issuer: ${graph} ${semantic ? "retains false policy" : "rejects"} ${defect}, then admits status-only graph`, () =>
+    Deno.test(`IPEX ${issuer} issuer: ${graph} rejects ${defect}, then admits status-only graph`, () =>
       withIpexPeers({ issuer, graph }, async (peers) => {
         const { issuer, holder } = peers;
-        let apply = await exchange(holder, issuer, "apply");
-        let offer = await exchange(issuer, holder, "offer", apply);
-        let agree = await exchange(holder, issuer, "agree", offer);
-        const first = [apply, offer, agree];
-        const rejected = semantic
-          ? await issuer.send("grant", agree, true)
-          : await refuseInvalidGrant(issuer, holder, agree);
-        let oldRaws: string[][] = [];
-        if (semantic) {
-          await observed(
-            "false-policy Grant crossed ordinary ingress",
-            async () => (await holder.snapshot()).received.includes(rejected) ? true : undefined,
-          );
-          const retained = await Promise.all([issuer.snapshot(rejected), holder.snapshot(rejected)]);
-          for (const snapshot of retained) {
-            assertEquals([snapshot.inspected?.accepted, snapshot.inspected?.escrowed], [true, false]);
-            assertEquals(snapshot.verdict, false, "a consuming action must refuse this retained graph");
-          }
-          oldRaws = retained.map((snapshot) => snapshot.nodes.map((node) => node.raw));
-          apply = await exchange(holder, issuer, "apply");
-          offer = await exchange(issuer, holder, "offer", apply);
-          agree = await exchange(holder, issuer, "agree", offer);
-          assertEquals(
-            first.some((said) => [apply, offer, agree].includes(said)),
-            false,
-            "the positive control has a fresh reply lineage",
-          );
-        }
+        const apply = await exchange(holder, issuer, "apply");
+        const offer = await exchange(issuer, holder, "offer", apply);
+        const agree = await exchange(holder, issuer, "agree", offer);
+        const rejected = await refuseInvalidGrant(issuer, holder, agree);
         const grant = await exchange(issuer, holder, "grant", agree);
         await exchange(holder, issuer, "admit", grant);
-        await assertConversation(
-          peers,
-          ["apply", "offer", "agree", "grant", "admit"],
-          semantic ? [...first, rejected] : [],
-          grant,
-        );
-        if (semantic) {
-          for (const [i, peer] of [issuer, holder].entries()) {
-            const old = await peer.snapshot(rejected);
-            assertEquals(old.verdict, false);
-            assertEquals(
-              old.nodes.map((node) => node.raw),
-              oldRaws[i],
-              "fresh completion never rewrites old retained evidence",
-            );
-            assertEquals((await peer.snapshot(grant)).verdict, true);
-          }
-        } else await assertRejected(issuer, holder, rejected);
+        await assertConversation(peers, ["apply", "offer", "agree", "grant", "admit"], [], grant);
+        await assertRejected(issuer, holder, rejected);
         const arrivals = (await holder.snapshot()).received.filter((said) => said === rejected || said === grant);
         assertEquals(arrivals, [rejected, grant], "both grants crossed real ingress in scenario order");
       }));

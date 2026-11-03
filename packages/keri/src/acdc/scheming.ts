@@ -151,12 +151,12 @@ function fragment(resource: Resource, value: string): Schema | boolean {
   }
   return target;
 }
-/** Authenticate one local static resource graph, shared by validation and disclosure closure. */
+/** Authenticate one local static resource graph before ordinary schema validation. */
 class SchemaResources {
   private readonly resources = new Map<string, Resource>();
   readonly roots: Schema[] = [];
   readonly scopes = new Map<Schema, Resource>();
-  private readonly refs: { node: Schema; resource: Resource; value: unknown }[] = [];
+  private readonly refs: { resource: Resource; value: unknown }[] = [];
   private readonly work: { schema: Schema | boolean; resource: Resource }[] = [];
   missing: string | null = null;
 
@@ -209,7 +209,7 @@ class SchemaResources {
         if ("$schema" in node && node.$schema !== dialect) throw new InvalidSchema("Schema must use Draft 2020-12");
         if (typeof node.$anchor === "string") owner.anchors.set(node.$anchor, node);
         if ("$ref" in node) {
-          this.refs.push({ node, resource: owner, value: node.$ref });
+          this.refs.push({ resource: owner, value: node.$ref });
         }
         for (const child of children(node)) this.work.push({ schema: child, resource: owner });
       }
@@ -226,16 +226,6 @@ class SchemaResources {
       if (!this.work.length) break;
     }
     return root;
-  }
-
-  /** Resolve only references authenticated by admit, preserving each bundled resource's scope. */
-  resolve(schema: Schema): Schema | boolean {
-    const owner = this.scopes.get(schema);
-    if (!owner) throw new Error("Admitted schema has no resource scope");
-    const parsed = reference(schema.$ref);
-    const target = parsed.said ? this.resources.get(parsed.said) : owner;
-    if (!target) throw new Error("Admitted schema reference has no resource");
-    return fragment(target, parsed.fragment);
   }
 }
 
@@ -300,72 +290,6 @@ export function validateSchema(acdc: SerderACDC, db: Baser, override?: string | 
       : { kind: "invalid", subject: "credential", reason: validator.errorsText(validate.errors) };
   } catch (error) {
     if (error instanceof InvalidSchema) return { kind: "invalid", subject: "schema", reason: error.message };
-    throw error;
-  }
-}
-
-/** Resolve static edge types; only an expanded ancestor may select a string/object union. */
-function staticEdgeSchema(schema: unknown, resources: SchemaResources, expanded = false, depth = 64): Schema | null {
-  if (depth <= 0 || !object(schema)) return null;
-  const annotations = [
-    "$id",
-    "$schema",
-    "title",
-    "description",
-    "$comment",
-    "deprecated",
-    "readOnly",
-    "writeOnly",
-    "examples",
-    "default",
-  ];
-  if ("$ref" in schema) {
-    if (Object.keys(schema).some((key) => key !== "$ref" && !annotations.includes(key))) return null;
-    return staticEdgeSchema(resources.resolve(schema), resources, expanded, depth - 1);
-  }
-  if (
-    ["anyOf", "allOf", "not", "if", "then", "else", "dependentSchemas", "patternProperties"].some((key) =>
-      key in schema
-    )
-  ) return null;
-  if ("oneOf" in schema) {
-    if (
-      !expanded || Object.keys(schema).some((key) => key !== "oneOf" && !annotations.includes(key))
-      || !Array.isArray(schema.oneOf) || schema.oneOf.length !== 2
-    ) return null;
-    const branches = schema.oneOf.map((branch) => staticEdgeSchema(branch, resources, false, depth - 1));
-    if (
-      !branches.every((branch) => branch) || !branches.some((branch) => branch!.type === "string")
-      || !branches.some((branch) => branch!.type === "object")
-    ) return null;
-    return branches.find((branch) => branch!.type === "object")!;
-  }
-  return schema;
-}
-
-/** Interpret only authenticated, declared string-only edge children; open/ambiguous values remain opaque. */
-export function simpleEdgeSchema(
-  acdc: SerderACDC,
-  db: Baser,
-  path: readonly string[],
-): boolean | Extract<SchemaValidation, { kind: "missing" }> {
-  const resources = new SchemaResources(db);
-  try {
-    const root = resources.admit(acdc.schema);
-    if (!root) return resources.missing ? { kind: "missing", said: resources.missing } : false;
-    let schema: unknown = root.schema, instance: unknown = acdc.sad;
-    for (const part of path) {
-      const selected = staticEdgeSchema(schema, resources, true);
-      if (
-        !selected || selected.type !== "object" || !object(instance) || "n" in instance
-        || !object(selected.properties) || !Object.hasOwn(selected.properties, part) || !Object.hasOwn(instance, part)
-      ) return false;
-      schema = selected.properties[part];
-      instance = instance[part];
-    }
-    return staticEdgeSchema(schema, resources)?.type === "string";
-  } catch (error) {
-    if (error instanceof InvalidSchema) return false;
     throw error;
   }
 }

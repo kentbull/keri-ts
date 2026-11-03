@@ -64,15 +64,13 @@ bulk accepted-row writes to bypass the workflow's verification.
 
 S1 validates decoded credential data with bounded local resource closure; legacy
 Schemer remains separate. S2/S3 retain typed missing dependencies while invalid
-schemas reject and infrastructure/resource failures propagate. TS DI2I now checks
-approved inception relationships, inception DND and typed missing KEL dependencies.
-NOT evaluates authenticated far-node validity using the accepted issued/revoked
-profile at each fresh validation; unknown/malformed evidence cannot satisfy it.
-Neither operator is implemented by the selected Python IPEX reference. Follow the
-[operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md):
-test these operators in keri-ts, excluding them from Python interop until the
-selected reference supports them. Preserve the distinction between known
-invalidity and missing evidence. Hidden aggregates and deeper nests stay guarded.
+schemas reject and infrastructure/resource failures propagate. Shared upstream
+chaining owns I2I/NI2I/E1E and strong AND/OR reductions; unsupported operators stay
+unknown. Protocol issuer authentication and application issued/revoked policy
+supply separate node verdicts, with own-schema and shape obligations global.
+Preserve missing-evidence, retained-view and no-signature refusal controls in the
+[operator acceptance matrix](../qualification/GRADUATED_DISCLOSURE_INTEROP.md).
+Hidden aggregates and deeper nests stay guarded.
 The [Mapper correction][mapper] owns bundled-schema construction and encoding
 qualification. Cached/override validation alone does not qualify that builder.
 Explicit schema OOBIs work; automatic discovery from a bare SAID lacks an upstream

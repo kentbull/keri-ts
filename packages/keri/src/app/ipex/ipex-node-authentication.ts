@@ -1,5 +1,6 @@
 /** Node issuer authentication over public KEL/TEL evidence; no conversation or validity policy. */
 import { Diger, NumberPrimitive, Prefixer, type SealEvent, type SerderACDC } from "cesr-ts";
+import type { ChainVerdict } from "../../acdc/chaining.ts";
 import {
   type RegistryState,
   validateRip,
@@ -25,6 +26,33 @@ export type IpexNodeAuthentication =
   | { kind: "authenticated"; registration: RegistryState | null }
   | { kind: "missing"; reason: string }
   | { kind: "reject" };
+
+/** Protocol admission authenticates registry observations without imposing an application state vocabulary. */
+export function authenticatedNodeVerdict(authentication: IpexNodeAuthentication): ChainVerdict {
+  switch (authentication.kind) {
+    case "authenticated":
+      return { kind: "valid" };
+    case "reject":
+      return { kind: "invalid" };
+    case "missing":
+      return { kind: "unknown", retryable: true, reason: authentication.reason, schemas: [] };
+  }
+}
+
+/** Classify every authenticated registered node for new-use policy, including the origin. */
+export function issuedNodeVerdict(authentication: IpexNodeAuthentication): ChainVerdict {
+  if (authentication.kind !== "authenticated" || !authentication.registration) {
+    return authenticatedNodeVerdict(authentication);
+  }
+  switch (authentication.registration.state) {
+    case "issued":
+      return { kind: "valid" };
+    case "revoked":
+      return { kind: "invalid" };
+    default:
+      return { kind: "unknown", retryable: false, reason: "Unsupported registry state for new use.", schemas: [] };
+  }
+}
 
 /** Assemble accepted ordinals only; a missing head is retryable, contradictory durable rows are corrupt. */
 export function acceptedRegistryEvidence(

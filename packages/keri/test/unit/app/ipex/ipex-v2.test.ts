@@ -22,7 +22,7 @@ import {
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
 import { loadNests } from "../../../../db.ts";
-import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
+import { type AcdcGraph, type ChainVerdict, evaluateChain } from "../../../../src/acdc/chaining.ts";
 import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
 import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
@@ -46,8 +46,8 @@ import { Schemer } from "../../../../src/core/scheming.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import fixture from "../../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 /** These relation fixtures are unregistered; signed grants exercise authentication separately. */
-const evaluateRelations = (graph: Parameters<typeof evaluateAcdcRelations>[0], db: Habery["db"]) =>
-  evaluateAcdcRelations(graph, db, new Map());
+const evaluateRelations = (graph: AcdcGraph, db: Habery["db"]) =>
+  evaluateChain(graph, new Map(graph.order.map((said) => [said, { kind: "valid" } as ChainVerdict])), db);
 
 /** Feed signed public KEL bytes through normal event verification. */
 async function learn(hby: Habery, wire: string | Uint8Array): Promise<void> {
@@ -1479,8 +1479,8 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         assert(graph && !("kind" in graph));
         return graph;
       };
-      assertEquals(evaluateRelations(graph(valid, schema.said), hby.db), true);
-      assertEquals(evaluateRelations(graph(invalid, schema.said), hby.db), false);
+      assertEquals(evaluateRelations(graph(valid, schema.said), hby.db), { kind: "valid" });
+      assertEquals(evaluateRelations(graph(invalid, schema.said), hby.db), null);
       const alternative = credential("Near", {
         d: "",
         o: "OR",
@@ -1501,7 +1501,7 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       assert(alternativeGraph && !("kind" in alternativeGraph));
       assertEquals(
         evaluateRelations(alternativeGraph, hby.db),
-        true,
+        { kind: "valid" },
       );
       const edgeSchema = new Schemer({
         sed: {
@@ -1514,16 +1514,21 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       const inherited = credential("Near", { d: "", group: { s: edgeSchema.said, link: { n: valid.said } } });
       const inheritedGraph = walkIpexGraph(inherited.said!, [node(inherited), node(valid)], true);
       assert(inheritedGraph && !("kind" in inheritedGraph));
-      assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "missing", said: edgeSchema.said });
+      assertEquals(evaluateRelations(inheritedGraph, hby.db), {
+        kind: "unknown",
+        retryable: true,
+        reason: `Missing edge schema ${edgeSchema.said}.`,
+        schemas: [edgeSchema.said],
+      });
       const edgeGrant = args("/ipex/grant", [near(valid, edgeSchema.said), valid]);
       assertEquals((yield* exchanger.processEvent(edgeGrant)).kind, "escrow");
       assertExists(hby.db.emse!.get([edgeGrant.serder.said!, edgeSchema.said]));
       hby.db.schema.pin(edgeSchema.said, edgeSchema);
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(edgeGrant.serder.said!), "the same Grant accepts after the decisive pin arrives");
-      assertEquals(evaluateRelations(inheritedGraph, hby.db), true);
-      assertEquals(evaluateRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), true);
-      assertEquals(evaluateRelations(graph(credential("Other"), edgeSchema.said), hby.db), false);
+      assertEquals(evaluateRelations(inheritedGraph, hby.db), { kind: "valid" });
+      assertEquals(evaluateRelations(graph(valid, edgeSchema.sed as MapperMap), hby.db), { kind: "valid" });
+      assertEquals(evaluateRelations(graph(credential("Other"), edgeSchema.said), hby.db), { kind: "invalid" });
       // A real schema read failure propagates; it is never downgraded to missing-schema escrow.
       const get = hby.db.schema.get.bind(hby.db.schema);
       hby.db.schema.get = () => {

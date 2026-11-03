@@ -65,6 +65,11 @@ need no disposal. Concrete inputs own cancellation and joined I/O cleanup; nativ
 backpressure is not a process-memory guarantee. Streaming remains where supported
 by KERIpy; selective new streaming needs a concrete benefit, not a stack-wide rule.
 
+ACDC chaining has one upstream-aligned evaluator. Protocol authentication and
+application issued-state policy provide node verdicts; consumers do not reject
+unused unknown branches before AND/OR. Own-schema and shape failures remain global.
+Exact retained disclosure and consent history remain separate from fresh use.
+
 Parsed evidence, construction, verification and durable publication are separate
 boundaries. Parent signatures never authenticate children. Decisions return data;
 owners persist within their transactions and publish live state/cues after commit.

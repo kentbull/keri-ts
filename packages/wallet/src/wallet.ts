@@ -13,15 +13,16 @@ import { loadNests, type RegistryStore } from "keri-ts/db";
 import {
   acceptedRegistryEvidence,
   authenticateIpexNode,
+  type ChainVerdict,
   envelopeFromFrame,
-  evaluateAcdcRelations,
+  evaluateChain,
   type Exchanger,
   type Habery,
   ipexExnBody,
   isLocalGroupHab,
+  issuedNodeVerdict,
   type Receiptor,
   type RegistryDisclosure,
-  type RegistryState,
   ValidationError,
   vet,
   walkIpexGraph,
@@ -140,18 +141,17 @@ export class Wallet {
     return body;
   }
 
-  /** New use requires current authentication and the single complete-root evaluator's explicit true. */
+  /** New use requires current node evidence and a valid root under shared issued-state policy. */
   private graphAccepted(grant: string, origin: string): boolean {
     if (!this.exc.verifyAccepted(grant, "/ipex/grant")) return false;
     const graph = walkIpexGraph(origin, loadNests(this.hby.db, grant), true);
     if (!graph) return false;
-    const registrations = new Map<string, RegistryState>();
+    const verdicts = new Map<string, ChainVerdict>();
     for (const [said, node] of graph.nodes) {
       const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.hby.db, this.registry);
-      if (auth.kind !== "authenticated") return false;
-      if (auth.registration) registrations.set(said, auth.registration);
+      verdicts.set(said, issuedNodeVerdict(auth));
     }
-    return evaluateAcdcRelations(graph, this.hby.db, registrations) === true;
+    return evaluateChain(graph, verdicts, this.hby.db)?.kind === "valid";
   }
 
   /** Resolve only the origin actually carried by this accepted Grant. */

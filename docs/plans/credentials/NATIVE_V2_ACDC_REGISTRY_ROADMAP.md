@@ -46,8 +46,8 @@ round-trip before calling these rows proven. Record missing capability as a narr
 claim boundary, not an optional silent pass. R2 may supply the minimal production
 intake needed for its proof; broaden it in cut 25. PR 31 reuses these first proofs.
 Ordinary native CLI examples/interoperability use the common I2I/NI2I/E1E and AND/OR
-subset. Existing DI2I and bounded NOT semantics remain explicitly TS-only until
-independent Python support is demonstrated; no negotiation framework or deletion.
+subset. Unsupported operators remain unknown under selected upstream chaining;
+there is no separate private TypeScript evaluator or compatibility profile.
 
 Bind native event/disclosure evidence to the exact outer approval EXN and payload
 SAIDs before local signing. Persist the association, validate the business
@@ -161,8 +161,7 @@ Do not claim Python wallet persistence from `vet`/`vetBinds` or EXN acceptance.
 | N3: native IPEX in both directions     | One representative grant/admit conversation in each direction using real Python v2 APIs, including a disclosed subset and presentation proof. Reuse N1's group CLI orchestration and existing verb tests.                                                 | Python-produced proofs are verified by Tufa; Tufa-produced nested proofs and grants are verified by Python. Assert recipient/credential state as well as transport/EXN completion, using the frozen R2 distinction between Python EXN/proof acceptance and TS wallet persistence.                                                                       |
 
 The common I2I/NI2I/E1E and AND/OR subset remains the proposed interoperability
-profile pending source verification. DI2I and bounded NOT stay explicitly TS-only
-until demonstrated otherwise. Native `upd` behavior must be assessed explicitly
+profile pending source verification. Unsupported operators stay unknown under the selected upstream chaining profile. Native `upd` behavior must be assessed explicitly
 alongside `rip` and `bup`, including its callers and persistence/replay obligations;
 do not assume the earlier cuts exhaust the completed reference contract.
 

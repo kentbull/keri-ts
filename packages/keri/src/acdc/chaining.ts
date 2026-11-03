@@ -1,21 +1,24 @@
-/** IPEX admission's read-only graph reduction; application EGF/state policy stays separate. */
+/** Read-only ACDC chaining over caller-owned node verdicts; authentication and application state policy stay separate. */
 import { ParserError, Saider, type SerderACDC } from "cesr-ts";
-import { acdcEdgeBlocks } from "../../acdc/graphing.ts";
-import { validateSchema } from "../../acdc/scheming.ts";
-import { ValidationError } from "../../core/errors.ts";
-import { Schemer } from "../../core/scheming.ts";
-import type { Baser } from "../../db/basing.ts";
-import type { IpexGraph } from "./ipex-graph.ts";
-import type { IpexNodeAuthentication } from "./ipex-node-authentication.ts";
+import { ValidationError } from "../core/errors.ts";
+import { Schemer } from "../core/scheming.ts";
+import type { Baser } from "../db/basing.ts";
+import { validateSchema } from "./scheming.ts";
 
-/** Reserved IPEX section/group labels include a pin at every level. */
-export const ipexGroupLabels: ReadonlySet<string> = new Set(["d", "u", "s", "o", "w"]);
-const leafLabels = new Set([...ipexGroupLabels, "n"]);
+/** Borrow a complete reachable DAG of verified credential views, with its origin first, without projecting frames. */
+export interface AcdcGraph {
+  nodes: ReadonlyMap<string, { readonly body: SerderACDC }>;
+  order: readonly string[];
+}
+
+/** Reserved section/group labels include a pin at every level. */
+export const acdcGroupLabels: ReadonlySet<string> = new Set(["d", "u", "s", "o", "w"]);
+const leafLabels = new Set([...acdcGroupLabels, "n"]);
 const unary = new Set(["I2I", "NI2I", "DI2I", "E1E", "NOT"]);
 const delegative = new Set(["I2I", "NI2I", "DI2I"]);
 const suppressDefault = new Set([...delegative, "E1E"]);
 /** A truth verdict cannot absorb malformed input; callers represent that separately as null. */
-export type IpexChainVerdict =
+export type ChainVerdict =
   | { kind: "valid" }
   | { kind: "invalid" }
   | { kind: "unknown"; retryable: boolean; reason: string; schemas: readonly string[] };
@@ -23,6 +26,12 @@ export type IpexChainVerdict =
 /** SAD maps exclude scalar/array edge representations. */
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+/** Empty section containers carry no disclosed edge semantics; malformed nonempty values refuse. */
+export function acdcEdgeBlocks(value: unknown): Record<string, unknown>[] | null {
+  if (!value || (Array.isArray(value) && !value.length) || (record(value) && !Object.keys(value).length)) return [];
+  if (record(value)) return [value];
+  return Array.isArray(value) && value.every(record) ? value : null;
 }
 /** Only canonical qualified digests identify expanded leaf targets and schema pins. */
 function said(value: unknown): value is string {
@@ -34,16 +43,16 @@ function said(value: unknown): value is string {
   }
 }
 /** Compact Edge strings name blocks, never far ACDCs. Expanded leaves have exact labels. */
-export function ipexEdgeTarget(value: unknown): string | null | false {
+export function acdcEdgeTarget(value: unknown): string | null | false {
   if (!record(value) || !Object.hasOwn(value, "n")) return null;
   return Object.keys(value).every((label) => leafLabels.has(label)) && said(value.n) ? value.n : false;
 }
 /** Missing proof/pin dependencies retain their ordered schema causes for the existing escrow owner. */
-function unknown(reason: string, retryable = false, schemas: readonly string[] = []): IpexChainVerdict {
+function unknown(reason: string, retryable = false, schemas: readonly string[] = []): ChainVerdict {
   return { kind: "unknown", reason, retryable, schemas };
 }
 /** Strong conjunction/disjunction retain only outcome-relevant unknown dependencies. */
-function reduce(op: "AND" | "OR", members: readonly IpexChainVerdict[]): IpexChainVerdict {
+function reduce(op: "AND" | "OR", members: readonly ChainVerdict[]): ChainVerdict {
   const decisive = members.find((member) => member.kind === (op === "AND" ? "invalid" : "valid"));
   if (decisive) return decisive;
   const unresolved = members.filter((member) => member.kind === "unknown");
@@ -58,31 +67,32 @@ function reduce(op: "AND" | "OR", members: readonly IpexChainVerdict[]): IpexCha
 }
 
 /**
- * Evaluate the origin after disclosure, own schemas, presentations and ax have vetted.
+ * Validate every own schema, then conjoin each caller verdict with its complete edge expression.
  * Every branch is inspected for malformed shape, even when its truth value is unused.
- * Own issuer authentication is conjoined with own edges; authenticated registry states
- * are evidence only. This helper reads schemas but writes no records and publishes no cues.
+ * Protocol callers supply issuer authentication; applications supply their state policy.
+ * This helper reads schemas but writes no records and publishes no cues.
  */
-export function evaluateIpexChain(
-  graph: IpexGraph,
-  authentications: ReadonlyMap<string, IpexNodeAuthentication>,
+export function evaluateChain(
+  graph: AcdcGraph,
+  verdicts: ReadonlyMap<string, ChainVerdict>,
   db: Baser,
-): IpexChainVerdict | null {
-  const memo = new Map<string, IpexChainVerdict>();
-  const evaluateNode = (id: string): IpexChainVerdict | null => {
+): ChainVerdict | null {
+  // Own schemas are global obligations, unlike optional edge pins and node verdicts.
+  for (const { body } of graph.nodes.values()) {
+    const schema = validateSchema(body, db);
+    if (schema.kind === "invalid") return null;
+    if (schema.kind === "missing") return unknown(`Missing node schema ${schema.said}.`, true, [schema.said]);
+  }
+  const memo = new Map<string, ChainVerdict>();
+  const evaluateNode = (id: string): ChainVerdict | null => {
     const cached = memo.get(id);
     if (cached) return cached;
-    const node = graph.nodes.get(id)?.body, authentication = authentications.get(id);
-    if (!node || !authentication) return null;
+    const node = graph.nodes.get(id)?.body, auth = verdicts.get(id);
+    if (!node || !auth) return null;
     memo.set(id, unknown(`Node ${id} is already being evaluated.`));
-    const auth: IpexChainVerdict = authentication.kind === "authenticated"
-      ? { kind: "valid" }
-      : authentication.kind === "reject"
-      ? { kind: "invalid" }
-      : unknown(authentication.reason, true);
     const blocks = acdcEdgeBlocks(node.sad!.e);
     if (!blocks) return null;
-    const members: IpexChainVerdict[] = [auth];
+    const members: ChainVerdict[] = [auth];
     for (const block of blocks) {
       const result = evaluateEdge(block, node, []);
       if (!result) return null;
@@ -96,16 +106,16 @@ export function evaluateIpexChain(
     edge: Record<string, unknown>,
     near: SerderACDC,
     inherited: readonly unknown[],
-  ): IpexChainVerdict | null => {
-    const target = ipexEdgeTarget(edge);
+  ): ChainVerdict | null => {
+    const target = acdcEdgeTarget(edge);
     if (target === false) return null;
     const pins = Object.hasOwn(edge, "s") ? [...inherited, edge.s] : inherited;
     if (target !== null) return evaluateLeaf(edge, target, near, pins);
     const op = Object.hasOwn(edge, "o") ? edge.o : "AND";
     if (typeof op !== "string") return null;
-    const members: IpexChainVerdict[] = [];
+    const members: ChainVerdict[] = [];
     for (const [label, member] of Object.entries(edge)) {
-      if (ipexGroupLabels.has(label)) continue;
+      if (acdcGroupLabels.has(label)) continue;
       if (typeof member === "string") {
         members.push(unknown(`Compact Edge ${label} cannot be dereferenced.`));
       } else {
@@ -123,7 +133,7 @@ export function evaluateIpexChain(
     target: string,
     near: SerderACDC,
     pins: readonly unknown[],
-  ): IpexChainVerdict | null => {
+  ): ChainVerdict | null => {
     const far = graph.nodes.get(target)?.body;
     if (!far) return null;
     const op = edge.o;
@@ -149,7 +159,7 @@ export function evaluateIpexChain(
         resolved.push(pin);
       } else return null;
     }
-    let own: IpexChainVerdict;
+    let own: ChainVerdict;
     if (ops.some((token) => typeof token !== "string" || !unary.has(token))) {
       own = unknown("Unrecognized unary Edge operator.");
     } else {

@@ -665,42 +665,58 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         assertEquals((yield* agent().processOnce()).webhooksSent, 1);
         assertEquals(webhookBodies.at(-1)!.action, "rev");
         assertEquals(acdcV2.inspectHistorical(exn.said!), historical);
-        // A revoked far node is known False, not invalid: NOR may authorize an issued root.
+        // Retain the two-node AND refusal; replace the private NOR case with a separate OR alternative.
         const farRip = yield* author.incept("acdc-v2-far", issuer.pre),
           farReg = author.registry("acdc-v2-far", issuer.pre);
         const far = author.create(farReg, { attribute: { name: "authority" } });
-        const farIssued = yield* author.issue(farReg, far, { public: true });
-        for (const operator of ["NOR", "AND"] as const) {
+        yield* author.issue(farReg, far, { public: true });
+        yield* author.revoke(farReg, far.said!, { public: true });
+        const goodRip = yield* author.incept("acdc-v2-good", issuer.pre),
+          goodReg = author.registry("acdc-v2-good", issuer.pre);
+        const good = author.create(goodReg, { attribute: { name: "current authority" } });
+        const goodIssued = yield* author.issue(goodReg, good, { public: true });
+        for (const operator of ["AND", "OR"] as const) {
           const near = author.create(reg, {
             attribute: { operator },
-            edge: { d: "", o: operator, proof: { n: far.said, o: "NI2I" } },
+            edge: {
+              d: "",
+              o: operator,
+              proof: { n: far.said, o: "NI2I" },
+              ...(operator === "OR" ? { good: { n: good.said, o: "NI2I" } } : {}),
+            },
           });
           const nearIssued = yield* author.issue(reg, near, { public: true });
           yield* receiver.reactor.processBytes(
-            concatBytes(publicEvidence(), source.acdc!.store.cloneTel(farRip.said!)),
+            concatBytes(
+              publicEvidence(),
+              source.acdc!.store.cloneTel(farRip.said!),
+              source.acdc!.store.cloneTel(goodRip.said!),
+            ),
           );
-          const grant = ipexExnBody(holder.pre, "/ipex/grant", [near, far], {
+          const nodes = operator === "OR" ? [near, far, good] : [near, far];
+          const grant = ipexExnBody(holder.pre, "/ipex/grant", nodes, {
             recipient: verifierPre,
-
             message: operator,
             plan: [[(near.schema as { $id: string }).$id, "/", []], [
               (far.schema as { $id: string }).$id,
               "/e/proof/_/",
               [],
-            ]],
+            ], ...(operator === "OR" ? [[(good.schema as { $id: string }).$id, "/e/good/_/", []] as const] : [])],
           });
           const frame = parseBytes(holder.endorse(grant, { gvrsn: Vrsn_2_0, genusify: true }))[0];
-          const farEvent = operator === "NOR" ? farIssued.update : farReg.regd!;
           frame.nests = [
             parseBytes(framed(near, source.acdc!.store.publicOpening(nearIssued.update)!))[0],
-            parseBytes(framed(far, source.acdc!.store.publicOpening(farEvent)!))[0],
+            parseBytes(framed(far, source.acdc!.store.publicOpening(farReg.regd!)!))[0],
+            ...(operator === "OR"
+              ? [parseBytes(framed(good, source.acdc!.store.publicOpening(goodIssued.update)!))[0]]
+              : []),
           ];
+          assertEquals(frame.nests.length, operator === "OR" ? 3 : 2);
           yield* receiver.reactor.processBytes(yield* call(() => collectPayload(framePayload(frame))));
           assertEquals(receiver.exc.complete(grant.said!), true);
-          if (operator === "NOR") yield* author.revoke(farReg, far.said!, { public: true });
           assertEquals(yield* observer.pullOnce(observerHab), 1);
-          assertEquals((yield* acdcV2.verifyCurrent(grant.said!)).kind, operator === "NOR" ? "issued" : "refused");
-          assertEquals((yield* agent().processOnce()).webhooksSent, operator === "NOR" ? 1 : 0);
+          assertEquals((yield* acdcV2.verifyCurrent(grant.said!)).kind, operator === "OR" ? "issued" : "refused");
+          assertEquals((yield* agent().processOnce()).webhooksSent, operator === "OR" ? 1 : 0);
         }
         now += 16000;
         assertEquals((yield* acdcV2.verifyCurrent(exn.said!)).kind, "missing");

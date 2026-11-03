@@ -2132,7 +2132,7 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
   });
 });
 
-for (const verdict of ["true", "false", "unresolved"] as const) {
+for (const verdict of ["true", "false", "unresolved", "optional"] as const) {
   Deno.test(`ACDC v2 group signing requires exact authenticated root truth: ${verdict}`, async () => {
     await participants(async (left, right, alice, bob) => {
       const mids = [alice.pre, bob.pre];
@@ -2152,28 +2152,36 @@ for (const verdict of ["true", "false", "unresolved"] as const) {
             sed: { $id: "", version: "1.0.0", type: "object", additionalProperties: true },
           });
           right.db.schema.pin(schema.said, schema);
-          if (verdict !== "true") left.db.schema.pin(schema.said, schema);
+          if (verdict === "false" || verdict === "unresolved") left.db.schema.pin(schema.said, schema);
           const full = acdcV2Map(bob.pre, {
             schema: schema.said,
             attribute: { d: "", i: verdict === "false" ? alice.pre : bob.pre, role: "authority" },
           });
-          const far = verdict === "unresolved"
-            ? acdcV2Map(bob.pre, { schema: schema.said, attribute: (full.sad!.a as { d: string }).d })
-            : full;
+          const far = full;
+          const optional = acdcV2Map(bob.pre, { schema: schema.said, attribute: { d: "", role: "unused" } });
           const near = acdcV2Map(bob.pre, {
             schema: schema.said,
             attribute: { d: "", i: local.hab.pre },
-            edge: { d: "", authority: { n: far.said! } },
+            edge: {
+              d: "",
+              authority: { n: far.said!, ...(verdict === "unresolved" ? { o: "UNSUPPORTED" } : {}) },
+              ...(verdict === "optional" ? { o: "OR", optional: { n: optional.said! } } : {}),
+            },
           });
           const nodes = [near, far].map(body => ({
             body,
             gvrsn: Vrsn_2_0,
             attachments: messageAttachmentGroups({ tsgs: proof(bob, body) }, Vrsn_2_0),
           }));
-          const grant = ipexExnBody(local.hab.pre, "/ipex/grant", [near, far], {
+          if (verdict === "optional") nodes.push({ body: optional, gvrsn: Vrsn_2_0, attachments: [] });
+          const grant = ipexExnBody(local.hab.pre, "/ipex/grant", nodes.map(node => node.body), {
             recipient: alice.pre,
             message: "exact group view",
-            plan: [[schema.said, "/", []], [schema.said, "/e/authority/_/", []]],
+            plan: [
+              [schema.said, "/", []],
+              [schema.said, "/e/authority/_/", []],
+              ...(verdict === "optional" ? [[schema.said, "/e/optional/_/", []] as const] : []),
+            ],
           });
           const candidate = yield* call(() =>
             collectPayload(framePayload({ body: grant, gvrsn: Vrsn_2_0, attachments: [], nests: nodes }))
@@ -2185,7 +2193,7 @@ for (const verdict of ["true", "false", "unresolved"] as const) {
             signs++;
             return oldSign(...args);
           }) as Hab["sign"];
-          if (verdict !== "true") {
+          if (verdict === "false" || verdict === "unresolved") {
             yield* call(() =>
               assertRejects(
                 () => run(() => prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, candidate)),

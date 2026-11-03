@@ -291,17 +291,17 @@ digest algorithms to produce the same CESR tuple forms. Independent hash checks
 and the [Python-produced SHA-256 opening case](../../../packages/keri/test/integration/app/interop-native-registry.test.ts)
 exercise that wire contract.
 
-ACDC v2 reporting has an explicit application-policy difference. The TypeScript
-[verifier](../../../packages/verifier/src/acdc-v2.ts) requires an issued origin
-and the shared graph evaluator's true verdict over current authenticated node
-states. A known revoked far node can therefore satisfy NOR/NAND. Selected
-[Dolly `06a37fbb`](https://github.com/kentbull/dolly/blob/06a37fbb154aec83f09d46c162becac663d9f1e9/src/dolly/serving.py)
-additionally requires every disclosed node to remain issued. Both retain the
-same authenticated wire evidence; reporting decisions can differ. The existing
+ACDC v2 reporting uses the shared upstream-aligned chaining evaluator. The
+[verifier](../../../packages/verifier/src/acdc-v2.ts) supplies issued/revoked node
+verdicts, including the origin. A revoked optional branch may be outvoted by an
+issued alternative under OR; AND requires every branch. Own schemas and malformed
+shape remain global obligations. The existing
 [verifier workflow](../../../packages/tufa/test/integration/verifier-workflow.test.ts)
-checks an issued root with a revoked far node under NOR and AND, plus independent
-historical inspection and opaque/current revocation transitions. Missing or
-invalid evidence remains unresolved or refused under either policy.
+checks the retained two-node AND refusal and a separate three-node OR alternative
+alongside historical inspection and opaque/current revocation transitions.
+The existing Observer-* freshness-header requirement remains pending R11 removal;
+this chaining change does not qualify it as upstream behavior. Retained observations
+never become current authority.
 
 ## Known compatibility needs and explicit limits
 

@@ -7,12 +7,9 @@ protocol evidence, transactions and actual resource cleanup.
 ## Proof and persistence boundaries
 
 The [disclosure acceptance matrix](../../docs/plans/qualification/GRADUATED_DISCLOSURE_INTEROP.md)
-separates TypeScript operator support from Python interoperability. Qualify operator
-interoperability against demonstrated selected-reference behavior; implementation
-availability alone is not qualification. A reference stub is not a permanent product
-contract. NOT must distinguish proved
-invalidity from unknown evidence before inversion; missing or unauthenticated
-input cannot establish a negative authorization predicate.
+qualifies supported operators against selected KERIpy behavior. The shared chaining
+owner uses strong AND/OR with explicit unknown and retryability; unsupported
+operators cannot create negative authorization predicates.
 
 Exchanger serializes resident children, then performs current sender
 authentication, supplemental selection, route verification and publication in one
@@ -79,7 +76,7 @@ XIP routes admit child trees. The selected wire uses exactly one outer DAG list,
 q.dp=[plan], while the graph owner retains one internal flat plan. Empty inner
 plans inherit with a prior or mean no disclosure at an opener; vacuous Grants
 carry o=[] and no nodes. Schema query slots accept strings, including empty/opaque criteria; Grant matching
-and actual schema validation still establish commitments. IPEX graph admission uses its own strong AND/OR profile; application EGF operators remain separate.
+and actual schema validation still establish commitments. IPEX and applications share strong AND/OR chaining, with caller-owned node verdicts.
 Historical ae828499 wire vectors preserve their raw blank/stale section observations.
 Current-reference graph vectors use ordinary repaired Python constructors and retain
 exact source/module hashes, with no section preparation or received-byte rewriting.
@@ -210,10 +207,10 @@ IPEX enst/epath. Optional unauthenticated children fabricate no observation and 
 not erase an earlier one. verifyAccepted and historical inspection are read-only;
 recordedRegistryStates are labeled observations, never current authority. Empty state
 text remains empty; do not manufacture authenticated nulls or backfill old exchanges.
-Source fixtures retain future-opening refusal/escrow differences for later auth alignment. The separate `acdc/graphing.ts` application evaluator stays unchanged. NOT/DI2I
-application support does not make those operators admissible in IPEX; consuming actions
-still require explicit true. The single IPEX walker still owns flat nested
-frames, Offer-open/Grant-closed traversal and negotiated disclosure checks. Generic edge block syntax stays shared; strict IPEX leaf/group labels belong to its admission profile.
+`acdc/chaining.ts` is shared by IPEX and applications; callers provide node
+verdicts and never short-circuit all node authentication before reduction. The
+single IPEX walker owns flat nested frames, Offer-open/Grant-closed traversal and
+negotiated disclosure. Edge shapes and reserved labels are shared.
 `ipex-node-authentication` reads only Baser/RegistryStore and returns authenticated
 proof, a missing dependency or refusal. A verified registration retains its actual
 bound state; authentication alone does not interpret it as credential validity.
@@ -221,22 +218,13 @@ Conversation policy owns escrow and rejection. Issuer and presentation checks sh
 accepted-chain reads, preserving corruption failures and source-proof precedence.
 Same-schema identity never bypasses payload constraints; missing schema is a
 typed dependency, while infrastructure/resource failures propagate.
-The separate application EGF evaluator’s DI2I permits identity or an approved inception chain at any depth. Read each
-delegator's inception DND and accepted approval; protected/witness-held delpre is
-not authority. Missing KEL/approval for DI2I is an evaluator dependency, without EXN replay or escrow. Later rotations
-or witness changes do not renew the relationship, and lookup does not write hints.
-Every ancestor and local schema pin accumulates; a child cannot release a parent constraint.
-The last explicit I2I/NI2I/DI2I wins. Visible targeted far nodes default to I2I, visible untargeted
-to NI2I; hidden Issuees cannot establish that default or E1E equality; the reference E1E extension retains entity-only matching when identity is
-not explicit. NOT inverts authenticated far-node validity after all issuer/own
-schema prerequisites, in dependency order independent of BFS disclosure order.
-Near identity/extra schema constraints are not inverted. Issued/revoked is the
-only supported issuer-state vocabulary, evaluated from accepted observer state
-at each explicit policy evaluation. Missing/stale/forged proofs, malformed schemas or
-operators and unknown custom states cannot satisfy negation. Malformed semantic pins and hidden
-identity return unresolved, not false. AND/OR/NAND/NOR cannot hide unresolved members behind
-a decisive sibling. Own schema failure rejects intake; a valid edge schema can disprove a relationship. Historical accepted
-grants remain evidence; no automatic revalidation or global freshness is implied.
+Every ancestor and local schema pin accumulates. I2I/NI2I and E1E use the
+selected reference semantics; NOT/DI2I and unsupported m-ary operators remain
+unknown. Application new use maps authenticated issued to valid, revoked to invalid,
+and unsupported states to unknown, including the origin. Missing proofs stay
+retryable unknown; no known sibling hides malformed graph or own-schema failures.
+Strong OR can accept with a valid alternative despite unused invalid/unknown node
+verdicts. Historical accepted Grants and consent remain evidence, not current policy.
 Conversation acceptance is not wallet acceptance. Observer registry import
 is separate from issuer registry processing. Presentation registries still require
 receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee

@@ -28,7 +28,6 @@ import {
 import { call, run, scoped } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { evaluateAcdcRelations } from "../../../../src/acdc/graphing.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import {
   acceptedEventReplayMessage,
@@ -37,7 +36,6 @@ import {
   type Habery,
 } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
-import { walkIpexGraph } from "../../../../src/app/ipex/ipex-graph.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
@@ -81,8 +79,6 @@ export interface PeerInfo {
 
 /** The same observations from each implementation, without sharing persistence internals. */
 export interface PeerSnapshot {
-  /** Explicit policy over the selected accepted Grant, separate from retained protocol state. */
-  verdict?: ReturnType<typeof evaluateAcdcRelations>;
   messages: { d: string; r: string; p: string; x: string; i: string; ri: string; q: { dp?: [DisclosurePlan] } }[];
   received: string[];
   known: string[];
@@ -280,21 +276,7 @@ class TypeScriptPeer implements IpexPeer {
         ? this.signed(node, invalid === "altered" && !i ? this.disclosed(false)[0] : node)
         : { body: node, attachments: [], gvrsn: Vrsn_2_0 }
     );
-    const semantic = invalid === true
-      && [
-        "I2I",
-        "E1E",
-        "AND",
-        "OR",
-        "NAND",
-        "NOR",
-        "unknown-leaf",
-        "unknown-group",
-        "edge-schema",
-        "inherited-schema",
-        "malformed-schema",
-      ].includes(this.graphCase ?? "");
-    return await this.deliver(frame, !invalid || semantic);
+    return await this.deliver(frame, !invalid);
   }
 
   /** Optional application scenario, preserving every existing protocol-negative peer path. */
@@ -492,16 +474,7 @@ class TypeScriptPeer implements IpexPeer {
     const messages = [...db.exns.getItemIter()].map(([, body]) => body);
     const selected = inspect ? db.exns.get(inspect) : null;
     const grant = selected?.route === "/ipex/grant" ? selected : messages.find((body) => body.route === "/ipex/grant");
-    let verdict: ReturnType<typeof evaluateAcdcRelations> | undefined;
-    if (selected?.route === "/ipex/grant") {
-      const frames = loadNests(db, selected.said!);
-      const graph = walkIpexGraph(frames[0].body.said!, frames, true);
-      assertExists(graph);
-      // These fixture graphs are unregistered; use only their exact accepted child views.
-      verdict = evaluateAcdcRelations(graph, db, new Map());
-    }
     return {
-      verdict,
       messages: messages.map((body) => body.sad as unknown as PeerSnapshot["messages"][number]),
       received: this.received.map(({ said }) => said),
       known: [...db.kevers.keys()],
