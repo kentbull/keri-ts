@@ -208,7 +208,22 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     const verdict = evaluateIpexChain(graph, authentications, this.hby.db);
     if (!verdict || verdict.kind === "invalid") return false;
-    if (verdict.kind === "valid") return true;
+    if (verdict.kind === "valid") {
+      const registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"][number][] = [];
+      for (const [node, authentication] of authentications) {
+        if (authentication.kind !== "authenticated" || !authentication.registration) continue;
+        const record = authentication.registration;
+        // acceptedRegistryEvidence already requires exact safe storage ordinals.
+        registryStates.push([node, {
+          regid: record.regid,
+          said: record.said,
+          sn: Number(record.sn),
+          state: record.state,
+          stamp: record.stamp,
+        }]);
+      }
+      return { kind: "accept", registryStates };
+    }
     if (!verdict.retryable) return false;
     return verdict.schemas.length
       ? { kind: "escrow", reason: verdict.reason, schema: verdict.schemas[0] }

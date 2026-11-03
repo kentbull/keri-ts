@@ -80,7 +80,7 @@ import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { baserDefaults } from "./baser-defaults.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
 import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
-import { ExchangeRecord } from "./exchange/exchange-records.ts";
+import { ExchangeRecord, ExchangeRegistryStateRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
 import { CapturedWitnessReplay } from "./replay/witness-replay.ts";
@@ -246,6 +246,8 @@ export class Baser {
   public obvs!: Komer<ObservedRecord>; // Observed identifier records keyed by controller, watcher, and observed ID.
   /** Receiver receipt, mailbox provenance and attachment genus; no payload ownership. */
   public exchangeMeta!: Komer<ExchangeRecord>;
+  /** Registry observations from successful Grant verification, keyed by (Grant, node). */
+  public exrs!: Komer<ExchangeRegistryStateRecord>;
 
   /**
    * Read pinned-main ESSR evidence only while an accepted or pending EXN owns it.
@@ -681,6 +683,7 @@ export class Baser {
       this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });
       // Bind metadata during store opening, never lazily inside an admission that may abort.
       this.exchangeMeta = new Komer(this.lmdber, { subkey: "exchange.meta.", recordClass: ExchangeRecord });
+      this.exrs = new Komer(this.lmdber, { subkey: "exrs.", recordClass: ExchangeRegistryStateRecord });
 
       // Forward pointers to provided reply messages.
       this.erpy = new CesrSuber<Saider>(this.lmdber, {

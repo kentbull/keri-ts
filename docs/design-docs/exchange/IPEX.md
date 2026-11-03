@@ -46,7 +46,7 @@ current owner validates every own schema and presentation/ax before reduction,
 repairs constructor section claims and imports its inline-pin Schemer. Minimal
 inline pins are covered; schemas whose properties include d retain the reference’s
 separate generic Compactor limitation and are not qualified by these cases. The separate empty graph-prefix
-extension and authenticated registry-state persistence remain outside this unit;
+extension and authentication differences below remain outside the matched profile;
 these checks do not establish full IPEX or application-use interoperability.
 
 An Offer's carried nodes contain bodies without proof attachments; empty counted
@@ -106,7 +106,24 @@ delegative operator; DI2I, NOT, unsupported m-ary operators and undereferenceabl
 compact Edge blocks are permanent unknowns. Every ancestor and leaf pin applies
 conjunctively. A satisfied OR can absorb unsupported semantics, never malformed
 input. Authenticated issued/revoked/custom registry states are not application-use
-verdicts. Persisting accepted per-node state observations remains separate R13d.
+verdicts. The handler returns successful registry observations as typed data; Exchanger pins
+them atomically with accepted evidence in Baser.exrs, keyed by (Grant SAID, node
+SAID). Each five-field record contains regid, head said, numeric sn, state and
+stamp. State vocabulary and empty strings are preserved verbatim; nullable fields
+remain nullable. Unregistered nodes and optional unauthenticated branches produce
+no new observation. Missing optional records are never fabricated or used to erase
+a previous authenticated observation. Refusal or escrow does not publish records.
+
+Successful later delivery of the same Grant may refresh these observations while
+its first accepted enst and epath remain immutable. A different Grant owns separate
+rows. Current/historical verifyAccepted and historical inspection remain read-only;
+inspection reports labeled recordedRegistryStates as the last recorded per-node
+facts from successful accepted verifications, not first-acceptance facts or current standing. Wallet and
+current verifier authority still require fresh proof and application-policy checks.
+The source state vectors explicitly retain two authentication differences: Python
+1f0f68a6 refuses a future proof at a RIP-only or older BUP head while TS escrows.
+Both preserve prior observations. Reconciliation with subsequent Python issuer-opening
+and bound-Issuee repairs remains separate; this is not full authentication parity.
 Whole-node `[""]` and relative `d/`, and trailing-separator subtree paths, require
 schema-proven closure under the selected explicit-acm profile. Static resources
 are authenticated by the same private owner as ordinary node validation; no

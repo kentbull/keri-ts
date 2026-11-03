@@ -20,3 +20,24 @@ export class ExchangeRecord extends RawRecord<ExchangeRecordShape> implements Ex
   /** Original attachment genus, independent of a non-native body version. */
   declare gvrsn?: Versionage;
 }
+
+/** Latest registry observation authenticated by a successful accepted Grant verification. */
+export interface ExchangeRegistryStateShape {
+  regid: string;
+  said: string;
+  /** Exact safe storage ordinal, matching Python's integer record field. */
+  sn: number;
+  state: string | null;
+  stamp: string | null;
+}
+
+/** Python exrs.; keys are (Grant SAID, node SAID), never a credential-validity index. */
+export class ExchangeRegistryStateRecord extends RawRecord<ExchangeRegistryStateShape>
+  implements ExchangeRegistryStateShape
+{
+  declare regid: string;
+  declare said: string;
+  declare sn: number;
+  declare state: string | null;
+  declare stamp: string | null;
+}
