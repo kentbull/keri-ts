@@ -1,7 +1,17 @@
 import { assertEquals, assertInstanceOf } from "jsr:@std/assert";
-import { Ilks, Vrsn_2_0 } from "../../../../cesr/mod.ts";
-import { incept, query, reply, rotate, state } from "../../../src/core/protocol-eventing.ts";
+import { Ilks, type Kind, Vrsn_2_0 } from "../../../../cesr/mod.ts";
+import { exchange, exincept } from "../../../src/core/exchange/protocol-exchanging.ts";
+import {
+  exchange as eventExchange,
+  exchept,
+  incept,
+  query,
+  reply,
+  rotate,
+  state,
+} from "../../../src/core/protocol-eventing.ts";
 import { KeyStateRecord } from "../../../src/core/records.ts";
+import fixture from "../../fixtures/keripy-xip-v2-spec-vectors.json" with { type: "json" };
 
 const PRE = "EAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const RECIPIENT = "EBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
@@ -145,4 +155,46 @@ Deno.test("protocol-eventing state returns a KeyStateRecord", () => {
   assertEquals(ksn.i, PRE);
   assertEquals(ksn.di, RECIPIENT);
   assertEquals(ksn.ee?.d, SAID);
+});
+
+Deno.test("selected v2-spec XIP and EXN transaction bodies match all four Python codecs", () => {
+  const bytes = (raw: string) => Uint8Array.from(atob(raw), (char) => char.charCodeAt(0));
+  for (const row of fixture.cases) {
+    const options = {
+      sender: fixture.parties[0].pre,
+      receiver: fixture.parties[1].pre,
+      nonce: fixture.nonce,
+      stamp: fixture.stamp,
+      attributes: { m: "open" },
+      kind: row.kind as Kind,
+    };
+    for (const opener of [exchept("/transaction", options), exincept("/transaction", options)]) {
+      assertEquals(opener.raw, bytes(row.opener.raw), `${row.kind} opener`);
+      assertEquals(opener.said, row.opener.said);
+      assertEquals(opener.ilk, Ilks.xip);
+    }
+    const continuation = eventExchange("/transaction", {
+      sender: fixture.parties[1].pre,
+      receiver: fixture.parties[0].pre,
+      xid: row.opener.said,
+      prior: row.opener.said,
+      stamp: fixture.stamp,
+      attributes: { m: "continue" },
+      kind: row.kind as Kind,
+    });
+    const [peerContinuation] = exchange("/transaction", { m: "continue" }, {
+      sender: fixture.parties[1].pre,
+      recipient: fixture.parties[0].pre,
+      xid: row.opener.said,
+      dig: row.opener.said,
+      stamp: fixture.stamp,
+      kind: row.kind as Kind,
+      pvrsn: Vrsn_2_0,
+    });
+    for (const body of [continuation, peerContinuation]) {
+      assertEquals(body.raw, bytes(row.continuation.raw), `${row.kind} continuation`);
+      assertEquals(body.ked?.x, row.opener.said);
+      assertEquals(body.ked?.p, row.opener.said);
+    }
+  }
 });

@@ -70,6 +70,13 @@ Schema query cues do not imply a host fetcher or completed IPEX schema gates.
 
 ## Route ownership
 
+Generic XIP dispatch and Exchanger admission/retry use the same independent sender
+authentication and evidence stores as EXN. Selected v2-spec public vectors own
+the four-codec XIP/EXN body contract; an XIP uses its own SAID for transaction
+schema deadlines. The handler still owns route acceptance. IPEX opener/reply
+identity and the one-DAG disclosure shape must migrate together; generic XIP
+support does not qualify that separate conversation contract.
+
 CLI group selection is an authorization boundary. Ordinary interaction/rotation
 must direct operators to multisig commands before signing; generic exchange,
 challenge, location, query and DID-binding commands cannot silently send a partial

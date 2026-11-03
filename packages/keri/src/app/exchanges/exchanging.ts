@@ -227,7 +227,7 @@ interface ExchangeAttempt {
 }
 
 /**
- * Peer-to-peer `exn` processor for one `Habery`.
+ * Peer-to-peer XIP/EXN processor for one `Habery`.
  *
  * Responsibilities:
  * - verify exchange-message signatures against accepted sender state
@@ -320,7 +320,9 @@ export class Exchanger {
     const said = args.serder.said ?? "<unknown>";
     const reject = (reason: string): ExchangeAdmission => ({ decision: { kind: "reject", said, reason }, cues: [] });
     if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own the admission transaction");
-    if (args.serder.ilk !== "exn") return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
+    if (args.serder.ilk !== "exn" && args.serder.ilk !== "xip") {
+      return reject(`Unsupported exchange ilk ${args.serder.ilk}.`);
+    }
     if (!args.serder.pre || !args.serder.said) return reject("Exchange message is missing sender or SAID.");
     if (args.receiverTime !== undefined && timestampMicros(args.receiverTime) === null) {
       throw new Error("Invalid exchange receiver time");
@@ -544,7 +546,10 @@ export class Exchanger {
       // Skip every schema branch for this EXN, including dependencies inserted by the replay below.
       start = b(schema ? `${said}/` : `${physical}\0`);
       const serder = table.get(keys);
-      if (!serder || serder.ilk !== "exn" || !serder.pre || serder.said !== said || keys.length !== (schema ? 2 : 1)) {
+      if (
+        !serder || (serder.ilk !== "exn" && serder.ilk !== "xip") || !serder.pre || serder.said !== said
+        || keys.length !== (schema ? 2 : 1)
+      ) {
         throw new Error("Corrupt exchange escrow key or body.");
       }
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
@@ -1054,7 +1059,7 @@ export class Exchanger {
     const prior = emsd.get([said]);
     if (prior && timestampMicros(prior.dts) === null) throw new Error("Corrupt missing-schema deadline.");
     if (!prior) {
-      const xid = serder.sad!.x;
+      const xid = serder.ilk === "xip" ? said : serder.sad!.x;
       const cache = typeof xid === "string" && xid ? this.hby.db.tmsc.get([serder.pre!, xid, said]) : null;
       const opener = cache && timestampMicros(cache.xdt);
       if (cache && (opener === null || opener === undefined || !Number.isSafeInteger(cache.pxl) || cache.pxl! < 0)) {

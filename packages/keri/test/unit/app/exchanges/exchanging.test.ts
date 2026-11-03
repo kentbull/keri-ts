@@ -1,6 +1,17 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
-import { b, Diger, Prefixer, Siger, Texter, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
+import {
+  b,
+  Diger,
+  NumberPrimitive,
+  parseBytes,
+  Prefixer,
+  SerderKERI,
+  Siger,
+  Texter,
+  Vrsn_1_0,
+  Vrsn_2_0,
+} from "../../../../../cesr/mod.ts";
 import { Exchanger, type ExchangeRouteHandler } from "../../../../src/app/exchanges/exchanging.ts";
 import {
   CHALLENGE_RESPONSE_ROUTE,
@@ -8,13 +19,16 @@ import {
   loadChallengeHandlers,
 } from "../../../../src/app/identity/challenging.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";
+import { messagize } from "../../../../src/core/protocol-serialization.ts";
 import { EndpointRoles } from "../../../../src/core/roles.ts";
+import fixture from "../../../fixtures/keripy-xip-v2-spec-vectors.json" with { type: "json" };
 
 function makeExchangeSerder(
   route: string,
@@ -612,6 +626,102 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       assertEquals(warnings.length, 1, "storage and corruption failures do not report an ejection");
     } finally {
       consoleLogger.warn = warn;
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("selected Python XIP dispatch authenticates, aggregates and retries generic exchange evidence", async () => {
+  const bytes = (raw: string) => Uint8Array.from(atob(raw), (char) => char.charCodeAt(0));
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    let handled = 0;
+    const exchanger = new Exchanger(hby, {
+      handlers: [{
+        resource: "/transaction",
+        verify: ({ serder }) => serder.ked?.a !== null,
+        handle: () => {
+          handled++;
+        },
+      }],
+    });
+    try {
+      for (const party of fixture.parties) {
+        for (const frame of parseBytes(bytes(party.kel))) {
+          yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+        }
+      }
+      for (const row of fixture.cases) {
+        const body = new SerderKERI({ raw: bytes(row.opener.raw) });
+        const unsigned = envelopeFromFrame({ body, attachments: [], gvrsn: Vrsn_2_0 });
+        assertEquals((yield* dispatchEnvelope(unsigned, hby.rvy, hby.kevery, exchanger)).decision, {
+          kind: "drop",
+          reason: "missingAuthentication",
+        });
+        const group = new TransIdxSigGroup(
+          new Prefixer({ qb64: fixture.parties[0].pre }),
+          NumberPrimitive.fromNum(0n),
+          new Diger({ qb64: fixture.parties[0].said }),
+          [new Siger({ qb64: row.opener.signatures[0] })],
+        );
+        const [frame] = parseBytes(messagize(body, { tsgs: [group], gvrsn: Vrsn_2_0 }));
+        const envelope = envelopeFromFrame(frame);
+        assertEquals((yield* dispatchEnvelope(envelope, hby.rvy, hby.kevery)).decision, {
+          kind: "drop",
+          reason: "missingProcessor",
+        });
+        const result = yield* dispatchEnvelope(envelope, hby.rvy, hby.kevery, exchanger);
+        assertEquals(result.decision?.kind, "escrow", row.kind);
+        assertEquals(exchanger.complete(body.said!), false);
+        assertExists(hby.db.epse.get([body.said!]));
+        yield* exchanger.processEscrows();
+        assertEquals(exchanger.complete(body.said!), false);
+        hby.db.esigs.add([body.said!, group.pre, group.snh, group.said], new Siger({ qb64: row.opener.signatures[1] }));
+        yield* exchanger.processEscrows();
+        assertEquals(exchanger.complete(body.said!), true);
+        assertEquals(hby.db.epse.get([body.said!]), null);
+        assertEquals(hby.db.exns.get(body.said!)?.raw, body.raw);
+      }
+      assertEquals(handled, fixture.cases.length);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("XIP schema escrow uses its own SAID for the KRAM transaction deadline", async () => {
+  const bytes = (raw: string) => Uint8Array.from(atob(raw), (char) => char.charCodeAt(0));
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const row = fixture.cases[0], body = new SerderKERI({ raw: bytes(row.opener.raw) });
+    const schema = new Diger({ raw: Diger.digest(b("XIP schema"), "E"), code: "E" }).qb64;
+    let missing = true;
+    const exchanger = new Exchanger(hby, {
+      now: () => Date.parse(fixture.stamp),
+      handlers: [{
+        resource: "/transaction",
+        verify: () => missing ? { kind: "escrow", reason: "missing schema", schema } : true,
+        handle() {},
+      }],
+    });
+    try {
+      for (const frame of parseBytes(bytes(fixture.parties[0].kel))) {
+        yield* dispatchEnvelope(envelopeFromFrame(frame), hby.rvy, hby.kevery);
+      }
+      hby.db.tmsc.pin([body.pre!, body.said!, body.said!], { xdt: fixture.stamp, pxl: 25_000 });
+      const group = new TransIdxSigGroup(
+        new Prefixer({ qb64: body.pre! }),
+        NumberPrimitive.fromNum(0n),
+        new Diger({ qb64: fixture.parties[0].said }),
+        row.opener.signatures.map((qb64) => new Siger({ qb64 })),
+      );
+      assertEquals((yield* exchanger.processEvent({ serder: body, tsgs: [group] })).kind, "escrow");
+      assertEquals(hby.db.emsd!.get([body.said!])!.dts, "2026-11-03T00:00:25.000123+00:00");
+      missing = false;
+      yield* exchanger.processEscrows();
+      assertEquals(exchanger.complete(body.said!), true);
+      assertEquals(hby.db.emsd!.get([body.said!]), null);
+    } finally {
       yield* hby.close(true);
     }
   });

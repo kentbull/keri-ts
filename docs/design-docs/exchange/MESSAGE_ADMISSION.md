@@ -1,10 +1,13 @@
 # V2 non-event admission
 
 `dispatchEnvelope` consolidates protocol-v2 `qry/rpy/exn/xip/pro/bar` intake
-before delegating to the existing processors. This corresponds to
-`Kevery.processMsg` with KRAM disabled in unmodified KERIpy
-`7143832813cac6a394ab1faf9be83bb3372be87c` (`core/parsing.py` and
-`core/eventing.py`). KRAM is disabled by default and explicitly configurable at runtime.
+before delegating to the existing processors. Generic XIP/EXN dispatch follows
+selected KERIpy `v2-spec` commit `99a11d2a30beb0e23d294a9be58c7c3ccf7ef078`
+(`#1744`), including ordinary exchange authentication, aggregation and escrow
+retry. Other recorded boundaries below retain their explicitly labeled frozen
+references. KRAM is disabled by default and explicitly configurable at runtime.
+This generic XIP support does not qualify IPEX interoperability: IPEX opener,
+continuation and one-DAG disclosure-contract migration remains separate.
 
 ## Policy and responsibility
 
@@ -109,8 +112,10 @@ the destination; actual 714 still leaves query signature validation TODO.
 Legacy TEL/TSN ordinals above `Number.MAX_SAFE_INTEGER` are explicitly refused;
 protocol `NumberPrimitive` supports wider values, so this is not all-number parity.
 
-Admission refusals return `MessageDropDecision`. Frozen `xip/pro/bar` processors
-are stubs: they report `referenceStub`, never acceptance. Route-specific decisions
+Admission refusals return `MessageDropDecision`. XIP and EXN require the same
+authentication prerequisites and exchange processor; route-specific verification
+remains with the handler. `pro/bar` processors remain stubs and report
+`referenceStub`, never acceptance. Route-specific decisions
 retain their meanings; an absent decision is not evidence of acceptance.
 Infrastructure failures and cancellation propagate unchanged.
 
@@ -138,7 +143,8 @@ Internal KRAM time plans preserve inclusive microsecond admission/lifetime windo
 XIP own-SAID openers, sender-local/shared XID precedence and original cached windows.
 Completed replay is refused before source queries; multi-key partials remain resumable.
 Transaction `rdt` records receiver-observed completion time, distinct from message
-`mdt`. Plans publish no state: synchronous intake checks current keys and replay
+`mdt`. Exchange schema escrow resolves an XIP transaction by its own SAID and
+a continuation by EXN `x`, preserving the retained opener deadline through retry. Plans publish no state: synchronous intake checks current keys and replay
 state and publishes cache/opener/receipt and partial factors in one transaction.
 
 Internal `verifyKramSignatures` normalizes sender triples/last groups on cloned
