@@ -2015,7 +2015,7 @@ Deno.test("group credential producers publish typed evidence and usable proposal
   });
 });
 
-Deno.test("ACDC v2 registry group proposals retain peer evidence until exact local approval", async () => {
+Deno.test("native RIP and BUP group proposals retain peer evidence until exact local approval", async () => {
   await participants(async (left, right, alice, bob) => {
     const members = [alice.pre, bob.pre];
     const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "2", nsith: "2" });
@@ -2031,16 +2031,28 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           );
         }
         const rip = acdcV2Regcept(local.hab.pre);
-        const anchor = right.interactGroupHab("acdc-v2-group", undefined, { data: [{ s: "0", d: rip.said! }] }).serder;
-        const telFrame = parseBytes(
-          concatBytes(
-            rip.raw,
-            Counter.enclose({ code: "AttachmentGroup", qb64: new Uint8Array(), version: Vrsn_2_0 }),
-          ),
-        )[0];
+        const anchor = interactEvent(
+          local.hab.pre,
+          local.hab.kever!.said,
+          1,
+          [{ i: rip.said!, s: "0", d: rip.said! }],
+          { version: Vrsn_2_0 },
+        );
+        const source = messageAttachmentGroups({
+          sourceSeals: [{
+            i: new Prefixer({ qb64: local.hab.pre }),
+            s: anchor.sner!,
+            d: new Diger({ qb64: anchor.said! }),
+          }],
+        }, Vrsn_2_0);
+        const telFrame = parseBytes(messagize(
+          rip,
+          concatBytes(...source.map(group => group.raw)),
+          { gvrsn: Vrsn_2_0 },
+        ))[0];
         const kelFrame =
           parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
-        const wrapper = exchange("/multisig/registry", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
+        const wrapper = exchange("/multisig/rip", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
           sender: bob.pre,
           version: Vrsn_2_0,
         })[0];
@@ -2090,8 +2102,10 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           });
           assertEquals(receiver.acdc!.store.head(rip.said!)?.qb64, prior, "a local share is not threshold acceptance");
           yield* sender.reactor.processBytes(concatBytes(first.raw, firstFoot));
+          assertEquals(first.route, "/multisig/bup");
           assertEquals(sender.acdc!.store.head(rip.said!)?.qb64, prior, "receipt is not explicit peer consent");
-          const nests = loadNests(right.db, first.said!), selected = acdcV2RegistryProposal(first, nests)!;
+          const nests = loadNests(right.db, first.said!),
+            selected = acdcV2RegistryProposal(first, nests, sender.acdc!.store)!;
           const disclosed = envelopeFromFrame(nests[0]).bsqs[0];
           assertEquals(selected.tel.raw, event.raw);
           const [second, secondFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, selected.tel, {
@@ -2117,8 +2131,28 @@ Deno.test("ACDC v2 registry group proposals retain peer evidence until exact loc
           prior,
           "old proposal replay cannot lower accepted history",
         );
+        // Advance the group, then retire its original member key before historical replay.
+        const retired = alice.kever!.verfers[0].qb64;
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        yield* call(() => learn(right, alice));
+        const ownRotation = left.rotateGroupHab("acdc-v2-group", undefined, undefined, { version: Vrsn_2_0 });
+        const peerRotation = right.rotateGroupHab("acdc-v2-group", undefined, undefined, { version: Vrsn_2_0 });
+        assertEquals(ownRotation.serder.pvrsn, Vrsn_2_0);
+        assertEquals(parseBytes(ownRotation.message)[0].gvrsn, Vrsn_2_0);
+        yield* sender.reactor.processBytes(ownRotation.message, { local: true });
+        yield* receiver.reactor.processBytes(peerRotation.message, { local: true });
+        alice.rotate();
+        assertEquals(left.ks.pris.get(retired), null, "old group contribution key is actually retired");
+        const replayed = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, rip);
+        assertEquals(
+          replayed[0].said,
+          approval.said,
+          "accepted historical anchor reuses exact retained local approval",
+        );
 
-        const wrong = exchange("/multisig/registry", { gid: local.hab.pre, tel: alice.pre, anc: anchor.said! }, {
+        const wrong = exchange("/multisig/rip", { gid: local.hab.pre, tel: alice.pre, anc: anchor.said! }, {
           sender: bob.pre,
           version: Vrsn_2_0,
         })[0];
@@ -2421,4 +2455,73 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
       }
     });
   });
+});
+
+/** Exercise the two real arrival orders without turning the shared anchor index into consent. */
+async function sharedRegistryAnchorConsent(order: "local-first" | "peer-first") {
+  await participants(async (left, right, alice, bob) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("shared-registry-anchor", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
+    const remote = right.makeGroupHab("shared-registry-anchor", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
+    await run(function*() {
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        for (const runtime of [receiver, sender]) {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            { local: true },
+          );
+        }
+        // Two unrelated TEL proposals deliberately share one full-seal KEL anchor.
+        const selected = acdcV2Regcept(local.hab.pre);
+        const other = acdcV2Regcept(local.hab.pre);
+        assertNotEquals(selected.said, other.said);
+        const anchor = interactEvent(
+          local.hab.pre,
+          local.hab.kever!.said,
+          1,
+          [selected, other].map(tel => ({ i: tel.said!, s: "0", d: tel.said! })),
+          { version: Vrsn_2_0 },
+        );
+        // Approving the selected TEL cannot authorize the other proposal's peer contribution.
+        const peer = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, other, { anchor });
+        if (order === "peer-first") yield* receiver.reactor.processBytes(concatBytes(peer[0].raw, peer[1]));
+        const own = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, selected, { anchor });
+        if (order === "local-first") yield* receiver.reactor.processBytes(concatBytes(peer[0].raw, peer[1]));
+        assertEquals(own[0].route, "/multisig/rip");
+        assertEquals(receiver.acdc!.store.head(selected.said!), null);
+        assertEquals(receiver.acdc!.store.head(other.said!), null);
+        assertEquals(
+          local.hab.kever!.sn,
+          0,
+          "a different TEL wrapper cannot replay the peer's shared-anchor signature",
+        );
+        // Matching consent now supplies the independent signature needed by ordinary Kevery.
+        const matching = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, selected, { anchor });
+        yield* receiver.reactor.processBytes(concatBytes(matching[0].raw, matching[1]));
+        yield* receiver.protocol.processEscrowsOnce();
+        assertEquals(receiver.acdc!.store.head(selected.said!)?.qb64, selected.said);
+        assertEquals(local.hab.kever!.said, anchor.said);
+        // KEL acceptance commits all seals; it does not fabricate this member's approval of another wrapper.
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approveAcdcV2Registry(left, receiver.protocol, local.hab, other, { anchor })),
+            ValidationError,
+            "no retained exact local approval",
+          )
+        );
+      } finally {
+        yield* sender.close();
+        yield* receiver.close();
+      }
+    });
+  });
+}
+
+Deno.test("native registry local-first consent does not approve a different TEL under the same anchor", async () => {
+  await sharedRegistryAnchorConsent("local-first");
+});
+Deno.test("native registry peer-first evidence is not replayed by consent to a different TEL", async () => {
+  await sharedRegistryAnchorConsent("peer-first");
 });
