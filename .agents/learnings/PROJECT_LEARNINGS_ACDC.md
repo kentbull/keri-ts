@@ -156,6 +156,8 @@ WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
 reuse pending BUP/opening bytes and the current branch's already signed KEL seal.
+New local anchors carry the full registry/ordinal/TEL-SAID `{i,s,d}` seal required
+by the native Python receiver; receipt retries reuse that same signed KEL event.
 Public proof retention uses RegistryStore's decoder; private derivation retains
 nonsecret event-specific coordinates before processing and never publishes implicitly.
 Tufa owns only argument/configuration and final output
