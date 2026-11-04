@@ -9,6 +9,7 @@
  */
 import {
   attachmentPayload,
+  bytesEqual,
   type CesrFrame,
   type Cigar,
   collectPayload,
@@ -42,12 +43,13 @@ import type { Reger } from "../../db/reger.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
-import { groupMemberHasKey, groupSigningMembers, localGroupMember } from "../multisig/group-members.ts";
+import { groupSigningMembers, localGroupMember, localIpexContribution } from "../multisig/group-members.ts";
 import {
   embeddedBusinessExnSAD,
   MULTISIG_EXN_ROUTE,
   multisigChild,
   multisigChildGenusAttrs,
+  prepareMultisigEventExn,
 } from "../multisig/grouping.ts";
 import {
   type GroupDelivery,
@@ -232,7 +234,7 @@ export function* approveMultisigIpex(
   wrapper: SerderKERI,
   options: MultisigIpexApprovalOptions = {},
 ): Operation<MultisigIpexApprovalResult> {
-  const { child, groupHab } = loadIpexProposal(hby, wrapper);
+  const { child, groupHab } = yield* loadIpexProposal(hby, wrapper);
   const { event: embedded, genus } = child;
   const embeddedSaid = embedded.said!;
   if (embedded.pvrsn.major === 1 && embedded.route === IPEX_GRANT_ROUTE && !reger) {
@@ -281,10 +283,43 @@ export function* approveMultisigIpex(
   };
 }
 
+/** Read the exact stored native child, or decode the separately framed legacy embed. */
+export function storedMultisigIpexBody(db: Baser, wrapper: SerderKERI): SerderKERI | null {
+  if (wrapper.pvrsn.major === 1) {
+    const sad = embeddedBusinessExnSAD(wrapper);
+    return sad ? new SerderKERI({ sad }) : null;
+  }
+  const children = loadNests(db, wrapper.said!), child = children[0]?.body, attrs = wrapper.sad?.a;
+  return children.length === 1 && child instanceof SerderKERI && child.pvrsn.major === 2
+      && attrs && typeof attrs === "object" && !Array.isArray(attrs)
+      && (attrs as Record<string, unknown>).exn === child.said && (attrs as Record<string, unknown>).gid === child.pre
+    ? child
+    : null;
+}
+
 /** Decode one accepted coordination wrapper and select its actual local group signing state. */
-function loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
-  const child = multisigChild(hby, wrapper, "exn");
-  if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
+function* loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
+  let child;
+  if (wrapper.pvrsn.major === 2) {
+    const nested = loadNests(hby.db, wrapper.said!);
+    const frame = nested[0], attrs = wrapper.sad?.a;
+    if (
+      nested.length !== 1 || !(frame.body instanceof SerderKERI) || frame.body.pvrsn.major !== 2
+      || !attrs || typeof attrs !== "object" || Array.isArray(attrs)
+      || (attrs as Record<string, unknown>).exn !== frame.body.said
+      || (attrs as Record<string, unknown>).gid !== frame.body.pre
+    ) {
+      throw new ValidationError("Multisig IPEX approval requires its exact retained child.");
+    }
+    child = {
+      event: frame.body,
+      attachment: yield* call(() => collectPayload(attachmentPayload(frame, { gvrsn: Vrsn_2_0 }))),
+      genus: Vrsn_2_0,
+    };
+  } else {
+    child = multisigChild(hby, wrapper, "exn");
+    if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
+  }
   const group = child.event.pre;
   if (!group || !child.event.said || !wrapper.said) {
     throw new ValidationError("Multisig IPEX approval requires wrapper, group, and embedded SAIDs.");
@@ -303,10 +338,19 @@ function* approveIpexChild(
   hby: Habery,
   protocol: ProtocolProcessor,
   groupHab: Hab,
-  child: ReturnType<typeof loadIpexProposal>["child"],
+  child: { event: SerderKERI; attachment: Uint8Array; genus: Versionage },
   wrapper: SerderKERI,
   reger: Reger | null,
 ): Operation<Uint8Array | null> {
+  if (wrapper.pvrsn.major === 2) {
+    const retained = hby.db.exns.get([wrapper.said!]);
+    if (
+      !retained || !bytesEqual(retained.raw, wrapper.raw)
+      || !protocol.exc.verifyAccepted(wrapper.said!, MULTISIG_EXN_ROUTE)
+    ) {
+      throw new ValidationError("Native IPEX approval requires the exact authenticated stored wrapper.");
+    }
+  }
   const { event: embedded, attachment: peerAttachment, genus } = child;
   if (embedded.pvrsn.major === 2) {
     return yield* prepareAcdcV2GroupIpex(hby, protocol, groupHab, concatBytes(embedded.raw, peerAttachment));
@@ -412,32 +456,6 @@ export function groupIpexPartial(
 }
 
 /**
- * Select only a cryptographically valid local partial at an accepted group establishment.
- * The shared esigs table can hold unverified escrow candidates, so a matching
- * index or an authenticated parent wrapper alone is not recorded child approval.
- */
-function localIpexContribution(
-  db: Baser,
-  member: string,
-  embedded: SerderKERI,
-  proofs: readonly TransIdxSigGroup[],
-): TransIdxSigGroup | null {
-  for (const proof of proofs) {
-    if (proof.pre !== embedded.pre || proof.sn > BigInt(Number.MAX_SAFE_INTEGER)) continue;
-    const said = db.kels.getLast(proof.pre, Number(proof.sn));
-    const event = said === proof.said ? db.getEvtSerder(proof.pre, said) : null;
-    if (!event?.estive) continue;
-    const verified = Kever.verifyIndexedSignatures(embedded.raw, proof.sigers, event.verfers);
-    for (const siger of verified.sigers) {
-      if (groupMemberHasKey(db, member, event.verfers[siger.index].qb64)) {
-        return new TransIdxSigGroup(proof.prefixer, event.sner!, proof.diger, [siger]);
-      }
-    }
-  }
-  return null;
-}
-
-/**
  * Prepare recipient-specific wrappers, replaying recorded ones, and admit each
  * exact packet locally before returning any transmission work. Composition owns
  * the delivery worker. Ordinary Baser/Multiplexor evidence is the recovery record;
@@ -477,12 +495,23 @@ function* prepareGroupIpexMessages(
   const input = new Reactor(protocol);
   const messages: SignedGroupMessage[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
-    const prepared = exchange(MULTISIG_EXN_ROUTE, payload, {
-      sender: member.pre,
-      recipient,
-      version: Vrsn_1_0,
-      embeds: { exn: embedded },
-    });
+    const prepared = child.pvrsn.major === 2
+      ? yield* prepareMultisigEventExn(
+        member.pre,
+        { route: MULTISIG_EXN_ROUTE, attrs: { gid: groupHab.pre } },
+        embedded,
+        {
+          recipient,
+          version: Vrsn_2_0,
+          childGvrsn: genus,
+        },
+      )
+      : exchange(MULTISIG_EXN_ROUTE, payload, {
+        sender: member.pre,
+        recipient,
+        version: Vrsn_1_0,
+        embeds: { exn: embedded },
+      });
     const signed = yield* prepareGroupMessage(protocol.exc, member, recipient, prepared);
     yield* input.processBytes(signed.message, { local: true });
     if (
@@ -556,11 +585,11 @@ export function* approveStoredMultisigIpexWrappers(
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = embeddedBusinessExnSAD(wrapper);
-    if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
+    const embedded = storedMultisigIpexBody(hby.db, wrapper);
+    if (!embedded || embedded.said !== embeddedSaid) {
       continue;
     }
-    const { child, groupHab } = loadIpexProposal(hby, wrapper);
+    const { child, groupHab } = yield* loadIpexProposal(hby, wrapper);
     yield* approveIpexChild(hby, protocol, groupHab, child, wrapper, reger);
   }
 }
@@ -576,11 +605,11 @@ export function findPendingMultisigIpex(db: Baser): SerderKERI | null {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = embeddedBusinessExnSAD(wrapper);
-    if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
+    const embedded = storedMultisigIpexBody(db, wrapper);
+    if (!embedded?.route?.startsWith("/ipex/")) {
       continue;
     }
-    const embeddedSaid = embeddedSad.d;
+    const embeddedSaid = embedded.said;
     if (typeof embeddedSaid !== "string" || db.exns.get([embeddedSaid])?.said === embeddedSaid) {
       continue;
     }

@@ -24,7 +24,7 @@ export class Kramer {
   private readonly now: () => number;
 
   constructor(
-    private readonly db: Baser,
+    readonly db: Baser,
     { config = {}, cues = new Deck<AgentCue>(), now = Date.now }: {
       config?: KramConfig;
       cues?: Deck<AgentCue>;

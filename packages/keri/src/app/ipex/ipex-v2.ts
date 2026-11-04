@@ -83,9 +83,9 @@ export class IpexV2Handler implements ExchangeRouteHandler {
 
   constructor(
     readonly resource: string,
-    private readonly hby: Habery,
+    readonly hby: Habery,
     private readonly notifier: Notifier | null = null,
-    private readonly registry: RegistryStore | null = null,
+    readonly registry: RegistryStore | null = null,
   ) {
     this.acceptsMissingEvidence = resource === "/ipex/grant";
     this.acceptsNests = nestedIpexRoute(resource);

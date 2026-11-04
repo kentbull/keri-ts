@@ -1,5 +1,6 @@
 /** Real nested multisig admission and approval replay; wrapper signatures never authorize child events. */
 import {
+  attachmentPayload,
   b,
   type CesrFrame,
   collectPayload,
@@ -42,15 +43,18 @@ import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
 import {
   approveMultisigIpex,
+  approveStoredMultisigIpexWrappers,
   groupIpexPartial,
   prepareAcdcV2GroupIpex,
   publishInitialGroupIpex,
   sendCompletedGroupIpex,
+  storedMultisigIpexBody,
 } from "../../../../src/app/ipex/ipex-grouping.ts";
 import { ipexApplyExn, ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
 import {
   acdcV2RegistryProposal,
   loadMultisigHandlers,
+  Multiplexor,
   multisigChild,
   type MultisigEventProposal,
   multisigExnBody,
@@ -1024,7 +1028,6 @@ Deno.test("multisig body construction borrows a parsed child without reading or 
       );
       assertThrows(
         () => {
-          // @ts-expect-error Preserve the malformed JavaScript route regression at runtime too.
           return multisigExnBody(bob.pre, { route: "/multisig/exn", attrs: { gid: bob.pre } }, body);
         },
         Error,
@@ -2294,8 +2297,9 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
     const local = left.makeGroupHab("native-ipex", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
     const remote = right.makeGroupHab("native-ipex", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
     await run(function*() {
-      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
-      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      const kram = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] as const } };
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { kram });
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock, { kram });
       try {
         for (const runtime of [receiver, sender]) {
           yield* runtime.reactor.processBytes(
@@ -2333,7 +2337,22 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
         /** Prepare the exact native child without inventing issuer evidence. */
         const wire = function*(body: SerderKERI, nests: readonly CesrFrame[] = []) {
           return yield* call(() =>
-            collectPayload(framePayload({ body, gvrsn: Vrsn_2_0, attachments: [], nests: [...nests] }))
+            collectPayload(
+              framePayload({
+                body,
+                gvrsn: Vrsn_2_0,
+                nests: [...nests],
+                attachments: body.route === "/ipex/grant"
+                  ? messageAttachmentGroups({
+                    sourceSeals: [{
+                      i: new Prefixer({ qb64: bob.pre }),
+                      s: NumberPrimitive.fromNum(BigInt(bob.kever!.sn)),
+                      d: new Diger({ qb64: bob.kever!.said }),
+                    }],
+                  }, Vrsn_2_0)
+                  : [],
+              }),
+            )
           );
         };
         const received = new Map<string, Uint8Array[]>();
@@ -2359,7 +2378,7 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             yield* spawn(() => receiver.postman.deliverDo()),
             yield* spawn(() => sender.postman.deliverDo()),
           );
-          /** Deliver through actual member endpoints and inspect the retained pathed child. */
+          /** Deliver through actual member endpoints and inspect the exact retained native child. */
           const publish = function*(runtime: typeof receiver, hby: Habery, group: Hab, raw: Uint8Array) {
             const result = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, group, raw, Vrsn_2_0);
             assertEquals(result.messages.length, 1);
@@ -2367,11 +2386,16 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             assertExists(sent);
             const wrapper = parseBytes(sent)[0].body;
             assertInstanceOf(wrapper, SerderKERI);
-            assertEquals(wrapper.pvrsn, Vrsn_1_0);
-            const child = multisigChild(hby, wrapper, "exn");
-            assertExists(child);
-            assertEquals(child.genus, Vrsn_2_0);
-            assertEquals(concatBytes(child.event.raw, child.attachment), raw, "pathed child proof bytes stay exact");
+            assertEquals(wrapper.pvrsn, Vrsn_2_0);
+            const children = loadNests(hby.db, wrapper.said!);
+            assertEquals(children.length, 1);
+            const child = children[0];
+            assertEquals(wrapper.sad!.a, { gid: group.pre, exn: child.body.said });
+            assertEquals(
+              concatBytes(child.body.raw, yield* call(() => collectPayload(attachmentPayload(child)))),
+              raw,
+              "native child proof bytes stay exact",
+            );
             return { wrapper, sent };
           };
           /** Receipt remains inert until the other member explicitly approves this exact child. */
@@ -2379,12 +2403,75 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             const first = yield* prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, yield* wire(body, nests));
             assertExists(first);
             assertEquals(receiver.exc.complete(body.said!), false, "one member share remains pending");
+            if (body.route === "/ipex/grant") {
+              const child = parseBytes(first)[0];
+              assertEquals(envelopeFromFrame(child).ssts.length, 1, "the exact child carries its issuer's source seal");
+              const outsider = left.makeHab("outsider");
+              yield* call(() => learn(right, outsider));
+              /** Real member signatures cannot authorize a false child commitment or group. */
+              const refuse = function*(attrs: { gid: string; exn: string }, member: Hab = alice) {
+                const wrapper = exchange("/multisig/exn", attrs, { sender: member.pre, version: Vrsn_2_0 })[0];
+                const decision = yield* sender.exc.processEvent({
+                  serder: wrapper,
+                  tsgs: proof(member, wrapper),
+                  nests: [child],
+                });
+                assertEquals(decision.kind, "reject");
+                assertEquals(right.db.exns.get([wrapper.said!]), null);
+                assertEquals(right.db.meids.get([body.said!]), []);
+              };
+              yield* refuse({ gid: bob.pre, exn: body.said! });
+              yield* refuse({ gid: local.hab.pre, exn: credential.said! });
+              yield* refuse({ gid: local.hab.pre, exn: body.said! }, outsider);
+              const wrapper = multisigExnBody(
+                alice.pre,
+                { route: "/multisig/exn", attrs: { gid: local.hab.pre } },
+                body,
+              );
+              const unbound = new Multiplexor(right, { exchanger: sender.exc, registry: sender.protocol.registry! });
+              assertEquals(
+                (yield* unbound.add(wrapper, [child])).kind,
+                "reject",
+                "missing live owners refuse before indexing",
+              );
+              assertEquals([right.db.meids.get([body.said!]), right.db.maids.get([body.said!])], [[], []]);
+              yield* call(() =>
+                assertRejects(
+                  () =>
+                    run(() =>
+                      prepareMultisigEventExn(
+                        alice.pre,
+                        { route: "/multisig/exn", attrs: { gid: local.hab.pre } },
+                        concatBytes(first, first),
+                        { version: Vrsn_2_0 },
+                      )
+                    ),
+                  Error,
+                  "one supported direct child",
+                )
+              );
+            }
             const proposed = yield* publish(receiver, left, local.hab, first);
             assertEquals(sender.exc.complete(body.said!), false, "receipt does not sign or approve the child");
             assertEquals(right.db.epse.get([body.said!]), null, "unapproved receipt does not escrow child signatures");
-            assertEquals(right.db.maids.get([(proposed.wrapper.ked!.e as { d: string }).d]).map(p => p.qb64), [
+            assertEquals(right.db.maids.get([body.said!]).map(p => p.qb64), [
               alice.pre,
             ]);
+            if (body.route === "/ipex/grant") {
+              const retained = loadNests(right.db, proposed.wrapper.said!)[0];
+              const before = concatBytes(
+                retained.body.raw,
+                yield* call(() => collectPayload(attachmentPayload(retained))),
+              );
+              yield* right.db.reopen();
+              const reopened = loadNests(right.db, proposed.wrapper.said!)[0];
+              assertEquals(
+                concatBytes(reopened.body.raw, yield* call(() => collectPayload(attachmentPayload(reopened)))),
+                before,
+              );
+            }
+            assertEquals(storedMultisigIpexBody(right.db, proposed.wrapper)?.raw, body.raw);
+            yield* approveStoredMultisigIpexWrappers(right, sender.protocol, body.said!, null);
             const approval = yield* approveMultisigIpex(
               right,
               sender.protocol,
@@ -2411,6 +2498,8 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             message: "retained native view",
           });
           assertEquals(grant.ilk, "xip");
+          bob.interact({ data: [{ d: grant.said! }] });
+          yield* call(() => learn(left, bob));
           yield* coordinate(grant, [node]);
           for (const hby of [left, right]) {
             const retained = loadNests(hby.db, grant.said!);

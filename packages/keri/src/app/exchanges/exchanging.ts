@@ -295,6 +295,12 @@ export class Exchanger {
     this.routes.set(handler.resource, handler);
   }
 
+  /** Resolve the configured body-version route owner without dispatching or changing evidence. */
+  handlerFor(serder: SerderKERI): ExchangeRouteHandler | undefined {
+    const route = serder.route ?? "";
+    return this.versionedRoutes.get(route)?.get(serder.pvrsn.major) ?? this.routes.get(route);
+  }
+
   /**
    * Verify, persist, and dispatch one inbound `exn`.
    *
@@ -332,7 +338,7 @@ export class Exchanger {
       throw new Error("Invalid exchange receiver time");
     }
     const route = args.serder.route ?? "";
-    const handler = this.versionedRoutes.get(route)?.get(args.serder.pvrsn.major) ?? this.routes.get(route);
+    const handler = this.handlerFor(args.serder);
     // Freeze implied last-establishment coordinates at receipt, not after child serialization.
     const resolved = this.resolveProofs(args);
     const nests = args.nests?.length
@@ -662,7 +668,7 @@ export class Exchanger {
   verifyAccepted(said: string, route: string, { historical = false }: { historical?: boolean } = {}): boolean {
     const serder = this.hby.db.exns.get([said]);
     if (!serder || serder.route !== route || !serder.verify()) return false;
-    const handler = this.versionedRoutes.get(route)?.get(serder.pvrsn.major) ?? this.routes.get(route);
+    const handler = this.handlerFor(serder);
     if (!handler?.verify) return false;
     const args = this.escrowInput(serder);
     if (this.verifyEssr(serder, args.essrs)) return false;

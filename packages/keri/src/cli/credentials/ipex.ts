@@ -20,6 +20,7 @@ import {
   sendCompletedGroupIpex,
   sendCredentialStream,
   storedExchangeMessage,
+  storedMultisigIpexBody,
 } from "../../app/ipex/ipex-grouping.ts";
 import {
   IPEX_ADMIT_ROUTE,
@@ -31,7 +32,7 @@ import {
   validateIpexReply,
 } from "../../app/ipex/ipexing.ts";
 import { isLocalGroupHab, localGroupMember } from "../../app/multisig/group-members.ts";
-import { embeddedBusinessExnSAD, MULTISIG_EXN_ROUTE } from "../../app/multisig/grouping.ts";
+import { MULTISIG_EXN_ROUTE } from "../../app/multisig/grouping.ts";
 import type { GroupSendResult } from "../../app/multisig/multisig-messaging.ts";
 import type { ProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { abortable } from "../../app/runtime/abortable.ts";
@@ -518,12 +519,10 @@ export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJ
       throw new ValidationError(`EXN ${ipexArgs.said} is not an IPEX or multisig IPEX message.`);
     }
 
-    const embeddedSad = embeddedBusinessExnSAD(exn);
-    if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
+    const embedded = storedMultisigIpexBody(hby.db, exn);
+    if (!embedded?.route?.startsWith("/ipex/")) {
       throw new ValidationError(`Multisig EXN ${ipexArgs.said} does not wrap an IPEX message.`);
     }
-
-    const embedded = new SerderKERI({ sad: embeddedSad });
     const group = embedded.pre;
     if (!group || !hby.habs.has(group)) {
       throw new ValidationError(`Multisig IPEX sender ${group ?? "<missing>"} is not a local group AID.`);
