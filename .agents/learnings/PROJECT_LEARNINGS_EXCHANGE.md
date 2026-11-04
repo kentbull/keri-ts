@@ -370,8 +370,10 @@ pathed branch with its embedded-section index and selected child genus.
 It receives protocol, Poster and optional Reger explicitly, owning only its local
 byte-input context. Stored approval has no transport dependency; pending discovery
 reads accepted Baser exchanges. Command composition owns workers and stores.
-Both initial stream publication and ordinary approval sends register exact local
-wrappers first and reuse shared recipient-specific replay. Group grant/join facts
+IPEX commands open normal persisted configuration before runtime composition, so
+the configured KRAM owner is available for native wrappers; they introduce no
+global enabled default. Both initial stream publication and ordinary approval
+sends register exact local wrappers first and reuse shared recipient-specific replay. Group grant/join facts
 include messages/exnSaid/payloadSaid for exact selection. Reverify a stored partial
 signature against accepted group/member key history before reusing it; a raw index
 or parent endorsement is insufficient. Explicitly selected unindexed wrappers

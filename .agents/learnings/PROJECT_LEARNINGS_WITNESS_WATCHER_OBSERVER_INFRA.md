@@ -57,8 +57,14 @@ proof/reopen file; `interop-ipex-disclosure` owns the five native disclosure fil
 Its Python peer composes normal Regery/Exchanger/Kevery/Parser/Revery owners and
 one Pruner. Explicit local Admit supplies consent; current recheck plus the exact
 accepted Admit/Grant pair gates reuse of retained child bytes after reopen.
-Do not recreate the removed Python Wallet/SectionBaser/CLI Peer facades. The TS
-side retains its actual Wallet assertions. Plans use the one-DAG wire wrapper;
+Do not recreate the removed Python Wallet/SectionBaser/CLI Peer facades. The mixed
+group peer lends its actual live KRAM/Parser/Regery/Exchanger to Multiplexor. Its
+fixture-only onward approval explicitly selects an authenticated admitted Grant,
+checks current issued state and exact selected body/proofs, then requires ordinary
+native quorum verification before publication. A pre-sign native presentation
+verdict cannot supply the completed KRAM cutoff that still needs this share.
+The pinned read-only verdict gate remains for issuance and Admit. The TS side
+retains its actual Wallet assertions. Plans use the one-DAG wire wrapper;
 current-source local proof does not qualify another manifest-selected commit.
 ESSR storage stays main-selected. Candidate root/interpreter configuration fails closed and
 cannot be replaced by `KERIPY_MAIN_ROOT`. Reuse the setup action with its concrete

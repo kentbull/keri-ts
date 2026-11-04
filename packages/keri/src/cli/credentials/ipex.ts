@@ -713,7 +713,6 @@ function* withIpexRuntime<TResult>(
     args,
     {
       compat: args.compat ?? false,
-      skipConfig: true,
     },
     function*({ hby, runtime }) {
       const rgy = runtime.vdr;

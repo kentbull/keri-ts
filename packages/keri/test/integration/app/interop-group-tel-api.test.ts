@@ -5,6 +5,7 @@ import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import reference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import {
   BlindState,
+  bytesEqual,
   concatBytes,
   Counter,
   Diger,
@@ -378,10 +379,10 @@ Deno.test({
           url: string;
         }[] = [];
         for (const name of ["issuer", "holder", "verifier"]) {
-          const hby = yield* createHabery({ name: `acdc-v2-${name}`, headDirPath: ctx.home, skipConfig: true });
-          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
-              kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-            }),
+          const hby = yield* createHabery({ name: `acdc-v2-${name}`, headDirPath: ctx.home });
+          const kram = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
+          hby.cf!.put({ kram });
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { kram }),
             member = hby.makeHab("member");
           const server = Deno.serve(
             { hostname: "127.0.0.1", port: 0, onListen() {} },
@@ -403,7 +404,16 @@ Deno.test({
         const [issuer, holder, verifier] = roles;
         const workers = [];
         function* post(raw: Uint8Array, url: string) {
-          const response = yield* call(() => fetch(url, { method: "PUT", ...buildCesrStreamRequest(raw) }));
+          const selected = [Vrsn_1_0, Vrsn_2_0].some(version => {
+            const selector = Counter.makeGVC(version);
+            return bytesEqual(raw.subarray(0, selector.length), selector);
+          });
+          const response = yield* call(() =>
+            fetch(url, {
+              method: "PUT",
+              ...buildCesrStreamRequest(selected ? raw : concatBytes(Counter.makeGVC(Vrsn_2_0), raw)),
+            })
+          );
           const detail = yield* call(() => response.text());
           assertEquals(response.status, 204, detail);
         }
@@ -547,6 +557,10 @@ Deno.test({
             )
           );
           assertEquals(pendingGrant.code, 0, pendingGrant.stderr);
+          assertEquals(issuer.hby.cf!.get().kram, {
+            enabled: true,
+            caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] },
+          });
           const pending = JSON.parse(pendingGrant.stdout.trim().split("\n").at(-1)!);
           assertEquals(pending.status, "multisig-pending");
           const proposed = loadNests(issuer.hby.db, pending.messages[0].exnSaid)[0];
@@ -590,7 +604,12 @@ Deno.test({
               Counter.enclose({ qb64: prepared.nests, version: Vrsn_2_0 }),
             );
           };
-          const completeExchange = function*(index: number, exn: SerderKERI, candidate: Uint8Array) {
+          const completeExchange = function*(
+            index: number,
+            exn: SerderKERI,
+            candidate: Uint8Array,
+            fromGrant?: string,
+          ) {
             const role = roles[index], label = index ? "holder" : "issuer";
             const first = yield* prepareAcdcV2GroupIpex(role.hby, role.runtime.protocol, groups[index], candidate);
             assertExists(first);
@@ -608,7 +627,12 @@ Deno.test({
               for await (const chunk of role.runtime.exc.replay(published.messages[0].exnSaid)) chunks.push(chunk);
               return concatBytes(...chunks);
             });
-            const approved = yield* call(() => control(label, "exchange", { wire: decoder.decode(wrapper) }));
+            const approved = yield* call(() =>
+              control(label, "exchange", {
+                wire: decoder.decode(wrapper),
+                ...(fromGrant ? { from_grant: fromGrant, selected: decoder.decode(candidate) } : {}),
+              })
+            );
             yield* post(encoder.encode(approved.wire), role.url);
             yield* role.runtime.protocol.processEscrowsOnce();
             assertEquals(approved.complete, true);
@@ -686,9 +710,7 @@ Deno.test({
           );
           yield* post(admitWire, issuer.url);
           yield* call(() => holder.wallet.recordAdmission(selected.exn.said!, admit.said!, { consent: true }));
-          yield* call(() =>
-            control("holder", "admission", { grant: selected.exn.said, admit: admit.said, consent: true })
-          );
+          yield* call(() => control("holder", "admission", { grant: selected.exn.said, admit: admit.said }));
           const held = yield* call(() => holder.wallet.heldCredential(selected.exn.said!));
           const pythonHeld = yield* call(() => control("holder", "snapshot", { grant: selected.exn.said }));
           assertEquals(pythonHeld.proof, decoder.decode(held.proof));
@@ -708,7 +730,12 @@ Deno.test({
               plan: [[schema.said, "/", []]],
             },
           );
-          const onwardWire = yield* completeExchange(1, onward.exn, yield* presentationProof(onward));
+          const onwardWire = yield* completeExchange(
+            1,
+            onward.exn,
+            yield* presentationProof(onward),
+            selected.exn.said!,
+          );
           yield* post(onwardWire, verifier.url);
           assertEquals(verifier.runtime.exc.complete(onward.exn.said!), true);
           assertEquals(verifier.hby.db.exns.get([onward.exn.said!])!.raw, onward.exn.raw);

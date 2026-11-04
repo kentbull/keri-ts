@@ -1,10 +1,11 @@
-"""A real legacy TEL group member behind ordinary Python HTTP/parser intake.
+"""Real legacy and native group members behind ordinary Python HTTP/parser intake.
 
 Fixture commands choose public signing/verification operations. They never seed
 accepted rows. Member and independent-wallet deliveries use the unmodified
 HttpEnd/Parser, with separate Habery/Reger environments and private keys.
-Explicit v1 child framing avoids the separately recorded pinned-main KLI defect;
-this fixture demonstrates protocol/API capability, not corrected CLI behavior.
+The legacy lane uses explicit v1 child framing around its pinned CLI defect.
+Native approval shares the caller's live KRAM, registry and exchange owners;
+ordinary protocol verification remains the sole acceptance boundary.
 """
 import argparse
 import signal
@@ -297,35 +298,35 @@ class Control:
 
 
 class AcdcV2Role:
-    """One independent member/store of a mixed issuer or holder group using actual v2 owners."""
+    """One independent member; public intake and explicit local approval share native owners."""
     def __init__(self, hby, root):
         from keri import Vrsn_1_0, Vrsn_2_0
         from keri.acdc import Regery, loadHandlers
         from keri.acdc.regbasing import RegBaser
-        from keri.acdc.regeventing import Rever
-        from keri.app.credentialing import Wallet, WalletBaser
-        from keri.core import Parser
+        from keri.core import Kevery, Parser
         self.hby, self.version = hby, Vrsn_2_0
         self.member = hby.makeHab('member', version=Vrsn_1_0)
         self.rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=root, temp=False))
-        self.exc = exchanging.Exchanger(hby, handlers=[])
         self.notifier = notifying.Notifier(hby)
-        self.verification = loadHandlers(hby, self.exc, self.notifier, rgy=self.rgy)
-        self.wallet = Wallet(hby, self.rgy, exc=self.exc, verification=self.verification,
-            db=WalletBaser(name=hby.name, headDirPath=root, temp=False))
-        self.rever = Rever(db=hby.db, reger=self.rgy.baser)
-        self.psr = Parser(kvy=hby.kvy, rgy=self.rever, exc=self.exc, version=Vrsn_2_0)
-        self.group = self.owner = None
+        self.exc = exchanging.Exchanger(hby, handlers=[])
+        loadHandlers(hby, self.exc, self.notifier, rgy=self.rgy)
+        self.kvy = Kevery(db=hby.db, lax=False, local=False, rvy=hby.rvy,
+                          cf=hby.cf, enableKram=True, exc=self.exc)
+        self.kvy.registerReplyRoutes(router=hby.rtr)
+        self.psr = Parser(kvy=self.kvy, rvy=hby.rvy, rgy=self.rgy,
+                          exc=self.exc, version=self.version, framed=False)
+        self.mux = grouping.Multiplexor(hby, self.notifier, rgy=self.rgy, replay=self.psr)
+        grouping.loadHandlers(self.exc, self.mux)
+        self.group = None
 
     def receive(self):
-        """Ordinary external intake cannot add this member's consent or signatures."""
+        """Receipt retains proposals; only the selected control action adds a local share."""
         if self.psr.ims:
             self.psr.parse()
-        self.hby.kvy.processEscrows()
-        self.rever.processEscrows()
+        self.kvy.processEscrows()
+        self.rgy.processEscrows()
         self.exc.processEscrow()
-        if self.owner:
-            self.owner.process()
+        self.hby.rvy.processEscrowReply()
 
     def replay(self, hab):
         from keri.core import Counter
@@ -333,37 +334,140 @@ class AcdcV2Role:
 
     def join(self, member):
         from keri import Vrsn_1_0
-        from keri.app.acdc_v2_grouping import AcdcV2GroupCoordinator
         self.group = self.hby.makeGroupHab(group='group', mhab=self.member,
             smids=[member, self.member.pre], rmids=[member, self.member.pre],
             isith='2', nsith='2', version=Vrsn_1_0)
-        self.hby.kvy.processEscrows()
+        self.receive()
         assert self.group.accepted
-        self.owner = AcdcV2GroupCoordinator(self.hby, self.rgy, self.group, self.exc, self.notifier)
-        self.rever = self.owner.rever
-        self.psr.kvy, self.psr.rgy = self.owner.mux.kvy, self.rever
         return dict(group=self.group.pre, kel=self.replay(self.group).decode())
 
-    def registry(self, wire):
-        """Explicitly approve the exact authenticated TEL/anchor selected from this member wrapper."""
-        event, anchor, opening = self.owner.registryProposal(wire.encode())
-        wrapper, foot = self.owner.approveRegistry(event, anchor, opening=opening)
-        self.owner.process()
-        head = self.rgy.store.head(event.said if event.ilk == 'rip' else event.sad['rd'])
-        return dict(wire=(wrapper.raw + foot).decode(), said=wrapper.said,
-                    head=head.qb64 if head else None)
-
-    def exchange(self, wire):
-        """Apply the shared v2 graph gate before adding an independent group contribution."""
+    def proposal(self, wire, route):
+        """Select a retained authenticated wrapper from the current member set."""
         from keri.core import Parser
-        from keri.peer import serializeMessage
-        selected = self.owner.exchangeProposal(wire.encode())
-        child = Parser(version=self.version).parse(ims=bytearray(selected), processive=False)[0].serder
-        wrapper, foot = self.owner.approveExchange(selected)
-        return dict(wire=(wrapper.raw + foot).decode(), said=wrapper.said,
-                    child=child.said, complete=self.exc.complete(child.said),
-                    accepted=serializeMessage(self.hby, child.said, framed=False).decode()
-                        if self.exc.complete(child.said) else None)
+        stream = bytearray(wire.encode())
+        selected = Parser(version=self.version).parseOneBare(ims=stream, processive=False)
+        assert not stream, 'approval requires exactly one selected wrapper'
+        supplied = selected.serder
+        self.mux.validate(supplied, nests=selected.nests)
+        self.receive()
+        wrapper, paths = exchanging.cloneMessage(self.hby, supplied.said)
+        assert wrapper is not None, (route, supplied.said, list(self.exc.cues))
+        assert wrapper.raw == supplied.raw and wrapper.route == route
+        assert wrapper.sad['a']['gid'] == self.group.pre
+        assert self.group.accepted and self.member.pre in self.hby.db.signingMembers(pre=self.group.pre)
+        assert wrapper.pre in self.hby.db.signingMembers(pre=self.group.pre)
+        return wrapper, paths
+
+    def registry(self, wire):
+        """Approve the exact TEL and KEL anchor, including retained historical retries."""
+        from keri.core import SerderKERI, messagize
+        route = SerderKERI(raw=wire.encode()).route
+        assert route in ('/multisig/rip', '/multisig/bup')
+        wrapper, _ = self.proposal(wire, route)
+        children = exchanging.loadParsedNestedSubstreams(self.hby, wrapper.said)
+        self.mux.validate(wrapper, nests=children)
+        tel, anchor = [child.serder for child in children]
+        prior = self.group.kever.serder.said
+        proposal = None
+        if self.hby.db.kels.getLast(keys=self.group.pre, on=anchor.sn) == anchor.said:
+            # Accepted anchors may replay an exact earlier approval, never acquire today's signature.
+            for said in self.hby.db.meids.get(keys=(anchor.said,)):
+                retained = self.hby.db.exns.get(keys=(said.qb64,))
+                if retained.pre == self.member.pre and grouping.sameRegistryProposal(retained, wrapper):
+                    proposal, _ = exchanging.cloneMessage(self.hby, retained.said)
+                    self.mux.validate(proposal, nests=exchanging.loadParsedNestedSubstreams(self.hby, proposal.said))
+                    own = exchanging.serializeMessage(self.hby, proposal.said)
+                    break
+            assert proposal is not None, 'accepted anchor has no retained local approval'
+        else:
+            assert anchor.sn == self.group.kever.sn + 1 and anchor.sad['p'] == prior
+            self.mux.validate(wrapper, nests=children)
+            assert self.group.kever.serder.said == prior
+            if anchor.ilk in ('rot', 'drt'):
+                own = self.group.rotate(serder=anchor, smids=self.group.smids,
+                                        rmids=self.group.rmids, framed=True, gvrsn=self.version)
+            else:
+                own = messagize(anchor, sigers=self.group.sign(anchor.raw), gvrsn=self.version)
+                self.psr.parse(ims=bytearray(own), local=True, version=self.version)
+            build = grouping.multisigRipExn if tel.ilk == 'rip' else grouping.multisigBupExn
+            kwa = dict(rgy=self.rgy) if tel.ilk == 'bup' else {}
+            proposal, foot = build(self.group, exchanging.serializeParsedSubstream(children[0]), own, **kwa)
+            own = proposal.raw + foot
+            self.psr.parseOneBare(ims=bytearray(own), local=True, version=self.version)
+        self.receive()
+        regid = tel.said if tel.ilk == 'rip' else tel.sad['rd']
+        head = self.rgy.store.head(regid)
+        return dict(wire=own.decode(), said=proposal.said, head=head.qb64 if head else None)
+
+    def exchange(self, wire, from_grant=None, selected=None):
+        """Approve one selected child; native owners alone complete its quorum and disclosure checks."""
+        from copy import deepcopy
+        from keri.core import Number, Diger, verifySigs
+        wrapper, _ = self.proposal(wire, '/multisig/exn')
+        assert wrapper.pvrsn == self.version
+        children = exchanging.loadParsedNestedSubstreams(self.hby, wrapper.said)
+        self.mux.validate(wrapper, nests=children)
+        assert len(children) == 1
+        parsed = children[0]
+        child = parsed.serder
+        assert child.pre == self.group.pre and wrapper.sad['a']['exn'] == child.said
+        # Partial sender shares are real signatures, but final group threshold belongs to Exchanger.
+        sender = [tsg for tsg in parsed.tsgs if tsg[0].qb64 == child.pre]
+        assert sender, 'selected child requires its own authenticated group contribution'
+        for prefixer, number, diger, sigers in parsed.tsgs:
+            if prefixer.qb64 == child.pre:
+                _, verfers = self.hby.db.resolveVerifiers(pre=child.pre, sn=number.sn, dig=diger.qb64)
+                verified, _ = verifySigs(child.raw, sigers, verfers)
+                assert len(verified) == len(sigers) and verified
+        supplemental = [tsg for tsg in parsed.tsgs if tsg[0].qb64 != child.pre]
+        tsgs, cigars, seals, invalid, missing = exchanging.verifyAttachments(
+            self.hby, child, tsgs=supplemental, cigars=parsed.cigars,
+            sourceSeals=parsed.ssts)
+        handler = self.exc.handlerFor(child)
+        evidence = handler.verifyEvidence(child, tsgs=tsgs, cigars=cigars,
+            sourceSeals=seals, invalid=invalid, missing=missing)
+        assert evidence is not None
+        assert not self.exc.complete(child.said)
+        assert self.hby.db.exns.get((child.said,)) is None
+        assert self.member.pre not in [pre.qb64 for pre in self.hby.db.maids.get((child.said,))]
+        if from_grant is not None:
+            # Like GroupPresentation, explicit admitted-view selection precedes the
+            # completed KRAM cutoff that ordinary verification obtains at quorum.
+            from keri.core import Parser
+            from keri.cli.common.presenting import admitted, currentIssued
+            source, nodes = admitted(self.hby, self.group, from_grant)
+            currentIssued(self.exc, from_grant)
+            selection = bytearray(selected.encode())
+            expected = Parser(version=self.version).parseOneBare(ims=selection, processive=False)
+            assert not selection and child.raw == expected.serder.raw
+            assert child.route == '/ipex/grant' and child.ilk == 'xip'
+            assert child.sad['q'] == source.sad['q'] and child.sad['a']['o'] == source.sad['a']['o']
+            assert [node.serder.raw for node in parsed.nests] == [node.serder.raw for node in nodes]
+            assert [exchanging.serializeParsedSubstream(node) for node in parsed.nests] == [
+                exchanging.serializeParsedSubstream(node) for node in expected.nests]
+        else:
+            assert selected is None
+            # Pinned read-only native gate applies before issuance/Admit shares.
+            verdict, _ = handler._verifyResult(child, nests=parsed.nests, sscs=parsed.sscs, evidence=evidence)
+            assert verdict.verdict == 'valid', (verdict, child.sad)
+        approved = deepcopy(parsed)
+        coordinate = (self.group.kever.prefixer, Number(num=self.group.kever.lastEst.s),
+                      Diger(qb64=self.group.kever.lastEst.d))
+        for pre, number, diger, sigers in approved.tsgs:
+            if (pre.qb64, number.sn, diger.qb64) == (coordinate[0].qb64, coordinate[1].sn, coordinate[2].qb64):
+                sigers.extend(self.group.sign(child.raw))
+                break
+        else:
+            approved.tsgs.append((*coordinate, self.group.sign(child.raw)))
+        own = exchanging.serializeParsedSubstream(approved)
+        proposal, foot = grouping.multisigExn(self.group, own, version=self.version)
+        self.psr.parseOneBare(ims=bytearray(proposal.raw + foot), local=True, version=self.version)
+        self.receive()
+        assert self.exc.complete(child.said), 'native quorum and disclosure must verify before publication'
+        return dict(wire=(proposal.raw + foot).decode(), said=proposal.said,
+            child=child.said, complete=self.exc.complete(child.said),
+            accepted=exchanging.serializeMessage(self.hby, child.said).decode()
+                if self.exc.complete(child.said) else None)
 
     def role(self, wire):
         """Sign only an explicitly selected controller binding for this actual group/member set."""
@@ -374,11 +478,11 @@ class AcdcV2Role:
         assert event.sad['a']['eid'] in self.group.smids
         assert event.sad['a']['role'] == 'controller'
         own = self.group.endorse(event, last=False, framed=False, gvrsn=self.version)
-        self.owner.receive(Counter.makeGVC(self.version) + own)
+        self.psr.parse(ims=bytearray(own), local=True, version=self.version)
         return dict(wire=(Counter.makeGVC(self.version) + own).decode())
 
     def evidence(self):
-        """Replay accepted public histories; an opening must still be explicitly disclosed by its owner."""
+        """Replay accepted public histories; openings require an owner's explicit disclosure."""
         from keri.core import Counter, Codens
         raw = bytearray(self.replay(self.group))
         for keys, _ in self.rgy.store.baser.heads.getTopItemIter():
@@ -387,19 +491,34 @@ class AcdcV2Role:
                 raw.extend(Counter(Codens.AttachmentGroup, count=0, version=self.version).qb64b)
         return dict(wire=raw.decode())
 
+    def admission(self, grant, admit):
+        """Observe the exact locally accepted protocol pair; this creates no wallet consent record."""
+        message, _ = exchanging.cloneMessage(self.hby, grant)
+        response, _ = exchanging.cloneMessage(self.hby, admit)
+        assert self.exc.complete(grant) and self.exc.complete(admit)
+        assert message.route == '/ipex/grant' and message.sad['ri'] == self.group.pre
+        assert response.route == '/ipex/admit' and response.pre == self.group.pre
+        assert response.sad['p'] == grant and self.hby.db.erpy.get((grant,)).qb64 == admit
+        return dict(grant=grant, admit=admit)
+
     def snapshot(self, registry=None, exchange=None, grant=None):
         head = self.rgy.store.head(registry) if registry else None
         result = dict(head=head.qb64 if head else None,
                       complete=self.exc.complete(exchange) if exchange else False)
         if grant:
-            held = self.wallet.heldCredential(grant)
-            result.update(credential=held['credential'].said, proof=held['proof'].decode(),
-                          grant=held['grant'].said, admit=held['admit'])
+            admit = self.hby.db.erpy.get((grant,)).qb64
+            self.admission(grant, admit)
+            message, _ = exchanging.cloneMessage(self.hby, grant)
+            origin = message.sad['a']['o'][0]
+            children = exchanging.loadParsedNestedSubstreams(self.hby, grant)
+            selected = next(child for child in children if child.serder.said == origin)
+            result.update(credential=origin, proof=exchanging.serializeParsedSubstream(selected).decode(),
+                          grant=grant, admit=admit)
         return result
 
     def reopen(self):
-        """Reopen every persistent application, registry, identity and configuration environment."""
-        for store in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf):
+        """Reopen persistent registry, identity, notification and configuration environments."""
+        for store in (self.rgy.baser, self.hby.ks, self.hby.db, self.hby.cf, self.notifier.noter):
             store.close()
             assert store.reopen()
         self.hby.db.reload()
@@ -451,8 +570,7 @@ class AcdcV2Control:
             elif action == 'reopen':
                 rep.media = role.reopen()
             elif action == 'admission':
-                record = role.wallet.recordAdmission(data['grant'], data['admit'], consent=data['consent'])
-                rep.media = dict(grant=record.grant, admit=record.admit)
+                rep.media = role.admission(**data)
             elif action == 'snapshot':
                 rep.media = role.snapshot(**data)
             else:
@@ -471,11 +589,13 @@ def run_acdc_v2(port, root):
         roles = {}
         for label in ('issuer', 'holder'):
             cf = Configer(name=label, headDirPath=root, temp=False, reopen=True)
+            cf.put(dict(kram=dict(enabled=True, denials=[],
+                caches={'~': [1000, 5000, 60000, 300000, 5000, 60000, 300000]})))
             hby = stack.enter_context(habbing.openHby(name=label, headDirPath=root,
                 temp=False, cf=cf, version=Vrsn_2_0))
             roles[label] = AcdcV2Role(hby, root)
             stack.callback(roles[label].rgy.close)
-            stack.callback(roles[label].wallet.close)
+            stack.callback(roles[label].notifier.noter.close)
         control = AcdcV2Control(roles)
         app = falcon.App()
         app.add_route('/', HttpEnd(rxbs=roles['issuer'].psr.ims))
@@ -483,7 +603,9 @@ def run_acdc_v2(port, root):
         app.add_route('/_fixture', control)
         app.add_route('/health', control)
         server = createHttpServer('127.0.0.1', port, app)
-        doist = doing.Doist(tock=.005, real=True, doers=[http.ServerDoer(server=server)])
+        from keri.core import Pruner
+        doist = doing.Doist(tock=.005, real=True, doers=[http.ServerDoer(server=server),
+            *(Pruner(role.kvy.kramer, tock=.005) for role in roles.values())])
         running = True
         def stop(*_):
             nonlocal running
