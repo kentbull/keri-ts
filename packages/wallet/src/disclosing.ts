@@ -388,6 +388,9 @@ export class WalletDiscloser {
     if (!hab?.kever || (options.gvrsn ?? Vrsn_2_0).major < 2) {
       throw new ValidationError("ACDC v2 Grant preparation requires an accepted local sender and attachment genus 2.");
     }
+    if (selection.derive && this.custody?.options.hab !== hab) {
+      throw new ValidationError("Derived disclosure requires the actual sender habitat's custody.");
+    }
     const prior = yield* this.prior(options.priorSaid), raw = yield* this.selected(selection);
     this.requireGraph(parseBytes(raw)[0].body.said!, raw);
     const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/grant", raw, { ...options, prior });

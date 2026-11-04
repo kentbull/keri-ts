@@ -2,6 +2,7 @@ import {
   Cipher,
   type Decrypter,
   type Encrypter,
+  MtrDex,
   NumberPrimitive,
   Prefixer,
   Salter,
@@ -238,6 +239,8 @@ export class Keeper {
   public prxs!: CesrSuber<Cipher>;
   /** Encrypted next-key commitments used by group-signify keeper flows. */
   public nxts!: CesrSuber<Cipher>;
+  /** Encrypted Salt128 roots scoped by canonical local AID and registry SAID. */
+  public rroots!: CesrSuber<Cipher>;
 
   static readonly TailDirPath = "keri/ks";
   static readonly AltTailDirPath = ".tufa/ks";
@@ -371,6 +374,7 @@ export class Keeper {
         subkey: "nxts.",
         ctor: Cipher,
       });
+      this.rroots = new CesrSuber<Cipher>(this.lmdber, { subkey: "rroots.", ctor: Cipher });
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
@@ -404,7 +408,7 @@ export class Keeper {
   /**
    * Commit one authenticated AEID change and every affected secret together.
    * Manager validates the replacement credentials; this owner rechecks the old
-   * AEID under the native writer, migrates root/prefix salts and signer seeds,
+   * AEID under the native writer, migrates root/prefix salts, signer seeds and registry roots,
    * and refuses false writes. A caller's outer writer cannot establish commit
    * completion, so this operation must own its transaction. No live Manager
    * crypto state is published here.
@@ -428,6 +432,17 @@ export class Keeper {
       }
       if (storedAeid === aeid) return;
 
+      const roots = [...this.rroots.getTopItemIter()];
+      if (roots.length && !encrypter) {
+        throw new DatabaseOperationError("Cannot disable encryption while registry roots are retained");
+      }
+      for (const [keys, cipher] of roots) {
+        const root = decrypter?.decrypt({ cipher, ctor: Salter }) as Salter | undefined;
+        if (!root || root.code !== MtrDex.Salt_128) throw new DatabaseOperationError("Invalid registry root");
+        if (!this.rroots.pin(keys, encrypter!.encrypt({ prim: root }))) {
+          throw new DatabaseOperationError("Keeper registry root write failed");
+        }
+      }
       const root = this.getGbls("salt");
       if (root !== null) {
         const value = reencryptSalt(root, encrypter, decrypter);
@@ -444,6 +459,39 @@ export class Keeper {
         }
       }
       if (!this.pinGbls("aeid", aeid)) throw new DatabaseOperationError("Keeper AEID write failed");
+    });
+  }
+
+  /** Retain an immutable root under the authenticated policy, owning its commit. */
+  retainRegistryRoot(
+    keys: string[],
+    root: Salter,
+    currentAeid: string,
+    encrypter: Encrypter,
+    decrypter: Decrypter,
+  ): boolean {
+    if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
+    const env = this.lmdber.env;
+    if (!env) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (this.lmdber.inWriteTransaction) {
+      throw new DatabaseOperationError("Registry root retention must own its write transaction");
+    }
+    return env.transactionSync(() => {
+      if (this.getGbls("aeid") !== currentAeid) {
+        throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
+      }
+      const old = this.rroots.get(keys);
+      if (old) {
+        const retained = decrypter.decrypt({ cipher: old, ctor: Salter }) as Salter;
+        if (retained.qb64 !== root.qb64) {
+          throw new Error("A different root is already retained for this AID and registry");
+        }
+        return false;
+      }
+      if (!this.rroots.put(keys, encrypter.encrypt({ prim: root }))) {
+        throw new DatabaseOperationError("Keeper registry root write failed");
+      }
+      return true;
     });
   }
 

@@ -126,13 +126,14 @@ same exact acceptance path. All four authoring commands accept `--witness-gvrsn 
 for the known v2 witness profile; the default remains 1.0. Legacy commands retain
 their existing defaults.
 
-Provision explicitly with inception's `--with-custody` and optional `--discloser`.
-An encrypted authenticated Keeper is required. Derivation material stays encrypted
-in the local wallet environment under that Keeper's AEID; this is not native
-Keeper `RegistrySalt` custody. AEID replacement makes the local material
-unavailable. Derived state commands accept `--bound-event` for an exact witnessed
-Issuee event. IPEX `--derive` requires retained exact event coordinates; missing
-material refuses disclosure. Groups remain a separate approval workflow.
+Provision explicitly with inception's `--with-custody`. The selected issuer
+habitat retains its Salt128 root in the encrypted authenticated Keeper. AEID
+replacement rewraps the root atomically; retained roots prevent disabling
+encryption. Derived state commands accept `--bound-event` for an exact witnessed
+Issuee event. IPEX `--derive` requires the selected sender's custody and retained
+exact event coordinates. Missing coordinates refuse disclosure even if the Keeper
+root survives wallet loss. DHKE, root transfer and network Unblind are separate
+work; groups retain their explicit approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying

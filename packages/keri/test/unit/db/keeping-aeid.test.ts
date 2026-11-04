@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assert, assertEquals, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { b, t, Verfer } from "../../../../cesr/mod.ts";
+import { b, Diger, Salter, t, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Manager } from "../../../src/app/identity/keeping.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
@@ -9,10 +9,11 @@ import { createKeeper, type Keeper } from "../../../src/db/keeping.ts";
 const first = branToSeedAeid("MyPasscodeARealSecret");
 const second = branToSeedAeid("AnotherPasscodeSecretX");
 const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+const registry = new Diger({ code: "E", raw: Diger.digest(b("registry root"), "E") }).qb64;
 
 /** Copy the actual affected native rows, including opaque encrypted signer bytes. */
 function snapshot(keeper: Keeper) {
-  return [keeper.gbls.sdb, keeper.prms.sdb, keeper.pris.sdb].map((table) =>
+  return [keeper.gbls.sdb, keeper.prms.sdb, keeper.pris.sdb, keeper.rroots.sdb].map((table) =>
     Array.from(table.getRange(), ({ key, value }) => [t(key), Array.from(value)])
   );
 }
@@ -24,11 +25,15 @@ function populate(manager: Manager): string[] {
     const [verfers] = manager.incept({ icount: 2, ncount: 2, transferable: true, temp: true });
     pubs.push(...verfers.map((verfer) => verfer.qb64));
   }
+  if (manager.aeid) manager.putRegistryRoot(first.aeid, registry, new Salter({ qb64: salt }));
   return pubs;
 }
 
 /** Verify usable private keys, rather than accepting decrypted-row presence alone. */
 function verifySigning(manager: Manager, pubs: string[]) {
+  if (manager.ks.rroots.get([first.aeid, registry])) {
+    assertEquals(manager.getRegistryRoot(first.aeid, registry)!.qb64, salt);
+  }
   const message = b("AEID migration signing proof");
   const signatures = manager.sign(message, pubs, true);
   assertEquals(signatures.length, pubs.length);
@@ -184,6 +189,11 @@ Deno.test("AEID migration - readonly keeper refuses changes without disturbing s
         const reader = new Manager({ ks: keeper, seed: first.seed });
         for (const [aeid, seed] of [[second.aeid, second.seed], ["", ""]]) {
           assertThrows(() => reader.updateAeid(aeid, seed), DatabaseOperationError, "read-only");
+          assertThrows(
+            () => reader.putRegistryRoot(first.aeid, registry, new Salter({ qb64: salt })),
+            DatabaseOperationError,
+            "read-only",
+          );
           assertEquals(snapshot(keeper), before);
           assertEquals(reader.seed, first.seed);
           assertEquals(reader.salt, salt);
@@ -230,8 +240,26 @@ Deno.test("AEID migration - stale manager cannot replace another manager's commi
       current.updateAeid(second.aeid, second.seed);
       const before = snapshot(keeper);
       assertThrows(() => stale.updateAeid(first.aeid, first.seed), Error, "not associated with last aeid");
+      assertThrows(
+        () =>
+          stale.putRegistryRoot(
+            first.aeid,
+            new Diger({ code: "E", raw: Diger.digest(b("new registry"), "E") }).qb64,
+            new Salter({ code: "0A", raw: crypto.getRandomValues(new Uint8Array(16)) }),
+          ),
+        Error,
+        "encrypted unlocked Keeper",
+      );
+      assertThrows(() => stale.getRegistryRoot(first.aeid, registry), Error, "encrypted unlocked Keeper");
+      current.updateAeid(second.aeid, second.seed);
+      assertEquals(snapshot(keeper), before, "same AEID retains root ciphertext");
+      assertThrows(() => current.updateAeid("", ""), DatabaseOperationError, "Cannot disable encryption");
       assertEquals(snapshot(keeper), before);
       verifySigning(current, pubs);
+      yield* keeper.close();
+      yield* keeper.reopen();
+      verifySigning(new Manager({ ks: keeper, seed: second.seed }), pubs);
+      assertThrows(() => new Manager({ ks: keeper, seed: first.seed }));
     } finally {
       yield* keeper.close(true);
     }
