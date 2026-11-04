@@ -13,10 +13,12 @@ import falcon
 from hio.base import doing
 from hio.core import http
 from keri import Kinds, Vrsn_2_0
-from keri.acdc import acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
+from keri.acdc import RegBaser, Regery, Registrar, acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
+from keri.acdc.chaining import Verdicts
+from keri.core.kraming import Pruner
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
-from keri.core import Counter, Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
+from keri.core import Codens, Counter, Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, serializeParsedSubstream
 
@@ -40,20 +42,24 @@ class IpexPeer:
         self.graph_case = graph_case
         self.graph = graph_disclosures(hby, self.hab, graph_case)
         self.recorder = Recorder()
+        self.rgy = Regery(hby, name="ipex-peer", baser=RegBaser(
+            name="ipex-peer", headDirPath=hby.db.headDirPath, temp=hby.db.temp))
         self.exc = Exchanger(hby=hby, handlers=[])
-        self.verification = loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder)
+        loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder, rgy=self.rgy)
         self.kvy = Kevery(db=hby.db, lax=False, local=False, cf=cf,
-                          enableKram=True, exc=self.exc)
-        self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc, framed=False)
+                          enableKram=True, exc=self.exc, rvy=self.hab.rvy)
+        self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc,
+                             rgy=self.rgy, rvy=self.hab.rvy, framed=False)
         self.received = []
         self.running = True
-        self.wallet = None
+        self.witnessed = False
         app = falcon.App()
         app.add_route("/", HttpEnd(rxbs=self.parser.ims))
         app.add_route("/_fixture", PeerControl(self))
         self.server = createHttpServer("127.0.0.1", port, app)
         self.doist = doing.Doist(tock=.005, real=True,
-                                doers=[http.ServerDoer(server=self.server)])
+                                doers=[http.ServerDoer(server=self.server),
+                                       Pruner(self.kvy.kramer, tock=.005)])
 
     def info(self):
         return dict(pre=self.hab.pre, url=f"http://127.0.0.1:{self.server.servant.ha[1]}/",
@@ -66,6 +72,10 @@ class IpexPeer:
         while self.running:
             self.doist.recur()
             self.receive()
+            self.kvy.processEscrows()
+            self.rgy.processEscrows()
+            self.hab.rvy.processEscrowReply()
+            self.exc.processEscrow()
             time.sleep(.005)
 
     def receive(self):
@@ -73,17 +83,12 @@ class IpexPeer:
         if not self.parser.ims:
             return
         arrived = bytearray(self.parser.ims)
-        if self.wallet is not None:
-            self.parser.ims.clear()
-            self.native.ingest(arrived)
-        else:
-            self.parser.parse()
+        self.parser.parse()
         decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
         self.received.extend(frame.serder.said for frame in decoded or ())
 
     def post(self, wire):
-        if self.wallet is not None:
-            wire = Counter.makeGVC(version=Vrsn_2_0) + bytes(wire)
+        wire = Counter.makeGVC(version=Vrsn_2_0) + bytes(wire)
         req = Request(self.remote["url"], data=bytes(wire), method="POST",
                       headers={"Content-Type": "application/cesr"})
         with urlopen(req, timeout=10) as rep:
@@ -93,7 +98,7 @@ class IpexPeer:
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
         for issuer in self.graph.issuers:
-            if self.wallet is not None:
+            if self.witnessed:
                 self.post(b"".join(self.hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)))
                 continue
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
@@ -134,15 +139,15 @@ class IpexPeer:
         self.post(serializeMessage(self.hby, said))
 
     def message(self, verb, prior, invalid):
-        if self.wallet is not None and not invalid:
-            return self.wallet_message(verb, prior)
+        if self.witnessed and not invalid:
+            return self.witnessed_message(verb, prior)
         recipient = self.remote["pre"]
         if verb == "apply":
-            return apply(self.hab, recipient, "status only", modifiers=dict(dp=self.plan))
+            return apply(self.hab, recipient, "status only", modifiers=dict(dp=[self.plan]))
         if verb == "offer":
             return offer(self.hab, "status only", origin=None if self.graph_case else self.disclosed()[0],
                          artifacts=None if self.graph_case else [], apply=prior, recp=recipient,
-                         modifiers=dict(dp=self.plan) if prior is None else None)
+                         modifiers=dict(dp=[self.plan] if prior is None else [[]]))
         if verb == "agree":
             return agree(self.hab, "agreed", prior)
         if verb == "spurn":
@@ -151,7 +156,7 @@ class IpexPeer:
             return admit(self.hab, "accepted", prior)
         if verb == "grant":
             nodes = self.disclosed(invalid)
-            if self.graph_case in ("fixed-path", "optional-path"):
+            if self.graph_case in ("required-edge", "optional-edge"):
                 assert [schema for schema, _, _ in self.plan] == [node.schema["$id"] for node in nodes]
                 assert [node.raw for node in nodes] == [node.raw for node in self.graph.nodes], "prefix selection preserves exact credential bytes"
             proofs = [node if invalid and node.said == self.graph.unsigned else
@@ -159,15 +164,15 @@ class IpexPeer:
                       for i, node in enumerate(nodes)]
             return grant(self.hab, recipient, "status only", origin=proofs[0],
                          artifacts=proofs[1:], agree=prior,
-                         modifiers=dict(dp=self.plan) if prior is None else None)
+                         modifiers=dict(dp=[self.plan] if prior is None else [[]]))
         raise ValueError(f"Unknown IPEX verb: {verb}")
 
     def send(self, verb, prior=None, invalid=False):
         previous = self.hby.db.exns.get(keys=(prior,)) if prior else None
         assert prior is None or previous is not None, f"Missing prior exchange: {prior}"
         body, attachments = self.message(verb, previous, invalid)
-        if self.wallet is not None and not invalid:
-            return self.wallet_deliver(body, bytes(body.raw + attachments), prior if verb == "admit" else None)
+        if self.witnessed and not invalid:
+            return self.witnessed_deliver(body, bytes(body.raw + attachments))
         return self.deliver(body, bytes(body.raw + attachments), not invalid)
 
     def receipt(self):
@@ -181,7 +186,7 @@ class IpexPeer:
             owner.msgs.append(dict(pre=self.hab.pre, sn=self.hab.kever.sn))
             while not owner.cues:
                 if time.monotonic() >= deadline:
-                    raise TimeoutError("wallet source receipts did not complete")
+                    raise TimeoutError("witnessed source receipts did not complete")
                 clock.recur()
                 time.sleep(.005)
             indices = sorted(sig.index for sig in self.hby.db.wigs.get(keys=(self.hab.pre, self.hab.kever.serder.said)))
@@ -189,12 +194,8 @@ class IpexPeer:
         finally:
             clock.exit()
 
-    def enable_wallet(self, witnesses):
-        """Compose native wallet owners and real three-witness/quorum-two issuance for the positive application case."""
-        from keri.acdc import Regery, Registrar
-        from keri.acdc.sectioning import SectionBaser
-        from keri.app.credentialing import Wallet, WalletBaser
-        from keri.cli.common.acdc_v2_ipex import Peer
+    def enable_witnessed_evidence(self, witnesses):
+        """Anchor real registry issuance under three witnesses with quorum two."""
         from keri.app.oobiing import Oobiery
         from keri.help import helping
         from keri.recording import OobiRecord
@@ -208,23 +209,15 @@ class IpexPeer:
                 self.hby.db.oobis.pin(keys=(url,), val=OobiRecord(date=helping.nowIso8601()))
             while not all((row := self.hby.db.roobi.get(keys=(url,))) is not None and row.state == "resolved" for url in urls):
                 if time.monotonic() >= deadline:
-                    raise TimeoutError("wallet witness OOBIs unresolved")
+                    raise TimeoutError("witness OOBIs unresolved")
                 clock.recur()
                 time.sleep(.005)
         finally:
             clock.exit()
         self.hab.rotate(adds=[node["pre"] for node in witnesses], toad=2, version=Vrsn_2_0, gvrsn=Vrsn_2_0)
         self.receipt()
-        from keri.acdc import RegBaser
-        self.rgy = Regery(self.hby, name="wallet-peer",
-                          baser=RegBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
-        self.wallet = Wallet(self.hby, self.rgy, db=WalletBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath))
-        self.sections = SectionBaser(name="wallet-peer", headDirPath=self.hby.db.headDirPath)
-        self.native = Peer(self.hby, self.rgy, self.wallet, self.sections)
-        self.native.parser.ims = self.parser.ims  # Keep HttpEnd's existing borrowed intake buffer.
-        self.doist.extend([self.native.evidence])
-        self.exc, self.kvy, self.parser, self.verification = self.native.exc, self.native.evidence.kvy, self.native.parser, self.wallet.verification
-        registry = Registrar(self.rgy).makeRegistry(name="wallet", prefix=self.hab.pre)
+        self.witnessed = True
+        registry = Registrar(self.rgy).makeRegistry(name="witnessed", prefix=self.hab.pre)
         rip = self.rgy.store.event(registry.regk)
         self.hab.interact(data=[dict(i=registry.regk, s="0", d=rip.said)], gvrsn=Vrsn_2_0)
         self.receipt()
@@ -233,77 +226,87 @@ class IpexPeer:
         schema = copy.deepcopy(old.sad["s"])
         schema["$id"] = ""
         schema["properties"]["rd"] = dict(type="string")
-        from keri.acdc import acdcmap
         full = acdcmap(self.hab.pre, schema=schema, regid=registry.regk, uuid=old.sad["u"], attribute=old.sad["a"])
         opening, update = registry.blind(full, "issued")
         self.hab.interact(data=[dict(i=registry.regk, s="1", d=update.said)], gvrsn=Vrsn_2_0)
         self.receipt()
         assert registry.anchorMsg(update.said)
-        self.wallet.recordIssued(full, update.said, blinder=opening)
-        self.wallet.retainPublicOpening(update, opening)
+        self.rgy.store.putOpening(update.said, opening)
         self.issued_opening = opening
         self.graph.full_nodes, self.graph.nodes = [full], [partial_disclosure(full, ["a/status/"])]
         return self.info()
 
-    def wallet_message(self, verb, prior, held=None):
-        """Select through actual inventory; retained presentations never merge another view."""
-        from keri.app.credential_disclosing import registryProof
+    def current_grant(self, said):
+        """Reverify the exact retained view and require issued state for its single registry node."""
+        body, nests, verdict, records = self.exc.reverifyGrant(said)
+        assert verdict is not None and verdict.verdict == Verdicts.valid
+        assert len(nests) == 1
+        node = nests[0].serder
+        observation = records.get(node.said)
+        assert node.regid and observation is not None and observation.state == "issued"
+        return body, nests
+
+    def witnessed_message(self, verb, prior, held=None):
+        """Use native proof objects; onward presentation selects only a locally admitted exact view."""
         if verb == "apply":
-            return apply(self.hab, self.remote["pre"], "status", modifiers=dict(dp=self.plan), ax=[True])
+            return apply(self.hab, self.remote["pre"], "status", modifiers=dict(dp=[self.plan]), ax=[True])
         if verb in ("offer", "grant"):
+            artifacts = []
             if held is None:
-                full = self.wallet.issuedCredential(self.graph.full_nodes[0].said)
-                node = partial_disclosure(full, self.plan[0][2])
+                node = partial_disclosure(self.graph.full_nodes[0], self.plan[0][2])
+                origin = messagize(node, bonds=[self.issued_opening.data], gvrsn=Vrsn_2_0)
             else:
-                view = self.wallet.heldCredential(held)
-                node = view["credential"]
+                selected, nests = self.current_grant(held)
+                response = self.hby.db.erpy.get(keys=(held,))
+                consent = self.hby.db.exns.get(keys=(response.qb64,)) if response else None
+                assert consent is not None and consent.said == response.qb64 and consent.route == "/ipex/admit"
+                assert consent.pre == self.hab.pre and consent.ked["ri"] == selected.pre
+                assert consent.ked["p"] == held and selected.ked["ri"] == self.hab.pre
+                assert consent.ked["x"] == (selected.said if selected.ilk == "xip" else selected.ked["x"])
+                node = nests[0].serder
+                origin = serializeParsedSubstream(nests[0])
+                artifacts = [serializeParsedSubstream(nest) for nest in nests[1:]]
             if verb == "offer":
                 return offer(self.hab, "status", origin=node, apply=prior, recp=self.remote["pre"], ax=[True],
-                             modifiers=dict(dp=self.plan) if prior is None else None)
-            if held is None:
-                origin = registryProof(self.hby, self.rgy, node, node.regid, retained=[self.issued_opening])
-                artifacts = []
-            else:
-                origin, artifacts = view["proof"], view["artifacts"]
-            assert self.verification.evaluateSelected(origin, artifacts) is True
+                             modifiers=dict(dp=[self.plan] if prior is None else [[]]))
             return grant(self.hab, self.remote["pre"], "status", origin=origin, artifacts=artifacts, agree=prior,
-                         ax=[True], modifiers=dict(dp=self.plan) if prior is None else None)
+                         ax=[True], modifiers=dict(dp=[self.plan] if prior is None else [[]]))
         if verb == "agree":
             return agree(self.hab, "agree", prior)
         if verb == "admit":
-            assert self.verification.evaluateGrant(prior.said) is True
+            self.current_grant(prior.said)
             return admit(self.hab, "admit", prior)
         return spurn(self.hab, "spurn", prior)
 
-    def wallet_deliver(self, body, wire, admission=None):
-        """Finish real source receipts, ordinary intake and explicit admission before public delivery."""
+    def witnessed_deliver(self, body, wire):
+        """Receipt real source anchors, then accept the same bytes locally and over HTTP."""
         if body.route in ("/ipex/agree", "/ipex/grant", "/ipex/admit"):
             self.receipt()
         support = b"".join(self.hby.db.clonePreIter(pre=self.hab.pre, gvrsn=Vrsn_2_0))
         for reg in self.rgy.regs.values():
-            support += bytes(self.rgy.store.cloneTel(reg.regk))
-        self.native.ingest(support + wire)
+            for raw in self.rgy.store.cloneTelIter(reg.regk):
+                # Public TEL bodies carry no implicit opening; frame each for stream intake.
+                support += raw + Counter.enclose(qb64=b"", code=Codens.AttachmentGroup, version=Vrsn_2_0)
+        self.parser.parse(ims=bytearray(support + wire))
         assert self.exc.complete(body.said)
         if body.route == "/ipex/grant":
-            assert self.verification.evaluateGrant(body.said) is True
-        if admission:
-            self.wallet.recordAdmission(admission, body.said, consent=True)
+            self.current_grant(body.said)
         self.post(support + wire)
         return body.said
 
     def present(self, grant):
-        body, attachments = self.wallet_message("grant", None, held=grant)
-        return self.wallet_deliver(body, bytes(body.raw + attachments))
+        body, attachments = self.witnessed_message("grant", None, held=grant)
+        return self.witnessed_deliver(body, bytes(body.raw + attachments))
 
-    def reopen_wallet(self):
-        """Reopen the same independent public and wallet environments without replacing retained views."""
-        for db in (self.wallet.db, self.rgy.baser, self.hby.ks, self.hby.db):
+    def reopen_evidence(self):
+        """Reopen existing native evidence stores; no view is rebuilt from fuller held data."""
+        for db in (self.rgy.baser, self.hby.ks, self.hby.db):
             db.close()
             db.reopen(reuse=True)
 
     def deliver(self, body, wire, accepted):
         """Local verification and public delivery consume the same signed bytes."""
-        Parser(version=Vrsn_2_0).parse(ims=bytearray(wire), kvy=self.kvy, exc=self.exc)
+        self.parser.parse(ims=bytearray(wire))
         assert (self.hby.db.exns.get(keys=(body.said,)) is not None) == accepted, body.route
         self.post(wire)
         return body.said
@@ -317,7 +320,7 @@ class IpexPeer:
                                                d=self.hab.kever.serder.said),
                           nested=True, gvrsn=Vrsn_2_0)
         body, attachments = grant(self.hab, self.remote["pre"], "anchored before rotation",
-                                  origin=child, ax=[True], modifiers=dict(dp=self.plan))
+                                  origin=child, ax=[True], modifiers=dict(dp=[self.plan]))
         self.hab.rotate(version=Vrsn_2_0, gvrsn=Vrsn_2_0)
         for sn in range(first_sn, self.hab.kever.sn + 1):
             self.post(self.hab.msgOwnEvent(sn=sn, framed=True, gvrsn=Vrsn_2_0))
@@ -337,10 +340,10 @@ class IpexPeer:
             attributes["o"] = [nodes[0].said]
         body = exchange(sender=owner.pre,
                         receiver=self.hab.pre if kind == "recipient" else previous.pre,
-                        xid=Diger(ser=b"other conversation").qb64 if kind == "exchange-id" else previous.sad["x"],
+                        xid=Diger(ser=b"other conversation").qb64 if kind == "exchange-id" else (previous.said if previous.ilk == "xip" else previous.sad["x"]),
                         prior=defect["said"] if kind == "prior" else prior,
                         route=f"/ipex/{verb}", attributes=attributes,
-                        modifiers=dict(dp=[]) if verb == "grant" else {},
+                        modifiers=dict(dp=[[]]) if verb == "grant" else {},
                         pvrsn=Vrsn_2_0, gvrsn=Vrsn_2_0, kind=Kinds.json)
         wire = self.signed(body, owner=owner, nests=[self.signed(node) for node in nodes] or None)
         return dict(said=self.deliver(body, bytes(wire), False), sender=owner.pre)
@@ -358,7 +361,7 @@ class IpexPeer:
             escrowed=db.epse.get(keys=(inspect,)) is not None,
             nests=len(db.enst.get(keys=(inspect,))))
         return dict(messages=[body.sad for body in messages], received=self.received,
-                    known=list(self.kvy.kevers), **({} if self.wallet else dict(notifications=len(self.recorder.items))), inspected=inspected,
+                    known=list(self.kvy.kevers), **({} if self.witnessed else dict(notifications=len(self.recorder.items))), inspected=inspected,
                     nodes=[dict(said=nest.serder.said, attributes=nest.serder.sad["a"],
                                 raw=nest.serder.raw.decode(),
                                 proof=serializeParsedSubstream(nest).decode(),
@@ -379,12 +382,12 @@ class PeerControl:
             if action == "connect":
                 self.peer.connect(**command)
                 rep.media = dict(connected=True)
-            elif action == "wallet":
-                rep.media = self.peer.enable_wallet(**command)
+            elif action == "witnessed_evidence":
+                rep.media = self.peer.enable_witnessed_evidence(**command)
             elif action == "present":
                 rep.media = self.peer.present(**command)
-            elif action == "reopen_wallet":
-                self.peer.reopen_wallet()
+            elif action == "reopen_evidence":
+                self.peer.reopen_evidence()
                 rep.media = dict(reopened=True)
             elif action == "invalid_reply":
                 rep.media = self.peer.invalid_reply(**command)
@@ -421,7 +424,4 @@ def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None):
             finally:
                 peer.doist.exit()
                 peer.server.close()
-                if peer.wallet is not None:
-                    peer.wallet.close()
-                    peer.rgy.close()
-                    peer.sections.close()
+                peer.rgy.close()

@@ -1,15 +1,15 @@
 # Graduated disclosure and KRAM interop acceptance
 
-The selected core is `8f9734326314287a3dbd548b3e0cf4b8a6571add`; application pins
+The selected core is `732adb4d9f390a12ff1f6ae782ce1e70e8578ee3`; application pins
 are maintained in [`keripy-reference.json`](../../../scripts/ci/keripy-reference.json).
 [Authenticated IPEX intake](../../../packages/keri/src/app/ipex/ipex-v2.ts)
-retains the exact negotiated view independently of its
-graph-policy verdict. Known false and unresolved graphs therefore remain inspectable;
-consuming [wallet](../../../packages/wallet/src/wallet.ts) and
-[verifier](../../../packages/verifier/src/acdc-v2.ts) actions apply the shared evaluator explicitly. Structural,
-authentication, own-schema and negotiated-disclosure failures retain their refusal
-or missing-proof behavior. Historical claims below about semantic Grant refusal
-describe the earlier policy, not the current retention boundary.
+accepts supported graphs only after native authentication and chaining succeed.
+False graphs refuse; unresolved evidence keeps its normal pending/refusal outcome.
+The exact accepted negotiated view stays distinct from fuller cached disclosures.
+Consuming [wallet](../../../packages/wallet/src/wallet.ts) and
+[verifier](../../../packages/verifier/src/acdc-v2.ts) actions apply their issued-state
+and consent policies separately. Structural, authentication, own-schema and
+negotiated-disclosure failures retain their refusal or missing-proof behavior.
 
 The [current qualification evidence](REFERENCE_ENVIRONMENTS.md#current-qualification-evidence)
 records the completed Deno 2.9.8 full CI, installed-family and eight application-path
@@ -112,6 +112,23 @@ cases. Conversation-link/spurn controls complete the supported pairwise family
 matrix; final-source full qualification remains mandatory. Keep single-controller
 HTTP evidence distinct from witnessed/multisig mailbox and registry-cutoff evidence.
 
+## Native Python disclosure peer
+
+The Python HTTP fixture composes Regery, native IPEX handlers, shared Kevery and
+Revery, Parser, ordinary escrows and one Pruner. It has no Python wallet or
+consent database. Witnessed issuance uses three real witnesses with quorum two,
+accepted anchored RIP/BUP events and explicit accepted-only opening retention.
+An explicit local Admit is the consent operation. Onward presentation requires
+the exact accepted Admit/Grant link, a fresh native Grant recheck and issued state
+for the selected registry-backed node; it reuses the exact retained child bytes
+after reopen rather than another cached disclosure. TypeScript still exercises
+its actual Wallet's consent and retained-view operations.
+
+The candidate profile pins the published native Python core in the reference
+manifest. The maintained five-file disclosure owner selects that profile through
+the existing isolated setup. Its source-specific results do not establish that
+all other candidate suites pass.
+
 ## Transport, KRAM and topology
 
 Use actual HTTP/TCP/mailbox ingress and signed IPEX messages. Do not rewrite
@@ -213,13 +230,14 @@ actual stored representation, not a separately retained producer object.
 
 ## Current-source qualification boundary
 
-The maintained Python `ipex_peer.py` wallet scenario still calls donor-only
-`NativeHaberyRuntime`, wallet and verification APIs. Its replacement against the
-current Python owner is required by R15 before claiming bilateral qualification.
-Source-pinned Python wire vectors and real TypeScript wallet/multisig/verifier
-checks are separate scoped evidence. Preserve actor/witness topology and accepted
-raw/proof observations when replacing that fixture; do not restore the private
-EGF verdict adapter or silently skip the scenario.
+The maintained Python `ipex_peer.py` uses the native owners described above;
+its witnessed scenario requires accepted registry proofs, explicit local Admit
+and current rechecking of the exact retained Grant. TypeScript uses its actual
+Wallet. Bilateral fixture qualification remains specific to the selected source
+and five-file owner. Source-pinned wire vectors, mailbox scenarios and final
+release qualification retain their separate scope. Preserve actor/witness topology
+and accepted raw/proof observations; do not restore private verdict adapters or
+silently skip a scenario.
 
 ## Qualified baseline and regression floor
 

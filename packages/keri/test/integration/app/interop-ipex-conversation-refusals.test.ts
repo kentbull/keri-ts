@@ -107,7 +107,9 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       for (const peer of [issuer, holder]) {
         const snapshot = await peer.snapshot(grant);
         assertEquals(snapshot.messages.length, 2);
-        assertEquals(snapshot.messages.find((message) => message.d === grant)!.p, "");
+        const opener = snapshot.messages.find((message) => message.d === grant)!;
+        assertEquals(opener.t, "xip");
+        assertEquals(Object.hasOwn(opener, "p"), false);
         assertEquals(snapshot.messages.find((message) => message.d === spurn)!.p, grant);
         assertEquals(snapshot.messages.some((message) => message.r === "/ipex/admit"), false);
         assertEquals(snapshot.nodes.length, 2, "the refused disclosure remains conversation evidence");

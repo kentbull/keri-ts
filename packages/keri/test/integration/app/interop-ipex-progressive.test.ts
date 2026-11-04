@@ -84,10 +84,11 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
           const lineage = [apply, offer, agree, grant, admit].map((said) =>
             snapshot.messages.find((message) => message.d === said)!
           );
-          assertEquals(lineage[0].p, "");
+          assertEquals(lineage[0].t, "xip");
+          assertEquals(Object.hasOwn(lineage[0], "p"), false);
           for (let i = 1; i < lineage.length; i++) {
             assertEquals(lineage[i].p, lineage[i - 1].d);
-            assertEquals(lineage[i].x, lineage[0].x);
+            assertEquals(lineage[i].x, lineage[0].d);
             assertEquals(lineage[i].i, lineage[i - 1].ri);
             assertEquals(lineage[i].ri, lineage[i - 1].i);
           }

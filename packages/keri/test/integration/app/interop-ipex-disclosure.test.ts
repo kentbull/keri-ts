@@ -1,5 +1,5 @@
 /** Independent HTTP peers exercise IPEX lineage and status-only graduated disclosure. */
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import type { IpexPeer, IpexPeers, Verb } from "./ipex/peers.ts";
 import { observed, withIpexPeers } from "./ipex/peers.ts";
 
@@ -59,11 +59,13 @@ async function assertConversation(
       }
       return message;
     });
-    assertEquals(lineage[0].p, "");
+    assertEquals(lineage[0].t, "xip");
+    assertEquals(Object.hasOwn(lineage[0], "p"), false, "an opener has no prior");
+    assertEquals(Object.hasOwn(lineage[0], "x"), false, "an opener uses its own SAID as transaction identity");
     for (let i = 1; i < lineage.length; i++) {
       const prior = lineage[i - 1], reply = lineage[i];
       assertEquals(reply.p, prior.d);
-      assertEquals(reply.x, prior.x);
+      assertEquals(reply.x, prior.t === "xip" ? prior.d : prior.x);
       assertEquals(reply.i, prior.ri);
       assertEquals(reply.ri, prior.i);
     }
@@ -166,13 +168,15 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
 }
 
 for (const implementation of ["TypeScript", "KERIpy"] as const) {
-  Deno.test(`IPEX wallet ${implementation} issuer: negotiated source anchors, consent and exact presentation after reopen with three witnesses`, () =>
-    withIpexPeers({ issuer: implementation, wallet: true }, async (peers) => {
+  Deno.test(`IPEX witnessed ${implementation} issuer: negotiated source anchors, consent and exact presentation after reopen with three witnesses`, () =>
+    withIpexPeers({ issuer: implementation, witnessed: true }, async (peers) => {
       const { issuer, holder } = peers;
       const apply = await exchange(holder, issuer, "apply");
       const offer = await exchange(issuer, holder, "offer", apply);
       const agree = await exchange(holder, issuer, "agree", offer);
       const grant = await exchange(issuer, holder, "grant", agree);
+      // Receipt is not consent: onward use must wait for the holder's explicit Admit.
+      await assertRejects(() => holder.present(grant));
       await exchange(holder, issuer, "admit", grant);
       const before = (await holder.snapshot(grant)).nodes.map(node => node.raw);
       const retainedProofs = await Promise.all(
@@ -180,8 +184,8 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       );
       assertEquals(before.length, 1);
       assertEquals(before[0].includes("hidden-value"), false);
-      await issuer.reopenWallet();
-      await holder.reopenWallet();
+      await issuer.reopenEvidence();
+      await holder.reopenEvidence();
       const presentation = await holder.present(grant);
       await observed(
         "issuer accepted exact retained presentation",
@@ -190,8 +194,14 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       for (const [index, peer] of [issuer, holder].entries()) {
         assertEquals((await peer.snapshot(grant)).nodes.map(node => node.raw), before);
         assertEquals((await peer.snapshot(grant)).nodes.map(node => node.proof), retainedProofs[index]);
-        assertEquals((await peer.snapshot(presentation)).nodes.map(node => node.raw), before);
-        assertEquals((await peer.snapshot(presentation)).inspected?.accepted, true);
+        const forwarded = await peer.snapshot(presentation);
+        assertEquals(forwarded.nodes.map(node => node.raw), before);
+        assertEquals(
+          forwarded.nodes.map(node => node.proof),
+          retainedProofs[index],
+          "onward presentation keeps the exact retained proof",
+        );
+        assertEquals(forwarded.inspected?.accepted, true);
       }
     }));
 }

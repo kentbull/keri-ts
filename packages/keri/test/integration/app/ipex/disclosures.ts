@@ -301,7 +301,16 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
           authority: { $ref: "#/$defs/target" },
           opaque: { oneOf: [scalar, { type: "object", properties: { n: scalar } }] },
         },
-        $defs: { target: scalar },
+        $defs: {
+          target: {
+            oneOf: [scalar, {
+              type: "object",
+              required: ["n"],
+              properties: { n: scalar },
+              additionalProperties: false,
+            }],
+          },
+        },
       },
     });
     return { oneOf: [scalar, resource.sed as MapperMap] };
@@ -335,7 +344,7 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
     leaf.o = graphCase === "unknown-leaf" && invalid ? "UNKNOWN" : "I2I";
     if (graphCase === "simple-edge") {
       return disclosure(hab.pre, {
-        edge: { d: "", authority: far.partial.said!, ...(invalid ? { opaque: far.partial.said! } : {}) },
+        edge: { d: "", authority: invalid ? far.partial.said! : { n: far.partial.said! } },
         edgeSchema: simpleSchema(),
       });
     }
@@ -345,11 +354,10 @@ function edgeRefusalGraph(hby: Habery, hab: Hab, graphCase: EdgeRefusalCase): Di
   if (graphCase === "simple-edge") {
     for (const node of [good.full, good.partial, bad.full, bad.partial, far.full, far.partial]) {
       assertEquals(node.schema, good.full.schema, "both controls satisfy the negotiated repeated-schema plan");
-      assertEquals(validateSchema(node, hby.db), { kind: "valid" }, "opacity refusal is not own-schema failure");
+      assertEquals(validateSchema(node, hby.db), { kind: "valid" }, "string-edge refusal is not own-schema failure");
     }
-    for (const node of [good.partial, bad.partial]) {
-      assertEquals((node.sad!.e as MapperMap).authority, far.partial.said);
-    }
+    assertEquals((good.partial.sad!.e as MapperMap).authority, { n: far.partial.said });
+    assertEquals((bad.partial.sad!.e as MapperMap).authority, far.partial.said);
   }
   return {
     fullNodes: [good.full, far.full],

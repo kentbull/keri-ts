@@ -53,7 +53,13 @@ compatibility shims. Keep actual-peer lifecycle qualification separate from boot
 
 The native-v2 candidate is a separate manifest profile with the six source pins and
 existing R/W/spec references. `interop-native-registry` owns its existing reciprocal
-proof/reopen file; `interop-ipex-disclosure` owns the five candidate flat-plan files.
+proof/reopen file; `interop-ipex-disclosure` owns the five native disclosure files.
+Its Python peer composes normal Regery/Exchanger/Kevery/Parser/Revery owners and
+one Pruner. Explicit local Admit supplies consent; current recheck plus the exact
+accepted Admit/Grant pair gates reuse of retained child bytes after reopen.
+Do not recreate the removed Python Wallet/SectionBaser/CLI Peer facades. The TS
+side retains its actual Wallet assertions. Plans use the one-DAG wire wrapper;
+current-source local proof does not qualify another manifest-selected commit.
 ESSR storage stays main-selected. Candidate root/interpreter configuration fails closed and
 cannot be replaced by `KERIPY_MAIN_ROOT`. Reuse the setup action with its concrete
 profile input; retain the explicit main/1.2/1.3 frozen matrix. Native proof children
