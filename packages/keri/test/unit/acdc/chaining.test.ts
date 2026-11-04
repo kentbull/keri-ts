@@ -1,5 +1,5 @@
 /** Shared chaining preserves source reductions while callers own state policy. */
-import { type MapperMap, Vrsn_2_0 } from "cesr-ts";
+import { type MapperMap, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { ensure, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { type ChainVerdict, evaluateChain } from "../../../src/acdc/chaining.ts";
@@ -8,6 +8,58 @@ import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { walkIpexGraph } from "../../../src/app/ipex/ipex-graph.ts";
 import { authenticatedNodeVerdict, issuedNodeVerdict } from "../../../src/app/ipex/ipex-node-authentication.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
+
+Deno.test("DI2I composes fixed-inception authority with pins, far-node truth and OR alternatives", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const authority = hby.makeHab("authority");
+    const delegate = hby.makeHab("delegate", undefined, { delpre: authority.pre });
+    const far = acdcmap(authority.pre, { attribute: { d: "", i: authority.pre } });
+    const untargeted = acdcmap(authority.pre, { attribute: { d: "", role: "untargeted" } });
+    const badPin = new Schemer({ sed: { $id: "", type: "object", properties: { i: { const: "wrong" } } } });
+    /** Build real credential views; only node authentication is caller-owned input to this evaluator. */
+    const evaluate = (
+      issuer: string,
+      target: SerderACDC,
+      options: { pin?: MapperMap; alternative?: boolean; farValid?: boolean; operator?: string[] } = {},
+    ) => {
+      const root = acdcmap(issuer, {
+        attribute: { d: "", role: "near" },
+        edge: {
+          d: "",
+          o: options.alternative ? "OR" : "AND",
+          link: { n: target.said, o: options.operator ?? "DI2I", ...(options.pin ? { s: options.pin } : {}) },
+          ...(options.alternative ? { other: { n: target.said, o: "NI2I" } } : {}),
+        },
+      });
+      const graph = {
+        nodes: new Map([root, target].map(body => [body.said!, { body }])),
+        order: [root.said!, target.said!],
+      };
+      return evaluateChain(
+        graph,
+        new Map<string, ChainVerdict>([
+          [root.said!, { kind: "valid" }],
+          [target.said!, { kind: options.farValid === false ? "invalid" : "valid" }],
+        ]),
+        hby.db,
+      );
+    };
+    assertEquals(evaluate(authority.pre, far)?.kind, "valid", "identity is the I2I arm of DI2I");
+    assertEquals(evaluate(delegate.pre, untargeted)?.kind, "invalid");
+    const pending = evaluate(delegate.pre, far);
+    assert(pending?.kind === "unknown" && pending.retryable);
+    assertEquals(evaluate(delegate.pre, far, { pin: badPin.sed as MapperMap })?.kind, "invalid");
+    assertEquals(evaluate(delegate.pre, far, { alternative: true })?.kind, "valid");
+    assertEquals(evaluate(delegate.pre, far, { farValid: false })?.kind, "invalid");
+    authority.interact({ data: [{ i: delegate.pre, s: "0", d: delegate.pre }] });
+    assertEquals(evaluate(delegate.pre, far)?.kind, "valid");
+    assertEquals(evaluate(delegate.pre, far, { operator: ["I2I", "DI2I"] })?.kind, "valid");
+    assertEquals(evaluate(delegate.pre, far, { operator: ["DI2I", "I2I"] })?.kind, "invalid");
+    assertEquals(evaluate(delegate.pre, far, { operator: ["DI2I", "NOT"] })?.kind, "unknown");
+  });
+});
 
 Deno.test("Shared chaining evaluates cross-links independently of BFS disclosure order", async () => {
   await run(function*() {

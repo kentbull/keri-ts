@@ -3,6 +3,7 @@ import { ParserError, Saider, type SerderACDC } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
 import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
+import { delegationRelation } from "./relating.ts";
 import { validateSchema } from "./scheming.ts";
 
 /** Borrow a complete reachable DAG of verified credential views, with its origin first, without projecting frames. */
@@ -166,11 +167,20 @@ export function evaluateChain(
       const operators = ops as string[];
       if (!operators.some((token) => suppressDefault.has(token))) operators.push(far.issuee !== null ? "I2I" : "NI2I");
       const delegate = operators.findLast((token) => delegative.has(token));
-      if (operators.includes("NOT") || delegate === "DI2I") {
+      if (operators.includes("NOT")) {
         own = unknown("Unimplemented unary Edge operator.");
       } else {
-        const matched = (!operators.includes("E1E") || Boolean(near.issuee && far.issuee && near.issuee === far.issuee))
+        let matched = (!operators.includes("E1E") || Boolean(near.issuee && far.issuee && near.issuee === far.issuee))
           && (delegate !== "I2I" || Boolean(far.issuee && near.issuer === far.issuee));
+        let pending: ChainVerdict | undefined;
+        if (matched && delegate === "DI2I") {
+          if (!far.issuee || !near.issuer) matched = false;
+          else if (near.issuer !== far.issuee) {
+            const relation = delegationRelation(db, near.issuer, far.issuee);
+            if (relation.kind === "refused") matched = false;
+            else if (relation.kind === "pending") pending = unknown(relation.reason, true);
+          }
+        }
         own = { kind: matched ? "valid" : "invalid" };
         if (matched) {
           for (let pin of resolved) {
@@ -183,6 +193,8 @@ export function evaluateChain(
             break;
           }
         }
+        // Pending delegation cannot replace a pin's decided refusal.
+        if (pending) own = reduce("AND", [own, pending]);
       }
     }
     // Do not short-circuit a far subtree: its shape cannot be outvoted by this leaf.

@@ -64,6 +64,13 @@ node, including the origin. Unsupported vocabulary remains unknown; applications
 require a valid root. Exact consented views and historical inventory remain
 separate from new-use decisions. Negotiated disclosure stays with IPEX.
 
+DI2I uses `acdc/relating.ts` for read-only, fixed-inception delegation checks at
+every hop. Read DND from accepted inception, not mutable current-state projection.
+Cached first-seen approval and uncached last-accepted KEL lookup preserve the
+84301a9f upstream distinction; protected-party source hints still require an exact
+dip seal. Missing approval is retryable and never bypasses pin/far-node reduction.
+KEL intake owns cache writes; legacy Verifier and wallet evidence export are separate.
+
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
 BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
 Missing management state stays pending with its candidate signatures. Every admission

@@ -102,7 +102,7 @@ Strong AND and OR absorb outcome-irrelevant invalid or unknown branches, while
 all branches are still inspected for malformed structure. Only a valid root is
 accepted; a dependent retryable unknown uses existing proof/schema escrow, and
 invalid or permanent-unknown roots refuse. I2I/NI2I and E1E compose using the last
-delegative operator; DI2I, NOT, unsupported m-ary operators and undereferenceable
+delegative operator; NOT, unsupported m-ary operators and undereferenceable
 compact Edge blocks are permanent unknowns. Every ancestor and leaf pin applies
 conjunctively. A satisfied OR can absorb unsupported semantics, never malformed
 input. Authenticated issued/revoked/custom registry states are not application-use
@@ -171,10 +171,32 @@ Unregistered nodes require issuer authentication but no registry state.
 
 Own schemas and malformed graph shape are global obligations. Strong AND/OR may
 reduce an unused false or unknown branch, while missing decisive dependencies
-remain retryable. Unsupported NOT/DI2I and m-ary operators remain unknown under
+remain retryable. Unsupported NOT and m-ary operators remain unknown under
 the selected Python profile. There is no separate private EGF interpreter.
 Applications require a valid root before signatures or new consent records;
 historical inventory and exact retained disclosure remain unchanged.
+
+DI2I follows merged KERIpy `84301a9ff4bbb644ce134f9649ad56b49aa130f2`
+(`acdc.relating` and `IpexHandler`): the near issuer may equal the far issuee or
+reach it through approved delegated inceptions at any depth. Each hop checks the
+delegator's accepted inception DND and the exact dip approval, independent of later
+delegate rotations. Missing KEL/anchor evidence is retryable; a wrong ancestry,
+untargeted far node or DND is false. Pending delegation is conjoined with pins and
+far-node truth, so it cannot conceal a decided failure.
+
+`acdc/relating.ts` reads accepted storage without repairing aess. Cached first-seen
+approvals remain usable after superseding; without a cached approval the search
+uses the last accepted KEL events. KEL intake owns cache repair. This retains
+upstream's history-dependent lookup distinction, not a superseding convergence
+guarantee. Unlike Python's verified-only cache assumption, TypeScript protected
+intake may retain an unverified attached source hint; its named event must contain
+the exact dip seal. An unrelated hint falls back to the last-accepted KEL search,
+so it cannot veto a later genuine approval. Missing first-seen event bodies
+remain storage failures. The companion specification PR
+[ToIP #213](https://github.com/trustoverip/kswg-acdc-specification/pull/213) is still
+open at this source review; implementation parity is not a claim of ratified text.
+The legacy TEL verifier is outside this v2 scope. Wallet ancestor-evidence export
+remains required before independent receiver qualification.
 
 Later updates do not rewrite accepted conversation history. New grants and default
 inspection re-evaluate current issuer history. Explicit `{ historical: true }`
