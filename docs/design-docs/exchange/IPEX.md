@@ -207,6 +207,18 @@ independent receiver intake and store reopen. Exporting retained superseded
 authorizers does not make a fresh receiver accept a delegation its current KEL
 policy refuses; superseding convergence remains outside this evidence assembly.
 
+The maintained HTTP disclosure fixture also covers reciprocal two-hop DI2I against
+candidate KERIpy `5fdef8d94a917802dfd23c03023f1ae9451420e2`: a signed graph naming
+a far issuee outside the approved ancestry is refused without escrow before the
+valid status-only graph completes apply/offer/agree/grant/admit. Introductions
+replay real root-first approval KELs, and the TypeScript peer advances the existing
+finite KEL/reply escrow owner after intake. No approval records are manufactured.
+These cases use v2 ACDC, IPEX and attachment genus; Python authors v2 KELs, while
+the TypeScript individual Hab API still authors its existing v1 KEL bodies.
+This is reciprocal credential qualification, not a new legacy-peer lane or proof
+of a v2 individual-inception authoring API. Full v2 individual KEL authoring remains
+required R13 follow-up work, including version propagation through rotation and reopen.
+
 Later updates do not rewrite accepted conversation history. New grants and default
 inspection re-evaluate current issuer history. Explicit `{ historical: true }`
 inspection selects the highest unique accepted BUP named by retained target BLIDs;

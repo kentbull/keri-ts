@@ -30,7 +30,11 @@ async function assertRejected(issuer: IpexPeer, holder: IpexPeer, rejected: stri
     const { inspected } = await peer.snapshot(rejected);
     assertExists(inspected);
     assertEquals(inspected.accepted, false, `${peer.implementation}: rejected exchange`);
-    assertEquals(inspected.escrowed, false, `${peer.implementation}: no pending exchange`);
+    assertEquals(
+      inspected.escrowed,
+      false,
+      `${peer.implementation}: no pending exchange: ${JSON.stringify(inspected)}`,
+    );
     assertEquals(inspected.nests, 0, `${peer.implementation}: no retained children`);
     if (peer === holder && peer.implementation === "TypeScript") {
       assertEquals(inspected.decision, "reject", "actual Reactor decision at HTTP ingress");
@@ -142,6 +146,7 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
   for (
     const [graph, defect] of [
       ["I2I", "authority issuee differs from root issuer"],
+      ["DI2I", "far issuee is outside the approved two-hop delegation ancestry"],
       ["NI2I", "authority proof missing"],
       ["E1E", "node issuees differ"],
       ["AND", "one required logical branch is false"],

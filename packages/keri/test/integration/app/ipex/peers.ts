@@ -165,6 +165,8 @@ class TypeScriptPeer implements IpexPeer {
           reason: result.decision && "reason" in result.decision ? result.decision.reason : undefined,
         });
       }
+      // Finite introduction must advance ordinary delegation dependencies, as the Python peer's loop does.
+      this.runtime.protocol.processKelReplyEscrowsOnce();
       return new Response(null, { status: 204 });
     } catch (error) {
       this.intakeFailure = error;
@@ -189,6 +191,13 @@ class TypeScriptPeer implements IpexPeer {
     this.remote = remote;
     this.plan = plan;
     for (const issuer of this.graph.issuers) {
+      if (this.graphCase === "DI2I") {
+        // The graph orders delegators before delegates; replay the actual approvals as well as inceptions.
+        for (const wire of this.hby.db.clonePreIter(issuer.pre, 0, Vrsn_2_0)) {
+          for (const frame of parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire))) await this.post(frame);
+        }
+        continue;
+      }
       if (this.wallet) {
         for (const frame of parseBytes(this.discloser!.kel(issuer))) await this.post(frame);
         continue;

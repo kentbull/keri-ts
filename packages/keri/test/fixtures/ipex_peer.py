@@ -98,7 +98,8 @@ class IpexPeer:
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
         for issuer in self.graph.issuers:
-            if self.witnessed:
+            if self.witnessed or self.graph_case == "DI2I":
+                # DI2I graph order is root-first; real replay includes each delegator's approval.
                 self.post(b"".join(self.hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)))
                 continue
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
