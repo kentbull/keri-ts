@@ -51,6 +51,12 @@ import {
 
 type VerifyArgs = Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0];
 type EvidenceArgs = Parameters<NonNullable<ExchangeRouteHandler["verifyEvidence"]>>[0];
+/** Shared Grant context keeps graph construction and node authentication identical for admission and inspection. */
+interface GrantContext {
+  kind: "grant";
+  graph: IpexGraph;
+  authentications: ReadonlyMap<string, IpexNodeAuthentication>;
+}
 /** SAD payloads include application-defined keys; named protocol fields are checked below before use. */
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -111,10 +117,62 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return { tsgs, cigars: factors.cigars.filter((cigar) => !sealers.has(cigar.verfer!.qb64)), sourceSeals };
   }
 
-  /** Validate conversation, disclosure and authentication obligations in reference order. */
-  verify(
+  /** Apply final issuer-state reduction only after the shared context is valid. */
+  verify(args: VerifyArgs): ExchangeRouteVerification {
+    const context = this.verifyContext(args);
+    if (typeof context !== "object" || context.kind !== "grant") return context;
+    const { graph, authentications } = context, { serder } = args;
+    const fresh = this.pendingIssuance(serder, graph, authentications);
+    if (fresh === null) return false;
+    if (fresh.size) return missing("Grant awaits issuance of its fresh registries.");
+    const verdict = evaluateChain(
+      graph,
+      new Map([...authentications].map(([said, auth]) => [said, authenticatedNodeVerdict(auth)])),
+      this.hby.db,
+    );
+    if (!verdict || verdict.kind === "invalid") {
+      const pending = this.pendingOpenings(serder, graph, authentications);
+      if (!pending?.size) return false;
+      const retry = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
+      return retry?.kind === "unknown" && retry.retryable
+        ? missing("Grant awaits current issuer-registry openings.")
+        : false;
+    }
+    if (verdict.kind === "valid") {
+      const registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"][number][] = [];
+      for (const [node, authentication] of authentications) {
+        if (authentication.kind !== "authenticated" || !authentication.registration) continue;
+        const record = authentication.registration;
+        // acceptedRegistryEvidence already requires exact safe storage ordinals.
+        registryStates.push([node, {
+          regid: record.regid,
+          said: record.said,
+          sn: Number(record.sn),
+          state: record.state,
+          stamp: record.stamp,
+        }]);
+      }
+      return { kind: "accept", registryStates };
+    }
+    if (!verdict.retryable) return false;
+    return verdict.schemas.length
+      ? { kind: "escrow", reason: verdict.reason, schema: verdict.schemas[0] }
+      : missing(verdict.reason);
+  }
+
+  /** Return deduplicated fresh registry IDs; stored sender authentication belongs to Exchanger. */
+  pendingGrant(args: VerifyArgs): readonly string[] | null {
+    if (args.serder.route !== "/ipex/grant") return null;
+    const context = this.verifyContext({ ...args, historical: false });
+    if (typeof context !== "object" || context.kind !== "grant") return null;
+    const fresh = this.pendingIssuance(args.serder, context.graph, context.authentications);
+    return fresh?.size ? [...new Set(fresh.values())] : null;
+  }
+
+  /** Validate shared conversation, disclosure, schema and authentication obligations in reference order. */
+  private verifyContext(
     { serder, nests = [], sscs = [], evidence, receiverTime, historical = false }: VerifyArgs,
-  ): ExchangeRouteVerification {
+  ): ExchangeRouteVerification | GrantContext {
     if (serder.pvrsn.major !== 2 || serder.route !== this.resource) return false;
     const route = serder.route.split("/");
     const verb = route[2];
@@ -220,42 +278,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         ),
       );
     }
-    const fresh = this.pendingIssuance(serder, graph, authentications);
-    if (fresh === null) return false;
-    if (fresh.size) return missing("Grant awaits issuance of its fresh registries.");
-    const verdict = evaluateChain(
-      graph,
-      new Map([...authentications].map(([said, auth]) => [said, authenticatedNodeVerdict(auth)])),
-      this.hby.db,
-    );
-    if (!verdict || verdict.kind === "invalid") {
-      const pending = this.pendingOpenings(serder, graph, authentications);
-      if (!pending?.size) return false;
-      const retry = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
-      return retry?.kind === "unknown" && retry.retryable
-        ? missing("Grant awaits current issuer-registry openings.")
-        : false;
-    }
-    if (verdict.kind === "valid") {
-      const registryStates: Extract<ExchangeRouteVerification, { kind: "accept" }>["registryStates"][number][] = [];
-      for (const [node, authentication] of authentications) {
-        if (authentication.kind !== "authenticated" || !authentication.registration) continue;
-        const record = authentication.registration;
-        // acceptedRegistryEvidence already requires exact safe storage ordinals.
-        registryStates.push([node, {
-          regid: record.regid,
-          said: record.said,
-          sn: Number(record.sn),
-          state: record.state,
-          stamp: record.stamp,
-        }]);
-      }
-      return { kind: "accept", registryStates };
-    }
-    if (!verdict.retryable) return false;
-    return verdict.schemas.length
-      ? { kind: "escrow", reason: verdict.reason, schema: verdict.schemas[0] }
-      : missing(verdict.reason);
+    return { kind: "grant", graph, authentications };
   }
 
   /** Substitute node-own unknowns only; the shared evaluator still traverses every edge. */
@@ -276,10 +299,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     grant: SerderKERI,
     graph: IpexGraph,
     authentications: ReadonlyMap<string, IpexNodeAuthentication>,
-  ): Set<string> | null {
-    const pending = new Set<string>();
+  ): Map<string, string> | null {
+    const pending = new Map<string, string>();
     if (!this.registry) return pending;
-    for (const [said, frame] of graph.nodes) {
+    for (const said of graph.order) {
+      const frame = graph.nodes.get(said)!;
       const node = frame.body, envelope = envelopeFromFrame(frame);
       // Python's BlindState parser verifies primitive integrity before candidate selection.
       if (node.regid && [...envelope.bsqs, ...envelope.bsss].some((proof) => !vetBlind(proof, proof.d.nonce))) {
@@ -294,13 +318,13 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         !chain || chain.updates.length || chain.rip.said !== node.regid || chain.rip.issuer !== grant.pre
         || vet({ ...chain, db: this.hby.db }).kind !== "verified"
       ) continue;
-      pending.add(said);
+      pending.set(said, node.regid);
     }
     if (!pending.size) return pending;
     for (const [said, auth] of authentications) {
       if (!pending.has(said) && auth.kind !== "authenticated") return null;
     }
-    const verdict = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
+    const verdict = evaluateChain(graph, this.pendingVerdicts(authentications, new Set(pending.keys())), this.hby.db);
     // A satisfied OR cannot authorize publishing a still proofless issuance.
     return verdict && (verdict.kind === "valid" || (verdict.kind === "unknown" && verdict.retryable)) ? pending : null;
   }

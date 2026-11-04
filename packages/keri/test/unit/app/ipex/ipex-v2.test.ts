@@ -685,10 +685,12 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
     }
   });
 });
-Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema retry, reopen and KRAM pruning", async () => {
+Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and original lifetime through retry and pruning", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const issuer = hby.makeHab("issuer"), issuee = hby.makeHab("issuee");
+    const issuer = hby.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" }),
+      issuee = hby.makeHab("issuee"),
+      support = hby.makeHab("support");
     let now = Math.floor(Date.now() / 1000) * 1000 + 123;
     const started = now, stamp = makeNowIso8601(new Date(now));
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
@@ -704,17 +706,19 @@ Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema 
       const schema = new Schemer({
         sed: { $id: "", version: "1.0.0", type: "object", properties: { name: { type: "string" } } },
       });
+      const supporting = acdcmap(support.pre, { schema: schema.said, attribute: { d: "", name: "Support" } });
       const credential = acdcmap(issuer.pre, {
         regid: rip.said,
         schema: schema.said,
         attribute: { d: "", i: issuee.pre, name: "Ada" },
+        edge: { d: "", link: { n: supporting.said! } },
       });
-      const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential], {
+      const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential, supporting], {
         kind: Kinds.json,
         message: "fresh issuance",
         recipient: issuee.pre,
         date: stamp,
-        plan: [[schema.said, "/", []]],
+        plan: [[schema.said, "/", []], [schema.said, "/e/link/_/", []]],
       });
       const group = new TransIdxSigGroup(
         new Prefixer({ qb64: issuer.pre }),
@@ -726,7 +730,23 @@ Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema 
         body: grant,
         gvrsn: Vrsn_2_0,
         attachments: messageAttachmentGroups({ tsgs: [group] }, Vrsn_2_0),
-        nests: [{ body: credential, attachments: [], gvrsn: Vrsn_2_0 }],
+        nests: [
+          { body: credential, attachments: [], gvrsn: Vrsn_2_0 },
+          {
+            body: supporting,
+            gvrsn: Vrsn_2_0,
+            attachments: messageAttachmentGroups({
+              tsgs: [
+                new TransIdxSigGroup(
+                  new Prefixer({ qb64: support.pre }),
+                  support.kever!.sner,
+                  new Diger({ qb64: support.kever!.said }),
+                  support.sign(supporting.raw, true),
+                ),
+              ],
+            }, Vrsn_2_0),
+          },
+        ],
       };
       yield* runtime.reactor.process((signal) => framePayload(frame).open(signal));
       const key = [issuer.pre, grant.said!, grant.said!];
@@ -736,6 +756,17 @@ Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema 
       const deadline = makeNowIso8601(new Date(started + accepted.xl!));
       assertEquals(hby.db.epsd.get(grant.said!)?.dts, deadline);
       assertExists(hby.db.emse!.get([grant.said!, schema.said]));
+      const scope = { xid: grant.said!, sender: issuer.pre, recipient: issuee.pre };
+      const transactionIds = () =>
+        [hby.db.env!, store.baser.env!].map(env => (env.getStats() as { lastTxnId: number }).lastTxnId);
+      const pending = (said = grant.said!, selected = scope) => {
+        const before = transactionIds(), cues = runtime.exc.cues.toArray();
+        const result = runtime.exc.pendingGrant(said, selected);
+        assertEquals(transactionIds(), before, "context lookup changes neither KEL/exchange nor registry stores");
+        assertEquals(runtime.exc.cues.toArray(), cues, "context lookup emits no recovery or protocol cues");
+        return result;
+      };
+      assertEquals(pending(), null, "schema escrow is not an authenticated pending issuance context");
 
       // Schema arrival after ten seconds changes the dependency, never the original validity clock.
       now += 11000;
@@ -748,6 +779,38 @@ Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema 
       assertEquals(hby.db.emse!.get([grant.said!, schema.said]), null);
       assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
       assertEquals(runtime.exc.complete(grant.said!), false, "an accepted RIP never supplies issuance");
+      // Context returns this selected Grant's registry IDs only after fresh complete authentication.
+      assertEquals(pending()!.serder.raw, grant.raw);
+      assertEquals(pending()!.registries, [rip.said!]);
+      assertEquals(pending(credential.said!), null, "a node SAID cannot select its enclosing Grant");
+      assertEquals(pending(grant.said!, { ...scope, xid: supporting.said! }), null);
+      assertEquals(pending(grant.said!, { ...scope, sender: support.pre }), null);
+      assertEquals(pending(grant.said!, { ...scope, recipient: support.pre }), null);
+      assertEquals(
+        new Exchanger(hby, { now: () => now }).pendingGrant(grant.said!, scope),
+        null,
+        "native handler is required",
+      );
+      const originalDeadline = hby.db.epsd.get(grant.said!)!;
+      hby.db.epsd.rem(grant.said!);
+      assertEquals(pending(), null, "body presence cannot replace the original deadline");
+      hby.db.epsd.put(grant.said!, originalDeadline);
+
+      // Remove real retained proof bytes, then restore those same bytes; cached KRAM acceptance is insufficient.
+      assertEquals(group.sigers.length, 2);
+      const senderKey = [grant.said!, issuer.pre, group.sn.toString(16).padStart(32, "0"), group.said];
+      hby.db.esigs.rem(senderKey, group.sigers[1]);
+      assertEquals(pending(), null, "the complete sender threshold is reverified");
+      hby.db.esigs.add(senderKey, group.sigers[1]);
+      const issuerAnchor = issuer.kever!.serder;
+      hby.db.evts.rem([issuer.pre, issuerAnchor.said!]);
+      assertEquals(pending(), null, "a retained RIP marker cannot replace its accepted issuer anchor");
+      hby.db.evts.pin([issuer.pre, issuerAnchor.said!], issuerAnchor);
+      const supportingEvent = hby.db.getEvtSerder(support.pre, support.kever!.lastEst.d)!;
+      hby.db.evts.rem([support.pre, supportingEvent.said!]);
+      assertEquals(pending(), null, "every other disclosed issuer proof must still authenticate");
+      hby.db.evts.pin([support.pre, supportingEvent.said!], supportingEvent);
+      assertEquals(pending()!.registries, [rip.said!]);
       now += 11000;
       yield* runtime.exc.processEscrows();
       assertExists(hby.db.epse.get(grant.said!), "fresh issuance remains pending beyond the ordinary PSE window");
@@ -761,11 +824,13 @@ Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema 
       now = started + 300000;
       yield* runtime.exc.processEscrows();
       assertExists(hby.db.epse.get(grant.said!), "deadline equality remains eligible");
+      assertEquals(pending(), null, "auxiliary pending authority expires at equality before escrow cleanup");
       now++;
       yield* runtime.exc.processEscrows();
       assertEquals(hby.db.epse.get(grant.said!), null);
       assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline, "body eviction retains the original lifetime");
       assertEquals(runtime.exc.complete(grant.said!), false);
+      assertEquals(pending(), null, "expired pending bodies confer no context");
       now = started + 600001;
       for (let pass = 0; pass < 4 && hby.db.tmsc.get(key); pass++) kramer.prune();
       assertEquals(hby.db.tmsc.get(key), null);
@@ -1708,7 +1773,20 @@ Deno.test("v2 IPEX binds EXN continuations to the XIP SAID and enforces one wire
         assertEquals(body.ilk, "exn");
         assertEquals(body.sad!.x, apply.said);
         assertEquals((yield* submit(body, signer)).kind, "accept");
+        if (body === grant) {
+          assertEquals(
+            exchanger.pendingGrant(grant.said!, { xid: apply.said!, sender: responder.pre, recipient: requester.pre }),
+            null,
+            "an accepted Grant is not pending issuance authority",
+          );
+        }
       }
+      assertEquals(hby.db.erpy.get(grant.said!)!.qb64, admit.said!);
+      assertEquals(
+        exchanger.pendingGrant(grant.said!, { xid: apply.said!, sender: responder.pre, recipient: requester.pre }),
+        null,
+        "an actually admitted conversation cannot authorize pending issuance",
+      );
       assertEquals(grant.sad!.a, { m: "vacuous grant", o: [] });
       assertEquals(grant.sad!.q, { dp: [[]] });
       for (const verb of ["offer", "grant"] as const) {

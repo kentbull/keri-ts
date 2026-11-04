@@ -49,7 +49,18 @@ acceptance and pending-body removal; retransmission, policy change, TMSC pruning
 and reopen cannot renew it. Both original Grant validity and schema retention
 must remain eligible during retry. `pxl` controls schema/replay retention separately
 from `xl` validity. Genuine V1 and other exchange routes clear PSE deadlines with
-their pending state. This retention supplies no live auxiliary authorization API.
+their pending state.
+
+`Exchanger.pendingGrant(said, {xid, sender, recipient})` reads exactly one live
+native Grant in `epse.` with its original `epsd.`. Accepted Grants and any terminal
+reply link refuse. Pending issuance authority requires `now < deadline`, although
+escrow cleanup retains equality. Stored complete sender signatures or source
+seals are reverified; a registered native V2 handler then reuses ordinary context,
+schema, disclosure and node authentication. Its fresh-registry classification
+requires an accepted issuer RIP, exact Grant parties and independent authentication
+of every other disclosed node. The result contains the exact Grant and deduplicated
+registry IDs. This read-only lookup changes no evidence, caches, escrows or cues
+and does not accept credentials or implement DHKE/network Unblind.
 ESSR commitment and qualified-payload syntax failures reject. Unexpected evidence
 read or hashing failures propagate and roll back the retry transaction.
 Storage/corruption failures propagate and retain pending ownership. Readonly

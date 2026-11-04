@@ -66,7 +66,13 @@ that deadline across schema/proof transitions, acceptance and pending-body evict
 Policy changes, retransmission, cache pruning and reopen do not renew it. `pxl`
 separately bounds schema/replay retention, never original Grant validity. Other
 exchange routes clear their PSE deadline with pending state. This storage contract
-does not yet implement live auxiliary context, DHKE or network Unblind approval.
+does not itself authorize auxiliary operations. `pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only native Grant before deadline
+equality, excludes accepted/terminal conversations, and reauthenticates its stored
+complete sender evidence. The native route reuses shared conversation/disclosure/
+schema checks and requires an anchored fresh issuer RIP plus authentication of all
+other disclosed nodes. It returns deduplicated registry IDs, with no writes or
+cues. This authorizes a pending issuance scope, never acceptance; DHKE and network
+Unblind remain separate work.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
