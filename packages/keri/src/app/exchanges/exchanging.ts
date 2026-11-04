@@ -129,6 +129,8 @@ export interface ExchangeRouteHandler {
     /** Read-only retained inspection may select exact issuer prefixes from its carried openings. */
     historical?: boolean;
   }): ExchangeRouteVerification;
+  /** Read fresh issuance registry scope after shared context checks; Exchanger authenticates the sender first. */
+  pendingGrant?(args: Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0]): readonly string[] | null;
   /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
     serder: SerderKERI;
@@ -687,6 +689,46 @@ export class Exchanger {
       ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
     });
     return verified === true || (typeof verified === "object" && verified.kind === "accept");
+  }
+
+  /**
+   * Read one selected live pending issuance Grant and its exact registry scope.
+   * Escrow presence grants no authority: reauthenticate retained sender factors,
+   * then reuse the native route's context checks. This changes no stores or cues
+   * and never accepts the Grant. Auxiliary authority expires at deadline equality.
+   */
+  pendingGrant(
+    said: string,
+    { xid, sender, recipient }: { xid: string; sender: string; recipient: string },
+  ): { serder: SerderKERI; registries: readonly string[] } | null {
+    const serder = this.hby.db.epse.get([said]), deadline = this.hby.db.epsd.get([said]);
+    if (
+      !serder || !deadline || serder.said !== said || !serder.verify() || !this.isV2Grant(serder)
+      || serder.pre !== sender || serder.sad!.ri !== recipient
+      || (serder.ilk === "xip" ? said : serder.sad!.x) !== xid
+      || this.complete(said) || this.hby.db.erpy.get([said])
+    ) return null;
+    const expiry = timestampMicros(deadline.dts);
+    if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+    if (this.nowMicros() >= expiry) return null;
+    const handler = this.handlerFor(serder);
+    if (handler?.protocolMajor !== 2 || !handler.pendingGrant) return null;
+    const args = this.escrowInput(serder);
+    if (this.verifyEssr(serder, args.essrs)) return null;
+    const approved = this.authenticate(serder, this.resolveProofs(args), handler, new Deck<AgentCue>());
+    if (approved.kind !== "verified") return null;
+    const meta = this.hby.db.exchangeMeta.get([said]);
+    const registries = handler.pendingGrant({
+      serder,
+      attachments: normalizeAttachments(args.ptds ?? []),
+      essrs: args.essrs,
+      nests: loadNests(this.hby.db, said),
+      mailboxAid: meta?.mailboxAid,
+      receiverTime: storedReceiverTime(meta),
+      ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
+      ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
+    });
+    return registries?.length ? { serder, registries } : null;
   }
 
   /**
