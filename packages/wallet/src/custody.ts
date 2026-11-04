@@ -14,22 +14,13 @@ import {
 } from "cesr-ts";
 import { Komer, type RegistryStore } from "keri-ts/db";
 import { type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
-import { constants } from "node:fs";
-import { open, unlink } from "node:fs/promises";
-import process from "node:process";
 import type { WalletBaser } from "./storing.ts";
 
-/** Python-compatible public bindings and the fixed derivation profile. */
+/** Public bindings for locally encrypted registry derivation material. */
 export interface CustodyInfo {
   registry: string;
   controller: string;
   discloser: string;
-  algorithm: "keripy.Blinder.makeUUID";
-  version: 1;
-  path: "Number.snh";
-  tier: "low";
-  kdf: "argon2id13";
-  nonce: "Salt_256";
 }
 
 interface Secret {
@@ -58,26 +49,12 @@ class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
   declare bound: DerivedUpdate["bound"];
 }
 
-/** Construct the single supported profile in Python's field order. */
-function metadata(registry: string, controller: string, discloser: string): CustodyInfo {
-  return {
-    registry,
-    controller,
-    discloser,
-    algorithm: "keripy.Blinder.makeUUID",
-    version: 1,
-    path: "Number.snh",
-    tier: "low",
-    kdf: "argon2id13",
-    nonce: "Salt_256",
-  };
-}
-/** Narrow only the operator JSON boundary; it never supplies an application policy. */
+/** Narrow the decrypted local record before reading its bindings. */
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-/** Validate a closed plaintext payload without including secret material in failures. */
-function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo): Secret {
+/** Validate the decrypted local record without including secret material in failures. */
+function parseSecret(raw: Uint8Array, registry: string): Secret {
   const payload: unknown = JSON.parse(t(raw));
   if (
     !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt"
@@ -85,24 +62,14 @@ function parseSecret(raw: Uint8Array, registry: string, expected?: CustodyInfo):
   ) throw new Error("Invalid custody payload");
   const info = payload.info;
   if (typeof info.controller !== "string" || typeof info.discloser !== "string") throw new Error("Invalid bindings");
-  const canonical = expected ?? metadata(registry, info.controller, info.discloser);
+  const canonical = { registry, controller: info.controller, discloser: info.discloser };
   if (
     Object.keys(info).length !== Object.keys(canonical).length
     || Object.entries(canonical).some(([key, value]) => info[key] !== value)
-  ) throw new Error("Invalid profile");
+  ) throw new Error("Invalid bindings");
   new Salter({ qb64: payload.salt });
   return { info: canonical, salt: payload.salt };
 }
-/** File protections are a POSIX contract; no weaker platform fallback is offered. */
-function requirePosix(): void {
-  if (
-    process.platform === "win32" || typeof process.geteuid !== "function"
-    || constants.O_NOFOLLOW === undefined || constants.O_NONBLOCK === undefined
-  ) {
-    throw new ValidationError("Protected plaintext custody handoff requires POSIX file protections");
-  }
-}
-
 /** Explicit capability over an existing wallet environment and accepted public registry evidence. */
 export class RegistryCustody {
   private env: WalletBaser["env"] = null;
@@ -136,7 +103,7 @@ export class RegistryCustody {
   }
 
   /** Bind explicit participants to the accepted inception; salt possession is not delegation. */
-  private binding(registry: string, controller: string, discloser: string, importing = false, rewrap = false): void {
+  private binding(registry: string, controller: string, discloser: string): void {
     new Prefixer({ qb64: controller });
     new Prefixer({ qb64: discloser });
     const rip = this.options.registry.seqEvent(registry, 0);
@@ -144,7 +111,7 @@ export class RegistryCustody {
       throw new ValidationError("Custody must match the accepted registry controller");
     }
     const local = this.options.hby.habs;
-    if (!local.has(importing ? discloser : controller) && !(rewrap && local.has(controller))) {
+    if (!local.has(controller)) {
       throw new ValidationError("Custody operation requires the intended local identifier");
     }
     if (!this.options.hby.db.getKever(discloser)) {
@@ -157,7 +124,7 @@ export class RegistryCustody {
     const box = this.box(), stored = this.tables().custody.get(registry);
     if (!stored) throw new ValidationError("Registry custody is not provisioned");
     if (stored.aeid !== box.aeid) {
-      throw new ValidationError("Custody encryption AEID changed; explicit operator rewrap is required");
+      throw new ValidationError("Local custody is unavailable under the changed Keeper AEID");
     }
     try {
       return parseSecret(box.decrypter.decrypt({ qb64: stored.cipher, bare: true }) as Uint8Array, registry);
@@ -166,30 +133,11 @@ export class RegistryCustody {
     }
   }
 
-  /** Retain only authenticated ciphertext; explicit reimport never decrypts an old-AEID row. */
-  private retain(secret: Secret, rewrap = false): CustodyInfo {
+  /** Retain locally encrypted material once; a concurrent differing record is refused. */
+  private retain(secret: Secret): CustodyInfo {
     const box = this.box(), rows = this.tables().custody, key = secret.info.registry;
-    const previous = rows.get(key);
-    if (previous?.aeid === box.aeid) {
-      if (JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
-        throw new ValidationError("Different registry custody is already retained");
-      }
-      return secret.info;
-    }
-    if (previous && !rewrap) {
-      throw new ValidationError("Custody encryption AEID changed; explicit operator rewrap is required");
-    }
-    if (!previous && rewrap) throw new ValidationError("Rewrap requires an existing custody record under a prior AEID");
     const value = { aeid: box.aeid, cipher: box.encrypter.encrypt({ ser: b(JSON.stringify(secret)) }).qb64 };
-    if (rewrap) {
-      this.options.db.env!.transactionSync(() => {
-        const current = rows.get(key);
-        if (!current || current.aeid !== previous!.aeid || current.cipher !== previous!.cipher) {
-          throw new ValidationError("Custody changed during explicit operator rewrap");
-        }
-        rows.pin(key, value);
-      });
-    } else if (!rows.put(key, value) && JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
+    if (!rows.put(key, value) && JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
       throw new ValidationError("Different registry custody was concurrently retained");
     }
     return secret.info;
@@ -200,7 +148,7 @@ export class RegistryCustody {
     this.box();
     const rip = this.options.registry.seqEvent(registry, 0);
     if (!rip?.issuer) throw new ValidationError("Accepted registry inception is required before custody");
-    const info = metadata(registry, rip.issuer, discloser);
+    const info = { registry, controller: rip.issuer, discloser };
     this.binding(registry, info.controller, discloser);
     if (this.tables().custody.get(registry)) {
       const current = this.load(registry);
@@ -219,7 +167,7 @@ export class RegistryCustody {
       if (!event) throw new ValidationError("Accepted registry history is incomplete");
       if (event.ilk === "bup" && !this.options.registry.opening(event.said!)) {
         throw new ValidationError(
-          "Blinded registry history requires explicit custody import; salt cannot be recreated",
+          "Local custody is missing for blinded registry history; salt cannot be recreated",
         );
       }
     }
@@ -246,7 +194,7 @@ export class RegistryCustody {
     if (!local.has(secret.info.controller) && !local.has(secret.info.discloser)) {
       throw new ValidationError("This wallet is not a designated custody participant");
     }
-    const values = { salt: secret.salt, sn: ordinal, tier: secret.info.tier, acdc: credential, state };
+    const values = { salt: secret.salt, sn: ordinal, tier: "low" as const, acdc: credential, state };
     return options.bound
       ? makeBoundState({ ...values, bsn: options.bsn ?? 0, bd: options.bd ?? "" })
       : makeBlindState(values);
@@ -294,72 +242,5 @@ export class RegistryCustody {
       throw new ValidationError("Derived opening does not match the exact accepted event");
     }
     return opening;
-  }
-
-  /** Create one exclusive mode0600 plaintext artifact for authenticated private operator transfer. */
-  async exportCustody(registry: string, path: string): Promise<string> {
-    requirePosix();
-    const secret = this.load(registry);
-    const file = await open(
-      path,
-      constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
-      0o600,
-    );
-    try {
-      try {
-        await file.chmod(0o600);
-        await file.writeFile(b(JSON.stringify(secret)));
-        await file.sync();
-      } finally {
-        await file.close();
-      }
-    } catch (error) {
-      await unlink(path);
-      throw error;
-    }
-    return path;
-  }
-
-  /** Import only a protected exact Python-profile handoff, optionally rewrapping an existing old-AEID row. */
-  async importCustody(
-    path: string,
-    { registry, controller, discloser, rewrap = false }: {
-      registry: string;
-      controller: string;
-      discloser: string;
-      rewrap?: boolean;
-    },
-  ): Promise<CustodyInfo> {
-    requirePosix();
-    if (typeof rewrap !== "boolean") throw new ValidationError("Explicit rewrap must be a boolean");
-    this.box();
-    this.binding(registry, controller, discloser, true, rewrap);
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    let raw: Uint8Array;
-    try {
-      const info = await file.stat();
-      if (!info.isFile() || (info.mode & 0o7777) !== 0o600 || info.uid !== process.geteuid!() || info.nlink !== 1) {
-        throw new ValidationError("Custody file must be a regular owner-only mode0600 file");
-      }
-      const buffer = new Uint8Array(16385);
-      let offset = 0;
-      while (offset < buffer.length) {
-        const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, null);
-        if (!bytesRead) break;
-        offset += bytesRead;
-      }
-      if (offset > 16384) throw new ValidationError("Custody file exceeds the supported size");
-      raw = buffer.subarray(0, offset);
-    } finally {
-      await file.close();
-    }
-    let secret: Secret;
-    try {
-      secret = parseSecret(raw, registry, metadata(registry, controller, discloser));
-    } catch {
-      throw new ValidationError("Custody file does not match the expected bindings and derivation profile");
-    }
-    this.binding(registry, controller, discloser, true, rewrap);
-    return this.retain(secret, rewrap);
   }
 }

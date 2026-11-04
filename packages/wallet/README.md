@@ -82,14 +82,13 @@ KEL seal, even when receipts were missing. They do not author another anchor jus
 to poll. Issuance inventory follows accepted TEL evidence and preserves the
 original issuance reference after later state advances or revocation.
 
-## Optional protected custody
+## Optional local encrypted custody
 
 `RegistryCustody({hby, registry, db})` is an explicit capability over the existing
 wallet environment. Ordinary inventory never creates it or reads its encrypted
 rows. `createCustody(registry, discloser)` requires an accepted locally controlled
 inception and the designated discloser's known KEL. Secrets use the authenticated
-encrypted Keeper AEID; plaintext fallback and salt regeneration after undisclosed
-blinded history are refused.
+encrypted Keeper AEID; salt regeneration after undisclosed blinded history is refused.
 
 `derive` returns an event-opening candidate, not accepted standing or permission
 to present a credential. `retainDerivedUpdate(event, opening)` records only the
@@ -98,11 +97,9 @@ processing/anchoring. `derivedOpening(event)` requires that exact accepted event
 and verifies the reconstructed commitment after reopen; a later public successor
 never selects another credential's inputs or publishes private openings.
 
-`exportCustody` and `importCustody` implement the Python-compatible protected
-operator handoff on POSIX only. Export exclusively creates a mode0600 file;
-import refuses symlinks, non-regular/multiply-linked files, another owner, loose
-permissions and mismatched bindings/profile. Transfer is an explicit authenticated
-private operator step: file mode does not authenticate the sender or secure the
-channel, and the file contains plaintext secret material. Keeper AEID replacement
-leaves custody unusable until explicit import with `rewrap: true` under the current
-authenticated Keeper; there is no automatic migration or key distribution.
+The encrypted salt and its registry/controller/discloser bindings live in the
+wallet environment, encrypted under the authenticated Keeper AEID. This is local
+wallet storage, not native Keeper `RegistrySalt` custody. AEID replacement makes
+this material unavailable. Missing exact event coordinates or inaccessible secret
+material refuse derivation; discovery never guesses coordinates or regenerates salt.
+Encrypted Keeper/RegistrySalt convergence remains separate planned work.

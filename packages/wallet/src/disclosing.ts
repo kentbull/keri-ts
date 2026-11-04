@@ -68,7 +68,6 @@ export interface DisclosureSelection {
   refresh?: boolean;
   openings?: readonly RegistryDisclosure[];
   derive?: boolean;
-  boundEvent?: string;
   artifacts?: readonly Uint8Array[];
 }
 /** Reuse a matching accepted KEL seal, or author once and gather real witness receipts. */
@@ -213,7 +212,7 @@ export class WalletDiscloser {
     credential: SerderACDC,
     registry: string,
     retained: readonly RegistryDisclosure[] = [],
-    options: Pick<DisclosureSelection, "derive" | "boundEvent"> = {},
+    options: Pick<DisclosureSelection, "derive"> = {},
   ): Uint8Array {
     const chain = acceptedRegistryEvidence(this.wallet.registry, registry);
     if (!chain || chain.updates.some((update) => update.ilk !== "bup")) {
@@ -221,46 +220,13 @@ export class WalletDiscloser {
     }
     if (options.derive && !this.custody) throw new ValidationError("Explicit derivation requires provisioned custody.");
     const proofs: Uint8Array[] = [];
-    let bound: { bsn: number; bd: string } | undefined;
-    if (options.boundEvent) {
-      const db = this.wallet.hby.db, issuee = credential.issuee;
-      const event = issuee ? db.getEvtSerder(issuee, options.boundEvent) : null;
-      if (
-        !event || event.sn === null || db.kels.getLast(issuee!, event.sn) !== event.said || !db.fullyWitnessed(event)
-      ) {
-        throw new ValidationError("Bound reference requires an exact accepted witnessed Issuee event.");
-      }
-      bound = { bsn: event.sn, bd: event.said! };
-    }
     let binding: SerderACDC | null = null;
     for (const event of [...chain.updates].reverse()) {
       const blid = event.sad!.b as string;
       let opening = retained.find((proof) => proof.d.nonce === blid) ?? this.wallet.registry.publicOpening(event.said!);
       if (!opening && options.derive) {
-        // Exact event coordinates take priority; an explicit bound event may reproduce foreign derived history.
-        try {
-          opening = this.custody!.derivedOpening(event);
-        } catch (error) {
-          if (
-            !(error instanceof ValidationError) || error.message !== "Exact derived update coordinates are unavailable"
-          ) throw error;
-        }
-        if (!opening) {
-          const ordinal = BigInt(`0x${event.sad!.n}`);
-          for (const [target, state] of [[credential.said!, "issued"], [credential.said!, "revoked"], ["", ""]]) {
-            const candidate = this.custody!.derive(
-              registry,
-              ordinal,
-              target,
-              state,
-              bound ? { bound: true, bsn: target ? bound.bsn : 0, bd: target ? bound.bd : "" } : {},
-            );
-            if (candidate.d.nonce === blid) {
-              opening = candidate;
-              break;
-            }
-          }
-        }
+        // Exact retained coordinates are required; missing local material is a refusal.
+        opening = this.custody!.derivedOpening(event);
       }
       if (
         !opening || !vetBlind(opening, blid) || (opening.td.nonce && opening.td.nonce !== credential.said)
@@ -308,7 +274,7 @@ export class WalletDiscloser {
     }
     if (
       retained && !selection.refresh
-      && (selection.derive || selection.openings?.length || selection.boundEvent)
+      && (selection.derive || selection.openings?.length)
     ) {
       throw new ValidationError("New held-Grant proof requires explicit refresh.");
     }

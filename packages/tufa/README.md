@@ -127,14 +127,12 @@ for the known v2 witness profile; the default remains 1.0. Legacy commands retai
 their existing defaults.
 
 Provision explicitly with inception's `--with-custody` and optional `--discloser`.
-An encrypted authenticated Keeper is required. `vc registry custody export` writes
-an exclusive protected `--file`; `import` requires explicit `--controller` and
-`--discloser`, and optionally `--rewrap` after Keeper AEID replacement. Select a
-local `--registry-name` or accepted `--registry` SAID for a remote designated
-discloser. Transfer the plaintext artifact over an authenticated private operator
-channel; the CLI does not distribute secrets. Derived state commands accept
-`--bound-event` for an exact witnessed Issuee event. Groups remain a separate
-approval workflow.
+An encrypted authenticated Keeper is required. Derivation material stays encrypted
+in the local wallet environment under that Keeper's AEID; this is not native
+Keeper `RegistrySalt` custody. AEID replacement makes the local material
+unavailable. Derived state commands accept `--bound-event` for an exact witnessed
+Issuee event. IPEX `--derive` requires retained exact event coordinates; missing
+material refuses disclosure. Groups remain a separate approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying

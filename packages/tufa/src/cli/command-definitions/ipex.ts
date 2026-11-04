@@ -103,7 +103,6 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .option("--refresh", "Refresh proofs without expanding the retained credential view")
             .option("--derive", "Explicitly use provisioned registry custody")
             .option("--opening <files...>", "Exact counted blind/bound opening files")
-            .option("--bound-event <said>", "Exact accepted witnessed Issuee KEL event")
             .option("--presentation-registry <name>", "Local registry declared by the selected Issuee view")
             .option("--plan <json>", "ACDC v2 flat disclosure plan JSON or @file")
             .option("--anchor", "Require witnessed source anchoring")
