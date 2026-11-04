@@ -349,14 +349,14 @@ export class Exchanger {
       if (retry) {
         status = this.escrowStatus(said);
         if (status.kind === "accepted") {
-          this.clearPending(said);
+          this.clearPending(args.serder);
           return undefined;
         }
         if (status.kind === "absent") return undefined;
         if (status.kind !== "pending") {
           return {
             ...reject(status.kind),
-            ejection: this.retireCurrent(said, this.expiryReport(status)),
+            ejection: this.retireCurrent(args.serder, this.expiryReport(status)),
           };
         }
       }
@@ -371,7 +371,7 @@ export class Exchanger {
       if (status?.kind === "pending" && admission.decision.kind === "reject" && !admission.decision.preserveEscrow) {
         return {
           ...admission,
-          ejection: this.retireCurrent(said, {
+          ejection: this.retireCurrent(args.serder, {
             family: status.family,
             reason: admission.decision.reason,
             cause: admission.decision.cause,
@@ -490,7 +490,7 @@ export class Exchanger {
     if (prepared.nests && !retainedIpex) publishNests(this.hby.db, said, prepared.nests);
     let newEscrow = false;
     if (!pending && approved) {
-      this.clearEscrow(said, true);
+      this.clearEscrow(args.serder, true);
       for (const [node, record] of registryStates) this.hby.db.exrs.pin([said, node], record);
       this.logAcceptedEvent({
         serder: args.serder,
@@ -566,7 +566,7 @@ export class Exchanger {
         throw new Error("Corrupt exchange escrow key or body.");
       }
       if (schema && new Diger({ qb64: keys[1] }).qb64 !== keys[1]) throw new Error("Corrupt schema escrow dependency.");
-      const expired = yield* call(() => this.expirePending(said));
+      const expired = yield* call(() => this.expirePending(serder));
       if (expired) {
         consoleLogger.warn("Exchanger ejected exchange escrow", {
           said,
@@ -1029,8 +1029,7 @@ export class Exchanger {
     }
     this.storeEscrowEvidence(serder, factors, ptds);
     this.hby.db.emse?.trim([said]);
-    // Preserve first admission time so repeated retries cannot keep stale wire alive forever.
-    this.hby.db.epsd.put([said], new Dater({ qb64: encodeDateTimeToDater(makeNowIso8601(new Date(this.now()))) }));
+    this.retainPartialDeadline(serder);
     return this.hby.db.epse.put([said], serder);
   }
   /** Persist the same independently authenticated evidence for signature and schema dependencies. */
@@ -1080,20 +1079,53 @@ export class Exchanger {
         throw new Error("Corrupt missing-schema transaction lifetime.");
       }
       const expiry = cache ? opener! + BigInt(cache.pxl!) * 1000n : this.nowMicros() + 20_000_000n;
-      const remainder = (expiry % 1000n + 1000n) % 1000n;
-      const text = makeNowIso8601(new Date(Number((expiry - remainder) / 1000n)))
-        .replace(/\d{6}\+/, ((expiry % 1_000_000n + 1_000_000n) % 1_000_000n).toString().padStart(6, "0") + "+");
-      if (timestampMicros(text) !== expiry) throw new Error("Missing-schema deadline exceeds supported date range.");
-      emsd.put([said], new Dater({ qb64: encodeDateTimeToDater(text) }));
+      emsd.put([said], this.deadlineDater(expiry));
     }
     this.storeEscrowEvidence(serder, factors, ptds);
     this.hby.db.epse.rem([said]);
-    this.hby.db.epsd.rem([said]);
+    if (this.isV2Grant(serder)) this.retainPartialDeadline(serder);
+    else this.hby.db.epsd.rem([said]);
     const stored = emse.get([said, schema]) === null;
     emse.trim([said]);
     emse.put([said, schema], serder);
     return stored;
   }
+  /** Native Grant validity survives dependency changes and acceptance; it is not cache retention. */
+  private isV2Grant(serder: SerderKERI): boolean {
+    return serder.pvrsn.major >= 2 && serder.route === "/ipex/grant";
+  }
+
+  /** Freeze one absolute PSE deadline; only accepted native Grant TMSC supplies xdt + xl. */
+  private retainPartialDeadline(serder: SerderKERI): void {
+    const said = serder.said!, prior = this.hby.db.epsd.get([said]);
+    if (prior) {
+      if (timestampMicros(prior.dts) === null) throw new Error("Corrupt exchange partial deadline.");
+      return;
+    }
+    let expiry = this.nowMicros() + BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n;
+    if (this.isV2Grant(serder)) {
+      const xid = serder.ilk === "xip" ? said : serder.sad!.x;
+      const cache = typeof xid === "string" && xid ? this.hby.db.tmsc.get([serder.pre!, xid, said]) : null;
+      if (cache?.rdt) {
+        const opener = timestampMicros(cache.xdt);
+        if (opener === null || !Number.isSafeInteger(cache.xl) || cache.xl! < 0) {
+          throw new Error("Corrupt Grant transaction lifetime.");
+        }
+        expiry = opener + BigInt(cache.xl!) * 1000n;
+      }
+    }
+    this.hby.db.epsd.put([said], this.deadlineDater(expiry));
+  }
+
+  /** Preserve the original microsecond deadline without truncating its TMSC opener. */
+  private deadlineDater(expiry: bigint): Dater {
+    const remainder = (expiry % 1000n + 1000n) % 1000n;
+    const text = makeNowIso8601(new Date(Number((expiry - remainder) / 1000n)))
+      .replace(/\d{6}\+/, ((expiry % 1_000_000n + 1_000_000n) % 1_000_000n).toString().padStart(6, "0") + "+");
+    if (timestampMicros(text) !== expiry) throw new Error("Exchange deadline exceeds supported date range.");
+    return new Dater({ qb64: encodeDateTimeToDater(text) });
+  }
+
   /** Trusted clock failures remain infrastructure errors rather than expiring remote work. */
   private nowMicros(): bigint {
     const now = new Date(this.now()).getTime();
@@ -1130,6 +1162,7 @@ export class Exchanger {
       }
       this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
     }
+    if (this.isV2Grant(args.serder) && !this.complete(said)) this.retainPartialDeadline(args.serder);
     const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
       && this.complete(said);
     if (!retainedIpex) {
@@ -1192,8 +1225,9 @@ export class Exchanger {
   }
 
   /** Clear pending metadata, preserving wire evidence during the acceptance transaction. */
-  private clearEscrow(said: string, keepEvidence = false): void {
-    this.clearPending(said);
+  private clearEscrow(serder: SerderKERI, keepEvidence = false): void {
+    const said = serder.said!;
+    this.clearPending(serder);
     // First acceptance replaces provisional factors; accepted duplicates accumulate verified proofs.
     if (!keepEvidence || !this.complete(said)) {
       this.hby.db.esigs.trim([said, ""], { topive: false });
@@ -1232,15 +1266,17 @@ export class Exchanger {
     const deadline = this.hby.db.emsd?.get([said]);
     const absolute = deadline && timestampMicros(deadline.dts);
     if (deadline && absolute === null) throw new Error("Corrupt missing-schema deadline.");
-    const dater = partial ? this.hby.db.epsd.get([said]) : deadline;
-    const date = dater && timestampMicros(dater.dts);
+    const partialDeadline = this.hby.db.epsd.get([said]);
+    const partialExpiry = partialDeadline && timestampMicros(partialDeadline.dts);
+    if (!partial && partialDeadline && partialExpiry === null) throw new Error("Corrupt exchange partial deadline.");
+    const date = partial ? partialExpiry : absolute;
     if (date === null || date === undefined) {
       if (!partial) throw new Error("Corrupt missing-schema deadline.");
       return { kind: "missingTimestamp", family };
     }
     const now = this.nowMicros();
     if (
-      now > date + (partial ? BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n : 0n)
+      now > date || partialExpiry !== null && partialExpiry !== undefined && now > partialExpiry
       || absolute !== null && absolute !== undefined && now > absolute
     ) return { kind: "expired", family };
     return { kind: "pending", family };
@@ -1255,21 +1291,22 @@ export class Exchanger {
   }
 
   /** Remove pending LMDB evidence inside its owning writer and return the committed diagnostic. */
-  private retireCurrent(said: string, ejection: EscrowEjection): EscrowEjection {
-    this.clearEscrow(said);
+  private retireCurrent(serder: SerderKERI, ejection: EscrowEjection): EscrowEjection {
+    this.clearEscrow(serder);
     return ejection;
   }
 
   /** Decide expiry and remove pending rows in the same native transaction. */
-  private *expirePending(said: string): Operation<EscrowEjection | undefined> {
+  private *expirePending(serder: SerderKERI): Operation<EscrowEjection | undefined> {
+    const said = serder.said!;
     const result = this.hby.db.env!.transactionSync(() => {
       const status = this.escrowStatus(said);
       if (status.kind === "accepted") {
-        this.clearPending(said);
+        this.clearPending(serder);
         return undefined;
       }
       if (status.kind === "absent" || status.kind === "pending") return undefined;
-      return this.retireCurrent(said, this.expiryReport(status));
+      return this.retireCurrent(serder, this.expiryReport(status));
     });
     yield* abortable(async () => {
       await this.hby.db.env!.flushed;
@@ -1278,9 +1315,10 @@ export class Exchanger {
   }
 
   /** Clear only dependency markers, keeping all accepted evidence and metadata intact. */
-  private clearPending(said: string): void {
+  private clearPending(serder: SerderKERI): void {
+    const said = serder.said!;
     this.hby.db.epse.rem([said]);
-    this.hby.db.epsd.rem([said]);
+    if (!this.isV2Grant(serder)) this.hby.db.epsd.rem([said]);
     this.hby.db.emse?.trim([said]);
     this.hby.db.emsd?.rem([said]);
   }

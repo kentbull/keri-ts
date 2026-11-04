@@ -1,6 +1,5 @@
 import {
   b,
-  Dater,
   Diger,
   NumberPrimitive,
   parse,
@@ -24,7 +23,6 @@ import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
-import { encodeDateTimeToDater } from "../../../../src/time/mod.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
 
 /** Keep acceptance on real signature and LMDB paths. */
@@ -236,14 +234,17 @@ Deno.test("ESSR fragment publication failure rolls back body, proofs, fragments 
   });
 });
 
-Deno.test("ESSR expired escrow removes only pending evidence and retains its first receipt until expiry", async () => {
+Deno.test("ESSR expired escrow removes only pending evidence and retains its original absolute deadline", async () => {
   await scenario(async (hby, sender) => {
-    const serder = message(sender), exchanger = new Exchanger(hby);
+    let now = Date.parse("2026-11-04T00:00:00Z");
+    const serder = message(sender), exchanger = new Exchanger(hby, { now: () => now });
     assertEquals((await run(() => exchanger.processEvent({ serder, essrs: payload() }))).kind, "escrow");
     const first = hby.db.epsd.get([serder.said!])!;
+    assertEquals(first.dts, "2026-11-04T00:00:10.000000+00:00");
+    now += 1000;
     await run(() => exchanger.processEscrows());
     assertEquals(hby.db.epsd.get([serder.said!])!.qb64, first.qb64);
-    hby.db.epsd.pin([serder.said!], new Dater({ qb64: encodeDateTimeToDater("2020-01-01T00:00:00.000000+00:00") }));
+    now += 9001;
     await run(() => exchanger.processEscrows());
     assertEquals(hby.db.epse.get([serder.said!]), null);
     assertEquals(hby.db.getEssrs(serder.said!), null);

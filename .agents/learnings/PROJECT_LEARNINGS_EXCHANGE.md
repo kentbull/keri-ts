@@ -60,6 +60,13 @@ Group leadership intentionally uses group signatures, excluding foreign endorsem
 Missing-schema EXNs retain the same LMDB evidence ownership through emse/emsd
 and retry. One absolute deadline spans sequential schema dependencies;
 TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
+`epsd.` freezes an absolute partial-signature deadline. Native V2 Grants use their
+accepted TMSC `xdt + xl`, otherwise the original ten-second PSE window; they retain
+that deadline across schema/proof transitions, acceptance and pending-body eviction.
+Policy changes, retransmission, cache pruning and reopen do not renew it. `pxl`
+separately bounds schema/replay retention, never original Grant validity. Other
+exchange routes clear their PSE deadline with pending state. This storage contract
+does not yet implement live auxiliary context, DHKE or network Unblind approval.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.

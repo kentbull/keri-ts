@@ -269,7 +269,7 @@ export class Baser {
   public gpwe!: CatCesrIoSetSuber<EventSealTuple>; // Group partial witness escrows.
   public cgms!: CesrSuber<Diger>; // Completed group multisig references.
   public epse!: SerderSuber<SerderKERI>; // Exchange-message partial signature escrow messages.
-  public epsd!: CesrSuber<Dater>; // Exchange-message partial signature escrow datetimes.
+  public epsd!: CesrSuber<Dater>; // Absolute partial-signature deadlines; native Grant originals survive body removal.
   /** Optional on readonly legacy stores; schema dependencies share one absolute deadline. */
   public emse: SerderSuber<SerderKERI> | null = null;
   public emsd: CesrSuber<Dater> | null = null;

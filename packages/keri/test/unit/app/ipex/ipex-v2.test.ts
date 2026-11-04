@@ -685,6 +685,99 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
     }
   });
 });
+Deno.test("IPEX fresh-registry Grant keeps its original lifetime through schema retry, reopen and KRAM pruning", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const issuer = hby.makeHab("issuer"), issuee = hby.makeHab("issuee");
+    let now = Math.floor(Date.now() / 1000) * 1000 + 123;
+    const started = now, stamp = makeNowIso8601(new Date(now));
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
+      now: () => now,
+      setTimeout,
+      clearTimeout: (timer) => clearTimeout(timer as number),
+    }, { kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 600000] } } });
+    try {
+      // Ordinary native intake authenticates the sender and admits the transaction before IPEX waits.
+      const store = runtime.acdc!.store, rip = regcept(issuer.pre, { stamp });
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      assertEquals(new RegistryObserver(hby.db, store).processEvent(rip).kind, "accept");
+      const schema = new Schemer({
+        sed: { $id: "", version: "1.0.0", type: "object", properties: { name: { type: "string" } } },
+      });
+      const credential = acdcmap(issuer.pre, {
+        regid: rip.said,
+        schema: schema.said,
+        attribute: { d: "", i: issuee.pre, name: "Ada" },
+      });
+      const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        message: "fresh issuance",
+        recipient: issuee.pre,
+        date: stamp,
+        plan: [[schema.said, "/", []]],
+      });
+      const group = new TransIdxSigGroup(
+        new Prefixer({ qb64: issuer.pre }),
+        NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+        new Diger({ qb64: issuer.kever!.lastEst.d }),
+        issuer.sign(grant.raw, true),
+      );
+      const frame: CesrFrame = {
+        body: grant,
+        gvrsn: Vrsn_2_0,
+        attachments: messageAttachmentGroups({ tsgs: [group] }, Vrsn_2_0),
+        nests: [{ body: credential, attachments: [], gvrsn: Vrsn_2_0 }],
+      };
+      yield* runtime.reactor.process((signal) => framePayload(frame).open(signal));
+      const key = [issuer.pre, grant.said!, grant.said!];
+      const accepted = hby.db.tmsc.get(key)!;
+      assertEquals(accepted.rdt, stamp);
+      assertEquals(accepted.xl, 300000);
+      const deadline = makeNowIso8601(new Date(started + accepted.xl!));
+      assertEquals(hby.db.epsd.get(grant.said!)?.dts, deadline);
+      assertExists(hby.db.emse!.get([grant.said!, schema.said]));
+
+      // Schema arrival after ten seconds changes the dependency, never the original validity clock.
+      now += 11000;
+      yield* hby.db.close();
+      yield* hby.db.reopen({ reuse: true });
+      yield* store.baser.reopen({ reuse: true });
+      hby.db.schema.pin(schema.said, schema);
+      yield* runtime.exc.processEscrows();
+      assertExists(hby.db.epse.get(grant.said!));
+      assertEquals(hby.db.emse!.get([grant.said!, schema.said]), null);
+      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
+      assertEquals(runtime.exc.complete(grant.said!), false, "an accepted RIP never supplies issuance");
+      now += 11000;
+      yield* runtime.exc.processEscrows();
+      assertExists(hby.db.epse.get(grant.said!), "fresh issuance remains pending beyond the ordinary PSE window");
+
+      // Live policy expansion cannot renew the already retained Grant deadline.
+      const kramer = runtime.protocol.kvy.kramer!;
+      kramer.changeConfig({ "~": [1000, 5000, 60000, 900000, 5000, 60000, 900000] }, 1);
+      now += 2;
+      kramer.prune();
+      assertEquals(hby.db.ctyp.get("~")!.xl, 900000, "expanded policy is active before original expiry");
+      now = started + 300000;
+      yield* runtime.exc.processEscrows();
+      assertExists(hby.db.epse.get(grant.said!), "deadline equality remains eligible");
+      now++;
+      yield* runtime.exc.processEscrows();
+      assertEquals(hby.db.epse.get(grant.said!), null);
+      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline, "body eviction retains the original lifetime");
+      assertEquals(runtime.exc.complete(grant.said!), false);
+      now = started + 600001;
+      for (let pass = 0; pass < 4 && hby.db.tmsc.get(key); pass++) kramer.prune();
+      assertEquals(hby.db.tmsc.get(key), null);
+      yield* hby.db.close();
+      yield* hby.db.reopen({ reuse: true });
+      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline, "TMSC pruning and reopen cannot renew validity");
+    } finally {
+      yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
 Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL head across observer retry", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
@@ -752,11 +845,13 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       yield* runtime.reactor.process((signal) => framePayload(frame).open(signal));
       assertExists(hby.db.epse.get([grant.said!]));
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
+      const originalDeadline = hby.db.epsd.get(grant.said!)!.dts;
+      assertEquals(originalDeadline, makeNowIso8601(new Date(now + 300000)));
       assertEquals(hby.db.exns.get([grant.said!]), null);
       assertEquals(observer.processEvent(ibup).kind, "accept");
       yield* runtime.protocol.processEscrowsOnce();
       assertExists(hby.db.epse.get([grant.said!]), "issuer update resolves before the presentation registry arrives");
-      now += 1000;
+      now += 11000;
       yield* store.baser.reopen();
       yield* hby.db.reopen();
       assertEquals(observer.processEvent(prip).kind, "accept");
@@ -780,6 +875,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(observer.processEvent(latest).kind, "accept");
       yield* runtime.exc.processEscrows();
       assertExists(hby.db.exns.get([grant.said!]));
+      assertEquals(hby.db.epsd.get(grant.said!)!.dts, originalDeadline, "acceptance keeps original Grant validity");
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       assertEquals(hby.db.exns.get([credential.said!]), null, "parent acceptance never dispatches its child");
       const handler = new IpexV2Handler("/ipex/grant", hby, null, store);
