@@ -147,6 +147,10 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         "explicit same-state update creates a fresh BUP/opening",
       );
       assertEquals(advance.opening.d.nonce === reissued.sad!.b, false, "an explicit advance has a fresh opening");
+      // Even a fully witnessed abbreviated seal cannot satisfy a native author retry.
+      issuer.interact({ data: [{ s: advance.event.sad!.n, d: advance.event.said! }] });
+      const abbreviated = issuer.kever!.serder;
+      yield* receiptor.receipt(issuer.pre, { sn: abbreviated.sn! });
       receiptLimit = 1;
       yield* call(() =>
         assertRejects(() =>
@@ -154,6 +158,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         )
       );
       const pendingAdvanceSeal = issuer.kever!.said;
+      assertEquals(pendingAdvanceSeal === abbreviated.said, false, "authoring must create the full registry seal");
       assertEquals(rgy.store.head(rip.said!)?.qb64, reissued.said, "one receipt cannot accept the pending successor");
       yield* rgy.baser.close(false);
       yield* rgy.baser.reopen({ reuse: true });

@@ -27,7 +27,9 @@ export function author(hab: Hab, name: string) {
   const rip = regcept(hab.pre), credential = acdcmap(hab.pre, { regid: rip.said!, attribute: { d: "", name } });
   const opening = makeBlindState({ acdc: credential.said!, state: "issued", sn: 1n, raw: b("0123456789abcdef") });
   const update = blindate(rip.said!, rip.said!, opening.d.nonce);
-  hab.interact({ data: [{ s: rip.sad!.n, d: rip.said! }, { s: update.sad!.n, d: update.said! }] });
+  hab.interact({
+    data: [{ i: rip.said!, s: rip.sad!.n, d: rip.said! }, { i: rip.said!, s: update.sad!.n, d: update.said! }],
+  });
   const raw = concatBytes(kel(hab), framed(rip), framed(update, opening));
   return { rip, update, opening, credential, raw };
 }

@@ -113,7 +113,7 @@ Deno.test("observer isolates source scopes and serves only exact recent cached h
         raw: b("fedcba9876543210"),
       });
       const successor = blindate(first.rip.said!, first.update.said!, revoked.d.nonce, { sn: 2 });
-      a.interact({ data: [{ s: successor.sad!.n, d: successor.said! }] });
+      a.interact({ data: [{ i: first.rip.said!, s: successor.sad!.n, d: successor.said! }] });
       const complete = concatBytes(
         kel(a),
         framed(first.rip),

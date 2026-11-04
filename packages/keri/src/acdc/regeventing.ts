@@ -144,7 +144,7 @@ export function validateUpdate(serder: SerderACDC, regid: string, prior?: string
 
 /**
  * Check a local TEL anchor against the current accepted KEL branch and its witness quorum.
- * Every supplied coordinate in the supported registry seal must match.
+ * Native TEL admission requires the full registry/ordinal/event-SAID seal.
  * Missing or mismatched evidence returns false; database failures propagate.
  */
 export function verifyRegistryAnchor(
@@ -181,15 +181,15 @@ function onCurrentRegistryBranch(db: Baser, issuer: string, anchor: SerderKERI):
   return false;
 }
 
-/** Match only the selected digest/couple/triple shapes, without dropping supplied coordinates. */
+/** Match the full registry/ordinal/event-SAID tuple required for native TEL authority. */
 export function matchesRegistrySeal(candidate: unknown, event: SerderACDC): boolean {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
   const seal = candidate as Record<string, unknown>;
   const fields = Object.keys(seal).sort().join(",");
-  if (!["d", "d,s", "d,i,s"].includes(fields)) return false;
+  if (fields !== "d,i,s") return false;
   return seal.d === event.said
-    && (!("s" in seal) || seal.s === event.sad!.n)
-    && (!("i" in seal) || seal.i === (event.ilk === Ilks.rip ? event.said : event.regid));
+    && seal.s === event.sad!.n
+    && seal.i === (event.ilk === Ilks.rip ? event.said : event.regid);
 }
 
 /** Refuse resolvable false locators before publication, without persisting unsigned requirements. */
@@ -218,7 +218,7 @@ export function validateRegistrySourceLocators(
   return true;
 }
 
-/** Extract hint digests only to distinguish an unsupported root seal from a mistaken source. */
+/** Public stateless vetting authenticates digest commitments; other seal fields are nonbinding hints. */
 function sealDigests(event: SerderKERI): unknown[] {
   return event.seals.flatMap((seal) => {
     if (typeof seal === "string") return [seal];
@@ -235,6 +235,17 @@ export function findRegistryAnchor(db: Baser, issuer: string, registry: SerderAC
       db.fullyWitnessed(event)
       && event.seals.some((seal) => matchesRegistrySeal(seal, registry))
     ) {
+      earliest = [event.sn!, event.said!];
+    }
+  }
+  return earliest;
+}
+
+/** Find a public digest commitment without granting native registry admission authority. */
+function findDigestAnchor(db: Baser, issuer: string, digest: string): readonly [number, string] | null {
+  let earliest: readonly [number, string] | null = null;
+  for (const event of currentRegistryBranch(db, issuer)) {
+    if (db.fullyWitnessed(event) && sealDigests(event).includes(digest)) {
       earliest = [event.sn!, event.said!];
     }
   }
@@ -262,7 +273,7 @@ function vetAnchor(
       && onCurrentRegistryBranch(db, issuer, anchor)
     ) {
       const digests = sealDigests(anchor);
-      if (db.fullyWitnessed(anchor) && anchor.seals.some((seal) => matchesRegistrySeal(seal, event))) {
+      if (db.fullyWitnessed(anchor) && digests.includes(event.said)) {
         return { kind: "verified", anchor: [anchor.sn!, anchor.said!] };
       }
       if (digests.length && !digests.some((digest) => typeof digest === "string" && told.has(digest))) {
@@ -270,10 +281,10 @@ function vetAnchor(
       }
     }
   }
-  const anchor = findRegistryAnchor(db, issuer, event);
+  const anchor = findDigestAnchor(db, issuer, event.said!);
   if (anchor) return { kind: "verified", anchor };
   for (const pre of db.kevers.keys()) {
-    if (pre !== issuer && findRegistryAnchor(db, pre, event)) return { kind: "reject", reason: "anchor" };
+    if (pre !== issuer && findDigestAnchor(db, pre, event.said!)) return { kind: "reject", reason: "anchor" };
   }
   return missing;
 }

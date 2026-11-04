@@ -332,7 +332,7 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
     assertEquals(validateRip(received({ dt }, true)), { kind: "reject", reason: "timestamp" }, dt);
   }
 });
-Deno.test("local registry anchors require exact supplied coordinates and verified witness receipts", async () => {
+Deno.test("public digest commitments remain distinct from full native registry anchors", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const witnessHby = yield* createHabery({
@@ -365,7 +365,7 @@ Deno.test("local registry anchors require exact supplied coordinates and verifie
           : shape === "extra"
           ? { ...seal, extra: "unsupported" }
           : seal;
-        const valid = ["digest", "couple", "triple"].includes(shape);
+        const nativeAnchor = shape === "triple";
         issuer.interact({ data: [candidate] });
         const anchor = issuer.kever!.serder;
         const claim = {
@@ -384,8 +384,14 @@ Deno.test("local registry anchors require exact supplied coordinates and verifie
           local: false,
         });
         assertEquals(db.fullyWitnessed(anchor), true);
-        assertEquals(vet({ db, rip: candidateRip }).kind, valid ? "verified" : "missing", shape);
-        assertEquals(verifyRegistryAnchor(result.event, claim), valid, shape);
+        // Every case carries the exact digest; public hints do not grant native authority.
+        assertEquals(vet({ db, rip: candidateRip }).kind, "verified", shape);
+        assertEquals(
+          vet({ db, rip: candidateRip, sources: new Map([[candidateRip.said!, anchor.said!]]) }).kind,
+          "verified",
+          `public source hint: ${shape}`,
+        );
+        assertEquals(verifyRegistryAnchor(result.event, claim), nativeAnchor, shape);
         assertEquals(verifyRegistryAnchor(result.event, { ...claim, diger: new Diger({ qb64: rip.said! }) }), false);
       }
       assertEquals(verifyRegistryAnchor(event, { db, issuer: issuer.pre }), false);
@@ -458,12 +464,27 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
       engine = new RegistryEventer(hby.db, issuer.pre, store, rip.said!);
+      // Digest commitments authenticate public evidence but cannot advance native TEL state.
+      issuer.interact({ data: [{ d: rip.said! }] });
+      assertEquals(vet({ db: hby.db, rip }).kind, "verified");
+      assertEquals(engine.processEvent(rip).kind, "escrow");
+      issuer.interact({ data: [{ s: "0", d: rip.said! }] });
+      assertEquals(
+        engine.anchorMsg(
+          rip.said!,
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
+          new Diger({ qb64: issuer.kever!.said }),
+        ),
+        { kind: "reject", reason: "anchor" },
+      );
+      assertEquals(engine.processEvent(rip).kind, "escrow");
+      assertEquals([store.seqSaider(rip.said!, 0), store.head(rip.said!)], [null, null]);
       issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
       assertEquals(engine.processEvent(rip).kind, "accept");
       assertEquals(store.seqSaider(rip.said!, 0)!.qb64, rip.said);
       assertEquals(store.head(rip.said!)!.qb64, rip.said);
       assertEquals(store.anchor(rip.said!)!.map((v) => v.qb64), [
-        NumberPrimitive.fromNum(1n).qb64,
+        NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)).qb64,
         issuer.kever!.said,
       ]);
       assertEquals(baser.maes!.get(rip.said!, 0), []);
@@ -716,7 +737,7 @@ Deno.test("registry queued replay retains first anchors and advances a contiguou
       for (const event of [winner, loser, third, stale]) {
         issuer.interact({ data: [{ i: rip.said!, s: event.sad!.n, d: event.said! }] });
         const earlier = issuer.kever!.serder;
-        if (event === winner) issuer.interact({ data: [{ d: event.said! }] });
+        if (event === winner) issuer.interact({ data: [{ i: rip.said!, s: event.sad!.n, d: event.said! }] });
         const decision = engine.anchorMsg(
           event.said!,
           NumberPrimitive.fromNum(BigInt(issuer.kever!.sn)),
@@ -819,15 +840,15 @@ for (const sealingOrdinal of [3, 4]) {
           assertEquals(isAbsolute(child) || child.split(/[\\/]/)[0] === "..", false);
         }
         engine.processEvent(rip);
-        issuer.interact({ data: [{ d: regid }] });
+        issuer.interact({ data: [{ i: regid, s: "0", d: regid }] });
         assertEquals(engine.anchorMsg(regid).kind, "accept");
         const first = blindate(regid, regid, fixture.disclosures.issued.d);
         const second = blindate(regid, first.said!, fixture.disclosures.issued.d, { sn: 2 });
-        issuer.interact({ data: [{ d: first.said! }] });
+        issuer.interact({ data: [{ i: regid, s: first.sad!.n, d: first.said! }] });
         const surviving = issuer.kever!.serder;
-        issuer.interact({ data: sealingOrdinal === 3 ? [{ d: second.said! }] : [] });
+        issuer.interact({ data: sealingOrdinal === 3 ? [{ i: regid, s: second.sad!.n, d: second.said! }] : [] });
         const third = issuer.kever!.serder;
-        issuer.interact({ data: sealingOrdinal === 4 ? [{ d: second.said! }] : [] });
+        issuer.interact({ data: sealingOrdinal === 4 ? [{ i: regid, s: second.sad!.n, d: second.said! }] : [] });
         const disputed = sealingOrdinal === 3 ? third : issuer.kever!.serder;
         assertEquals(engine.processEvent(second).kind, "escrow");
         assertEquals(store.event(first.said!), null, "the surviving predecessor seal is known before its TEL body");
@@ -885,7 +906,7 @@ for (const sealingOrdinal of [3, 4]) {
           reason: "anchor",
         });
         assertEquals(engine.processEvent(second).kind, "escrow");
-        issuer.interact({ data: [{ d: second.said! }] });
+        issuer.interact({ data: [{ i: regid, s: second.sad!.n, d: second.said! }] });
         const authentic = issuer.kever!.serder;
         assertEquals(engine.processEvent(second).kind, "accept", "authentic resealing restores same-TEL liveness");
         assertEquals(store.anchor(second.said!)![1].qb64, authentic.said);
@@ -1075,7 +1096,11 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
       witnessReceipt();
       yield* call(() => ingest(hby, issuer.interact({ data: [{ s: "1", d: regid }] })));
       witnessReceipt();
-      assertEquals(vet({ db: hby.db, rip }).kind, "missing", "a supplied false ordinal cannot be ignored");
+      assertEquals(
+        vet({ db: hby.db, rip }).kind,
+        "verified",
+        "public stateless vet matches the digest, not the ordinal hint",
+      );
       observer.processEscrows(regid);
       assertEquals(store.head(regid), null, "false seal coordinates do not authorize public engine intake");
       const anchored = issuer.interact({
@@ -1129,7 +1154,9 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
             : ["digest", "event", "unavailable"]
         ) {
           const candidate = regcept(issuer.pre);
-          yield* call(() => ingest(hby, issuer.interact({ data: [{ d: candidate.said! }] })));
+          yield* call(() =>
+            ingest(hby, issuer.interact({ data: [{ i: candidate.said!, s: "0", d: candidate.said! }] }))
+          );
           witnessReceipt();
           const seal = {
             s: wrong === "event" ? "0" : wrong === "unavailable" ? "ffff" : issuer.kever!.serder.snh!,

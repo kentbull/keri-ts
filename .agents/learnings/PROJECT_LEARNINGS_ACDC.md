@@ -200,8 +200,10 @@ local processing. Native ordinals use canonical lowercase hex without leading ze
 within 128 bits; BUP authoring requires a positive ordinal. Native timestamps carry
 six fractional digits and a numeric offset, with real calendar/offset validation.
 Historical `upd` bytes remain serializable and decodable; live dispatch explicitly
-refuses them. Accept only `{d}`, `{s,d}`, or `{i,s,d}` with every supplied
-coordinate matching. Both stateless vetting and durable discovery require the
+refuses them. Native acceptance, discovery, source locators and author retry require
+an exact `{i,s,d}` registry/ordinal/TEL-SAID seal. Public stateless `vet`/`vetBinds`
+match digest commitments, including bare SAIDs; other seal fields are nonbinding.
+Both stateless vetting and durable discovery require the
 current accepted KEL head's prior-digest ancestry and that event's historical
 witness quorum. Superseded ordinal buckets retain history, not new TEL authority.
 Field validity is not TEL acceptance.

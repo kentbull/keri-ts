@@ -305,7 +305,9 @@ Deno.test("wallet issued history retains binary bytes and accepted issuance afte
     const proof = makeBlindState({ acdc: credential.said!, state: "issued", sn: 1n, raw: b("0123456789abcdef") });
     const issued = blindate(rip.said!, rip.said!, proof.d.nonce);
     const observer = new RegistryObserver(p.source.db, p.registry);
-    p.issuer.interact({ data: [{ s: rip.sad!.n, d: rip.said! }, { s: issued.sad!.n, d: issued.said! }] });
+    p.issuer.interact({
+      data: [{ i: rip.said!, s: rip.sad!.n, d: rip.said! }, { i: rip.said!, s: issued.sad!.n, d: issued.said! }],
+    });
     assertEquals(observer.processEvent(rip).kind, "accept");
     assertEquals(observer.processEvent(issued).kind, "accept");
     assertThrows(() => issuerWallet.recordIssued(credential, issued.said!), ValidationError, "opening");
@@ -318,7 +320,7 @@ Deno.test("wallet issued history retains binary bytes and accepted issuance afte
       raw: b("fedcba9876543210"),
     });
     const revoked = blindate(rip.said!, issued.said!, revokedProof.d.nonce, { sn: 2 });
-    p.issuer.interact({ data: [{ s: revoked.sad!.n, d: revoked.said! }] });
+    p.issuer.interact({ data: [{ i: rip.said!, s: revoked.sad!.n, d: revoked.said! }] });
     assertEquals(observer.processEvent(revoked).kind, "accept");
     yield* p.source.ks.reopen();
     yield* p.source.db.reopen();
@@ -353,7 +355,7 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       );
       const holder = new WalletDiscloser(p.wallet, holderReceipts);
       const observed = new RegistryObserver(p.source.db, p.registry), rip = regcept(p.issuer.pre);
-      p.issuer.interact({ data: [{ s: "0", d: rip.said! }] });
+      p.issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
       assertEquals(observed.processEvent(rip).kind, "accept");
       const full = graphDisclosures(p.source, p.issuer).fullNodes[0];
       const schema = structuredClone(full.schema) as MapperMap;
