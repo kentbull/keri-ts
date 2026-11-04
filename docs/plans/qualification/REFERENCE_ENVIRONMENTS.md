@@ -37,9 +37,8 @@ The same action's `profile: candidate` input prepares the ACDC v2 candidate for
 `KERIPY_INTEROP_PROFILE=candidate` with its root and interpreter. Main setup cannot
 replace this selection; missing candidate configuration and mismatched source/imports
 fail before protocol state. The native-registry owner covers reciprocal proof
-intake, protected custody handoff with fresh-process reopen, and reciprocal
-registrar/observer service boundaries. Its stores and service processes remain
-owned by the test's temporary scope.
+intake with reopened TS state and reciprocal registrar/observer service boundaries.
+Its stores and service processes remain owned by the test's temporary scope.
 
 The `interop-kram` owner retains its mailbox-fork environment. Its pairwise IPEX
 file separately verifies the candidate Python IPEX actor, while the provider and

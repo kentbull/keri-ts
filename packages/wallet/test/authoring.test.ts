@@ -1,11 +1,14 @@
 /** Authoring uses three independent witnesses and the normal receipt endpoints, not accepted-row insertion. */
+import { BlindState, parseBytes } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import {
   acdcmap,
   AcdcV2Regery,
+  blindate,
   createAgentRuntime,
   createHabery,
+  envelopeFromFrame,
   FetchHttpClient,
   Receiptor,
   Roles,
@@ -16,6 +19,7 @@ import {
 import { createProtocolHandler } from "../../hosting/mod.ts";
 import { createWalletBaser, Wallet, WalletAuthor } from "../mod.ts";
 import { RegistryCustody } from "../src/custody.ts";
+import { WalletDiscloser } from "../src/disclosing.ts";
 
 Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum and retains public/derived issuance across reopen", async () => {
   await run(function*() {
@@ -161,6 +165,29 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       assertEquals(resumed.raw, advance.event.raw, "retry reuses the exact pending next event");
       assertEquals(issuer.kever!.said, pendingAdvanceSeal, "retry gathers receipts for the same pending anchor");
       assertEquals(wallet.db.issued.get([acdc.said!])!.update, original.update);
+
+      // Public acceptance alone cannot recover missing private derivation coordinates.
+      const current = author.registry("native", issuer.pre);
+      const ordinal = current.sn + 1n;
+      const opening = custody.derive(rip.said!, ordinal, acdc.said!, "issued");
+      const update = blindate(rip.said!, resumed.said!, opening.d.nonce, { sn: ordinal });
+      current.processEvent(update);
+      yield* author.anchor(current, update);
+      const discloser = new WalletDiscloser(
+        wallet,
+        receiptor,
+        new RegistryCustody({ hby, registry: wallet.registry, db }),
+      );
+      assertThrows(
+        () => discloser.registryProof(acdc, rip.said!, [], { derive: true }),
+        ValidationError,
+        "Exact derived update coordinates are unavailable",
+      );
+      custody.retainDerivedUpdate(update, opening);
+      const disclosed = envelopeFromFrame(
+        parseBytes(discloser.registryProof(acdc, rip.said!, [], { derive: true }))[0],
+      );
+      assertEquals(BlindState.qb64(disclosed.bsqs[0]), BlindState.qb64(opening as BlindState));
     } finally {
       yield* db.close(true);
       for (const server of servers) yield* call(() => server.shutdown());

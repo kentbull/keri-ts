@@ -310,7 +310,6 @@ function* acdcV2Disclosure(
           disclose: json(args.disclose, "disclose"),
           refresh: parseBooleanOption(args.refresh, "refresh"),
           derive,
-          boundEvent: parseStringOption(args.boundEvent, "bound-event"),
           openings: (Array.isArray(args.opening) ? args.opening as string[] : []).map(openingFile),
         };
         const options = {
