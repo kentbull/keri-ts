@@ -601,7 +601,17 @@ export class Multiplexor {
       const event = new Serder({ sad });
       const { attachment, genus } = multisigChildEvidence(this.hby, wrapper, label, event);
       for (const frame of parseBytes(concatBytes(Counter.makeGVC(genus), event.raw, attachment))) {
-        yield* dispatchEnvelope(envelopeFromFrame(frame, true), this.rvy, this.kvy);
+        yield* dispatchEnvelope(
+          envelopeFromFrame(frame, true),
+          this.rvy,
+          this.kvy,
+          this.exchanger,
+          undefined,
+          undefined,
+          undefined,
+          this.messageKevery,
+          this.registry,
+        );
       }
     }
   }
@@ -688,7 +698,7 @@ export class Multiplexor {
       const signed = multisigPayloadSaid(serder);
       if (
         typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
-        || !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
+        || !(child.body instanceof SerderKERI) || child.nests?.length
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }

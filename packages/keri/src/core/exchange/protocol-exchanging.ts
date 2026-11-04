@@ -271,8 +271,6 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
   switch (route) {
     case "/multisig/registry":
       return ["rip", "bup", "ixn", "rot", "drt"];
-    case "/multisig/exn":
-      return ["exn"];
     case "/multisig/icp":
       return ["icp", "dip"];
     case "/multisig/rot":

@@ -20,9 +20,11 @@ approval replay, so a peer wrapper arriving during replay sees that approval and
 processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
-Legacy `/multisig/exn` coordination indexes the embedded-section SAID in meids
-and submitters in maids. Joining adds a member's group-index signature to the
-business EXN; completion and external lead delivery remain separate decisions.
+Canonical V1 `/multisig/exn` coordination indexes the embedded-section SAID in
+meids and submitters in maids, including native XIP Grants and EXN Admits.
+Pathed child bytes retain their body and V2 proof enclosure; the outer version
+does not select child proof framing. Joining adds a member's group-index signature
+to the business exchange; completion and external lead delivery remain separate decisions.
 Single-sig habitats lead their own messages. Notification is a wakeup, not approval;
 preserve first-notice behavior for an already indexed proposal.
 

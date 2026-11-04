@@ -19,7 +19,7 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, type Operation, run } from "effection";
+import { call, type Operation, run, spawn, type Task } from "effection";
 import {
   assertEquals,
   assertExists,
@@ -51,6 +51,7 @@ import { ipexApplyExn, ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts"
 import {
   acdcV2RegistryProposal,
   loadMultisigHandlers,
+  multisigChild,
   type MultisigEventProposal,
   multisigExnBody,
   multisigInceptExn,
@@ -73,6 +74,7 @@ import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
+import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -2251,3 +2253,172 @@ for (const verdict of ["true", "false", "unresolved", "optional"] as const) {
     });
   });
 }
+
+Deno.test("native IPEX group wrappers preserve child proofs and require explicit member approval", async () => {
+  await participants(async (left, right, alice, bob) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("native-ipex", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
+    const remote = right.makeGroupHab("native-ipex", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
+    await run(function*() {
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock);
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        for (const runtime of [receiver, sender]) {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            { local: true },
+          );
+        }
+        const schema = new Schemer({ sed: { $id: "", version: "1.0.0", type: "object" } });
+        for (const hby of [left, right]) hby.db.schema.pin(schema.said, schema);
+        const rip = acdcV2Regcept(bob.pre);
+        const credential = acdcV2Map(bob.pre, {
+          regid: rip.said!,
+          schema: schema.said,
+          attribute: { d: "", i: local.hab.pre, role: "selected" },
+        });
+        const opening = makeBlindState({ acdc: credential.said!, state: "issued" });
+        const bup = acdcV2Blindate(rip.said!, rip.said!, opening.d.nonce);
+        for (const event of [rip, bup]) {
+          bob.interact({ data: [{ i: event.regid ?? event.said, s: event.sad!.n, d: event.said }] });
+          yield* call(() => learn(left, bob));
+          for (const runtime of [receiver, sender]) {
+            yield* runtime.reactor.processBytes(messagize(event, new Uint8Array(), { gvrsn: Vrsn_2_0 }));
+            assertEquals(runtime.acdc!.store.head(rip.said!)?.qb64, event.said);
+          }
+        }
+        const node = parseBytes(messagize(
+          credential,
+          Counter.enclose({
+            code: "BlindedStateQuadruples",
+            version: Vrsn_2_0,
+            qb64: concatBytes(opening.d.qb64b, opening.u.qb64b, opening.td.qb64b, opening.ts.qb64b),
+          }),
+          { gvrsn: Vrsn_2_0 },
+        ))[0];
+        /** Prepare the exact native child without inventing issuer evidence. */
+        const wire = function*(body: SerderKERI, nests: readonly CesrFrame[] = []) {
+          return yield* call(() =>
+            collectPayload(framePayload({ body, gvrsn: Vrsn_2_0, attachments: [], nests: [...nests] }))
+          );
+        };
+        const received = new Map<string, Uint8Array[]>();
+        const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+          const member = new URL(request.url).pathname.slice(1);
+          const runtime = member === alice.pre ? receiver : member === bob.pre ? sender : null;
+          if (!runtime) return new Response(null, { status: 404 });
+          const bytes = await readCesrRequestBytes(request);
+          await run(() => runtime.reactor.processBytes(bytes));
+          received.set(member, [...received.get(member) ?? [], bytes]);
+          return new Response(null, { status: 204 });
+        });
+        const workers: Task<void>[] = [];
+        try {
+          for (const member of [alice, bob]) {
+            const url = `http://127.0.0.1:${server.addr.port}/${member.pre}`;
+            for (const runtime of [receiver, sender]) {
+              yield* runtime.reactor.processBytes(member.makeEndRole(member.pre, "controller", true));
+              yield* runtime.reactor.processBytes(member.makeLocScheme(url, member.pre, "http"));
+            }
+          }
+          workers.push(
+            yield* spawn(() => receiver.postman.deliverDo()),
+            yield* spawn(() => sender.postman.deliverDo()),
+          );
+          /** Deliver through actual member endpoints and inspect the retained pathed child. */
+          const publish = function*(runtime: typeof receiver, hby: Habery, group: Hab, raw: Uint8Array) {
+            const result = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, group, raw, Vrsn_2_0);
+            assertEquals(result.messages.length, 1);
+            const sent = received.get(result.messages[0].recipient)?.at(-1);
+            assertExists(sent);
+            const wrapper = parseBytes(sent)[0].body;
+            assertInstanceOf(wrapper, SerderKERI);
+            assertEquals(wrapper.pvrsn, Vrsn_1_0);
+            const child = multisigChild(hby, wrapper, "exn");
+            assertExists(child);
+            assertEquals(child.genus, Vrsn_2_0);
+            assertEquals(concatBytes(child.event.raw, child.attachment), raw, "pathed child proof bytes stay exact");
+            return { wrapper, sent };
+          };
+          /** Receipt remains inert until the other member explicitly approves this exact child. */
+          const coordinate = function*(body: SerderKERI, nests: readonly CesrFrame[] = []) {
+            const first = yield* prepareAcdcV2GroupIpex(left, receiver.protocol, local.hab, yield* wire(body, nests));
+            assertExists(first);
+            assertEquals(receiver.exc.complete(body.said!), false, "one member share remains pending");
+            const proposed = yield* publish(receiver, left, local.hab, first);
+            assertEquals(sender.exc.complete(body.said!), false, "receipt does not sign or approve the child");
+            assertEquals(right.db.epse.get([body.said!]), null, "unapproved receipt does not escrow child signatures");
+            assertEquals(right.db.maids.get([(proposed.wrapper.ked!.e as { d: string }).d]).map(p => p.qb64), [
+              alice.pre,
+            ]);
+            const approval = yield* approveMultisigIpex(
+              right,
+              sender.protocol,
+              sender.postman,
+              null,
+              proposed.wrapper,
+              {
+                publish: false,
+                sendLead: false,
+              },
+            );
+            assertExists(approval.approved);
+            assertEquals(approval.accepted, true);
+            yield* publish(sender, right, remote.hab, approval.approved);
+            yield* receiver.protocol.processEscrowsOnce();
+            assertEquals(
+              receiver.exc.complete(body.said!),
+              true,
+              "approved peer wrappers complete through native replay",
+            );
+          };
+          const grant = ipexExnBody(local.hab.pre, "/ipex/grant", [credential], {
+            recipient: alice.pre,
+            message: "retained native view",
+          });
+          assertEquals(grant.ilk, "xip");
+          yield* coordinate(grant, [node]);
+          for (const hby of [left, right]) {
+            const retained = loadNests(hby.db, grant.said!);
+            assertEquals(retained[0].body.raw, credential.raw);
+            const kept = envelopeFromFrame(retained[0]).bsqs[0];
+            assertEquals([kept.d.qb64, kept.u.qb64, kept.td.qb64, kept.ts.qb64], [
+              opening.d.qb64,
+              opening.u.qb64,
+              opening.td.qb64,
+              opening.ts.qb64,
+            ]);
+          }
+          const incoming = ipexExnBody(bob.pre, "/ipex/grant", [credential], {
+            recipient: local.hab.pre,
+            message: "group receives exact credential",
+          });
+          const incomingWire = yield* call(() =>
+            collectPayload(framePayload({
+              body: incoming,
+              gvrsn: Vrsn_2_0,
+              nests: [node],
+              attachments: messageAttachmentGroups({ tsgs: proof(bob, incoming) }, Vrsn_2_0),
+            }))
+          );
+          for (const runtime of [receiver, sender]) {
+            yield* runtime.reactor.processBytes(incomingWire);
+            assertEquals(runtime.exc.complete(incoming.said!), true);
+          }
+          const admit = ipexExnBody(local.hab.pre, "/ipex/admit", [], {
+            message: "explicit group admit",
+            prior: incoming,
+          });
+          assertEquals(admit.ilk, "exn");
+          yield* coordinate(admit);
+        } finally {
+          for (const worker of workers) yield* worker.halt();
+          yield* call(() => server.shutdown());
+        }
+      } finally {
+        yield* sender.close();
+        yield* receiver.close();
+      }
+    });
+  });
+});

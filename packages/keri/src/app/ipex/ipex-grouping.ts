@@ -8,14 +8,13 @@
  * delivery and credential owners; its byte-input context belongs to the operation.
  */
 import {
+  attachmentPayload,
   type CesrFrame,
   type Cigar,
   collectPayload,
   concatBytes,
   Counter,
   Diger,
-  framePayload,
-  nestedPayload,
   parseBytes,
   Prefixer,
   Seqner,
@@ -195,7 +194,8 @@ export function* prepareAcdcV2GroupIpex(
     ...frame,
     attachments: [...frame.attachments, ...messageAttachmentGroups({ tsgs: [proof] }, Vrsn_2_0)],
   };
-  const wire = yield* call(() => collectPayload(framePayload(approved, { gvrsn: Vrsn_2_0 })));
+  const attachments = yield* call(() => collectPayload(attachmentPayload(approved, { gvrsn: Vrsn_2_0 })));
+  const wire = concatBytes(embedded.raw, attachments);
   yield* new Reactor(protocol).processBytes(wire, { local: true });
   yield* protocol.processEscrowsOnce();
   return wire;
@@ -283,10 +283,7 @@ export function* approveMultisigIpex(
 
 /** Decode one accepted coordination wrapper and select its actual local group signing state. */
 function loadIpexProposal(hby: Habery, wrapper: SerderKERI) {
-  const frame = wrapper.pvrsn.major === 2 ? loadNests(hby.db, wrapper.said!)[0] : undefined;
-  const child = frame && frame.body instanceof SerderKERI
-    ? { event: frame.body, attachment: new Uint8Array(), genus: frame.gvrsn!, frame }
-    : multisigChild(hby, wrapper, "exn");
+  const child = multisigChild(hby, wrapper, "exn");
   if (!child) throw new ValidationError("Multisig IPEX approval requires an embedded child.");
   const group = child.event.pre;
   if (!group || !child.event.said || !wrapper.said) {
@@ -311,9 +308,8 @@ function* approveIpexChild(
   reger: Reger | null,
 ): Operation<Uint8Array | null> {
   const { event: embedded, attachment: peerAttachment, genus } = child;
-  if (embedded.pvrsn.major === 2 && "frame" in child) {
-    const raw = yield* call(() => collectPayload(framePayload(child.frame, { gvrsn: Vrsn_2_0 })));
-    return yield* prepareAcdcV2GroupIpex(hby, protocol, groupHab, raw);
+  if (embedded.pvrsn.major === 2) {
+    return yield* prepareAcdcV2GroupIpex(hby, protocol, groupHab, concatBytes(embedded.raw, peerAttachment));
   }
   if (embedded.route === IPEX_GRANT_ROUTE) {
     if (!reger) throw new ValidationError("Grant approval requires the local credential wallet.");
@@ -481,16 +477,12 @@ function* prepareGroupIpexMessages(
   const input = new Reactor(protocol);
   const messages: SignedGroupMessage[] = [];
   for (const recipient of remoteGroupMembers(hby, member, groupSigningMembers(hby, groupHab.pre))) {
-    const prepared = child.pvrsn.major === 2
-      ? [
-        exchange(MULTISIG_EXN_ROUTE, { gid: groupHab.pre, exn: child.said! }, {
-          sender: member.pre,
-          recipient,
-          version: Vrsn_2_0,
-        })[0],
-        yield* call(() => collectPayload(nestedPayload(childFrame, Vrsn_2_0))),
-      ] as const
-      : exchange(MULTISIG_EXN_ROUTE, payload, { sender: member.pre, recipient, embeds: { exn: embedded } });
+    const prepared = exchange(MULTISIG_EXN_ROUTE, payload, {
+      sender: member.pre,
+      recipient,
+      version: Vrsn_1_0,
+      embeds: { exn: embedded },
+    });
     const signed = yield* prepareGroupMessage(protocol.exc, member, recipient, prepared);
     yield* input.processBytes(signed.message, { local: true });
     if (
@@ -564,9 +556,7 @@ export function* approveStoredMultisigIpexWrappers(
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = wrapper.pvrsn.major === 2
-      ? loadNests(hby.db, wrapper.said!)[0]?.body.ked
-      : embeddedBusinessExnSAD(wrapper);
+    const embeddedSad = embeddedBusinessExnSAD(wrapper);
     if (!embeddedSad || embeddedSad.d !== embeddedSaid) {
       continue;
     }
@@ -586,9 +576,7 @@ export function findPendingMultisigIpex(db: Baser): SerderKERI | null {
     if (wrapper.route !== MULTISIG_EXN_ROUTE) {
       continue;
     }
-    const embeddedSad = wrapper.pvrsn.major === 2
-      ? loadNests(db, wrapper.said!)[0]?.body.ked
-      : embeddedBusinessExnSAD(wrapper);
+    const embeddedSad = embeddedBusinessExnSAD(wrapper);
     if (!embeddedSad || typeof embeddedSad.r !== "string" || !embeddedSad.r.startsWith("/ipex/")) {
       continue;
     }
