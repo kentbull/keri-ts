@@ -84,22 +84,20 @@ original issuance reference after later state advances or revocation.
 
 ## Optional local encrypted custody
 
-`RegistryCustody({hby, registry, db})` is an explicit capability over the existing
-wallet environment. Ordinary inventory never creates it or reads its encrypted
-rows. `createCustody(registry, discloser)` requires an accepted locally controlled
-inception and the designated discloser's known KEL. Secrets use the authenticated
-encrypted Keeper AEID; salt regeneration after undisclosed blinded history is refused.
+`RegistryCustody({hby, hab, registry, db})` binds the actual local habitat,
+Keeper and wallet owners. `createCustody(registry)` reuses that habitat's native
+Keeper root, or provisions a new Salt128 root for its accepted issuer inception.
+It refuses regeneration behind undisclosed blinded history. Ordinary inventory
+needs no private capability.
 
-`derive` returns an event-opening candidate, not accepted standing or permission
-to present a credential. `retainDerivedUpdate(event, opening)` records only the
-exact event SAID, target, state and optional bound KEL coordinates before new
-processing/anchoring. `derivedOpening(event)` requires that exact accepted event
-and verifies the reconstructed commitment after reopen; a later public successor
-never selects another credential's inputs or publishes private openings.
+Roots are immutable encrypted `rroots.` values keyed by canonical local AID and
+registry SAID. Keeper AEID replacement atomically rewraps them; encryption cannot
+be disabled while roots remain. Root possession confers no presentation authority.
+DHKE, explicit RegistrySalt transfer and network Unblind remain separate work.
 
-The encrypted salt and its registry/controller/discloser bindings live in the
-wallet environment, encrypted under the authenticated Keeper AEID. This is local
-wallet storage, not native Keeper `RegistrySalt` custody. AEID replacement makes
-this material unavailable. Missing exact event coordinates or inaccessible secret
-material refuse derivation; discovery never guesses coordinates or regenerates salt.
-Encrypted Keeper/RegistrySalt convergence remains separate planned work.
+`derive` returns an event-opening candidate. `retainDerivedUpdate(event, opening)`
+records only exact event SAID, target, state and optional bound KEL coordinates in
+the wallet before processing/anchoring. `derivedOpening(event)` authenticates the
+exact accepted event and reconstructed commitment after reopen. Losing the wallet
+does not lose the Keeper root, but missing coordinates still refuse derivation;
+no coordinate guessing or legacy wallet-secret reader exists.

@@ -10,9 +10,12 @@ do not cast the native environment or infer commit completion from a nested retu
 
 Manager authenticates AEID changes and prepares replacement crypto before writes.
 Keeper.changeEncryption owns one native transaction for root/prefix salts, signer
-seeds and AEID, rechecks expected policy under the writer and rejects false writes.
+seeds, encrypted registry roots and AEID, rechecks expected policy under the writer and rejects false writes.
 Readonly and borrowed writers cannot change this policy. Publish Manager crypto
-only after commit; same-AEID changes preserve stored ciphertext.
+only after commit; same-AEID changes preserve stored ciphertext. Registry roots are
+immutable Salt128 Cipher values in `rroots.`. Retention authenticates the live AEID
+and rechecks it inside its owned writer, refusing stale Managers and borrowed
+writers. Retained roots prevent disabling encryption.
 
 ## Database truth
 

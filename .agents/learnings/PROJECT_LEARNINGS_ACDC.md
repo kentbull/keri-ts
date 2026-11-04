@@ -143,15 +143,15 @@ body after non-refusal. Pending material is not acceptance. Accepted cloneTel re
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
-RegistryCustody is an explicit local capability over the existing wallet environment.
-The salt and registry/controller/discloser bindings remain wallet-owned ciphertext
-under the authenticated Keeper AEID; this is not native Keeper RegistrySalt custody.
-Ordinary inventory never loads them. The nonsecret event-SAID index retains exact
-target/state/bound coordinates before derived BUP processing so reopen and later
-public successors cannot select different inputs. Reconstructed openings must match
-the exact accepted event. AEID replacement, missing coordinates and missing private
-material refuse derivation; no salt regeneration or coordinate guessing. Full
-Keeper/RegistrySalt convergence remains separate planned work.
+RegistryCustody binds actual Habery/Hab/registry/wallet owners and uses native
+Keeper `rroots.` ciphertext keyed by canonical local AID and registry SAID. New
+roots require the selected accepted issuer; an existing retained root may be
+reused without implying delegation. AEID changes atomically rewrap immutable roots
+and cannot disable encryption while roots remain. No legacy wallet-secret reader
+exists. Nonsecret event-SAID coordinates remain wallet-owned: wallet loss preserves
+the Keeper root but missing coordinates refuse derivation. Authoring requires the
+registry's actual Hab; derived Grant preparation requires the actual sender Hab.
+DHKE, RegistrySalt transfer and network Unblind remain separate work.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

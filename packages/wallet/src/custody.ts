@@ -1,47 +1,15 @@
 /** Optional encrypted derivation capability; ordinary wallet inventory never constructs or reads it. */
-import {
-  b,
-  bytesEqual,
-  Decrypter,
-  Encrypter,
-  makeBlindState,
-  makeBoundState,
-  MtrDex,
-  Prefixer,
-  Salter,
-  type SerderACDC,
-  t,
-} from "cesr-ts";
+import { bytesEqual, makeBlindState, makeBoundState, MtrDex, Salter, type SerderACDC } from "cesr-ts";
 import { Komer, type RegistryStore } from "keri-ts/db";
-import { type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
+import { type Hab, type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
 import type { WalletBaser } from "./storing.ts";
 
-/** Public bindings for locally encrypted registry derivation material. */
-export interface CustodyInfo {
-  registry: string;
-  controller: string;
-  discloser: string;
-}
-
-interface Secret {
-  info: CustodyInfo;
-  salt: string;
-}
-interface EncryptedCustody {
-  aeid: string;
-  cipher: string;
-}
 interface DerivedUpdate {
   credential: string;
   state: string;
   bound: { bn: string; bd: string } | null;
 }
 
-/** Only the Keeper AEID and authenticated ciphertext are stored at rest. */
-class CustodyRecord extends RawRecord<EncryptedCustody> implements EncryptedCustody {
-  declare aeid: string;
-  declare cipher: string;
-}
 /** Public event-specific inputs; neither a salt nor a derived opening is retained here. */
 class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
   declare credential: string;
@@ -49,113 +17,54 @@ class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
   declare bound: DerivedUpdate["bound"];
 }
 
-/** Narrow the decrypted local record before reading its bindings. */
-function record(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-/** Validate the decrypted local record without including secret material in failures. */
-function parseSecret(raw: Uint8Array, registry: string): Secret {
-  const payload: unknown = JSON.parse(t(raw));
-  if (
-    !record(payload) || Object.keys(payload).sort().join(",") !== "info,salt"
-    || !record(payload.info) || typeof payload.salt !== "string"
-  ) throw new Error("Invalid custody payload");
-  const info = payload.info;
-  if (typeof info.controller !== "string" || typeof info.discloser !== "string") throw new Error("Invalid bindings");
-  const canonical = { registry, controller: info.controller, discloser: info.discloser };
-  if (
-    Object.keys(info).length !== Object.keys(canonical).length
-    || Object.entries(canonical).some(([key, value]) => info[key] !== value)
-  ) throw new Error("Invalid bindings");
-  new Salter({ qb64: payload.salt });
-  return { info: canonical, salt: payload.salt };
-}
 /** Explicit capability over an existing wallet environment and accepted public registry evidence. */
 export class RegistryCustody {
   private env: WalletBaser["env"] = null;
-  private custody?: Komer<CustodyRecord>;
   private derivations?: Komer<DerivedRecord>;
 
   /** Borrow owners only; construction opens no table and loads no encrypted row. */
-  constructor(readonly options: { hby: Habery; registry: RegistryStore; db: WalletBaser }) {}
+  constructor(readonly options: { hby: Habery; hab: Hab; registry: RegistryStore; db: WalletBaser }) {
+    this.owner();
+  }
+
+  /** Bind the actual local habitat and its key owners, never an AID label alone. */
+  private owner(): void {
+    const { hby, hab } = this.options;
+    if (hby.habs.get(hab.pre) !== hab || hab.ks !== hby.ks || hab.mgr !== hby.mgr || hab.db !== hby.db) {
+      throw new ValidationError("Custody requires the actual local habitat and Keeper owners");
+    }
+  }
 
   /** Rebind optional tables after the caller reopens the same wallet owner. */
   private tables() {
     const { db } = this.options;
     if (!db.opened || !db.env) throw new ValidationError("Wallet inventory is closed");
     if (this.env !== db.env) {
-      this.custody = new Komer(db, { subkey: "custody.", recordClass: CustodyRecord });
       this.derivations = new Komer(db, { subkey: "derived-updates.", recordClass: DerivedRecord });
       this.env = db.env;
     }
-    return { custody: this.custody!, derivations: this.derivations! };
+    return { derivations: this.derivations! };
   }
 
-  /** Authenticate the current Keeper before any secret-bearing operation. */
-  private box() {
-    const mgr = this.options.hby.mgr;
-    if (!mgr.aeid || !mgr.seed) {
+  /** Load only this habitat's native Keeper root; possession confers no protocol authority. */
+  private load(registry: string): Salter {
+    this.owner();
+    const root = this.options.hby.mgr.getRegistryRoot(this.options.hab.pre, registry);
+    if (!root) throw new ValidationError("Registry custody is not provisioned");
+    return root;
+  }
+
+  /** Provision an issuer-selected root once, refusing replacement behind opaque accepted history. */
+  createCustody(registry: string): { registry: string } {
+    this.owner();
+    const { hby, hab } = this.options;
+    if (!hby.mgr.aeid || !hby.mgr.seed) {
       throw new ValidationError("Private credential custody requires an authenticated encrypted Keeper");
     }
-    const encrypter = new Encrypter({ verkey: mgr.aeid });
-    if (!encrypter.verifySeed(mgr.seed)) throw new ValidationError("Keeper authentication does not match its AEID");
-    return { aeid: mgr.aeid, encrypter, decrypter: new Decrypter({ seed: mgr.seed }) };
-  }
-
-  /** Bind explicit participants to the accepted inception; salt possession is not delegation. */
-  private binding(registry: string, controller: string, discloser: string): void {
-    new Prefixer({ qb64: controller });
-    new Prefixer({ qb64: discloser });
+    if (hby.mgr.getRegistryRoot(hab.pre, registry)) return { registry };
     const rip = this.options.registry.seqEvent(registry, 0);
-    if (!rip || rip.issuer !== controller) {
-      throw new ValidationError("Custody must match the accepted registry controller");
-    }
-    const local = this.options.hby.habs;
-    if (!local.has(controller)) {
-      throw new ValidationError("Custody operation requires the intended local identifier");
-    }
-    if (!this.options.hby.db.getKever(discloser)) {
-      throw new ValidationError("Designated discloser key state is unknown");
-    }
-  }
-
-  /** Decrypt exactly one provisioned row under its original Keeper AEID. */
-  private load(registry: string): Secret {
-    const box = this.box(), stored = this.tables().custody.get(registry);
-    if (!stored) throw new ValidationError("Registry custody is not provisioned");
-    if (stored.aeid !== box.aeid) {
-      throw new ValidationError("Local custody is unavailable under the changed Keeper AEID");
-    }
-    try {
-      return parseSecret(box.decrypter.decrypt({ qb64: stored.cipher, bare: true }) as Uint8Array, registry);
-    } catch {
-      throw new ValidationError("Unable to authenticate private registry custody");
-    }
-  }
-
-  /** Retain locally encrypted material once; a concurrent differing record is refused. */
-  private retain(secret: Secret): CustodyInfo {
-    const box = this.box(), rows = this.tables().custody, key = secret.info.registry;
-    const value = { aeid: box.aeid, cipher: box.encrypter.encrypt({ ser: b(JSON.stringify(secret)) }).qb64 };
-    if (!rows.put(key, value) && JSON.stringify(this.load(key)) !== JSON.stringify(secret)) {
-      throw new ValidationError("Different registry custody was concurrently retained");
-    }
-    return secret.info;
-  }
-
-  /** Provision once, refusing replacement salt after any undisclosed accepted blinded history. */
-  createCustody(registry: string, discloser: string): CustodyInfo {
-    this.box();
-    const rip = this.options.registry.seqEvent(registry, 0);
-    if (!rip?.issuer) throw new ValidationError("Accepted registry inception is required before custody");
-    const info = { registry, controller: rip.issuer, discloser };
-    this.binding(registry, info.controller, discloser);
-    if (this.tables().custody.get(registry)) {
-      const current = this.load(registry);
-      if (JSON.stringify(current.info) !== JSON.stringify(info)) {
-        throw new ValidationError("Registry custody has different designated bindings");
-      }
-      return info;
+    if (!rip || rip.issuer !== hab.pre) {
+      throw new ValidationError("New custody requires the accepted registry issuer's actual local habitat");
     }
     // Existing clone validation authenticates public openings without another parser or proof algorithm.
     for (const _ of this.options.registry.cloneTelIter(registry)) { /* consume the accepted public prefix */ }
@@ -171,10 +80,12 @@ export class RegistryCustody {
         );
       }
     }
-    return this.retain({
-      info,
-      salt: new Salter({ code: MtrDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }).qb64,
-    });
+    hby.mgr.putRegistryRoot(
+      hab.pre,
+      registry,
+      new Salter({ code: MtrDex.Salt_128, raw: crypto.getRandomValues(new Uint8Array(16)) }),
+    );
+    return { registry };
   }
 
   /** Derive a candidate only; consumers still authenticate its exact accepted event and bound KEL reference. */
@@ -190,11 +101,8 @@ export class RegistryCustody {
     ) {
       throw new ValidationError("Update ordinal must be a positive integer");
     }
-    const secret = this.load(registry), local = this.options.hby.habs;
-    if (!local.has(secret.info.controller) && !local.has(secret.info.discloser)) {
-      throw new ValidationError("This wallet is not a designated custody participant");
-    }
-    const values = { salt: secret.salt, sn: ordinal, tier: "low" as const, acdc: credential, state };
+    const root = this.load(registry);
+    const values = { salt: root.qb64, sn: ordinal, tier: "low" as const, acdc: credential, state };
     return options.bound
       ? makeBoundState({ ...values, bsn: options.bsn ?? 0, bd: options.bd ?? "" })
       : makeBlindState(values);

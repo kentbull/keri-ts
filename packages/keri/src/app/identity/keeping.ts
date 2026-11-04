@@ -10,6 +10,7 @@ import {
   NumberPrimitive,
   NumDex,
   parseMatter,
+  Prefixer,
   Saider,
   Salter,
   Siger,
@@ -453,7 +454,7 @@ function emptyLot(
  * - `randy` and `salty` creator algorithms are live; `group` and `extern`
  *   remain explicit unsupported-algorithm seams
  * - AEID handling now includes real sealed-box encryption for keeper-global
- *   salt, per-prefix salts, and signer seeds, while keeping the encrypted
+ *   salt, per-prefix salts, signer seeds and registry roots, while keeping the encrypted
  *   runtime dependency local to the KERI package instead of CESR
  * - readonly opens intentionally avoid keeper mutation so visibility commands
  *   can inspect stores without side effects
@@ -615,13 +616,13 @@ export class Manager {
    * Re-encryption scope:
    * - keeper-global root salt in `gbls.salt`
    * - per-prefix salts in `prms.salt`
-   * - signer seeds in `pris.`
+   * - signer seeds in `pris.` and Salt128 registry roots in `rroots.`
    *
    * Behavior matrix:
    * - `current AEID -> same AEID`: validate and keep stable
    * - `current AEID -> new AEID`: decrypt with old seed, re-encrypt with new
    *   public box key
-   * - `current AEID -> empty`: decrypt and persist plaintext secrets
+   * - `current AEID -> empty`: refuse retained registry roots; otherwise persist plaintext secrets
    * - `empty -> new AEID`: encrypt existing and subsequently managed secrets
    *
    * Failure model:
@@ -652,6 +653,43 @@ export class Manager {
     this.encrypter = encrypter;
     this.decrypter = decrypter;
     this._seed = seed;
+  }
+
+  /** Require full canonical keys; local ownership is the calling operation's responsibility. */
+  private registryRootKeys(aid: string, regid: string): string[] {
+    if (new Prefixer({ qb64: aid }).qb64 !== aid || new Diger({ qb64: regid }).qb64 !== regid) {
+      throw new Error("Registry root keys must be canonical AID and registry SAID strings");
+    }
+    return [aid, regid];
+  }
+
+  /** Authenticate live policy as well as process-local crypto, refusing stale managers. */
+  private registryRootCrypto() {
+    const aeid = this.aeid;
+    if (!aeid || !this.encrypter || !this.decrypter || !new Encrypter({ verkey: aeid }).verifySeed(this.seed)) {
+      throw new Error("Registry roots require an authenticated encrypted unlocked Keeper");
+    }
+    return { aeid, encrypter: this.encrypter, decrypter: this.decrypter };
+  }
+
+  /** Return the retained Salt128 root; absent reads require no encryption. */
+  getRegistryRoot(aid: string, regid: string): Salter | null {
+    const cipher = this.ks.rroots.get(this.registryRootKeys(aid, regid));
+    if (!cipher) return null;
+    const { decrypter } = this.registryRootCrypto();
+    const root = decrypter.decrypt({ cipher, ctor: Salter }) as Salter;
+    if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128) {
+      throw new Error("Retained registry root is not Salt128");
+    }
+    return root;
+  }
+
+  /** Retain once, returning false for the identical root without replacing ciphertext. */
+  putRegistryRoot(aid: string, regid: string, root: Salter): boolean {
+    const keys = this.registryRootKeys(aid, regid);
+    if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128) throw new Error("Registry root must be Salt128");
+    const { aeid, encrypter, decrypter } = this.registryRootCrypto();
+    return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter);
   }
 
   private signerDecrypter(): Decrypter | undefined {

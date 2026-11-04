@@ -87,7 +87,7 @@ export function* acdcV2AuthorCommand(
             if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
             const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
             const custody = withCustody || (operation !== "incept" && !publicOpening)
-              ? new RegistryCustody({ hby, registry: wallet.registry, db: wallet.db })
+              ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
               : undefined;
             const author = new WalletAuthor(
               wallet,
@@ -103,7 +103,6 @@ export function* acdcV2AuthorCommand(
               yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, opening);
             }
             if (operation === "incept") {
-              if (args.discloser && !withCustody) throw new ValidationError("--discloser requires --with-custody.");
               if (custody && (!hby.mgr.aeid || !hby.mgr.seed)) {
                 throw new ValidationError("Private custody requires an authenticated encrypted Keeper.");
               }
@@ -115,15 +114,11 @@ export function* acdcV2AuthorCommand(
               }
               const event = reg ? reg.store.event(reg.regk!)! : yield* author.incept(name, hab.pre);
               if (group) yield* approve(event);
-              const info = custody?.createCustody(
-                event.said!,
-                parseStringOption(args.discloser, "discloser") ?? hab.pre,
-              );
+              custody?.createCustody(event.said!);
               return {
                 registry: event.said,
                 controller: hab.pre,
                 accepted: true,
-                ...(info ? { discloser: info.discloser } : {}),
               };
             }
             const reg = author.registry(name, hab.pre),

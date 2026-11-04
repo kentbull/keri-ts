@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertExists, assertInstanceOf, assertThrows } from "jsr:@std/assert";
-import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Siger, Verfer } from "../../../../cesr/mod.ts";
+import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Salter, Siger, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/identity/keeping.ts";
 import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
@@ -38,6 +38,51 @@ Deno.test("db/keeping - Keeper round-trips group member tuple stores", async () 
       assertEquals(keeper.getSmids("group-a")[0]?.[1].num, 1n);
       assertEquals(keeper.getRmids("group-a")[0]?.[0].qb64, member.qb64);
       assertEquals(keeper.getRmids("group-a")[0]?.[1].num, 1n);
+    } finally {
+      yield* keeper.close(true);
+    }
+  });
+});
+
+Deno.test("app/keeping - registry roots are canonical, encrypted and immutable", async () => {
+  await run(function*() {
+    const keeper = yield* createKeeper({ name: "registry-roots", temp: true });
+    try {
+      const manager = new Manager({ ks: keeper });
+      const { aeid, seed } = branToSeedAeid("MyPasscodeARealSecret");
+      const registry = new Diger({ code: "E", raw: Diger.digest(b("registry"), "E") }).qb64;
+      const root = new Salter({ qb64: "0AAwMTIzNDU2Nzg5YWJjZGVm" });
+      assertEquals(manager.getRegistryRoot(aeid, registry), null);
+      assertThrows(() => manager.putRegistryRoot(aeid, registry, root), Error, "encrypted unlocked Keeper");
+      manager.updateAeid(aeid, seed);
+      assertThrows(() => manager.putRegistryRoot(aeid + "extra", registry, root));
+      assertThrows(() => manager.putRegistryRoot(aeid, registry + "extra", root));
+      assertEquals(manager.putRegistryRoot(aeid, registry, root), true);
+      const cipher = keeper.rroots.get([aeid, registry])!.qb64;
+      assertEquals(cipher === root.qb64, false);
+      assertEquals(manager.getRegistryRoot(aeid, registry)!.qb64, root.qb64);
+      assertEquals(
+        manager.getRegistryRoot(aeid, new Diger({ code: "E", raw: Diger.digest(b("other registry"), "E") }).qb64),
+        null,
+      );
+      assertEquals(manager.getRegistryRoot(branToSeedAeid("AnotherPasscodeSecretX").aeid, registry), null);
+      assertEquals(manager.putRegistryRoot(aeid, registry, root), false);
+      assertThrows(
+        () =>
+          manager.putRegistryRoot(
+            aeid,
+            registry,
+            new Salter({ code: "0A", raw: crypto.getRandomValues(new Uint8Array(16)) }),
+          ),
+        Error,
+        "different root",
+      );
+      assertEquals(keeper.rroots.get([aeid, registry])!.qb64, cipher);
+      assertThrows(
+        () => keeper.gbls.sdb.transactionSync(() => manager.putRegistryRoot(aeid, registry, root)),
+        Error,
+        "own its write transaction",
+      );
     } finally {
       yield* keeper.close(true);
     }

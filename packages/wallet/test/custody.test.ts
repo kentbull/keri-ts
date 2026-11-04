@@ -51,7 +51,7 @@ Deno.test({
         const registry = new RegistryStore(baser),
           issuer = source.makeHab("issuer"),
           disclosee = holder.makeHab("holder");
-        const custody = new RegistryCustody({ hby: source, registry, db: sourceDb });
+        const custody = new RegistryCustody({ hby: source, hab: issuer, registry, db: sourceDb });
         try {
           yield* introduce(source, holder, issuer);
           yield* introduce(holder, source, disclosee);
@@ -59,12 +59,12 @@ Deno.test({
           issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
           const observer = new RegistryObserver(source.db, registry);
           assertEquals(observer.processEvent(rip).kind, "accept");
-          const info = custody.createCustody(rip.said!, disclosee.pre);
-          assertEquals(custody.createCustody(rip.said!, disclosee.pre), info);
+          const info = custody.createCustody(rip.said!);
+          assertEquals(custody.createCustody(rip.said!), info);
           assertThrows(
-            () => new RegistryCustody({ hby: holder, registry, db: sourceDb }).createCustody(rip.said!, disclosee.pre),
+            () => new RegistryCustody({ hby: holder, hab: issuer, registry, db: sourceDb }).createCustody(rip.said!),
             ValidationError,
-            "local identifier",
+            "actual local habitat",
           );
           const credential = acdcmap(issuer.pre, { regid: rip.said!, attribute: { d: "", i: disclosee.pre } });
           disclosee.interact();
@@ -113,22 +113,24 @@ Deno.test({
           assertEquals(registry.head(rip.said!)!.qb64, successor.said);
           const lost = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
           try {
-            assertThrows(
-              () => new RegistryCustody({ hby: source, registry, db: lost }).createCustody(rip.said!, disclosee.pre),
-              ValidationError,
-              "cannot be recreated",
-            );
+            // Wallet loss leaves the Keeper root intact, but cannot recover event coordinates.
+            const recovered = new RegistryCustody({ hby: source, hab: issuer, registry, db: lost });
+            assertEquals(recovered.createCustody(rip.said!), info);
+            assertThrows(() => recovered.derivedOpening(update), ValidationError, "coordinates are unavailable");
           } finally {
             yield* lost.close(true);
           }
-          // Changing the Keeper AEID cannot silently replace locally encrypted material.
+          // Native Keeper rotation rewraps the same root and preserves exact openings.
           const replacement = new Signer({
             code: MtrDex.Ed25519_Seed,
             raw: crypto.getRandomValues(new Uint8Array(32)),
             transferable: false,
           });
           source.mgr.updateAeid(replacement.verfer.qb64, replacement.qb64);
-          assertThrows(() => custody.derivedOpening(update), ValidationError, "changed Keeper AEID");
+          assert(vetBlind(custody.derivedOpening(update), proof.d.nonce));
+          yield* source.ks.close();
+          yield* source.ks.reopen();
+          assert(vetBlind(custody.derivedOpening(update), proof.d.nonce));
         } finally {
           yield* sourceDb.close();
           yield* baser.close();
@@ -151,8 +153,8 @@ Deno.test("ordinary inventory needs no private capability; lost opaque custody i
       const registry = new RegistryStore(baser), hab = hby.makeHab("issuer");
       const wallet = new Wallet({ hby, registry, db, exc: new Exchanger(hby) });
       assertEquals(wallet.inventory(), { issued: [], held: [] });
-      const custody = new RegistryCustody({ hby, registry, db });
-      assertThrows(() => custody.createCustody("unprovisioned", hab.pre), ValidationError, "encrypted Keeper");
+      const custody = new RegistryCustody({ hby, hab, registry, db });
+      assertThrows(() => custody.createCustody("unprovisioned"), ValidationError, "encrypted Keeper");
       const key = new Signer({
         code: MtrDex.Ed25519_Seed,
         raw: crypto.getRandomValues(new Uint8Array(32)),
@@ -165,9 +167,9 @@ Deno.test("ordinary inventory needs no private capability; lost opaque custody i
       const proof = makeBlindState(), update = blindate(rip.said!, rip.said!, proof.d.nonce);
       hab.interact({ data: [{ i: rip.said!, s: "1", d: update.said! }] });
       assertEquals(observer.processEvent(update).kind, "accept");
-      assertThrows(() => custody.createCustody(rip.said!, hab.pre), ValidationError, "cannot be recreated");
+      assertThrows(() => custody.createCustody(rip.said!), ValidationError, "cannot be recreated");
       registry.retainOpening(update, proof);
-      assertEquals(custody.createCustody(rip.said!, hab.pre).registry, rip.said);
+      assertEquals(custody.createCustody(rip.said!).registry, rip.said);
       assertThrows(() => custody.derive(rip.said!, 0, "", ""), ValidationError, "positive integer");
       assertEquals(wallet.inventory(), { issued: [], held: [] });
     } finally {

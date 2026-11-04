@@ -35,6 +35,13 @@ export class WalletAuthor {
     if (rgy.hby !== wallet.hby || rgy.baser !== wallet.registry.baser || receiptor.hby !== wallet.hby) {
       throw new ValidationError("Authoring requires the wallet's actual registry and receipt owners.");
     }
+    if (
+      custody
+      && (custody.options.hby !== wallet.hby || custody.options.registry !== wallet.registry
+        || custody.options.db !== wallet.db)
+    ) {
+      throw new ValidationError("Authoring custody must use this wallet's actual owners.");
+    }
   }
 
   /** Resolve the actual local registry; staging supports groups while signing methods enforce their owner. */
@@ -118,6 +125,9 @@ export class WalletAuthor {
     }
     if (!options.public && !this.custody) {
       throw new ValidationError("Derived authoring requires provisioned registry custody.");
+    }
+    if (!options.public && this.custody!.options.hab !== reg.hab) {
+      throw new ValidationError("Derived authoring requires the registry habitat's custody.");
     }
     const sn = Number(BigInt(`0x${head.sad!.n}`));
     if (!Number.isSafeInteger(sn + 1)) throw new ValidationError("Registry ordinal is not representable.");

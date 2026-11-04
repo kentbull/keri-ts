@@ -55,7 +55,6 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
           .option("--acdc-v2", "Use ACDC v2 registry acceptance")
           .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
           .option("--with-custody", "Provision encrypted derivation custody after accepted inception")
-          .option("--discloser <aid>", "Explicit designated custody participant")
           .requiredOption("--registry-name <name>", "Registry name")
           .option("--usage <text>", "Human-readable registry usage for multisig proposals")
           .option("--timeout <seconds>", "Wait for local TEL publication (default: 60; 0 returns pending state)")

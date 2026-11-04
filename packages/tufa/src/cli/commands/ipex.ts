@@ -294,7 +294,7 @@ function* acdcV2Disclosure(
           new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock, {
             gvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),
           }),
-          derive ? new RegistryCustody({ hby, registry: wallet.registry, db: wallet.db }) : undefined,
+          derive ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db }) : undefined,
         );
         const requestedRecipient = parseStringOption(args.recipient, "recipient");
         const recipient = requestedRecipient

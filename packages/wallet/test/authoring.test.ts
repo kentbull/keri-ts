@@ -116,8 +116,35 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         original.update,
         "revocation does not rewrite historical issuance",
       );
-      const custody = new RegistryCustody({ hby, registry: rgy.store, db });
-      custody.createCustody(rip.said!, issuer.pre);
+      const custody = new RegistryCustody({ hby, hab: issuer, registry: wallet.registry, db });
+      custody.createCustody(rip.said!);
+      // A different local habitat cannot borrow the issuer's private authoring or disclosure scope.
+      const other = hby.makeHab("other");
+      const otherCustody = new RegistryCustody({ hby, hab: other, registry: wallet.registry, db });
+      assertThrows(
+        () =>
+          new WalletAuthor(wallet, rgy, receiptor, otherCustody).stage(
+            author.registry("native", issuer.pre),
+            acdc,
+            "renewed",
+          ),
+        ValidationError,
+        "registry habitat's custody",
+      );
+      const wrongDiscloser = new WalletDiscloser(wallet, receiptor, custody);
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              wrongDiscloser.prepareGrantBody(other.pre, { said: acdc.said!, derive: true }, {
+                recipient: issuer.pre,
+                message: "",
+              })
+            ),
+          ValidationError,
+          "actual sender habitat's custody",
+        )
+      );
       author = new WalletAuthor(wallet, rgy, receiptor, custody);
       const boundEvent = issuer.kever!.said;
       const staged = author.stage(author.registry("native", issuer.pre), acdc, "renewed", { boundEvent });
@@ -183,7 +210,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       const discloser = new WalletDiscloser(
         wallet,
         receiptor,
-        new RegistryCustody({ hby, registry: wallet.registry, db }),
+        new RegistryCustody({ hby, hab: issuer, registry: wallet.registry, db }),
       );
       assertThrows(
         () => discloser.registryProof(acdc, rip.said!, [], { derive: true }),
