@@ -351,6 +351,11 @@ hidden declarations and unfinished graphs remain guarded.
 [storage](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
 Group IPEX approval derives its child, stored proof and genus from the wrapper.
+Native XIP Grants and EXN Admits use the same canonical V1 `/multisig/exn`
+pathed wrapper as Python. Keep the child body first with its own V2 attachment
+enclosure; genus selectors belong at parser intake. V1 approval replay supplies
+the existing native exchange/registry owners, while receipt alone neither signs
+nor processes the child. Child quorum still requires its independent proof.
 It receives protocol, Poster and optional Reger explicitly, owning only its local
 byte-input context. Stored approval has no transport dependency; pending discovery
 reads accepted Baser exchanges. Command composition owns workers and stores.
