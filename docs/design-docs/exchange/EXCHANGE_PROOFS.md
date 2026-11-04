@@ -42,8 +42,14 @@ terminal rejection releases pending evidence, acceptance retains its wire.
 Retries re-read stored proofs and deadlines in the final writer. Terminal removal clears pending evidence in the same transaction;
 completion joins the ordinary LMDB flush. Overlapping scans skip accepted/obsolete candidates, preserving
 each scan's captured horizon without an asynchronous Exchanger admission lock.
-TS retains and enforces this deadline through partial-proof migrations; inspected
-714 removes it after moving the final missing-schema branch to partial escrow.
+`epsd.` stores an absolute partial-signature deadline, normally first admission
+plus ten seconds. Native V2 Grants instead freeze an accepted TMSC `xdt + xl`
+when available. Their original deadline survives schema/proof transitions,
+acceptance and pending-body removal; retransmission, policy change, TMSC pruning
+and reopen cannot renew it. Both original Grant validity and schema retention
+must remain eligible during retry. `pxl` controls schema/replay retention separately
+from `xl` validity. Genuine V1 and other exchange routes clear PSE deadlines with
+their pending state. This retention supplies no live auxiliary authorization API.
 ESSR commitment and qualified-payload syntax failures reject. Unexpected evidence
 read or hashing failures propagate and roll back the retry transaction.
 Storage/corruption failures propagate and retain pending ownership. Readonly

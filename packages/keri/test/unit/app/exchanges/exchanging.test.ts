@@ -490,11 +490,11 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
     let missing: string | undefined = first, proof = false;
     try {
       const sender = hby.makeHab("sender");
-      const serder = exchangeMessage("/ipex/grant", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
+      const serder = exchangeMessage("/ipex/offer", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
       const child = exchangeMessage("/child", {}, { sender: sender.pre, version: Vrsn_2_0 })[0];
       const said = serder.said!;
       const handlers: ExchangeRouteHandler[] = [{
-        resource: "/ipex/grant",
+        resource: "/ipex/offer",
         acceptsNests: true,
         verify({ nests, mailboxAid }) {
           calls++;
@@ -563,7 +563,7 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
       assertEquals(warnings, [], "pending work, migration and accepted cleanup are not ejections");
       // Expiry is strict, terminal, and releases the stored nested evidence.
       missing = first;
-      const expired = exchangeMessage("/ipex/grant", { expired: true }, { sender: sender.pre, version: Vrsn_2_0 })[0];
+      const expired = exchangeMessage("/ipex/offer", { expired: true }, { sender: sender.pre, version: Vrsn_2_0 })[0];
       const expiredInput = {
         ...input,
         serder: expired,
@@ -589,13 +589,13 @@ Deno.test("missing schemas preserve EXN evidence and one absolute deadline throu
         family: "epse",
         said: expired.said,
         pre: sender.pre,
-        route: "/ipex/grant",
+        route: "/ipex/offer",
         reason: "expired",
         detail: "Exchange dependency exceeded its pending lifetime or absolute schema deadline.",
       }]]);
       proof = false;
       const lifetime =
-        exchangeMessage("/ipex/grant", { lifetime: true }, { sender: sender.pre, version: Vrsn_2_0, xid: first })[0];
+        exchangeMessage("/ipex/offer", { lifetime: true }, { sender: sender.pre, version: Vrsn_2_0, xid: first })[0];
       const cacheKey = [sender.pre, first, lifetime.said!];
       hby.db.tmsc.pin(cacheKey, { xdt: "2026-10-13T01:00:00.000123+00:00", pxl: 25_000 });
       const lifetimeInput = {
