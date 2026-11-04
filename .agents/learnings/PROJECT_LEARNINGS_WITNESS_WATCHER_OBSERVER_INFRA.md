@@ -141,3 +141,15 @@ merge CI. Record failures/skips and variance; parser-only timing does not prove
 production memory bounds. [Runtime learnings](PROJECT_LEARNINGS_RUNTIME.md) own
 signal/SSE shutdown, and [storage learnings](PROJECT_LEARNINGS_STORAGE.md) own
 LMDB process and allocation boundaries.
+
+## Extended workflow aggregation
+
+`extended-interop-matrix.ts` expands the exported KERI suite groups rather than
+copying their inventory into YAML. The reference-profile owner becomes four
+independent jobs via `qualify-reference-profiles.py --profile`; every other row
+invokes its original owner and preserves the runner's file isolation/concurrency.
+The full, extended-interop and qualification groups currently expand to 29, 20
+and 31 rows respectively. Keep peer preparation on the concrete row (main for
+ESSR storage, candidate for native registry/disclosure/KRAM, services for native
+registry). Each job retains its 15-minute cap and separate timing artifact;
+`fail-fast: false` preserves failure evidence from all selected scopes.

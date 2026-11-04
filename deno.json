@@ -39,7 +39,7 @@
     "tufa": "cd packages/tufa && deno task tufa",
     "test": "cd packages/tufa && deno task test && cd ../keri && deno task test && cd ../cesr && deno task test && cd ../.. && deno task test:verifier && deno task test:hosting && deno task test:wallet && deno task test:registrar && deno task test:observer",
     "test:quality": "deno task test:unit && deno task test:interop",
-    "test:ci-tools": "deno test -A scripts/ci/pr-test-scope.test.ts",
+    "test:ci-tools": "deno test -A scripts/ci/pr-test-scope.test.ts scripts/ci/extended-interop-matrix.test.ts",
     "test:quality:tufa": "cd packages/tufa && deno task test:quality",
     "test:integration:server": "cd packages/tufa && deno task test:integration:server",
     "test:cesr": "cd packages/cesr && deno task test",

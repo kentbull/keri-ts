@@ -55,8 +55,29 @@ env:
   KERI_TEST_TIMINGS_DIR: ${{ github.workspace }}/.test-timings
 
 jobs:
-  extended-interop:
+  select:
     if: inputs.target != 'essr-qualification'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: ${{ env.DENO_VERSION }}
+      - name: expand maintained owners
+        id: matrix
+        env:
+          TARGET: ${{ inputs.target }}
+        run: echo "matrix=$(deno run scripts/ci/extended-interop-matrix.ts "$TARGET")" >> "$GITHUB_OUTPUT"
+
+  extended-interop:
+    needs: select
+    name: KERI ${{ matrix.id }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -145,27 +166,34 @@ jobs:
         run: bash scripts/ci/assert-environment.sh
 
       - name: Prepare pinned main protocol and storage peer
-        if: contains(fromJSON('["interop-essr-storage", "extended-interop", "qualification", "full"]'), inputs.target)
+        if: matrix.main
         uses: ./.github/actions/setup-keripy-main-peer
 
       - name: Prepare pinned native candidate peer
-        if: contains(fromJSON('["interop-native-registry", "interop-ipex-disclosure", "interop-kram", "extended-interop", "qualification", "full"]'), inputs.target)
+        if: matrix.candidate
         uses: ./.github/actions/setup-keripy-main-peer
         with:
           profile: candidate
-          services: ${{ contains(fromJSON('["interop-native-registry", "extended-interop", "qualification", "full"]'), inputs.target) }}
+          services: ${{ matrix.services }}
 
       - name: run selected extended interop target
         shell: bash
+        env:
+          SUITE: ${{ matrix.suite }}
+          PROFILE: ${{ matrix.profile }}
         run: |
           mkdir -p .test-timings
-          deno task test:quality:keri:${{ inputs.target }} 2>&1 | tee .test-timings/qualification.log
+          if [[ -n "$PROFILE" ]]; then
+            python scripts/ci/qualify-reference-profiles.py --profile "$PROFILE" 2>&1 | tee .test-timings/qualification.log
+          else
+            deno run -A scripts/ci/run-keri-test-group.ts "$SUITE" 2>&1 | tee .test-timings/qualification.log
+          fi
 
       - name: upload extended interop timings
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keri-extended-interop-timings-${{ inputs.target }}-${{ github.run_id }}
+          name: keri-extended-interop-timings-${{ matrix.id }}-${{ github.run_id }}
           path: .test-timings/
           if-no-files-found: ignore
           retention-days: 14

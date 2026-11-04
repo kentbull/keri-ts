@@ -13,8 +13,9 @@ After the relevant unit tests pass locally on the exact committed source:
 ```
 ````
 
-The local field attests that the selected change's unit checks passed; describe
-commands, results and environment in the PR's validation prose. A new head needs
+The local field attests that the selected change's unit checks passed. Keep exact
+commands, results and environment in qualification logs and handoff evidence; PR
+descriptions stay focused on the problem and fix. A new head needs
 fresh applicable local validation and an updated SHA. Stale credit fails the
 selection job. Keep interop or package checks when the change needs them.
 
@@ -48,6 +49,14 @@ Direct and mailbox presentation share the same workflow and participant topology
 Empty arrays explicitly select no owners for that lane.
 The reference-profile owner expands through the same frozen-peer driver in local
 aggregate runs and CI. An explicit `KERIPY_INTEROP_PROFILE` selects one child run.
+
+The manually dispatched extended workflow expands the existing KERI group exports
+into independent 15-minute jobs: `extended-interop` has 20 rows, `full` has 29,
+and `qualification` has 31. Each includes four isolated reference-profile rows;
+all other rows invoke their original concrete suite. The suite runner retains
+file ordering, isolation and measured concurrency caps. Jobs do not cancel their
+siblings after a failure, and each uploads its own timings. These are the KERI
+groups, distinct from the broader full PR battery below.
 
 For the periodic broad run, use:
 
