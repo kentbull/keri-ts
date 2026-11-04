@@ -228,7 +228,6 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
             stamp: sent,
             plan: [[(credential.schema as { $id: string }).$id, "/", ["a/status/"]]] as [string, string, string[]][],
           };
-          const offer = ipexExnBody(holder.pre, "/ipex/offer", [partial], offerOptions);
           let discloser: WalletDiscloser | undefined;
           const transferred = messagize(partial, publicOpeningAttachment(issuance), {
             gvrsn: Vrsn_2_0,
@@ -251,7 +250,16 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           const walletOffer = discloser
             ? yield* discloser.prepareOffer(holder.pre, { transferred, presenterAuthorized: true }, offerOptions)
             : undefined;
-          if (walletOffer) assertEquals(walletOffer.exn.raw, offer.raw, "wallet preserves the negotiated body bytes");
+          // Author one transaction opener; a second XIP would have a different nonce and SAID.
+          const offer = walletOffer?.exn ?? ipexExnBody(holder.pre, "/ipex/offer", [partial], offerOptions);
+          if (walletOffer) {
+            assertEquals(
+              parseBytes(walletOffer.wire)[0].body.raw,
+              offer.raw,
+              "wallet serializes the exact authored Offer",
+            );
+            assertEquals(offer.sad!.q, { dp: [offerOptions.plan] }, "the authored Offer preserves the negotiated plan");
+          }
           const agree = ipexExnBody(receiver.pre, "/ipex/agree", [], {
             message: "agree",
             prior: offer,
@@ -434,13 +442,13 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
             if (index < holders.length - 1) {
               assertExists(receiverHby.db.pmkm.get([holder.pre, grant.said!]));
               assertEquals(receiverHby.db.exns.get(grant.said!), null);
-              assertEquals(receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt, "");
+              assertEquals(receiverHby.db.tmsc.get([holder.pre, offer.said!, grant.said!])?.rdt, "");
               receiverNow = now;
             }
           }
           assertExists(receiverHby.db.epse.get(grant.said!));
           assertEquals(receiverHby.db.exchangeMeta.get(grant.said!)?.receiverTime, receipt);
-          assertEquals(receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt, receipt);
+          assertEquals(receiverHby.db.tmsc.get([holder.pre, offer.said!, grant.said!])?.rdt, receipt);
           assertEquals(receiverHby.db.exns.get(grant.said!), null);
 
           now += 2000;
@@ -474,7 +482,7 @@ export async function presentationCutoff(count: number, mailboxUrl?: string): Pr
           );
           yield* receiveGrant(frame);
           assertEquals(
-            receiverHby.db.tmsc.get([holder.pre, credential.said!, grant.said!])?.rdt,
+            receiverHby.db.tmsc.get([holder.pre, offer.said!, grant.said!])?.rdt,
             receipt,
             "replay cannot refresh the receipt",
           );

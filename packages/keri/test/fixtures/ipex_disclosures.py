@@ -87,11 +87,11 @@ def graph_disclosures(hby, hab, graph_case):
     if graph_case is None:
         full, partial = disclosure(hab.pre)
         return DisclosureGraph([full], [partial], [], [hab], None)
-    if graph_case in ("fixed-path", "optional-path"):
+    if graph_case in ("required-edge", "optional-edge"):
         return path_shape_graph(hby, hab, graph_case)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
-    if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR", "NAND", "NOR"):
+    if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
         return relation_graph(hby, hab, graph_case)
     if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "simple-edge", "edge-schema", "inherited-schema", "malformed-schema"):
         return edge_refusal_graph(hby, hab, graph_case)
@@ -99,7 +99,7 @@ def graph_disclosures(hby, hab, graph_case):
 
 
 def path_shape_graph(hby, hab, shape):
-    """Same two-node authority graph; requiredness alone controls positional use."""
+    """Same two-node authority graph; requiredness does not change explicit selection."""
     authority = hby.makeHab(name="authority")
     terminal_schema = copy.deepcopy(disclosure_schema().sed)
     terminal_schema["$id"] = ""
@@ -109,7 +109,7 @@ def path_shape_graph(hby, hab, shape):
     root_schema["$id"] = ""
     root_schema["required"].append("e")
     root_schema["properties"]["e"] = dict(type="object", additionalProperties=False,
-        required=["authority"] if shape == "fixed-path" else [],
+        required=["authority"] if shape == "required-edge" else [],
         properties=dict(d=dict(type="string"), authority=dict(type="object", required=["n"],
             properties=dict(n=dict(type="string"), o=dict(type="string")))))
     full, partial = disclosure(hab.pre, schema=root_schema,
@@ -148,10 +148,6 @@ def deep_graph(hby, hab, graph_case):
 
 def relation_edge(graph_case, far, invalid):
     """Keep the nested AND/OR truth table separate from credential construction."""
-    if graph_case in ("NAND", "NOR"):
-        return dict(d="", o=graph_case,
-            first=dict(n=far.said, o="NI2I" if invalid else "I2I"),
-            second=dict(n=far.said, o="NI2I" if graph_case == "NAND" else "I2I"))
     if graph_case not in ("AND", "OR"):
         return dict(d="", authority=dict(n=far.said, o=graph_case))
     return dict(d="", o=graph_case, authority=dict(
@@ -172,7 +168,7 @@ def relation_graph(hby, hab, graph_case):
     full, partial = near(far)
     nodes = [partial, far]
     bad_nodes = nodes
-    if graph_case in ("AND", "OR", "NAND", "NOR"):
+    if graph_case in ("AND", "OR"):
         bad_nodes = [near(far, invalid=True)[1], far]
     elif graph_case != "NI2I":
         _, bad_far = disclosure(authority.pre, issuee=authority.pre if graph_case == "I2I" else hab.pre)
@@ -191,7 +187,8 @@ def edge_refusal_graph(hby, hab, graph_case):
             "$id": "", "version": "1.0.0", "type": "object",
             "properties": {"d": scalar, "authority": {"$ref": "#/$defs/target"},
                            "opaque": {"oneOf": [scalar, dict(type="object", properties=dict(n=scalar))]}},
-            "$defs": {"target": scalar}})
+            "$defs": {"target": {"oneOf": [scalar, dict(type="object", required=["n"],
+                properties=dict(n=scalar), additionalProperties=False)]}}})
         return dict(oneOf=[scalar, resource.sed])
 
     far_full, far = disclosure(authority.pre, issuee=hab.pre,
@@ -217,7 +214,7 @@ def edge_refusal_graph(hby, hab, graph_case):
             leaf["s"] = pin("citizen", "invalid-version" if invalid else "1.0.0")
         leaf["o"] = "UNKNOWN" if graph_case == "unknown-leaf" and invalid else "I2I"
         if graph_case == "simple-edge":
-            return disclosure(hab.pre, edge=dict(d="", authority=far.said, **(dict(opaque=far.said) if invalid else {})),
+            return disclosure(hab.pre, edge=dict(d="", authority=far.said if invalid else dict(n=far.said)),
                 edge_schema=simple_schema())
         return disclosure(hab.pre, edge=edge)
 
@@ -226,7 +223,8 @@ def edge_refusal_graph(hby, hab, graph_case):
     if graph_case == "simple-edge":
         for node in (full, partial, bad, far_full, far):
             assert node.schema == full.schema, "both controls satisfy the negotiated repeated-schema plan"
-            scheming.validateSchema(acdc=node, db=hby.db)  # opacity refusal is not own-schema failure
-        assert partial.sad["e"]["authority"] == bad.sad["e"]["authority"] == far.said
+            scheming.validateSchema(acdc=node, db=hby.db)  # string-edge refusal is not own-schema failure
+        assert partial.sad["e"]["authority"] == dict(n=far.said)
+        assert bad.sad["e"]["authority"] == far.said
 
     return DisclosureGraph([full, far_full], [partial, far], [bad, far], [hab, authority], None)
