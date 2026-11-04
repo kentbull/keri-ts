@@ -223,7 +223,7 @@ export class WalletAuthor {
       current = prior;
     }
     if (!anchor) {
-      const data = [{ s: event.sad!.n, d: event.said }];
+      const data = [{ i: reg.regk, s: event.sad!.n, d: event.said }];
       if (hab.kever!.estOnly) hab.rotate({ data });
       else hab.interact({ data });
       anchor = hab.kever!.serder;

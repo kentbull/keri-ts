@@ -79,6 +79,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       assertEquals(hby.db.wigs.get([issuer.pre, sealing.said!]).map((signature) => signature.index).sort(), [0, 1]);
       assertEquals(hby.db.fullyWitnessed(sealing), true);
       const rip = yield* author.incept("native", issuer.pre);
+      assertEquals(sealing.seals, [{ i: rip.said, s: "0", d: rip.said }]);
       assertEquals(issuer.kever!.serder.said, sealing.said, "retry collects receipts for the same signed KEL event");
       receiptLimit = 3;
       yield* receiptor.receipt(issuer.pre, { sn: sealing.sn! }); // Catch up the third witness before later KEL events.
@@ -164,6 +165,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       const resumed = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true });
       assertEquals(resumed.raw, advance.event.raw, "retry reuses the exact pending next event");
       assertEquals(issuer.kever!.said, pendingAdvanceSeal, "retry gathers receipts for the same pending anchor");
+      assertEquals(issuer.kever!.serder.seals, [{ i: rip.said, s: resumed.sad!.n, d: resumed.said }]);
       assertEquals(wallet.db.issued.get([acdc.said!])!.update, original.update);
 
       // Public acceptance alone cannot recover missing private derivation coordinates.
