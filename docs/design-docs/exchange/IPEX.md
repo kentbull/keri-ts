@@ -195,8 +195,17 @@ so it cannot veto a later genuine approval. Missing first-seen event bodies
 remain storage failures. The companion specification PR
 [ToIP #213](https://github.com/trustoverip/kswg-acdc-specification/pull/213) is still
 open at this source review; implementation parity is not a claim of ratified text.
-The legacy TEL verifier is outside this v2 scope. Wallet ancestor-evidence export
-remains required before independent receiver qualification.
+The legacy TEL verifier is outside this v2 scope.
+
+Wallet disclosure support includes deduplicated delegation ancestry root-first for
+selected issuers, issuees, senders and source sealers. It replays their accepted
+first-seen histories through Baser, retaining exact stored signatures, receipts
+and source seals; incomplete accepted replay fails preparation. An ancestry claim
+only selects support: ordinary receiver KEL intake and the graph evaluator still
+authenticate each approval. A two-hop unregistered DI2I Grant is qualified through
+independent receiver intake and store reopen. Exporting retained superseded
+authorizers does not make a fresh receiver accept a delegation its current KEL
+policy refuses; superseding convergence remains outside this evidence assembly.
 
 Later updates do not rewrite accepted conversation history. New grants and default
 inspection re-evaluate current issuer history. Explicit `{ historical: true }`

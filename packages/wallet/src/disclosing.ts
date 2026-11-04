@@ -468,7 +468,7 @@ export class WalletDiscloser {
       support: this.proofSupport(raw, hab),
     };
   }
-  /** Carry the selected nodes' accepted public dependencies; neither query nor publish private openings. */
+  /** Carry selected public evidence and root-first delegation ancestry; receiver intake still verifies every approval. */
   private proofSupport(raw: Uint8Array, hab: Hab): Uint8Array {
     const aids = new Set([hab.pre]), registries = new Set<string>();
     for (const frame of parseBytes(raw)) {
@@ -485,12 +485,25 @@ export class WalletDiscloser {
       }
     }
     const messages: Uint8Array[] = [Counter.makeGVC(Vrsn_2_0)];
+    const db = this.wallet.hby.db, ordered = new Set<string>();
+    // An ancestry claim selects supporting KELs; it does not establish delegation authority.
     for (const aid of aids) {
-      const state = this.wallet.hby.db.getKever(aid);
-      if (!state) continue;
-      for (let sn = 0; sn <= state.sn; sn++) {
-        messages.push(acceptedEventReplayMessage(this.wallet.hby, aid, sn, Vrsn_2_0).message);
+      const ancestors: string[] = [], seen = new Set<string>();
+      let current: string | null = aid;
+      while (current && !ordered.has(current)) {
+        if (seen.has(current)) throw new ValidationError(`Cyclic disclosure delegation ancestry at ${current}.`);
+        seen.add(current);
+        const state = db.getKever(current);
+        if (!state) break;
+        ancestors.push(current);
+        current = state.delpre;
       }
+      for (const ancestor of ancestors.reverse()) ordered.add(ancestor);
+    }
+    // Keep first-seen authorizers and exact stored attachments, including superseded history.
+    // clonePreIter skips broken rows; finite disclosure must instead fail if an accepted row cannot be replayed.
+    for (const aid of ordered) {
+      for (const [, fn, said] of db.fels.getAllItemIter(aid)) messages.push(db.cloneEvtMsg(aid, fn, said, Vrsn_2_0));
     }
     for (const regid of registries) messages.push(this.wallet.registry.cloneTel(regid));
     return concatBytes(...messages);

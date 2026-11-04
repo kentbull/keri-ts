@@ -5,6 +5,8 @@ import {
   type CesrFrame,
   collectPayload,
   Compactor,
+  concatBytes,
+  Counter,
   Diger,
   framePayload,
   Kinds,
@@ -14,7 +16,7 @@ import {
   parseBytes,
   Prefixer,
   SerderACDC,
-  type SerderKERI,
+  SerderKERI,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -442,6 +444,77 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       yield* sourceDb.close(true);
       yield* receiverRuntime.close();
       yield* sourceRuntime.close();
+    }
+  });
+});
+
+Deno.test("wallet disclosure supplies root-first DI2I ancestry to an independent receiver across reopen", async () => {
+  await withPeers(function*(p) {
+    const runtime = yield* createAgentRuntime(p.source, new FetchHttpClient(), systemClock);
+    const sourceDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+    try {
+      // Sign a credential graph whose issuer is two approved delegation hops below the far issuee.
+      const authority = p.source.makeHab("authority");
+      const middle = p.source.makeHab("middle", undefined, { delpre: authority.pre });
+      const issuer = p.source.makeHab("delegated issuer", undefined, { delpre: middle.pre });
+      authority.interact({ data: [{ i: middle.pre, s: "0", d: middle.pre }] });
+      middle.interact({ data: [{ i: issuer.pre, s: "0", d: issuer.pre }] });
+      const far = acdcmap(authority.pre, { attribute: { d: "", i: authority.pre, role: "authority" } });
+      const near = acdcmap(issuer.pre, {
+        attribute: { d: "", i: p.holder.pre, role: "delegated" },
+        edge: { d: "", proof: { n: far.said, o: "DI2I" } },
+      });
+      const transferred = concatBytes(
+        yield* call(() => collectPayload(framePayload(signed(near, issuer)))),
+        yield* call(() => collectPayload(framePayload(signed(far, authority)))),
+      );
+      const wallet = new Wallet({ hby: p.source, registry: p.registry, exc: p.sending, db: sourceDb });
+      const discloser = new WalletDiscloser(
+        wallet,
+        new Receiptor(p.source, runtime.protocol, runtime.http, runtime.clock),
+      );
+      const prepared = yield* discloser.prepareGrant(issuer.pre, { transferred, presenterAuthorized: true }, {
+        message: "two-hop authority",
+        recipient: p.holder.pre,
+        plan: [near, far].map((node, index) => [
+          (node.schema as { $id: string }).$id,
+          index ? "/e/proof/_/" : "/",
+          [],
+        ]),
+      });
+      const hierarchy = [authority.pre, middle.pre, issuer.pre];
+      for (const aid of hierarchy) {
+        assertEquals(p.receiver.db.getKever(aid), null, "receiver has no delegation evidence");
+      }
+      const support = parseBytes(prepared.support).map(({ body }) => {
+        assert(body instanceof SerderKERI);
+        return body;
+      });
+      assertEquals([...new Set(support.map(body => body.pre))], [...hierarchy, p.holder.pre]);
+      assertEquals(new Set(support.map(body => body.said)).size, support.length, "no duplicate accepted events");
+      assertEquals(
+        prepared.support,
+        concatBytes(
+          Counter.makeGVC(Vrsn_2_0),
+          ...[...hierarchy, p.holder.pre].flatMap(aid => [...p.source.db.clonePreIter(aid, 0, Vrsn_2_0)]),
+        ),
+        "support preserves accepted event bodies, source seals and stored receipts exactly",
+      );
+      // The receiver learns the hierarchy only from the wallet's exported public support.
+      yield* ingest(prepared.support, p.receiver, p.receiving);
+      yield* ingest(prepared.wire, p.receiver, p.receiving);
+      assertEquals(p.receiving.complete(prepared.exn.said!), true);
+      assertEquals(p.receiving.verifyAccepted(prepared.exn.said!, "/ipex/grant"), true);
+      const retained = loadNests(p.receiver.db, prepared.exn.said!).map(frame => frame.body.raw.slice());
+      // Reopening must preserve verification and the accepted Grant's exact credential views.
+      yield* p.receiver.ks.reopen();
+      yield* p.receiver.db.reopen();
+      p.receiver.db.kevers.clear();
+      assertEquals(p.receiving.verifyAccepted(prepared.exn.said!, "/ipex/grant"), true);
+      assertEquals(loadNests(p.receiver.db, prepared.exn.said!).map(frame => frame.body.raw), retained);
+    } finally {
+      yield* sourceDb.close(true);
+      yield* runtime.close();
     }
   });
 });
