@@ -1,4 +1,5 @@
 """Prepare isolated frozen peers and execute their maintained compatibility owner."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -11,14 +12,24 @@ def run(*args, **kwargs):
     subprocess.run(args, check=True, **kwargs)
 
 
+def selected_profiles(argv=None):
+    """Reject unknown selections before preparing any checkout or environment."""
+    profiles = ("main", "1.2", "1.3", "candidate")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--profile", choices=profiles, help="Prepare and run only this frozen peer")
+    selected = parser.parse_args(argv).profile
+    return (selected,) if selected else profiles
+
+
 def main():
     """Keep each reference's source, interpreter and dependencies independent."""
+    selected = selected_profiles()
     repo = Path(__file__).resolve().parents[2]
     profiles = json.loads((repo / "scripts/ci/keripy-reference.json").read_text())["profiles"]
     cache = repo / ".cache/keripy-release-profiles"
     cache.mkdir(parents=True, exist_ok=True)
     # Candidate-only ACDC v2 cases coexist with the maintained release compatibility lanes.
-    for name in ("main", "1.2", "1.3", "candidate"):
+    for name in selected:
         profile = profiles[name]
         root = cache / profile["commit"]
         if not root.exists():

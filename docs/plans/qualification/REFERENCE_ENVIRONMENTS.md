@@ -72,7 +72,12 @@ on 2026-10-20; main advanced to c7e74ad before final qualification. These supple
 The `1.2` target is GLEIF-IT/keripy with `gleif-keri`/`gleif-hio` distributions;
 main and 1.3 retain WebOfTrust/keripy. It replaces the original 1.2.14 pin after
 its Directant dropped queued input on EOF. `qualify-reference-profiles.py` prepares
-these three isolated environments and the separately pinned candidate. Candidate-only
+these three isolated environments and the separately pinned candidate. Use
+`python scripts/ci/qualify-reference-profiles.py --profile candidate` to prepare
+and execute exactly one peer; omitting `--profile` retains all four serial runs.
+The extended workflow gives each profile its own job and preparation environment.
+Its other matrix rows preserve each suite's mailbox/main/candidate/service setup,
+and never share a peer venv across jobs. Candidate-only
 ACDC v2 group cases are skipped in the older profiles; those skips are not
 qualification credit for the candidate.
 

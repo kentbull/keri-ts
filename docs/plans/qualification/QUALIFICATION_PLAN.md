@@ -51,7 +51,9 @@ of duplicate CI execution. Select applicable interop/package checks and run the
 broad maintained battery about every 20 implementation PRs. Scoped PR checks do
 not replace this final full clean-source qualification. Large ESSR, gigabyte
 and endurance runs remain local/manual. Only the maintainer dispatches hosted
-extended jobs; retain both existing **15-minute** job caps. Do not dispatch them
+extended jobs; retain the **15-minute** cap per concrete suite or reference-profile
+job and the separate ESSR job cap. Aggregate targets expand from the existing
+suite exports, preserving coverage and per-suite serialization. Do not dispatch them
 as part of autonomous continuation. Use identified disposable test stores only.
 
 ## Buffered parsing and real transport qualification
