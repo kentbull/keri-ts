@@ -56,7 +56,7 @@ Deno.test({
           yield* introduce(source, holder, issuer);
           yield* introduce(holder, source, disclosee);
           const rip = regcept(issuer.pre);
-          issuer.interact({ data: [{ s: "0", d: rip.said! }] });
+          issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
           const observer = new RegistryObserver(source.db, registry);
           assertEquals(observer.processEvent(rip).kind, "accept");
           const info = custody.createCustody(rip.said!, disclosee.pre);
@@ -76,7 +76,7 @@ Deno.test({
           });
           const update = blindate(rip.said!, rip.said!, proof.d.nonce);
           custody.retainDerivedUpdate(update, proof); // Retain coordinates before processing and anchoring.
-          issuer.interact({ data: [{ s: "1", d: update.said! }] });
+          issuer.interact({ data: [{ i: rip.said!, s: "1", d: update.said! }] });
           assertEquals(observer.processEvent(update).kind, "accept");
           assertEquals(
             BoundState.qb64(custody.derivedOpening(update) as BoundState),
@@ -90,7 +90,7 @@ Deno.test({
           });
           const later = blindate(rip.said!, update.said!, other.d.nonce, { sn: 2 });
           custody.retainDerivedUpdate(later, other);
-          issuer.interact({ data: [{ s: "2", d: later.said! }] });
+          issuer.interact({ data: [{ i: rip.said!, s: "2", d: later.said! }] });
           assertEquals(observer.processEvent(later).kind, "accept");
           yield* sourceDb.close();
           yield* baser.close();
@@ -106,7 +106,7 @@ Deno.test({
           assert(vetBlind(custody.derivedOpening(later), other.d.nonce));
           const publicProof = makeBlindState({ acdc: credential.said!, state: "revoked" });
           const successor = blindate(rip.said!, later.said!, publicProof.d.nonce, { sn: 3 });
-          issuer.interact({ data: [{ s: "3", d: successor.said! }] });
+          issuer.interact({ data: [{ i: rip.said!, s: "3", d: successor.said! }] });
           assertEquals(observer.processEvent(successor).kind, "accept");
           registry.retainOpening(successor, publicProof);
           assert(vetBlind(custody.derivedOpening(update), proof.d.nonce));
@@ -160,10 +160,10 @@ Deno.test("ordinary inventory needs no private capability; lost opaque custody i
       });
       hby.mgr.updateAeid(key.verfer.qb64, key.qb64);
       const observer = new RegistryObserver(hby.db, registry), rip = regcept(hab.pre);
-      hab.interact({ data: [{ s: "0", d: rip.said! }] });
+      hab.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
       assertEquals(observer.processEvent(rip).kind, "accept");
       const proof = makeBlindState(), update = blindate(rip.said!, rip.said!, proof.d.nonce);
-      hab.interact({ data: [{ s: "1", d: update.said! }] });
+      hab.interact({ data: [{ i: rip.said!, s: "1", d: update.said! }] });
       assertEquals(observer.processEvent(update).kind, "accept");
       assertThrows(() => custody.createCustody(rip.said!, hab.pre), ValidationError, "cannot be recreated");
       registry.retainOpening(update, proof);

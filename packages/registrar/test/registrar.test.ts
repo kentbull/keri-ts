@@ -71,7 +71,9 @@ Deno.test("registrar serves foreign published public history only after shared a
       const credential = acdcmap(publisher.pre, { regid: rip.said!, attribute: { d: "", name: "public" } });
       const opening = makeBlindState({ acdc: credential.said!, state: "issued", sn: 1n, raw: b("0123456789abcdef") });
       const update = blindate(rip.said!, rip.said!, opening.d.nonce);
-      publisher.interact({ data: [{ s: rip.sad!.n, d: rip.said! }, { s: update.sad!.n, d: update.said! }] });
+      publisher.interact({
+        data: [{ i: rip.said!, s: rip.sad!.n, d: rip.said! }, { i: rip.said!, s: update.sad!.n, d: update.said! }],
+      });
       const stream = t(concatBytes(framed(rip), framed(update, opening)));
       const denied = yield* call(() =>
         fetch(`${url}/ingest`, {
@@ -176,7 +178,7 @@ Deno.test("registrar serves foreign published public history only after shared a
         raw: b("newer-state-1234"),
       });
       const newer = blindate(rip.said!, update.said!, newerOpening.d.nonce, { sn: 2 });
-      publisher.interact({ data: [{ s: newer.sad!.n, d: newer.said! }] });
+      publisher.interact({ data: [{ i: rip.said!, s: newer.sad!.n, d: newer.said! }] });
       const newerStream = t(concatBytes(...issuer.db.clonePreIter(publisher.pre), framed(newer, newerOpening)));
       const advanced = yield* call(() =>
         fetch(`${url}/ingest`, {

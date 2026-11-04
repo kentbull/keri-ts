@@ -635,7 +635,7 @@ Deno.test("ACDC workflow: tufa issuer -> holder -> verifier with revoke webhook"
         const opaqueProof = makeBlindState({ sn: 2, acdc: full.said!, state: "revoked" });
         const opaque = blindate(rip.said!, issuance.update, opaqueProof.d.nonce, { sn: 2 });
         reg.processEvent(opaque);
-        issuer.interact({ data: [{ s: "2", d: opaque.said }] });
+        issuer.interact({ data: [{ i: rip.said!, s: "2", d: opaque.said }] });
         yield* receiptor.receipt(issuer.pre);
         reg.processEscrows();
         assertEquals(yield* observer.pullOnce(observerHab), 1);
