@@ -2,8 +2,16 @@
 
 Multisig wrappers coordinate member approval of a business event. The enclosed
 KEL, TEL, reply or IPEX message retains its own signatures and processing rules.
-Legacy v1 proposals use pathed embedded evidence; v2 nested intake currently
-supports `/multisig/icp`, `/rot`, `/ixn` and `/rpy` only.
+Legacy v1 proposals use pathed embedded evidence. V2 event proposals use
+`/multisig/icp`, `/rot`, `/ixn` and `/rpy`; native registry proposals use
+`/multisig/rip` and `/multisig/bup` with exactly two unnested TEL/anchor children.
+
+Native registry approval binds the exact route, group, TEL and anchor. The anchor
+must contain the full `{i,s,d}` TEL seal and every supplied source locator must
+match it. BUP proposals require the accepted controlling RIP and exact next
+ordinal/prior, or byte-identical accepted replay. Shared-anchor indexes never
+confer consent to other TEL proposals. Accepted historical anchors reuse an exact
+retained local contribution rather than signing again with current keys.
 
 ## Commitment and processing
 
@@ -46,7 +54,8 @@ IPEX uses the [same responsibility split](IPEX.md).
 
 ## Scope and evidence
 
-CLI proposal/join remains v1, as in frozen upstream. Default native EXN construction
+Legacy KEL/reply/VDR command proposals retain V1 encoding. Native registry approval
+uses the explicit V2 RIP/BUP contract above. Default native EXN construction
 with empty ri/x/p does not round-trip in the frozen reference and remains unqualified.
 JSON/CBOR/MGPK acceptance/storage/replay evidence is recorded in the
 [multisig plan](../../plans/exchange/MULTISIG_PLAN.md). The

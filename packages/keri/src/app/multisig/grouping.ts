@@ -27,8 +27,9 @@ import {
 } from "cesr-ts";
 import { call, ensure, type Operation } from "effection";
 import type { RegistryObserver } from "../../acdc/observing.ts";
-import { matchesRegistrySeal } from "../../acdc/regeventing.ts";
-import { exchange, nestedMultisigIlks } from "../../core/exchange/protocol-exchanging.ts";
+import { type RegistryEvent, validateRip, validateUpdate } from "../../acdc/regeventing.ts";
+import type { RegistryStore } from "../../acdc/registering.ts";
+import { exchange, isNativeRegistryRoute, nestedMultisigIlks } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
 import { Exchanger, type ExchangeRouteHandler } from "../exchanges/exchanging.ts";
@@ -36,13 +37,15 @@ import type { Hab, Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../protocol/parsering.ts";
 import { abortable, rethrowCleanupFailure } from "../runtime/abortable.ts";
+import { groupSigningMembers } from "./group-members.ts";
 import { multisigEmbeddedSection, multisigPayloadSaid } from "./multisig-messaging.ts";
 
 /** KERIpy multisig route constants. */
 export const MULTISIG_ICP_ROUTE = "/multisig/icp";
 export const MULTISIG_ROT_ROUTE = "/multisig/rot";
 export const MULTISIG_IXN_ROUTE = "/multisig/ixn";
-export const MULTISIG_REGISTRY_ROUTE = "/multisig/registry";
+export const MULTISIG_RIP_ROUTE = "/multisig/rip";
+export const MULTISIG_BUP_ROUTE = "/multisig/bup";
 export const MULTISIG_VCP_ROUTE = "/multisig/vcp";
 export const MULTISIG_ISS_ROUTE = "/multisig/iss";
 export const MULTISIG_REV_ROUTE = "/multisig/rev";
@@ -51,7 +54,8 @@ export const MULTISIG_RPY_ROUTE = "/multisig/rpy";
 
 /** Ordered route list used for handler registration. */
 export const MULTISIG_ROUTES = [
-  MULTISIG_REGISTRY_ROUTE,
+  MULTISIG_RIP_ROUTE,
+  MULTISIG_BUP_ROUTE,
   MULTISIG_ICP_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_IXN_ROUTE,
@@ -168,20 +172,85 @@ export interface MultisigHandlerOptions {
   messageKevery?: Kevery;
 }
 
-/** Validate the exact ACDC v2 TEL/KEL pair without granting member approval or writing evidence. */
-export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly CesrFrame[]) {
+/** Validate public TEL linkage before proposing or signing an anchor; no state is inferred from b. */
+export function registryProposalEvent(tel: SerderACDC, gid: string, store: RegistryStore | null): RegistryEvent | null {
+  const checked = tel.ilk === "rip" ? validateRip(tel, gid) : validateUpdate(tel, tel.regid ?? "");
+  if (checked.kind !== "valid" || tel.pvrsn.major !== 2 || tel.pvrsn.minor !== 0) {
+    return null;
+  }
+  if (tel.ilk === "rip") {
+    return checked.event;
+  }
+  const rip = store?.seqEvent(checked.event.regid, 0);
+  const inception = rip && validateRip(rip, gid);
+  const head = store?.headEvent(checked.event.regid);
+  if (!rip || !head || !inception || inception.kind !== "valid" || rip.pvrsn.major !== 2 || rip.pvrsn.minor !== 0) {
+    return null;
+  }
+  const headSn = BigInt(`0x${head.sad!.n}`);
+  const sn = checked.event.sn;
+  if (sn > headSn + 1n || sn > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return null;
+  }
+  const accepted = store!.seqEvent(rip.said!, Number(sn));
+  if (accepted) {
+    return sameBytes(accepted.raw, tel.raw) ? checked.event : null;
+  }
+  return sn === headSn + 1n && checked.event.prior === head.said ? checked.event : null;
+}
+
+/** Exact authenticated consent may share an anchor index with unrelated native TEL proposals. */
+export function sameRegistryProposal(left: SerderKERI, right: SerderKERI): boolean {
+  const a = left.sad?.a;
+  const b = right.sad?.a;
+  return isNativeRegistryRoute(left.route ?? "") && left.route === right.route && isRecord(a) && isRecord(b)
+    && ["gid", "tel", "anc"].every(field => a[field] === b[field]);
+}
+
+/** Validate both child commitments and every supplied source coordinate without writing evidence. */
+export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly CesrFrame[], store: RegistryStore | null) {
   const payload = wrapper.sad?.a;
-  if (wrapper.route !== MULTISIG_REGISTRY_ROUTE || !isRecord(payload) || nests.length !== 2) return null;
+  const route = wrapper.route ?? "";
+  if (
+    !isNativeRegistryRoute(route) || !isRecord(payload) || typeof payload.gid !== "string" || nests.length !== 2
+    || wrapper.pvrsn.major !== 2 || wrapper.pvrsn.minor !== 0
+  ) {
+    return null;
+  }
   const [tel, anchor] = nests.map(child => child.body);
   if (
-    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI)
-    || !["rip", "bup"].includes(tel.ilk ?? "") || tel.pvrsn.major !== 2
-    || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "") || anchor.pre !== payload.gid
+    !(tel instanceof SerderACDC) || !(anchor instanceof SerderKERI) || route !== `/multisig/${tel.ilk}`
     || nests.some(child => child.nests?.length) || tel.said !== payload.tel || anchor.said !== payload.anc
-    || !tel.verify() || !anchor.verify() || (tel.ilk === "rip" && tel.issuer !== anchor.pre)
-    || !Array.isArray(anchor.sad?.a) || !anchor.sad.a.some(seal => matchesRegistrySeal(seal, tel))
-  ) return null;
+    || anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0 || !anchor.verify()
+    || anchor.pre !== payload.gid || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
+  ) {
+    return null;
+  }
+  const event = registryProposalEvent(tel, payload.gid, store);
+  if (
+    !event || !anchor.seals.some(seal =>
+      isRecord(seal) && seal.i === event.regid
+      && seal.s === tel.sad!.n && seal.d === tel.said
+    )
+  ) {
+    return null;
+  }
+  const evidence = envelopeFromFrame(nests[0]);
+  if (
+    evidence.sscs.some(seal => seal.s.num !== BigInt(anchor.sn!) || seal.d.qb64 !== anchor.said)
+    || evidence.ssts.some(seal =>
+      seal.i.qb64 !== payload.gid
+      || seal.s.num !== BigInt(anchor.sn!) || seal.d.qb64 !== anchor.said
+    )
+  ) {
+    return null;
+  }
   return { tel, anchor };
+}
+
+/** Compare retained event bytes without normalizing their signed representation. */
+function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 /** Commit one exact ACDC v2 registry/anchor pair using the ordinary nested-wire serializer. */
@@ -189,6 +258,7 @@ export function* prepareAcdcV2RegistryExn(
   sender: string,
   tel: Uint8Array,
   anchor: Uint8Array,
+  store: RegistryStore | null,
   options: MultisigBuilderOptions = {},
 ): Operation<MultisigMessage> {
   const children = [tel, anchor].map(wire => parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire)));
@@ -197,13 +267,16 @@ export function* prepareAcdcV2RegistryExn(
   }
   const nests = children.map(frames => frames[0]);
   if (!(nests[1].body instanceof SerderKERI)) throw new Error("ACDC v2 registry anchor must be KERI.");
-  const wrapper =
-    exchange(MULTISIG_REGISTRY_ROUTE, { gid: nests[1].body.pre, tel: nests[0].body.said, anc: nests[1].body.said }, {
-      ...options,
-      sender,
-      version: Vrsn_2_0,
-    })[0];
-  if (!acdcV2RegistryProposal(wrapper, nests)) throw new Error("Invalid ACDC v2 registry proposal.");
+  const wrapper = exchange(`/multisig/${nests[0].body.ilk}`, {
+    gid: nests[1].body.pre,
+    tel: nests[0].body.said,
+    anc: nests[1].body.said,
+  }, {
+    ...options,
+    sender,
+    version: Vrsn_2_0,
+  })[0];
+  if (!acdcV2RegistryProposal(wrapper, nests, store)) throw new Error("Invalid ACDC v2 registry proposal.");
   const parts = yield* abortable(signal =>
     Promise.all(nests.map(child => collectPayload(nestedPayload(child, Vrsn_2_0), signal)))
   );
@@ -537,8 +610,17 @@ export class Multiplexor {
     }
     const { said, embeddedSaid, route, sender } = inspection;
     const { existing, submitters } = this.hby.db.env!.transactionSync(() => {
-      const existing = this.hby.db.meids.get([embeddedSaid]);
-      const submitters = this.hby.db.maids.get([embeddedSaid]);
+      const indexed = this.hby.db.meids.get([embeddedSaid]);
+      const existing = isNativeRegistryRoute(route)
+        ? indexed.filter(diger => {
+          const retained = this.hby.db.exns.get([diger.qb64]);
+          return retained && sameRegistryProposal(retained, serder)
+            && this.exchanger?.verifyAccepted(diger.qb64, route);
+        })
+        : indexed;
+      const submitters = isNativeRegistryRoute(route)
+        ? existing.map(diger => new Prefixer({ qb64: this.hby.db.exns.get([diger.qb64])!.pre! }))
+        : this.hby.db.maids.get([embeddedSaid]);
       // Approval is the authenticated wrapper, not completion of its asynchronous child replay.
       this.hby.db.meids.add([embeddedSaid], new Saider({ qb64: said }));
       this.hby.db.maids.add([embeddedSaid], new Prefixer({ qb64: sender }));
@@ -685,9 +767,12 @@ export class Multiplexor {
         return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
       embeddedSaid = commitment;
-    } else if (route === MULTISIG_REGISTRY_ROUTE) {
-      const children = acdcV2RegistryProposal(serder, nests);
+    } else if (isNativeRegistryRoute(route)) {
+      const children = acdcV2RegistryProposal(serder, nests, this.registry?.store ?? null);
       if (!children) return { ok: false, said, reason: "Invalid ACDC v2 registry/anchor proposal." };
+      if (!groupSigningMembers(this.hby, children.anchor.pre!).includes(sender)) {
+        return { ok: false, said, reason: "Registry proposal sender is not a current group signing member." };
+      }
       embeddedSaid = children.anchor.said!;
     } else {
       const allowed = nestedMultisigIlks(route);

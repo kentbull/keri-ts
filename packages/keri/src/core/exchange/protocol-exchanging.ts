@@ -266,11 +266,18 @@ export function serializeMessage(
   });
 }
 
+/** Native TEL proposal routes share exact registry/anchor consent, not an arbitrary anchor bucket. */
+export function isNativeRegistryRoute(route: string): route is "/multisig/rip" | "/multisig/bup" {
+  return route === "/multisig/rip" || route === "/multisig/bup";
+}
+
 /** Selected ACDC v2 multisig routes; exact child relationships remain the coordinator's obligation. */
 export function nestedMultisigIlks(route: string): readonly string[] | null {
   switch (route) {
-    case "/multisig/registry":
-      return ["rip", "bup", "ixn", "rot", "drt"];
+    case "/multisig/rip":
+      return ["rip", "ixn", "rot", "drt"];
+    case "/multisig/bup":
+      return ["bup", "ixn", "rot", "drt"];
     case "/multisig/icp":
       return ["icp", "dip"];
     case "/multisig/rot":

@@ -10,6 +10,7 @@
  */
 import { concatBytes, Counter, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import type { Operation } from "effection";
+import { isNativeRegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import type { Baser } from "../../db/basing.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
@@ -68,7 +69,7 @@ export function multisigPayloadSaid(serder: SerderKERI): string | null {
     return typeof said === "string" && said.length > 0 ? said : null;
   }
   const route = serder.route ?? "";
-  const said = payloadSection(ked)[route === "/multisig/registry" ? "anc" : route.slice(route.lastIndexOf("/") + 1)];
+  const said = payloadSection(ked)[isNativeRegistryRoute(route) ? "anc" : route.slice(route.lastIndexOf("/") + 1)];
   return typeof said === "string" && said.length > 0 ? said : null;
 }
 

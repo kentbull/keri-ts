@@ -7,12 +7,15 @@ import { Organizer } from "../identity/organizing.ts";
  * without starting or driving background workers.
  */
 import {
+  attachmentPayload,
+  collectPayload,
   concatBytes,
   Counter,
   Diger,
   Ilks,
   NumberPrimitive,
   NumDex,
+  parseBytes,
   Prefixer,
   SerderACDC,
   SerderKERI,
@@ -23,13 +26,13 @@ import {
 import { type Operation } from "npm:effection@^3.6.0";
 import {
   type RegistryDisclosure,
-  validateRip,
-  validateUpdate,
   verifyRegistryAnchor,
   vetBlind,
 } from "../../acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { isNativeRegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
+import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { RegistryRecord } from "../../core/records.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
@@ -60,14 +63,15 @@ import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import { Reactor } from "../protocol/reactor.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { collectBytes } from "../transport/byte-source.ts";
-import { findLocalGroupMember as findLocalMember, uniqueMembers } from "./group-members.ts";
+import { findLocalGroupMember as findLocalMember, groupMemberHasKey, uniqueMembers } from "./group-members.ts";
 import {
   acdcV2RegistryProposal,
+  MULTISIG_BUP_ROUTE,
   MULTISIG_ICP_ROUTE,
   MULTISIG_ISS_ROUTE,
   MULTISIG_IXN_ROUTE,
-  MULTISIG_REGISTRY_ROUTE,
   MULTISIG_REV_ROUTE,
+  MULTISIG_RIP_ROUTE,
   MULTISIG_ROT_ROUTE,
   MULTISIG_RPY_ROUTE,
   MULTISIG_VCP_ROUTE,
@@ -81,6 +85,7 @@ import {
   prepareAcdcV2RegistryExn,
   prepareMultisigEventExn,
   prepareMultisigVdrExn,
+  registryProposalEvent,
 } from "./grouping.ts";
 import {
   admitAndSendGroupMessage,
@@ -108,35 +113,82 @@ export function* approveAcdcV2Registry(
   if (!registry || group.db !== hby.db || registry.db !== hby.db) {
     throw new ValidationError("ACDC v2 group registry owner is unavailable.");
   }
-  const checked = event.ilk === "rip" ? validateRip(event) : validateUpdate(event, event.regid ?? "");
-  const rip = event.ilk === "rip" ? event : registry.store.seqEvent(event.regid ?? "", 0);
-  if (checked.kind !== "valid" || !rip || rip.issuer !== group.pre) {
+  if (!group.kever || !groupSigningMembers(hby, group.pre).includes(member.pre)) {
+    throw new ValidationError("Registry approval requires an accepted group and current local signing member.");
+  }
+  const checked = registryProposalEvent(event, group.pre, registry.store);
+  if (!checked) {
     throw new ValidationError("ACDC v2 TEL belongs to another group or is unavailable.");
   }
   if (opening && (event.ilk !== "bup" || !vetBlind(opening, event.sad!.b as string))) {
     throw new ValidationError("Invalid proposed event opening.");
   }
-  const seal = { s: event.sad!.n, d: event.said! };
+  const seal = { i: checked.regid, s: event.sad!.n, d: event.said! };
   const retained = registry.store.anchor(event.said!);
   if (
     !anchor && retained
-    && verifyRegistryAnchor(checked.event, { db: hby.db, issuer: group.pre, number: retained[0], diger: retained[1] })
+    && verifyRegistryAnchor(checked, { db: hby.db, issuer: group.pre, number: retained[0], diger: retained[1] })
   ) {
     anchor = hby.db.getEvtSerder(group.pre, retained[1].qb64) ?? undefined;
   }
+  let authored = false;
   if (!anchor) {
     const pending = hby.db.pses.getLast(group.pre, group.kever!.sn + 1);
     if (pending) anchor = hby.db.getEvtSerder(group.pre, pending) ?? undefined;
     if (!anchor) {
+      authored = true;
       anchor = (group.kever!.estOnly
-        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal] })
-        : hby.interactGroupHab(group.name, undefined, { data: [seal] })).serder;
+        ? hby.rotateGroupHab(group.name, undefined, undefined, { data: [seal], version: Vrsn_2_0 })
+        : hby.interactGroupHab(group.name, undefined, { data: [seal], version: Vrsn_2_0 })).serder;
     }
   }
   if (
-    anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
-    || JSON.stringify(anchor.sad!.a) !== JSON.stringify([seal])
-  ) throw new ValidationError("Group anchor must exclusively seal the exact proposed TEL.");
+    anchor.pvrsn.major !== 2 || anchor.pvrsn.minor !== 0 || !anchor.verify()
+    || anchor.pre !== group.pre || !["ixn", "rot", "drt"].includes(anchor.ilk ?? "")
+    || !anchor.seals.some(value => isRecord(value) && value.i === seal.i && value.s === seal.s && value.d === seal.d)
+  ) {
+    throw new ValidationError("Group anchor must be V2 and seal the exact proposed TEL.");
+  }
+  if (!authored && hby.db.kels.getLast(group.pre, anchor.sn!) === anchor.said) {
+    // Accepted anchors reuse only this member's authenticated exact recorded contribution.
+    let establishment: SerderKERI | null = anchor;
+    while (establishment && !establishment.estive) {
+      establishment = establishment.prior ? hby.db.getEvtSerder(group.pre, establishment.prior) : null;
+    }
+    for (const index of hby.db.meids.get([anchor.said!])) {
+      const retained = hby.db.exns.get([index.qb64]);
+      const payload = retained?.sad?.a;
+      if (
+        !retained || retained.pre !== member.pre || retained.route !== `/multisig/${event.ilk}` || !isRecord(payload)
+        || payload.gid !== group.pre || payload.tel !== event.said || payload.anc !== anchor.said
+        || !protocol.exc.verifyAccepted(retained.said!, retained.route!)
+      ) {
+        continue;
+      }
+      const frames = loadNests(hby.db, retained.said!);
+      const verified = establishment && frames[1] && Kever.verifyIndexedSignatures(
+        anchor.raw,
+        envelopeFromFrame(frames[1]).sigers,
+        establishment.verfers,
+      );
+      if (
+        !verified
+        || !verified.sigers.some(siger =>
+          groupMemberHasKey(hby.db, member.pre, establishment!.verfers[siger.index].qb64)
+        )
+      ) {
+        continue;
+      }
+      const replay = yield* abortable(signal => collectBytes(protocol.exc.replay(retained.said!, signal)));
+      const [frame] = parseBytes(replay);
+      const foot = yield* abortable(signal => collectPayload(attachmentPayload(frame), signal));
+      return [retained, foot] as const;
+    }
+    throw new ValidationError("Accepted registry anchor has no retained exact local approval.");
+  }
+  if (!authored && (anchor.sn !== group.kever.sn + 1 || anchor.prior !== group.kever.serder.said)) {
+    throw new ValidationError("Registry anchor does not extend the current group event.");
+  }
   const keys = groupEventKeys(hby, group.pre, anchor);
   const sigers = signLocalGroupEvent(hby, anchor, groupSigningMembers(hby, group.pre), keys);
   const own = messagize(anchor, { sigers, gvrsn: Vrsn_2_0 });
@@ -151,7 +203,7 @@ export function* approveAcdcV2Registry(
   const input = new Reactor(protocol);
   yield* input.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), tel), { local: true });
   yield* input.processBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), own), { local: true });
-  const proposal = yield* prepareAcdcV2RegistryExn(member.pre, tel, own);
+  const proposal = yield* prepareAcdcV2RegistryExn(member.pre, tel, own, registry.store);
   const signed = signGroupMessage(member, "", proposal);
   yield* input.processBytes(signed.message, { local: true });
   yield* protocol.processEscrowsOnce();
@@ -193,7 +245,8 @@ export type MultisigProposalRoute =
   | MultisigKelRoute
   | MultisigVdrRoute
   | MultisigRpyRoute
-  | typeof MULTISIG_REGISTRY_ROUTE;
+  | typeof MULTISIG_RIP_ROUTE
+  | typeof MULTISIG_BUP_ROUTE;
 
 /** Decoded child and membership fields consumed by KEL approval policy; child proofs are verified during intake. */
 type KelApproval = MultisigChild & {
@@ -336,7 +389,7 @@ function pendingMultisigProposals(
     const exn = hby.db.exns.get([said]);
     if (!exn?.ked) continue;
     const route = exn.route ?? "";
-    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && route !== MULTISIG_REGISTRY_ROUTE) {
+    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && !isNativeRegistryRoute(route)) {
       continue;
     }
     const payloadSaid = multisigPayloadSaid(exn);
@@ -384,11 +437,17 @@ export function* approvePendingMultisigProposal(
       result = yield* approveKelProposal(hby, runtime, exn, route, options);
     } else if (isVdrRoute(route)) {
       result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
-    } else if (route === MULTISIG_REGISTRY_ROUTE) {
-      const nests = loadNests(hby.db, exn.said!), proposal = acdcV2RegistryProposal(exn, nests);
+    } else if (isNativeRegistryRoute(route)) {
+      const nests = loadNests(hby.db, exn.said!);
+      const proposal = acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null);
       const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
       if (!proposal || !group) continue;
+      const head = group.kever?.serder.said;
+      if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
       if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) continue;
+      if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null)) {
+        throw new ValidationError("Group or registry changed while approval was pending.");
+      }
       const envelope = envelopeFromFrame(nests[0]), opening = [...envelope.bsqs, ...envelope.bsss];
       if (opening.length > 1) throw new ValidationError("Registry proposal carries multiple openings.");
       const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {

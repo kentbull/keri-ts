@@ -115,12 +115,19 @@ after database reopen. Replay decodes generic protocol bodies: issuance contains
 an ACDC child as well as KERI TEL/anchor children. Keep the KEL/reply approval
 reader KERI-specific and share only proof/genus resolution. Decode signed cgvrsn before parsing; explicit child genus
 wins, and a hint applies only to a child with attachments. Parent signatures never
-supply missing child proofs. CLI proposal/join remains v1. Shared proposal
+supply missing child proofs. Legacy KEL/reply/VDR proposal/join remains v1. Shared proposal
 publication registers its actual signed wire through intake before transmission,
 so later peer proofs can replay without another approval prompt. Endpoint-role
 initiation likewise records each recipient-specific wrapper before delivery and
 returns those actual proposal identities. Preserve first-notice behavior or retries
 can republish approval unnecessarily.
+Native RIP/BUP proposals instead carry exactly two V2 TEL/anchor children on their
+explicit routes. Read-only validation requires a full contained TEL seal, exact
+source locators, accepted controlling RIP and next BUP linkage or identical replay.
+Authenticate exact route/gid/tel/anc wrappers in either arrival order before counting
+consent; an anchor bucket alone is insufficient. Native group authors explicitly
+select V2 body/proof framing; omitted group authoring version remains V1. Historical
+accepted anchors reuse retained local contributions, including after key retirement.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
 EXNs and their Multiplexor indexes independently of notification presence. When

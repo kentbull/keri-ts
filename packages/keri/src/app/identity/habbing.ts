@@ -1759,6 +1759,7 @@ export class Habery {
    * - member AIDs should already be in the key state intended for the new
    *   group key list, matching KLI's operator workflow of rotating members
    *   before rotating the group
+   * An explicit version selects both body and returned proof framing; omission remains V1.
    */
   rotateGroupHab(
     group: string,
@@ -1771,6 +1772,7 @@ export class Habery {
       cuts?: string[];
       adds?: string[];
       data?: unknown[];
+      version?: Versionage;
     } = {},
   ): GroupHabRotation {
     const hab = this.habByName(group);
@@ -1808,6 +1810,7 @@ export class Habery {
         cuts: args.cuts,
         adds: args.adds,
         data: args.data,
+        version: args.version,
       },
     );
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1837,15 +1840,15 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_1_0 }),
     };
   }
 
-  /** Create a locally signed group interaction event. */
+  /** Create a locally signed group interaction; explicit version selects body/proofs, otherwise V1. */
   interactGroupHab(
     group: string,
     smids?: string[],
-    args: { data?: unknown[] } = {},
+    args: { data?: unknown[]; version?: Versionage } = {},
   ): GroupHabInteraction {
     const hab = this.habByName(group);
     if (!hab?.pre || !hab.kever) {
@@ -1869,6 +1872,7 @@ export class Habery {
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
+      { version: args.version },
     );
     const keys = kever.verfers.map((verfer) => verfer.qb64);
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1896,7 +1900,7 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_1_0 }),
     };
   }
 
