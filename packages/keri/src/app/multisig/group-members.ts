@@ -1,4 +1,7 @@
+import type { SerderKERI } from "cesr-ts";
+import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 
@@ -50,4 +53,30 @@ export function groupMemberHasKey(db: Baser, member: string, key: string): boole
     if (event?.estive && event.verfers[0]?.qb64 === key) return true;
   }
   return false;
+}
+
+/**
+ * Select only a cryptographically valid local partial at an accepted group establishment.
+ * The shared esigs table can hold unverified escrow candidates, so a matching
+ * index or an authenticated parent wrapper alone is not recorded child approval.
+ */
+export function localIpexContribution(
+  db: Baser,
+  member: string,
+  embedded: SerderKERI,
+  proofs: readonly TransIdxSigGroup[],
+): TransIdxSigGroup | null {
+  for (const proof of proofs) {
+    if (proof.pre !== embedded.pre || proof.sn > BigInt(Number.MAX_SAFE_INTEGER)) continue;
+    const said = db.kels.getLast(proof.pre, Number(proof.sn));
+    const event = said === proof.said ? db.getEvtSerder(proof.pre, said) : null;
+    if (!event?.estive) continue;
+    const verified = Kever.verifyIndexedSignatures(embedded.raw, proof.sigers, event.verfers);
+    for (const siger of verified.sigers) {
+      if (groupMemberHasKey(db, member, event.verfers[siger.index].qb64)) {
+        return new TransIdxSigGroup(proof.prefixer, event.sner!, proof.diger, [siger]);
+      }
+    }
+  }
+  return null;
 }

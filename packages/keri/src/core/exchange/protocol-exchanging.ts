@@ -286,6 +286,8 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
       return ["ixn"];
     case "/multisig/rpy":
       return ["rpy"];
+    case "/multisig/exn":
+      return ["xip", "exn"];
     default:
       return null;
   }

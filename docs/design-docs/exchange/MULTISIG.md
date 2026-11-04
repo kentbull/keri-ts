@@ -28,11 +28,19 @@ approval replay, so a peer wrapper arriving during replay sees that approval and
 processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
-Canonical V1 `/multisig/exn` coordination indexes the embedded-section SAID in
-meids and submitters in maids, including native XIP Grants and EXN Admits.
-Pathed child bytes retain their body and V2 proof enclosure; the outer version
-does not select child proof framing. Joining adds a member's group-index signature
-to the business exchange; completion and external lead delivery remain separate decisions.
+Native V2 `/multisig/exn` binds `{gid, exn: childSAID}` to exactly one framed V2
+XIP/EXN on a supported IPEX route, authored by that group. Only Offer/Grant children
+may carry their own credential proof trees. The current group signing member
+and local participation are verified before indexing by child SAID in meids/maids.
+The caller supplies its actual native IPEX, registry, Revery and KRAM owners;
+missing or mismatched owners refuse before indexing. A local wrapper first enters
+native child verification with this member's verified contribution. Stored peer
+wrappers replay only after that explicit approval, using the same native owners.
+Both direct and stored-proposal approval reauthenticate the exact retained wrapper.
+Body, signatures, source seals and nested proofs remain child-owned; parent
+signatures never satisfy its threshold. Completion and external lead delivery
+remain separate decisions. Legacy V1 coordination retains its pathed encoding,
+embedded-section aggregation key and independently selected child framing.
 Single-sig habitats lead their own messages. Notification is a wakeup, not approval;
 preserve first-notice behavior for an already indexed proposal.
 
