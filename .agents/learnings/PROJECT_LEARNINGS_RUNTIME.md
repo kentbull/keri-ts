@@ -14,6 +14,12 @@ Mailboxer, not AgentMode/runtimeMode. HTTP and clock dependencies are separate
 required component arguments. MailboxPoller owns its concrete HTTP/SSE request
 operation; there is no separately injected polling strategy. Requests carry data
 rather than collaborator bundles.
+Finite IPEX composition selects one `ipexAuxiliary` (`dhke` or `unblind`) with
+an actual local Hab and explicitly enabled KRAM. Runtime supplies its exact
+Exchanger, registry and Revery before immutable query dispatch is constructed;
+standalone owners may use Hab Revery. Selection is not approval. Runtime teardown
+clears process-local approvals/retries and best-effort zeros pending DH scalars;
+commands still abandon their scoped XID and join workers before closing stores.
 Choose concrete dependencies at construction; no parent-runtime discovery in
 Respondant, WitnessInquisitor, Anchorer, receipt owners or lower TCP transport.
 

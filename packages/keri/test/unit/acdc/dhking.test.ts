@@ -617,33 +617,36 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     for (const [hby, hab] of [[issuerHby, issuer], [issueeHby, issuee]] as const) {
       const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
-      const store = new RegistryStore(baser), rvy = hab.rvy, output = rvy.cues, cues = new Deck<AgentCue>();
-      const kvy = new Kevery(hby.db, {
-        rvy,
-        cues: output,
-        kramer: new Kramer(hby.db, {
-          cues: output,
-          now: () => now,
-          config: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        }),
+      const rgy = new Regery(hby, baser);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
+        now: () => now,
+        setTimeout,
+        clearTimeout: timer => clearTimeout(timer as number),
+      }, {
+        acdc: rgy,
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        ipexAuxiliary: { kind: "dhke", hab },
       });
-      const exc = new Exchanger(hby, { cues: output, now: () => now });
-      loadIpexHandlers(hby, exc, { registry: store });
-      const dh = new Dhke({ hab, exc, registryStore: store });
-      rvy.rtr.addRoute("/ipex/dhke", dh);
-      const protocol = new ProtocolProcessor(
-        kvy,
-        rvy,
-        exc,
-        null,
-        null,
-        new RegistryObserver(hby.db, store),
-        output,
-        cues,
-        new QueryReplies(cues),
-        dh,
+      yield* ensure(() => runtime.close());
+      assert(runtime.ipexAuxiliary?.kind === "dhke");
+      const dh = runtime.ipexAuxiliary.owner;
+      assertEquals(
+        dh.rvy === runtime.protocol.rvy,
+        true,
+        "DH authenticates replies through its composed runtime owner",
       );
-      parties.push({ hby, hab, store, exc, dh, protocol, reactor: new Reactor(protocol) });
+      assertEquals(dh.rvy === hab.rvy, false, "the ordinary runtime has its own Revery");
+      assertEquals(runtime.protocol.qvy === dh, true);
+      assertEquals(dh.outgoing.length, 0, "construction implies no approval or delivery");
+      parties.push({
+        hby,
+        hab,
+        store: rgy.store,
+        exc: runtime.exc,
+        dh,
+        protocol: runtime.protocol,
+        reactor: runtime.reactor,
+      });
     }
     const [left, right] = parties;
     // Only accepted public KEL/TEL crosses between independently encrypted stores.
@@ -673,6 +676,12 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       assertEquals(party.exc.complete(grant.said!), false);
       assertExists(party.hby.db.epse.get(grant.said!));
       assertEquals(party.hab.mgr.getRegistryRoot(party.hab.pre, rip.said!), null);
+      assertThrows(
+        () => party.dh.complete(grant.said!),
+        Error,
+        undefined,
+        "retained Grant intake does not approve runtime DH",
+      );
     }
     const deadlines = parties.map(party => party.hby.db.epsd.get(grant.said!)!.dts);
     const originalBodies = parties.map(party => loadNests(party.hby.db, grant.said!).map(nest => nest.body.raw));

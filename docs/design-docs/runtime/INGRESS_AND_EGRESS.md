@@ -114,6 +114,24 @@ operation scope. It owns no parser, queue or transport through this interface.
 KRAM hands complete accumulated sender signatures to query, reply, XIP and EXN
 receivers as one establishment-bound group, preserving foreign evidence.
 
+`createAgentRuntime` can select one concrete owner with `ipexAuxiliary: {kind: "dhke", hab}` or `{kind: "unblind", hab, states}`. The habitat must be the
+actual local object in this Habery, a v2 registry must be available, and caller
+configuration must explicitly enable KRAM. Missing or disabled KRAM is a caller
+error, never a fallback to unauthenticated receiver time. The composition constructs
+the owner with its Exchanger and registry, registers the reply route on its actual
+Revery, and supplies the same owner as immutable `ProtocolProcessor.qvy`. Both
+owners accept an explicit `rvy` dependency with matching database; standalone
+composition defaults to the habitat's Revery.
+
+The returned `runtime.ipexAuxiliary` identifies the concrete owner for a finite
+application to approve a selected Grant and drain its outgoing Deck. Construction
+supplies no consent and starts no protocol operation. Commands still abandon their
+scoped XID; explicit runtime close and scope exit also clear all process-local
+approvals and retry bytes, zeroing owned pending DH scalar arrays on a best-effort
+basis. Retained encrypted roots and public evidence are unchanged. Applications
+stop and join workers before explicit runtime close; no operation restart ledger
+or automatic Admit is introduced.
+
 `Unblind({hab, exc, registry, states})` composes that query seam with
 the existing Revery Router at `/ipex/unblind`. Each party explicitly approves the
 same retained live Grant. Only this v2 query route admits nested public BUPs;

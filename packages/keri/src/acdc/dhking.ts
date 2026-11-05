@@ -51,7 +51,7 @@ import { verifyQueryAttachments } from "../core/exchange/exchange-proofing.ts";
 import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
-import { fetchStoredTsgs, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
 import { validateUpdate, verifyRegistryAnchor } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
 
@@ -182,16 +182,24 @@ export class Dhke implements AuxiliaryQueryProcessor {
   private readonly operations = new Map<string, DhkeOperation>();
   readonly hab: Hab;
   readonly exc: Exchanger;
+  readonly rvy: Revery;
   readonly registryStore: RegistryStore;
   readonly group: boolean;
 
   /** Bind concrete local owners; construction grants no consent and writes nothing. */
-  constructor({ hab, exc, registryStore }: { hab: Hab; exc: Exchanger; registryStore: RegistryStore }) {
+  constructor({ hab, exc, registryStore, rvy = hab.rvy }: {
+    hab: Hab;
+    exc: Exchanger;
+    registryStore: RegistryStore;
+    rvy?: Revery;
+  }) {
     if (
-      !(hab instanceof Hab) || hab.db !== exc.hby.db || exc.hby.habs.get(hab.pre!) !== hab
+      !(hab instanceof Hab) || hab.db !== exc.hby.db || rvy.db !== hab.db
+      || exc.hby.habs.get(hab.pre!) !== hab
     ) throw new ValidationError("DH requires a local signing habitat");
     this.hab = hab;
     this.exc = exc;
+    this.rvy = rvy;
     this.registryStore = registryStore;
     this.group = isLocalGroupHab(exc.hby, hab);
     if (this.group && !(localGroupMember(exc.hby, hab.pre!) instanceof Hab)) {
@@ -417,7 +425,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
         throw new ValidationError("Own DH reply lacks exact local proposal approval");
       }
       if (!own && !op.query) throw new ValidationError("DH reply has no outstanding query");
-      const decision = this.hab.rvy.acceptReply({ serder, saider: diger, route, aid: op.issuee, cigars, tsgs });
+      const decision = this.rvy.acceptReply({ serder, saider: diger, route, aid: op.issuee, cigars, tsgs });
       if (decision.kind !== "accept") return decision;
       if (own) {
         if (this.custody(op) && !op.completed) this.retain(op, op.peer!, this.derive(op, op.peer!, "issuee"));
@@ -490,6 +498,13 @@ export class Dhke implements AuxiliaryQueryProcessor {
     const op = this.operation(xid);
     this.clearPrivate(op);
     op.abandoned = true;
+  }
+
+  /** Release all process-local approvals and retry bytes; zero owned ephemeral scalar arrays. */
+  close(): void {
+    for (const op of this.operations.values()) this.clearPrivate(op);
+    this.operations.clear();
+    this.outgoing.clear();
   }
 
   private operation(xid: string): DhkeOperation {

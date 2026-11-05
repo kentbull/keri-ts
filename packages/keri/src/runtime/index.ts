@@ -37,6 +37,8 @@ export {
   type AgentRuntime,
   type AgentRuntimeOptions,
   createAgentRuntime,
+  type IpexAuxiliary,
+  type IpexAuxiliarySelection,
   runAgentRuntime,
   runAgentRuntimeUntil,
   runtimeOobiConverged,
