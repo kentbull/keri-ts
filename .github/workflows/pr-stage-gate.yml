@@ -4,13 +4,14 @@ on:
   pull_request:
     branches: [master]
     types: [opened, reopened, synchronize]
+  workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: read
 
 concurrency:
-  group: pr-stage-gate-${{ github.event.pull_request.number }}
+  group: pr-stage-gate-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 env:
@@ -49,11 +50,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      run_unit: ${{ steps.scope.outputs.run_unit }}
-      run_interop: ${{ steps.scope.outputs.run_interop }}
-      run_package: ${{ steps.scope.outputs.run_package }}
-      unit_targets: ${{ steps.scope.outputs.unit_targets }}
-      interop_targets: ${{ steps.scope.outputs.interop_targets }}
+      run_unit: ${{ steps.scope_dispatch.outputs.run_unit || steps.scope.outputs.run_unit }}
+      run_interop: ${{ steps.scope_dispatch.outputs.run_interop || steps.scope.outputs.run_interop }}
+      run_package: ${{ steps.scope_dispatch.outputs.run_package || steps.scope.outputs.run_package }}
+      unit_targets: ${{ steps.scope_dispatch.outputs.unit_targets || steps.scope.outputs.unit_targets }}
+      interop_targets: ${{ steps.scope_dispatch.outputs.interop_targets || steps.scope.outputs.interop_targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -63,7 +64,13 @@ jobs:
         with:
           deno-version: ${{ env.DENO_VERSION }}
 
+      - name: select the full gate for a manual run
+        if: github.event_name == 'workflow_dispatch'
+        id: scope_dispatch
+        run: deno run --no-config --no-lock --allow-write --allow-env scripts/ci/pr-test-scope.ts dispatch
+
       - name: select checks from current PR scope
+        if: github.event_name == 'pull_request'
         id: scope
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -79,6 +86,7 @@ jobs:
           deno run --no-config --no-lock --allow-read --allow-write --allow-env --allow-run=git scripts/ci/pr-test-scope.ts
 
       - name: require release intent
+        if: github.event_name == 'pull_request'
         run: bash scripts/ci/check-changeset.sh "${{ github.event.pull_request.base.sha }}"
 
   unit-tests:
@@ -118,7 +126,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keri-required-timings-pr-${{ github.event.pull_request.number }}
+          name: keri-required-timings-pr-${{ github.event.pull_request.number || github.run_id }}
           path: .test-timings/
           if-no-files-found: ignore
           retention-days: 14
@@ -192,7 +200,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: keri-${{ matrix.target }}-timings-pr-${{ github.event.pull_request.number }}
+          name: keri-${{ matrix.target }}-timings-pr-${{ github.event.pull_request.number || github.run_id }}
           path: .test-timings/
           if-no-files-found: ignore
           retention-days: 3
@@ -291,7 +299,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: npm-tarballs-pr-${{ github.event.pull_request.number }}
+          name: npm-tarballs-pr-${{ github.event.pull_request.number || github.run_id }}
           path: |
             packages/keri/npm/${{ steps.pack.outputs.keri }}
             packages/cesr/npm/${{ steps.pack.outputs.cesr }}

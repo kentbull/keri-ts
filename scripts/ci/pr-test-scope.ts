@@ -129,7 +129,9 @@ function currentBody(value: unknown, head: string): string {
 async function runUnit(): Promise<void> {
   const selected = unitTargets(JSON.parse(Deno.env.get("UNIT_TARGETS") ?? "[]"));
   for (const target of selected) {
-    const args = target === "tufa" ? ["task", "test:quality:tufa"] : target === "verifier"
+    const args = target === "tufa"
+      ? ["task", "test:quality:tufa"]
+      : target === "verifier"
       ? ["task", "test:verifier"]
       : target === "hosting"
       ? ["task", "test:hosting"]
@@ -154,9 +156,35 @@ async function runUnit(): Promise<void> {
   }
 }
 
+/** Publish selected checks as job outputs and reviewable evidence. */
+async function publish(scope: PrTestScope, source: string): Promise<void> {
+  const unit = scope.unit.kind === "ci" ? scope.unit.targets : [];
+  const output = [
+    `run_unit=${unit.length > 0}`,
+    `run_interop=${scope.interop.length > 0}`,
+    `run_package=${scope.packageSmoke}`,
+    `unit_targets=${JSON.stringify(unit)}`,
+    `interop_targets=${JSON.stringify(scope.interop)}`,
+  ].join("\n");
+  await Deno.writeTextFile(Deno.env.get("GITHUB_OUTPUT")!, output + "\n", { append: true });
+  await Deno.writeTextFile(
+    Deno.env.get("GITHUB_STEP_SUMMARY")!,
+    `## Selected PR checks\n\nSource: ${source}\n\n\`\`\`json\n${JSON.stringify(scope, null, 2)}\n\`\`\`\n`,
+    { append: true },
+  );
+  console.log(JSON.stringify(scope));
+}
+
 /** Emit the selected contract as job outputs and reviewable evidence. */
 async function main(): Promise<void> {
   if (Deno.args[0] === "run-unit") return await runUnit();
+  if (Deno.args[0] === "dispatch") {
+    // A manual run has no PR body or diff, so it exercises every maintained check.
+    return await publish(
+      { unit: { kind: "ci", targets: allUnits }, interop: [...interopOwners], packageSmoke: true },
+      Deno.env.get("GITHUB_SHA") ?? "manual dispatch",
+    );
+  }
   const head = Deno.env.get("HEAD_SHA")!;
   const body = currentBody(JSON.parse(await Deno.readTextFile(Deno.env.get("PR_METADATA")!)), head);
   const diff = await new Deno.Command("git", {
@@ -171,21 +199,7 @@ async function main(): Promise<void> {
     release: Deno.env.get("HEAD_REF") === "changeset-release/master"
       && Deno.env.get("HEAD_AUTHOR") === "github-actions[bot]",
   });
-  const unit = scope.unit.kind === "ci" ? scope.unit.targets : [];
-  const output = [
-    `run_unit=${unit.length > 0}`,
-    `run_interop=${scope.interop.length > 0}`,
-    `run_package=${scope.packageSmoke}`,
-    `unit_targets=${JSON.stringify(unit)}`,
-    `interop_targets=${JSON.stringify(scope.interop)}`,
-  ].join("\n");
-  await Deno.writeTextFile(Deno.env.get("GITHUB_OUTPUT")!, output + "\n", { append: true });
-  await Deno.writeTextFile(
-    Deno.env.get("GITHUB_STEP_SUMMARY")!,
-    `## Selected PR checks\n\nSource: ${head}\n\n\`\`\`json\n${JSON.stringify(scope, null, 2)}\n\`\`\`\n`,
-    { append: true },
-  );
-  console.log(JSON.stringify(scope));
+  await publish(scope, head);
 }
 
 if (import.meta.main) await main();
