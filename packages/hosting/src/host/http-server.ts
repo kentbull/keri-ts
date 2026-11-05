@@ -8,6 +8,7 @@
 import { action, call, type Operation } from "effection";
 import { type AgentRuntime, consoleLogger, type Logger, type ProtocolHostPolicy } from "keri-ts/runtime";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createTlsServer } from "node:https";
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createTufaApp } from "../http/app.ts";
@@ -27,6 +28,7 @@ interface OwnedServerHost extends ServerHost {
 }
 
 interface ServerOptions {
+  tls?: { key: string; cert: string };
   port: number;
   hostname: string;
   signal: AbortSignal;
@@ -36,6 +38,8 @@ interface ServerOptions {
 
 /** HTTP host options. */
 export interface RuntimeHttpHostOptions extends ProtocolHostPolicy {
+  /** Explicit PEM identity for HTTPS; selected TLS never falls back to a plaintext listener. */
+  tls?: { key: string; cert: string };
   /** A concrete service may own routing across independent runtimes; it also owns handler cleanup. */
   protocolHandler?: ProtocolHandler;
   hostname?: string;
@@ -59,13 +63,15 @@ function buildServerOptions(
   signal: AbortSignal,
   hostname = "127.0.0.1",
   onListen?: (address: { port: number; hostname: string }) => void,
+  tls?: { key: string; cert: string },
 ): ServerOptions {
   return {
     port,
     hostname,
     signal,
+    tls,
     onListen: ({ port }) => {
-      logger.info(`Server running on http://${hostname}:${port}`);
+      logger.info(`Server running on ${tls ? "https" : "http"}://${hostname}:${port}`);
       onListen?.({ port, hostname });
     },
     onError: (error) => {
@@ -75,13 +81,21 @@ function buildServerOptions(
   };
 }
 
+/** Empty PEM values must fail before native serving can interpret them as plaintext options. */
+function requireTlsIdentity(options: ServerOptions): void {
+  if (options.tls && (!options.tls.key || !options.tls.cert)) {
+    throw new Error("HTTPS requires both a certificate and private key in PEM format.");
+  }
+}
+
 /** Open the native Deno HTTP host and join request cleanup after its listener closes. */
 export function openDenoServerHost(
   options: ServerOptions,
   handler: (req: Request) => Promise<Response>,
 ): ServerHost {
+  requireTlsIdentity(options);
   const requests = new Set<Promise<Response>>();
-  const server = Deno.serve(options, (request) => {
+  const server = Deno.serve({ ...options, ...options.tls }, (request) => {
     const response = Promise.resolve().then(() => handler(request));
     requests.add(response);
     void response.then(() => requests.delete(response), () => requests.delete(response));
@@ -141,7 +155,7 @@ function toNodeRequest(
     init.duplex = "half";
   }
 
-  return new Request(`http://${host}${req.url ?? "/"}`, init);
+  return new Request(`${options.tls ? "https" : "http"}://${host}${req.url ?? "/"}`, init);
 }
 
 /** Flush one Fetch `Response` back onto Node's `ServerResponse`. */
@@ -224,14 +238,16 @@ export function openNodeServerHost(
   options: ServerOptions,
   handler: (req: Request) => Promise<Response>,
 ): ServerHost {
+  requireTlsIdentity(options);
   // A closed socket does not imply that its parser or payload cleanup has finished.
   const requests = new Set<Promise<void>>();
-  const server = createServer((req, res) => {
+  const listener = (req: IncomingMessage, res: ServerResponse) => {
     const request = handleNodeRequest(req, res, options, handler);
     requests.add(request);
     // Attach both branches immediately: a rejected fallback response must not become detached rejection.
     void request.then(() => requests.delete(request), () => requests.delete(request));
-  });
+  };
+  const server = options.tls ? createTlsServer(options.tls, listener) : createServer(listener);
   // listen() is asynchronous; an owner can close the host before Node marks it listening.
   let closing = false;
   /** Remember early cancellation and close the listener as soon as it becomes available. */
@@ -291,6 +307,7 @@ function openServerHost(
     signal,
     options.hostname ?? "127.0.0.1",
     options.onListen,
+    options.tls,
   );
   const app = createTufaApp({
     runtime,
@@ -312,7 +329,7 @@ function openServerHost(
         host = openDenoServerHost(serverOptions, handler);
       } catch (error) {
         logger.warn(
-          "Falling back to Node HTTP host after Deno.serve() startup failed:",
+          `Falling back to Node ${options.tls ? "HTTPS" : "HTTP"} host after Deno.serve() startup failed:`,
           error,
         );
         host = openNodeServerHost(serverOptions, handler);

@@ -69,8 +69,8 @@ function ordinal(value: unknown): number | null {
  * Selected Python reference: kf-registrar 7e934668, declared KERIpy 7ea525ba.
  */
 export class Registrar {
-  private readonly publishers: ReadonlySet<string>;
-  private readonly observers: ReadonlySet<string>;
+  private readonly publishers: Set<string>;
+  private readonly observers: Set<string>;
   private readonly fullEvidence: boolean;
 
   constructor(readonly processor: ProtocolProcessor, readonly store: RegistryStore, options: RegistrarOptions = {}) {
@@ -80,6 +80,18 @@ export class Registrar {
     this.publishers = new Set(options.publishers);
     this.observers = new Set(options.observers);
     this.fullEvidence = options.fullEvidence ?? false;
+  }
+
+  /** Publish a service-owner authorization change after its durable enrollment write. */
+  setPublisher(aid: string, enabled: boolean): void {
+    if (enabled) this.publishers.add(aid);
+    else this.publishers.delete(aid);
+  }
+
+  /** Update the bulk-reader policy; the service owner retains separately configured source access. */
+  setObserver(aid: string, enabled: boolean): void {
+    if (enabled) this.observers.add(aid);
+    else this.observers.delete(aid);
   }
 
   /** Public hosting-compatible handler; it neither opens stores nor starts background work. */

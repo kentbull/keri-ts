@@ -48,7 +48,7 @@ function unavailable(message: string, status = 503): Response {
  */
 export class Observer {
   readonly sources: readonly SourceTrust[];
-  private readonly readers: ReadonlySet<string>;
+  private readonly readers: Set<string>;
   private readonly maximumAgeMs: number;
   private readonly now: () => number;
   private readonly evidence: Registrar;
@@ -59,8 +59,8 @@ export class Observer {
     readonly observations: ObservationBaser,
     options: ObserverOptions,
   ) {
-    if (!options.sources.length || !options.readers.length) {
-      throw new ValidationError("Observer needs configured sources and readers.");
+    if (!options.sources.length) {
+      throw new ValidationError("Observer needs configured sources.");
     }
     this.sources = options.sources.map(source => new SourceTrust(source));
     if (new Set(this.sources.map(source => source.url)).size !== this.sources.length) {
@@ -70,6 +70,12 @@ export class Observer {
     this.maximumAgeMs = duration(options.maximumAgeMs ?? 15000);
     this.now = options.now ?? Date.now;
     this.evidence = new Registrar(processor, store);
+  }
+
+  /** Publish a service-owner enrollment change; an empty reader set denies every query. */
+  setReader(aid: string, enabled: boolean): void {
+    if (enabled) this.readers.add(aid);
+    else this.readers.delete(aid);
   }
 
   /** Ignore unresolved sightings only when their exact ordinal already has an accepted event. */

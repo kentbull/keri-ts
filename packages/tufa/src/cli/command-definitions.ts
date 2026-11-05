@@ -18,6 +18,7 @@ import { registerLifecycleCmds } from "./command-definitions/lifecycle.ts";
 import { registerMailboxCmds } from "./command-definitions/mailbox.ts";
 import { registerMessagingCmds } from "./command-definitions/messaging.ts";
 import { registerNotificationCmds } from "./command-definitions/notifications.ts";
+import { registerRegistryServiceCmds } from "./command-definitions/registry-services.ts";
 import { registerToolingCmds } from "./command-definitions/tooling.ts";
 import { registerVcCmds } from "./command-definitions/vc.ts";
 import { registerVerifierCmds } from "./command-definitions/verifier.ts";
@@ -44,6 +45,7 @@ export function registerCmds(
   registerMailboxCmds(program, dispatch);
   registerWitnessCmds(program, dispatch);
   registerWatcherCmds(program, dispatch);
+  registerRegistryServiceCmds(program, dispatch);
   registerToolingCmds(program, dispatch);
   registerKfBootCmds(program, dispatch);
 }

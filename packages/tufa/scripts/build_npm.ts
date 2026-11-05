@@ -56,6 +56,7 @@ const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
   "/multisync/v2/",
   "/wallet/src/",
   "/registrar/src/",
+  "/observer/src/",
 ];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
   "libsodium-wrappers",
@@ -84,11 +85,13 @@ function dntPackageMappings(
   hostingVersion: string,
   walletVersion: string,
   registrarVersion: string,
+  observerVersion: string,
   multisyncVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
     "../multisync/v2/mod.ts": { name: "@keri-ts/multisync", version: multisyncVersion, subPath: "v2" },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
+    "../observer/mod.ts": { name: "@keri-ts/observer", version: observerVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
@@ -212,6 +215,7 @@ const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package
 const multisyncPackageVersion = resolveWorkspacePackageVersion("../multisync/package.json");
 const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
 const registrarPackageVersion = resolveWorkspacePackageVersion("../registrar/package.json");
+const observerPackageVersion = resolveWorkspacePackageVersion("../observer/package.json");
 
 await build({
   entryPoints: [ENTRYPOINT, NODE_CLI_ENTRYPOINT],
@@ -227,6 +231,7 @@ await build({
     hostingPackageVersion,
     walletPackageVersion,
     registrarPackageVersion,
+    observerPackageVersion,
     multisyncPackageVersion,
   ),
   typeCheck: false,
@@ -269,6 +274,7 @@ await build({
       "@keri-ts/hosting": hostingPackageVersion,
       "@keri-ts/wallet": walletPackageVersion,
       "@keri-ts/registrar": registrarPackageVersion,
+      "@keri-ts/observer": observerPackageVersion,
       "@keri-ts/multisync": multisyncPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
@@ -300,6 +306,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/multisync`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/wallet`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/registrar`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/observer`, { recursive: true });
     assertNoBundledWorkspaceSources();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);
