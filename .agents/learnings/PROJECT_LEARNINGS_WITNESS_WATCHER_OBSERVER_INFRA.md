@@ -94,7 +94,7 @@ their real assertions and topology. A skipped lane is not execution evidence.
 Periodic broad checks catch cross-feature regressions; full release qualification
 still includes the maintained manual/endurance gates.
 
-## KF provider allocation
+## KF provider onboarding
 
 KF allocation is a finite Tufa caller over existing Habery, KRAM, Exchanger and
 HTTP owners. Use a separate existing onboarding signer and explicit account AID;
@@ -102,8 +102,16 @@ discovery is public configuration, and allocation does not activate an account.
 Require current reply authentication plus route, recipient and selected subject
 checks, even when the provider KEL is already known. Pin the returned server AID
 on later invocations. Cancellation acknowledgement precedes service-owned cleanup.
-The application client does not establish TS witness/watcher/registry backend
-support; those require their own hosted service contracts and Locksmith proof.
+`infra kf onboard` composes registration, an accepted witnessed rotation, watcher
+introduction/actual quorum observation, account completion and signed service
+activation. Existing individual account/onboarding aliases remain separate.
+Explicit encrypted credentials retain the registration ciphertext and recipient
+public key; historical signer keys in the encrypted Keeper decrypt fresh transient
+codes after rotation. No client operation ledger is needed. Retrying a selected
+session reuses matching accepted rotation. Account operations use an explicit
+account surface; operation status cannot infer its signing principal from a route.
+The CLI flow does not establish normal Locksmith UI integration; that remains a
+separate application gate even when the same TS backends pass client onboarding.
 
 `witness backend` separately owns KF witness allocations. Its private listener
 binds loopback; the public listener selects a distinct witness runtime/store by

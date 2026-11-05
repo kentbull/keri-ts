@@ -27,6 +27,10 @@ export interface KfBootDiscovery {
 export type KfBootRoute =
   | "/onboarding/session/start"
   | "/onboarding/session/status"
+  | "/onboarding/account/create"
+  | "/onboarding/complete"
+  | "/account/services"
+  | "/account/watchers/status"
   | "/onboarding/cancel"
   | "/operations/status";
 
@@ -105,6 +109,7 @@ export class KfBootClient {
     readonly http: HttpClient,
     readonly discovery: KfBootDiscovery,
     server?: string,
+    readonly surface: "onboarding" | "account" = "onboarding",
   ) {
     if (hab.db !== hby.db || protocol.kvy.db !== hby.db || !protocol.kvy.kramer) {
       throw new ValidationError("KF boot requires the selected habitat's KRAM-enabled protocol owner.");
@@ -119,7 +124,7 @@ export class KfBootClient {
 
   /** Consume the complete HTTP response inside the caller's scope; protocol acceptance happens separately. */
   private *post(frame: CesrFrame): Operation<Uint8Array> {
-    const response = yield* requestFrame(this.discovery.onboarding, frame, this.http, { destination: this.server });
+    const response = yield* requestFrame(this.discovery[this.surface], frame, this.http, { destination: this.server });
     const body = yield* call(() => collectBytes(response.body()));
     return concatBytes(body, new TextEncoder().encode(response.headers.get("CESR-ATTACHMENT") ?? ""));
   }
@@ -138,6 +143,12 @@ export class KfBootClient {
 
   /** Authenticate the exact returned exchange through KRAM and Exchanger before exposing its payload. */
   *request(route: KfBootRoute, payload: Record<string, unknown>): Operation<KfBootReply> {
+    if (
+      (route.startsWith("/onboarding/") && this.surface !== "onboarding")
+      || (route.startsWith("/account/") && this.surface !== "account")
+    ) {
+      throw new ValidationError("KF boot route does not belong to the selected surface.");
+    }
     yield* this.introduce();
     const [request] = exchange(route, payload, {
       sender: this.hab.pre,

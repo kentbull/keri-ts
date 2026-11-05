@@ -8,7 +8,7 @@
  * Part of the P0 clean-architecture work: command definitions should read as specs
  * or use named groups rather than hand-written walls of options.
  */
-import { Command } from "npm:commander@^10.0.1";
+import { Command, InvalidArgumentError } from "npm:commander@^10.0.1";
 
 export function collectOption(value: string, previous: string[] = []): string[] {
   previous.push(value);
@@ -41,7 +41,8 @@ export function addGvrsnOption(cmd: Command): Command {
   );
 }
 
-export function addWitnessAuthOptions(cmd: Command): Command {
+export function addWitnessAuthOptions(cmd: Command, credentials = false): Command {
+  if (credentials) cmd.option("--witness-credentials <file>", "Encrypted KF witness credentials file");
   return cmd
     .option(
       "--receipt-endpoint",
@@ -62,12 +63,19 @@ export function addWitnessAuthOptions(cmd: Command): Command {
     .option("--code-time <time>", "Time the witness codes were captured.");
 }
 
-export function witnessAuthArgs(options: Record<string, unknown>): Record<string, unknown> {
+export function witnessAuthArgs(
+  options: Record<string, unknown>,
+  requireV2Credentials = false,
+): Record<string, unknown> {
+  if (options.witnessCredentials && requireV2Credentials && options.acdcV2 !== true) {
+    throw new InvalidArgumentError("--witness-credentials requires --acdc-v2 for this command.");
+  }
   return {
     endpoint: options.receiptEndpoint || false,
     authenticate: options.authenticate || false,
     code: options.code || [],
     codeTime: options.codeTime,
+    ...(options.witnessCredentials === undefined ? {} : { witnessCredentials: options.witnessCredentials }),
   };
 }
 

@@ -264,6 +264,51 @@ it alone supplies no windows. The selected Locksmith policy is
 `tufa agent` forwards KRAM from its selected configuration too; use the same
 policy for the store and its host. Omitting `kram` leaves it disabled.
 
+## KERI Foundation onboarding
+
+Use an unlocked encrypted store with two distinct existing individual identifiers:
+the permanent account and its onboarding signer. The provider must advertise the
+selected witness profile and have Registrar and/or Observer activation configured.
+
+```sh
+tufa infra kf onboard --name wallet --passcode "$PASSCODE" \
+  --alias account --onboarding-alias onboarding --url http://127.0.0.1:9723 \
+  --profile 3-of-4 --credentials ./witness-credentials.json
+```
+
+The command registers with the allocated witnesses, retains their encrypted
+registration credentials, rotates onto the selected pool and collects ordinary
+witness receipts. It introduces the account to the watcher, completes the
+provider account, requires actual matching watcher observations at the selected
+quorum, then activates registry-service permissions. Output contains public
+completion facts and authenticated service identity, URL, role and CA settings.
+Allocation alone does not establish any of these later results.
+
+Retain the returned `sessionId` and `server`. Retry with `--session ID` and
+`--server-aid AID`, the same aliases and credentials file. An already accepted
+matching witness rotation is reused. The file contains ciphertext and public
+recipient keys; it requires the original encrypted Keeper's retained keys, and
+contains no decrypted TOTP seed or separate operation ledger.
+
+Use the same credentials after reopening the store:
+
+```sh
+tufa witness submit --name wallet --passcode "$PASSCODE" --alias account \
+  --witness-credentials ./witness-credentials.json
+```
+
+`--witness-credentials` is also supported by ACDC v2 IPEX agree/grant/admit,
+registry inception, create/revoke and update. Select `--acdc-v2` where applicable
+and `--witness-gvrsn 2` for these v2 witness backends. It cannot be combined with
+manual codes or authentication prompts. Other identifier lifecycle and multisig
+commands retain their explicit witness-code options.
+
+`infra kf status --operation ID --surface account --alias account` uses the
+permanent account surface; onboarding session status uses the onboarding signer
+and the default onboarding surface. Both require the ordinary store/provider
+options. Discovery remains unsigned configuration; authenticated replies carry
+the service facts.
+
 ## ACDC v2 registry authoring
 
 Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then

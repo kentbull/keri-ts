@@ -73,7 +73,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
-        addWitnessAuthOptions(ipex.command("agree"))
+        addWitnessAuthOptions(ipex.command("agree"), true)
           .description("Send an IPEX agree")
           .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
           .requiredOption("--offer <said>", "Prior offer EXN SAID")
@@ -89,7 +89,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       name: "ipex.agree",
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexAgreeCommand",
-      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options, true) }),
     },
   );
 
@@ -97,7 +97,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
     addGvrsnOption(
       addHabOption(
         addStoreOptions(
-          addWitnessAuthOptions(ipex.command("grant"))
+          addWitnessAuthOptions(ipex.command("grant"), true)
             .description("Send or write an IPEX credential grant")
             .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
             .option("--said <said>", "Credential SAID")
@@ -150,7 +150,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       name: "ipex.grant",
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexGrantCommand",
-      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options, true) }),
     },
   );
 
@@ -198,7 +198,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
   registerDispatchedCommand(
     addGvrsnOption(addHabOption(
       addStoreOptions(
-        addWitnessAuthOptions(ipex.command("admit"))
+        addWitnessAuthOptions(ipex.command("admit"), true)
           .description("Send or write an IPEX admit after local credential acceptance")
           .option("--said <said>", "Accepted grant EXN SAID")
           .option("--acdc-v2", "Admit an accepted ACDC v2 Grant into wallet inventory")
@@ -217,7 +217,11 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       name: "ipex.admit",
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexAdmitCommand",
-      args: (options) => ({ ...dispatchArgs(options), ...witnessAuthArgs(options), noWait: options.wait === false }),
+      args: (options) => ({
+        ...dispatchArgs(options),
+        ...witnessAuthArgs(options, true),
+        noWait: options.wait === false,
+      }),
     },
   );
 

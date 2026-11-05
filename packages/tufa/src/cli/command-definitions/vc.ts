@@ -98,7 +98,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
-        addWitnessAuthOptions(registry.command("incept"))
+        addWitnessAuthOptions(registry.command("incept"), true)
           .description("Create a local credential registry")
           .option("--acdc-v2", "Use ACDC v2 registry acceptance")
           .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
@@ -116,7 +116,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       exportName: "vcRegistryInceptCommand",
       args: (options) => ({
         ...dispatchArgs(options),
-        ...witnessAuthArgs(options),
+        ...witnessAuthArgs(options, true),
         estOnly: options.estOnly || false,
         usage: options.usage,
       }),
@@ -145,7 +145,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
-        addWitnessAuthOptions(vc.command("create"))
+        addWitnessAuthOptions(vc.command("create"), true)
           .description("Create and issue a registry-backed credential")
           .option("--acdc-v2", "Use ACDC v2 issuance")
           .option("--prepare", "Write a fresh public ACDC v2 body to --out without root, BUP or inventory")
@@ -171,13 +171,13 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       name: "vc.create",
       load: () => import("../commands/credentials.ts"),
       exportName: "vcCreateCommand",
-      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options, true) }),
     },
   );
 
   registerDispatchedCommand(
     addHabOption(addStoreOptions(
-      addWitnessAuthOptions(vc.command("update"))
+      addWitnessAuthOptions(vc.command("update"), true)
         .description("Advance ACDC v2 BUP state; never authors historical upd")
         .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
         .requiredOption("--registry-name <name>", "ACDC v2 registry alias")
@@ -240,7 +240,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
 
   registerDispatchedCommand(
     addStoreOptions(
-      addWitnessAuthOptions(vc.command("revoke"))
+      addWitnessAuthOptions(vc.command("revoke"), true)
         .description("Revoke a local credential")
         .option("--acdc-v2", "Use an ACDC v2 revoked BUP")
         .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
@@ -267,7 +267,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       name: "vc.revoke",
       load: () => import("../commands/credentials.ts"),
       exportName: "vcRevokeCommand",
-      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options, true) }),
     },
   );
 }
