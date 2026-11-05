@@ -32,6 +32,11 @@ upstream semver range or instantiate a second heap as an identity check.
 The npm loader supplies native Web Crypto only when its global is absent,
 before evaluating either pinned distribution. Existing globals and browser randomness
 remain authoritative. Record the loader hash separately; wrapper/raw cryptographic bytes stay pinned.
+Raw X25519 public derivation/agreement uses that same initialized backend. Only
+the pinned `weak public key` failure maps to null; argument/backend failures
+propagate. The IPEX DHKE owner supplies fresh independent keys and Python's local
+`/v1` HKDF-SHA256 context; carrying it in v2 messages does not standardize the KDF.
+Owned ephemeral/shared arrays are cleared best effort, without an erasure claim.
 
 `pwhash.ts` owns password/salt/output allocations and reloads HEAPU8 after growth.
 Zero-before-free applies only to owned ranges. Native temporaries and JS copies

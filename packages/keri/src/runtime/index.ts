@@ -110,6 +110,14 @@ export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
 export { type AcdcGraph, type ChainVerdict, evaluateChain } from "../acdc/chaining.ts";
 export {
+  decodePublicKey,
+  deriveRoot,
+  Dhke,
+  type DhkeContext,
+  type DhkeOutgoing,
+  generateKeyPair,
+} from "../acdc/dhking.ts";
+export {
   Oobiery,
   oobiRequestExn,
 } from "../app/bootstrap/oobiery.ts";

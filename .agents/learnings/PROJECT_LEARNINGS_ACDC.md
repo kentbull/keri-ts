@@ -161,7 +161,11 @@ and cannot disable encryption while roots remain. No legacy wallet-secret reader
 exists. Nonsecret event-SAID coordinates remain wallet-owned: wallet loss preserves
 the Keeper root but missing coordinates refuse derivation. Authoring requires the
 registry's actual Hab; derived Grant preparation requires the actual sender Hab.
-DHKE, RegistrySalt transfer and network Unblind remain separate work.
+Individual DHKE separately approves fresh pending Grants, derives all scoped
+roots before retention and uses these same encrypted Manager APIs. No custody
+object, secret ledger or root-transfer route grants that approval. Completion
+and exact-Grant retry remain bounded by the original deadline after BUP arrives;
+Admit stays explicit. Group DHKE, RegistrySalt transfer and network Unblind remain separate work.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
