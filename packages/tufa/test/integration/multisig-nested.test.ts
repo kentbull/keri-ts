@@ -1,3 +1,4 @@
+import { multisigPayloadSaid } from "../../../keri/src/app/multisig/multisig-messaging.ts";
 import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
 // @file-test-lane app-stateful-a
@@ -613,7 +614,7 @@ async function assertStoredMessageIdentities(
           const wrapper = hby.db.exns.get([message.exnSaid]);
           assertExists(wrapper);
           assertEquals(wrapper.said, message.exnSaid);
-          assertEquals((wrapper.ked!.e as { d: string }).d, message.payloadSaid);
+          assertEquals(multisigPayloadSaid(wrapper), message.payloadSaid);
           assertEquals(hby.db.meids.get([message.payloadSaid]).some(said => said.qb64 === message.exnSaid), true);
         }
       }

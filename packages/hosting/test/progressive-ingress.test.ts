@@ -8,6 +8,7 @@ import {
   concatBytes,
   Counter,
   CtrDexV1,
+  CtrDexV2,
   Diger,
   NumberPrimitive,
   parseBytes,
@@ -15,6 +16,7 @@ import {
   SealEvent,
   SerderKERI,
   Texter,
+  type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run, sleep, spawn, suspend } from "effection";
@@ -64,15 +66,19 @@ async function promptly<T>(pending: Promise<T>): Promise<T> {
 }
 
 /** Count text quadlets explicitly after the JSON body has been wrapped as qualified text. */
-function enclose(code: string, bytes: Uint8Array): Uint8Array {
-  return concatBytes(new Counter({ code, count: bytes.length / 4, version: { major: 1, minor: 0 } }).qb64b, bytes);
+function enclose(code: string, bytes: Uint8Array, version: Versionage = { major: 1, minor: 0 }): Uint8Array {
+  return concatBytes(new Counter({ code, count: bytes.length / 4, version }).qb64b, bytes);
 }
 
-/** Qualify a real JSON inception body so its surrounding counted groups remain quadlet-aligned. */
+/** Qualify a real v2 JSON inception body so its surrounding v2 counted groups remain quadlet-aligned. */
 function child(hby: Habery, hab: Hab): Uint8Array {
   const { serder, message } = acceptedEventReplayMessage(hby, hab.pre, 0);
-  const body = enclose(CtrDexV1.NonNativeBodyGroup, new Texter({ raw: serder.raw, code: "4B" }).qb64b);
-  return enclose(CtrDexV1.BodyWithAttachmentGroup, concatBytes(body, message.subarray(serder.raw.length)));
+  const body = enclose(CtrDexV2.NonNativeBodyGroup, new Texter({ raw: serder.raw, code: "4B" }).qb64b, Vrsn_2_0);
+  return enclose(
+    CtrDexV2.BodyWithAttachmentGroup,
+    concatBytes(body, message.subarray(serder.raw.length)),
+    Vrsn_2_0,
+  );
 }
 
 /** Commit each logical value, then fragment its ESSR wire without changing that commitment. */
@@ -108,9 +114,10 @@ Deno.test("HTTP ingress waits for the complete enclosing group before accepting 
       const bob = source.makeHab("bob");
       const first = child(source, alice);
       const second = child(source, bob);
+      // Local habitats author v2 KEL events, so the enclosing stream selects the v2 genus.
       const wire = concatBytes(
-        Counter.makeGVC({ major: 1, minor: 0 }),
-        enclose(CtrDexV1.GenericGroup, concatBytes(first, second)),
+        Counter.makeGVC(Vrsn_2_0),
+        enclose(CtrDexV2.GenericGroup, concatBytes(first, second), Vrsn_2_0),
       );
       let release!: () => void;
       const waiting = Promise.withResolvers<void>();
@@ -133,19 +140,20 @@ Deno.test("HTTP ingress waits for the complete enclosing group before accepting 
           release();
         },
       }, { highWaterMark: 0 });
-      const upload = yield* spawn(function*() {
-        const response = yield* abortable((signal) =>
-          fetch(`http://127.0.0.1:${server.addr.port}/`, {
+      // Release the response inside the fetch leaf; its signal aborts the response once the leaf returns.
+      const upload = yield* spawn(() =>
+        abortable(async (signal) => {
+          const response = await fetch(`http://127.0.0.1:${server.addr.port}/`, {
             method: "POST",
             headers: { "content-type": "application/cesr" },
             body,
             client,
             signal,
-          })
-        );
-        yield* call(() => response.body?.cancel());
-        return response.status;
-      });
+          });
+          await response.body?.cancel();
+          return response.status;
+        })
+      );
       try {
         yield* call(() => promptly(waiting.promise));
         assertEquals(target.db.kevers.has(alice.pre), false);

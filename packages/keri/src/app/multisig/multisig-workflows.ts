@@ -376,11 +376,12 @@ export function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
  * Notices discover candidates; their attributes do not authorize a route or group.
  * An explicit accepted wrapper missing its handler index is replayed by the caller.
  */
-function pendingMultisigProposals(
+function* pendingMultisigProposals(
   hby: Habery,
+  runtime: AgentRuntime,
   notices: readonly NoticeLike[],
   options: MultisigApprovalOptions,
-): { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] {
+): Operation<{ exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[]> {
   const candidates = options.said ? [options.said] : notices.map(note => note.attrs.d);
   const group = options.group && (hby.habByName(options.group)?.pre ?? options.group);
   const selected: { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] = [];
@@ -397,7 +398,7 @@ function pendingMultisigProposals(
     const indexed = hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said);
     if (!indexed && !options.said) continue;
     const proposalGroup = isKelRoute(route)
-      ? kelApproval(hby, exn, route)?.group
+      ? kelApproval(exn, route, yield* kelChild(hby, runtime, exn, route))?.group
       : stringField(payloadSection(exn.ked), "gid");
     if (!proposalGroup) continue;
     if (group && group !== proposalGroup) {
@@ -422,7 +423,7 @@ export function* approvePendingMultisigProposal(
     throw new ValidationError("Multisig join requires notification storage or an explicit exchange SAID.");
   }
   const notices = (notifier?.list(0, 100) ?? []) as NoticeLike[];
-  for (const { exn, route, indexed } of pendingMultisigProposals(hby, notices, options)) {
+  for (const { exn, route, indexed } of yield* pendingMultisigProposals(hby, runtime, notices, options)) {
     if (!indexed) {
       // Acceptance commits before the asynchronous handler. Resume that ordinary
       // authenticated intake after interruption; never synthesize approval indexes.
@@ -566,7 +567,7 @@ function* approveKelProposal(
   if (!wrapperSaid) {
     return null;
   }
-  const selected = kelApproval(hby, exn, route);
+  const selected = kelApproval(exn, route, yield* kelChild(hby, runtime, exn, route));
   if (!selected) return null;
   const member = selected.proposal.route === MULTISIG_IXN_ROUTE
     ? localGroupMember(hby, selected.group)
@@ -577,7 +578,7 @@ function* approveKelProposal(
   const prior = storedGroupMessage(hby.db, member.pre, exn);
   // A resume reuses the member's recorded membership choices as well as its
   // child signatures; a later peer wrapper cannot replace that decision.
-  const approval = prior ? kelApproval(hby, prior, route) : selected;
+  const approval = prior ? kelApproval(prior, route, yield* kelChild(hby, runtime, prior, route)) : selected;
   if (!approval || approval.group !== selected.group || approval.event.said !== selected.event.said) {
     throw new ValidationError(`Stored multisig approval does not match ${wrapperSaid}.`);
   }
@@ -587,7 +588,13 @@ function* approveKelProposal(
   const members = kelApprovalMembers(approval);
   let localMessage: Uint8Array;
   if (prior) {
-    localMessage = storedContribution(hby, prior, kelProposalLabel(route), serder.said!);
+    // The resumed approval was decoded from this member's own recorded wrapper and child proof.
+    if (!approval.attachment.length) {
+      throw new ValidationError(
+        `Stored multisig approval ${prior.said} lacks its ${kelProposalLabel(route)} contribution.`,
+      );
+    }
+    localMessage = concatBytes(serder.raw, approval.attachment);
   } else {
     if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
       return null;
@@ -787,9 +794,30 @@ function kelApprovalMembers({ proposal }: KelApproval): string[] {
 }
 
 /** Revalidate v2 nested reply commitments through ordinary exchange admission before reading proofs. */
-function* replyChild(hby: Habery, runtime: AgentRuntime, wrapper: SerderKERI): Operation<MultisigChild | null> {
-  if (wrapper.pvrsn.major === 1) return multisigChild(hby, wrapper, "rpy");
-  if (!wrapper.said || !runtime.exc.verifyAccepted(wrapper.said, MULTISIG_RPY_ROUTE)) return null;
+function replyChild(hby: Habery, runtime: AgentRuntime, wrapper: SerderKERI): Operation<MultisigChild | null> {
+  return nestedChild(hby, runtime, wrapper, MULTISIG_RPY_ROUTE, "rpy");
+}
+
+/** Read a KEL proposal's named v1 embed, or its v2 nested child after authenticated wrapper admission. */
+function kelChild(
+  hby: Habery,
+  runtime: AgentRuntime,
+  wrapper: SerderKERI,
+  route: MultisigKelRoute,
+): Operation<MultisigChild | null> {
+  return nestedChild(hby, runtime, wrapper, route, kelProposalLabel(route));
+}
+
+/** v1 reads the named pathed embed; v2 reads the first nest of an accepted wrapper with its own proof. */
+function* nestedChild(
+  hby: Habery,
+  runtime: AgentRuntime,
+  wrapper: SerderKERI,
+  route: MultisigKelRoute | typeof MULTISIG_RPY_ROUTE,
+  label: string,
+): Operation<MultisigChild | null> {
+  if (wrapper.pvrsn.major === 1) return multisigChild(hby, wrapper, label);
+  if (!wrapper.said || !runtime.exc.verifyAccepted(wrapper.said, route)) return null;
   const [child] = loadNests(hby.db, wrapper.said);
   if (!(child?.body instanceof SerderKERI)) return null;
   const attachment = yield* abortable(signal => collectPayload(attachmentPayload(child), signal));
@@ -830,8 +858,7 @@ function kelProposalLabel(route: MultisigKelRoute): "icp" | "rot" | "ixn" {
 }
 
 /** Decode the fields used by approval, preserving existing missing-embed and member-list behavior. */
-function kelApproval(hby: Habery, exn: SerderKERI, route: MultisigKelRoute): KelApproval | null {
-  const child = multisigChild(hby, exn, kelProposalLabel(route));
+function kelApproval(exn: SerderKERI, route: MultisigKelRoute, child: MultisigChild | null): KelApproval | null {
   if (!child) return null;
   const { event } = child;
   const attrs: unknown = exn.ked?.a;
