@@ -1290,6 +1290,27 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(hby.db.enst.get(grant.said!), retained);
       assertEquals(runtime.exc.cues.toArray(), cues);
       assertEquals(hby.db.exchangeMeta.get(grant.said!)?.receiverTime, receipt);
+      // Registered aggregate entries do not declare Issuee presentation registries.
+      const aggregate = acdcmap(issuer.pre, {
+        regid: irip.said!,
+        aggregate: ["", { d: "", i: sender.pre, rd: prip.said! }],
+      });
+      const aggregateProof = makeBlindState({ acdc: aggregate.said!, state: "issued", sn: 4 });
+      const aggregateUpdate = blindate(irip.said!, issuerVacuous.said!, aggregateProof.d.nonce, { sn: 4 });
+      anchor(issuer, aggregateUpdate);
+      assertEquals(observer.processEvent(aggregateUpdate).kind, "accept");
+      const aggregateGrant = ipexExnBody(sender.pre, "/ipex/grant", [aggregate], {
+        message: "aggregate without presentation obligations",
+        recipient: sender.pre,
+      });
+      assertEquals(
+        (yield* runtime.exc.processEvent({
+          serder: aggregateGrant,
+          tsgs: [signedBy(sender, aggregateGrant), signedBy(issuer, aggregateGrant)],
+          nests: [parseBytes(messagize(aggregate, publicOpeningAttachment(aggregateProof), { gvrsn: Vrsn_2_0 }))[0]],
+        })).kind,
+        "accept",
+      );
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -1513,6 +1534,19 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       assertEquals((yield* exchanger.processEvent(grant)).kind, "escrow");
       assertExists(hby.db.emse!.get([grant.serder.said!, schema.said]));
       hby.db.schema.pin(schema.said, schema);
+      // Expanded inner rd is hidden issuer registration, never signature-only authentication.
+      const expandedAggregate = acdcmap(issuer.pre, {
+        schema: schema.said,
+        aggregate: ["", { d: "", rd: valid.said! }],
+      });
+      const entries = expandedAggregate.sad!.A as [string, MapperMap];
+      const compactAggregate = new SerderACDC({
+        sad: { ...expandedAggregate.sad!, A: [entries[0], entries[1].d] },
+        makify: true,
+      });
+      assertEquals(compactAggregate.said, expandedAggregate.said);
+      assertEquals((yield* exchanger.processEvent(args("/ipex/grant", [expandedAggregate]))).kind, "reject");
+      assertEquals((yield* exchanger.processEvent(args("/ipex/grant", [compactAggregate]))).kind, "accept");
       yield* exchanger.processEscrows();
       assertExists(hby.db.exns.get(offer.serder.said!));
       assertExists(hby.db.exns.get(grant.serder.said!));

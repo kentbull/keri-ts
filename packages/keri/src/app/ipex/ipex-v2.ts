@@ -633,36 +633,21 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return result.kind === "verified" && result.state.regid === regid;
   }
 
-  /** Reject hidden requirements and preserve unique, validated Issuee/registry pairs in wire order. */
+  /** Read the disclosed top-level attribute's Issuee presentation-registry declaration. */
   private presentationRegistries(serder: SerderACDC): readonly (readonly [string, string])[] | null {
     const a = serder.sad!.a;
-    const aggregate = serder.sad!.A;
-    if (!serder.regid) {
-      if (record(a) && a.rd) return null;
-      const sections = Array.isArray(aggregate) ? aggregate.slice(1) : [aggregate];
-      return sections.some((section) => record(section) && section.rd) ? null : [];
+    if (!serder.regid) return record(a) && a.rd ? null : [];
+    if (typeof a === "string") return null;
+    if (!record(a)) return [];
+    const regid = a.rd, issuee = a.i;
+    if (!regid || !issuee) return [];
+    if (typeof regid !== "string" || typeof issuee !== "string") return null;
+    try {
+      if (new Diger({ qb64: regid }).qb64 !== regid || new Prefixer({ qb64: issuee }).qb64 !== issuee) return null;
+    } catch (error) {
+      if (!(error instanceof ParserError)) throw error;
+      return null;
     }
-    if (typeof a === "string" || typeof aggregate === "string") return null;
-    const sections = record(a) ? [a] : [];
-    if (Array.isArray(aggregate)) {
-      if (!aggregate.slice(1).every(record)) return null;
-      sections.push(...aggregate.slice(1) as Record<string, unknown>[]);
-    } else if (record(aggregate)) sections.push(aggregate);
-    const declarations: [string, string][] = [];
-    for (const section of sections) {
-      const regid = section.rd, issuee = section.i;
-      if (!regid || !issuee) continue;
-      if (typeof regid !== "string" || typeof issuee !== "string") return null;
-      try {
-        if (new Diger({ qb64: regid }).qb64 !== regid || new Prefixer({ qb64: issuee }).qb64 !== issuee) return null;
-      } catch (error) {
-        if (!(error instanceof ParserError)) throw error;
-        return null;
-      }
-      if (!declarations.some(([aid, registry]) => aid === issuee && registry === regid)) {
-        declarations.push([issuee, regid]);
-      }
-    }
-    return declarations;
+    return [[issuee, regid]];
   }
 }
