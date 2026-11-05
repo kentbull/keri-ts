@@ -20,7 +20,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, race, scoped, spawn } from "effection";
-import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import { parseBooleanOption, parseGvrsn, parseIntegerOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
   createAgentRuntime,
@@ -233,6 +233,10 @@ export function* runDerivedIssuance(
 
 /** CLI resource boundary shared only by these two finite issuance actions. */
 function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recipient"): Operation<void> {
+  const listen = parseIntegerOption(args.listen, "listen");
+  if (listen !== undefined && (listen < 1 || listen > 65535)) {
+    throw new ValidationError("--listen must be a port between 1 and 65535");
+  }
   const alias = parseStringOption(args.alias, "alias");
   const timeout = parseNumberOption(args.timeout, "timeout") ?? 60;
   if (!Number.isFinite(timeout) || timeout <= 0) throw new ValidationError("--timeout must be finite and positive");
@@ -259,6 +263,9 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
     function*({ hby, hab }) {
       const auths = role === "issuer" ? authoringWitnessAuths(hab, args) : undefined;
       const group = isLocalGroupHab(hby, hab);
+      if (listen !== undefined && (!group || args.out || args.proof)) {
+        throw new ValidationError("--listen requires a live group issuance phase, without --out or --proof");
+      }
       const coordinator = parseStringOption(args.coordinator, "coordinator"),
         custodian = parseStringOption(args.custodian, "custodian");
       if (group && (!coordinator || !custodian)) {
@@ -397,7 +404,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               grant: selected,
               proposal,
               ...selection,
-            }, { timeoutMs: timeout * 1000, auths, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1") });
+            }, { timeoutMs: timeout * 1000, auths, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"), listen });
             const { proof, ...facts } = completed;
             if (proof) yield* call(() => Deno.writeFile(proofOutput!, proof, { createNew: true, mode: 0o600 }));
             return { ...facts, ...(proof ? { proofOutput } : {}) };

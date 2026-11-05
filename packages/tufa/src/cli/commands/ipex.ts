@@ -143,6 +143,7 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
 
 /** Project grant facts, retaining the distinction between pending group evidence and completed business EXNs. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
+  if (args.listen !== undefined && !args.issue) throw new ValidationError("--listen requires live group --issue");
   if (args.prepare && args.issue) {
     throw new ValidationError("Presentation --prepare and fresh --issue are separate actions");
   }
@@ -429,6 +430,7 @@ function* acdcV2Disclosure(
 
 /** Select live exact-Grant acquisition or offline candidate recovery; neither creates an Admit. */
 export function* ipexUnblindCommand(args: Record<string, unknown>): Operation<void> {
+  if (args.listen !== undefined && !args.grant) throw new ValidationError("--listen requires live --grant Unblind");
   if (args.grant) {
     const { ipexLiveUnblindCommand } = yield* call(() => import("./ipex-unblinding.ts"));
     return yield* ipexLiveUnblindCommand(args);

@@ -1,9 +1,11 @@
 /** Finite live presentation proof acquisition/release; original Grant authority and Admit remain separate. */
+import { startServer } from "@keri-ts/hosting";
 import { bytesEqual, type CesrFrame, collectPayload, framePayload, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { action, call, type Operation, race, scoped, spawn } from "effection";
-import { parseNumberOption, parseStringOption } from "keri-ts/cli";
+import { parseIntegerOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
+  consoleLogger,
   createAgentRuntime,
   envelopeFromFrame,
   exchange,
@@ -29,6 +31,7 @@ const QueryRoute = "/multisig/qry", ReplyRoute = "/multisig/rpy";
 export interface PresentationUnblindOptions {
   timeoutMs: number;
   proposer?: string;
+  listen?: number;
 }
 /** Proof exchange completion does not authorize or create a wallet Admit. */
 export interface PresentationUnblindResult {
@@ -49,8 +52,41 @@ function* wait(runtime: AgentRuntime, milliseconds: number): Operation<void> {
 function* wire(frame: CesrFrame): Operation<Uint8Array> {
   return yield* call(() => collectPayload(framePayload(frame)));
 }
-/** Run one exact retained presentation through its selected Unblind owner, without creating an Admit. */
+/** Acquire optional direct intake before approving the exact live presentation. */
 export function* runPresentationUnblind(
+  runtime: AgentRuntime,
+  grant: string,
+  options: PresentationUnblindOptions,
+): Operation<PresentationUnblindResult> {
+  if (options.listen === undefined) return yield* runUnblind(runtime, grant, options);
+  if (!Number.isInteger(options.listen) || options.listen < 1 || options.listen > 65535) {
+    throw new ValidationError("--listen must be a port between 1 and 65535");
+  }
+  const selected = runtime.ipexAuxiliary;
+  if (selected?.kind !== "unblind") throw new ValidationError("Live Unblind requires its selected runtime");
+  const hab = selected.owner.hab, member = selected.owner.group ? localGroupMember(runtime.hby, hab.pre) : hab;
+  return yield* scoped(function*() {
+    let ready!: () => void;
+    const bound = new Promise<void>(resolve => ready = resolve);
+    const listener = yield* spawn(() =>
+      startServer(options.listen!, consoleLogger, runtime, {
+        hostname: "127.0.0.1",
+        serviceHab: member,
+        hostedPrefixes: [...new Set([member.pre, hab.pre])],
+        onListen: () => ready(),
+      })
+    );
+    try {
+      yield* call(() => bound);
+      return yield* runUnblind(runtime, grant, options);
+    } finally {
+      yield* listener.halt();
+    }
+  });
+}
+
+/** Run one exact retained presentation through its selected Unblind owner, without creating an Admit. */
+function* runUnblind(
   runtime: AgentRuntime,
   grant: string,
   { timeoutMs, proposer }: PresentationUnblindOptions,
@@ -265,6 +301,10 @@ export function* runPresentationUnblind(
 
 /** Compose the selected concrete owner and explicit KRAM policy for one live CLI action. */
 export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operation<void> {
+  const listen = parseIntegerOption(args.listen, "listen");
+  if (listen !== undefined && (listen < 1 || listen > 65535)) {
+    throw new ValidationError("--listen must be a port between 1 and 65535");
+  }
   if (args.opening || args.said || args.out) {
     throw new ValidationError("Live --grant and offline --opening/--said/--out profiles are exclusive");
   }
@@ -292,6 +332,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
       return yield* runPresentationUnblind(runtime, grant, {
         timeoutMs: timeout * 1000,
         proposer: parseStringOption(args.proposer, "proposer"),
+        listen,
       });
     } finally {
       yield* runtime.close();

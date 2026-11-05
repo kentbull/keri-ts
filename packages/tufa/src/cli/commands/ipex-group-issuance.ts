@@ -1,4 +1,5 @@
 /** Finite group issuance phases; ordinary signatures and existing DH/registry owners retain authority. */
+import { startServer } from "@keri-ts/hosting";
 import {
   exchangeWire,
   type IssuanceGrantOptions,
@@ -25,6 +26,7 @@ import {
   acceptedRegistryEvidence,
   type AgentRuntime,
   CesrHttpRefusal,
+  consoleLogger,
   Dhke,
   envelopeFromFrame,
   exchange,
@@ -241,8 +243,48 @@ export function* acceptGroupIssuanceProof(
   }
 }
 
-/** Run one exact member phase; issuer contributors return before the separate explicit BUP join. */
+/** Finite group phase options; the optional listener borrows this runtime and local member. */
+export interface GroupIssuanceOptions {
+  timeoutMs: number;
+  witnessGvrsn?: Versionage;
+  auths?: WitnessAuthMap;
+  listen?: number;
+}
+
+/** Own an optional direct listener before releasing the selected group's setup consent. */
 export function* runGroupDerivedIssuance(
+  runtime: AgentRuntime,
+  wallet: Wallet,
+  request: GroupIssuanceRequest,
+  options: GroupIssuanceOptions,
+): Operation<GroupIssuanceResult> {
+  if (options.listen === undefined) return yield* runGroupIssuance(runtime, wallet, request, options);
+  if (!Number.isInteger(options.listen) || options.listen < 1 || options.listen > 65535) {
+    throw new ValidationError("--listen must be a port between 1 and 65535");
+  }
+  const { hab, member } = owners(runtime, wallet, request);
+  return yield* scoped(function*() {
+    let ready!: () => void;
+    const bound = new Promise<void>(resolve => ready = resolve);
+    const listener = yield* spawn(() =>
+      startServer(options.listen!, consoleLogger, runtime, {
+        hostname: "127.0.0.1",
+        serviceHab: member,
+        hostedPrefixes: [member.pre, hab.pre],
+        onListen: () => ready(),
+      })
+    );
+    try {
+      yield* call(() => bound);
+      return yield* runGroupIssuance(runtime, wallet, request, options);
+    } finally {
+      yield* listener.halt();
+    }
+  });
+}
+
+/** Run one exact member phase; issuer contributors return before the separate explicit BUP join. */
+function* runGroupIssuance(
   runtime: AgentRuntime,
   wallet: Wallet,
   request: GroupIssuanceRequest,

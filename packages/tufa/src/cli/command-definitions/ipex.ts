@@ -104,6 +104,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .option("--acdc-v2", "Grant an exact ACDC v2 wallet disclosure")
             .option("--prepare", "Freeze an exact presentation Grant for independent issuer endorsement")
             .option("--issue", "Explicitly derive a fresh registry root with the recipient before issuing")
+            .option("--listen <port>", "Loopback direct intake during a live group --issue phase")
             .option("--coordinator <said>", "Exact accepted group coordinator event")
             .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
             .option(
@@ -180,6 +181,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       ipex.command("setup")
         .description("Explicitly approve DH for one pending issuance Grant; does not Admit")
         .requiredOption("--said <said>", "Exact pending ACDC v2 issuance Grant")
+        .option("--listen <port>", "Loopback direct intake during live group setup")
         .option("--coordinator <said>", "Exact accepted group coordinator event")
         .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
         .option("--proof <file>", "Explicitly verify final group issuance proof after separate BUP approval")
@@ -262,6 +264,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       ipex.command("unblind")
         .description("Acquire or release exact presentation openings, or recover an offline candidate; never Admit")
         .option("--grant <said>", "Exact retained presentation Grant for explicit live Unblind")
+        .option("--listen <port>", "Loopback direct intake during live --grant Unblind")
         .option("--timeout <seconds>", "Live operation elapsed limit (default: 60)")
         .option("--input <file>", "Ingest signed public evidence before explicit live approval")
         .option("--proposer <aid>", "Current group member who authors the exact query or reply")
