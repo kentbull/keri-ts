@@ -1,4 +1,4 @@
-/** Explicit KERI Foundation provider allocation commands; account activation stays separate. */
+/** Explicit KERI Foundation allocation, account onboarding and signed status commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
 import { addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
@@ -21,13 +21,32 @@ export function registerKfBootCmds(program: Command, dispatch: CommandDispatch):
       args: dispatchArgs,
     },
   );
+  registerDispatchedCommand(
+    addHabOption(addStoreOptions(kf.command("onboard")))
+      .description("Enroll an existing permanent account using a distinct existing onboarding signer")
+      .requiredOption("--onboarding-alias <alias>", "Existing temporary onboarding signer alias")
+      .requiredOption("--credentials <file>", "Output file for encrypted witness credentials")
+      .requiredOption("--url <url>", "Base provider URL")
+      .option("--server-aid <aid>", "Expected provider signing AID")
+      .option("--profile <profile>", "Advertised witness allocation profile", "3-of-4")
+      .option("--session <id>", "Existing onboarding session ID")
+      .option("--timeout <seconds>", "Onboarding deadline in seconds", "60"),
+    dispatch,
+    {
+      name: "infra.kf.onboard",
+      load: () => import("../commands/kfboot.ts"),
+      exportName: "kfBootOnboardCommand",
+      args: dispatchArgs,
+    },
+  );
   for (const operation of ["start", "status", "cancel"] as const) {
     const command = addHabOption(addStoreOptions(kf.command(operation)))
       .requiredOption("--url <url>", "Base provider URL")
       .option("--server-aid <aid>", "Expected provider signing AID")
       .option("--timeout <seconds>", "Request deadline in seconds", "60");
-    command.options.find(option => option.long === "--alias")!.description =
-      "Existing local onboarding signer alias; account authority remains separate";
+    command.options.find(option => option.long === "--alias")!.description = operation === "status"
+      ? "Existing signer alias for the selected request surface"
+      : "Existing local onboarding signer alias; account authority remains separate";
     if (operation === "start") {
       command.description("Allocate an onboarding session; account activation remains a separate action")
         .requiredOption("--account <aid>", "Intended account AID; allocation does not activate it")
@@ -36,7 +55,8 @@ export function registerKfBootCmds(program: Command, dispatch: CommandDispatch):
     } else if (operation === "status") {
       command.description("Read signed facts for exactly one session or operation")
         .option("--session <id>", "Onboarding session ID; select this or --operation")
-        .option("--operation <id>", "Allocation operation ID; select this or --session");
+        .option("--operation <id>", "Allocation operation ID; select this or --session")
+        .option("--surface <surface>", "Signed request surface: onboarding or account", "onboarding");
     } else {
       command.description("Cancel one onboarding session and report signed provider facts")
         .requiredOption("--session <id>", "Onboarding session ID")

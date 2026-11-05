@@ -24,7 +24,7 @@ import { runWitnessHost } from "../../roles/witness.ts";
 import { withExistingHab } from "../support/context.ts";
 import { ensureHby } from "../support/existing.ts";
 import { writeTextLines } from "../support/rendering.ts";
-import { resolveWitnessAuths } from "../support/witness-auth.ts";
+import { authoringWitnessAuths } from "../support/witness-auth.ts";
 
 interface WitnessBaseArgs {
   name?: string;
@@ -141,15 +141,7 @@ export function* witnessSubmitCommand(
       skipSignator: true,
     },
     function*({ hby, hab }) {
-      const auths = resolveWitnessAuths(
-        hab.kever?.wits ?? [],
-        commandArgs.code ?? [],
-        {
-          codeTime: commandArgs.codeTime,
-          promptMissing: commandArgs.authenticate ?? false,
-          normalizeCodeTime: validateIsoDatetime,
-        },
-      );
+      const auths = authoringWitnessAuths(hab, { ...args, ...commandArgs });
       if (commandArgs.endpoint) {
         const receiptor = new Receiptor(
           hby,

@@ -228,6 +228,21 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
     "reply.cesr",
   ],
   ["infra", "kf", "discover", "--url", "https://provider.example"],
+  [
+    "infra",
+    "kf",
+    "onboard",
+    "-n",
+    "store",
+    "-a",
+    "account",
+    "--onboarding-alias",
+    "onboarding",
+    "--credentials",
+    "witnesses.json",
+    "--url",
+    "https://provider.example",
+  ],
   ["infra", "kf", "start", "-n", "store", "-a", "signer", "--url", "https://provider.example", "--account", "Eaccount"],
   ["infra", "kf", "status", "-n", "store", "-a", "signer", "--url", "https://provider.example", "--session", "sess_1"],
   ["infra", "kf", "cancel", "-n", "store", "-a", "signer", "--url", "https://provider.example", "--session", "sess_1"],
@@ -551,6 +566,80 @@ Deno.test("tufa/cli - KF allocation commands preserve explicit signer and accoun
     "Eserver",
     "60",
   ]);
+  const onboard = parseCommandSelection([
+    "infra",
+    "kf",
+    "onboard",
+    "-n",
+    "store",
+    "-a",
+    "account",
+    "--onboarding-alias",
+    "onboarding",
+    "--credentials",
+    "witnesses.json",
+    "--url",
+    "https://provider.example",
+    "--session",
+    "sess_1",
+  ]);
+  assertEquals([
+    onboard.name,
+    onboard.args.alias,
+    onboard.args.onboardingAlias,
+    onboard.args.credentials,
+    onboard.args.profile,
+    onboard.args.session,
+    onboard.args.timeout,
+  ], ["infra.kf.onboard", "account", "onboarding", "witnesses.json", "3-of-4", "sess_1", "60"]);
+  const status = parseCommandSelection([
+    "infra",
+    "kf",
+    "status",
+    "-n",
+    "store",
+    "-a",
+    "account",
+    "--url",
+    "https://provider.example",
+    "--operation",
+    "operation_1",
+    "--surface",
+    "account",
+  ]);
+  assertEquals([status.name, status.args.alias, status.args.operation, status.args.surface], [
+    "infra.kf.status",
+    "account",
+    "operation_1",
+    "account",
+  ]);
+  const grant = parseCommandSelection([
+    "ipex",
+    "agree",
+    "-n",
+    "store",
+    "-a",
+    "issuer",
+    "--offer",
+    "Eoffer",
+    "--recipient",
+    "Eissuer",
+    "--acdc-v2",
+    "--witness-credentials",
+    "witnesses.json",
+  ]);
+  assertEquals(grant.args.witnessCredentials, "witnesses.json");
+  const submit = parseCommandSelection([
+    "witness",
+    "submit",
+    "-n",
+    "store",
+    "-a",
+    "account",
+    "--witness-credentials",
+    "witnesses.json",
+  ]);
+  assertEquals(submit.args.witnessCredentials, "witnesses.json");
 });
 
 Deno.test("tufa/cli - credential import parses its default and explicit settlement deadline", () => {

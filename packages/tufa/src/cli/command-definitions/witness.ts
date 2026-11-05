@@ -105,6 +105,7 @@ export function registerWitnessCmds(
           "Directory override for database and keystore root (default fallback: ~/.tufa)",
         )
         .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+      true,
     ),
     dispatch,
     {
