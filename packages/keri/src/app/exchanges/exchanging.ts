@@ -331,8 +331,16 @@ export class Exchanger {
   /** Complete only a still-live pending Grant with added proof; serialization cannot extend its original lifetime. */
   acceptPendingGrantProof(args: ExchangeInput): Operation<ExchangeDecision> {
     return call(function*(this: Exchanger) {
-      const attempt = yield* this.admit(args, false, true);
+      const attempt = yield* this.admit(args, false, "proof");
       if (!attempt) throw new Error("A selected pending Grant proof cannot become an obsolete escrow retry");
+      return attempt.decision;
+    }.bind(this));
+  }
+  /** Add authentication to a live prepared Grant without replacing its exact disclosure or renewing its deadline. */
+  acceptPreparedGrantContribution(args: ExchangeInput): Operation<ExchangeDecision> {
+    return call(function*(this: Exchanger) {
+      const attempt = yield* this.admit(args, false, "contribution");
+      if (!attempt) throw new Error("A selected prepared Grant contribution cannot become an obsolete escrow retry");
       return attempt.decision;
     }.bind(this));
   }
@@ -346,7 +354,7 @@ export class Exchanger {
   private *admit(
     args: ExchangeInput,
     retry = false,
-    pendingGrantProof = false,
+    selectedGrant?: "proof" | "contribution",
   ): Operation<ExchangeAttempt | undefined> {
     const said = args.serder.said ?? "<unknown>";
     const reject = (reason: string): ExchangeAdmission => ({ decision: { kind: "reject", said, reason }, cues: [] });
@@ -366,13 +374,27 @@ export class Exchanger {
       ? yield* abortable((signal) => prepareNests(args.nests!, signal))
       : undefined;
     const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | undefined => {
-      if (pendingGrantProof) {
-        const original = this.isV2Grant(args.serder) ? this.retainedInput(said, { pending: true }) : null;
+      if (selectedGrant) {
+        const db = this.hby.db;
+        const stored = selectedGrant === "proof" ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
+        const deadline = db.epsd.get([said]);
+        const expiry = deadline ? timestampMicros(deadline.dts) : null;
+        const live = stored && this.isV2Grant(stored) && !db.erpy.get([said])
+          && expiry !== null && this.nowMicros() < expiry;
+        const original = !live ? null : selectedGrant === "proof"
+          ? this.retainedInput(said, { pending: true })
+          : { serder: stored, nests: loadNests(db, said) };
         const before = original?.nests ?? [], after = args.nests ?? [];
         if (
           !original || !bytesEqual(original.serder.raw, args.serder.raw) || before.length !== after.length
           || before.some((node, index) => !bytesEqual(node.body.raw, after[index].body.raw))
         ) return reject("Selected pending Grant proof is expired, terminated or changes the original disclosure");
+        if (selectedGrant === "contribution") {
+          const retained = db.enst.get([said]);
+          if (retained.length !== nests?.length || retained.some((raw, index) => !bytesEqual(b(raw), nests![index]))) {
+            return reject("Prepared Grant contribution changes the original nested evidence");
+          }
+        }
       }
       let status: EscrowStatus | undefined;
       if (retry) {
@@ -396,7 +418,7 @@ export class Exchanger {
         : this.admitCurrent(current, retry ? this.resolveProofs(current) : resolved, handler, {
           attachments: normalizeAttachments(current.ptds ?? []),
           nests,
-        });
+        }, selectedGrant === "contribution");
       if (status?.kind === "pending" && admission.decision.kind === "reject" && !admission.decision.preserveEscrow) {
         return {
           ...admission,
@@ -456,6 +478,7 @@ export class Exchanger {
     resolved: ResolvedExchangeFactors,
     handler: ExchangeRouteHandler | undefined,
     prepared: PreparedExchangeEvidence,
+    preparedContribution = false,
   ): ExchangeAdmission {
     const said = args.serder.said!;
     const authentication = this.authenticate(args.serder, resolved, handler, this.cues);
@@ -513,7 +536,19 @@ export class Exchanger {
         needsProof = missingSchema === undefined;
       }
     }
-    if (pending && this.complete(said)) return { decision: pending, cues };
+    if (pending && this.complete(said)) {
+      // The exact prepared-file writer may retain verified added consent while
+      // current issuer openings remain unresolved; accepted proof rows stay untouched.
+      if (preparedContribution && approved) {
+        this.logAcceptedEvent({
+          serder: args.serder,
+          ...approved.retained,
+          supplemental: approved.supplemental,
+          ptds: args.ptds ?? [],
+        });
+      }
+      return { decision: pending, cues };
+    }
     const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
       && this.complete(said);
     if (prepared.nests && !retainedIpex) publishNests(this.hby.db, said, prepared.nests);

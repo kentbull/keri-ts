@@ -50,6 +50,18 @@ separate from holder admission consent and possession of a derivation salt.
 A local `presentation` registry must match the selected Issuee declaration; its
 accepted BUP commits the frozen Grant body.
 
+For independent issuer consent, `prepareGrantFileBody` freezes that same selected
+view while permitting retryable missing current openings only when the supplied
+historical graph verifies as issued. Ordinary `prepareGrantBody` stays strict.
+`inspectGrantFile` checks every supplied authentication factor and reports
+complete and partial signers without dropping invalid signatures. Each selected
+registry issuer uses `endorseGrant(issuer, wire, {said, sender, recipient, contributions})` to add its own exact-body consent. Group members combine only
+their current establishment's signatures; `endorsed: false` means the issuer
+threshold is still incomplete. Mixed-issuer graphs need each required issuer's
+independent consent. File preparation, signature contributions and roots create
+no Admit; callers retain the original Grant deadline and require complete
+presentation scope before delivery or Unblind.
+
 Configure `Receiptor(hby, protocol, http, clock, {gvrsn})` for the actual witness attachment genus,
 independently of ACDC v2 IPEX genus. Its default remains 1.0; the known v2
 witness profile explicitly selects 2.0. For a group, `prepareGrantBody` freezes

@@ -3,7 +3,7 @@
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
-import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
+import { createWalletBaser, Wallet, WalletAuthor, WalletDiscloser } from "@keri-ts/wallet";
 import {
   type CesrFrame,
   collectPayload,
@@ -32,6 +32,10 @@ import {
   runGroupDerivedIssuance,
 } from "../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance, runDerivedIssuance } from "../../../../tufa/src/cli/commands/ipex-issuance.ts";
+import {
+  preparePresentationGrant,
+  resumePresentationGrant,
+} from "../../../../tufa/src/cli/commands/ipex-presentation.ts";
 import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
@@ -53,6 +57,7 @@ import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
+import { ValidationError } from "../../../src/core/errors.ts";
 import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -400,6 +405,122 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }
     for (const peer of [issuers[1], issuees[1]]) {
       assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
+    }
+
+    // The same held view becomes one exact group presentation file, with ordinary sender contributions.
+    const presentationHistory = actors.map(side => side.hby.db.enst.get(grant.said!));
+    const transferredView = yield* call(() => collectPayload(framePayload(loadNests(holder.hby.db, grant.said!)[0])));
+    const viewSelection = { transferred: transferredView, presenterAuthorized: true };
+    const presentationOptions = { recipient: issuerPeer.member.pre, message: "Exact group presentation file" };
+    const firstPresentation = yield* preparePresentationGrant(
+      holder.runtime,
+      holder.wallet,
+      holder.hab,
+      viewSelection,
+      presentationOptions,
+    );
+    assertEquals(firstPresentation.prepared, false, "one sender member cannot export a complete group Grant");
+    yield* call(() =>
+      assertRejects(
+        () =>
+          run(() =>
+            resumePresentationGrant(
+              holder.runtime,
+              holder.wallet,
+              holder.hab,
+              firstPresentation.grant,
+              firstPresentation.wire,
+            )
+          ),
+        ValidationError,
+      )
+    );
+    const peerPresentation = yield* preparePresentationGrant(
+      issuees[1].runtime,
+      issuees[1].wallet,
+      issuees[1].hab,
+      viewSelection,
+      presentationOptions,
+      firstPresentation.wire,
+    );
+    assertEquals(peerPresentation.prepared, true);
+    const fullPresentation = yield* preparePresentationGrant(
+      holder.runtime,
+      holder.wallet,
+      holder.hab,
+      viewSelection,
+      presentationOptions,
+      peerPresentation.wire,
+    );
+    const exactPresentation = {
+      said: firstPresentation.grant,
+      sender: holder.hab.pre,
+      recipient: issuerPeer.member.pre,
+    };
+    const presentationFrame = parseBytes(fullPresentation.wire)[0], presentationBody = presentationFrame.body.raw;
+    const presentationNests = yield* call(() =>
+      Promise.all(presentationFrame.nests!.map(node => collectPayload(framePayload(node))))
+    );
+    const groupEndorser = (side: typeof lead) =>
+      new WalletDiscloser(side.wallet, new Receiptor(side.hby, side.protocol, side.runtime.http, side.runtime.clock));
+    assertExists(holder.hab.mgr.getRegistryRoot(holder.hab.pre, rip.said!));
+    yield* call(() =>
+      assertRejects(
+        () => run(() => groupEndorser(holder).endorseGrant(holder.hab.pre, fullPresentation.wire, exactPresentation)),
+        ValidationError,
+        undefined,
+        "root custody does not grant issuer permission",
+      )
+    );
+    const partialEndorsement = yield* groupEndorser(lead).endorseGrant(
+      lead.hab.pre,
+      fullPresentation.wire,
+      exactPresentation,
+    );
+    assertEquals(partialEndorsement.endorsed, false);
+    yield* call(() =>
+      assertRejects(
+        () =>
+          run(() =>
+            resumePresentationGrant(
+              holder.runtime,
+              holder.wallet,
+              holder.hab,
+              firstPresentation.grant,
+              partialEndorsement.wire,
+            )
+          ),
+        ValidationError,
+      )
+    );
+    const completeEndorsement = yield* groupEndorser(issuerPeer).endorseGrant(
+      issuerPeer.hab.pre,
+      fullPresentation.wire,
+      { ...exactPresentation, contributions: [partialEndorsement.wire] },
+    );
+    assertEquals(completeEndorsement.endorsed, true);
+    assertEquals(completeEndorsement.exn.raw, presentationBody);
+    const resumedPresentation = yield* resumePresentationGrant(
+      holder.runtime,
+      holder.wallet,
+      holder.hab,
+      firstPresentation.grant,
+      completeEndorsement.wire,
+    );
+    assertEquals(resumedPresentation.deadline, firstPresentation.deadline);
+    assertEquals(parseBytes(resumedPresentation.wire)[0].body.raw, presentationBody);
+    assertEquals(
+      yield* call(() =>
+        Promise.all(parseBytes(resumedPresentation.wire)[0].nests!.map(node => collectPayload(framePayload(node))))
+      ),
+      presentationNests,
+    );
+    yield* issuerPeer.reactor.processBytes(resumedPresentation.wire);
+    assertEquals(issuerPeer.exc.complete(firstPresentation.grant), true);
+    for (const [index, side] of actors.entries()) {
+      assertEquals(side.hby.db.enst.get(grant.said!), presentationHistory[index]);
+      assertEquals(side.hby.db.erpy.get(firstPresentation.grant), null, "file approvals do not Admit");
+      assertEquals(side.wallet.inventory().held, []);
     }
 
     // Explicitly copy the holder's existing root to its already rotated, rootless signing member.

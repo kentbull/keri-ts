@@ -15,16 +15,17 @@ import {
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  SerderACDC,
+  type SerderACDC,
   SerderKERI,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, type Operation, run } from "effection";
+import { call, ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { loadNests, openRegistry, RegistryStore } from "keri-ts/db";
 import {
   acdcmap,
+  AcdcV2Regery,
   blindate,
   type ChainVerdict,
   createAgentRuntime,
@@ -47,6 +48,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol
 import { TransIdxSigGroup } from "../../keri/src/core/dispatch.ts";
 import { messageAttachmentGroups } from "../../keri/src/core/protocol-serialization.ts";
 import { graphDisclosures } from "../../keri/test/integration/app/ipex/disclosures.ts";
+import { preparePresentationGrant, resumePresentationGrant } from "../../tufa/src/cli/commands/ipex-presentation.ts";
 import { createWalletBaser, Wallet } from "../mod.ts";
 import { anchorExchange, WalletDiscloser } from "../src/disclosing.ts";
 
@@ -340,8 +342,14 @@ Deno.test("wallet issued history retains binary bytes and accepted issuance afte
 
 Deno.test("wallet negotiates source obligations, admits, and presents only its exact consented view", async () => {
   await withPeers(function*(p) {
-    const sourceRuntime = yield* createAgentRuntime(p.source, new FetchHttpClient(), systemClock);
-    const receiverRuntime = yield* createAgentRuntime(p.receiver, new FetchHttpClient(), systemClock);
+    const sourceRuntime = yield* createAgentRuntime(p.source, new FetchHttpClient(), systemClock, {
+      acdc: new AcdcV2Regery(p.source, p.registry.baser),
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+    });
+    const receiverRuntime = yield* createAgentRuntime(p.receiver, new FetchHttpClient(), systemClock, {
+      acdc: new AcdcV2Regery(p.receiver, p.registry.baser),
+      kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+    });
     const sourceDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
     try {
       const issuerWallet = new Wallet({ hby: p.source, registry: p.registry, exc: p.sending, db: sourceDb });
@@ -434,6 +442,148 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       );
       assertEquals(transferred.proof, before.proof);
       assertEquals(issuerWallet.inventory().held, [], "presenter authorization creates no holder consent");
+      // The designated discloser freezes its held view for a third, independent verifier.
+      const verifierHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      yield* ensure(() => verifierHby.close(true));
+      const verifier = verifierHby.makeHab("independent verifier");
+      const verifierRegistry = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => verifierRegistry.close(true));
+      const verifierDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => verifierDb.close(true));
+      const verifierRuntime = yield* createAgentRuntime(verifierHby, new FetchHttpClient(), systemClock, {
+        acdc: new AcdcV2Regery(verifierHby, verifierRegistry),
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      });
+      yield* ensure(() => verifierRuntime.close());
+      const presenterWallet = new Wallet({
+        hby: p.receiver,
+        registry: receiverRuntime.acdc!.store,
+        exc: receiverRuntime.exc,
+        db: p.wallet.db,
+      });
+      const endorsingWallet = new Wallet({
+        hby: p.source,
+        registry: sourceRuntime.acdc!.store,
+        exc: sourceRuntime.exc,
+        db: sourceDb,
+      });
+      const verifierWallet = new Wallet({
+        hby: verifierHby,
+        registry: verifierRuntime.acdc!.store,
+        exc: verifierRuntime.exc,
+        db: verifierDb,
+      });
+      const fileIssuer = new WalletDiscloser(
+        endorsingWallet,
+        new Receiptor(p.source, sourceRuntime.protocol, sourceRuntime.http, sourceRuntime.clock),
+      );
+      const preparedFile = yield* preparePresentationGrant(receiverRuntime, presenterWallet, p.holder, {
+        fromGrant: grant.exn.said!,
+      }, { recipient: verifier.pre, message: "Designated exact view", plan });
+      const frozenFile = parseBytes(preparedFile.wire)[0];
+      const frozenNodes = yield* call(() =>
+        Promise.all(frozenFile.nests!.map(node => collectPayload(framePayload(node))))
+      );
+      assertEquals(frozenFile.nests!.map(node => node.body.raw), parseBytes(before.proof).map(node => node.body.raw));
+      assertEquals(receiverRuntime.exc.complete(preparedFile.grant), true);
+      // A new public BUP makes this exact accepted file's current opening retryably unknown.
+      const withheld = makeBlindState({ acdc: credential.said!, state: "issued", sn: 2 });
+      const later = blindate(rip.said!, update.said!, withheld.d.nonce, { sn: 2 });
+      const laterAnchor = p.issuer.interact({ data: [{ i: rip.said!, s: "2", d: later.said! }] });
+      yield* receiverRuntime.reactor.processBytes(laterAnchor);
+      assertEquals(observed.processEvent(later).kind, "accept");
+      assertEquals(p.registry.opening(later.said!), null, "the newer opening is deliberately withheld");
+      const selectedFile = { said: preparedFile.grant, sender: p.holder.pre, recipient: verifier.pre };
+      yield* sourceRuntime.reactor.processBytes(holder.proofSupport(before.proof, p.holder));
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              resumePresentationGrant(receiverRuntime, presenterWallet, p.holder, preparedFile.grant, preparedFile.wire)
+            ),
+          ValidationError,
+        )
+      );
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              fileIssuer.endorseGrant(p.issuer.pre, preparedFile.wire, { ...selectedFile, recipient: p.issuer.pre })
+            ),
+          ValidationError,
+        )
+      );
+      const endorsedFile = yield* fileIssuer.endorseGrant(p.issuer.pre, preparedFile.wire, selectedFile);
+      assertEquals(endorsedFile.endorsed, true);
+      assertEquals(endorsedFile.exn.raw, frozenFile.body.raw);
+      assertEquals(
+        parseBytes(endorsedFile.wire)[0].nests!.map(node => node.body.raw),
+        frozenFile.nests!.map(node => node.body.raw),
+      );
+      const badFile = parseBytes(endorsedFile.wire)[0], badFactors = envelopeFromFrame(badFile);
+      badFile.attachments = messageAttachmentGroups({
+        tsgs: badFactors.tsgs.map(group =>
+          group.pre !== p.issuer.pre
+            ? group
+            : new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, p.issuer.sign(credential.raw, true))
+        ),
+      }, Vrsn_2_0);
+      const invalidFile = yield* call(() => collectPayload(framePayload(badFile)));
+      const retainedFile = p.receiver.db.enst.get(preparedFile.grant);
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              resumePresentationGrant(receiverRuntime, presenterWallet, p.holder, preparedFile.grant, invalidFile)
+            ),
+          ValidationError,
+        )
+      );
+      assertEquals(
+        p.receiver.db.enst.get(preparedFile.grant),
+        retainedFile,
+        "invalid supplied signatures change no retained proof",
+      );
+      const resumedFile = yield* resumePresentationGrant(
+        receiverRuntime,
+        presenterWallet,
+        p.holder,
+        preparedFile.grant,
+        endorsedFile.wire,
+      );
+      assertEquals(resumedFile.deadline, preparedFile.deadline);
+      assertEquals(parseBytes(resumedFile.wire)[0].body.raw, frozenFile.body.raw);
+      assertEquals(
+        yield* call(() =>
+          Promise.all(parseBytes(resumedFile.wire)[0].nests!.map(node => collectPayload(framePayload(node))))
+        ),
+        frozenNodes,
+      );
+      yield* verifierRuntime.reactor.processBytes(issuer.proofSupport(before.proof, p.issuer));
+      yield* verifierRuntime.reactor.processBytes(holder.proofSupport(before.proof, p.holder));
+      yield* verifierRuntime.reactor.processBytes(resumedFile.wire);
+      assertEquals(
+        receiverRuntime.exc.complete(preparedFile.grant),
+        true,
+        "resuming adds consent to the original accepted preparation",
+      );
+      assertEquals(
+        verifierRuntime.exc.complete(preparedFile.grant),
+        false,
+        "the exact file remains pending at a new verifier until current openings arrive",
+      );
+      assert(verifierHby.db.epse.get(preparedFile.grant));
+      assertEquals(
+        verifierRuntime.exc.presentationContext(preparedFile.grant, {
+          xid: preparedFile.grant,
+          sender: p.holder.pre,
+          recipient: verifier.pre,
+        })!.registries.get(rip.said!),
+        [credential.said!],
+      );
+      assertEquals(verifierWallet.inventory().held, [], "issuer endorsement and resume do not Admit");
+      assertEquals(p.receiver.db.erpy.get(preparedFile.grant), null);
+      assertEquals((yield* call(() => p.wallet.heldCredential(grant.exn.said!))).proof, before.proof);
       yield* p.wallet.db.close();
       yield* p.wallet.db.reopen();
       const after = yield* call(() => p.wallet.heldCredential(grant.exn.said!));

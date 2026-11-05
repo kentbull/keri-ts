@@ -95,10 +95,14 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
             .option("--said <said>", "Credential SAID")
             .option("--acdc-v2", "Grant an exact ACDC v2 wallet disclosure")
+            .option("--prepare", "Freeze an exact presentation Grant for independent issuer endorsement")
             .option("--issue", "Explicitly derive a fresh registry root with the recipient before issuing")
             .option("--coordinator <said>", "Exact accepted group coordinator event")
             .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
-            .option("--proposal <file>", "Exact group issuance Grant proposal, with --resume")
+            .option(
+              "--proposal <file>",
+              "Exact group Grant proposal: issuance with --issue --resume; presentation with --prepare",
+            )
             .option("--proposal-output <file>", "Write the new exact group Grant proposal before waiting")
             .option(
               "--proof-output <file>",
@@ -106,7 +110,10 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             )
             .option("--credential <file>", "Exact fresh ACDC v2 credential body for --issue")
             .option("--artifact <files...>", "Explicit authenticated far-node streams for --issue")
-            .option("--resume <said>", "Resume the exact prepared pending issuance Grant, within its original deadline")
+            .option(
+              "--resume <said>",
+              "Resume the exact prepared Grant within its original deadline; --issue selects fresh issuance",
+            )
             .option("--timeout <seconds>", "Elapsed DH issuance limit (default: 60)")
             .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
             .option("--from-grant <said>", "Exact admitted or authorized transferred Grant")
@@ -136,6 +143,27 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       name: "ipex.grant",
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexGrantCommand",
+      args: dispatchArgs,
+    },
+  );
+
+  registerDispatchedCommand(
+    addHabOption(addStoreOptions(
+      ipex.command("endorse")
+        .description("Independently add issuer authentication to one exact prepared presentation Grant")
+        .requiredOption("--grant <file>", "Exact prepared Grant file")
+        .requiredOption("--said <said>", "Exact Grant SAID")
+        .requiredOption("--sender <aid>", "Declared discloser AID or contact alias")
+        .requiredOption("--recipient <aid>", "Selected verifier AID or contact alias")
+        .option("--contribution <files...>", "Exact partial issuer-group endorsement files")
+        .option("--input <file>", "Supporting accepted public KEL/TEL/schema evidence")
+        .requiredOption("--out <file>", "New exact Grant file with issuer authentication additions"),
+    )),
+    dispatch,
+    {
+      name: "ipex.endorse",
+      load: () => import("../commands/ipex-presentation.ts"),
+      exportName: "ipexEndorseCommand",
       args: dispatchArgs,
     },
   );

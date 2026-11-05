@@ -4,6 +4,8 @@ export { RegistryCustody } from "./src/custody.ts";
 export {
   type DisclosureSelection,
   exchangeWire,
+  type GrantFileSelection,
+  type InspectedGrantFile,
   type IssuanceGrantOptions,
   type PreparedDisclosure,
   type PreparedGrantBody,

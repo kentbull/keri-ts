@@ -467,6 +467,7 @@ export {
   PathError,
   ValidationError,
 } from "../core/errors.ts";
+export { verifyExchangeProofs } from "../core/exchange/exchange-proofing.ts";
 export { exchange } from "../core/exchange/protocol-exchanging.ts";
 export {
   type KeverEventEnvelope,
@@ -504,7 +505,7 @@ export {
   REPLY_MAILBOX_TOPIC,
 } from "../core/mailbox/mailbox-topics.ts";
 export { incept, interact, query, reply, rotate } from "../core/protocol-eventing.ts";
-export { messagize } from "../core/protocol-serialization.ts";
+export { messageAttachmentGroups, messagize } from "../core/protocol-serialization.ts";
 export { incept as inceptRegistry, issue, revoke } from "../core/protocol-vdr-eventing.ts";
 export {
   type BlindedImageTuple,
