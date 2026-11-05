@@ -4,6 +4,7 @@ import type { Regery } from "../src/acdc/registraring.ts";
 import type { Verifier } from "../src/app/credentials/verifying.ts";
 import { Exchanger } from "../src/app/exchanges/exchanging.ts";
 import type { Habery } from "../src/app/identity/habbing.ts";
+import type { AuxiliaryQueryProcessor } from "../src/app/protocol/parsering.ts";
 import { ProtocolProcessor } from "../src/app/protocol/protocol-processing.ts";
 import { QueryReplies } from "../src/app/queries/query-replies.ts";
 import type { AgentCue } from "../src/core/cues.ts";
@@ -27,6 +28,7 @@ export function protocolFixture(
     kram,
     now = Date.now,
     local = false,
+    qvy,
   }: {
     cues?: Deck<AgentCue>;
     protocolCues?: Deck<AgentCue>;
@@ -38,6 +40,7 @@ export function protocolFixture(
     kram?: KramConfig;
     now?: () => number;
     local?: boolean;
+    qvy?: AuxiliaryQueryProcessor;
   } = {},
 ): ProtocolProcessor {
   const output = protocolCues ?? revery?.cues ?? new Deck<AgentCue>();
@@ -55,5 +58,6 @@ export function protocolFixture(
     output,
     cues,
     new QueryReplies(cues),
+    qvy,
   );
 }

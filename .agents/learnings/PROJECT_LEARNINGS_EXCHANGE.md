@@ -87,6 +87,12 @@ full sender threshold and historical member-index election still apply. Neither
 scope nor election implies disclosure consent, issued-state policy or Admit.
 DHKE and network Unblind remain separate work.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
+KRAM's ordinary multi-signature handoff supplies the complete verified sender
+TSG for qry/rpy/XIP/EXN, preserving its accepted establishment coordinates and
+foreign factors. Auxiliary query receivers must use that full envelope rather
+than the legacy requester projection, which omits TSGs. A valid sender seal
+retains the reference's separate authentication path; it does not itself grant
+auxiliary authority.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.

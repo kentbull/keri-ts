@@ -183,7 +183,7 @@ export function stageKram(
     const envelope = rehydrateKramFactors(db, key, received);
     if (fresh.multi) {
       envelope.sigers.splice(0, envelope.sigers.length, ...[...fresh.pool].sort((a, b) => a.index - b.index));
-      if (incoming.serder.ilk === "exn") {
+      if (["qry", "rpy", "xip", "exn"].includes(incoming.serder.ilk ?? "")) {
         envelope.tsgs.splice(
           0,
           envelope.tsgs.length,

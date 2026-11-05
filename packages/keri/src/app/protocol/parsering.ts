@@ -134,6 +134,16 @@ export type DispatchDecision =
   | void;
 
 /**
+ * Caller-owned auxiliary query receiver, analogous to KERIpy's Kevery.qvy.
+ * Sender policy and optional KRAM run first. The receiver independently checks
+ * complete signature evidence and its approved operation scope; dispatch alone
+ * grants no authority. It borrows the full envelope during this synchronous call.
+ */
+export interface AuxiliaryQueryProcessor {
+  processQuery(envelope: KeriDispatchEnvelope): DispatchDecision;
+}
+
+/**
  * Convert one or more already-parsed CESR frames into KERI dispatch envelopes.
  *
  * Architectural rule:
@@ -168,7 +178,8 @@ export interface DispatchResult {
  * @param verifier Optional credential processor.
  * @param mailboxAid Receiving hosted endpoint provenance, distinct from claimed sender.
  * @param messageKevery Authoritative shared message-policy/KRAM processor when distinct from input Kevery.
- * @param registry Native registry intake over accepted public KEL state, without requiring a local alias.
+ * @param registry V2 registry intake over accepted public KEL state, without requiring a local alias.
+ * @param qvy Optional auxiliary query owner; receives full evidence after v2 message admission.
  * @returns The processed envelope and protocol-specific decision data.
  * @throws Unsupported input and infrastructure/handler failures follow their owning processor contracts.
  */
@@ -183,6 +194,7 @@ export function* dispatchEnvelope(
   /** Long-lived v2 message policy/KRAM owner; input-specific Kevery handles KEL and legacy traffic. */
   messageKevery: Kevery = kevery,
   registry?: RegistryObserver,
+  qvy?: AuxiliaryQueryProcessor,
 ): Operation<DispatchResult> {
   const serder = envelope.serder as SerderKERI | SerderACDC;
   if (serder instanceof SerderACDC) {
@@ -210,7 +222,7 @@ export function* dispatchEnvelope(
     serder.pvrsn.major >= 2
     && [Ilks.qry, Ilks.rpy, Ilks.exn, Ilks.xip, Ilks.pro, Ilks.bar].some((ilk) => ilk === serder.ilk)
   ) {
-    return yield* dispatchMessage(envelope, revery, messageKevery, exchanger, tevery, mailboxAid);
+    return yield* dispatchMessage(envelope, revery, messageKevery, exchanger, tevery, mailboxAid, qvy);
   }
 
   switch (serder.ilk) {
@@ -291,6 +303,7 @@ function* dispatchMessage(
   exchanger: ExchangerLike | undefined,
   tevery: Tevery | undefined,
   mailboxAid?: string | null,
+  qvy?: AuxiliaryQueryProcessor,
 ): Operation<DispatchResult> {
   const serder = envelope.serder;
   const sender = serder.pre;
@@ -311,6 +324,7 @@ function* dispatchMessage(
     tevery,
     mailboxAid,
     result?.receiverTime,
+    qvy,
   );
   return { envelope: ready, decision };
 }
@@ -324,10 +338,17 @@ function* dispatchReadyMessage(
   tevery: Tevery | undefined,
   mailboxAid?: string | null,
   receiverTime?: string,
+  qvy?: AuxiliaryQueryProcessor,
 ): Operation<DispatchDecision> {
   const serder = envelope.serder;
   switch (serder.ilk) {
     case Ilks.qry: {
+      if (qvy && !["logs", "ksn", "mbx", "tels", "tsn"].includes(serder.route ?? "")) {
+        if (!envelope.sigers.length && !envelope.ssgs.length && !envelope.tsgs.length && !envelope.cigars.length) {
+          return { kind: "drop", reason: "missingAuthentication" };
+        }
+        return qvy.processQuery(envelope);
+      }
       const query = queryEnvelopeFromDispatch(envelope);
       if (!query.source && !query.cigars?.length) return { kind: "drop", reason: "missingAuthentication" };
       if (["logs", "ksn", "mbx"].includes(serder.route ?? "")) return kevery.processQuery(query);

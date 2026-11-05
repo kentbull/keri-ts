@@ -11,6 +11,7 @@ export {
   Respondant,
 } from "../app/delivery/respondant.ts";
 export {
+  type AuxiliaryQueryProcessor,
   type DispatchResult,
   envelopeFromFrame,
   queryEnvelopeFromDispatch,
