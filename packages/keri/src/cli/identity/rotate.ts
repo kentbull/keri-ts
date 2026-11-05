@@ -1,7 +1,9 @@
 import type { ThresholdSith } from "cesr-ts";
+import type { Hab } from "../../app/identity/habbing.ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
 
 /**
  * `tufa rotate` command implementation.
@@ -117,8 +119,12 @@ function difference(
  * - habitat/key-state mutation lives in `Hab.rotate(...)`
  *
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
+ * @param options Optional application-owned authorization resolver, evaluated against prospective witnesses before rotation.
  */
-export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
+export function* rotateCommand(
+  args: Record<string, unknown>,
+  { witnessAuths }: { witnessAuths?: (hab: Hab, witnesses: readonly string[]) => WitnessAuthMap } = {},
+): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
   const http = new FetchHttpClient();
   const rotateArgs: RotateArgs = {
@@ -185,6 +191,15 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
         adds = difference(options.wits ?? [], kever.wits);
       }
 
+      const witnesses = [...kever.wits.filter(witness => !cuts.includes(witness)), ...adds];
+      const auths = witnessAuths ? witnessAuths(hab, witnesses) : resolveWitnessAuths(
+        witnesses,
+        rotateArgs.code ?? [],
+        {
+          codeTime: rotateArgs.codeTime,
+          promptMissing: rotateArgs.authenticate ?? false,
+        },
+      );
       hab.rotate({
         isith: options.isith,
         nsith: options.nsith ?? "1",
@@ -196,14 +211,6 @@ export function* rotateCommand(args: Record<string, unknown>): Operation<void> {
       });
 
       if (hab.kever?.wits.length) {
-        const auths = resolveWitnessAuths(
-          hab.kever.wits,
-          rotateArgs.code ?? [],
-          {
-            codeTime: rotateArgs.codeTime,
-            promptMissing: rotateArgs.authenticate ?? false,
-          },
-        );
         if (rotateArgs.endpoint) {
           const receiptor = new Receiptor(
             hby,

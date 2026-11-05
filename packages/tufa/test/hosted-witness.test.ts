@@ -1,7 +1,7 @@
 /** Actual private/public backend lifecycle and controller protocol use; no substituted service objects. */
 import { Matter, parseBytes, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
-import { assertEquals, assertExists } from "jsr:@std/assert";
+import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import {
   acceptedEventReplayMessage,
   createAgentRuntime,
@@ -14,6 +14,7 @@ import {
 } from "keri-ts/runtime";
 import { TOTP } from "npm:otpauth@9.4.1";
 import { mailboxAddCommand } from "../src/cli/commands/mailbox.ts";
+import { rotateWithCredentialsCommand } from "../src/cli/commands/rotate.ts";
 import { runHostedWitnesses } from "../src/roles/hosted-witness.ts";
 
 /** Select distinct local ports before opening the real listeners. */
@@ -44,7 +45,14 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
   };
   try {
     await run(function*() {
-      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+      const controllerStore = {
+        name: "controller",
+        headDirPath: folder,
+        bran: options.passcode,
+        skipConfig: true,
+        skipSignator: true,
+      };
+      const hby = yield* createHabery(controllerStore);
       const controller = hby.makeHab("controller"), other = hby.makeHab("other");
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       let server: Task<void> | undefined;
@@ -187,6 +195,51 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         assertEquals(log.status, 200);
         assertEquals(parseBytes(logBytes).map(frame => (frame.body as SerderKERI).sn), [0, 1, 2]);
 
+        // Reopened normal rotation refuses another account's artifact before advancing its KEL.
+        const credentialFile = `${folder}/witness-credentials.json`, before = controller.kever!.sn;
+        const artifact = {
+          account: other.pre,
+          provider: publicUrl,
+          server: first.eid,
+          witnesses: [{
+            eid: first.eid,
+            url: publicUrl,
+            cipher: credentials.totp,
+            pubs: [(parseBytes(inception)[0].body as SerderKERI).verfers[0].qb64],
+          }],
+        };
+        yield* runtime.close();
+        yield* hby.close();
+        const rotationArgs = {
+          name: controllerStore.name,
+          headDirPath: folder,
+          passcode: options.passcode,
+          alias: "controller",
+          endpoint: true,
+          witnessCredentials: credentialFile,
+        };
+        yield* call(() => Deno.writeTextFile(credentialFile, JSON.stringify(artifact), { mode: 0o600 }));
+        yield* call(() =>
+          assertRejects(() => run(() => rotateWithCredentialsCommand(rotationArgs)), Error, "another account")
+        );
+        const unchanged = yield* createHabery(controllerStore);
+        try {
+          assertEquals(unchanged.habByName("controller")!.kever!.sn, before);
+        } finally {
+          yield* unchanged.close();
+        }
+        artifact.account = controller.pre;
+        yield* call(() => Deno.writeTextFile(credentialFile, JSON.stringify(artifact), { mode: 0o600 }));
+        yield* rotateWithCredentialsCommand(rotationArgs);
+        const rotated = yield* createHabery(controllerStore);
+        try {
+          const account = rotated.habByName("controller")!;
+          assertEquals(account.kever!.sn, before + 1);
+          assertEquals(rotated.db.fullyWitnessed(account.kever!.serder), true);
+        } finally {
+          yield* rotated.close();
+        }
+
         // Deleting one allocation removes its routes without closing the other tenant's store.
         const removed = yield* call(() => fetchAt(bootUrl + "/witnesses/" + first.eid, { method: "DELETE" }));
         yield* call(() => removed.arrayBuffer());
@@ -200,8 +253,10 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         assertExists(parseBytes(retainedBytes)[0]);
       } finally {
         if (server) yield* server.halt();
-        yield* runtime.close();
-        yield* hby.close();
+        if (hby.db.opened) {
+          yield* runtime.close();
+          yield* hby.close();
+        }
       }
     });
   } finally {

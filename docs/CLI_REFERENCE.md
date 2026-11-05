@@ -55,6 +55,16 @@ Without a pin, the first authenticated reply supplies the server AID for that in
 Replies must pass v2 KRAM and exchange authentication. The command uses kf-boot's cache windows unless the store configures its own KRAM policy, and refuses an explicitly disabled policy.
 Cancellation acknowledges the request; wait for session `resources_cleaned_at` before treating resource cleanup as complete.
 
+## Credential-backed account rotation
+
+`tufa rotate -n store -a member --receipt-endpoint --witness-credentials witnesses.json`
+rotates an existing KF-onboarded member with its retained encrypted witness credentials.
+Authorization is resolved for the selected post-rotation witness set before keys change;
+a file that fails local validation leaves the KEL unchanged. The encrypted
+artifact retains its original recipient public key, so later rotations can reuse it.
+Do not combine this file with `--code`, `--code-time` or `--authenticate`.
+Without the file, the ordinary public code and prompt options remain available.
+
 ## Finite IPEX direct intake
 
 Live group `ipex setup` and `ipex grant --issue` accept `--listen PORT` to receive

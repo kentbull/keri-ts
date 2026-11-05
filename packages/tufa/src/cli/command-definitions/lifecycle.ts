@@ -197,7 +197,7 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
  *   implementation parity
  */
 function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
-  registerKeriCliCommand(
+  registerDispatchedCommand(
     addWitnessAuthOptions(
       program
         .command("rotate")
@@ -250,29 +250,33 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
           "Anchor data, '@' allowed",
           collectOption,
         ),
+      true,
     ),
     dispatch,
-    "rotate",
-    "rotateCommand",
-    (options) => ({
-      name: options.name,
-      alias: options.alias,
-      base: options.base,
-      compat: options.compat || false,
-      headDirPath: options.headDir,
-      passcode: options.passcode,
-      file: options.file,
-      nextCount: options.nextCount,
-      ...witnessAuthArgs(options),
-      proxy: options.proxy,
-      isith: options.isith,
-      nsith: options.nsith,
-      toad: options.toad,
-      witnesses: options.witnesses,
-      cuts: options.witnessCut,
-      witnessAdd: options.witnessAdd,
-      data: options.data,
-    }),
+    {
+      name: "rotate",
+      load: () => import("../commands/rotate.ts"),
+      exportName: "rotateWithCredentialsCommand",
+      args: (options) => ({
+        name: options.name,
+        alias: options.alias,
+        base: options.base,
+        compat: options.compat || false,
+        headDirPath: options.headDir,
+        passcode: options.passcode,
+        file: options.file,
+        nextCount: options.nextCount,
+        ...witnessAuthArgs(options),
+        proxy: options.proxy,
+        isith: options.isith,
+        nsith: options.nsith,
+        toad: options.toad,
+        witnesses: options.witnesses,
+        cuts: options.witnessCut,
+        witnessAdd: options.witnessAdd,
+        data: options.data,
+      }),
+    },
   );
 }
 
