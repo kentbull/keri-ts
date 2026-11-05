@@ -847,7 +847,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
 
 Deno.test("DHKE requires explicit consent and complete peer proofs before encrypted two-party issuance", async () => {
   await run(function*() {
-    let now = Date.now();
+    // Habitats stamp DH messages with wall time, so the receiver clock may only run ahead of it.
+    let skew = 0;
     const issuerHby = yield* createHabery({
       name: crypto.randomUUID(),
       temp: true,
@@ -870,7 +871,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       yield* ensure(() => baser.close(true));
       const rgy = new Regery(hby, baser);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
-        now: () => now,
+        now: () => Date.now() + skew,
         setTimeout,
         clearTimeout: timer => clearTimeout(timer as number),
       }, {
@@ -904,7 +905,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     // Only accepted public KEL/TEL crosses between independently encrypted stores.
     for (const wire of issuerHby.db.clonePreIter(issuer.pre, 0)) yield* right.reactor.processBytes(wire);
     for (const wire of issueeHby.db.clonePreIter(issuee.pre, 0)) yield* left.reactor.processBytes(wire);
-    const stamp = makeNowIso8601(new Date(now));
+    const stamp = makeNowIso8601(new Date(Date.now() + skew));
     const rip = regcept(issuer.pre, { stamp });
     const anchor = issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
     yield* right.reactor.processBytes(anchor);
@@ -937,7 +938,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     }
     const deadlines = parties.map(party => party.runtime.exc.exchangeDeadline(grant));
     const originalBodies = parties.map(party => loadNests(party.hby.db, grant.said!).map(nest => nest.body.raw));
-    now += 11000;
+    skew += 11000;
     assertEquals(left.dh.approve(grant.said!), grant.said!);
     const query = left.dh.start(grant.said!);
     assertEquals(left.dh.start(grant.said!), query, "retry preserves the exact signed query");

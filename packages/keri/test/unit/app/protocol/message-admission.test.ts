@@ -233,6 +233,7 @@ Deno.test("optional KRAM returns combined evidence after retiring acceptance", a
         now: () => now,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
         qvy: {
+          resource: "/ipex/dhke",
           processQuery(envelope) {
             // The query owner independently verifies the complete proof, not KRAM's intake decision.
             const verified = verifyExchangeProofs(hby.db, envelope.serder, { tsgs: envelope.tsgs });

@@ -1241,22 +1241,23 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
           new Diger({ qb64: group.serder.said! }),
           indices.map(index => indexed([alice, bob][index], pending, index)),
         );
-      const receive = function*(indices: number[]) {
-        assertEquals(
-          (yield* runtime.exc.processEvent({
-            serder: pending,
-            nests: [stale],
-            tsgs: [proof(indices), endorse(pending)],
-            receiverTime: receipt,
-          })).kind,
-          "escrow",
-        );
+      // Sender threshold intake must pass KRAM; only that accepted receipt supplies the pending Grant lifetime.
+      const receive = function*(indices: number[], expected: string) {
+        const { decision } = yield* runtime.protocol.dispatch({
+          body: pending,
+          attachments: messageAttachmentGroups({ tsgs: [proof(indices), endorse(pending)] }, Vrsn_2_0),
+          gvrsn: Vrsn_2_0,
+          nests: [stale],
+        });
+        assertEquals(decision?.kind, expected, JSON.stringify(decision));
         yield* runtime.exc.processEscrows();
       };
-      yield* receive([0]);
+      yield* receive([0], "pending");
       assertEquals(runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }), false);
+      assertEquals(runtime.exc.exchangeDeadline(pending), null, "a partial sender proposal grants no live lifetime");
+      yield* receive([1], "escrow");
       const pendingDeadline = runtime.exc.exchangeDeadline(pending);
-      yield* receive([1]);
+      assertExists(pendingDeadline);
       assertEquals(runtime.exc.complete(pending.said!), false, "the newer opaque issuer state still needs an opening");
       assertEquals(runtime.exc.lead(group.hab, pending.said!), false, "ordinary election requires acceptance");
       assertEquals(runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }), true);
