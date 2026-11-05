@@ -5,12 +5,15 @@ import {
   bytesEqual,
   type Cigar,
   Cipher,
+  concatBytes,
+  Counter,
   type Diger,
   Encrypter,
   Kinds,
   makeBlindUuid,
   Matter,
   MtrDex,
+  parseBytes,
   ParserError,
   Prefixer,
   Salter,
@@ -26,9 +29,13 @@ import {
   latestGroupContribution,
   localGroupMember,
 } from "../app/multisig/group-members.ts";
-import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import { envelopeFromFrame } from "../app/protocol/parsering.ts";
+import { KeriDispatchEnvelope, type TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
+import { verifyExchangeProofs } from "../core/exchange/exchange-proofing.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { reply } from "../core/protocol-eventing.ts";
+import { messagize } from "../core/protocol-serialization.ts";
 import { type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
 import type { Regery } from "./registraring.ts";
@@ -121,6 +128,87 @@ export class RegistrySalt {
       kind: Kinds.json,
     });
     return this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+  }
+
+  /**
+   * Endorse the elected member's authenticated exact ciphertext proposal.
+   * Reuse current registry/target scope and ordinary signature verification;
+   * contribution neither needs the root nor claims the group threshold is met.
+   */
+  contribute(proposal: Uint8Array, { registry, recipient, target, coordinator }: {
+    registry: string;
+    recipient: string;
+    target: string;
+    coordinator: GroupCoordinator;
+  }): Uint8Array {
+    this.hab.mgr.requireRegistryRootAccess();
+    if (!isLocalGroupHab(this.rgy.hby, this.hab)) {
+      throw new ValidationError("Root copy contribution requires a local group signer");
+    }
+    const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), proposal));
+    if (frames.length !== 1) throw new ValidationError("Expected one authenticated group reply proposal");
+    const envelope = envelopeFromFrame(frames[0]), wrapper = envelope.serder;
+    this.attachments(
+      wrapper,
+      new KeriDispatchEnvelope({ ...envelope, attachmentGroups: [...envelope.attachmentGroups], nests: [] }),
+    );
+    if (
+      wrapper.pvrsn.major !== 2 || wrapper.pvrsn.minor !== 0 || !["xip", "exn"].includes(wrapper.ilk!)
+      || wrapper.route !== "/multisig/rpy" || !wrapper.verify() || envelope.nests.length !== 1
+    ) {
+      throw new ValidationError("Expected one v2 multisig reply proposal");
+    }
+    const authenticated = verifyExchangeProofs(this.hab.db, wrapper, { tsgs: envelope.tsgs, cigars: envelope.cigars });
+    if (
+      authenticated.invalid || authenticated.missing.length
+      || !(authenticated.tsgs.some(group => group.pre === wrapper.pre)
+        || authenticated.cigars.some(cigar => cigar.verfer?.qb64 === wrapper.pre))
+    ) {
+      throw new ValidationError("Root copy proposal lacks its authenticated member author");
+    }
+    const election = groupWitnesserSelection(this.hab.db, this.hab.pre!, coordinator);
+    const proposer = election && latestGroupContribution(this.hab.db, wrapper.pre!, election.establishment.verfers);
+    if (
+      !election || proposer?.index !== election.index
+      || !latestGroupContribution(this.hab.db, wrapper.pre!, this.hab.kever!.verfers)
+    ) {
+      throw new ValidationError("Root copy proposal is not from the selected current group coordinator");
+    }
+    const child = envelopeFromFrame(envelope.nests[0]), body = child.serder, attributes = wrapper.sad!.a;
+    this.attachments(body, child);
+    if (
+      body.ilk !== "rpy" || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0 || body.route !== RegistrySalt.Route
+      || body.pre !== this.hab.pre || !body.verify() || !attributes || typeof attributes !== "object"
+      || Array.isArray(attributes) || Object.keys(attributes).sort().join() !== "gid,rpy"
+      || !("gid" in attributes) || !("rpy" in attributes)
+      || attributes.gid !== body.pre || attributes.rpy !== body.said || !child.tsgs.length
+      || child.sigers.length || child.cigars.length
+    ) {
+      throw new ValidationError("Root copy proposal does not bind the exact group reply");
+    }
+    const data = body.sad!.a;
+    if (
+      !data || typeof data !== "object" || Array.isArray(data)
+      || Object.keys(data).sort().join() !== "cipher,recipient,registry,target"
+      || !("registry" in data) || !("recipient" in data) || !("target" in data) || !("cipher" in data)
+      || data.registry !== registry || data.recipient !== recipient || data.target !== target
+      || typeof data.cipher !== "string"
+    ) throw new ValidationError("Root copy proposal differs from the selected scope");
+    const cipher = this.canonical(data.cipher, Cipher);
+    if (cipher.code !== MtrDex.X25519_Cipher_Salt) throw new ValidationError("Expected an encrypted Salt128 root");
+    const author = this.hab.kever!;
+    for (const group of child.tsgs) {
+      if (group.pre !== this.hab.pre || group.sn !== BigInt(author.lastEst.s) || group.said !== author.lastEst.d) {
+        throw new ValidationError("Root copy proposal requires current group establishment signatures");
+      }
+      const verified = Kever.verifyIndexedSignatures(body.raw, group.sigers, author.verfers);
+      if (!verified.sigers.length || verified.sigers.length !== group.sigers.length) {
+        throw new ValidationError("Root copy proposal has an invalid member contribution");
+      }
+    }
+    this.scope(registry, this.hab.pre!, recipient, target);
+    const local = envelopeFromFrame(parseBytes(this.hab.endorse(body, { gvrsn: Vrsn_2_0 }))[0]);
+    return messagize(body, { tsgs: [...child.tsgs, ...local.tsgs], gvrsn: Vrsn_2_0 });
   }
 
   /** Accept only after threshold authentication, decryption and immutable retention, including an identical root. */

@@ -1,7 +1,7 @@
 /** Commander registrations for vc operations; command adapters own effects. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addHabOption, addStoreOptions, dispatchArgs } from "./options.ts";
+import { addHabOption, addStoreOptions, collectOption, dispatchArgs } from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
 
 /**
@@ -47,6 +47,32 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   );
 
   const registry = vc.command("registry").description("Credential registry operations");
+  const root = registry.command("root").description("Explicit encrypted copies of existing ACDC v2 registry roots");
+  for (const operation of ["prepare", "contribute", "receive"] as const) {
+    const command = addHabOption(addStoreOptions(root.command(operation)))
+      .requiredOption("--registry <said>", "Accepted registry SAID")
+      .option("--evidence <file>", "Public KEL/TEL or endpoint evidence file (repeatable)", collectOption, []);
+    if (operation === "receive") {
+      command.requiredOption("--sender <aid>", "Explicitly authorized source AID")
+        .requiredOption("--event <said>", "Exact accepted BUP whose opening verifies the copied root")
+        .requiredOption("--opening <file>", "Held counted BSQ or BSS file")
+        .requiredOption("--message <file>", "Encrypted reply contribution file (repeatable)", collectOption, []);
+    } else {
+      command.requiredOption("--recipient <aid>", "Recipient individual or group AID")
+        .requiredOption("--target <aid>", "Individual encryption target; select the receiving member for a group")
+        .requiredOption("--output <file>", "New encrypted reply file")
+        .option("--coordinator <said>", "Exact accepted source-group coordinator event SAID");
+      if (operation === "prepare") {
+        command.option("--proposal-output <file>", "New authenticated group proposal file (required for groups)");
+      } else command.requiredOption("--proposal <file>", "Authenticated elected-member proposal to contribute to");
+    }
+    registerDispatchedCommand(command, dispatch, {
+      name: `vc.registry.root.${operation}`,
+      load: () => import("../commands/registry-root.ts"),
+      exportName: "registryRootCommand",
+      args: options => ({ ...dispatchArgs(options), operation }),
+    });
+  }
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(

@@ -21,7 +21,8 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, run } from "effection";
-import { assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
@@ -37,6 +38,9 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/p
 import { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import { QueryReplies } from "../../../src/app/queries/query-replies.ts";
+import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -399,6 +403,95 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
     assertEquals(recipient.hby.db.exns.get(admit.said!)!.raw, admit.raw);
     assertEquals(recipient.hby.db.epsd.get(grant.said!)!.dts, deadlines[3]);
+
+    // Exercise Tufa's maintained finite file command with fresh ciphertext and exact reviewed group scope.
+    importer.abandon(rip.said!, holder.hab.pre);
+    const directory = yield* call(() => Deno.makeTempDir({ prefix: "tufa-registry-root-" }));
+    yield* ensure(() => call(() => Deno.remove(directory, { recursive: true })));
+    const output = `${directory}/copy.cesr`, proposalOutput = `${directory}/proposal.cesr`;
+    const peerOutput = `${directory}/contribution.cesr`, refusedOutput = `${directory}/refused.cesr`;
+    const openingFile = `${directory}/opening.cesr`;
+    yield* call(() => Deno.writeFile(openingFile, publicOpeningAttachment(opening)));
+    const fileRuntime = yield* createAgentRuntime(recipient.hby, new FetchHttpClient(), systemClock, {
+      acdc: importer.rgy,
+      kram: { enabled: true },
+    });
+    yield* ensure(() => fileRuntime.close());
+    const sourceRuntime = yield* createAgentRuntime(holder.hby, new FetchHttpClient(), systemClock, {
+      acdc: exporter.rgy,
+      kram: { enabled: true },
+    });
+    yield* ensure(() => sourceRuntime.close());
+    assertEquals(
+      fileRuntime.protocol.rvy === recipient.hab.rvy,
+      false,
+      "file intake uses the command runtime's actual reply owner",
+    );
+    const sourceContext = { hab: holder.hab, rgy: exporter.rgy, protocol: sourceRuntime.protocol };
+    const targetContext = { hab: recipient.hab, rgy: importer.rgy, protocol: fileRuntime.protocol };
+    const scope = {
+      registry: rip.said!,
+      recipient: holder.hab.pre,
+      target: recipient.member.pre,
+      coordinator: recipientCoordinator.said!,
+    };
+    const prepared = yield* registryRootFile(sourceContext, { operation: "prepare", ...scope, output, proposalOutput });
+    assert(prepared.operation === "prepare");
+    assertEquals(prepared.prepared, true);
+    const preparedBytes = yield* call(() => Deno.readFile(output));
+    const preparedBody = envelopeFromFrame(parseBytes(preparedBytes)[0]).serder;
+    assertNotEquals(
+      preparedBody.said,
+      selected.serder.said,
+      "fresh file acceptance cannot reuse earlier cached receipt",
+    );
+    yield* call(() =>
+      assertRejects(
+        () =>
+          run(() =>
+            registryRootFile(targetContext, {
+              operation: "contribute",
+              ...scope,
+              recipient: lead.hab.pre,
+              proposal: proposalOutput,
+              output: refusedOutput,
+            })
+          ),
+        Error,
+        "selected scope",
+      )
+    );
+    assertThrows(
+      () => Deno.statSync(refusedOutput),
+      Deno.errors.NotFound,
+      undefined,
+      "scope refusal precedes output creation",
+    );
+    const fileContribution = yield* registryRootFile(targetContext, {
+      operation: "contribute",
+      ...scope,
+      proposal: proposalOutput,
+      output: peerOutput,
+    });
+    assert(fileContribution.operation === "contribute");
+    assertEquals(fileContribution.contributed, true);
+    assertEquals(parseBytes(yield* call(() => Deno.readFile(peerOutput)))[0].body.raw, preparedBody.raw);
+    const previousRoutes = [...fileRuntime.protocol.rvy.rtr.routes];
+    const received = yield* registryRootFile(targetContext, {
+      operation: "receive",
+      registry: rip.said!,
+      sender: holder.hab.pre,
+      event: event.said!,
+      opening: openingFile,
+      messages: [output, peerOutput],
+    });
+    assert(received.operation === "receive");
+    assertEquals(received.received, true, "only the fresh command's authenticated receipt owner reports success");
+    assertEquals(received.reply, preparedBody.said);
+    assertEquals(fileRuntime.protocol.rvy.rtr.routes.length, previousRoutes.length);
+    assertEquals(fileRuntime.protocol.rvy.rtr.routes.every((route, index) => route === previousRoutes[index]), true);
+    assertEquals(recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64, ciphertext);
+    assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
   });
 });
 
