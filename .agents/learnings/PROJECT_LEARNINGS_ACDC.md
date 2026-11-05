@@ -165,7 +165,14 @@ Individual DHKE separately approves fresh pending Grants, derives all scoped
 roots before retention and uses these same encrypted Manager APIs. No custody
 object, secret ledger or root-transfer route grants that approval. Completion
 and exact-Grant retry remain bounded by the original deadline after BUP arrives;
-Admit stays explicit. Group DHKE, RegistrySalt transfer and network Unblind remain separate work.
+Admit stays explicit. Individual `Unblind` uses exact held ordinary or bound
+openings, or derives ordinary openings from the existing Keeper root using an
+explicit application state vocabulary. It never derives a bound proof or sends a
+root. Public query BUPs must form a fully anchored contiguous suffix before any
+intake; newly accepted heads invalidate the frozen request. Only requested missing
+proofs through the latest non-placeholder binding are released. Same-recipient
+presentation-registry and DI2I policy remain in the existing Grant verifier.
+Group DHKE/Unblind and RegistrySalt transfer remain separate work.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

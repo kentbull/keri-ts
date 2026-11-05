@@ -1,6 +1,7 @@
 import {
   type AttachmentGroup,
   b,
+  bytesEqual,
   type CesrFrame,
   Cigar,
   Counter,
@@ -720,6 +721,40 @@ export class Exchanger {
       ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
     });
     return verified === true || (typeof verified === "object" && verified.kind === "accept");
+  }
+
+  /**
+   * Reverify replacement proofs for one live accepted Grant through its ordinary
+   * route. Bodies and order stay exact; this returns current observations without
+   * writes, handling or new consent. The Unblind owner publishes inside its own
+   * synchronous transaction after comparing the retained evidence snapshot.
+   */
+  verifyGrantProofs(said: string, nests: readonly CesrFrame[]): ExchangeRouteVerification {
+    const serder = this.hby.db.exns.get([said]);
+    if (!serder || !this.isV2Grant(serder)) return false;
+    const xid = serder.ilk === "xip" ? said : serder.sad!.x, recipient = serder.sad!.ri;
+    if (typeof xid !== "string" || typeof recipient !== "string" || !serder.pre) return false;
+    const context = this.presentationContext(said, { xid, sender: serder.pre, recipient });
+    if (
+      !context || nests.length !== context.nests.length
+      || nests.some((nest, index) => !bytesEqual(nest.body.raw, context.nests[index].body.raw))
+    ) return false;
+    const handler = this.handlerFor(serder);
+    if (!handler?.verify) return false;
+    const args = this.escrowInput(serder);
+    const approved = this.authenticate(serder, this.resolveProofs(args), handler, new Deck<AgentCue>());
+    if (approved.kind !== "verified") return false;
+    const meta = this.hby.db.exchangeMeta.get([said]);
+    return handler.verify({
+      serder,
+      attachments: normalizeAttachments(args.ptds ?? []),
+      essrs: args.essrs,
+      nests,
+      mailboxAid: meta?.mailboxAid,
+      receiverTime: storedReceiverTime(meta),
+      ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
+      ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
+    });
   }
 
   /**

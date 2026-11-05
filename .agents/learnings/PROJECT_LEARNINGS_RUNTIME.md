@@ -117,6 +117,12 @@ v2 query routes reach it with the full post-KRAM envelope, after normal sender
 policy and signature-presence checks. Established KEL/mailbox/TEL routes keep
 their owners. Auxiliary receivers independently authenticate complete sender
 thresholds and operation consent; no route map, queue or transport is implied.
+Only the implemented v2 Unblind query admits nested public registry events at
+normalization; its owner verifies their exact scope and anchors before intake.
+Revery forwards the optional parsed reply envelope to semantic routes. Unblind
+consumes its BSQ/BSS fields after ordinary KRAM accumulation; raw attachment
+groups alone do not describe evidence retained from an earlier partial signature.
+Reply threshold/BADA verification remains with the existing Revery owner.
 
 Multisig message signing, exact local admission and concrete sending share one
 cohesive module. Typed `messages` identify outer EXNs and Multiplexor payload keys;

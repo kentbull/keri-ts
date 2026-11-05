@@ -93,7 +93,19 @@ verifies all current anchored issued openings before retrying exact Grant/child
 bodies; it never authors Admit. Shared `verifyQueryAttachments` prefers named
 sender TSGs, otherwise resolves raw/last signatures against accepted current
 establishment state; a valid factor suffices but missing claimed coordinates
-refuse. KRAM admission alone supplies no consent. Network Unblind remains separate work.
+refuse. KRAM admission alone supplies no consent.
+Individual `Unblind` separately approves one live presentation and freezes its
+exact bodies, registry scope and original deadline. The disclosee's signed query
+carries a contiguous accepted public BUP suffix; the sender authenticates its full
+threshold before ordinary registry intake or proof release. Replies contain only
+the minimum missing BSQ/BSS suffix, never roots. Revery retains ordinary threshold
+and BADA ownership; parsed reply evidence reaches the handler, including KRAM's
+previously retained openings when a later signature carries none. Independently
+vetted event openings may survive a partial reply only in the approved operation.
+Finish retries a pending Grant or uses `verifyGrantProofs` and the ordinary route
+verifier before atomically replacing only that live accepted Grant's proof rows
+and current observations. Exact node bodies, earlier admitted Grants and deadlines
+stay unchanged. No automatic Admit, durable approval or group fallback exists.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 KRAM's ordinary multi-signature handoff supplies the complete verified sender
 TSG for qry/rpy/XIP/EXN, preserving its accepted establishment coordinates and
