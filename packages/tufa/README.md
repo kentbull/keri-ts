@@ -169,10 +169,44 @@ the original Grant deadline, and acceptance still requires a separate explicit
 `grant --issue --out FILE` prepares only the exact proposal, for explicit later
 `--resume GRANT --proposal FILE`; it does not persist an ephemeral DH session.
 
+Live opening acquisition/release selects an exact retained presentation Grant on
+each party. The command infers requester (Grant recipient) or responder (Grant
+sender), keeps the original view and deadline, and runs the selected Unblind
+owner with the store's enabled KRAM configuration:
+
+```sh
+# Requester may begin before the presenter explicitly approves release.
+tufa ipex unblind -n VERIFIER_STORE -a VERIFIER --grant PRESENTATION_GRANT --timeout 60
+tufa ipex unblind -n PRESENTER_STORE -a PRESENTER --grant PRESENTATION_GRANT --timeout 60
+```
+
+`--input FILE` supplies signed public evidence before that explicit approval.
+`--states` defaults to `["issued","revoked",""]` for live Unblind; the state
+vocabulary permits recovery, not an admission decision. The requester retries
+the same authenticated query under the original lifetime while the responder has
+not approved it. A current verified presentation returns without an empty query.
+Success acquires/verifies the selected proof or sends the authenticated response;
+it creates no Admit and does not rewrite earlier admitted history. Admit remains
+an explicit `ipex admit --acdc-v2 --consent --said PRESENTATION_GRANT` invocation.
+
+For a group, every participating member selects the same exact Grant and
+`--proposer MEMBER_AID`. Start the nonproposer member commands first, then the
+proposer command: these finite invocations install the selected coordination
+handler, so direct HTTP proposal delivery requires those members to be running.
+The opposite party's release approval may still begin later. The proposer must
+be a current signing member; it authors the query or the held/derived reply
+proof. Ordinary verified signature indices elect actual delivery. Rootless
+members validate the supplied openings and can be elected to send; no DH
+custodian or coordinator selection applies. Public nested BUP evidence and
+ordinary/bound reply openings remain on their original messages. Timeout or
+completion abandons process-local consent, restores borrowed handlers and joins
+host cleanup; no persistent Unblind session or new approval stage is created.
+
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
 writes the matching raw opening tuple. A match does not establish accepted standing
-or permission to disclose.
+or permission to disclose. Offline `--opening`/`--said`/`--out` and live `--grant`
+profiles are mutually exclusive.
 
 ACDC v2 IPEX attachment genus defaults to 2.0. Agree/Grant/Admit independently
 accept `--witness-gvrsn 2` for the known v2 witness profile; the witness
@@ -207,8 +241,8 @@ Issuee event. IPEX `--derive` requires the selected sender's custody and retaine
 exact event coordinates. Missing coordinates refuse disclosure even if the Keeper
 root survives wallet loss. Fresh individual DH issuance uses the `grant --issue`
 and `setup` flow above; explicit existing-root transfer uses the registry root
-commands below. Network Unblind remains separate work; group DH uses the finite member phases
-above, and ordinary group authoring retains its explicit approval workflow.
+commands below. Live Unblind uses the exact-Grant command above; group DH uses the finite member
+phases above, and ordinary group authoring retains its explicit approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying

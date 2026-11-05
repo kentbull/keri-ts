@@ -1,0 +1,301 @@
+/** Finite live presentation proof acquisition/release; original Grant authority and Admit remain separate. */
+import { bytesEqual, type CesrFrame, collectPayload, framePayload, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { action, call, type Operation, race, scoped, spawn } from "effection";
+import { parseNumberOption, parseStringOption } from "keri-ts/cli";
+import {
+  type AgentRuntime,
+  createAgentRuntime,
+  envelopeFromFrame,
+  exchange,
+  type ExchangeRouteHandler,
+  FetchHttpClient,
+  groupSigningMembers,
+  type KramConfig,
+  localGroupMember,
+  multisigExnBody,
+  runAgentRuntime,
+  systemClock,
+  timestampMicros,
+  Unblind,
+  ValidationError,
+} from "keri-ts/runtime";
+import { withExistingHab } from "../support/context.ts";
+import { writeJsonLine } from "../support/rendering.ts";
+import { walletStoreArgs } from "../support/wallet.ts";
+import { isPendingSetupRefusal } from "./ipex-group-issuance.ts";
+
+const QueryRoute = "/multisig/qry", ReplyRoute = "/multisig/rpy";
+/** One explicit invocation; the proposer authors bytes and ordinary verified indices elect delivery. */
+export interface PresentationUnblindOptions {
+  timeoutMs: number;
+  proposer?: string;
+}
+/** Proof exchange completion does not authorize or create a wallet Admit. */
+export interface PresentationUnblindResult {
+  grant: string;
+  xid: string;
+  role: "requester" | "responder";
+  completed: true;
+  admitted: false;
+}
+/** Wait on the selected runtime's clock, releasing the timer on cancellation. */
+function* wait(runtime: AgentRuntime, milliseconds: number): Operation<void> {
+  yield* action<void>(resolve => {
+    const timer = runtime.clock.setTimeout(resolve, milliseconds);
+    return () => runtime.clock.clearTimeout(timer);
+  });
+}
+/** Preserve public child evidence and opening attachments through normal CESR serialization. */
+function* wire(frame: CesrFrame): Operation<Uint8Array> {
+  return yield* call(() => collectPayload(framePayload(frame)));
+}
+/** Run one exact retained presentation through its selected Unblind owner, without creating an Admit. */
+export function* runPresentationUnblind(
+  runtime: AgentRuntime,
+  grant: string,
+  { timeoutMs, proposer }: PresentationUnblindOptions,
+): Operation<PresentationUnblindResult> {
+  const selected = runtime.ipexAuxiliary;
+  if (selected?.kind !== "unblind" || !runtime.acdc || selected.owner.exc !== runtime.exc) {
+    throw new ValidationError("Live Unblind requires its selected runtime and registry");
+  }
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ValidationError("Unblind timeout must be positive");
+  const protocol = selected.owner, hab = protocol.hab;
+  const member = protocol.group ? localGroupMember(runtime.hby, hab.pre) : hab;
+  if (
+    protocol.group
+      ? !proposer || !groupSigningMembers(runtime.hby, hab.pre).includes(proposer)
+      : proposer !== undefined
+  ) {
+    throw new ValidationError("Group Unblind requires a current signing member proposer; individual Unblind has none");
+  }
+  const xid = protocol.approve(grant);
+  const input = runtime.exc.retainedInput(grant)!;
+  const requester = input.serder.sad!.ri === hab.pre;
+  const role = requester ? "requester" : "responder";
+  const result: PresentationUnblindResult = { grant, xid, role, completed: true, admitted: false };
+  const deadline = runtime.hby.db.epsd.get([grant])?.dts, expiry = deadline ? timestampMicros(deadline) : null;
+  const route = requester ? QueryRoute : ReplyRoute, field = requester ? "qry" : "rpy";
+  const previous = protocol.group ? runtime.exc.routes.get(route) : undefined;
+  let installed = false, frozen: Uint8Array | undefined, contributed = false, finished = false;
+  let query: Uint8Array | undefined, nextQuery = 0;
+  const pending = new Map<string, { parent: SerderKERI; child: CesrFrame }>(), seen = new Set<string>();
+  function check() {
+    if (!deadline || expiry === null || expiry === undefined) {
+      throw new Error("Missing or corrupt presentation deadline");
+    }
+    if (runtime.hby.db.epsd.get([grant])?.dts !== deadline) {
+      throw new ValidationError("Original presentation deadline changed");
+    }
+    if (BigInt(runtime.clock.now()) * 1000n >= expiry) {
+      throw new ValidationError("Original presentation deadline expired");
+    }
+    if (!finished) protocol.complete(xid); // Rechecks exact live scope and accepted current state; readiness is separate.
+  }
+  function matches(parent: SerderKERI, children: readonly CesrFrame[] = []): boolean {
+    const child = children[0], attrs = parent.sad!.a as Record<string, unknown>;
+    if (
+      parent.route !== route || parent.pvrsn.major !== 2 || parent.pvrsn.minor !== 0
+      || !groupSigningMembers(runtime.hby, hab.pre).includes(parent.pre!)
+      || children.length !== 1 || !(child?.body instanceof SerderKERI)
+      || !attrs || Object.keys(attrs).length !== 2 || attrs.gid !== hab.pre || attrs[field] !== child.body.said
+    ) return false;
+    const body = child.body, data = body.sad![requester ? "q" : "a"] as { x?: string };
+    if (
+      body.pre !== hab.pre || body.ilk !== field || body.route !== Unblind.Route
+      || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0 || data?.x !== xid
+      || requester && body.sad!.rr !== Unblind.Route || frozen && !bytesEqual(frozen, body.raw)
+    ) return false;
+    const evidence = envelopeFromFrame(child);
+    const allowed = requester
+      ? ["TransIdxSigGroups", "TransLastIdxSigGroups"]
+      : ["TransIdxSigGroups", "BlindedStateQuadruples", "BoundStateSextuples"];
+    return (requester || !child.nests?.length)
+      && evidence.attachmentGroups.every(group => allowed.includes(group.name.replace(/^Big/, "")));
+  }
+  try {
+    check();
+    // A current authenticated view needs no empty auxiliary query or new proof writes.
+    if (requester && runtime.exc.complete(grant)) {
+      const current = runtime.exc.verifyGrantProofs(grant, input.nests ?? []);
+      if (current === true || typeof current === "object" && current.kind === "accept") return result;
+    }
+    if (protocol.group) {
+      const handler: ExchangeRouteHandler = {
+        resource: route,
+        acceptsNests: true,
+        verify(args) {
+          if (matches(args.serder, args.nests)) return !args.attachments.length && !args.essrs?.length;
+          return previous?.verify ? previous.verify(args) : false;
+        },
+        *handle(args) {
+          if (matches(args.serder, args.nests)) {
+            pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
+          } else if (previous) {
+            const handled = previous.handle(args);
+            if (handled) yield* handled;
+          }
+        },
+      };
+      runtime.exc.routes.set(route, handler);
+      installed = true;
+    }
+    return yield* race([
+      call(function*() {
+        return yield* scoped(function*() {
+          const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
+          function* send(msg: Uint8Array, dest: string, topic = "credential"): Operation<void> {
+            check();
+            const event = runtime.postman.send({ src: member.pre, dest, topic, msg }, { notify: true });
+            const outcome = yield* runtime.postman.wait(event);
+            if (outcome.kin === "failed") throw outcome.error;
+          }
+          function* broadcast(raw: Uint8Array): Operation<void> {
+            const child = parseBytes(raw)[0];
+            if (!(child?.body instanceof SerderKERI) || child.body.ilk !== field) {
+              throw new ValidationError("Unexpected local Unblind proposal");
+            }
+            frozen = child.body.raw;
+            contributed = true;
+            yield* runtime.protocol.dispatch(child, { local: true });
+            const body = requester
+              ? exchange(QueryRoute, { gid: hab.pre, qry: child.body.said }, {
+                sender: member.pre,
+                version: Vrsn_2_0,
+                gvrsn: Vrsn_2_0,
+              })[0]
+              : multisigExnBody(member.pre, { route: ReplyRoute, attrs: { gid: hab.pre } }, child.body, {
+                version: Vrsn_2_0,
+              });
+            const parent = parseBytes(member.endorse(body, { gvrsn: Vrsn_2_0 }))[0];
+            parent.nests = [child];
+            const proposal = yield* wire(parent);
+            for (const peer of groupSigningMembers(runtime.hby, hab.pre)) {
+              if (peer !== member.pre) yield* send(proposal, peer, "multisig");
+            }
+          }
+          try {
+            if (requester && (!protocol.group || member.pre === proposer)) {
+              const started = protocol.start(grant);
+              if (!protocol.group) query = started;
+            }
+            while (true) {
+              check();
+              if (protocol.group) {
+                // Accepted wrappers can precede this explicit invocation; intake alone never contributed.
+                for (const [, parent] of runtime.hby.db.exns.getTopItemIter()) {
+                  if (parent.route !== route || seen.has(parent.said!)) continue;
+                  const retained = runtime.exc.retainedInput(parent.said!);
+                  if (retained && matches(parent, retained.nests)) {
+                    pending.set(parent.said!, { parent, child: retained.nests![0] });
+                  }
+                }
+                if (!requester && member.pre === proposer && !contributed && protocol.hasPeerQuery(xid)) {
+                  protocol.respond(xid);
+                }
+                for (const [said, item] of pending) {
+                  if (seen.has(said) || item.parent.pre === member.pre) {
+                    pending.delete(said);
+                    continue;
+                  }
+                  if (!frozen && item.parent.pre !== proposer || !requester && !protocol.hasPeerQuery(xid)) continue;
+                  if (!matches(item.parent, [item.child])) {
+                    pending.delete(said);
+                    seen.add(said);
+                    continue;
+                  }
+                  const contribution = protocol.contribute(xid, yield* wire(item.child));
+                  yield* runtime.protocol.dispatch(item.child, { local: true });
+                  if (!contributed) yield* broadcast(contribution);
+                  seen.add(said);
+                  pending.delete(said);
+                }
+              }
+              while (protocol.outgoing.length) {
+                const message = protocol.outgoing.pull()!;
+                if (message.kin === "sign") {
+                  if (!contributed) yield* broadcast(message.msg);
+                } else if (message.kin === "query") query = message.msg;
+                else if (!finished) {
+                  yield* protocol.finish(xid); // Validate exact evidence; no issuer-state admission policy here.
+                  finished = true;
+                  yield* send(message.msg, message.dest);
+                }
+              }
+              if (requester && protocol.complete(xid)) {
+                const decision = yield* protocol.finish(xid);
+                if (decision.kind !== "accept") throw new ValidationError("Updated presentation proofs did not verify");
+                return result;
+              }
+              if (!requester && (finished || protocol.group && protocol.complete(xid))) {
+                if (!finished) yield* protocol.finish(xid);
+                return result;
+              }
+              if (query && runtime.clock.now() >= nextQuery) {
+                try {
+                  yield* send(query, input.serder.pre!);
+                } catch (error) {
+                  if (!isPendingSetupRefusal(error)) throw error;
+                }
+                nextQuery = runtime.clock.now() + 1000;
+              }
+              yield* wait(runtime, 50);
+            }
+          } finally {
+            yield* host.halt();
+          }
+        });
+      }),
+      call(function*(): Operation<never> {
+        yield* wait(
+          runtime,
+          Math.min(timeoutMs, Math.max(0, Number(expiry! - BigInt(runtime.clock.now()) * 1000n) / 1000)),
+        );
+        throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
+      }),
+    ]);
+  } finally {
+    protocol.abandon(xid);
+    if (installed) {
+      if (previous) runtime.exc.routes.set(route, previous);
+      else runtime.exc.routes.delete(route);
+    }
+  }
+}
+
+/** Compose the selected concrete owner and explicit KRAM policy for one live CLI action. */
+export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operation<void> {
+  if (args.opening || args.said || args.out) {
+    throw new ValidationError("Live --grant and offline --opening/--said/--out profiles are exclusive");
+  }
+  const grant = parseStringOption(args.grant, "grant"), timeout = parseNumberOption(args.timeout, "timeout") ?? 60;
+  if (!grant || !Number.isFinite(timeout) || timeout <= 0) {
+    throw new ValidationError("Live Unblind requires --grant and a positive timeout");
+  }
+  const states = JSON.parse(parseStringOption(args.states, "states") ?? "[\"issued\",\"revoked\",\"\"]");
+  if (!Array.isArray(states) || !states.every(state => typeof state === "string")) {
+    throw new ValidationError("--states must be a JSON string array");
+  }
+  const completed = yield* withExistingHab(walletStoreArgs(args), parseStringOption(args.alias, "alias"), {
+    skipConfig: false,
+  }, function*({ hby, hab }) {
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
+      ipexAuxiliary: { kind: "unblind", hab, states },
+    });
+    try {
+      const input = parseStringOption(args.input, "input");
+      if (input) {
+        yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(input)));
+        yield* runtime.protocol.processEscrowsOnce();
+      }
+      return yield* runPresentationUnblind(runtime, grant, {
+        timeoutMs: timeout * 1000,
+        proposer: parseStringOption(args.proposer, "proposer"),
+      });
+    } finally {
+      yield* runtime.close();
+    }
+  });
+  writeJsonLine(completed);
+}

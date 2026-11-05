@@ -191,6 +191,17 @@ root. Public query BUPs must form a fully anchored contiguous suffix before any
 intake; newly accepted heads invalidate the frozen request. Only requested missing
 proofs through the latest non-placeholder binding are released. Same-recipient
 presentation-registry and DI2I policy remain in the existing Grant verifier.
+Tufa `ipex unblind --grant` infers the requester/responder from that exact retained
+presentation, composes the selected Unblind owner with enabled KRAM, and runs one
+finite operation. Unchanged-query retries allow delayed opposite-party consent
+without renewing the Grant lifetime. Current complete proofs avoid empty queries;
+responders validate the frozen reply before sending without an issued-state
+admission gate. No Admit or old admitted-view rewrite follows automatically.
+Group members explicitly select a current proposer and start nonproposers before
+the proposer for finite direct HTTP coordination. The proposer authors bytes;
+verified signature indices elect delivery. Scoped handlers retain original query
+children and reply opening attachments, delegate unrelated traffic, and restore
+on exit. Offline candidate recovery remains a separate mutually exclusive mode.
 Group Unblind contributors verify the supplied minimum openings without root
 custody. Public query suffixes remain exact on every member contribution, and
 ordinary group signature thresholds gate peer delivery. Delivery election uses
