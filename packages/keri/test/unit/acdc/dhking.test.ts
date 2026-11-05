@@ -62,7 +62,7 @@ import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../src/app/witness/receipting.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
-import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
+import { interact as interactEvent, query as queryEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
@@ -1078,6 +1078,17 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       }
     }
     const source = finite[0], recipient = finite[1];
+    const unhandled = queryEvent("/unhandled-custom-query", {}, { pre: issuer.pre, pvrsn: Vrsn_2_0 });
+    const acknowledgement = yield* call(() =>
+      fetch(recipient.hab.fetchUrls(issuee.pre, "http").http!, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: issuer.endorse(unhandled, { gvrsn: Vrsn_2_0 }) as BodyInit,
+      })
+    );
+    assertEquals(acknowledgement.status, 204, "missing custom owner acknowledges only transport");
+    yield* call(() => acknowledgement.arrayBuffer());
+    assertEquals(recipient.runtime.hby.db.msgc.get([issuer.pre, unhandled.said!]), null);
     const freshRip = yield* source.author.incept("finite-derived", issuer.pre);
     const registry = source.author.registry("finite-derived", issuer.pre);
     const bodyDirectory = yield* call(() => Deno.makeTempDir({ prefix: "derived-credential-body-" }));
@@ -1123,11 +1134,20 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       "real query arrival cannot approve receiver setup",
     );
     assertEquals(issuee.mgr.getRegistryRoot(issuee.pre, freshRip.said!), null);
+    const replayReceipt = yield* call(() =>
+      fetch(recipient.hab.fetchUrls(issuee.pre, "http").http!, {
+        method: "POST",
+        headers: { "Content-Type": "application/cesr" },
+        body: observedQueries[0] as BodyInit,
+      })
+    );
+    assertEquals(replayReceipt.status, 204, "cached query replay acknowledges transport without protocol work");
+    yield* call(() => replayReceipt.arrayBuffer());
     const unsigned = yield* recipient.runtime.protocol.dispatch({ ...firstQuery, attachments: [] });
     assertEquals(
       unsigned.decision,
-      { kind: "drop", reason: "authentication" },
-      "a cache hit cannot authenticate unsigned query replay",
+      { kind: "drop", reason: "replay" },
+      "completed query replay remains rejected before route processing",
     );
     const queryProof = envelopeFromFrame(firstQuery),
       oneSignature = (queryProof.ssgs[0] ?? queryProof.tsgs[0]).sigers[0];
@@ -1146,7 +1166,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     });
     assertEquals(
       partial.decision,
-      { kind: "drop", reason: "authentication" },
+      { kind: "drop", reason: "replay" },
       "one current signature cannot reuse a completed query cache",
     );
     const received = yield* runDerivedIssuance(recipient.runtime, recipient.wallet, {
@@ -1160,7 +1180,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       false,
       false,
     ]);
-    assert(observedQueries.length >= 2, "explicit delayed setup requires an actual frozen-query retry");
+    assert(observedQueries.length >= 1, "the actual owner retains the first query for delayed explicit setup");
     for (const repeated of observedQueries) assertEquals(repeated, observedQueries[0]);
     assertEquals(recipient.runtime.hby.db.msgc.get(queryKey), queryCache);
     assertEquals(source.runtime.exc.exchangeDeadline(body), sourceDeadline);

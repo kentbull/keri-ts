@@ -45,7 +45,6 @@ import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
 import {
   acceptGroupIssuanceProof,
-  isPendingSetupRefusal,
   prepareGroupDerivedIssuance,
   runGroupDerivedIssuance,
 } from "./ipex-group-issuance.ts";
@@ -190,13 +189,7 @@ export function* runDerivedIssuance(
               }
               if (dh.complete(xid)) break;
               if (query && runtime.clock.now() >= nextQuery) {
-                try {
-                  yield* send(query, peer);
-                } catch (error) {
-                  // Explicit recipient consent may follow the first query. Only that HTTP refusal
-                  // keeps this bounded wait alive; no refusal establishes protocol acceptance.
-                  if (!isPendingSetupRefusal(error)) throw error;
-                }
+                yield* send(query, peer);
                 nextQuery = runtime.clock.now() + 1000;
               }
               yield* wait(runtime.clock, 50);

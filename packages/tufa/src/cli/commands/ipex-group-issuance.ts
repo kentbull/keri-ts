@@ -25,7 +25,6 @@ import { action, call, type Operation, race, scoped, spawn } from "effection";
 import {
   acceptedRegistryEvidence,
   type AgentRuntime,
-  CesrHttpRefusal,
   consoleLogger,
   Dhke,
   envelopeFromFrame,
@@ -108,11 +107,6 @@ function* wait(runtime: AgentRuntime, milliseconds: number): Operation<void> {
     const timer = runtime.clock.setTimeout(resolve, milliseconds);
     return () => runtime.clock.clearTimeout(timer);
   });
-}
-/** Only a query's unanimous authorization refusals permit its unchanged bounded retry. */
-export function isPendingSetupRefusal(error: unknown): boolean {
-  if (error instanceof CesrHttpRefusal) return error.status === 403;
-  return error instanceof AggregateError && error.errors.length > 0 && error.errors.every(isPendingSetupRefusal);
 }
 /** Parent authentication commits one exact child; it never supplies the child's group threshold. */
 function* wrapper(
@@ -576,11 +570,7 @@ function* runGroupIssuance(
                 else yield* send(message.msg, message.dest, "credential");
               }
               if (query && runtime.clock.now() >= nextQuery && !dh.complete(xid)) {
-                try {
-                  yield* send(query, frozenGrant.sad!.ri as string, "credential");
-                } catch (error) {
-                  if (!isPendingSetupRefusal(error)) throw error;
-                }
+                yield* send(query, frozenGrant.sad!.ri as string, "credential");
                 nextQuery = runtime.clock.now() + 1000;
               }
               if (lead && dh.complete(xid)) {

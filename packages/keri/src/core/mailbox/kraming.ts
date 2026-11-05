@@ -7,12 +7,11 @@ import type { KeriDispatchEnvelope } from "../dispatch.ts";
 import { type KramConfig, KramPolicy } from "./kram-policy.ts";
 import { KramPruner, type KramPruneResult } from "./kram-pruning.ts";
 import { type KramStageRefusal, stageKram } from "./kram-staging.ts";
-import type { KramQueryRetry } from "./kram-time.ts";
 
 /** Expected pending/refusal outcomes; cancellation, corruption and infrastructure failures throw. */
 export type KramRefusal = KramStageRefusal | { kind: "pending"; key: readonly string[] };
 /** Accepted input carries ordinary buffered evidence, including combined threshold proofs. */
-export type KramIntakeResult = KramRefusal | KramQueryRetry | {
+export type KramIntakeResult = KramRefusal | {
   kind: "ready";
   envelope: KeriDispatchEnvelope;
   receiverTime?: string;
@@ -43,14 +42,14 @@ export class Kramer {
   }
 
   /** Decide intake synchronously; protocol dispatch consumes the returned evidence. */
-  intake(envelope: KeriDispatchEnvelope, { retryQuery = false }: { retryQuery?: boolean } = {}): KramIntakeResult {
+  intake(envelope: KeriDispatchEnvelope): KramIntakeResult {
     this.policy.reconcile();
     if (this.policy.exempts(envelope.serder)) return { kind: "ready", envelope };
     const clock = this.now();
     if (!Number.isSafeInteger(clock)) throw new Error("Invalid KRAM receiver clock");
     const receipt = makeNowIso8601(new Date(clock));
     if (timestampMicros(receipt) === null) throw new Error("Invalid KRAM receiver clock");
-    const result = stageKram(this.db, this.policy, envelope, receipt, retryQuery);
+    const result = stageKram(this.db, this.policy, envelope, receipt);
     if (result.kind === "missing") {
       this.cues.push({
         kin: "query",

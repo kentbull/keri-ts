@@ -312,10 +312,10 @@ export function* createAgentRuntime(
   const ipexAuxiliary = selected && registry
     ? yield* resource<IpexAuxiliary>(function*(provide) {
       const auxiliary: IpexAuxiliary = selected.kind === "dhke"
-        ? { kind: "dhke", owner: new Dhke({ hab: selected.hab, exc, registryStore: registry.store, rvy: revery }) }
+        ? { kind: "dhke", owner: new Dhke({ hab: selected.hab, exc, registryStore: registry.store, rvy: revery, now }) }
         : {
           kind: "unblind",
-          owner: new Unblind({ hab: selected.hab, exc, registry, states: selected.states, rvy: revery }),
+          owner: new Unblind({ hab: selected.hab, exc, registry, states: selected.states, rvy: revery, now }),
         };
       try {
         revery.rtr.addRoute(auxiliary.kind === "dhke" ? Dhke.Route : Unblind.Route, auxiliary.owner);

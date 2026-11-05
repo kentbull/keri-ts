@@ -28,6 +28,7 @@ import { IpexV2Handler } from "../app/ipex/ipex-v2.ts";
 import { isLocalGroupHab, latestGroupContribution, localGroupMember } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
+  copyAuxiliaryQuery,
   envelopeFromFrame,
   type MessageDropDecision,
 } from "../app/protocol/parsering.ts";
@@ -41,6 +42,7 @@ import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
+import { timestampMicros } from "../time/mod.ts";
 import type { RegistryObserver } from "./observing.ts";
 import {
   type RegistryDisclosure,
@@ -111,8 +113,13 @@ function ordinal(event: SerderACDC): number {
  */
 export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
-  readonly retryQueryRoute = Unblind.Route;
+  readonly resource = Unblind.Route;
   readonly outgoing = new Deck<UnblindOutgoing>();
+  private readonly pendingQueries = new Map<
+    string,
+    { envelope: KeriDispatchEnvelope; expires: bigint; grant: string }
+  >();
+  private readonly now: () => number;
   private readonly operations = new Map<string, UnblindOperation>();
   readonly hab: Hab;
   readonly exc: Exchanger;
@@ -122,12 +129,13 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly group: boolean;
 
   /** Bind the exact Grant verifier's store and an explicit ordinary-state vocabulary. */
-  constructor({ hab, exc, registry, states, rvy = hab.rvy }: {
+  constructor({ hab, exc, registry, states, rvy = hab.rvy, now = Date.now }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
     states: readonly string[];
     rvy?: Revery;
+    now?: () => number;
   }) {
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db || rvy.db !== hab.db
@@ -140,6 +148,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
       throw new ValidationError("Unblind requires an explicit sequence of state strings");
     }
+    this.now = now;
     this.hab = hab;
     this.exc = exc;
     this.rvy = rvy;
@@ -149,6 +158,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Freeze one authenticated live Grant's exact bodies, parties and authorized registry scope. */
   approve(grant: string): string {
+    this.pruneQueries();
     const input = this.exc.retainedInput(grant);
     if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
     const message = input.serder, sender = message.pre, recipient = message.sad!.ri;
@@ -188,6 +198,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
       proposal: null,
       contribution: null,
     });
+    this.replayQuery(xid);
     return xid;
   }
 
@@ -301,11 +312,17 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Authenticate the full peer threshold before public evidence intake or proof release. */
   processQuery(envelope: KeriDispatchEnvelope): { kind: "accept" } | MessageDropDecision {
+    this.pruneQueries();
     try {
       const { serder } = envelope;
       if (serder.ilk !== "qry" || serder.sad!.rr !== Unblind.Route) throw new ValidationError("Invalid Unblind query");
       this.attachments(envelope, "query");
       const own = this.group && serder.pre === this.hab.pre;
+      const xid = (serder.sad?.q as { x?: unknown } | undefined)?.x;
+      if (!own && typeof xid === "string" && !this.operations.has(xid)) {
+        this.retainQuery(envelope);
+        return { kind: "accept" };
+      }
       const { op, selected } = this.preflight(serder, "q", own ? "recipient" : "sender", own);
       if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
         throw new ValidationError("Own Unblind query lacks its exact locally approved proposal");
@@ -528,6 +545,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Discard approved work and unsent replies; delivered bytes remain caller-owned. */
   abandon(xid: string): void {
+    const retained = this.pendingQueries.delete(xid);
+    if (retained && !this.operations.has(xid)) return;
     const op = this.operation(xid);
     const keep = [...this.outgoing].filter(item =>
       ![op.query, op.reply, op.contribution]
@@ -583,7 +602,74 @@ export class Unblind implements AuxiliaryQueryProcessor {
   close(): void {
     for (const xid of this.operations.keys()) this.abandon(xid);
     this.operations.clear();
+    this.pendingQueries.clear();
     this.outgoing.clear();
+  }
+
+  /** Hold one authenticated public suffix for explicit release consent; never import events here. */
+  private retainQuery(envelope: KeriDispatchEnvelope): void {
+    const query = envelope.serder, data = this.parameters(query, "q");
+    if (!verifyQueryAttachments(this.hab.db, envelope)) throw new ValidationError("Unauthenticated Unblind query");
+    const candidates = [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, data.x])]
+      .map(([key]) => this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]))
+      .filter(grant =>
+        grant && grant.pre === this.hab.pre && grant.sad!.ri === query.pre
+        && this.exc.presentationContext(grant.said!, { xid: data.x, sender: this.hab.pre, recipient: query.pre! })
+      );
+    if (candidates.length !== 1) throw new ValidationError("Unblind query has no unique authenticated Grant");
+    const grant = candidates[0]!;
+    const context = this.exc.presentationContext(grant.said!, {
+      xid: data.x,
+      sender: this.hab.pre,
+      recipient: query.pre!,
+    })!;
+    const selected = this.selection(data.re, context.registries, "q");
+    this.validateEvents(selected, envelope.nests);
+    const expires = this.retainUntil(envelope, grant);
+    const prior = this.pendingQueries.get(data.x);
+    if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) {
+      throw new ValidationError("Conflicting Unblind query");
+    }
+    if (!prior) {
+      this.pendingQueries.set(data.x, { envelope: copyAuxiliaryQuery(envelope), expires, grant: grant.said! });
+    }
+  }
+
+  /** Expired evidence cannot survive another owner interaction. */
+  private pruneQueries(): bigint {
+    const now = BigInt(this.now()) * 1000n;
+    for (const [xid, query] of this.pendingQueries) if (now >= query.expires) this.pendingQueries.delete(xid);
+    return now;
+  }
+
+  /** Consume the first authenticated request only after explicit approval; never renew either clock. */
+  private replayQuery(xid: string): void {
+    const pending = this.pendingQueries.get(xid);
+    this.pendingQueries.delete(xid);
+    if (
+      pending && pending.grant === this.operations.get(xid)?.grant
+      && BigInt(this.now()) * 1000n < pending.expires
+    ) this.processQuery(pending.envelope);
+  }
+
+  /** Bound process-local public evidence by the original query and accepted Grant lifetimes. */
+  private retainUntil(envelope: KeriDispatchEnvelope, grant: SerderKERI): bigint {
+    const now = this.pruneQueries();
+    const cache = this.hab.db.msgc.get([envelope.serder.pre!, envelope.serder.said!]);
+    const messageTime = cache && timestampMicros(cache.mdt);
+    const grantTime = timestampMicros(this.exc.exchangeDeadline(grant) ?? undefined);
+    if (
+      !cache || this.hab.db.pmkm.get([envelope.serder.pre!, envelope.serder.said!]) || messageTime === null
+      || messageTime === undefined || grantTime === null
+      || !Number.isSafeInteger(cache.d) || !Number.isSafeInteger(cache.ml)
+      || cache.d! < 0 || cache.ml! < 0 || !Number.isSafeInteger(cache.d! + cache.ml!)
+    ) {
+      throw new ValidationError("Query has no accepted original lifetime");
+    }
+    const queryTime = messageTime + BigInt(cache.d! + cache.ml!) * 1000n;
+    const expires = queryTime < grantTime ? queryTime : grantTime;
+    if (now >= expires) throw new ValidationError("Query or Grant has expired");
+    return expires;
   }
 
   private operation(xid: string): UnblindOperation {
@@ -616,7 +702,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
   }
 
-  private preflight(serder: SerderKERI, field: "q" | "a", role: "sender" | "recipient", own = false) {
+  /** Decode the exact query/reply body before applying consent and event scope. */
+  private parameters(serder: SerderKERI, field: "q" | "a"): { x: string; re: Record<string, unknown> } {
     const data = serder.sad?.[field];
     if (
       !serder.verify() || serder.pvrsn.major !== 2 || serder.pvrsn.minor !== 0 || serder.route !== Unblind.Route
@@ -624,14 +711,15 @@ export class Unblind implements AuxiliaryQueryProcessor {
       || !("x" in data) || typeof data.x !== "string" || !("re" in data) || !data.re
       || typeof data.re !== "object" || Array.isArray(data.re)
     ) throw new ValidationError("Invalid Unblind message shape");
-    const op = this.operation(data.x), { nests } = this.live(op);
-    if (this.hab.pre !== op[role] || serder.pre !== op[own ? role : role === "sender" ? "recipient" : "sender"]) {
-      throw new ValidationError("Wrong Unblind sender or local recipient");
-    }
+    return data as { x: string; re: Record<string, unknown> };
+  }
+
+  /** Keep selected event identities distinct and inside the authenticated Grant's registry scope. */
+  private selection(re: Record<string, unknown>, scope: PresentationScope, field: "q" | "a"): Selection {
     const selected: Selection = {};
-    for (const [regid, values] of Object.entries(data.re)) {
+    for (const [regid, values] of Object.entries(re)) {
       if (
-        !op.scope.has(regid) || !Array.isArray(values) || !values.length
+        !scope.has(regid) || !Array.isArray(values) || !values.length
         || values.some((value) => typeof value !== "string" || !value) || new Set(values).size !== values.length
       ) {
         throw new ValidationError("Unblind events must be distinct lists within the approved scope");
@@ -639,6 +727,16 @@ export class Unblind implements AuxiliaryQueryProcessor {
       selected[regid] = [...values];
     }
     if (field === "q" && !Object.keys(selected).length) throw new ValidationError("Unblind query scope is empty");
+    return selected;
+  }
+
+  private preflight(serder: SerderKERI, field: "q" | "a", role: "sender" | "recipient", own = false) {
+    const data = this.parameters(serder, field);
+    const op = this.operation(data.x), { nests } = this.live(op);
+    if (this.hab.pre !== op[role] || serder.pre !== op[own ? role : role === "sender" ? "recipient" : "sender"]) {
+      throw new ValidationError("Wrong Unblind sender or local recipient");
+    }
+    const selected = this.selection(data.re, op.scope, field);
     return { op, selected, nests };
   }
 
@@ -768,7 +866,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
   }
 
   /** Vet every supplied suffix before any ordinary TEL intake changes the accepted prefix. */
-  private receiveEvents(requested: Selection, nests: readonly CesrFrame[]): void {
+  private validateEvents(requested: Selection, nests: readonly CesrFrame[]): void {
     const saids = Object.values(requested).flat();
     if (nests.length !== saids.length || nests.some((nest, i) => nest.body.said !== saids[i])) {
       throw new ValidationError("Nested events differ from the exact Unblind request");
@@ -818,6 +916,10 @@ export class Unblind implements AuxiliaryQueryProcessor {
         || ordinal(head) > first + selected.length - 1
       ) throw new ValidationError("Query has unverified or superseded history");
     }
+  }
+
+  private receiveEvents(requested: Selection, nests: readonly CesrFrame[]): void {
+    this.validateEvents(requested, nests);
     for (const frame of nests) {
       const envelope = envelopeFromFrame(frame);
       const decision = this.registry.processEvent(frame.body as SerderACDC, {

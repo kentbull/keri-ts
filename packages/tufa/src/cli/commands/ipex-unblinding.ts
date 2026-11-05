@@ -24,7 +24,6 @@ import {
 import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { walletStoreArgs } from "../support/wallet.ts";
-import { isPendingSetupRefusal } from "./ipex-group-issuance.ts";
 
 const QueryRoute = "/multisig/qry", ReplyRoute = "/multisig/rpy";
 /** One explicit invocation; the proposer authors bytes and ordinary verified indices elect delivery. */
@@ -268,11 +267,7 @@ function* runUnblind(
                 return result;
               }
               if (query && runtime.clock.now() >= nextQuery) {
-                try {
-                  yield* send(query, input.serder.pre!);
-                } catch (error) {
-                  if (!isPendingSetupRefusal(error)) throw error;
-                }
+                yield* send(query, input.serder.pre!);
                 nextQuery = runtime.clock.now() + 1000;
               }
               yield* wait(runtime, 50);

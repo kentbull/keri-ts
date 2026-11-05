@@ -200,7 +200,7 @@ function* ingest(
 ): Operation<Response> {
   const runtime = context.runtime!;
   let seen = false;
-  let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean } | undefined;
+  let query: { serder: SerderKERI; mailbox: boolean; authorized: boolean; transportOnly?: boolean } | undefined;
   // Close and join the request parser before publishing a mailbox response.
   yield* call(function*() {
     const controller = new AbortController();
@@ -256,6 +256,9 @@ function* ingest(
           });
           if (query) {
             // SAIDs exclude attachments: authorize this exact envelope, not an older query cue.
+            query.transportOnly = decision?.kind === "drop"
+              && (decision.reason === "missingProcessor" || decision.reason === "replay")
+              && !["logs", "ksn", "mbx", "tels", "tsn"].includes(query.serder.route ?? "");
             query.authorized = decision?.kind !== "drop" && decision?.kind !== "pending"
               && decision?.kind !== "missing"
               && (!query.mailbox || mailboxQueryAuthorized);
@@ -273,6 +276,8 @@ function* ingest(
   });
   if (!seen) return textResponse("Invalid CESR request", 400);
   if (!query) return jsonNoContentResponse();
+  // Unhandled or cached-replayed custom queries acknowledge transport only; no protocol work is authorized.
+  if (query.transportOnly) return jsonNoContentResponse();
   if (!query.authorized) return textResponse("Query requester is not authorized", 403);
   if (query.mailbox) {
     const response = querySseResponse(context, query.serder.said ?? null);
