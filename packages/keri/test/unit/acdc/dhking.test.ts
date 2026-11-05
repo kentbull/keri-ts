@@ -8,8 +8,13 @@ import {
   framePayload,
   makeBlindState,
   makeBlindUuid,
+  NumberPrimitive,
+  parseAttachmentGroup,
   parseBytes,
+  Prefixer,
   SealLast,
+  type SerderACDC,
+  type SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, run } from "effection";
@@ -18,12 +23,12 @@ import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
-import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
 import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { loadIpexHandlers } from "../../../src/app/ipex/ipexing.ts";
-import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
+import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import { QueryReplies } from "../../../src/app/queries/query-replies.ts";
@@ -32,6 +37,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/kel/eventing.ts";
 import { Kramer } from "../../../src/core/mailbox/kraming.ts";
+import { interact as interactEvent } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
@@ -82,6 +88,228 @@ Deno.test("DHKE derives the Python root and UUIDs and refuses unbound or noncont
       vector.root_qb64,
     );
   }
+});
+
+Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected members", async () => {
+  await run(function*() {
+    const members: { hby: Habery; member: Hab }[] = [];
+    for (const name of ["issuer-0", "issuer-1", "issuee-0", "issuee-1"]) {
+      const hby = yield* createHabery({
+        name: crypto.randomUUID(),
+        temp: true,
+        skipConfig: true,
+        bran: `${name}GroupDhPasscodeABC`,
+      });
+      yield* ensure(() => hby.close(true));
+      members.push({ hby, member: hby.makeHab(name) });
+    }
+    assertEquals(new Set(members.map(side => side.member.pre)).size, 4);
+    for (const source of members) {
+      for (const target of members) {
+        if (source === target) continue;
+        for (const wire of source.hby.db.clonePreIter(source.member.pre, 0)) {
+          yield* dispatchEnvelope(envelopeFromFrame(parseBytes(wire)[0]), target.hby.rvy, target.hby.kevery);
+        }
+      }
+    }
+    const creations = members.map((side, index) => {
+      const signing = members.slice(index < 2 ? 0 : 2, index < 2 ? 2 : 4).map(peer => peer.member.pre);
+      return side.hby.makeGroupHab("group", side.member, signing, signing, undefined, { isith: "2", nsith: "2" });
+    });
+    // Each group accepts the two independently owned inception contributions through ordinary KEL verification.
+    for (const start of [0, 2]) {
+      const frame = parseBytes(messagize(creations[start].serder, {
+        sigers: [...creations[start].sigers, ...creations[start + 1].sigers],
+        gvrsn: Vrsn_2_0,
+      }))[0];
+      for (const side of members) {
+        yield* dispatchEnvelope(envelopeFromFrame(frame, true), side.hby.rvy, side.hby.kevery);
+        assertExists(side.hby.db.getKever(creations[start].hab.pre));
+      }
+    }
+    const actors: {
+      hby: Habery;
+      member: Hab;
+      hab: Hab;
+      store: RegistryStore;
+      exc: Exchanger;
+      dh: Dhke;
+      protocol: ProtocolProcessor;
+      reactor: Reactor;
+    }[] = [];
+    for (const [index, side] of members.entries()) {
+      const hab = creations[index].hab;
+      const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => baser.close(true));
+      const store = new RegistryStore(baser), rvy = hab.rvy, output = rvy.cues, cues = new Deck<AgentCue>();
+      const kvy = new Kevery(side.hby.db, {
+        rvy,
+        cues: output,
+        kramer: new Kramer(side.hby.db, {
+          cues: output,
+          config: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        }),
+      });
+      const exc = new Exchanger(side.hby, { cues: output });
+      loadIpexHandlers(side.hby, exc, { registry: store });
+      const dh = new Dhke({ hab, exc, registryStore: store });
+      rvy.rtr.addRoute(Dhke.Route, dh);
+      const protocol = new ProtocolProcessor(
+        kvy,
+        rvy,
+        exc,
+        null,
+        null,
+        new RegistryObserver(side.hby.db, store),
+        output,
+        cues,
+        new QueryReplies(cues),
+        dh,
+      );
+      actors.push({ ...side, hab, store, exc, dh, protocol, reactor: new Reactor(protocol) });
+    }
+    const issuers = actors.slice(0, 2), issuees = actors.slice(2), lead = issuers[0], holder = issuees[0];
+    const intakeAll = function*(wire: Uint8Array, local = false) {
+      for (const side of actors) yield* side.reactor.processBytes(wire, { local });
+    };
+    const groupInteraction = function*(peers: typeof issuers, data: unknown[] = []) {
+      const state = peers[0].hab.kever!;
+      const body = interactEvent(peers[0].hab.pre, state.said, state.sn + 1, data, { version: Vrsn_2_0 });
+      const wire = messagize(body, { sigers: peers.flatMap(side => side.hab.sign(body.raw, true)), gvrsn: Vrsn_2_0 });
+      yield* intakeAll(wire, true);
+      for (const side of actors) assertEquals(side.hby.db.getKever(body.pre!)!.said, body.said);
+      return body;
+    };
+    const anchor = function*(event: SerderACDC) {
+      const regid = event.regid ?? event.said!;
+      const body = yield* groupInteraction(issuers, [{ i: regid, s: event.sad!.n, d: event.said! }]);
+      yield* intakeAll(event.raw);
+      return body;
+    };
+    const rip = regcept(lead.hab.pre);
+    const coordinator = yield* anchor(rip);
+    const recipientCoordinator = yield* groupInteraction(issuees);
+    const credential = acdcmap(lead.hab.pre, {
+      regid: rip.said!,
+      attribute: { d: "", i: holder.hab.pre, name: "Ada" },
+    });
+    const grant = ipexExnBody(lead.hab.pre, "/ipex/grant", [credential], {
+      recipient: holder.hab.pre,
+      message: "Exact group issuance",
+    });
+    const groupProof = (body: SerderKERI, peers: typeof issuers) =>
+      new TransIdxSigGroup(
+        new Prefixer({ qb64: peers[0].hab.pre }),
+        NumberPrimitive.fromNum(0n),
+        new Diger({ qb64: peers[0].hab.kever!.lastEst.d }),
+        peers.flatMap(side => side.hab.sign(body.raw, true)),
+      );
+    yield* intakeAll(
+      yield* call(() =>
+        collectPayload(framePayload({
+          body: grant,
+          gvrsn: Vrsn_2_0,
+          attachments: messageAttachmentGroups({ tsgs: [groupProof(grant, issuers)] }, Vrsn_2_0),
+          nests: [{ body: credential, gvrsn: Vrsn_2_0, attachments: [] }],
+        }))
+      ),
+    );
+    const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
+    const selection = { coordinator: { sn: coordinator.sn!, said: coordinator.said! }, custodian: lead.member.pre };
+    const recipientSelection = {
+      coordinator: { sn: recipientCoordinator.sn!, said: recipientCoordinator.said! },
+      custodian: holder.member.pre,
+    };
+    lead.dh.approve(grant.said!, selection);
+    for (const side of issuees) side.dh.approve(grant.said!, recipientSelection);
+    const proposal = lead.dh.start(grant.said!);
+    assertThrows(
+      () => issuers[1].dh.contribute(grant.said!, proposal),
+      Error,
+      undefined,
+      "a proposal cannot create setup consent",
+    );
+    issuers[1].dh.approve(grant.said!, selection);
+    assertThrows(() => issuers[1].dh.start(grant.said!), Error, undefined, "only the frozen custodian authors DH keys");
+    // Later member keys cannot reinterpret the coordinator or replace its historical group contribution.
+    yield* intakeAll(issuers[1].member.rotate());
+    const contributed = issuers[1].dh.contribute(grant.said!, proposal);
+    assertEquals(parseBytes(contributed)[0].body.raw, parseBytes(proposal)[0].body.raw);
+    assertEquals(issuers[1].dh.contribute(grant.said!, proposal), contributed);
+    for (const side of issuers) {
+      yield* side.reactor.processBytes(proposal);
+      assertEquals(
+        [...side.dh.outgoing].filter(cue => cue.kin === "query"),
+        [],
+        "one signature cannot publish a query",
+      );
+      yield* side.reactor.processBytes(contributed);
+    }
+    const query = lead.dh.outgoing.pull()!;
+    assertEquals(query.kin, "query");
+    assertEquals(query.dest, holder.hab.pre);
+    assertEquals(lead.dh.start(grant.said!), query.msg, "retry returns the same threshold-complete query");
+    for (const side of issuees) yield* side.reactor.processBytes(query.msg);
+    for (const side of actors) assertEquals(side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!), null);
+    const replyProposal = holder.dh.outgoing.pull()!;
+    assertEquals(replyProposal.kin, "sign");
+    yield* intakeAll(issuees[1].member.rotate());
+    const replyContribution = issuees[1].dh.contribute(grant.said!, replyProposal.msg);
+    assertEquals(parseBytes(replyContribution)[0].body.raw, parseBytes(replyProposal.msg)[0].body.raw);
+    for (const side of issuees) {
+      yield* side.reactor.processBytes(replyProposal.msg);
+      yield* side.reactor.processBytes(replyProposal.msg);
+      assertEquals(
+        side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!),
+        null,
+        "duplicate partials do not create custody",
+      );
+      yield* side.reactor.processBytes(replyContribution);
+    }
+    const response = holder.dh.outgoing.pull()!;
+    assertEquals(response.kin, "reply");
+    for (const side of issuers) yield* side.reactor.processBytes(response.msg);
+    const root = lead.hab.mgr.getRegistryRoot(lead.hab.pre, rip.said!)!;
+    assertExists(root);
+    assertEquals(holder.hab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!.qb64, root.qb64);
+    assertEquals(lead.dh.complete(grant.said!), true);
+    assertEquals(holder.dh.complete(grant.said!), true);
+    for (const peer of [issuers[1], issuees[1]]) {
+      assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
+    }
+    assertEquals(new TextDecoder().decode(query.msg).includes(root.qb64), false);
+    assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
+    const opening = makeBlindState({ salt: root.qb64, acdc: credential.said!, state: "issued" });
+    const event = blindate(rip.said!, rip.said!, opening.d.nonce);
+    yield* anchor(event);
+    for (const side of [lead, holder]) assertEquals((yield* side.dh.finish(grant.said!)).kind, "accept");
+    // Rootless members accept the same signed Grant using the actual public opening, never copied roots.
+    for (const peer of [issuers[1], issuees[1]]) {
+      const input = peer.exc.retainedInput(grant.said!)!;
+      input.nests![0].attachments.push(parseAttachmentGroup(publicOpeningAttachment(opening), Vrsn_2_0, "txt").group);
+      assertEquals((yield* peer.exc.processEvent(input)).kind, "accept");
+    }
+    for (const [index, side] of actors.entries()) {
+      assertEquals(side.exc.complete(grant.said!), true);
+      assertEquals(side.hby.db.exns.get(grant.said!)!.raw, grant.raw);
+      assertEquals(side.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
+      assertEquals(side.hby.db.erpy.get(grant.said!), null, "setup and issuance do not Admit");
+    }
+    const admit = ipexExnBody(holder.hab.pre, "/ipex/admit", [], {
+      prior: grant,
+      message: "Separate group acceptance",
+    });
+    yield* intakeAll(holder.hab.endorse(admit, { gvrsn: Vrsn_2_0 }));
+    for (const side of actors) assertEquals(side.exc.complete(admit.said!), false);
+    yield* intakeAll(issuees[1].hab.endorse(admit, { gvrsn: Vrsn_2_0 }));
+    for (const side of actors) {
+      assertEquals(side.exc.complete(admit.said!), true);
+      assertEquals(side.hby.db.erpy.get(grant.said!)!.qb64, admit.said!);
+    }
+    for (const peer of [issuers[1], issuees[1]]) {
+      assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
+    }
+  });
 });
 
 Deno.test("DHKE requires explicit consent and complete peer proofs before encrypted two-party issuance", async () => {

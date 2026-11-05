@@ -7,16 +7,20 @@ import {
   bytesEqual,
   type CesrFrame,
   type Cigar,
+  concatBytes,
+  Counter,
   type Diger,
   Kinds,
   makeBlindUuid,
   Matter,
   MtrDex,
   parseAttachmentGroup,
+  parseBytes,
   ParserError,
   Prefixer,
   Saider,
   Salter,
+  SealLast,
   type SerderKERI,
   unblindBlindState,
   Vrsn_2_0,
@@ -28,14 +32,26 @@ import { hkdf } from "npm:@noble/hashes@1.8.0/hkdf";
 import { sha256 } from "npm:@noble/hashes@1.8.0/sha2";
 import type { ExchangeDecision, ExchangeInput, Exchanger } from "../app/exchanges/exchanging.ts";
 import { Hab } from "../app/identity/habbing.ts";
-import { isLocalGroupHab } from "../app/multisig/group-members.ts";
-import type { AuxiliaryQueryProcessor, MessageDropDecision } from "../app/protocol/parsering.ts";
+import {
+  type GroupCoordinator,
+  groupWitnesserSelection,
+  isLocalGroupHab,
+  latestGroupContribution,
+  localGroupMember,
+} from "../app/multisig/group-members.ts";
+import {
+  type AuxiliaryQueryProcessor,
+  envelopeFromFrame,
+  type MessageDropDecision,
+} from "../app/protocol/parsering.ts";
 import { Deck } from "../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { verifyQueryAttachments } from "../core/exchange/exchange-proofing.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
-import { type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { messagize } from "../core/protocol-serialization.ts";
+import { fetchStoredTsgs, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { validateUpdate, verifyRegistryAnchor } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
 
@@ -126,22 +142,39 @@ interface DhkeOperation {
   peer: Record<string, string> | null;
   query: Uint8Array | null;
   reply: Uint8Array | null;
+  proposal: Uint8Array | null;
+  contribution: Uint8Array | null;
+  custody: {
+    coordinator: GroupCoordinator;
+    custodian: string;
+    establishment: string;
+    index: number;
+    key: string;
+  } | null;
   completed: boolean;
   abandoned: boolean;
 }
 
-/** Application-owned delivery of an already authenticated, signed reply. */
+/** Group consent names its own accepted coordinator and elected member; individuals omit both. */
+export interface DhkeApproval {
+  coordinator?: GroupCoordinator;
+  custodian?: string;
+}
+
+/** Delivery of signed wire; sign asks members to review/contribute, never authorizes them. */
 export interface DhkeOutgoing {
-  kin: "reply";
+  kin: "query" | "reply" | "sign";
   dest: string;
   msg: Uint8Array;
 }
 
 /**
- * Individual issuer/issuee DH for an explicitly approved pending Grant. Wire
+ * Issuer/issuee DH for an explicitly approved pending Grant. Wire
  * intake cannot approve work. Inject as ProtocolProcessor.qvy and register on
  * Revery's existing Router at Route. Full proofs remain owned by KRAM/Revery.
- * Groups require a later custodian/contribution implementation and refuse here.
+ * A group freezes its own accepted coordinator/custodian at approval. Members
+ * contribute ordinary signatures; only the custodian generates or retains keys,
+ * after own complete query/reply intake through the same threshold owners.
  */
 export class Dhke implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/dhke";
@@ -150,23 +183,34 @@ export class Dhke implements AuxiliaryQueryProcessor {
   readonly hab: Hab;
   readonly exc: Exchanger;
   readonly registryStore: RegistryStore;
+  readonly group: boolean;
 
   /** Bind concrete local owners; construction grants no consent and writes nothing. */
   constructor({ hab, exc, registryStore }: { hab: Hab; exc: Exchanger; registryStore: RegistryStore }) {
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || exc.hby.habs.get(hab.pre!) !== hab
-      || isLocalGroupHab(exc.hby, hab)
-    ) throw new ValidationError("DH requires a local individual signing habitat");
+    ) throw new ValidationError("DH requires a local signing habitat");
     this.hab = hab;
     this.exc = exc;
     this.registryStore = registryStore;
+    this.group = isLocalGroupHab(exc.hby, hab);
+    if (this.group && !(localGroupMember(exc.hby, hab.pre!) instanceof Hab)) {
+      throw new ValidationError("DH requires a local signing member");
+    }
   }
 
   /** Select one live fresh issuance and freeze its exact bodies, parties and registry order. */
-  approve(grant: string): string {
+  approve(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
     this.hab.mgr.requireRegistryRootAccess();
     for (const op of this.operations.values()) {
       if (op.grant === grant) {
+        if (
+          (coordinator
+            && (coordinator.sn !== op.custody?.coordinator.sn || coordinator.said !== op.custody?.coordinator.said))
+          || (custodian !== undefined && custodian !== op.custody?.custodian)
+        ) {
+          throw new ValidationError("DH coordinator and custodian are already frozen");
+        }
         this.live(op);
         return op.xid;
       }
@@ -195,32 +239,103 @@ export class Dhke implements AuxiliaryQueryProcessor {
       peer: null,
       query: null,
       reply: null,
+      proposal: null,
+      contribution: null,
+      custody: null,
       completed: false,
       abandoned: false,
     };
+    if (this.group) {
+      if (!coordinator || !custodian) {
+        throw new ValidationError("Group DH requires its own accepted coordinator and custodian");
+      }
+      const selected = groupWitnesserSelection(this.hab.db, this.hab.pre!, coordinator);
+      if (!selected) throw new ValidationError("Group coordinator lacks accepted threshold evidence");
+      op.custody = {
+        coordinator: { ...coordinator },
+        custodian,
+        establishment: selected.establishment.said!,
+        index: selected.index,
+        key: selected.establishment.verfers[selected.index].qb64,
+      };
+      this.custody(op);
+    } else if (coordinator !== undefined || custodian !== undefined) {
+      throw new ValidationError("Individual DH has no group coordinator");
+    }
     this.roots(op);
     this.operations.set(xid, op);
     return xid;
   }
 
-  /** Return the same signed issuer query on every retry; no automatic delivery occurs. */
+  /** Return the stable issuer proposal until own threshold intake supplies the complete query. */
   start(grant: string): Uint8Array {
     const op = this.operation(this.approve(grant));
     if (this.hab.pre !== op.issuer) throw new ValidationError("Only the issuer starts DH");
+    this.custody(op, true);
     this.roots(op);
-    if (!op.query) {
+    if (!op.query && !op.proposal) {
       this.generate(op);
-      op.query = this.hab.endorse(
-        query(Dhke.Route, { x: op.xid, pk: op.publicKeys }, {
-          pre: this.hab.pre,
-          replyRoute: Dhke.Route,
-          pvrsn: Vrsn_2_0,
-          kind: Kinds.json,
-        }),
-        { gvrsn: Vrsn_2_0 },
-      );
+      const message = query(Dhke.Route, { x: op.xid, pk: op.publicKeys }, {
+        pre: this.hab.pre,
+        replyRoute: Dhke.Route,
+        pvrsn: Vrsn_2_0,
+        kind: Kinds.json,
+      });
+      const signed = this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+      if (this.group) {
+        op.proposal = message.raw.slice();
+        op.contribution = signed;
+      } else op.query = signed;
     }
-    return op.query.slice();
+    return (op.query ?? op.contribution!).slice();
+  }
+
+  /** Explicitly sign one exact custodian proposal; partial proof authorizes review, never DH. */
+  contribute(xid: string, proposal: Uint8Array): Uint8Array {
+    if (!this.group) throw new ValidationError("DH contribution requires a local group member");
+    const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), proposal));
+    if (frames.length !== 1) throw new ValidationError("DH proposal must be one signed query or reply");
+    const parsed = envelopeFromFrame(frames[0]), message = parsed.serder;
+    const allowed = ["ControllerIdxSigs", "TransIdxSigGroups", "TransLastIdxSigGroups"];
+    if (
+      !["qry", "rpy"].includes(message.ilk!) || parsed.essrs?.length || parsed.nests.length
+      || parsed.attachmentGroups.some(group => !allowed.includes(group.name.replace(/^Big/, "")))
+    ) {
+      throw new ValidationError("DH proposal must contain only ordinary group signatures");
+    }
+    const querying = message.ilk === "qry";
+    const { op, peer: publicKeys } = this.preflight(
+      message,
+      querying ? "q" : "a",
+      querying ? "issuer" : "issuee",
+      true,
+    );
+    if (op.xid !== xid || (querying && message.sad!.rr !== Dhke.Route)) {
+      throw new ValidationError("DH proposal differs from the approved transaction");
+    }
+    if (!querying && !op.peer) throw new ValidationError("Group reply requires its authenticated peer query");
+    if (op.proposal && !bytesEqual(op.proposal, message.raw)) {
+      throw new ValidationError("DH proposal body is already frozen");
+    }
+    const kever = this.hab.kever!;
+    const signatures = [
+      ...parsed.sigers,
+      ...parsed.ssgs.filter(group => group.pre === this.hab.pre).flatMap(group => group.sigers),
+      ...parsed.tsgs.filter(group =>
+        group.pre === this.hab.pre && group.sn === BigInt(kever.lastEst.s)
+        && group.said === kever.lastEst.d
+      ).flatMap(group => group.sigers),
+    ];
+    const { indices } = Kever.verifyIndexedSignatures(message.raw, signatures, kever.verfers);
+    const contribution = latestGroupContribution(this.hab.db, op.custody!.custodian, kever.verfers);
+    if (!contribution || !indices.includes(contribution.index)) {
+      throw new ValidationError("DH proposal lacks the frozen custodian signature");
+    }
+    const signed = this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+    op.proposal = message.raw.slice();
+    op.publicKeys = { ...publicKeys };
+    op.contribution = signed;
+    return signed.slice();
   }
 
   /** Independently authenticate the full issuer threshold, even when KRAM is disabled. */
@@ -228,25 +343,57 @@ export class Dhke implements AuxiliaryQueryProcessor {
     try {
       const { serder } = envelope;
       if (serder.ilk !== "qry" || serder.sad!.rr !== Dhke.Route) throw new ValidationError("Invalid DH query");
-      const { op, peer } = this.preflight(serder, "q", "issuee");
+      const own = this.group && serder.pre === this.hab.pre;
+      const { op, peer } = this.preflight(serder, "q", own ? "issuer" : "issuee", own);
+      if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
+        throw new ValidationError("Own DH query lacks exact local proposal approval");
+      }
       if (!verifyQueryAttachments(this.hab.db, envelope)) {
         return { kind: "drop", reason: "missingAuthentication" };
       }
+      if (own) {
+        if (!op.query) {
+          const tsgs = envelope.tsgs.filter(group => group.pre === this.hab.pre);
+          const lasts = envelope.ssgs.filter(group => group.pre === this.hab.pre);
+          op.query = messagize(serder, {
+            tsgs,
+            sigers: tsgs.length ? [] : lasts.length ? lasts.flatMap(group => group.sigers) : envelope.sigers,
+            seal: !tsgs.length && lasts.length ? SealLast.fromTuple([lasts[0].prefixer]) : undefined,
+            gvrsn: Vrsn_2_0,
+          });
+        }
+        if (this.custody(op)) this.outgoing.push({ kin: "query", dest: op.issuee, msg: op.query.slice() });
+        return { kind: "accept" };
+      }
+      if (this.group && !this.custody(op)) {
+        op.peer = { ...peer };
+        return { kind: "accept" };
+      }
       if (!op.reply) {
-        this.generate(op);
-        const roots = this.derive(op, peer, "issuee");
-        const signed = this.hab.endorse(
-          reply(Dhke.Route, { x: op.xid, pk: op.publicKeys }, {
+        if (!op.proposal) {
+          this.generate(op);
+          const roots = this.derive(op, peer, "issuee");
+          const message = reply(Dhke.Route, { x: op.xid, pk: op.publicKeys }, {
             pre: this.hab.pre!,
             pvrsn: Vrsn_2_0,
             kind: Kinds.json,
-          }),
-          { gvrsn: Vrsn_2_0 },
-        );
-        this.retain(op, peer, roots);
-        op.reply = signed;
+          });
+          const signed = this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+          if (this.group) {
+            op.proposal = message.raw.slice();
+            op.contribution = signed;
+            op.peer = { ...peer };
+          } else {
+            this.retain(op, peer, roots);
+            op.reply = signed;
+          }
+        }
+        if (this.group) {
+          this.outgoing.push({ kin: "sign", dest: this.hab.pre!, msg: op.contribution!.slice() });
+          return { kind: "accept" };
+        }
       }
-      this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply.slice() });
+      this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply!.slice() });
       return { kind: "accept" };
     } catch (error) {
       if (error instanceof ValidationError) return { kind: "drop", reason: "invalidQuery" };
@@ -264,11 +411,24 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }): ReplyProcessDecision {
     try {
       if (serder.ilk !== "rpy" || route !== Dhke.Route) throw new ValidationError("Invalid DH reply");
-      const { op, peer } = this.preflight(serder, "a", "issuer");
-      if (!op.query) throw new ValidationError("DH reply has no outstanding query");
+      const own = this.group && serder.pre === this.hab.pre;
+      const { op, peer } = this.preflight(serder, "a", own ? "issuee" : "issuer", own);
+      if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw) || !op.peer)) {
+        throw new ValidationError("Own DH reply lacks exact local proposal approval");
+      }
+      if (!own && !op.query) throw new ValidationError("DH reply has no outstanding query");
       const decision = this.hab.rvy.acceptReply({ serder, saider: diger, route, aid: op.issuee, cigars, tsgs });
       if (decision.kind !== "accept") return decision;
-      if (!op.completed) this.retain(op, peer, this.derive(op, peer, "issuer"));
+      if (own) {
+        if (this.custody(op) && !op.completed) this.retain(op, op.peer!, this.derive(op, op.peer!, "issuee"));
+        if (!op.reply) {
+          op.reply = messagize(serder, {
+            tsgs: fetchStoredTsgs(this.hab.db, diger.qb64).filter(group => group.pre === this.hab.pre),
+            gvrsn: Vrsn_2_0,
+          });
+        }
+        if (this.custody(op)) this.outgoing.push({ kin: "reply", dest: op.issuer, msg: op.reply.slice() });
+      } else if (this.custody(op) && !op.completed) this.retain(op, peer, this.derive(op, peer, "issuer"));
       return decision;
     } catch (error) {
       if (error instanceof ValidationError) return unverifiedReplyDecision(error.message);
@@ -340,6 +500,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   private pending(op: DhkeOperation): ExchangeInput {
     this.hab.mgr.requireRegistryRootAccess();
+    this.custody(op);
     const input = this.exc.retainedInput(op.grant, { pending: true });
     if (op.abandoned || !input || !bytesEqual(input.serder.raw, op.raw)) {
       throw new ValidationError("DH operation is unavailable, terminated or expired");
@@ -372,7 +533,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
   }
 
-  private preflight(serder: SerderKERI, field: "q" | "a", role: "issuer" | "issuee") {
+  private preflight(serder: SerderKERI, field: "q" | "a", role: "issuer" | "issuee", own = false) {
     const data = serder.sad?.[field];
     if (
       !serder.verify() || serder.pvrsn.major !== 2 || serder.pvrsn.minor !== 0 || serder.route !== Dhke.Route
@@ -384,7 +545,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
     const op = this.operation(data.x);
     this.live(op);
-    if (this.hab.pre !== op[role] || serder.pre !== op[role === "issuer" ? "issuee" : "issuer"]) {
+    if (this.hab.pre !== op[role] || serder.pre !== op[own ? role : role === "issuer" ? "issuee" : "issuer"]) {
       throw new ValidationError("Wrong DH sender or local recipient");
     }
     const entries = Object.entries(data.pk), peer: Record<string, string> = {};
@@ -395,7 +556,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       decodePublicKey(key);
       peer[registry] = key as string;
     }
-    if (op.peer && op.registries.some((registry) => op.peer![registry] !== peer[registry])) {
+    if (!own && op.peer && op.registries.some((registry) => op.peer![registry] !== peer[registry])) {
       throw new ValidationError("Conflicting DH public keys");
     }
     this.roots(op);
@@ -403,6 +564,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }
 
   private generate(op: DhkeOperation): void {
+    this.custody(op, true);
     if (op.privateKeys.size) return;
     for (const registry of op.registries) {
       const { privateKey, publicKey } = generateKeyPair();
@@ -412,6 +574,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }
 
   private derive(op: DhkeOperation, peer: Record<string, string>, role: "issuer" | "issuee"): Map<string, Salter> {
+    this.custody(op, true);
     // Complete the entire scope, including contributory checks, before any Keeper mutation.
     return new Map(op.registries.map((registry) => [
       registry,
@@ -438,5 +601,28 @@ export class Dhke implements AuxiliaryQueryProcessor {
   private clearPrivate(op: DhkeOperation): void {
     for (const key of op.privateKeys.values()) key.fill(0);
     op.privateKeys.clear(); // Best effort for owned arrays only; not a process-erasure guarantee.
+  }
+
+  /** Recheck exact frozen election evidence and current membership without choosing a replacement. */
+  private custody(op: DhkeOperation, requireLead = false): boolean {
+    if (!this.group) return true;
+    const frozen = op.custody;
+    const selected = frozen && groupWitnesserSelection(this.hab.db, this.hab.pre!, frozen.coordinator);
+    if (
+      !frozen || !selected || selected.establishment.said !== frozen.establishment
+      || !selected.indices.includes(frozen.index)
+    ) throw new ValidationError("Frozen group coordinator evidence is unavailable");
+    const current = this.hab.kever!.verfers, member = localGroupMember(this.exc.hby, this.hab.pre!);
+    const contribution = latestGroupContribution(this.hab.db, frozen.custodian, selected.establishment.verfers);
+    if (
+      !contribution || contribution.index !== frozen.index || contribution.verfer.qb64 !== frozen.key
+      || !latestGroupContribution(this.hab.db, frozen.custodian, current)
+      || !latestGroupContribution(this.hab.db, member.pre!, current)
+    ) {
+      throw new ValidationError("Frozen DH custodian or local member is no longer authorized");
+    }
+    const elected = member.pre === frozen.custodian;
+    if (requireLead && !elected) throw new ValidationError("Only the frozen DH custodian may generate or derive keys");
+    return elected;
   }
 }

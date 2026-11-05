@@ -59,6 +59,7 @@ import { createKeeper, Keeper, PreSit } from "../../db/keeping.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
+import { latestGroupContribution } from "../multisig/group-members.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
@@ -754,28 +755,20 @@ export class Hab {
       if (!state) throw new ValidationError(`Missing accepted member key state for ${member}.`);
       // KERIpy GroupHab.sign/fetchLatestContribTo: a member may have rotated
       // ahead of its contribution to the group's currently accepted key list.
-      for (const [, sn, said] of this.db.kels.getOnItemBackIter(member, state.sn)) {
-        if (this.db.kels.getLast(member, sn) !== said) continue;
-        const event = this.db.getEvtSerder(member, said);
-        if (!event) throw new ValidationError(`Missing accepted member event ${member}:${said}.`);
-        if (!event.estive) continue;
-        const keys = event.verfers ?? [];
-        if (keys.length !== 1) {
-          throw new ValidationError(`Group signing requires single-key member events for ${member}.`);
-        }
-        const index = pubs.indexOf(keys[0].qb64);
-        if (index < 0) continue;
+      const contribution = latestGroupContribution(this.db, member, kever.verfers);
+      if (contribution) {
+        const { index, verfer } = contribution;
         if (indexed) {
           // Endorsement proves current authority only. Rotation signatures have
           // a separate prior-next commitment path in rotateGroupHab().
           return this.mgr.sign(ser, {
-            pubs: [keys[0].qb64],
+            pubs: [verfer.qb64],
             indexed: true,
             indices: [index],
             ondices: [null],
           });
         }
-        return this.mgr.sign(ser, [keys[0].qb64], false);
+        return this.mgr.sign(ser, [verfer.qb64], false);
       }
       throw new ValidationError(`Member ${member} has no contribution to group ${this.pre}.`);
     }

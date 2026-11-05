@@ -113,6 +113,7 @@ export {
   decodePublicKey,
   deriveRoot,
   Dhke,
+  type DhkeApproval,
   type DhkeContext,
   type DhkeOutgoing,
   generateKeyPair,

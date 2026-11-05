@@ -68,6 +68,12 @@ Weighted kt/nt behavior uses Tholder.satisfy, never numeric shortcuts.
 
 ## Delegation and group state
 
+- `latestGroupContribution` owns Hab.sign's accepted reverse single-key history
+  lookup. Frozen DH custody uses the same lookup for historical/current membership.
+  `groupWitnesserSelection` verifies the exact accepted coordinator against its
+  historical establishment threshold, including interaction coordinators. A live
+  operation freezes the initial index/key and rechecks that evidence without
+  replacing it when more signatures arrive.
 - `delegate confirm` derives work from `delegables`; `/delegate/request` notices
   are UI hints. Wait for witnessed/query-backed local commitment before pinning
   `aess` and unescrowing. Remote protected shortcuts must not bypass local approval.
