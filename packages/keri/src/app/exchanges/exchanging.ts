@@ -1329,26 +1329,21 @@ export class Exchanger {
     return serder.pvrsn.major >= 2 && serder.route === "/ipex/grant";
   }
 
-  /** Freeze one absolute PSE deadline; only accepted native Grant TMSC supplies xdt + xl. */
+  /**
+   * Bound PSE cleanup by the accepted native Grant lifetime (xdt + xl) once KRAM
+   * records sender-threshold receipt; before that, freeze one local PSE timeout
+   * that retransmission never extends. Mirrors KERIpy `_partialSignedDeadline`.
+   */
   private retainPartialDeadline(serder: SerderKERI): void {
     const said = serder.said!, prior = this.hby.db.epsd.get([said]);
-    if (prior) {
-      if (timestampMicros(prior.dts) === null) throw new Error("Corrupt exchange partial deadline.");
+    if (prior && timestampMicros(prior.dts) === null) throw new Error("Corrupt exchange partial deadline.");
+    const accepted = this.isV2Grant(serder) ? this.exchangeDeadline(serder) : null;
+    if (accepted) {
+      if (prior?.dts !== accepted) this.hby.db.epsd.pin([said], this.deadlineDater(timestampMicros(accepted)!));
       return;
     }
-    let expiry = this.nowMicros() + BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n;
-    if (this.isV2Grant(serder)) {
-      const xid = serder.ilk === "xip" ? said : serder.sad!.x;
-      const cache = typeof xid === "string" && xid ? this.hby.db.tmsc.get([serder.pre!, xid, said]) : null;
-      if (cache?.rdt) {
-        const opener = timestampMicros(cache.xdt);
-        if (opener === null || !Number.isSafeInteger(cache.xl) || cache.xl! < 0) {
-          throw new Error("Corrupt Grant transaction lifetime.");
-        }
-        expiry = opener + BigInt(cache.xl!) * 1000n;
-      }
-    }
-    this.hby.db.epsd.put([said], this.deadlineDater(expiry));
+    if (prior) return;
+    this.hby.db.epsd.put([said], this.deadlineDater(this.nowMicros() + BigInt(EXCHANGE_ESCROW_TIMEOUT_MS) * 1000n));
   }
 
   /** Preserve the original microsecond deadline without truncating its TMSC opener. */

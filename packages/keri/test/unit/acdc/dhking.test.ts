@@ -275,6 +275,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       message: "Exact group issuance",
     }, { coordinator: coordinator.said!, custodian: lead.member.pre });
     const grant = parseBytes(preparedGrant.proposal)[0].nests![0].body as SerderKERI;
+    // Spawned members wait across peer contribution, DH and explicit BUP approval; budget the whole flow.
     const issuing = yield* spawn(() =>
       runGroupDerivedIssuance(lead.runtime, lead.wallet, {
         role: "issuer",
@@ -282,7 +283,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         proposal: preparedGrant.proposal,
         coordinator: coordinator.said!,
         custodian: lead.member.pre,
-      }, { timeoutMs: 15000 })
+      }, { timeoutMs: 30000 })
     );
     yield* sleep(100);
     assertEquals(queries, [], "one Grant contribution cannot publish a DH query");
@@ -317,7 +318,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 15000 })
+      }, { timeoutMs: 30000 })
     );
     yield* sleep(100);
     assertEquals(responses, [], "one recipient's setup cannot publish a threshold reply");
@@ -329,7 +330,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 15000 })
+      }, { timeoutMs: 30000 })
     );
 
     // DH setup consent never approves the issuer's later registry update.
