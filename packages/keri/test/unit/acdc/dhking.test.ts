@@ -14,7 +14,6 @@ import {
   makeBlindUuid,
   MtrDex,
   NumberPrimitive,
-  parseAttachmentGroup,
   parseBytes,
   Prefixer,
   Salter,
@@ -27,33 +26,33 @@ import {
 import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { prepareAcdcV2Credential } from "../../../../tufa/src/cli/commands/acdc-v2-authoring.ts";
+import {
+  acceptGroupIssuanceProof,
+  prepareGroupDerivedIssuance,
+  runGroupDerivedIssuance,
+} from "../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance, runDerivedIssuance } from "../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
-import { RegistryObserver } from "../../../src/acdc/observing.ts";
-import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
+import { openRegistry, publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
 import { Regery } from "../../../src/acdc/registraring.ts";
 import { RegistrySalt } from "../../../src/acdc/salting.ts";
-import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
+import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
-import { loadIpexHandlers } from "../../../src/app/ipex/ipexing.ts";
+import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
+import { approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
-import { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
-import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import { QueryReplies } from "../../../src/app/queries/query-replies.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
+import type { Reactor } from "../../../src/app/protocol/reactor.ts";
+import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../src/app/witness/receipting.ts";
-import type { AgentCue } from "../../../src/core/cues.ts";
-import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { Kevery } from "../../../src/core/kel/eventing.ts";
-import { Kramer } from "../../../src/core/mailbox/kraming.ts";
 import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
@@ -154,37 +153,35 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       dh: Dhke;
       protocol: ProtocolProcessor;
       reactor: Reactor;
+      runtime: AgentRuntime;
+      wallet: Wallet;
     }[] = [];
     for (const [index, side] of members.entries()) {
       const hab = creations[index].hab;
       const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
-      const store = new RegistryStore(baser), rvy = hab.rvy, output = rvy.cues, cues = new Deck<AgentCue>();
-      const kvy = new Kevery(side.hby.db, {
-        rvy,
-        cues: output,
-        kramer: new Kramer(side.hby.db, {
-          cues: output,
-          config: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        }),
+      const rgy = new Regery(side.hby, baser);
+      const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
+        acdc: rgy,
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        ipexAuxiliary: { kind: "dhke", hab },
       });
-      const exc = new Exchanger(side.hby, { cues: output });
-      loadIpexHandlers(side.hby, exc, { registry: store });
-      const dh = new Dhke({ hab, exc, registryStore: store });
-      rvy.rtr.addRoute(Dhke.Route, dh);
-      const protocol = new ProtocolProcessor(
-        kvy,
-        rvy,
-        exc,
-        null,
-        null,
-        new RegistryObserver(side.hby.db, store),
-        output,
-        cues,
-        new QueryReplies(cues),
-        dh,
-      );
-      actors.push({ ...side, hab, store, exc, dh, protocol, reactor: new Reactor(protocol) });
+      yield* ensure(() => runtime.close());
+      assert(runtime.ipexAuxiliary?.kind === "dhke");
+      const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => db.close(true));
+      const wallet = new Wallet({ hby: side.hby, registry: rgy.store, exc: runtime.exc, db });
+      actors.push({
+        ...side,
+        hab,
+        store: rgy.store,
+        exc: runtime.exc,
+        dh: runtime.ipexAuxiliary.owner,
+        protocol: runtime.protocol,
+        reactor: runtime.reactor,
+        runtime,
+        wallet,
+      });
     }
     const issuers = actors.slice(0, 2), issuees = actors.slice(2), lead = issuers[0], holder = issuees[0];
     const intakeAll = function*(wire: Uint8Array, local = false) {
@@ -204,16 +201,13 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       yield* intakeAll(event.raw);
       return body;
     };
-    const rip = regcept(lead.hab.pre);
+    const managedRegistry = lead.runtime.acdc!.makeRegistry("group-derived", lead.hab.pre);
+    const rip = managedRegistry.store.event(managedRegistry.regk!)!;
     const coordinator = yield* anchor(rip);
     const recipientCoordinator = yield* groupInteraction(issuees);
     const credential = acdcmap(lead.hab.pre, {
       regid: rip.said!,
       attribute: { d: "", i: holder.hab.pre, name: "Ada" },
-    });
-    const grant = ipexExnBody(lead.hab.pre, "/ipex/grant", [credential], {
-      recipient: holder.hab.pre,
-      message: "Exact group issuance",
     });
     const groupProof = (body: SerderKERI, peers: typeof issuers) =>
       new TransIdxSigGroup(
@@ -222,96 +216,176 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         new Diger({ qb64: peers[0].hab.kever!.lastEst.d }),
         peers.flatMap(side => side.hab.sign(body.raw, true)),
       );
-    yield* intakeAll(
-      yield* call(() =>
-        collectPayload(framePayload({
-          body: grant,
-          gvrsn: Vrsn_2_0,
-          attachments: messageAttachmentGroups({ tsgs: [groupProof(grant, issuers)] }, Vrsn_2_0),
-          nests: [{ body: credential, gvrsn: Vrsn_2_0, attachments: [] }],
-        }))
-      ),
-    );
-    const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
-    const selection = { coordinator: { sn: coordinator.sn!, said: coordinator.said! }, custodian: lead.member.pre };
+    const queries: Uint8Array[] = [], responses: Uint8Array[] = [];
+    // Poster delivers to actual member endpoints; group endpoints fan out to both signing members.
+    for (const side of actors) {
+      const handler = createProtocolHandler(side.runtime, {
+        hostedPrefixes: [side.member.pre, side.hab.pre],
+        serviceHab: side.member,
+      });
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+        const incoming = request.method === "POST" ? parseBytes(await readCesrRequestBytes(request.clone())) : [];
+        const response = await handler(request);
+        for (const frame of incoming) {
+          const body = envelopeFromFrame(frame).serder;
+          if (body.route === Dhke.Route) {
+            if (body.ilk === "qry") queries.push(await collectPayload(framePayload(frame)));
+            if (body.ilk === "rpy") responses.push(await collectPayload(framePayload(frame)));
+          }
+        }
+        return response;
+      });
+      yield* ensure(() =>
+        call(async () => {
+          await server.shutdown();
+          await handler.close?.();
+        })
+      );
+      yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.member.pre, "http"));
+      yield* intakeAll(side.member.makeEndRole(side.member.pre, Roles.controller, true));
+      const controller = reply("/end/role/add", {
+        cid: side.hab.pre,
+        role: Roles.controller,
+        eid: side.member.pre,
+      }, { pre: side.hab.pre, pvrsn: Vrsn_2_0 });
+      yield* intakeAll(messagize(controller, {
+        tsgs: [groupProof(controller, side === lead || side === issuers[1] ? issuers : issuees)],
+        gvrsn: Vrsn_2_0,
+      }));
+    }
     const recipientSelection = {
       coordinator: { sn: recipientCoordinator.sn!, said: recipientCoordinator.said! },
       custodian: holder.member.pre,
     };
-    lead.dh.approve(grant.said!, selection);
-    for (const side of issuees) side.dh.approve(grant.said!, recipientSelection);
-    const proposal = lead.dh.start(grant.said!);
-    assertThrows(
-      () => issuers[1].dh.contribute(grant.said!, proposal),
-      Error,
-      undefined,
-      "a proposal cannot create setup consent",
+    const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, lead.wallet, credential, {
+      recipient: holder.hab.pre,
+      message: "Exact group issuance",
+    }, { coordinator: coordinator.said!, custodian: lead.member.pre });
+    const grant = parseBytes(preparedGrant.proposal)[0].nests![0].body as SerderKERI;
+    const issuing = yield* spawn(() =>
+      runGroupDerivedIssuance(lead.runtime, lead.wallet, {
+        role: "issuer",
+        grant: preparedGrant.grant,
+        proposal: preparedGrant.proposal,
+        coordinator: coordinator.said!,
+        custodian: lead.member.pre,
+      }, { timeoutMs: 15000 })
     );
-    issuers[1].dh.approve(grant.said!, selection);
-    assertThrows(() => issuers[1].dh.start(grant.said!), Error, undefined, "only the frozen custodian authors DH keys");
-    // Later member keys cannot reinterpret the coordinator or replace its historical group contribution.
-    yield* intakeAll(issuers[1].member.rotate());
-    const contributed = issuers[1].dh.contribute(grant.said!, proposal);
-    assertEquals(parseBytes(contributed)[0].body.raw, parseBytes(proposal)[0].body.raw);
-    assertEquals(issuers[1].dh.contribute(grant.said!, proposal), contributed);
-    for (const side of issuers) {
-      yield* side.reactor.processBytes(proposal);
-      assertEquals(
-        [...side.dh.outgoing].filter(cue => cue.kin === "query"),
-        [],
-        "one signature cannot publish a query",
-      );
-      yield* side.reactor.processBytes(contributed);
-    }
-    const query = lead.dh.outgoing.pull()!;
-    assertEquals(query.kin, "query");
-    assertEquals(query.dest, holder.hab.pre);
-    assertEquals(lead.dh.start(grant.said!), query.msg, "retry returns the same threshold-complete query");
-    for (const side of issuees) yield* side.reactor.processBytes(query.msg);
+    yield* sleep(100);
+    assertEquals(queries, [], "one Grant contribution cannot publish a DH query");
     for (const side of actors) assertEquals(side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!), null);
-    const replyProposal = holder.dh.outgoing.pull()!;
-    assertEquals(replyProposal.kin, "sign");
+    // A later member key cannot reinterpret the frozen coordinator or its historical contribution.
+    yield* intakeAll(issuers[1].member.rotate());
+    const contributed = yield* runGroupDerivedIssuance(issuers[1].runtime, issuers[1].wallet, {
+      role: "issuer",
+      grant: preparedGrant.grant,
+      proposal: preparedGrant.proposal,
+      coordinator: coordinator.said!,
+      custodian: lead.member.pre,
+    }, { timeoutMs: 15000 });
+    assertEquals([contributed.contributed, contributed.registryIssued, contributed.admitted], [true, false, false]);
+    while (
+      issuees.some(side =>
+        !side.exc.pendingGrant(grant.said!, {
+          xid: grant.said!,
+          sender: lead.hab.pre,
+          recipient: holder.hab.pre,
+        })
+      )
+    ) yield* sleep(10);
+    const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
+    assertEquals(responses, [], "receiving the full Grant does not approve recipient setup");
+    const receiving = yield* spawn(() =>
+      runGroupDerivedIssuance(holder.runtime, holder.wallet, {
+        role: "recipient",
+        grant: grant.said!,
+        coordinator: recipientCoordinator.said!,
+        custodian: holder.member.pre,
+      }, { timeoutMs: 15000 })
+    );
+    yield* sleep(100);
+    assertEquals(responses, [], "one recipient's setup cannot publish a threshold reply");
+    for (const side of actors) assertEquals(side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!), null);
     yield* intakeAll(issuees[1].member.rotate());
-    const replyContribution = issuees[1].dh.contribute(grant.said!, replyProposal.msg);
-    assertEquals(parseBytes(replyContribution)[0].body.raw, parseBytes(replyProposal.msg)[0].body.raw);
-    for (const side of issuees) {
-      yield* side.reactor.processBytes(replyProposal.msg);
-      yield* side.reactor.processBytes(replyProposal.msg);
-      assertEquals(
-        side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!),
-        null,
-        "duplicate partials do not create custody",
-      );
-      yield* side.reactor.processBytes(replyContribution);
+    const peerReceiving = yield* spawn(() =>
+      runGroupDerivedIssuance(issuees[1].runtime, issuees[1].wallet, {
+        role: "recipient",
+        grant: grant.said!,
+        coordinator: recipientCoordinator.said!,
+        custodian: holder.member.pre,
+      }, { timeoutMs: 15000 })
+    );
+
+    // DH setup consent never approves the issuer's later registry update.
+    const issuerPeer = issuers[1];
+    let bup: SerderKERI | undefined;
+    while (!bup) {
+      bup = [...issuerPeer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
+        .find(body => body.route === "/multisig/bup");
+      if (!bup) yield* sleep(10);
     }
-    const response = holder.dh.outgoing.pull()!;
-    assertEquals(response.kin, "reply");
-    for (const side of issuers) yield* side.reactor.processBytes(response.msg);
+    const nests = loadNests(issuerPeer.hby.db, bup.said!);
+    const staged = acdcV2RegistryProposal(bup, nests, issuerPeer.store)!;
+    assertExists(staged);
+    assertEquals(lead.store.headEvent(rip.said!)!.said, rip.said!);
+    assertEquals(lead.exc.complete(grant.said!), false, "issuance waits for explicit peer BUP approval");
     const root = lead.hab.mgr.getRegistryRoot(lead.hab.pre, rip.said!)!;
     assertExists(root);
     assertEquals(holder.hab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!.qb64, root.qb64);
-    assertEquals(lead.dh.complete(grant.said!), true);
-    assertEquals(holder.dh.complete(grant.said!), true);
-    for (const peer of [issuers[1], issuees[1]]) {
+    for (const peer of [issuerPeer, issuees[1]]) {
       assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
     }
-    assertEquals(new TextDecoder().decode(query.msg).includes(root.qb64), false);
-    assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
-    const opening = makeBlindState({ salt: root.qb64, acdc: credential.said!, state: "issued" });
-    const event = blindate(rip.said!, rip.said!, opening.d.nonce);
-    yield* anchor(event);
-    for (const side of [lead, holder]) assertEquals((yield* side.dh.finish(grant.said!)).kind, "accept");
-    // Rootless members accept the same signed Grant using the actual public opening, never copied roots.
-    for (const peer of [issuers[1], issuees[1]]) {
-      const input = peer.exc.retainedInput(grant.said!)!;
-      input.nests![0].attachments.push(parseAttachmentGroup(publicOpeningAttachment(opening), Vrsn_2_0, "txt").group);
-      assertEquals((yield* peer.exc.processEvent(input)).kind, "accept");
+    const event = staged.tel, opening = envelopeFromFrame(nests[0]).bsqs[0];
+    assertExists(opening);
+    const peerHost = yield* spawn(() =>
+      runAgentRuntime(issuerPeer.runtime, { hab: issuerPeer.member, pollMailbox: true })
+    );
+    const approved = yield* approvePendingMultisigProposal(issuerPeer.hby, issuerPeer.runtime, {
+      said: bup.said!,
+      callbacks: {
+        approveProposal(context) {
+          assertEquals(context, { route: "/multisig/bup", group: lead.hab.pre, embedded: event.said! });
+          return true;
+        },
+        chooseGroupAlias() {
+          return "group";
+        },
+        chooseRegistryName() {
+          return "group-derived";
+        },
+      },
+    });
+    assertExists(approved);
+    const issued = yield* issuing, recipientIssued = yield* receiving, peerReceived = yield* peerReceiving;
+    assertEquals([issued.registryIssued, recipientIssued.registryIssued, peerReceived.registryIssued], [
+      true,
+      true,
+      true,
+    ]);
+    assertExists(issued.proof);
+    assertEquals(
+      yield* acceptGroupIssuanceProof(
+        issuerPeer.runtime,
+        issuerPeer.wallet,
+        grant.said!,
+        { coordinator: coordinator.said!, custodian: lead.member.pre },
+        issued.proof,
+      ),
+      true,
+    );
+    yield* peerHost.halt();
+    assert(queries.length > 0 && responses.length > 0, "DH messages traverse real Poster HTTP delivery");
+    for (const wire of queries) assertEquals(wire, queries[0], "group fanout and retries keep the exact signed query");
+    assertEquals(lead.wallet.inventory().issued[0].credential, credential.said!);
+    for (const wire of [...queries, ...responses]) {
+      assertEquals(new TextDecoder().decode(wire).includes(root.qb64), false);
     }
     for (const [index, side] of actors.entries()) {
       assertEquals(side.exc.complete(grant.said!), true);
       assertEquals(side.hby.db.exns.get(grant.said!)!.raw, grant.raw);
       assertEquals(side.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
       assertEquals(side.hby.db.erpy.get(grant.said!), null, "setup and issuance do not Admit");
+      assertEquals(side.wallet.inventory().held, []);
     }
     const admit = ipexExnBody(holder.hab.pre, "/ipex/admit", [], {
       prior: grant,
@@ -332,7 +406,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const recipient = issuees[1];
     const exporter = new RegistrySalt({ hab: holder.hab, rgy: new Regery(holder.hby, holder.store.baser) });
     const importer = new RegistrySalt({ hab: recipient.hab, rgy: new Regery(recipient.hby, recipient.store.baser) });
-    recipient.hab.rvy.rtr.addRoute(RegistrySalt.Route, importer);
+    recipient.protocol.rvy.rtr.addRoute(RegistrySalt.Route, importer);
     const retainedHistory = recipient.hby.db.enst.get(grant.said!);
     const copy = exporter.prepare(rip.said!, holder.hab.pre, recipient.member.pre, {
       coordinator: recipientSelection.coordinator,

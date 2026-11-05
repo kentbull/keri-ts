@@ -301,13 +301,21 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailbox/mailboxing.ts";
-export { groupSigningMembers, isLocalGroupHab, latestGroupContribution } from "../app/multisig/group-members.ts";
+export {
+  type GroupCoordinator,
+  groupSigningMembers,
+  groupWitnesserSelection,
+  isLocalGroupHab,
+  latestGroupContribution,
+  localGroupMember,
+} from "../app/multisig/group-members.ts";
 export {
   Multiplexor,
   MULTISIG_ROUTES,
   type MultisigBuilderOptions,
   type MultisigEventProposal,
   multisigExn,
+  multisigExnBody,
   multisigInceptExn,
   multisigInteractExn,
   multisigIssueExn,

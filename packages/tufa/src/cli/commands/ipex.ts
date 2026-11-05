@@ -146,7 +146,10 @@ export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void
     const { ipexIssueCommand } = yield* call(() => import("./ipex-issuance.ts"));
     return yield* ipexIssueCommand(args);
   }
-  if (args.credential || args.resume || args.artifact) {
+  if (
+    args.credential || args.resume || args.artifact || args.coordinator || args.custodian || args.proposal
+    || args.proposalOutput || args.proofOutput
+  ) {
     throw new ValidationError("Fresh issuance options require --issue");
   }
   if (args.acdcV2) return yield* acdcV2Disclosure(args, "grant");

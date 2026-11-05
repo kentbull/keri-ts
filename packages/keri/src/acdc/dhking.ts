@@ -453,6 +453,14 @@ export class Dhke implements AuxiliaryQueryProcessor {
     return op.completed;
   }
 
+  /** Recipient members may defer reply contribution until the issuer query independently authenticates. */
+  hasPeerQuery(xid: string): boolean {
+    const op = this.operation(xid);
+    this.pending(op);
+    if (this.hab.pre !== op.issuee) throw new ValidationError("Peer query readiness requires the selected issuee");
+    return op.peer !== null;
+  }
+
   /** Verify all current issued openings, then retry the exact Grant; this never authors Admit. */
   *finish(xid: string): Operation<ExchangeDecision> {
     const op = this.operation(xid), input = this.pending(op);
@@ -491,7 +499,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     for (const { nest, opening } of openings) {
       nest.attachments.push(parseAttachmentGroup(publicOpeningAttachment(opening), Vrsn_2_0, "txt").group);
     }
-    return yield* this.exc.processEvent(input);
+    return yield* this.exc.acceptPendingGrantProof(input);
   }
 
   /** Drop local ephemeral key references and permanently refuse this operation. */

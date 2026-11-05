@@ -327,6 +327,15 @@ export class Exchanger {
       return attempt.decision;
     }.bind(this));
   }
+
+  /** Complete only a still-live pending Grant with added proof; serialization cannot extend its original lifetime. */
+  acceptPendingGrantProof(args: ExchangeInput): Operation<ExchangeDecision> {
+    return call(function*(this: Exchanger) {
+      const attempt = yield* this.admit(args, false, true);
+      if (!attempt) throw new Error("A selected pending Grant proof cannot become an obsolete escrow retry");
+      return attempt.decision;
+    }.bind(this));
+  }
   /**
    * Prepare nested serialization outside the writer, then decide and persist in
    * one uninterrupted transaction. A retry re-reads current escrow evidence in
@@ -334,7 +343,11 @@ export class Exchanger {
    * Flush committed storage before publishing cues and awaiting the route handler.
    * The caller must keep the Baser open through all these completion boundaries.
    */
-  private *admit(args: ExchangeInput, retry = false): Operation<ExchangeAttempt | undefined> {
+  private *admit(
+    args: ExchangeInput,
+    retry = false,
+    pendingGrantProof = false,
+  ): Operation<ExchangeAttempt | undefined> {
     const said = args.serder.said ?? "<unknown>";
     const reject = (reason: string): ExchangeAdmission => ({ decision: { kind: "reject", said, reason }, cues: [] });
     if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own the admission transaction");
@@ -353,6 +366,14 @@ export class Exchanger {
       ? yield* abortable((signal) => prepareNests(args.nests!, signal))
       : undefined;
     const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | undefined => {
+      if (pendingGrantProof) {
+        const original = this.isV2Grant(args.serder) ? this.retainedInput(said, { pending: true }) : null;
+        const before = original?.nests ?? [], after = args.nests ?? [];
+        if (
+          !original || !bytesEqual(original.serder.raw, args.serder.raw) || before.length !== after.length
+          || before.some((node, index) => !bytesEqual(node.body.raw, after[index].body.raw))
+        ) return reject("Selected pending Grant proof is expired, terminated or changes the original disclosure");
+      }
       let status: EscrowStatus | undefined;
       if (retry) {
         status = this.escrowStatus(said);

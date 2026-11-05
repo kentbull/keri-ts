@@ -482,7 +482,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     if (!accepted) {
       const input = this.exc.retainedInput(op.grant, { pending: true });
       if (!input) throw new ValidationError("Selected pending Grant is no longer live");
-      return yield* this.exc.processEvent({ ...input, nests });
+      return yield* this.exc.acceptPendingGrantProof({ ...input, nests });
     }
     // Serialization may suspend; repeat all authority and snapshot checks inside
     // the single writer. This does not rewrite another Grant or any Admit.

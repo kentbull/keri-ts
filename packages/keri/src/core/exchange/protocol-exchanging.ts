@@ -286,6 +286,10 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
       return ["ixn"];
     case "/multisig/rpy":
       return ["rpy"];
+    case "/multisig/qry":
+      return ["qry"]; // Finite auxiliary coordinators own authentication, consent and child dispatch.
+    case "/multisig/ipex-proof":
+      return ["xip", "exn"]; // Selected group members verify the original issuer Grant and added proof.
     case "/multisig/exn":
       return ["xip", "exn"];
     default:
