@@ -191,6 +191,18 @@ root. Public query BUPs must form a fully anchored contiguous suffix before any
 intake; newly accepted heads invalidate the frozen request. Only requested missing
 proofs through the latest non-placeholder binding are released. Same-recipient
 presentation-registry and DI2I policy remain in the existing Grant verifier.
+Tufa exact-file presentation (`grant --acdc-v2 --prepare`, `ipex endorse`,
+`grant --acdc-v2 --resume`) separates local view selection from issuer wire
+consent. `--presenter-authorized` never supplies issuer authentication. Group
+sender files carry ordinary partial signatures until the actual sender threshold;
+issuer-group files separately report their issuer threshold. Resume first captures
+an existing authenticated local preparation and its original deadline, permits only
+authentication additions to unchanged body/nested evidence, then requires complete
+presentationContext coverage of every registry node. Current openings may remain
+retryably unknown for later live Unblind. Accepted Grant records can still need
+supplemental issuer wire authorization: the existing Exchanger writer validates
+that exact accepted/partial preparation and deadline after serialization before
+accumulating factors. No operation ledger, implicit root authority or Admit follows.
 Tufa `ipex unblind --grant` infers the requester/responder from that exact retained
 presentation, composes the selected Unblind owner with enabled KRAM, and runs one
 finite operation. Unchanged-query retries allow delayed opposite-party consent

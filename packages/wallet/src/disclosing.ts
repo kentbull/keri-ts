@@ -1,10 +1,13 @@
 /** Finite ACDC v2 IPEX composition over exact wallet views and explicitly supplied private capability. */
 import {
+  bytesEqual,
+  type CesrFrame,
   collectPayload,
   Compactor,
   concatBytes,
   Counter,
   Diger,
+  framePayload,
   type MapperMap,
   nestedPayload,
   NumberPrimitive,
@@ -12,7 +15,7 @@ import {
   Prefixer,
   SealSource,
   SerderACDC,
-  type SerderKERI,
+  SerderKERI,
   unblindBlindState,
   unblindBoundState,
   type Versionage,
@@ -33,13 +36,19 @@ import {
   type IpexV2BodyOptions,
   isLocalGroupHab,
   issuedNodeVerdict,
+  Kever,
+  latestGroupContribution,
+  localGroupMember,
   matchesRegistrySeal,
   prepareIpexExn,
   type Receiptor,
   type RegistryDisclosure,
+  timestampMicros,
   validateAcdcSchema,
   ValidationError,
+  verifyExchangeProofs,
   vet,
+  vetBinds,
   vetBlind,
   vetBound,
   walkIpexGraph,
@@ -58,6 +67,28 @@ export interface PreparedGrantBody {
   exn: SerderKERI;
   raw: Uint8Array;
   nests: Uint8Array;
+}
+/** Exact parties reviewed by the operator before adding independent issuer authentication. */
+export interface GrantFileSelection {
+  said: string;
+  sender: string;
+  recipient: string;
+}
+/** Valid individual factors may remain below their ordinary signing threshold. */
+export interface InspectedGrantFile {
+  frame: CesrFrame;
+  completeSigners: string[];
+  partialSigners: string[];
+}
+/** Compare every named authentication factor without treating serialization grouping as new consent. */
+function grantFileFactors(frame: CesrFrame): Map<string, string> {
+  const factors = envelopeFromFrame(frame), result = new Map<string, string>();
+  for (const group of factors.tsgs) {
+    for (const sig of group.sigers) result.set(`tsg:${group.pre}:${group.sn}:${group.said}:${sig.qb64}`, group.pre);
+  }
+  for (const cigar of factors.cigars) result.set(`cigar:${cigar.verfer!.qb64}:${cigar.qb64}`, cigar.verfer!.qb64);
+  for (const seal of factors.ssts) result.set(`seal:${seal.i.qb64}:${seal.s.num}:${seal.d.qb64}`, seal.i.qb64);
+  return result;
 }
 /** Fresh origin and explicit far-node proofs; preparation grants neither DH nor inventory consent. */
 export interface IssuanceGrantOptions extends Omit<IpexV2BodyOptions, "prior"> {
@@ -190,17 +221,60 @@ export class WalletDiscloser {
     return partial;
   }
   /** Authenticate every selected node, then authorize only the shared complete-root expression. */
-  private requireGraph(origin: string, raw: Uint8Array): void {
+  private requireGraph(origin: string, raw: Uint8Array, pendingPresentation = false): void {
     const graph = walkIpexGraph(origin, parseBytes(raw), true);
     if (!graph) throw new ValidationError("Selected credential graph is incomplete.");
     const verdicts = new Map<string, ChainVerdict>();
     for (const [said, node] of graph.nodes) {
-      const auth = authenticateIpexNode(node.body, envelopeFromFrame(node), this.wallet.hby.db, this.wallet.registry);
-      verdicts.set(said, issuedNodeVerdict(auth));
+      if (pendingPresentation) {
+        const schema = validateAcdcSchema(node.body, this.wallet.hby.db);
+        if (schema.kind !== "valid") {
+          throw new ValidationError(schema.kind === "missing" ? `Missing ACDC schema: ${schema.said}` : schema.reason);
+        }
+      }
+      const envelope = envelopeFromFrame(node);
+      const auth = authenticateIpexNode(node.body, envelope, this.wallet.hby.db, this.wallet.registry);
+      let verdict = issuedNodeVerdict(auth);
+      if (pendingPresentation && auth.kind === "reject" && node.body.regid) {
+        // Ordinary node authentication deliberately rejects absent current openings.
+        // File consent may wait for that specific evidence, never for a known invalid state.
+        const chain = acceptedRegistryEvidence(this.wallet.registry, node.body.regid);
+        const binding = chain && vetBinds({
+          ...chain,
+          db: this.wallet.hby.db,
+          acdc: node.body,
+          target: said,
+          blinders: [...envelope.bsqs, ...envelope.bsss],
+        });
+        const historical = authenticateIpexNode(node.body, envelope, this.wallet.hby.db, this.wallet.registry, true);
+        if (
+          binding?.kind === "missing" && binding.reason === "disclosure"
+          && historical.kind === "authenticated" && historical.registration?.state === "issued"
+        ) {
+          verdict = { kind: "unknown", retryable: true, reason: "Missing current registry opening.", schemas: [] };
+        }
+      }
+      verdicts.set(said, verdict);
     }
-    if (evaluateChain(graph, verdicts, this.wallet.hby.db)?.kind !== "valid") {
-      throw new ValidationError("Current authenticated graph truth is required before use.");
+    const current = evaluateChain(graph, verdicts, this.wallet.hby.db);
+    if (current?.kind === "valid") return;
+    if (pendingPresentation && current?.kind === "unknown" && current.retryable) {
+      const historical = new Map<string, ChainVerdict>();
+      for (const [said, node] of graph.nodes) {
+        historical.set(
+          said,
+          issuedNodeVerdict(authenticateIpexNode(
+            node.body,
+            envelopeFromFrame(node),
+            this.wallet.hby.db,
+            this.wallet.registry,
+            true,
+          )),
+        );
+      }
+      if (evaluateChain(graph, historical, this.wallet.hby.db)?.kind === "valid") return;
     }
+    throw new ValidationError("Current authenticated graph truth is required before use.");
   }
   /** Recover a candidate using an explicitly possessed UUID; this neither derives a salt nor grants authority. */
   unblind(
@@ -392,6 +466,23 @@ export class WalletDiscloser {
     selection: DisclosureSelection,
     options: IpexV2BodyOptions & { priorSaid?: string },
   ): Operation<PreparedGrantBody> {
+    return yield* this.grantBody(sender, selection, options, false);
+  }
+  /** Freeze an endorsement file from issued evidence, allowing only retryable current-opening absence. */
+  *prepareGrantFileBody(
+    sender: string,
+    selection: DisclosureSelection,
+    options: IpexV2BodyOptions & { priorSaid?: string },
+  ): Operation<PreparedGrantBody> {
+    return yield* this.grantBody(sender, selection, options, true);
+  }
+  /** Both public preparation profiles preserve the same selected view and body construction. */
+  private *grantBody(
+    sender: string,
+    selection: DisclosureSelection,
+    options: IpexV2BodyOptions & { priorSaid?: string },
+    pendingPresentation: boolean,
+  ): Operation<PreparedGrantBody> {
     const hab = this.wallet.hby.habs.get(sender);
     if (!hab?.kever || (options.gvrsn ?? Vrsn_2_0).major < 2) {
       throw new ValidationError("ACDC v2 Grant preparation requires an accepted local sender and attachment genus 2.");
@@ -400,9 +491,165 @@ export class WalletDiscloser {
       throw new ValidationError("Derived disclosure requires the actual sender habitat's custody.");
     }
     const prior = yield* this.prior(options.priorSaid), raw = yield* this.selected(selection);
-    this.requireGraph(parseBytes(raw)[0].body.said!, raw);
+    this.requireGraph(parseBytes(raw)[0].body.said!, raw, pendingPresentation);
     const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/grant", raw, { ...options, prior });
     return { exn, raw, nests };
+  }
+  /** Inspect one exact unanchored Grant without dropping invalid signatures or publishing any evidence. */
+  inspectGrantFile(raw: Uint8Array, selection?: GrantFileSelection): InspectedGrantFile {
+    const frames = parseBytes(raw), frame = frames[0], message = frame?.body;
+    if (
+      frames.length !== 1 || !(message instanceof SerderKERI) || !message.verify()
+      || message.pvrsn.major !== 2 || message.pvrsn.minor !== 0 || !["xip", "exn"].includes(message.ilk ?? "")
+      || message.route !== "/ipex/grant" || (message.sad!.a as { ax?: boolean[] }).ax?.[0]
+      || frame.essrs?.length || !frame.nests?.length
+      || frame.nests.some(node => !(node.body instanceof SerderACDC) || node.nests?.length || node.essrs?.length)
+      || selection && (message.said !== selection.said || message.pre !== selection.sender
+          || message.sad!.ri !== selection.recipient)
+    ) {
+      throw new ValidationError("Select one exact unanchored v2 Grant, its disclosed nodes and declared parties.");
+    }
+    const factors = envelopeFromFrame(frame);
+    if (
+      factors.attachmentGroups.some(group =>
+        ![
+          "TransIdxSigGroups",
+          "NonTransReceiptCouples",
+          "SealSourceTriples",
+        ].includes(group.name.replace(/^Big/, ""))
+      )
+    ) {
+      throw new ValidationError("Grant file permits only named authentication and exact nested evidence.");
+    }
+    const other = verifyExchangeProofs(this.wallet.hby.db, message, {
+      cigars: factors.cigars,
+      sourceSeals: factors.ssts,
+    });
+    if (other.invalid || other.missing.length) {
+      throw new ValidationError("Invalid or unavailable Grant authentication.");
+    }
+    const complete = new Set([
+      ...other.cigars.map(proof => proof.verfer!.qb64),
+      ...other.sourceSeals.map(seal => seal.i.qb64),
+    ]);
+    const groups = new Map<string, { pre: string; event: SerderKERI; indices: Set<number> }>();
+    for (const group of factors.tsgs) {
+      const accepted = group.sn <= BigInt(Number.MAX_SAFE_INTEGER)
+        ? this.wallet.hby.db.kels.getLast(group.pre, Number(group.sn))
+        : null;
+      const event = accepted ? this.wallet.hby.db.getEvtSerder(group.pre, accepted) : null;
+      if (
+        !group.prefixer.transferable || !event?.estive || !event.tholder || accepted !== group.said
+        || !group.sigers.length
+      ) {
+        throw new ValidationError("Grant contribution requires an accepted establishment event.");
+      }
+      const verified = Kever.verifyIndexedSignatures(message.raw, group.sigers, event.verfers);
+      if (new Set(verified.sigers.map(sig => sig.qb64)).size !== new Set(group.sigers.map(sig => sig.qb64)).size) {
+        throw new ValidationError("Invalid supplied Grant signature.");
+      }
+      const key = `${group.pre}:${group.sn}:${group.said}`;
+      const aggregate = groups.get(key) ?? { pre: group.pre, event, indices: new Set<number>() };
+      for (const index of verified.indices) aggregate.indices.add(index);
+      groups.set(key, aggregate);
+    }
+    const partial = new Set<string>();
+    for (const { pre, event, indices } of groups.values()) {
+      if (event.tholder!.satisfy([...indices])) complete.add(pre);
+      else partial.add(pre);
+    }
+    return { frame, completeSigners: [...complete], partialSigners: [...partial] };
+  }
+  /** Add only this local registry issuer's consent; partial group authentication remains explicitly incomplete. */
+  *endorseGrant(
+    issuer: string,
+    raw: Uint8Array,
+    selection: GrantFileSelection & { contributions?: readonly Uint8Array[] },
+  ): Operation<PreparedDisclosure & { endorsed: boolean }> {
+    const hab = this.wallet.hby.habs.get(issuer), inspected = this.inspectGrantFile(raw, selection);
+    const frame = inspected.frame, exn = frame.body as SerderKERI;
+    if (!hab?.kever || !inspected.completeSigners.includes(exn.pre!)) {
+      throw new ValidationError(
+        "Issuer endorsement requires a local signer and complete original sender authentication.",
+      );
+    }
+    if (
+      isLocalGroupHab(this.wallet.hby, hab)
+      && !latestGroupContribution(hab.db, localGroupMember(this.wallet.hby, issuer).pre, hab.kever.verfers)
+    ) {
+      throw new ValidationError("Issuer endorsement requires a current group signing member.");
+    }
+    if (
+      !selection.recipient || selection.recipient === selection.sender
+      || new Prefixer({ qb64: selection.recipient }).qb64 !== selection.recipient
+    ) {
+      throw new ValidationError("Issuer endorsement requires a distinct qualified recipient.");
+    }
+    const nodes = frame.nests!.filter(node => (node.body as SerderACDC).regid);
+    if (!nodes.length || !nodes.some(node => (node.body as SerderACDC).issuer === issuer)) {
+      throw new ValidationError("Selected signer is not an issuer of this disclosed registry scope.");
+    }
+    for (const node of nodes.filter(node => (node.body as SerderACDC).issuer === issuer)) {
+      const credential = node.body as SerderACDC;
+      if (this.wallet.registry.seqEvent(credential.regid!, 0)?.issuer !== issuer) {
+        throw new ValidationError("Selected credential registry does not belong to this issuer.");
+      }
+    }
+    const nested = yield* call(() => Promise.all(frame.nests!.map(node => collectPayload(framePayload(node)))));
+    const originals = grantFileFactors(frame);
+    for (const raw of selection.contributions ?? []) {
+      const candidate = this.inspectGrantFile(raw, selection).frame;
+      const candidateNodes = yield* call(() =>
+        Promise.all(candidate.nests!.map(node => collectPayload(framePayload(node))))
+      );
+      if (
+        !bytesEqual(candidate.body.raw, exn.raw) || nested.length !== candidateNodes.length
+        || nested.some((node, index) => !bytesEqual(node, candidateNodes[index]))
+      ) {
+        throw new ValidationError("Issuer contribution changed the exact Grant or nested evidence.");
+      }
+      const additions = grantFileFactors(candidate);
+      if (
+        [...originals.keys()].some(key => !additions.has(key))
+        || [...additions].some(([key, signer]) => !originals.has(key) && (signer !== issuer || !key.startsWith("tsg:")))
+      ) {
+        throw new ValidationError("Contribution adds authentication outside the selected issuer.");
+      }
+      frame.attachments.push(...candidate.attachments);
+    }
+    const all = envelopeFromFrame(frame);
+    for (const group of all.tsgs.filter(group => group.pre === issuer)) {
+      if (group.sn !== BigInt(hab.kever.lastEst.s) || group.said !== hab.kever.lastEst.d) {
+        throw new ValidationError("Issuer contributions name another establishment event.");
+      }
+    }
+    const checkDeadline = () => {
+      const deadline = this.wallet.hby.db.epsd.get([exn.said!]);
+      const expiry = deadline ? timestampMicros(deadline.dts) : null;
+      if (
+        this.wallet.hby.db.erpy.get([exn.said!]) || deadline
+          && (expiry === null || BigInt(this.receiptor.clock.now()) * 1000n >= expiry)
+      ) {
+        throw new ValidationError("Prepared Grant is terminated or past its original deadline.");
+      }
+    };
+    checkDeadline();
+    this.requireGraph(
+      (frame.nests![0].body as SerderACDC).said!,
+      concatBytes(Counter.makeGVC(Vrsn_2_0), ...nested),
+      true,
+    );
+    // Selection and supplied proof validation precede any local signature work.
+    frame.attachments.push(...parseBytes(hab.endorse(exn, { gvrsn: Vrsn_2_0 }))[0].attachments);
+    const wire = yield* call(() => collectPayload(framePayload(frame)));
+    checkDeadline();
+    const final = this.inspectGrantFile(wire, selection);
+    return {
+      exn,
+      wire,
+      support: this.proofSupport(concatBytes(Counter.makeGVC(Vrsn_2_0), ...nested), hab),
+      endorsed: final.completeSigners.includes(issuer) && !final.partialSigners.includes(issuer),
+    };
   }
 
   /** Prepare one fresh issuer origin with explicit authenticated far nodes, without changing disclosure authority. */

@@ -806,7 +806,18 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       const senderKey = [grant.said!, issuer.pre, group.sn.toString(16).padStart(32, "0"), group.said];
       hby.db.esigs.rem(senderKey, group.sigers[1]);
       assertEquals(pending(), null, "the complete sender threshold is reverified");
-      hby.db.esigs.add(senderKey, group.sigers[1]);
+      const contributed = yield* runtime.exc.acceptPreparedGrantContribution({
+        serder: grant,
+        tsgs: [group],
+        nests: frame.nests,
+        gvrsn: Vrsn_2_0,
+      });
+      assertEquals(contributed.kind, "escrow", "valid sender completion still awaits fresh registry issuance");
+      assertEquals(
+        pending()!.registries,
+        [rip.said!],
+        "a selected contribution can complete the original partial sender",
+      );
       const issuerAnchor = issuer.kever!.serder;
       hby.db.evts.rem([issuer.pre, issuerAnchor.said!]);
       assertEquals(pending(), null, "a retained RIP marker cannot replace its accepted issuer anchor");
@@ -836,6 +847,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       const selected = runtime.exc.retainedInput(grant.said!, { pending: true });
       assertExists(selected);
       const previousNests = hby.db.enst.get([grant.said!]);
+      const contributing = run(() => runtime.exc.acceptPreparedGrantContribution({ ...selected }));
       selected.nests = [
         parseBytes(messagize(credential, publicOpeningAttachment(opening), { gvrsn: Vrsn_2_0 }))[0],
         ...selected.nests!.slice(1),
@@ -843,6 +855,11 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       const completing = run(() => runtime.exc.acceptPendingGrantProof(selected));
       now = started + 300000;
       const refused = yield* call(() => completing);
+      assertEquals(
+        (yield* call(() => contributing)).kind,
+        "reject",
+        "auth additions cannot cross the original deadline",
+      );
       assertEquals(refused, {
         kind: "reject",
         said: grant.said!,

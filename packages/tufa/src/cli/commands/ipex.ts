@@ -142,6 +142,13 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
 
 /** Project grant facts, retaining the distinction between pending group evidence and completed business EXNs. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
+  if (args.prepare && args.issue) {
+    throw new ValidationError("Presentation --prepare and fresh --issue are separate actions");
+  }
+  if (args.prepare || args.resume && !args.issue) {
+    const { ipexPresentationFileCommand } = yield* call(() => import("./ipex-presentation.ts"));
+    return yield* ipexPresentationFileCommand(args);
+  }
   if (parseBooleanOption(args.issue, "issue") ?? false) {
     const { ipexIssueCommand } = yield* call(() => import("./ipex-issuance.ts"));
     return yield* ipexIssueCommand(args);

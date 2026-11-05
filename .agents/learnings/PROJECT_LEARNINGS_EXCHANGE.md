@@ -101,6 +101,15 @@ pending deadline, terminal-response and exact body/order checks inside Exchanger
 writer after nested serialization. DH, pending Unblind and selected rootless group
 completion use this path; ordinary intake and accepted-live proof refresh remain
 separate. No proof retry renews the original lifetime.
+Exact file consent uses `acceptPreparedGrantContribution` for a retained partial
+or accepted Grant. Its writer enforces the original deadline, no terminal reply,
+and identical nested wire evidence before normal authentication. Unlike proof
+completion, this path can add a missing sender contribution. On an already
+accepted Grant whose current openings are retryably missing, it retains only
+verified added authentication; it neither replaces old proof rows nor claims
+current credential acceptance. File callers inspect every supplied signature
+before intake, so invalid or threshold-short extra factors cannot disappear into
+ordinary optional-factor selection.
 Shared `verifyQueryAttachments` prefers named
 sender TSGs, otherwise resolves raw/last signatures against accepted current
 establishment state; a valid factor suffices but missing claimed coordinates
