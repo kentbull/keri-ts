@@ -178,6 +178,7 @@ export interface DhkeOutgoing {
  */
 export class Dhke implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/dhke";
+  readonly retryQueryRoute = Dhke.Route;
   readonly outgoing = new Deck<DhkeOutgoing>();
   private readonly operations = new Map<string, DhkeOperation>();
   readonly hab: Hab;

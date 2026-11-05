@@ -69,6 +69,7 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<void>
     yield* acdcV2AuthorCommand(args, "issue");
     return;
   }
+  if (parseBooleanOption(args.prepare, "prepare")) throw new ValidationError("--prepare requires --acdc-v2");
   const { creder, tel, status, group, publicationComplete } = yield* create(args);
   const issued = {
     said: creder.said,

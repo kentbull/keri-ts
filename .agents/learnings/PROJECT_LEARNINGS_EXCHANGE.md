@@ -137,6 +137,11 @@ foreign factors. Auxiliary query receivers must use that full envelope rather
 than the legacy requester projection, which omits TSGs. A valid sender seal
 retains the reference's separate authentication path; it does not itself grant
 auxiliary authority.
+Selected Dhke/Unblind query retries use complete incoming current-sender proofs,
+not cached factors or a claim of prior threshold completion. The query cache and
+original timestamp/window remain unchanged, no current partial pool qualifies,
+and the owner rechecks explicit live consent and the original Grant deadline.
+Ordinary query replay policy remains unchanged.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.

@@ -473,6 +473,51 @@ Deno.test("wallet disclosure supplies root-first DI2I ancestry to an independent
         wallet,
         new Receiptor(p.source, runtime.protocol, runtime.http, runtime.clock),
       );
+      // Fresh issuance freezes its new origin and authenticates every explicitly supplied far node.
+      const rip = regcept(issuer.pre);
+      issuer.interact({ data: [{ i: rip.said!, s: "0", d: rip.said! }] });
+      assertEquals(new RegistryObserver(p.source.db, p.registry).processEvent(rip).kind, "accept");
+      const fresh = acdcmap(issuer.pre, {
+        regid: rip.said!,
+        attribute: { d: "", i: p.holder.pre, role: "fresh delegated" },
+        edge: { d: "", proof: { n: far.said!, o: "DI2I" } },
+      });
+      const plan = [fresh, far].map((node, index) =>
+        [(node.schema as { $id: string }).$id, index ? "/e/proof/_/" : "/", []] as [string, string, string[]]
+      );
+      const farProof = yield* call(() => collectPayload(framePayload(signed(far, authority))));
+      const before = wallet.inventory();
+      const issuance = yield* discloser.prepareIssuanceGrantBody(issuer.pre, fresh, {
+        message: "Fresh delegated issuance",
+        recipient: p.holder.pre,
+        plan,
+        artifacts: [farProof],
+      });
+      assertEquals(parseBytes(issuance.raw).map(frame => frame.body.raw), [fresh.raw, far.raw]);
+      assertEquals(wallet.inventory(), before);
+      assertEquals(
+        p.source.db.exns.get(issuance.exn.said!),
+        null,
+        "body preparation neither signs nor accepts the Grant",
+      );
+      const unsignedFar = yield* call(() =>
+        collectPayload(framePayload({ body: far, gvrsn: Vrsn_2_0, attachments: [] }))
+      );
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              discloser.prepareIssuanceGrantBody(issuer.pre, fresh, {
+                message: "Fresh delegated issuance",
+                recipient: p.holder.pre,
+                plan,
+                artifacts: [unsignedFar],
+              })
+            ),
+          ValidationError,
+          "every far node requires authenticated issuer proof",
+        )
+      );
       const prepared = yield* discloser.prepareGrant(issuer.pre, { transferred, presenterAuthorized: true }, {
         message: "two-hop authority",
         recipient: p.holder.pre,

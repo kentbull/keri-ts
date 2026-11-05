@@ -165,6 +165,14 @@ DHKE separately approves fresh pending Grants, derives all scoped
 roots before retention and uses these same encrypted Manager APIs. No custody
 object, secret ledger or root-transfer route grants that approval. Completion
 and exact-Grant retry remain bounded by the original deadline after BUP arrives.
+Tufa `ipex grant --issue` prepares an exact fresh origin and explicitly supplied
+far-node evidence, then runs the selected DH runtime. `ipex setup --said` is the
+recipient's separate approval; unchanged-query retry accommodates delayed consent
+without renewing the original cache/Grant lifetime. Only completed DH supplies
+custody to WalletAuthor for a real anchored issued BUP. Both sides finish the
+same Grant; held inventory still requires a separate explicit wallet Admit.
+The finite caller rejects group habitats and abandons operation state on every
+exit; optional prepared files do not imply persistent DH restart support.
 Group DH freezes its accepted coordinator's custodian and ordinary threshold;
 only that member retains the scalar-derived root, while other members contribute
 ordinary signatures to the exact proposal. No automatic root copying follows;

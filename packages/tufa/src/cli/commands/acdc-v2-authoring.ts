@@ -4,6 +4,8 @@ import { type MapperMap, type SerderACDC } from "cesr-ts";
 import { call, type Operation, race, scoped, sleep, spawn } from "effection";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
+  type AcdcMapOptions,
+  type AcdcV2Registry,
   type AgentRuntime,
   approveAcdcV2Registry,
   type Hab,
@@ -14,6 +16,7 @@ import {
   type RegistryDisclosure,
   runAgentRuntime,
   Schemer,
+  validateAcdcSchema,
   ValidationError,
 } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
@@ -61,6 +64,25 @@ export function* approveAcdcV2RegistryEvent(
   }
 }
 
+/** Write a fresh public credential body without creating custody, issuing a BUP or recording inventory. */
+export function* prepareAcdcV2Credential(
+  author: WalletAuthor,
+  reg: AcdcV2Registry,
+  options: Omit<AcdcMapOptions, "regid">,
+  output: string,
+): Operation<SerderACDC> {
+  if (reg.store.headEvent(reg.regk!)?.ilk !== "rip") {
+    throw new ValidationError("Credential preparation requires a fresh accepted registry inception");
+  }
+  const credential = author.create(reg, options);
+  const schema = validateAcdcSchema(credential, author.wallet.hby.db);
+  if (schema.kind !== "valid") {
+    throw new ValidationError(schema.kind === "missing" ? `Missing ACDC schema: ${schema.said}` : schema.reason);
+  }
+  yield* call(() => Deno.writeFile(output, credential.raw, { createNew: true, mode: 0o600 }));
+  return credential;
+}
+
 /** Compose one finite author operation and print acceptance only after all owned stores close. */
 export function* acdcV2AuthorCommand(
   args: Record<string, unknown>,
@@ -69,7 +91,12 @@ export function* acdcV2AuthorCommand(
   const name = required(args.registryName, "registry-name"), alias = required(args.alias, "alias");
   const publicOpening = parseBooleanOption(args.public, "public") ?? false;
   const withCustody = parseBooleanOption(args.withCustody, "with-custody") ?? false;
-  if ((Array.isArray(args.send) ? args.send.length : args.send) || args.out || args.estOnly) {
+  const prepare = parseBooleanOption(args.prepare, "prepare") ?? false;
+  const output = parseStringOption(args.out, "out");
+  if (prepare && (operation !== "issue" || !output || publicOpening || withCustody || args.boundEvent)) {
+    throw new ValidationError("--prepare requires vc create --acdc-v2 --out without custody or BUP options");
+  }
+  if ((Array.isArray(args.send) ? args.send.length : args.send) || (output && !prepare) || args.estOnly) {
     throw new ValidationError("ACDC v2 authoring uses registrar replay and the controller's establishment-only trait.");
   }
   const timeout = parseNumberOption(args.timeout, "timeout") ?? 60;
@@ -86,7 +113,7 @@ export function* acdcV2AuthorCommand(
           return yield* scoped(function*() {
             if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
             const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
-            const custody = withCustody || (operation !== "incept" && !publicOpening)
+            const custody = !prepare && (withCustody || (operation !== "incept" && !publicOpening))
               ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
               : undefined;
             const author = new WalletAuthor(
@@ -98,7 +125,7 @@ export function* acdcV2AuthorCommand(
               custody,
             );
             const group = isLocalGroupHab(hby, hab);
-            if (group) yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
+            if (group && !prepare) yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
             function* approve(event: SerderACDC, opening?: RegistryDisclosure): Operation<void> {
               yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, opening);
             }
@@ -132,13 +159,18 @@ export function* acdcV2AuthorCommand(
                 hby.db.schema.pin(schemer.said, schemer);
                 schema = schemer.said;
               }
-              const acdc = author.create(reg, {
+              const bodyOptions = {
                 schema,
                 issuee: parseStringOption(args.recipient, "recipient"),
                 attribute: section(args.data, "data"),
                 edge: section(args.edges, "edges"),
                 rule: section(args.rules, "rules"),
-              });
+              };
+              if (prepare) {
+                const body = yield* prepareAcdcV2Credential(author, reg, bodyOptions, output!);
+                return { credential: body.said, registry: body.regid, prepared: true, issued: false, output };
+              }
+              const acdc = author.create(reg, bodyOptions);
               const staged = group ? author.stage(reg, acdc, "issued", options) : undefined;
               if (staged) yield* approve(staged.event, staged.opening);
               const record = staged

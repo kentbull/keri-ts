@@ -114,6 +114,17 @@ operation scope. It owns no parser, queue or transport through this interface.
 KRAM hands complete accumulated sender signatures to query, reply, XIP and EXN
 receivers as one establishment-bound group, preserving foreign evidence.
 
+Dhke and Unblind opt their selected query route into authenticated full-query
+retry. A repeated query needs an existing cache entry, its unchanged message
+timestamp, no current partial pool, and a receiver time inside the original
+cached window. KRAM reauthenticates the full incoming current sender threshold
+without pooling or changing query cache/factor rows. The typed retry decision
+passes that incoming envelope to the selected owner, which independently checks
+proofs, explicit consent and the original Grant deadline. Cache presence alone
+does not prove prior threshold completion. Ordinary query routes retain replay
+refusal. A finite sender may retry the same frozen query when initial delivery
+preceded recipient consent; retries never renew either lifetime.
+
 `createAgentRuntime` can select one concrete owner with `ipexAuxiliary: {kind: "dhke", hab}` or `{kind: "unblind", hab, states}`. The habitat must be the
 actual local object in this Habery, a v2 registry must be available, and caller
 configuration must explicitly enable KRAM. Missing or disabled KRAM is a caller

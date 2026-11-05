@@ -1,7 +1,9 @@
 /** RFC7748 fixture copied byte-for-byte from KERIpy 63a33e8869aa2309757ea9c1ab7b4447c5bf70e3,
  * tests/acdc/fixtures/dhke.json, Git blob 548bc1702a4bde93831c2ab125b24a4a71311d90.
  */
+import { createProtocolHandler } from "@keri-ts/hosting";
 import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
+import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
 import {
   type CesrFrame,
   collectPayload,
@@ -22,8 +24,10 @@ import {
   unblindBlindState,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, ensure, run } from "effection";
+import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { prepareAcdcV2Credential } from "../../../../tufa/src/cli/commands/acdc-v2-authoring.ts";
+import { prepareDerivedIssuance, runDerivedIssuance } from "../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
@@ -40,9 +44,11 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/p
 import { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import { QueryReplies } from "../../../src/app/queries/query-replies.ts";
-import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { type AgentRuntime, createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
+import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import { Receiptor } from "../../../src/app/witness/receipting.ts";
 import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
@@ -50,6 +56,7 @@ import { Kevery } from "../../../src/core/kel/eventing.ts";
 import { Kramer } from "../../../src/core/mailbox/kraming.ts";
 import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
 
@@ -646,6 +653,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
         dh,
         protocol: runtime.protocol,
         reactor: runtime.reactor,
+        runtime,
       });
     }
     const [left, right] = parties;
@@ -778,5 +786,167 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       assertEquals(party.exc.complete(admit.said!), true);
       assertEquals(party.hby.db.erpy.get(grant.said!)!.qb64, admit.said!);
     }
+
+    // A fresh scope uses the maintained wallet caller and ordinary wall-clock HTTP workers.
+    const finite: { runtime: AgentRuntime; wallet: Wallet; hab: Hab; author: WalletAuthor }[] = [];
+    for (const party of parties) {
+      yield* party.runtime.close();
+      const rgy = new Regery(party.hby, party.store.baser);
+      const runtime = yield* createAgentRuntime(party.hby, new FetchHttpClient(), systemClock, {
+        acdc: rgy,
+        kram: { enabled: true },
+        ipexAuxiliary: { kind: "dhke", hab: party.hab },
+      });
+      yield* ensure(() => runtime.close());
+      const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
+      yield* ensure(() => db.close(true));
+      const wallet = new Wallet({ hby: party.hby, registry: rgy.store, exc: runtime.exc, db });
+      const receiptor = new Receiptor(party.hby, runtime.protocol, runtime.http, runtime.clock);
+      finite.push({ runtime, wallet, hab: party.hab, author: new WalletAuthor(wallet, rgy, receiptor) });
+    }
+    const observedQueries: Uint8Array[] = [];
+    for (const [index, side] of finite.entries()) {
+      const handler = createProtocolHandler(side.runtime, { hostedPrefixes: [side.hab.pre], serviceHab: side.hab });
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+        const incoming = request.method === "POST"
+          ? parseBytes(await readCesrRequestBytes(request.clone()))
+          : [];
+        const response = await handler(request);
+        if (index === 1) {
+          for (const frame of incoming) {
+            if (frame.body.ilk === "qry" && envelopeFromFrame(frame).serder.route === Dhke.Route) {
+              observedQueries.push(await collectPayload(framePayload(frame)));
+            }
+          }
+        }
+        return response;
+      });
+      yield* ensure(() =>
+        call(async () => {
+          await server.shutdown();
+          await handler.close?.();
+        })
+      );
+      const endpoint = side.hab.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.hab.pre, "http");
+      const controller = side.hab.makeEndRole(side.hab.pre, Roles.controller, true);
+      for (const peer of finite) {
+        yield* peer.runtime.reactor.processBytes(endpoint);
+        yield* peer.runtime.reactor.processBytes(controller);
+      }
+    }
+    const source = finite[0], recipient = finite[1];
+    const freshRip = yield* source.author.incept("finite-derived", issuer.pre);
+    const registry = source.author.registry("finite-derived", issuer.pre);
+    const bodyDirectory = yield* call(() => Deno.makeTempDir({ prefix: "derived-credential-body-" }));
+    yield* ensure(() => call(() => Deno.remove(bodyDirectory, { recursive: true })));
+    const credentialFile = `${bodyDirectory}/credential.cesr`;
+    const fresh = yield* prepareAcdcV2Credential(source.author, registry, {
+      issuee: issuee.pre,
+      attribute: { d: "", name: "Grace" },
+    }, credentialFile);
+    assertEquals(yield* call(() => Deno.readFile(credentialFile)), fresh.raw);
+    assertEquals(
+      registry.store.headEvent(freshRip.said!)!.said,
+      freshRip.said!,
+      "body preparation leaves the fresh RIP unchanged",
+    );
+    for (const side of finite) {
+      assertEquals(side.wallet.inventory(), { issued: [], held: [] });
+      assertEquals(side.hab.mgr.getRegistryRoot(side.hab.pre, freshRip.said!), null);
+    }
+    const prepared = yield* prepareDerivedIssuance(source.runtime, source.wallet, fresh, {
+      recipient: issuee.pre,
+      message: "Finite derived issuance",
+    });
+    const body = source.runtime.exc.retainedInput(prepared.grant, { pending: true })!.serder;
+    const sourceDeadline = source.runtime.hby.db.epsd.get(prepared.grant)!.dts;
+    assertEquals(source.wallet.inventory().issued, []);
+    assertEquals(issuer.mgr.getRegistryRoot(issuer.pre, freshRip.said!), null);
+    const issuing = yield* spawn(() =>
+      runDerivedIssuance(source.runtime, source.wallet, {
+        role: "issuer",
+        grant: prepared.grant,
+      }, { timeoutMs: 10000 })
+    );
+    while (!observedQueries.length) yield* sleep(10);
+    const firstQuery = parseBytes(observedQueries[0])[0];
+    const queryKey = [issuer.pre, firstQuery.body.said!];
+    const queryCache = recipient.runtime.hby.db.msgc.get(queryKey)!;
+    const recipientDeadline = recipient.runtime.hby.db.epsd.get(prepared.grant)!.dts;
+    assertExists(queryCache);
+    assertEquals(
+      recipient.runtime.ipexAuxiliary!.owner.outgoing.length,
+      0,
+      "real query arrival cannot approve receiver setup",
+    );
+    assertEquals(issuee.mgr.getRegistryRoot(issuee.pre, freshRip.said!), null);
+    const unsigned = yield* recipient.runtime.protocol.dispatch({ ...firstQuery, attachments: [] });
+    assertEquals(
+      unsigned.decision,
+      { kind: "drop", reason: "authentication" },
+      "a cache hit cannot authenticate unsigned query replay",
+    );
+    const queryProof = envelopeFromFrame(firstQuery),
+      oneSignature = (queryProof.ssgs[0] ?? queryProof.tsgs[0]).sigers[0];
+    const partial = yield* recipient.runtime.protocol.dispatch({
+      ...firstQuery,
+      attachments: messageAttachmentGroups({
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: issuer.pre }),
+            NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+            new Diger({ qb64: issuer.kever!.lastEst.d }),
+            [oneSignature],
+          ),
+        ],
+      }, Vrsn_2_0),
+    });
+    assertEquals(
+      partial.decision,
+      { kind: "drop", reason: "authentication" },
+      "one current signature cannot reuse a completed query cache",
+    );
+    const received = yield* runDerivedIssuance(recipient.runtime, recipient.wallet, {
+      role: "recipient",
+      grant: prepared.grant,
+    }, { timeoutMs: 10000 });
+    const issued = yield* issuing;
+    assertEquals([issued.registryIssued, received.registryIssued, issued.admitted, received.admitted], [
+      true,
+      true,
+      false,
+      false,
+    ]);
+    assert(observedQueries.length >= 2, "explicit delayed setup requires an actual frozen-query retry");
+    for (const repeated of observedQueries) assertEquals(repeated, observedQueries[0]);
+    assertEquals(recipient.runtime.hby.db.msgc.get(queryKey), queryCache);
+    assertEquals(source.runtime.hby.db.epsd.get(prepared.grant)!.dts, sourceDeadline);
+    assertEquals(recipient.runtime.hby.db.epsd.get(prepared.grant)!.dts, recipientDeadline);
+    for (const side of finite) {
+      assertEquals(side.runtime.hby.db.exns.get(prepared.grant)!.raw, body.raw);
+      assertEquals(loadNests(side.runtime.hby.db, prepared.grant)[0].body.raw, fresh.raw);
+      assertEquals(
+        side.hab.mgr.getRegistryRoot(side.hab.pre, freshRip.said!)!.qb64,
+        issuer.mgr.getRegistryRoot(issuer.pre, freshRip.said!)!.qb64,
+      );
+    }
+    assertEquals(source.wallet.inventory().issued[0].credential, fresh.said!);
+    assertEquals(
+      recipient.wallet.inventory().held,
+      [],
+      "successful setup and issuance never create recipient inventory",
+    );
+    const consented = yield* recipient.wallet.prepareAdmit(prepared.grant, issuee.pre, { consent: true });
+    yield* recipient.runtime.reactor.processBytes(consented.wire);
+    const delivery = recipient.runtime.postman.send({
+      src: issuee.pre,
+      dest: issuer.pre,
+      topic: "credential",
+      msg: consented.wire,
+    }, { notify: true });
+    yield* recipient.runtime.postman.process();
+    assertEquals((yield* recipient.runtime.postman.wait(delivery)).kin, "sent");
+    yield* call(() => recipient.wallet.recordAdmission(prepared.grant, consented.admit.said!, { consent: true }));
+    assertEquals(recipient.wallet.inventory().held.map(record => record.grant), [prepared.grant]);
   });
 });

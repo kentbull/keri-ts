@@ -111,6 +111,7 @@ function ordinal(event: SerderACDC): number {
  */
 export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
+  readonly retryQueryRoute = Unblind.Route;
   readonly outgoing = new Deck<UnblindOutgoing>();
   private readonly operations = new Map<string, UnblindOperation>();
   readonly hab: Hab;

@@ -3,6 +3,8 @@ export { type AcdcV2UpdateOptions, WalletAuthor } from "./src/authoring.ts";
 export { RegistryCustody } from "./src/custody.ts";
 export {
   type DisclosureSelection,
+  exchangeWire,
+  type IssuanceGrantOptions,
   type PreparedDisclosure,
   type PreparedGrantBody,
   WalletDiscloser,

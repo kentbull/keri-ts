@@ -95,6 +95,11 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
             .option("--said <said>", "Credential SAID")
             .option("--acdc-v2", "Grant an exact ACDC v2 wallet disclosure")
+            .option("--issue", "Explicitly derive a fresh registry root with the recipient before issuing")
+            .option("--credential <file>", "Exact fresh ACDC v2 credential body for --issue")
+            .option("--artifact <files...>", "Explicit authenticated far-node streams for --issue")
+            .option("--resume <said>", "Resume the exact prepared pending issuance Grant, within its original deadline")
+            .option("--timeout <seconds>", "Elapsed DH issuance limit (default: 60)")
             .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
             .option("--from-grant <said>", "Exact admitted or authorized transferred Grant")
             .option("--view <file>", "Exact transferred ACDC v2 credential/proof stream")
@@ -123,6 +128,23 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       name: "ipex.grant",
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexGrantCommand",
+      args: dispatchArgs,
+    },
+  );
+
+  registerDispatchedCommand(
+    addHabOption(addStoreOptions(
+      ipex.command("setup")
+        .description("Explicitly approve DH for one pending issuance Grant; does not Admit")
+        .requiredOption("--said <said>", "Exact pending ACDC v2 issuance Grant")
+        .option("--input <file>", "Ingest signed Grant/public evidence before explicit setup")
+        .option("--timeout <seconds>", "Elapsed setup limit (default: 60)"),
+    )),
+    dispatch,
+    {
+      name: "ipex.setup",
+      load: () => import("../commands/ipex-issuance.ts"),
+      exportName: "ipexSetupCommand",
       args: dispatchArgs,
     },
   );

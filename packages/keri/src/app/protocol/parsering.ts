@@ -140,6 +140,8 @@ export type DispatchDecision =
  * grants no authority. It borrows the full envelope during this synchronous call.
  */
 export interface AuxiliaryQueryProcessor {
+  /** Opt one concrete route into complete-wire retries; this owner reauthenticates proof and live consent. */
+  readonly retryQueryRoute?: string;
   processQuery(envelope: KeriDispatchEnvelope): DispatchDecision;
 }
 
@@ -314,9 +316,11 @@ function* dispatchMessage(
       return { envelope, decision: { kind: "drop", reason: "senderNotAllowed" } };
     }
   }
-  const result = kevery.kramer?.intake(envelope);
-  if (result && result.kind !== "ready") return { envelope, decision: result };
-  const ready = result?.envelope ?? envelope;
+  const retryQuery = serder.ilk === "qry" && qvy?.retryQueryRoute !== undefined
+    && qvy.retryQueryRoute === serder.route && !["logs", "ksn", "mbx", "tels", "tsn"].includes(serder.route!);
+  const result = kevery.kramer?.intake(envelope, { retryQuery });
+  if (result && result.kind !== "ready" && result.kind !== "queryRetry") return { envelope, decision: result };
+  const ready = result?.kind === "ready" ? result.envelope : envelope;
   const decision = yield* dispatchReadyMessage(
     ready,
     revery,
@@ -324,7 +328,7 @@ function* dispatchMessage(
     exchanger,
     tevery,
     mailboxAid,
-    result?.receiverTime,
+    result?.kind === "ready" ? result.receiverTime : undefined,
     qvy,
   );
   return { envelope: ready, decision };
