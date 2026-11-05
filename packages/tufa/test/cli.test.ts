@@ -783,7 +783,7 @@ Deno.test("tufa/cli - delegate confirm dispatches expected command args", () => 
   });
 });
 
-Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
+Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", async () => {
   const acdcV2 = parseCommandSelection([
     "ipex",
     "admit",
@@ -910,6 +910,55 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
   ]);
   assertEquals(join.name, "ipex.join");
   assertEquals(join.args.approvalTimeoutSeconds, "5");
+  const setup = parseCommandSelection([
+    "ipex",
+    "setup",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "--said",
+    "Egrant",
+    "--listen",
+    "8001",
+  ]);
+  const issuance = parseCommandSelection([
+    "ipex",
+    "grant",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "--recipient",
+    "Eholder",
+    "--issue",
+    "--listen",
+    "8002",
+  ]);
+  const unblind = parseCommandSelection([
+    "ipex",
+    "unblind",
+    "-n",
+    "store",
+    "-a",
+    "group",
+    "--grant",
+    "Egrant",
+    "--listen",
+    "8003",
+  ]);
+  assertEquals([setup.args.listen, issuance.args.listen, unblind.args.listen], ["8001", "8002", "8003"]);
+  const handlers = createCmdHandlers();
+  await assertRejects(
+    () => run(() => handlers.get(setup.name)!({ ...setup.args, listen: "0", input: "unread.cesr" })),
+    ValidationError,
+    "--listen",
+  );
+  await assertRejects(
+    () => run(() => handlers.get(unblind.name)!({ ...unblind.args, listen: "0", input: "unread.cesr" })),
+    ValidationError,
+    "--listen",
+  );
 });
 
 Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers", () => {

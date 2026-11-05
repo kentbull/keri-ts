@@ -411,6 +411,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       }, Vrsn_2_0),
     });
     const queries: CesrFrame[] = [], replies: CesrFrame[] = [];
+    let finiteListener!: { port: number; stop: () => Promise<void> };
     for (const side of actors) {
       const handler = createProtocolHandler(side.runtime, {
         hostedPrefixes: [side.member.pre, side.hab.pre],
@@ -427,12 +428,15 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
         }
         return response;
       });
-      yield* ensure(() =>
-        call(async () => {
-          await server.shutdown();
-          await handler.close?.();
-        })
-      );
+      let stopped = false;
+      const stop = async () => {
+        if (stopped) return;
+        stopped = true;
+        await server.shutdown();
+        await handler.close?.();
+      };
+      yield* ensure(() => call(stop));
+      if (side === verifiers[1]) finiteListener = { port: server.addr.port, stop };
       yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.member.pre, "http"));
       yield* intakeAll(side.member.makeEndRole(side.member.pre, Roles.controller, true));
       const controller = reply("/end/role/add", {
@@ -503,11 +507,14 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* intakeAll(yield* call(() => collectPayload(framePayload(signed(grant, presenters, [child])))));
     const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
     for (const side of verifiers) assertEquals(side.exc.complete(grant.said!), false);
+    // The finite command replaces its fixture listener on the same signed endpoint.
+    yield* call(finiteListener.stop);
     // Start the ordinary nonproposer command first; one setup cannot publish a group query.
     const peerRequest = yield* spawn(() =>
       runPresentationUnblind(verifiers[1].runtime, grant.said!, {
         timeoutMs: 15000,
         proposer: verifier.member.pre,
+        listen: finiteListener.port,
       })
     );
     yield* sleep(100);
@@ -547,6 +554,22 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     );
     const completed = [yield* request, yield* peerRequest, yield* release, yield* peerRelease];
     for (const result of completed) assertEquals([result.completed, result.admitted], [true, false]);
+    const reclaimed = Deno.listen({ hostname: "127.0.0.1", port: finiteListener.port });
+    reclaimed.close();
+    // A selected-Grant failure after binding must also release the command's listener.
+    yield* call(() =>
+      assertRejects(() =>
+        run(() =>
+          runPresentationUnblind(verifiers[1].runtime, "missing", {
+            timeoutMs: 15000,
+            proposer: verifier.member.pre,
+            listen: finiteListener.port,
+          })
+        )
+      )
+    );
+    const afterFailure = Deno.listen({ hostname: "127.0.0.1", port: finiteListener.port });
+    afterFailure.close();
     assert(queries.length > 0 && replies.length > 0, "finite commands deliver actual HTTP query and reply messages");
     for (const repeated of queries) assertEquals(repeated.body.raw, query.body.raw);
     const response = replies[0], evidence = envelopeFromFrame(response);

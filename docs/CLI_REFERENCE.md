@@ -55,6 +55,20 @@ Without a pin, the first authenticated reply supplies the server AID for that in
 Replies must pass v2 KRAM and exchange authentication. The command uses kf-boot's cache windows unless the store configures its own KRAM policy, and refuses an explicitly disabled policy.
 Cancellation acknowledges the request; wait for session `resources_cleaned_at` before treating resource cleanup as complete.
 
+## Finite IPEX direct intake
+
+Live group `ipex setup` and `ipex grant --issue` accept `--listen PORT` to receive
+signed direct traffic while the finite command owns its existing runtime and store.
+Live `ipex unblind --grant SAID` supports the same option for individuals and groups.
+The listener binds `127.0.0.1`, starts before local setup consent, and closes and drains
+before command teardown. Ports must be between 1 and 65535. File-only preparation,
+proof import and offline Unblind do not use this option.
+
+Configure normal signed member locations and the group's agent endpoint roles before
+starting a live exchange. Every contributing member needs its own reachable endpoint;
+selecting one proposer does not relay the other members' incoming authenticated queries.
+The listener does not change mailbox query authorization or group signature thresholds.
+
 ## Tufa Commands (KERI / Application)
 
 | Command                            | Description                                                                              |
