@@ -238,10 +238,10 @@ export class Receiptor {
       parts.push(
         this.gvrsn.major === 1
           ? buildDetachedReceiptMessage(
-            receiptEvent(pre, eventSn, said),
+            receiptEvent(pre, eventSn, said, { pvrsn: serder.pvrsn, gvrsn: serder.pvrsn }),
             { wigers: otherWigers },
           )
-          : messagize(receiptEvent(pre, eventSn, said), {
+          : messagize(receiptEvent(pre, eventSn, said, { pvrsn: serder.pvrsn, gvrsn: serder.pvrsn }), {
             wigers: otherWigers,
             gvrsn: this.gvrsn,
             pipelined: true,

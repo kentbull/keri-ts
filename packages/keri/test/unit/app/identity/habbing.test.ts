@@ -1938,6 +1938,12 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
       }
       const witnessMsg = witness.witness(witnessEvent);
       assertEquals(witnessMsg.length > 0, true);
+      const witnessMsgFrame = parseBytes(witnessMsg)[0];
+      assertEquals(witnessMsgFrame.body.pvrsn, witnessEvent.pvrsn);
+      assertEquals(
+        parseCounterFromText(witnessMsg.subarray(witnessMsgFrame.body.raw.length), { major: 2, minor: 0 }).code,
+        CtrDexV2.AttachmentGroup,
+      );
       assertEquals(
         hby.db.wigs.get([witnessController.pre, witnessEvent.said]).length,
         0,
@@ -1966,6 +1972,15 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
       }
       const nonTransferableReceiptMsg = receiptor.receipt(receiptEvent);
       assertEquals(nonTransferableReceiptMsg.length > 0, true);
+      const nonTransferableReceiptMsgFrame = parseBytes(nonTransferableReceiptMsg)[0];
+      assertEquals(nonTransferableReceiptMsgFrame.body.pvrsn, receiptEvent.pvrsn);
+      assertEquals(
+        parseCounterFromText(nonTransferableReceiptMsg.subarray(nonTransferableReceiptMsgFrame.body.raw.length), {
+          major: 2,
+          minor: 0,
+        }).code,
+        CtrDexV2.AttachmentGroup,
+      );
       assertEquals(
         hby.db.rcts.get([receiptController.pre, receiptEvent.said]).length,
         0,
@@ -1998,6 +2013,15 @@ Deno.test("Hab receipt helpers reuse one Habery across witness and receipt varia
       const transferableReceiptMsg = validator.receipt(event);
 
       assertEquals(transferableReceiptMsg.length > 0, true);
+      const transferableReceiptMsgFrame = parseBytes(transferableReceiptMsg)[0];
+      assertEquals(transferableReceiptMsgFrame.body.pvrsn, event.pvrsn);
+      assertEquals(
+        parseCounterFromText(transferableReceiptMsg.subarray(transferableReceiptMsgFrame.body.raw.length), {
+          major: 2,
+          minor: 0,
+        }).code,
+        CtrDexV2.AttachmentGroup,
+      );
       assertEquals(hby.db.vrcs.get([controller.pre, event.said]).length, 0);
     } finally {
       yield* hby.close();

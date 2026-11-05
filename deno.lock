@@ -38,7 +38,8 @@
     "npm:libsodium-wrappers@0.8.4": "0.8.4",
     "npm:lmdb@*": "3.5.3",
     "npm:lmdb@3.4.4": "3.4.4",
-    "npm:lmdb@3.5.3": "3.5.3"
+    "npm:lmdb@3.5.3": "3.5.3",
+    "npm:otpauth@9.4.1": "9.4.1"
   },
   "jsr": {
     "@david/code-block-writer@13.0.3": {
@@ -576,6 +577,12 @@
     },
     "ordered-binary@1.6.1": {
       "integrity": "sha512-QkCdPooczexPLiXIrbVOPYkR3VO3T6v2OyKRkR1Xbhpy7/LAVXwahnRCgRp78Oe/Ehf0C/HATAxfSr6eA1oX+w=="
+    },
+    "otpauth@9.4.1": {
+      "integrity": "sha512-+iVvys36CFsyXEqfNftQm1II7SW23W1wx9RwNk0Cd97lbvorqAhBDksb/0bYry087QMxjiuBS0wokdoZ0iUeAw==",
+      "dependencies": [
+        "@noble/hashes"
+      ]
     },
     "require-from-string@2.0.2": {
       "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw=="

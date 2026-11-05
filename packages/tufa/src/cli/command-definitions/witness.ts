@@ -1,7 +1,7 @@
 /** Commander registrations for witness hosting and submission commands. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addWitnessAuthOptions, witnessAuthArgs } from "./options.ts";
+import { addWitnessAuthOptions, dispatchArgs, witnessAuthArgs } from "./options.ts";
 import { registerDispatchedCommand } from "./shared.ts";
 
 /**
@@ -16,6 +16,26 @@ export function registerWitnessCmds(
 ): void {
   const witness = program.command("witness").description(
     "Run and interact with witness nodes",
+  );
+
+  registerDispatchedCommand(
+    witness.command("backend")
+      .description("Run a hosted-witness backend with loopback-only provisioning")
+      .requiredOption("-n, --name <name>", "Backend keystore name")
+      .requiredOption("-u, --url <url>", "Advertised public HTTP(S) origin")
+      .option("-H, --http <port>", "Public receipt listener port", "5632")
+      .option("--boot-port <port>", "Private loopback provisioning port", "5631")
+      .option("--listen-host <host>", "Public receipt listener bind host", "127.0.0.1")
+      .option("-b, --base <base>", "Optional base path prefix")
+      .option("--head-dir <dir>", "Directory override for database and keystore root")
+      .option("-p, --passcode <passcode>", "Encryption passcode for keystore"),
+    dispatch,
+    {
+      name: "witness.backend",
+      load: () => import("../commands/hosted-witness.ts"),
+      exportName: "hostedWitnessCommand",
+      args: dispatchArgs,
+    },
   );
 
   registerDispatchedCommand(

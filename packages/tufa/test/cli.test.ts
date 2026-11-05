@@ -102,6 +102,7 @@ function leafCommandNames(command: Command, prefix: string[] = []): string[] {
 }
 
 const CLI_COMMAND_EXAMPLES: string[][] = [
+  ["witness", "backend", "-n", "backend", "--url", "https://witness.example"],
   [
     "ipex",
     "endorse",
@@ -328,6 +329,53 @@ Deno.test("tufa/cli - parsed command names all have registered handlers", () => 
 
   const handlerNames = [...createCmdHandlers().keys()].sort();
   assertEquals(handlerNames, dispatchedNames);
+});
+
+Deno.test("tufa/cli - witness backend separates public receipt and private provisioning ports", () => {
+  const defaults = parseCommandSelection(["witness", "backend", "-n", "backend", "--url", "https://witness.example"]);
+  assertEquals([defaults.name, defaults.args.http, defaults.args.bootPort, defaults.args.listenHost], [
+    "witness.backend",
+    "5632",
+    "5631",
+    "127.0.0.1",
+  ]);
+  const selected = parseCommandSelection([
+    "witness",
+    "backend",
+    "-n",
+    "backend",
+    "--url",
+    "https://witness.example",
+    "--http",
+    "9002",
+    "--boot-port",
+    "9001",
+    "--listen-host",
+    "0.0.0.0",
+    "--base",
+    "main",
+    "--head-dir",
+    "/tmp/backend",
+    "--passcode",
+    "secret",
+  ]);
+  assertEquals([
+    selected.args.url,
+    selected.args.http,
+    selected.args.bootPort,
+    selected.args.listenHost,
+    selected.args.base,
+    selected.args.headDirPath,
+    selected.args.passcode,
+  ], [
+    "https://witness.example",
+    "9002",
+    "9001",
+    "0.0.0.0",
+    "main",
+    "/tmp/backend",
+    "secret",
+  ]);
 });
 
 Deno.test("tufa/cli - KF allocation commands preserve explicit signer and account selections", () => {
