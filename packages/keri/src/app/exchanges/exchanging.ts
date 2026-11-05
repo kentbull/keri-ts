@@ -377,8 +377,8 @@ export class Exchanger {
       if (selectedGrant) {
         const db = this.hby.db;
         const stored = selectedGrant === "proof" ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
-        const deadline = db.epsd.get([said]);
-        const expiry = deadline ? timestampMicros(deadline.dts) : null;
+        const deadline = stored && this.exchangeDeadline(stored);
+        const expiry = deadline ? timestampMicros(deadline) : null;
         const live = stored && this.isV2Grant(stored) && !db.erpy.get([said])
           && expiry !== null && this.nowMicros() < expiry;
         const original = !live ? null : selectedGrant === "proof"
@@ -716,6 +716,20 @@ export class Exchanger {
     return this.hby.db.exns.get([said])?.said === said;
   }
 
+  /** Original accepted KRAM lifetime; partial-escrow timestamps never authorize live auxiliary work. */
+  exchangeDeadline(serder: SerderKERI): string | null {
+    const said = serder.said, sender = serder.pre;
+    const xid = serder.ilk === "xip" ? said : serder.sad?.x;
+    if (!said || !sender || typeof xid !== "string" || !xid) return null;
+    const cache = this.hby.db.tmsc.get([sender, xid, said]);
+    if (!cache?.rdt) return null;
+    const opener = timestampMicros(cache.xdt);
+    if (timestampMicros(cache.rdt) === null || opener === null || !Number.isSafeInteger(cache.xl) || cache.xl! < 0) {
+      throw new Error("Corrupt accepted exchange transaction lifetime.");
+    }
+    return this.deadlineDater(opener + BigInt(cache.xl!) * 1000n).dts;
+  }
+
   /**
    * Rehydrate authenticated retained factors without route handling or writes.
    * Pending-only access also enforces the original deadline with this owner's
@@ -727,10 +741,10 @@ export class Exchanger {
     const serder = pending ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
     if (!serder || serder.said !== said || !serder.verify()) return null;
     if (pending) {
-      const deadline = db.epsd.get([said]);
+      const deadline = this.exchangeDeadline(serder);
       if (!deadline || this.complete(said) || db.erpy.get([said])) return null;
-      const expiry = timestampMicros(deadline.dts);
-      if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+      const expiry = timestampMicros(deadline);
+      if (expiry === null) throw new Error("Corrupt accepted exchange deadline.");
       if (this.nowMicros() >= expiry) return null;
     }
     const args = this.escrowInput(serder);
@@ -823,15 +837,16 @@ export class Exchanger {
     said: string,
     { xid, sender, recipient }: { xid: string; sender: string; recipient: string },
   ): { serder: SerderKERI; registries: readonly string[] } | null {
-    const serder = this.hby.db.epse.get([said]), deadline = this.hby.db.epsd.get([said]);
+    const serder = this.hby.db.epse.get([said]);
+    const deadline = serder && this.exchangeDeadline(serder);
     if (
       !serder || !deadline || serder.said !== said || !serder.verify() || !this.isV2Grant(serder)
       || serder.pre !== sender || serder.sad!.ri !== recipient
       || (serder.ilk === "xip" ? said : serder.sad!.x) !== xid
       || this.complete(said) || this.hby.db.erpy.get([said])
     ) return null;
-    const expiry = timestampMicros(deadline.dts);
-    if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+    const expiry = timestampMicros(deadline);
+    if (expiry === null) throw new Error("Corrupt accepted exchange deadline.");
     if (this.nowMicros() >= expiry) return null;
     const handler = this.handlerFor(serder);
     if (handler?.protocolMajor !== 2 || !handler.pendingGrant) return null;
@@ -864,15 +879,15 @@ export class Exchanger {
     { xid, sender, recipient }: { xid: string; sender: string; recipient: string },
   ): { serder: SerderKERI; nests: readonly CesrFrame[]; registries: PresentationScope } | null {
     const serder = this.hby.db.exns.get([said]) ?? this.hby.db.epse.get([said]);
-    const deadline = this.hby.db.epsd.get([said]);
+    const deadline = serder && this.exchangeDeadline(serder);
     if (
       !serder || !deadline || serder.said !== said || !serder.verify() || !this.isV2Grant(serder)
       || serder.pre !== sender || serder.sad!.ri !== recipient
       || (serder.ilk === "xip" ? said : serder.sad!.x) !== xid
       || this.hby.db.erpy.get([said])
     ) return null;
-    const expiry = timestampMicros(deadline.dts);
-    if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+    const expiry = timestampMicros(deadline);
+    if (expiry === null) throw new Error("Corrupt accepted exchange deadline.");
     if (this.nowMicros() >= expiry) return null;
     const handler = this.handlerFor(serder);
     if (handler?.protocolMajor !== 2 || !handler.presentationContext) return null;
@@ -1303,8 +1318,7 @@ export class Exchanger {
     }
     this.storeEscrowEvidence(serder, factors, ptds);
     this.hby.db.epse.rem([said]);
-    if (this.isV2Grant(serder)) this.retainPartialDeadline(serder);
-    else this.hby.db.epsd.rem([said]);
+    this.hby.db.epsd.rem([said]);
     const stored = emse.get([said, schema]) === null;
     emse.trim([said]);
     emse.put([said, schema], serder);
@@ -1382,7 +1396,6 @@ export class Exchanger {
       }
       this.hby.db.ecigs.add([said], [cigar.verfer, cigar]);
     }
-    if (this.isV2Grant(args.serder) && !this.complete(said)) this.retainPartialDeadline(args.serder);
     const retainedIpex = args.serder.pvrsn.major === 2 && nestedIpexRoute(args.serder.route ?? "")
       && this.complete(said);
     if (!retainedIpex) {
@@ -1538,7 +1551,7 @@ export class Exchanger {
   private clearPending(serder: SerderKERI): void {
     const said = serder.said!;
     this.hby.db.epse.rem([said]);
-    if (!this.isV2Grant(serder)) this.hby.db.epsd.rem([said]);
+    this.hby.db.epsd.rem([said]);
     this.hby.db.emse?.trim([said]);
     this.hby.db.emsd?.rem([said]);
   }

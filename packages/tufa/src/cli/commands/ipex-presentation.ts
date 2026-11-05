@@ -39,7 +39,7 @@ export interface PreparedPresentationFile {
   grant: string;
   wire: Uint8Array;
   prepared: boolean;
-  deadline: string;
+  deadline: string | null;
 }
 /** Borrow the actual wallet and accepted local signer; KRAM policy owns the preparation lifetime. */
 function discloser(runtime: AgentRuntime, wallet: Wallet, hab: Hab): WalletDiscloser {
@@ -53,7 +53,8 @@ function discloser(runtime: AgentRuntime, wallet: Wallet, hab: Hab): WalletDiscl
 }
 /** Keep the original v2 IPEX clock; no file can recreate a missing or terminated preparation. */
 function deadline(runtime: AgentRuntime, said: string, expected?: string): string {
-  const date = runtime.hby.db.epsd.get([said])?.dts;
+  const selected = runtime.exc.retainedInput(said)?.serder;
+  const date = selected && runtime.exc.exchangeDeadline(selected);
   if (!date || runtime.hby.db.erpy.get([said]) || expected !== undefined && date !== expected) {
     throw new ValidationError("Prepared Grant is unavailable, terminated or its original deadline changed");
   }
@@ -162,7 +163,7 @@ export function* preparePresentationGrant(
   }
   const original = proposal ? owner.inspectGrantFile(proposal).frame : undefined;
   const body = original?.body as SerderKERI | undefined;
-  const previous = body && runtime.hby.db.epsd.get([body.said!]) ? deadline(runtime, body.said!) : undefined;
+  const previous = body && runtime.exc.exchangeDeadline(body) ? deadline(runtime, body.said!) : undefined;
   const prepared = yield* owner.prepareGrantFileBody(hab.pre, selection, {
     ...options,
     ...(body ? { date: body.stamp!, kind: body.kind } : {}),
@@ -181,11 +182,18 @@ export function* preparePresentationGrant(
   if (original) candidate.attachments = [...original.attachments, ...candidate.attachments];
   const raw = yield* wire(candidate), checked = owner.inspectGrantFile(raw);
   if (previous) deadline(runtime, exn.said!, previous);
-  const decision = previous
-    ? yield* runtime.exc.acceptPreparedGrantContribution(input(candidate))
-    : yield* runtime.exc.processEvent(input(candidate));
-  if (decision.kind === "reject") throw new ValidationError(decision.reason);
-  const frozen = deadline(runtime, exn.said!, previous);
+  if (previous) {
+    const decision = yield* runtime.exc.acceptPreparedGrantContribution(input(candidate));
+    if (decision.kind === "reject") throw new ValidationError(decision.reason);
+  } else if (checked.completeSigners.includes(hab.pre)) {
+    yield* runtime.reactor.processBytes(raw, { local: true });
+  } else {
+    // Keep partial sender proof in ordinary escrow without granting accepted KRAM authority.
+    const decision = yield* runtime.exc.processEvent(input(candidate));
+    if (decision.kind === "reject") throw new ValidationError(decision.reason);
+  }
+  // A partial group proposal has no accepted lifetime and grants no auxiliary authority.
+  const frozen = runtime.exc.exchangeDeadline(exn) ? deadline(runtime, exn.said!, previous) : null;
   const saved = runtime.hby.db.exns.get([exn.said!]) ?? runtime.hby.db.epse.get([exn.said!]);
   if (!saved || !bytesEqual(saved.raw, exn.raw)) {
     throw new ValidationError("v2 IPEX preparation did not retain the exact Grant");

@@ -110,7 +110,7 @@ function* runUnblind(
   const requester = input.serder.sad!.ri === hab.pre;
   const role = requester ? "requester" : "responder";
   const result: PresentationUnblindResult = { grant, xid, role, completed: true, admitted: false };
-  const deadline = runtime.hby.db.epsd.get([grant])?.dts, expiry = deadline ? timestampMicros(deadline) : null;
+  const deadline = runtime.exc.exchangeDeadline(input.serder), expiry = deadline ? timestampMicros(deadline) : null;
   const route = requester ? QueryRoute : ReplyRoute, field = requester ? "qry" : "rpy";
   const previous = protocol.group ? runtime.exc.routes.get(route) : undefined;
   let installed = false, frozen: Uint8Array | undefined, contributed = false, finished = false;
@@ -120,7 +120,7 @@ function* runUnblind(
     if (!deadline || expiry === null || expiry === undefined) {
       throw new Error("Missing or corrupt presentation deadline");
     }
-    if (runtime.hby.db.epsd.get([grant])?.dts !== deadline) {
+    if (runtime.exc.exchangeDeadline(input.serder) !== deadline) {
       throw new ValidationError("Original presentation deadline changed");
     }
     if (BigInt(runtime.clock.now()) * 1000n >= expiry) {

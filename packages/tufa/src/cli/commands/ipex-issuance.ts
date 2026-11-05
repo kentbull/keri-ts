@@ -155,8 +155,8 @@ export function* runDerivedIssuance(
   const frame = parseBytes(messagize(input.serder, { tsgs: input.tsgs, cigars: input.cigars, gvrsn: Vrsn_2_0 }))[0];
   frame.nests = [...input.nests ?? []];
   const grantWire = yield* call(() => collectPayload(framePayload(frame)));
-  const deadline = runtime.hby.db.epsd.get([request.grant]);
-  const expires = deadline ? timestampMicros(deadline.dts) : null;
+  const deadline = runtime.exc.exchangeDeadline(input.serder);
+  const expires = deadline ? timestampMicros(deadline) : null;
   if (expires === null) throw new Error("Authenticated pending Grant has a missing or corrupt deadline");
   const remainingMs = Number(expires - BigInt(runtime.clock.now()) * 1000n) / 1000;
   const xid = dh.approve(request.grant);

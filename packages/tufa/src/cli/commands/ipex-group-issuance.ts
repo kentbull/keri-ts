@@ -377,7 +377,7 @@ function* runGroupIssuance(
     query: Uint8Array | undefined,
     nextQuery = 0;
   let finalProof: Uint8Array | undefined;
-  let frozenDeadline = runtime.hby.db.epsd.get([request.grant])?.dts;
+  let frozenDeadline = runtime.exc.exchangeDeadline(frozenGrant) ?? undefined;
   const previous = new Map<string, ExchangeRouteHandler | undefined>();
   const result = (issued: boolean): GroupIssuanceResult => ({
     grant: request.grant,
@@ -458,13 +458,13 @@ function* runGroupIssuance(
             }
           }
           function check() {
-            const deadline = runtime.hby.db.epsd.get([request.grant]);
-            if (frozenDeadline && deadline?.dts !== frozenDeadline) {
+            const deadline = runtime.exc.exchangeDeadline(frozenGrant);
+            if (frozenDeadline && deadline !== frozenDeadline) {
               throw new ValidationError("Original group Grant deadline changed");
             }
             if (deadline) {
-              frozenDeadline ??= deadline.dts;
-              const expiry = timestampMicros(deadline.dts);
+              frozenDeadline ??= deadline;
+              const expiry = timestampMicros(deadline);
               if (expiry === null) throw new Error("Corrupt group Grant deadline");
               if (BigInt(runtime.clock.now()) * 1000n >= expiry) {
                 throw new ValidationError("Original group Grant deadline expired");
@@ -474,12 +474,6 @@ function* runGroupIssuance(
           }
           try {
             check();
-            if (!frozenDeadline) throw new ValidationError("Selected group Grant has no original deadline");
-            const remaining = Number(timestampMicros(frozenDeadline)! - BigInt(runtime.clock.now()) * 1000n) / 1000;
-            yield* spawn(function*() {
-              yield* wait(runtime, Math.max(0, remaining));
-              throw new ValidationError("Original group Grant deadline expired");
-            });
             if (ownProposal) yield* broadcast(ownProposal);
             while (
               !runtime.exc.pendingGrant(request.grant, {
@@ -491,6 +485,13 @@ function* runGroupIssuance(
               check();
               yield* wait(runtime, 50);
             }
+            check();
+            if (!frozenDeadline) throw new ValidationError("Selected group Grant has no original deadline");
+            const remaining = Number(timestampMicros(frozenDeadline)! - BigInt(runtime.clock.now()) * 1000n) / 1000;
+            yield* spawn(function*() {
+              yield* wait(runtime, Math.max(0, remaining));
+              throw new ValidationError("Original group Grant deadline expired");
+            });
             dh.approve(request.grant, { coordinator, custodian: request.custodian });
             approved = true;
             if (lead) {

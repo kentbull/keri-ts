@@ -772,7 +772,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
           ? this.operation.replySent
           : this.runtime.ipexAuxiliary!.owner.complete(this.operation.xid)),
       ),
-      deadline: grant ? db.epsd.get([grant.said!])?.dts ?? null : null,
+      deadline: grant ? this.runtime.exc.exchangeDeadline(grant) : null,
       grantRaw: grant ? new TextDecoder().decode(grant.raw) : null,
       admit: grant ? db.erpy.get([grant.said!])?.qb64 ?? null : null,
       witnesses: { threshold: Number(this.hab.kever!.toader.num), count: this.hab.kever!.wits.length },
