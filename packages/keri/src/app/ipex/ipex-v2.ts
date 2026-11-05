@@ -29,7 +29,7 @@ import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
-import type { ExchangeRouteHandler, ExchangeRouteVerification } from "../exchanges/exchanging.ts";
+import type { ExchangeRouteHandler, ExchangeRouteVerification, PresentationScope } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
@@ -131,7 +131,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
       this.hby.db,
     );
     if (!verdict || verdict.kind === "invalid") {
-      const pending = this.pendingOpenings(serder, graph, authentications);
+      const pending = this.presentationState(serder, graph, authentications)?.pending;
       if (!pending?.size) return false;
       const retry = evaluateChain(graph, this.pendingVerdicts(authentications, pending), this.hby.db);
       return retry?.kind === "unknown" && retry.retryable
@@ -167,6 +167,40 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (typeof context !== "object" || context.kind !== "grant") return null;
     const fresh = this.pendingIssuance(args.serder, context.graph, context.authentications);
     return fresh?.size ? [...new Set(fresh.values())] : null;
+  }
+
+  /**
+   * Return auxiliary registry scope without issuing an admission verdict.
+   * Every supplied opening and non-registry issuer factor must authenticate,
+   * including optional graph branches. A separate discloser needs each node's
+   * issuer to endorse this exact Grant; origin authority cannot extend to others.
+   */
+  presentationContext(args: VerifyArgs): PresentationScope | null {
+    if (args.serder.route !== "/ipex/grant") return null;
+    const context = this.verifyContext({ ...args, historical: false });
+    if (typeof context !== "object" || context.kind !== "grant") return null;
+    const { graph, authentications } = context;
+    const state = this.presentationState(args.serder, graph, authentications);
+    if (!state) return null;
+    const verdict = evaluateChain(graph, this.pendingVerdicts(authentications, state.pending), this.hby.db);
+    if (!verdict || !(verdict.kind === "valid" || verdict.kind === "unknown" && verdict.retryable)) return null;
+    // Exchanger already cryptographically verified and route-selected these factors.
+    const evidence = args.evidence!;
+    const endorsers = new Set([
+      ...evidence.tsgs.map(group => group.pre),
+      ...evidence.cigars.map(cigar => cigar.verfer!.qb64),
+      ...evidence.sourceSeals.map(seal => seal.i.qb64),
+    ]);
+    const registries = new Map<string, readonly string[]>();
+    for (const [regid, saids] of state.registries) {
+      if (
+        saids.every((said) => {
+          const node = graph.nodes.get(said)!.body;
+          return args.serder.pre === node.issuer || args.serder.pre === node.issuee || endorsers.has(node.issuer!);
+        })
+      ) registries.set(regid, saids);
+    }
+    return registries.size ? registries : null;
   }
 
   /** Validate shared conversation, disclosure, schema and authentication obligations in reference order. */
@@ -329,15 +363,16 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     return verdict && (verdict.kind === "valid" || (verdict.kind === "unknown" && verdict.retryable)) ? pending : null;
   }
 
-  /** After ordinary refusal, validate every supplied opening before classifying absent current/suffix proofs. */
-  private pendingOpenings(
+  /** Validate all supplied claims, then classify absent issuer openings and exact per-registry node scope. */
+  private presentationState(
     grant: SerderKERI,
     graph: IpexGraph,
     authentications: ReadonlyMap<string, IpexNodeAuthentication>,
-  ): Set<string> | null {
+  ): { pending: ReadonlySet<string>; registries: PresentationScope } | null {
     if (!this.registry) return null;
-    const pending = new Set<string>();
-    for (const [said, frame] of graph.nodes) {
+    const pending = new Set<string>(), registries = new Map<string, string[]>();
+    for (const said of graph.order) {
+      const frame = graph.nodes.get(said)!;
       const node = frame.body, envelope = envelopeFromFrame(frame);
       const proofs: RegistryDisclosure[] = [...envelope.bsqs, ...envelope.bsss];
       if (!node.regid) {
@@ -389,8 +424,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         }
       }
       if (!bound) return null; // A completely opened placeholder history binds no credential.
+      const selected = registries.get(node.regid) ?? [];
+      selected.push(said);
+      registries.set(node.regid, selected);
     }
-    return pending;
+    return { pending, registries };
   }
 
   /** Notify only after Exchanger has durably accepted the parent and its evidence. */

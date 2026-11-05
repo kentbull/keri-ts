@@ -87,6 +87,9 @@ interface AuthenticatedExchange {
   supplemental: Required<ExchangeFactors>;
   sscs: SealSource[];
 }
+/** Exact disclosed node SAIDs authorized for each issuer registry in a live Grant. */
+export type PresentationScope = ReadonlyMap<string, readonly string[]>;
+
 /** Route-handler contract for accepted exchange messages. */
 export interface ExchangeRouteHandler {
   readonly resource: string;
@@ -131,6 +134,8 @@ export interface ExchangeRouteHandler {
   }): ExchangeRouteVerification;
   /** Read fresh issuance registry scope after shared context checks; Exchanger authenticates the sender first. */
   pendingGrant?(args: Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0]): readonly string[] | null;
+  /** Read auxiliary presentation scope after Exchanger authenticates the exact retained sender evidence. */
+  presentationContext?(args: Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0]): PresentationScope | null;
   /** Consume already durable evidence within the caller's Effection scope. */
   handle(args: {
     serder: SerderKERI;
@@ -732,21 +737,77 @@ export class Exchanger {
   }
 
   /**
+   * Reauthenticate a live accepted or pending Grant and its exact retained disclosure.
+   * Scope is per registry, not permission to use every disclosed node or Admit.
+   * The original deadline and terminal response bound authority; inspection never
+   * writes, renews lifetime, emits cues or hydrates a fuller credential view.
+   */
+  presentationContext(
+    said: string,
+    { xid, sender, recipient }: { xid: string; sender: string; recipient: string },
+  ): { serder: SerderKERI; nests: readonly CesrFrame[]; registries: PresentationScope } | null {
+    const serder = this.hby.db.exns.get([said]) ?? this.hby.db.epse.get([said]);
+    const deadline = this.hby.db.epsd.get([said]);
+    if (
+      !serder || !deadline || serder.said !== said || !serder.verify() || !this.isV2Grant(serder)
+      || serder.pre !== sender || serder.sad!.ri !== recipient
+      || (serder.ilk === "xip" ? said : serder.sad!.x) !== xid
+      || this.hby.db.erpy.get([said])
+    ) return null;
+    const expiry = timestampMicros(deadline.dts);
+    if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+    if (this.nowMicros() >= expiry) return null;
+    const handler = this.handlerFor(serder);
+    if (handler?.protocolMajor !== 2 || !handler.presentationContext) return null;
+    const args = this.escrowInput(serder);
+    if (this.verifyEssr(serder, args.essrs)) return null;
+    const approved = this.authenticate(serder, this.resolveProofs(args), handler, new Deck<AgentCue>());
+    if (approved.kind !== "verified") return null;
+    const meta = this.hby.db.exchangeMeta.get([said]);
+    const nests = loadNests(this.hby.db, said);
+    const registries = handler.presentationContext({
+      serder,
+      attachments: normalizeAttachments(args.ptds ?? []),
+      essrs: args.essrs,
+      nests,
+      mailboxAid: meta?.mailboxAid,
+      receiverTime: storedReceiverTime(meta),
+      ...(handler.acceptsSscs ? { sscs: approved.sscs } : {}),
+      ...(handler.acceptsEvidence ? { evidence: approved.supplemental } : {}),
+    });
+    return registries?.size ? { serder, nests, registries } : null;
+  }
+
+  /**
    * Elect the lowest verified index in the first authenticated sender proof group.
    *
    * Like KERIpy, choose one stored establishment group deterministically. Require
-   * an accepted EXN before reading the shared escrow/proof table, then reverify
-   * retained sender proofs against accepted historical establishment state.
+   * an accepted exchange, or explicitly opt into a live pending presentation,
+   * before reverifying sender proofs against accepted historical establishment state.
    * Resolve the winning key at that proof's accepted establishment, not the current
    * group state. The local member's accepted KEL identifies its historical keys;
    * rotating that member must not transfer or erase an existing approval's lead.
-   * An incomplete group exchange has no elected external sender.
+   * Partial signatures elect no sender. Election alone does not authorize sending
+   * the selected disclosure; callers still approve its complete registry scope.
    */
-  lead(hab: Hab, said: string): boolean {
+  lead(hab: Hab, said: string, { pendingPresentation = false }: { pendingPresentation?: boolean } = {}): boolean {
     const record = this.hby.db.getHab(hab.pre);
     if (!record?.mid) return true;
     const db = this.hby.db;
-    const serder = db.exns.get([said]);
+    let serder = db.exns.get([said]);
+    if (!serder && pendingPresentation) {
+      const candidate = db.epse.get([said]);
+      if (candidate?.pre === hab.pre && typeof candidate.sad?.ri === "string") {
+        const xid = candidate.ilk === "xip" ? candidate.said : candidate.sad.x;
+        if (
+          typeof xid === "string" && this.presentationContext(said, {
+            xid,
+            sender: candidate.pre!,
+            recipient: candidate.sad.ri,
+          })
+        ) serder = candidate;
+      }
+    }
     if (!serder || serder.pre !== hab.pre) return false;
     const verified = verifyExchangeProofs(db, serder, {
       tsgs: this.rebuildEscrowedGroups(said).filter(group => group.pre === hab.pre),
