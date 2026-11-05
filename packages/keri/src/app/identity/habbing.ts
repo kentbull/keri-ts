@@ -113,10 +113,14 @@ export interface MakeHabArgs {
   algo?: Algos;
   salt?: string;
   tier?: Tier;
+  /** KERI version of the new KEL and its proof framing; defaults to 2.0. */
+  version?: Versionage;
 }
 
 /** Group habitat inception options for local member-collected group creation. */
 export interface MakeGroupHabArgs {
+  /** KERI version of the new group KEL and its proof framing; defaults to 2.0. */
+  version?: Versionage;
   isith?: ThresholdSith;
   nsith?: ThresholdSith;
   toad?: number;
@@ -158,6 +162,24 @@ export interface GroupHabInteraction {
  * locally generated reply and inception messages.
  */
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
+
+/**
+ * Select the KERI version for a new event on an existing identifier.
+ *
+ * An identifier keeps the KERI version of its accepted KEL, so rotation and
+ * interaction never mix versions within one KEL. An explicit selection that
+ * conflicts with the accepted KEL is refused rather than silently ignored.
+ */
+function acceptedKelVersion(kever: Kever, requested?: Versionage): Versionage {
+  const accepted = kever.serder.pvrsn.major === 1 ? Vrsn_1_0 : Vrsn_2_0;
+  if (requested && (requested.major !== accepted.major || requested.minor !== accepted.minor)) {
+    throw new ValidationError(
+      `KEL of ${kever.prefixer.qb64} is KERI ${accepted.major}.${accepted.minor}; `
+        + `refusing a KERI ${requested.major}.${requested.minor} event.`,
+    );
+  }
+  return accepted;
+}
 
 /**
  * Produce the default simple numeric signing threshold for a key count.
@@ -492,7 +514,8 @@ export class Hab {
   }
 
   /**
-   * Incept this habitat as KERI v2 through the shared accepted-state path.
+   * Incept this habitat through the shared accepted-state path, as KERI v2
+   * unless `version` selects KERI v1 for v1-only peers.
    *
    * KERIpy correspondence:
    * - mirrors the pattern where local inception is signed in the habitat layer
@@ -519,6 +542,7 @@ export class Hab {
       algo = undefined,
       salt = undefined,
       tier = undefined,
+      version = Vrsn_2_0,
     } = args;
 
     let nextCount = ncount ?? icount;
@@ -553,7 +577,7 @@ export class Hab {
     const currentSith = isith ?? defaultThreshold(keys.length, 1);
     const nextThreshold = nextSith ?? defaultThreshold(ndigs.length, 0);
     const serder = inceptEvent(keys, {
-      version: Vrsn_2_0,
+      version,
       code: prefixCode,
       isith: currentSith,
       ndigs,
@@ -613,6 +637,8 @@ export class Hab {
     cuts?: string[];
     adds?: string[];
     data?: unknown[];
+    /** Must match the accepted KEL version when given. */
+    version?: Versionage;
   } = {}): Uint8Array {
     if (!this.pre) {
       throw new ValidationError("Rotation requires a local habitat prefix.");
@@ -621,6 +647,7 @@ export class Hab {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
+    const version = acceptedKelVersion(kever, args.version);
 
     const priorSit = this.ks.getSits(this.pre);
     if (!priorSit) {
@@ -663,7 +690,7 @@ export class Hab {
         keys,
         kever.serder.said ?? kever.said,
         {
-          version: Vrsn_2_0,
+          version,
           ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
           sn: kever.sn + 1,
           isith: currentSith,
@@ -686,7 +713,7 @@ export class Hab {
         this.ks.pris.rem(pub);
       }
 
-      return messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 });
+      return messagize(serder, { sigers, pipelined: true, gvrsn: version });
     } catch (error) {
       // Roll keeper state back if the event was not accepted locally. The
       // accepted-state machine, not keeper progression alone, defines success.
@@ -710,6 +737,8 @@ export class Hab {
   interact(
     args: {
       data?: unknown[];
+      /** Must match the accepted KEL version when given. */
+      version?: Versionage;
     } = {},
   ): Uint8Array {
     if (!this.pre) {
@@ -719,17 +748,18 @@ export class Hab {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
+    const version = acceptedKelVersion(kever, args.version);
 
     const serder = interactEvent(
       this.pre,
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
-      { version: Vrsn_2_0 },
+      { version },
     );
     const sigers = this.sign(serder.raw, true) as Siger[];
     this.acceptLocally(serder, sigers);
-    return messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 });
+    return messagize(serder, { sigers, pipelined: true, gvrsn: version });
   }
 
   /**
@@ -1565,7 +1595,7 @@ export class Habery {
     const serder = inceptEvent(keys, {
       // A group identifier is always self-addressing, even with a single signing
       // key, matching KERIpy's GroupHab.make (code defaults to Blake3_256).
-      version: Vrsn_2_0,
+      version: args.version ?? Vrsn_2_0,
       code: DigDex.Blake3_256,
       isith: args.isith,
       ndigs,
@@ -1640,7 +1670,7 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: args.version ?? Vrsn_2_0 }),
     };
   }
 
@@ -1758,7 +1788,8 @@ export class Habery {
    * - member AIDs should already be in the key state intended for the new
    *   group key list, matching KLI's operator workflow of rotating members
    *   before rotating the group
-   * Body and returned proof framing default to KERI/CESR v2.
+   * Body and returned proof framing follow the group's accepted KEL version;
+   * a conflicting explicit `version` is refused.
    */
   rotateGroupHab(
     group: string,
@@ -1794,6 +1825,7 @@ export class Habery {
     const keys = this.extractGroupMemberKeys(signingMembers);
     const ndigs = this.extractGroupMemberNextDigests(rotationMembers);
     const kever = hab.kever;
+    const version = acceptedKelVersion(kever, args.version);
     const serder = rotateEvent(
       hab.pre,
       keys,
@@ -1809,7 +1841,7 @@ export class Habery {
         cuts: args.cuts,
         adds: args.adds,
         data: args.data,
-        version: args.version ?? Vrsn_2_0,
+        version,
       },
     );
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1839,11 +1871,11 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_2_0 }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? version }),
     };
   }
 
-  /** Create a locally signed group interaction with KERI/CESR v2 body/proofs by default. */
+  /** Create a locally signed group interaction in the group's accepted KEL version; conflicts are refused. */
   interactGroupHab(
     group: string,
     smids?: string[],
@@ -1866,12 +1898,13 @@ export class Habery {
     }
 
     const kever = hab.kever;
+    const version = acceptedKelVersion(kever, args.version);
     const serder = interactEvent(
       hab.pre,
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
-      { version: args.version ?? Vrsn_2_0 },
+      { version },
     );
     const keys = kever.verfers.map((verfer) => verfer.qb64);
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1899,7 +1932,7 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_2_0 }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? version }),
     };
   }
 

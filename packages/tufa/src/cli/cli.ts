@@ -23,7 +23,9 @@ export class CliExitError extends Error {
 /** Create the CLI program with action handlers that signal command execution. */
 function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
   const program = new Command();
-  program.name("tufa").version(tufaCliVersionLine()).description(
+  // Subcommands own `--version` as KLI's KERI protocol selection; `tufa --version`
+  // keeps printing the CLI version through the top-level alias in parseCLIArgs.
+  program.name("tufa").version(tufaCliVersionLine(), "-V").description(
     "Trust Utilities for Agents CLI",
   );
   program.addOption(
@@ -45,7 +47,9 @@ function createCLIProgram(onCommand: (selection: CommandSelection) => void) {
 
 function parseCLIArgs(program: Command, args: string[]): void {
   const argsToParse = args.length > 0 ? args : Deno.args;
-  program.parse(argsToParse, { from: "user" });
+  // Only a leading `--version` is the program version request.
+  const selected = argsToParse[0] === "--version" ? ["-V", ...argsToParse.slice(1)] : argsToParse;
+  program.parse(selected, { from: "user" });
 }
 
 function cliArgs(args: string[]): string[] {

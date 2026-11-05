@@ -7,7 +7,7 @@
  * - `join` polls mailbox notifications, signs the embedded event with local
  *   member keys, and republishes the approval EXN
  */
-import { type SerderKERI, type ThresholdSith } from "cesr-ts";
+import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
@@ -53,6 +53,7 @@ import {
   parseCountOption,
   parseDataItems,
   parseFileData,
+  parseKeriVersionOption,
   parseNumberOption,
   parseStringListOption,
   parseStringOption,
@@ -92,17 +93,23 @@ interface MultisigBaseArgs {
 }
 
 interface MultisigInceptArgs extends MultisigBaseArgs {
+  /** KERI version of the new group KEL (KLI `--version`); defaults to 2.0. */
+  version?: Versionage;
   file?: string;
   approvalTimeoutSeconds: number;
   proxy?: string;
 }
 
 interface MultisigInteractArgs extends MultisigBaseArgs {
+  /** Must match the group's accepted KEL version. */
+  version?: Versionage;
   data?: string[];
   approvalTimeoutSeconds: number;
 }
 
 interface MultisigRotateArgs extends MultisigBaseArgs {
+  /** Must match the group's accepted KEL version. */
+  version?: Versionage;
   file?: string;
   isith?: ThresholdSith;
   nsith?: ThresholdSith;
@@ -188,6 +195,7 @@ export function* multisigInceptCommand(
       "approval timeout seconds",
     ),
     proxy: parseStringOption(args.proxy, "proxy"),
+    version: parseKeriVersionOption(args.version),
   };
   const name = requireText(commandArgs.name, "Name");
   const alias = requireText(commandArgs.alias, "Alias");
@@ -209,6 +217,7 @@ export function* multisigInceptCommand(
       wits: options.wits ?? [],
       delpre: options.delpre,
       data: options.data ?? [],
+      version: commandArgs.version,
     });
     const { deliveries, messages } = yield* publishProposal(
       hby,
@@ -349,13 +358,14 @@ export function* multisigInteractCommand(
       10,
       "approval timeout seconds",
     ),
+    version: parseKeriVersionOption(args.version),
   };
   const name = requireText(commandArgs.name, "Name");
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
   const data = parseDataItems(commandArgs.data);
 
   return yield* withMultisigRuntime(commandArgs, name, function*({ hby, runtime }) {
-    const created = hby.interactGroupHab(group, undefined, { data });
+    const created = hby.interactGroupHab(group, undefined, { data, version: commandArgs.version });
     const smids = groupSigningMembers(hby, created.hab.pre);
     const { deliveries, messages } = yield* publishProposal(
       hby,
@@ -423,6 +433,7 @@ export function* multisigRotateCommand(
       10,
       "approval timeout seconds",
     ),
+    version: parseKeriVersionOption(args.version),
   };
   const name = requireText(commandArgs.name, "Name");
   const group = requireText(commandArgs.group ?? commandArgs.alias, "Group");
@@ -440,6 +451,7 @@ export function* multisigRotateCommand(
         cuts: options.witsCut,
         adds: options.witsAdd,
         data: options.data ?? [],
+        version: commandArgs.version,
       },
     );
     const smids = commandArgs.smids?.length ? commandArgs.smids : groupSigningMembers(hby, rotated.hab.pre);

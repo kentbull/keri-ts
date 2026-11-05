@@ -22,6 +22,7 @@ import {
   SerderACDC,
   SerderKERI,
   type Versionage,
+  Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, type Operation } from "effection";
@@ -488,7 +489,7 @@ export function multisigChildGenusAttrs(
 }
 /**
  * Prepare finite child input, construct the parent and serialize its nested evidence.
- * New proposals default to v2. The explicitly selected v1 pathed path retains
+ * KEL event proposals follow the child event version (v2 nested, v1 pathed); others default to v2. The v1 pathed path retains
  * its established encoding; v2 delegates parsing to parseBytes
  * once and borrows the resulting child only until nestedPayload has been fully consumed.
  * Parsed child evidence consists of ordinary values; serialization observes cancellation.
@@ -503,7 +504,10 @@ export function* prepareMultisigEventExn(
   // Keep the route selection stable through parser suspension; attribute values remain immutable borrows.
   const captured = { ...proposal };
   const { route, attrs } = captured;
-  const version = options.pvrsn ?? options.version ?? Vrsn_2_0;
+  // A KEL event proposal follows its event's KEL version, so v1 and v2 KEL events never nest.
+  const kelEvent = [MULTISIG_ICP_ROUTE, MULTISIG_ROT_ROUTE, MULTISIG_IXN_ROUTE].includes(route);
+  const version = options.pvrsn ?? options.version
+    ?? (kelEvent && new SerderKERI({ raw: wire }).pvrsn.major === 1 ? Vrsn_1_0 : Vrsn_2_0);
   const field = route.slice(route.lastIndexOf("/") + 1);
   if (version.major === 1) {
     const child = new SerderKERI({ raw: wire });

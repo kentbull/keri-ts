@@ -131,18 +131,20 @@ Deno.test("selected KERIpy profile serves its real v1 witness OOBI", async () =>
   }
 });
 
-// Skipped for v1-only peers (GLEIF 1.2/1.3): pending decision on keri-ts v1 KEL authoring for v1-only peers.
-Deno.test({
-  name: "selected Python and Tufa query commands converge from stale accepted state through independent mailboxes",
-  ignore: v1OnlyKeripyPeer(),
-}, async () => {
+Deno.test("selected Python and Tufa query commands converge from stale accepted state through independent mailboxes", async () => {
   const ctx = await createInteropContext();
+  // v1-only reference peers (GLEIF 1.2/1.3) need Tufa to author v1 KELs.
+  const kelVersion = v1OnlyKeripyPeer(ctx.env) ? "1.0" : "2.0";
   try {
     const python = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
     try {
       await run(function*() {
         const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-        const witness = hby.makeHab("witness", undefined, { transferable: false, ncount: 0 });
+        const witness = hby.makeHab("witness", undefined, {
+          transferable: false,
+          ncount: 0,
+          version: kelVersion === "1.0" ? Vrsn_1_0 : Vrsn_2_0,
+        });
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
           enableMailboxStore: true,
         });
@@ -168,7 +170,7 @@ Deno.test({
         const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: witness }));
         try {
           yield* call(async () => {
-            const versions = keripyProtocolVersionArgs(ctx.env, "2.0");
+            const versions = keripyProtocolVersionArgs(ctx.env, kelVersion);
             const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
             const head = `${ctx.home}/tufa`,
               issuer = `issuer-${crypto.randomUUID()}`,
@@ -226,6 +228,8 @@ Deno.test({
               extractPrefix(
                 (await tufa("incept query participant", [
                   "incept",
+                  "--version",
+                  kelVersion,
                   "--name",
                   name,
                   "--head-dir",
@@ -379,8 +383,9 @@ Deno.test("selected Python profile accepts actual TCP TEL replay through issued 
   try {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-      const issuer = hby.makeHab("issuer");
-      const service = hby.makeHab("service", undefined, { transferable: false });
+      // Legacy TEL evidence is anchored in a v1 KEL, as the v1 Python fixture expects.
+      const issuer = hby.makeHab("issuer", undefined, { version: Vrsn_1_0 });
+      const service = hby.makeHab("service", undefined, { transferable: false, version: Vrsn_1_0 });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
         const rgy = runtime.vdr!;
@@ -520,8 +525,11 @@ Deno.test("selected Python observer accepts indexed legacy TEL evidence", async 
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
-        const issuer = hby.makeHab("issuer");
-        const signers = ["first", "second"].map(name => hby.makeHab(name, undefined, { transferable: false }));
+        // Legacy TEL evidence is anchored in a v1 KEL, as the v1 Python fixture expects.
+        const issuer = hby.makeHab("issuer", undefined, { version: Vrsn_1_0 });
+        const signers = ["first", "second"].map(name =>
+          hby.makeHab(name, undefined, { transferable: false, version: Vrsn_1_0 })
+        );
         const backers = signers.map(hab => hab.pre);
         // Protocol-level fixture signing supplies independent indexed receipt evidence.
         const vcp = inceptRegistry(issuer.pre, { baks: backers, toad: 2 });
