@@ -128,7 +128,7 @@ The listener does not change mailbox query authorization or group signature thre
 | `tufa ipex spurn`                  | Send an IPEX spurn.                                                                      |
 | `tufa ipex list`                   | List stored IPEX EXNs.                                                                   |
 | `tufa ipex poll`                   | Poll configured credential mailboxes once.                                               |
-| `tufa ipex join`                   | Approve or validate a single-sig or multisig IPEX message.                               |
+| `tufa ipex join`                   | Review or explicitly approve IPEX; accepted v2 group Admit approval records wallet admission.                               |
 | `tufa verifier run`                | Process verifier grants, revocations, and webhook delivery.                              |
 | `tufa hook demo`                   | Launch a sample verifier webhook target.                                                 |
 | `tufa dws bind`                    | Bind a local AID to replacement designated-alias ACDC(s).                                |

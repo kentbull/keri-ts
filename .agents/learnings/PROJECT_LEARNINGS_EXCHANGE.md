@@ -247,6 +247,8 @@ an outer wrapper around the same approved child. Never reset membership from an
 accepted historical inception/rotation or infer acceptance from a resend. Stored
 epath values include their counter; serialize only their path/proof payload so
 reconstruction does not double the counter.
+Group Admit peer approval borrows the existing protocol runtime through `joinIpexProposal`; only v1 uses legacy credential settlement. Tufa `joinWalletIpex` records v2 inventory only after explicit local approval and accepted threshold. Review and partial signatures do not admit.
+
 IPEX command helpers return typed snapshots only after owned cleanup. Tufa
 projects final success JSON; poll results carry ordinary Serders rather than
 presentation-shaped SAD fields. A shutdown failure does not undo actual delivery
