@@ -179,7 +179,14 @@ Group Unblind contributors verify the supplied minimum openings without root
 custody. Public query suffixes remain exact on every member contribution, and
 ordinary group signature thresholds gate peer delivery. Delivery election uses
 the completed auxiliary message's accepted signing keys, independently of any DH
-custodian. RegistrySalt transfer remains separate work.
+custodian. `RegistrySalt` copies existing roots using current author thresholds,
+current target signing membership and the existing sealed-box primitives. Explicit
+process-local receive approval snapshots an exact accepted BUP and held ordinary
+or bound opening; decryption must reproduce its UUID before immutable Keeper
+retention. Group preparation uses the accepted coordinator's elected current
+member; contributors endorse the same ciphertext. Public TEL and wallet custody
+creation remain unchanged. Application newcomer selection/provisioning workflows
+are separate from this core receipt owner.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
