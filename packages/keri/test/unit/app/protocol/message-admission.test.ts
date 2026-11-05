@@ -9,8 +9,9 @@ import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
-import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
-import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
+import { verifyExchangeProofs } from "../../../../src/core/exchange/exchange-proofing.ts";
+import { exchange, exincept } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { Kevery, type QueryEnvelope } from "../../../../src/core/kel/eventing.ts";
 import { type KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { query, reply } from "../../../../src/core/protocol-eventing.ts";
@@ -211,6 +212,7 @@ Deno.test("optional KRAM returns combined evidence after retiring acceptance", a
       const [complete] = yield* call(() => frame(1));
       const { envelope: ready } = yield* runtime.protocol.dispatch(complete);
       assertEquals(ready.sigers.map((sig) => sig.index), [0, 1]);
+      assertEquals(ready.tsgs[0].sigers.map(sig => sig.index), [0, 1]);
       assertEquals(hby.db.pmkm.get(key), null, "partial state is retired before returning evidence");
       assertEquals(runtime.reactor.kvy.kramer!.prune().kind, "pruned");
       assertExists(hby.db.msgc.get(key));
@@ -224,6 +226,67 @@ Deno.test("optional KRAM returns combined evidence after retiring acceptance", a
       now += 120000;
       yield* runtime.protocol.processEscrowsOnce();
       assertEquals(hby.db.msgc.get(key), null, "ordinary escrow scheduling advances finite pruning");
+
+      // The same real threshold fragments reach each semantic owner as one complete sender group.
+      const received: KeriDispatchEnvelope[] = [];
+      const protocol = protocolFixture(hby, {
+        now: () => now,
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        qvy: {
+          processQuery(envelope) {
+            // The query owner independently verifies the complete proof, not KRAM's intake decision.
+            const verified = verifyExchangeProofs(hby.db, envelope.serder, { tsgs: envelope.tsgs });
+            assertEquals(verified.invalid, false);
+            assertEquals(verified.missing, []);
+            assertEquals(verified.tsgs[0].sigers.map(signature => signature.index), [0, 1]);
+            received.push(envelope);
+            return { kind: "accept" };
+          },
+        },
+      });
+      const stamp = makeNowIso8601(new Date(now));
+      const request = query("/ipex/dhke", { grant: body.said! }, { pre: sender.pre, pvrsn: Vrsn_2_0, stamp });
+      const notice = reply(`/ksn/${sender.pre}`, sender.kever!.state().asDict(), {
+        pre: sender.pre,
+        pvrsn: Vrsn_2_0,
+        stamp,
+      });
+      const transaction = exincept("/test/threshold", { sender: sender.pre, receiver: sender.pre, stamp });
+      const deliverThreshold = function*(selected: SerderKERI, partialEffect: () => void) {
+        const signatures = sender.sign(selected.raw, true);
+        const part = (index: number) =>
+          parseBytes(messagize(selected, { sigers: [signatures[index]], gvrsn: Vrsn_2_0 }))[0];
+        const { decision } = yield* protocol.dispatch(part(0));
+        assertEquals(decision?.kind, "pending", JSON.stringify(decision));
+        partialEffect();
+        const result = yield* protocol.dispatch(part(1));
+        assertEquals(result.decision?.kind, "accept");
+        const proof = result.envelope.tsgs[0];
+        assertEquals([proof.pre, proof.sn, proof.said], [sender.pre, 0n, sender.kever!.lastEst.d]);
+        assertEquals(
+          proof.sigers.map(signature => signature.qb64),
+          signatures.slice(0, 2).map(signature => signature.qb64),
+        );
+        assertEquals(hby.db.pmkm.get([sender.pre, selected.said!]), null);
+      };
+      yield* deliverThreshold(request, () => assertEquals(received, [], "partial queries never reach the owner"));
+      assertEquals(received[0].serder.raw, request.raw);
+      yield* deliverThreshold(notice, () => assertEquals(hby.db.knas.get([sender.pre, sender.pre]), null));
+      assertEquals(hby.db.knas.get([sender.pre, sender.pre])?.qb64, sender.kever!.said);
+      assertEquals(hby.db.ksns.get(sender.kever!.said)?.i, sender.pre);
+      assertEquals(received.length, 1, "ksn replies retain their existing owner");
+      yield* deliverThreshold(transaction, () => assertEquals(protocol.exc.complete(transaction.said!), false));
+      assertEquals(protocol.exc.complete(transaction.said!), true);
+      protocol.kvy.denyList.add(sender.pre);
+      const denied = query("/ipex/dhke", { grant: transaction.said! }, { pre: sender.pre, pvrsn: Vrsn_2_0, stamp });
+      const result = yield* protocol.dispatch(
+        parseBytes(messagize(denied, {
+          sigers: sender.sign(denied.raw, true),
+          gvrsn: Vrsn_2_0,
+        }))[0],
+      );
+      assertEquals(result.decision, { kind: "drop", reason: "deniedSender" });
+      assertEquals(received.length, 1, "sender policy runs before the auxiliary query owner");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);

@@ -105,6 +105,15 @@ evidence preparation rechecks current state at that boundary. ProtocolProcessor
 has no global lock: other inputs and escrow scans can progress during file I/O
 or handlers. Each operation joins its own cleanup.
 
+An optional caller-owned `AuxiliaryQueryProcessor` is injected as
+`ProtocolProcessor.qvy`. After sender policy and optional KRAM, it receives the
+full v2 query envelope for routes not owned by the existing KEL, mailbox and TEL
+processors. Signature presence is a dispatch prerequisite, not authorization:
+the receiver verifies the complete author threshold and its explicitly approved
+operation scope. It owns no parser, queue or transport through this interface.
+KRAM hands complete accumulated sender signatures to query, reply, XIP and EXN
+receivers as one establishment-bound group, preserving foreign evidence.
+
 All enabled built-in diagnostic levels (debug/info/warn/error) write to stderr.
 Loglevel selects verbosity; CLI command data, including JSON, remains on stdout.
 

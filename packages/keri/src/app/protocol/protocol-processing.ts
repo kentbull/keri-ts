@@ -12,7 +12,13 @@ import { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import { QueryReplies } from "../queries/query-replies.ts";
 import { runtimeTurn } from "../runtime/runtime-turn.ts";
-import { dispatchEnvelope, type DispatchResult, envelopeFromFrame, queryEnvelopeFromDispatch } from "./parsering.ts";
+import {
+  type AuxiliaryQueryProcessor,
+  dispatchEnvelope,
+  type DispatchResult,
+  envelopeFromFrame,
+  queryEnvelopeFromDispatch,
+} from "./parsering.ts";
 
 /** Protocol choices for a frame; input owners separately own cancellation and parsing. */
 export interface DispatchOptions {
@@ -52,6 +58,7 @@ export class ProtocolProcessor {
    * @param protocolCues Private semantic-output Deck; distinct from application cues.
    * @param cues Application output Deck consumed by the composed cue router.
    * @param replies Shared live request correlations captured before application publication.
+   * @param qvy Optional caller-owned auxiliary query receiver; owns its authorization and lifecycle.
    * @throws TypeError for inconsistent stores or cue bindings.
    */
   constructor(
@@ -73,6 +80,7 @@ export class ProtocolProcessor {
     readonly cues: Deck<AgentCue>,
     /** Shared live request correlations; each requesting connection owns its slots. */
     readonly replies: QueryReplies,
+    readonly qvy?: AuxiliaryQueryProcessor,
   ) {
     if (
       protocolCues === cues || kvy.cues !== protocolCues || rvy.cues !== protocolCues
@@ -133,6 +141,7 @@ export class ProtocolProcessor {
           mailboxAid,
           self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
           self.registry ?? undefined,
+          self.qvy,
         );
         const mailboxQueryAuthorized = result.envelope.serder.route === "mbx"
           && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));

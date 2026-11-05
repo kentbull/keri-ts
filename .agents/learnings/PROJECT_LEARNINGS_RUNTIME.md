@@ -112,6 +112,12 @@ there is no duplicate queued-ingress API or idle msgDo worker. Runtime pending
 state describes its real owners, not a dormant input queue. Explicit close and
 scope exit clear cues after dependent work joins.
 
+`ProtocolProcessor.qvy` optionally borrows an auxiliary query receiver. Unknown
+v2 query routes reach it with the full post-KRAM envelope, after normal sender
+policy and signature-presence checks. Established KEL/mailbox/TEL routes keep
+their owners. Auxiliary receivers independently authenticate complete sender
+thresholds and operation consent; no route map, queue or transport is implied.
+
 Multisig message signing, exact local admission and concrete sending share one
 cohesive module. Typed `messages` identify outer EXNs and Multiplexor payload keys;
 completed destinations never imply participant approval. Tufa projects the affected
