@@ -1,7 +1,7 @@
 /** Independently verify EXN or disclosed-node proofs against already accepted KEL state. */
-import { type Cigar, type SealEvent, type SerderACDC, type SerderKERI } from "cesr-ts";
+import { type Cigar, Diger, NumberPrimitive, type SealEvent, type SerderACDC, type SerderKERI } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
-import { TransIdxSigGroup } from "../dispatch.ts";
+import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../dispatch.ts";
 import { Kever } from "../kel/kever.ts";
 
 /** Explicit proof factors; no parent or neighboring node can supply implicit evidence here. */
@@ -24,6 +24,40 @@ export interface ExchangeProofVerification {
   sourceSeals: SealEvent[];
   invalid: boolean;
   missing: MissingExchangeState[];
+}
+
+/**
+ * Authenticate a named query sender independently of optional KRAM admission.
+ * Explicit sender TSGs take precedence; only their absence allows raw/last
+ * factors to resolve against current accepted establishment state. A valid
+ * alternative suffices, but missing claimed coordinates refuse, as in Python.
+ */
+export function verifyQueryAttachments(db: Baser, envelope: KeriDispatchEnvelope): boolean {
+  const { serder } = envelope;
+  let tsgs = envelope.tsgs.filter((group) => group.pre === serder.pre);
+  const kever = db.getKever(serder.pre!);
+  if (!tsgs.length && kever) {
+    const sigers = [
+      ...envelope.sigers,
+      ...envelope.ssgs.filter((group) => group.pre === serder.pre)
+        .flatMap((group) => group.sigers),
+    ];
+    if (sigers.length) {
+      tsgs = [
+        new TransIdxSigGroup(
+          kever.prefixer,
+          NumberPrimitive.fromNum(BigInt(kever.lastEst.s)),
+          new Diger({ qb64: kever.lastEst.d }),
+          sigers,
+        ),
+      ];
+    }
+  }
+  const verified = verifyExchangeProofs(db, serder, {
+    tsgs,
+    cigars: envelope.cigars.filter((cigar) => cigar.verfer?.qb64 === serder.pre),
+  });
+  return !verified.missing.length && !!(verified.tsgs.length || verified.cigars.length);
 }
 
 /**

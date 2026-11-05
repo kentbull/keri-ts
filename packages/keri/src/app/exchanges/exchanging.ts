@@ -612,32 +612,25 @@ export class Exchanger {
     signal?.throwIfAborted();
     const serder = this.hby.db.exns.get([said]);
     if (!serder) throw new ValidationError("Cannot replay an unaccepted exchange.");
-    const essrs = this.hby.db.getEssrs(said);
+    const args = this.retainedInput(said);
+    if (!args) throw new ValidationError("Invalid stored exchange authentication or evidence.");
+    const essrs = args.essrs;
     signal?.throwIfAborted();
     const gvrsn = resolveAttachmentGvrsn(serder, this.hby.db.exchangeMeta.get([said])?.gvrsn);
-    const args = {
-      serder,
-      tsgs: this.rebuildEscrowedGroups(said),
-      cigars: this.storedCigars(said),
-      sourceSeals: this.storedSeals(said),
-      ptds: this.hby.db.epath.get([said]).map((text) => PathedMaterialGroup.fromRaw(new TextEncoder().encode(text))),
-    };
-    const verified = verifyExchangeProofs(this.hby.db, serder, args);
-    if (
-      verified.invalid || verified.missing.length || !(verified.tsgs.some((group) => group.pre === serder.pre)
-        || verified.cigars.some((cigar) => cigar.verfer?.qb64 === serder.pre)
-        || verified.sourceSeals.some((seal) => seal.i.qb64 === serder.pre))
-    ) throw new ValidationError("Invalid stored exchange authentication or evidence.");
     // epath retains complete groups; serialization supplies the destination
     // genus's counter and therefore consumes only the path-and-proof payload.
     const evidence = {
-      ...verified,
-      pathed: args.ptds.map(group => group.raw.slice(new Counter({ qb64b: group.raw, version: gvrsn }).fullSize)),
+      tsgs: args.tsgs,
+      cigars: args.cigars,
+      sourceSeals: args.sourceSeals,
+      pathed: (args.ptds ?? []).map((group) =>
+        group.raw.slice(new Counter({ qb64b: group.raw, version: gvrsn }).fullSize)
+      ),
     };
     const nested = hasNests(this.hby.db, said);
     {
       const groups = nested ? messageAttachmentGroups(evidence, gvrsn) : [];
-      const nests = nested ? loadNests(this.hby.db, said) : [];
+      const nests = nested ? [...args.nests ?? []] : [];
       if (nests.length) {
         // Reuse the stored Serder and hydrated endorsements; the shared encoder builds real leaf groups.
         const parent: CesrFrame = {
@@ -645,7 +638,7 @@ export class Exchanger {
           attachments: groups,
           gvrsn,
           nests,
-          essrs: essrs ?? undefined,
+          essrs: essrs ? [...essrs] : undefined,
         };
         yield* framePayload(parent).open(signal);
       } else {
@@ -664,6 +657,39 @@ export class Exchanger {
   /** Return true once the named exchange SAID is durably stored as accepted. */
   complete(said: string): boolean {
     return this.hby.db.exns.get([said])?.said === said;
+  }
+
+  /**
+   * Rehydrate authenticated retained factors without route handling or writes.
+   * Pending-only access also enforces the original deadline with this owner's
+   * clock and refuses terminal responses. It does not require fresh RIP state:
+   * an approved issuance may need these exact factors after its BUP arrives.
+   */
+  retainedInput(said: string, { pending = false }: { pending?: boolean } = {}): ExchangeInput | null {
+    const db = this.hby.db;
+    const serder = pending ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
+    if (!serder || serder.said !== said || !serder.verify()) return null;
+    if (pending) {
+      const deadline = db.epsd.get([said]);
+      if (!deadline || this.complete(said) || db.erpy.get([said])) return null;
+      const expiry = timestampMicros(deadline.dts);
+      if (expiry === null) throw new Error("Corrupt exchange partial deadline.");
+      if (this.nowMicros() >= expiry) return null;
+    }
+    const args = this.escrowInput(serder);
+    const verified = verifyExchangeProofs(db, serder, args);
+    if (
+      verified.invalid || verified.missing.length || !(verified.tsgs.some((group) => group.pre === serder.pre)
+        || verified.cigars.some((cigar) => cigar.verfer?.qb64 === serder.pre)
+        || verified.sourceSeals.some((seal) => seal.i.qb64 === serder.pre))
+    ) return null;
+    return {
+      ...args,
+      tsgs: verified.tsgs,
+      cigars: verified.cigars,
+      sourceSeals: verified.sourceSeals,
+      nests: loadNests(db, said),
+    };
   }
 
   /**

@@ -1,0 +1,60 @@
+{
+  "profile": "KERI/ipex/dhke/X25519-HKDF-SHA256-Salt128/v1",
+  "context": {
+    "x": "ECU0NjlQO2uGsmn4LeOqDzOEb3Kwr0lFKDEEDRuWA1o5",
+    "grant": "EAx0jMGMHlcb7MgSXz4I66gHX5vbFoIsTP3b0_CQGUlm",
+    "registry": "EGftLSppNBooNe4QaNXzmxdqZGKUrDlBjxfqEFDZrfqd",
+    "issuer": "EPoxFkbPfGMLAAvSbmVbzaUq06b_iLtO0Jl-_iulPkcw",
+    "issuee": "EDHkuNmalS_OzlzIi-epx2p9k4RnyIX1KXNb2Fon6E0k",
+    "issuer_pk": "CIUg8AmJMKdUdIt93LQ-91oNvzoNJjga9OukqY6qm05q",
+    "issuee_pk": "CN6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCtP"
+  },
+  "issuer_private_hex": "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+  "issuee_private_hex": "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+  "shared_hex": "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742",
+  "info_hex": "0000002c4b4552492f697065782f64686b652f5832353531392d484b44462d5348413235362d53616c743132382f76310000002c454355304e6a6c514f327547736d6e344c654f71447a4f4562334b7772306c464b4445454452755741316f350000002c454178306a4d474d486c6362374d6753587a34493636674858357662466f497354503362305f435147556c6d0000002c454766744c5370704e426f6f4e653451614e587a6d7864715a474b5572446c426a7866714546445a726671640000002c45506f78466b625066474d4c41417653626d56627a6155713036625f694c744f304a6c2d5f69756c506b63770000002c4544486b754e6d616c535f4f7a6c7a49692d6570783270396b34526e794958314b584e6232466f6e3645306b0000002c4349556738416d4a4d4b645564497439334c512d39316f4e767a6f4e4a6a6761394f756b715936716d3035710000002c434e366532333137666347303031746877757a6b4e54635f673050495733686e546133386668527669437450",
+  "hkdf_salt_hex": "eecc91c562b0a99283fbfa2b67752a69927d057486fce4d4d2e193bb452b1bc3",
+  "root_hex": "d26ac66680a49bcf75f92ce7cb852580",
+  "root_qb64": "0ADSasZmgKSbz3X5LOfLhSWA",
+  "uuids": {
+    "1": "aHC0DvoXj-1uFW5B9w_PBrp-4V4TCVFEEAG-4DXhgfEO",
+    "15": "aIm6OCvmiRpsQCEbHV_OQVtEOm4qdsZ_32_LwDEM3FU6",
+    "16": "aE-av5nk9why_pFng7fn50RPmvZBlC2ApyhJjWRgoVn2",
+    "255": "aM8cylyMPr7AtIkQtMzdZ26hRwa3W9BJvEzgzJkYWhSm",
+    "256": "aHhSnDKjJaev0vHzIAdgMXgWEpEMTd7lyHwMbq9E5u-d"
+  },
+  "rejected_public_keys": [
+    {
+      "name": "Ed25519 code is not X25519",
+      "qb64": "DN6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCtP"
+    },
+    {
+      "name": "truncated",
+      "qb64": "CN6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCt"
+    },
+    {
+      "name": "trailing material",
+      "qb64": "CN6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCtPAAAA"
+    },
+    {
+      "name": "base64 padding",
+      "qb64": "CN6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCtP="
+    },
+    {
+      "name": "nonzero CESR prepad",
+      "qb64": "Cz6e2317fcG001thwuzkNTc_g0PIW3hnTa38fhRviCtP"
+    },
+    {
+      "name": "low order zero",
+      "qb64": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "low order one",
+      "qb64": "CAEAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    {
+      "name": "low order p minus one",
+      "qb64": "COz_______________________________________9_"
+    }
+  ]
+}

@@ -85,7 +85,15 @@ while corrupt accepted storage and infrastructure failures propagate. Pending
 `lead` is an explicit opt-in to this scope only when no accepted exchange exists;
 full sender threshold and historical member-index election still apply. Neither
 scope nor election implies disclosure consent, issued-state policy or Admit.
-DHKE and network Unblind remain separate work.
+Individual `Dhke` uses explicit local approval (`start` itself approves issuer
+work), process-local fresh keys and stable retry bytes; local groups refuse.
+`retainedInput(..., {pending:true})` reuses stored authentication and Exchanger's
+original deadline clock without requiring fresh RIP after BUP arrival. Finish
+verifies all current anchored issued openings before retrying exact Grant/child
+bodies; it never authors Admit. Shared `verifyQueryAttachments` prefers named
+sender TSGs, otherwise resolves raw/last signatures against accepted current
+establishment state; a valid factor suffices but missing claimed coordinates
+refuse. KRAM admission alone supplies no consent. Network Unblind remains separate work.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 KRAM's ordinary multi-signature handoff supplies the complete verified sender
 TSG for qry/rpy/XIP/EXN, preserving its accepted establishment coordinates and

@@ -20,6 +20,7 @@ import {
   Verfer,
 } from "cesr-ts";
 import { b } from "cesr-ts";
+import { ValidationError } from "../../core/errors.ts";
 import { Keeper, type PrePrm, type PrePrmShape, type PreSit, type PreSitShape, PubLot } from "../../db/keeping.ts";
 
 /**
@@ -667,9 +668,14 @@ export class Manager {
   private registryRootCrypto() {
     const aeid = this.aeid;
     if (!aeid || !this.encrypter || !this.decrypter || !new Encrypter({ verkey: aeid }).verifySeed(this.seed)) {
-      throw new Error("Registry roots require an authenticated encrypted unlocked Keeper");
+      throw new ValidationError("Registry roots require an authenticated encrypted unlocked Keeper");
     }
     return { aeid, encrypter: this.encrypter, decrypter: this.decrypter };
+  }
+
+  /** Assert encrypted, unlocked current policy before authorizing an operation with no root yet. */
+  requireRegistryRootAccess(): void {
+    this.registryRootCrypto();
   }
 
   /** Return the retained Salt128 root; absent reads require no encryption. */

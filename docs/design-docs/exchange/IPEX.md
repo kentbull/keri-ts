@@ -166,6 +166,39 @@ Election and auxiliary scope supply neither delivery consent, credential-use
 policy nor Admit. This contract follows Python `28ccfc25` (the relevant modules
 are unchanged at `63a33e88`).
 
+`Dhke` implements the individual issuer/issuee flow for an explicitly selected
+fresh pending Grant. `start(grant)` is the issuer's explicit approval and returns
+stable signed query bytes; the issuee must call `approve(grant)` before query
+intake. Composition injects the owner as `ProtocolProcessor.qvy`, registers
+`/ipex/dhke` on the same habitat Revery's Router, and delivers its `outgoing` reply
+Deck. Constructor or wire intake never supplies consent. Local groups refuse;
+custodian election and member contributions are not implemented by this owner yet.
+
+The derivation ports Python's local profile
+`KERI/ipex/dhke/X25519-HKDF-SHA256-Salt128/v1`, carried in KERI/CESR v2 JSON
+query/reply bodies. It is not a standardized KERI key derivation. Each registry
+uses fresh X25519 keys, never converted signing keys. HKDF-SHA256 binds the exact
+XID, Grant SAID, registry, issuer, issuee and both public keys with length-prefixed
+fields and the existing profile domain. Every root is derived, including
+noncontributory-key checks, before any encrypted Keeper root is retained.
+Approval requires current encrypted/unlocked Keeper access and refuses existing
+roots. Consent, private keys and stable retry bytes are process-local; restarting
+does not restore authorization or unfinished ephemeral keys. `abandon` drops
+private-key references and refuses further operation use without deleting roots.
+
+Query verification independently requires the sender threshold even without
+KRAM. Named sender TSGs take precedence over raw/last factors; the latter resolve
+only against current accepted establishment state. Revery owns reply threshold
+and escrow behavior. `complete` and `finish` reauthenticate the original pending
+Grant using Exchanger's retained-proof accessor and original clock/deadline;
+they remain usable after BUP arrival even though fresh-RIP negotiation ends.
+`finish` verifies every selected current anchored BUP opens its exact disclosed
+node as `issued` before appending any opening. It retries the same Grant and
+child bodies through Exchanger, without re-signing, renewing expiry or authoring
+Admit. Normal remote refusals are typed decisions; corrupt storage and unexpected
+crypto/storage failures remain exceptions. A root retained before a later
+storage failure does not imply completion or distributed atomicity.
+
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.
 Maps and list indexes are traversed as carried; `_` follows that map's `n` to an
