@@ -134,6 +134,9 @@ thresholds freeze completed aggregates. Delivery belongs to the member whose
 latest accepted historical contribution matches the aggregate's lowest verified
 index; it is not DH custody or a Grant/KEL coordinator election. The root holder
 may author a reply proposal while another rootless member delivers its aggregate.
+Finite callers use `hasPeerQuery(xid)` to schedule responder work after the
+independent peer query authenticates; it rechecks live scope and current heads
+without signing or exposing mutable operation state.
 No automatic Admit, durable approval or additional consent stage exists.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 KRAM's ordinary multi-signature handoff supplies the complete verified sender

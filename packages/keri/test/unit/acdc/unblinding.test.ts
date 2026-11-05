@@ -1,4 +1,5 @@
-/** Real encrypted owners follow KERIpy test_unblind_routes.py without provisioning or transport claims. */
+import { createProtocolHandler } from "@keri-ts/hosting";
+/** Real encrypted owners repair exact presentations through the maintained finite HTTP workflow. */
 import {
   type CesrFrame,
   collectPayload,
@@ -16,28 +17,28 @@ import {
   type SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, ensure, run } from "effection";
-import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { call, ensure, run, sleep, spawn } from "effection";
+import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { runPresentationUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { loadNests } from "../../../db.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
-import { RegistryObserver } from "../../../src/acdc/observing.ts";
-import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
+import { openRegistry, publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
+import { Regery } from "../../../src/acdc/registraring.ts";
 import { Unblind } from "../../../src/acdc/unblinding.ts";
-import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
+import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
-import { loadIpexHandlers } from "../../../src/app/ipex/ipexing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
-import { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
-import { Reactor } from "../../../src/app/protocol/reactor.ts";
-import { QueryReplies } from "../../../src/app/queries/query-replies.ts";
-import type { AgentCue } from "../../../src/core/cues.ts";
-import { Deck } from "../../../src/core/deck.ts";
+import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
+import type { Reactor } from "../../../src/app/protocol/reactor.ts";
+import { type AgentRuntime, createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
+import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
+import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
-import { Kevery } from "../../../src/core/kel/eventing.ts";
-import { Kramer } from "../../../src/core/mailbox/kraming.ts";
-import { interact as interactEvent } from "../../../src/core/protocol-eventing.ts";
+import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
+import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 
 Deno.test("Unblind repairs pending and live exact presentations without changing admitted history", async () => {
@@ -72,39 +73,64 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       route: Unblind;
       protocol: ProtocolProcessor;
       reactor: Reactor;
+      runtime: AgentRuntime;
     }[] = [];
     for (const [hby, hab] of [[senderHby, sender], [verifierHby, verifier]] as const) {
       const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
-      const store = new RegistryStore(baser), rvy = hab.rvy, output = rvy.cues, cues = new Deck<AgentCue>();
-      const kvy = new Kevery(hby.db, {
-        rvy,
-        cues: output,
-        kramer: new Kramer(hby.db, {
-          cues: output,
-          config: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        }),
+      const rgy = new Regery(hby, baser);
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+        acdc: rgy,
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        ipexAuxiliary: { kind: "unblind", hab, states: ["issued", "revoked", ""] },
       });
-      const exc = new Exchanger(hby, { cues: output });
-      loadIpexHandlers(hby, exc, { registry: store });
-      const registry = new RegistryObserver(hby.db, store);
-      const route = new Unblind({ hab, exc, registry, states: ["issued", "revoked", ""] });
-      rvy.rtr.addRoute(Unblind.Route, route);
-      const protocol = new ProtocolProcessor(
-        kvy,
-        rvy,
-        exc,
-        null,
-        null,
-        registry,
-        output,
-        cues,
-        new QueryReplies(cues),
-        route,
-      );
-      parties.push({ hby, hab, store, exc, route, protocol, reactor: new Reactor(protocol) });
+      yield* ensure(() => runtime.close());
+      assert(runtime.ipexAuxiliary?.kind === "unblind");
+      parties.push({
+        hby,
+        hab,
+        store: rgy.store,
+        exc: runtime.exc,
+        route: runtime.ipexAuxiliary.owner,
+        protocol: runtime.protocol,
+        reactor: runtime.reactor,
+        runtime,
+      });
     }
     const [presenter, observer] = parties;
+    const queries: CesrFrame[] = [], replies: CesrFrame[] = [];
+    for (const side of parties) {
+      const handler = createProtocolHandler(side.runtime, { hostedPrefixes: [side.hab.pre], serviceHab: side.hab });
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+        const incoming = request.method === "POST" ? parseBytes(await readCesrRequestBytes(request.clone())) : [];
+        const response = await handler(request);
+        for (const frame of incoming) {
+          if (envelopeFromFrame(frame).serder.route === Unblind.Route) {
+            if (frame.body.ilk === "qry") queries.push(frame);
+            if (frame.body.ilk === "rpy") replies.push(frame);
+          }
+        }
+        return response;
+      });
+      yield* ensure(() =>
+        call(async () => {
+          await server.shutdown();
+          await handler.close?.();
+        })
+      );
+      const location = side.hab.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.hab.pre, "http");
+      const controller = side.hab.makeEndRole(side.hab.pre, Roles.controller, true);
+      for (const peer of parties) {
+        // Public endpoint authentication follows the ordinary KEL intake below.
+        if (peer !== side) {
+          for (const wire of side.hby.db.clonePreIter(side.hab.pre, 0)) {
+            yield* peer.reactor.processBytes(wire);
+          }
+        }
+        yield* peer.reactor.processBytes(location);
+        yield* peer.reactor.processBytes(controller);
+      }
+    }
     for (const wire of senderHby.db.clonePreIter(sender.pre, 0)) yield* observer.reactor.processBytes(wire);
     for (const wire of verifierHby.db.clonePreIter(verifier.pre, 0)) yield* presenter.reactor.processBytes(wire);
     const rip = regcept(sender.pre, { stamp });
@@ -260,18 +286,11 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     // An explicit finish may update another live accepted view; ordinary intake cannot enrich history.
     const liveView = observer.hby.db.enst.get(live.said!), liveDeadline = observer.hby.db.epsd.get(live.said!)!.dts;
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), false);
-    const liveXid = observer.route.approve(live.said!);
-    presenter.route.approve(live.said!);
-    yield* presenter.reactor.processBytes(observer.route.start(live.said!));
-    const liveReply = presenter.route.outgoing.pull()!;
-    yield* observer.reactor.processBytes(liveReply.msg);
-    assertEquals(observer.route.complete(liveXid), true);
-    assertEquals(
-      observer.hby.db.enst.get(live.said!),
-      liveView,
-      "authenticated reply alone does not rewrite accepted proof",
-    );
-    assertEquals((yield* observer.route.finish(liveXid)).kind, "accept");
+    assertEquals(observer.hby.db.enst.get(live.said!), liveView);
+    const liveRequest = yield* spawn(() => runPresentationUnblind(observer.runtime, live.said!, { timeoutMs: 15000 }));
+    const liveRelease = yield* runPresentationUnblind(presenter.runtime, live.said!, { timeoutMs: 15000 });
+    assertEquals((yield* liveRequest).completed, true);
+    assertEquals(liveRelease.admitted, false);
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), true);
     assertEquals(observer.hby.db.epsd.get(live.said!)!.dts, liveDeadline);
     assertEquals(loadNests(observer.hby.db, live.said!)[0].body.raw, credential.raw);
@@ -334,38 +353,30 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       route: Unblind;
       protocol: ProtocolProcessor;
       reactor: Reactor;
+      runtime: AgentRuntime;
     }[] = [];
     for (const [index, side] of members.entries()) {
       const hab = groups[index].hab;
       const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
-      const store = new RegistryStore(baser), rvy = hab.rvy, output = rvy.cues, cues = new Deck<AgentCue>();
-      const kvy = new Kevery(side.hby.db, {
-        rvy,
-        cues: output,
-        kramer: new Kramer(side.hby.db, {
-          cues: output,
-          config: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        }),
+      const rgy = new Regery(side.hby, baser);
+      const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
+        acdc: rgy,
+        kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+        ipexAuxiliary: { kind: "unblind", hab, states: ["issued", "revoked", ""] },
       });
-      const exc = new Exchanger(side.hby, { cues: output });
-      loadIpexHandlers(side.hby, exc, { registry: store });
-      const registry = new RegistryObserver(side.hby.db, store);
-      const route = new Unblind({ hab, exc, registry, states: ["issued", "revoked", ""] });
-      rvy.rtr.addRoute(Unblind.Route, route);
-      const protocol = new ProtocolProcessor(
-        kvy,
-        rvy,
-        exc,
-        null,
-        null,
-        registry,
-        output,
-        cues,
-        new QueryReplies(cues),
-        route,
-      );
-      actors.push({ ...side, hab, store, exc, route, protocol, reactor: new Reactor(protocol) });
+      yield* ensure(() => runtime.close());
+      assert(runtime.ipexAuxiliary?.kind === "unblind");
+      actors.push({
+        ...side,
+        hab,
+        store: rgy.store,
+        exc: runtime.exc,
+        route: runtime.ipexAuxiliary.owner,
+        protocol: runtime.protocol,
+        reactor: runtime.reactor,
+        runtime,
+      });
     }
     const presenters = actors.slice(0, 2), verifiers = actors.slice(2), sender = presenters[0], verifier = verifiers[0];
     const intakeAll = function*(wire: Uint8Array, local = false) {
@@ -399,6 +410,42 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
         ],
       }, Vrsn_2_0),
     });
+    const queries: CesrFrame[] = [], replies: CesrFrame[] = [];
+    for (const side of actors) {
+      const handler = createProtocolHandler(side.runtime, {
+        hostedPrefixes: [side.member.pre, side.hab.pre],
+        serviceHab: side.member,
+      });
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+        const incoming = request.method === "POST" ? parseBytes(await readCesrRequestBytes(request.clone())) : [];
+        const response = await handler(request);
+        for (const frame of incoming) {
+          if (envelopeFromFrame(frame).serder.route === Unblind.Route) {
+            if (frame.body.ilk === "qry") queries.push(frame);
+            if (frame.body.ilk === "rpy") replies.push(frame);
+          }
+        }
+        return response;
+      });
+      yield* ensure(() =>
+        call(async () => {
+          await server.shutdown();
+          await handler.close?.();
+        })
+      );
+      yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.member.pre, "http"));
+      yield* intakeAll(side.member.makeEndRole(side.member.pre, Roles.controller, true));
+      const controller = reply("/end/role/add", {
+        cid: side.hab.pre,
+        role: Roles.controller,
+        eid: side.member.pre,
+      }, { pre: side.hab.pre, pvrsn: Vrsn_2_0 });
+      yield* intakeAll(
+        yield* call(() =>
+          collectPayload(framePayload(signed(controller, presenters.includes(side) ? presenters : verifiers)))
+        ),
+      );
+    }
     // Earlier group admission remains its own immutable historical view.
     const rip = regcept(sender.hab.pre);
     yield* anchor(rip);
@@ -456,86 +503,66 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     yield* intakeAll(yield* call(() => collectPayload(framePayload(signed(grant, presenters, [child])))));
     const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
     for (const side of verifiers) assertEquals(side.exc.complete(grant.said!), false);
-    for (const side of [presenters[1], ...verifiers]) side.route.approve(grant.said!);
-
-    // Setup approval permits ordinary contributions; only a complete own query is delivered to the peer.
-    const queryProposal = verifier.route.start(grant.said!);
-    assertEquals(verifier.route.outgoing.pull()!.kin, "sign");
-    const queryContribution = verifiers[1].route.contribute(grant.said!, queryProposal);
-    assertEquals(parseBytes(queryContribution)[0].body.raw, parseBytes(queryProposal)[0].body.raw);
-    for (const side of verifiers) {
-      yield* side.reactor.processBytes(queryProposal);
-      assertEquals([...side.route.outgoing].filter(cue => cue.kin === "query"), []);
-      yield* side.reactor.processBytes(queryContribution);
-    }
-    const query = verifier.route.outgoing.pull()!;
-    assertEquals(query.kin, "query");
-    assertEquals(query.dest, sender.hab.pre);
-    const request = parseBytes(query.msg)[0];
-    assertEquals((envelopeFromFrame(request).serder.sad!.q as Record<string, unknown>).re, {
+    // Start the ordinary nonproposer command first; one setup cannot publish a group query.
+    const peerRequest = yield* spawn(() =>
+      runPresentationUnblind(verifiers[1].runtime, grant.said!, {
+        timeoutMs: 15000,
+        proposer: verifier.member.pre,
+      })
+    );
+    yield* sleep(100);
+    assertEquals(queries, []);
+    const request = yield* spawn(() =>
+      runPresentationUnblind(verifier.runtime, grant.said!, {
+        timeoutMs: 15000,
+        proposer: verifier.member.pre,
+      })
+    );
+    while (!queries.length) yield* sleep(10);
+    const query = queries[0], queryEvidence = envelopeFromFrame(query);
+    assertEquals((queryEvidence.serder.sad!.q as Record<string, unknown>).re, {
       [rip.said!]: events.map(event => event.said!),
     });
-    assertEquals(request.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
-    assertEquals(sender.route.processQuery(envelopeFromFrame(request)).kind, "drop");
-    assertEquals(sender.store.head(rip.said!)!.qb64, event1.said!, "unapproved receipt does not import or disclose");
-    sender.route.approve(grant.said!);
+    assertEquals(query.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
+    assertEquals(queryEvidence.tsgs.flatMap(group => group.sigers.map(siger => siger.index)).sort(), [0, 1]);
     for (const side of presenters) {
-      yield* side.reactor.processBytes(query.msg);
-      assertEquals(side.store.head(rip.said!)!.qb64, events[2].said!);
-      assertEquals(side.route.outgoing.length, 0, "a group query does not author competing reply proposals");
+      assertEquals(side.store.head(rip.said!)!.qb64, event1.said!, "unapproved receipt does not import or disclose");
     }
+    assertEquals(replies, []);
 
-    // Index 1 supplies proofs; rootless index 0 independently validates the exact proposal before signing.
-    const proposal = presenters[1].route.respond(grant.said!);
-    assertEquals(presenters[1].route.outgoing.pull()!.kin, "sign");
-    const frame = parseBytes(proposal)[0], evidence = envelopeFromFrame(frame);
+    // Index 1 authors the proof; rootless index 0 validates and contributes under its one setup approval.
+    const peerRelease = yield* spawn(() =>
+      runPresentationUnblind(sender.runtime, grant.said!, {
+        timeoutMs: 15000,
+        proposer: presenters[1].member.pre,
+      })
+    );
+    yield* sleep(100);
+    assertEquals(replies, [], "one approved presenter cannot release a threshold reply");
+    const release = yield* spawn(() =>
+      runPresentationUnblind(presenters[1].runtime, grant.said!, {
+        timeoutMs: 15000,
+        proposer: presenters[1].member.pre,
+      })
+    );
+    const completed = [yield* request, yield* peerRequest, yield* release, yield* peerRelease];
+    for (const result of completed) assertEquals([result.completed, result.admitted], [true, false]);
+    assert(queries.length > 0 && replies.length > 0, "finite commands deliver actual HTTP query and reply messages");
+    for (const repeated of queries) assertEquals(repeated.body.raw, query.body.raw);
+    const response = replies[0], evidence = envelopeFromFrame(response);
     assertEquals(evidence.bsqs.map(opening => opening.d.nonce).sort(), proofs.map(opening => opening.d.nonce).sort());
-    const excess: CesrFrame = {
-      ...frame,
-      attachments: [...frame.attachments, parseAttachmentGroup(publicOpeningAttachment(first), Vrsn_2_0, "txt").group],
-    };
-    const invalid = yield* call(() => collectPayload(framePayload(excess)));
-    assertThrows(
-      () => sender.route.contribute(grant.said!, invalid),
-      Error,
-      undefined,
-      "already carried proof is excess disclosure",
-    );
-    const contribution = sender.route.contribute(grant.said!, proposal);
-    assertEquals(parseBytes(contribution)[0].body.raw, frame.body.raw);
-    assertEquals(
-      envelopeFromFrame(parseBytes(contribution)[0]).bsqs.map(opening => opening.d.nonce),
-      evidence.bsqs.map(opening => opening.d.nonce),
-    );
-    for (const side of presenters) {
-      yield* side.reactor.processBytes(proposal);
-      assertEquals(
-        [...side.route.outgoing].filter(cue => cue.kin === "reply"),
-        [],
-        "one signer cannot release a peer reply",
-      );
-      yield* side.reactor.processBytes(contribution);
-      assertEquals(side.route.complete(grant.said!), true);
-    }
-    assertEquals(presenters[1].route.outgoing.length, 0, "root custody does not override the signature election");
-    const response = sender.route.outgoing.pull()!;
-    assertEquals(response.kin, "reply");
-    assertEquals(response.dest, verifier.hab.pre);
-    assertEquals(
-      sender.hab.mgr.getRegistryRoot(sender.hab.pre, rip.said!),
-      null,
-      "elected delivery requires no root custody",
-    );
-    assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
-    assertEquals(new TextDecoder().decode(response.msg).includes(first.d.qb64), false);
-    for (const side of verifiers) {
-      yield* side.reactor.processBytes(response.msg);
-      assertEquals(side.route.complete(grant.said!), true);
-    }
+    assertEquals(evidence.bsss, []);
+    assertEquals(response.nests ?? [], []);
+    const indices = evidence.tsgs.flatMap(group => group.sigers.map(siger => siger.index)).sort();
+    assertEquals(indices, [0, 1], "the verified minimum index elects rootless member zero for delivery");
+    assertEquals(sender.hab.mgr.getRegistryRoot(sender.hab.pre, rip.said!), null);
+    const responseWire = yield* call(() => collectPayload(framePayload(response)));
+    assertEquals(new TextDecoder().decode(responseWire).includes(root.qb64), false);
+    assertEquals(new TextDecoder().decode(responseWire).includes(first.d.qb64), false);
 
     // All four owners finish the same retained presentation; a separate threshold still gates Admit.
     for (const [index, side] of actors.entries()) {
-      assertEquals((yield* side.route.finish(grant.said!)).kind, "accept");
+      assertEquals(side.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
       assertEquals(side.hby.db.exns.get(grant.said!)!.raw, grant.raw);
       assertEquals(side.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
       assertEquals(side.hby.db.erpy.get(grant.said!), null);

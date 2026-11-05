@@ -348,6 +348,15 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
   }
 
+  /** Schedule responder work only after the selected live operation authenticates its peer query. */
+  hasPeerQuery(xid: string): boolean {
+    const op = this.operation(xid);
+    this.live(op);
+    this.current(op);
+    if (this.hab.pre !== op.sender) throw new ValidationError("Peer query readiness requires the selected discloser");
+    return op.requestedByPeer;
+  }
+
   /** Retry a previously authenticated request locally when held proofs become available. */
   respond(xid: string): Uint8Array {
     const op = this.operation(xid), { nests } = this.live(op);

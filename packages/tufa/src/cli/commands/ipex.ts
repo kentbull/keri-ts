@@ -415,8 +415,13 @@ function* acdcV2Disclosure(
   writeJsonLine(completed);
 }
 
-/** Recover only the requested commitment candidate through CESR's existing unblind operation. */
+/** Select live exact-Grant acquisition or offline candidate recovery; neither creates an Admit. */
 export function* ipexUnblindCommand(args: Record<string, unknown>): Operation<void> {
+  if (args.grant) {
+    const { ipexLiveUnblindCommand } = yield* call(() => import("./ipex-unblinding.ts"));
+    return yield* ipexLiveUnblindCommand(args);
+  }
+  if (args.timeout || args.input || args.proposer) throw new ValidationError("Live Unblind options require --grant");
   const path = parseStringOption(args.opening, "opening"), said = parseStringOption(args.said, "said");
   if (!path || !said) throw new ValidationError("Unblind requires --opening and --said.");
   const states = JSON.parse(parseStringOption(args.states, "states") ?? "[]");
