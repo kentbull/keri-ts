@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Git exports GIT_DIR to hooks; in a linked worktree that makes the Changesets
+# CLI misread the repository. Let git rediscover it from the working directory.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 BASE_REF="${1:-origin/master}"
 
 print_remedies() {

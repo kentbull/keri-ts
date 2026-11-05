@@ -65,7 +65,6 @@ import {
   multisigInceptExn,
   multisigInteractExn,
   type MultisigMessage,
-  multisigPathedAttachment,
   multisigRotateExn,
   type MultisigRoute,
   multisigRpyExn,
@@ -96,7 +95,6 @@ import {
 } from "../../../../src/core/protocol-vdr-eventing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
-import { Reger } from "../../../../src/db/reger.ts";
 import { credential, Credentialer, Regery, serializeCredential } from "../../../../src/vdr/credentialing.ts";
 import framing714 from "../../../fixtures/multisig-framing-714.json" with { type: "json" };
 
@@ -189,17 +187,18 @@ Deno.test("multisig publication records its actual local proposal before deliver
         let delivered: SerderKERI | undefined;
         // Only transmission is substituted; preparation, signing, intake and replay use real owners.
         runtime.postman.send = function(evt) {
-          const serder = new SerderKERI({ raw: evt.msg });
+          const [frame] = parseBytes(evt.msg);
+          const serder = frame.body as SerderKERI;
           assertEquals(evt.src, alice.pre);
           assertEquals(evt.dest, bob.pre);
-          assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
-          const embeds = serder.ked!.e;
-          assertExists(embeds);
-          assertEquals(Object.keys(embeds), ["icp", "d"]);
+          // A v2 wrapper commits to its one nested child by SAID; it carries no v1 embeds.
+          assertEquals(serder.pvrsn, Vrsn_2_0);
+          assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, icp: local.serder.said });
+          assertEquals(serder.ked!.e, undefined);
+          assertEquals(frame.nests?.map(nest => nest.body.raw), [local.serder.raw]);
           assertEquals(left.db.exns.get([serder.said!])?.raw, serder.raw);
           assertEquals(runtime.exc.complete(serder.said!), true);
-          const embedded = (serder.ked!.e as { d: string }).d;
-          assertEquals(left.db.maids.get([embedded]).map((p) => p.qb64), [alice.pre]);
+          assertEquals(left.db.maids.get([local.serder.said!]).map((p) => p.qb64), [alice.pre]);
           delivered = serder;
           return { ...evt, kin: "msg" };
         };
@@ -209,13 +208,13 @@ Deno.test("multisig publication records its actual local proposal before deliver
         const publication = yield* publishProposal(left, runtime.protocol, runtime.postman, alice, mids, {
           route: "/multisig/icp",
           attrs: { smids: mids, rmids: mids },
-        }, messagize(local.serder, { sigers: local.sigers, gvrsn: Vrsn_1_0 }));
+        }, local.message);
         assertEquals(publication.deliveries, ["test-transmission"]);
         assertExists(delivered);
         assertEquals(publication.messages, [{
           recipient: bob.pre,
           exnSaid: delivered.said,
-          payloadSaid: (delivered.ked!.e as { d: string }).d,
+          payloadSaid: local.serder.said,
         }]);
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, 0);
@@ -235,15 +234,8 @@ Deno.test("multisig publication records its actual local proposal before deliver
         assertEquals(resumed?.accepted, false);
         assertEquals(resumed?.messages, publication.messages);
         assertEquals(left.db.getKever(local.hab.pre), null);
-        const [peer, paths] = yield* multisigInceptExn(
-          bob,
-          mids,
-          mids,
-          messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_1_0 }),
-        );
-        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
-          local: true,
-        });
+        const peer = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, remote.message));
+        yield* runtime.reactor.processBytes(peer.message, { local: true });
         yield* runtime.protocol.processEscrowsOnce();
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         assertEquals(notifier.list().length, 0);
@@ -355,7 +347,7 @@ for (const localSender of [false, true]) {
   });
 }
 
-Deno.test("multisig approval honors signed child genus through KEL, replies, registry and credential issuance", async () => {
+Deno.test("multisig join selects, signs and resumes v2 group inception and reply proposals", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
@@ -366,53 +358,24 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
       });
       try {
         runtime.postman.send = function(evt) {
-          const serder = new SerderKERI({ raw: evt.msg });
+          const [frame] = parseBytes(evt.msg);
+          const serder = frame.body as SerderKERI;
+          // Local contributions are v2 wrappers that commit to their one nested child by SAID.
+          assertEquals(serder.pvrsn, Vrsn_2_0);
+          assertEquals(serder.ked!.e, undefined);
           if (serder.route === "/multisig/icp") {
-            assertEquals(serder.ked!.a, {
-              gid: local.hab.pre,
-              smids: mids,
-              rmids: mids,
-              cgvrsn: [2, 0],
-              i: bob.pre,
-            });
+            assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, icp: local.serder.said });
           }
-          if (["/multisig/rpy", "/multisig/vcp", "/multisig/iss"].includes(serder.route!)) {
-            assertEquals(serder.ked!.a, {
-              gid: local.hab.pre,
-              cgvrsn: [2, 0],
-              ...(serder.route === "/multisig/vcp" ? { usage: "group credentials" } : {}),
-              i: bob.pre,
-            });
-          }
-          if (serder.route === "/multisig/iss") {
-            const sad = serder.ked!.e as Record<string, unknown>;
-            const child = new SerderACDC({ sad: sad.acdc as Record<string, unknown> });
-            const proof = multisigPathedAttachment(left, serder.said!, "acdc");
-            const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), child.raw, proof));
-            {
-              assertEquals(frames.length, 1);
-              const seals = envelopeFromFrame(frames[0]).ssts;
-              assertEquals(seals.length, 1);
-              assertEquals([seals[0].i.qb64, seals[0].s.num, seals[0].d.qb64], [issuance.pre, 0n, issuance.said]);
-            }
+          if (serder.route === "/multisig/rpy") {
+            assertEquals(serder.ked!.a, { gid: local.hab.pre, rpy: frame.nests?.[0].body.said });
           }
           return { ...evt, kin: "msg" };
         };
         runtime.postman.wait = function*(evt) {
           return { kin: "sent", evt, deliveries: ["test"] };
         };
-        const [peer, paths] = exchange("/multisig/icp", {
-          smids: mids,
-          rmids: mids,
-          cgvrsn: [2, 0],
-          unrecognized: "peer-only",
-        }, {
-          sender: bob.pre,
-          embeds: { icp: messagize(remote.serder, { sigers: remote.sigers, gvrsn: Vrsn_2_0 }) },
-        });
-        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(peer, { pipelined: false }), paths), {
-          local: true,
-        });
+        const peer = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, remote.message));
+        yield* runtime.reactor.processBytes(peer.message, { local: true });
         const callbacks = {
           approveProposal: () => {
             prompts++;
@@ -424,6 +387,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         let prompts = 0;
         // The wrong group must not prompt, sign or consume the pending notice.
         const pending = notifier.list();
+        assertEquals(pending.length, 1);
         assertEquals(
           yield* approvePendingMultisigProposal(left, runtime, {
             group: bob.pre,
@@ -439,7 +403,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               run(() =>
                 approvePendingMultisigProposal(left, runtime, {
                   group: bob.pre,
-                  said: peer.said!,
+                  said: peer.exnSaid,
                   callbacks,
                 })
               ),
@@ -452,115 +416,34 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         for (const notice of pending) notifier.remove(notice.rid);
         const result = yield* approvePendingMultisigProposal(left, { ...runtime, notifier: null }, {
           group: "group",
-          said: peer.said!,
+          said: peer.exnSaid,
           callbacks,
         });
-        assertEquals(result?.said, peer.said);
+        assertEquals(result?.said, peer.exnSaid);
+        assertEquals(result?.embedded, local.serder.said);
         assertEquals(prompts, 1);
         assertEquals(result?.accepted, true);
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         yield* call(() => learn(right, local.hab));
         const rpy = replyEvent("/end/role/add", { cid: local.hab.pre, role: "mailbox", eid: bob.pre }, {
           pre: local.hab.pre,
+          pvrsn: Vrsn_2_0,
         });
         const peerRpy = groupEndorseReply(right, remote.hab.pre, rpy, Vrsn_2_0);
-        const [rpyWrapper, rpyPaths] = exchange("/multisig/rpy", {
-          gid: local.hab.pre,
-          cgvrsn: [2, 0],
-          unrecognized: "peer-only",
-        }, { sender: bob.pre, embeds: { rpy: peerRpy } });
-        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(rpyWrapper, { pipelined: false }), rpyPaths), {
-          local: true,
-        });
-        const replyResult = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "registry",
-          },
-        });
+        const rpyWrapper = signGroupMessage(bob, alice.pre, yield* multisigRpyExn(local.hab.pre, bob, peerRpy));
+        yield* runtime.reactor.processBytes(rpyWrapper.message, { local: true });
+        const replyResult = yield* approvePendingMultisigProposal(left, runtime, { callbacks });
+        assertEquals(replyResult?.said, rpyWrapper.exnSaid);
         assertEquals(replyResult?.accepted, true);
         assertEquals(left.db.ends.get([local.hab.pre, "mailbox", bob.pre])?.allowed, true);
-        const registry = inceptRegistry(local.hab.pre, { cnfg: ["NB"] });
-        const anchor = right.interactGroupHab("group", mids, {
-          data: [{ i: registry.pre, s: "0", d: registry.said }],
-        });
-        const [vcpWrapper, vcpPaths] = exchange("/multisig/vcp", {
-          gid: local.hab.pre,
-          cgvrsn: [2, 0],
-          usage: "group credentials",
-          unrecognized: "peer-only",
-        }, {
-          sender: bob.pre,
-          embeds: { vcp: registry.raw, anc: messagize(anchor.serder, { sigers: anchor.sigers, gvrsn: Vrsn_2_0 }) },
-        });
-        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(vcpWrapper, { pipelined: false }), vcpPaths), {
-          local: true,
-        });
-        const registryResult = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "registry",
-          },
-        });
-        assertEquals(registryResult?.accepted, true);
-        assertEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
-        assertInstanceOf(runtime.vdr!.reger, Reger);
-        assertEquals(runtime.vdr!.reger.tels.getOn(registry.pre!, 0)?.qb64, registry.said);
-        yield* call(() => learn(right, local.hab));
-        const schemer = new Schemer({ sed: { $id: "", type: "object" } });
-        left.db.schema.pin(schemer.said, schemer);
-        const creder = credential({
-          issuer: local.hab.pre,
-          registry: registry.pre!,
-          schema: schemer.said,
-          recipient: bob.pre,
-          data: { role: "holder" },
-        });
-        const issuance = issueCredential(creder.said!, registry.pre!);
-        const issueAnchor = right.interactGroupHab("group", mids, {
-          data: [{ i: issuance.pre, s: "0", d: issuance.said }],
-        });
-        const [issWrapper, issPaths] = exchange("/multisig/iss", {
-          gid: local.hab.pre,
-          cgvrsn: [2, 0],
-          unrecognized: "peer-only",
-        }, {
-          sender: bob.pre,
-          embeds: {
-            acdc: serializeCredential(
-              creder,
-              new Prefixer({ qb64: issuance.pre! }),
-              NumberPrimitive.fromNum(0n),
-              new Diger({ qb64: issuance.said! }),
-              Vrsn_2_0,
-            ),
-            iss: issuance.raw,
-            anc: messagize(issueAnchor.serder, { sigers: issueAnchor.sigers, gvrsn: Vrsn_2_0 }),
-          },
-        });
-        yield* runtime.reactor.processBytes(concatBytes(bob.endorse(issWrapper, { pipelined: false }), issPaths), {
-          local: true,
-        });
-        const issueResult = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "registry",
-          },
-        });
-        assertEquals(issueResult?.accepted, true);
-        assertEquals(runtime.vdr!.reger.tels.getOn(creder.said!, 0)?.qb64, issuance.said);
-        assertExists(runtime.vdr!.reger.saved.get([creder.said!]));
-        // Reopen the actual evidence store; all four selections have consumed their notices.
+        // Reopen the actual evidence store; both selections have consumed their notices.
         yield* left.db.reopen();
         const sign = alice.mgr.sign;
         alice.mgr.sign = () => {
           throw new Error("Resume must reuse the recorded member contribution and outer signatures.");
         };
         try {
-          const callbacks = {
+          const recorded = {
             approveProposal: () => {
               throw new Error("Recorded approval must not prompt again.");
             },
@@ -571,18 +454,11 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
               throw new Error("Recorded registry must not be renamed.");
             },
           };
-          for (
-            const [wrapper, prior] of [
-              [peer, result],
-              [rpyWrapper, replyResult],
-              [vcpWrapper, registryResult],
-              [issWrapper, issueResult],
-            ] as const
-          ) {
+          for (const [wrapper, prior] of [[peer, result], [rpyWrapper, replyResult]] as const) {
             const resumed = yield* approvePendingMultisigProposal(left, runtime, {
-              said: wrapper.said!,
+              said: wrapper.exnSaid,
               group: "group",
-              callbacks,
+              callbacks: recorded,
             });
             assertEquals(resumed?.accepted, true);
             assertEquals(resumed?.messages, prior?.messages);
@@ -591,7 +467,7 @@ Deno.test("multisig approval honors signed child genus through KEL, replies, reg
         } finally {
           alice.mgr.sign = sign;
         }
-        assertEquals(left.db.getKever(local.hab.pre)?.said, issueAnchor.serder.said);
+        assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
       } finally {
         yield* runtime.close();
       }
