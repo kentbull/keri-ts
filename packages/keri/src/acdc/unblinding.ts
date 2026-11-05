@@ -39,7 +39,7 @@ import { verifyExchangeProofs, verifyQueryAttachments } from "../core/exchange/e
 import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
-import { fetchStoredTsgs, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
 import type { RegistryObserver } from "./observing.ts";
 import {
@@ -115,19 +115,21 @@ export class Unblind implements AuxiliaryQueryProcessor {
   private readonly operations = new Map<string, UnblindOperation>();
   readonly hab: Hab;
   readonly exc: Exchanger;
+  readonly rvy: Revery;
   readonly registry: RegistryObserver;
   readonly states: readonly string[];
   readonly group: boolean;
 
   /** Bind the exact Grant verifier's store and an explicit ordinary-state vocabulary. */
-  constructor({ hab, exc, registry, states }: {
+  constructor({ hab, exc, registry, states, rvy = hab.rvy }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
     states: readonly string[];
+    rvy?: Revery;
   }) {
     if (
-      !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db
+      !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db || rvy.db !== hab.db
       || exc.hby.habs.get(hab.pre!) !== hab
     ) {
       throw new ValidationError("Unblind requires a local signing habitat");
@@ -139,6 +141,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
     this.hab = hab;
     this.exc = exc;
+    this.rvy = rvy;
     this.registry = registry;
     this.states = [...states];
   }
@@ -401,7 +404,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
         ...attachments?.bsss ?? [],
       ]);
       for (const [said, opening] of verified) op.openings.set(said, opening);
-      const decision = this.hab.rvy.acceptReply({ serder, saider: diger, route, aid: op.sender, cigars, tsgs });
+      const decision = this.rvy.acceptReply({ serder, saider: diger, route, aid: op.sender, cigars, tsgs });
       if (decision.kind !== "accept") return decision;
       const minimum = this.minimum(op, nests, (event) => this.opening(op.openings, event));
       if (!sameSelection(selected, minimum.selected)) {
@@ -555,6 +558,13 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
     if (!Object.keys(requested).length) throw new ValidationError("Grant already carries the current openings");
     return { requested, children };
+  }
+
+  /** Release all process-local approvals, opening references and retry bytes without changing stores. */
+  close(): void {
+    for (const xid of this.operations.keys()) this.abandon(xid);
+    this.operations.clear();
+    this.outgoing.clear();
   }
 
   private operation(xid: string): UnblindOperation {

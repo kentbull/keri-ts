@@ -1,11 +1,13 @@
 import { WireParseError } from "cesr-ts";
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
+import { Dhke } from "../../acdc/dhking.ts";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
+import { Unblind } from "../../acdc/unblinding.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
-import { DatabaseNotOpenError } from "../../core/errors.ts";
+import { DatabaseNotOpenError, ValidationError } from "../../core/errors.ts";
 import { Kevery, type MessagePolicy } from "../../core/kel/eventing.ts";
 import { type KramConfig, Kramer } from "../../core/mailbox/kraming.ts";
 import {
@@ -52,6 +54,16 @@ import { runtimeTurn } from "./runtime-turn.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 
+/** One explicitly selected local IPEX auxiliary owner; construction never approves a Grant. */
+export type IpexAuxiliarySelection =
+  | { kind: "dhke"; hab: Hab }
+  | { kind: "unblind"; hab: Hab; states: readonly string[] };
+
+/** Concrete owner exposed only at composition for finite application orchestration. */
+export type IpexAuxiliary =
+  | { kind: "dhke"; owner: Dhke }
+  | { kind: "unblind"; owner: Unblind };
+
 /**
  * Shared runtime composition root owned by one `Habery`.
  *
@@ -88,6 +100,8 @@ export interface AgentRuntime {
   replies: QueryReplies;
   /** Configured application exchange processor; workflows observe its durable completion. */
   exc: Exchanger;
+  /** Selected process-local IPEX operation owner, released on explicit close or scope exit. */
+  readonly ipexAuxiliary: IpexAuxiliary | null;
   /** Durable OOBI job owner, independent of outgoing delivery. */
   oobiery: Oobiery;
   /** Well-known authentication jobs over the shared HTTP service. */
@@ -155,6 +169,8 @@ export interface AgentRuntimeOptions {
   messagePolicy?: MessagePolicy;
   /** Optional KRAM uses the trusted runtime receiver clock. */
   kram?: KramConfig;
+  /** Select one local owner; requires an available v2 registry and explicitly enabled KRAM. */
+  ipexAuxiliary?: IpexAuxiliarySelection;
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -219,6 +235,15 @@ export function* createAgentRuntime(
   clock: RuntimeClock,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
+  const selected = options.ipexAuxiliary;
+  if (selected) {
+    if (options.kram?.enabled !== true) {
+      throw new ValidationError("IPEX auxiliary runtime requires explicitly enabled KRAM");
+    }
+    if (!selected.hab.pre || hby.habs.get(selected.hab.pre) !== selected.hab) {
+      throw new ValidationError("IPEX auxiliary runtime requires its actual local habitat");
+    }
+  }
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
     (options.notifier && options.notifier.signator !== hby.signator)
@@ -254,6 +279,7 @@ export function* createAgentRuntime(
   const acdc = options.acdc ?? (!hby.readonly ? (yield* openAcdcRegeryForHabery(hby)) : null);
   const ownsAcdcRegery = options.acdc === undefined && acdc !== null;
   const acdcRegery = acdc;
+  if (selected && !acdc) throw new ValidationError("IPEX auxiliary runtime requires a v2 registry");
   // Acquire after stores, before processors/consumers: reverse teardown joins consumers, clears cues, closes stores.
   const cues = yield* resource<Deck<AgentCue>>(function*(provide) {
     const owned = new Deck<AgentCue>();
@@ -282,6 +308,23 @@ export function* createAgentRuntime(
   const kramer = options.kram ? new Kramer(hby.db, { config: options.kram, cues: protocolCues, now }) : undefined;
   const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });
   const exc = new Exchanger(hby, { cues: protocolCues, now });
+  const registry = acdc ? new RegistryObserver(hby.db, acdc.store) : null;
+  const ipexAuxiliary = selected && registry
+    ? yield* resource<IpexAuxiliary>(function*(provide) {
+      const auxiliary: IpexAuxiliary = selected.kind === "dhke"
+        ? { kind: "dhke", owner: new Dhke({ hab: selected.hab, exc, registryStore: registry.store, rvy: revery }) }
+        : {
+          kind: "unblind",
+          owner: new Unblind({ hab: selected.hab, exc, registry, states: selected.states, rvy: revery }),
+        };
+      try {
+        revery.rtr.addRoute(auxiliary.kind === "dhke" ? Dhke.Route : Unblind.Route, auxiliary.owner);
+        yield* provide(auxiliary);
+      } finally {
+        auxiliary.owner.close();
+      }
+    })
+    : null;
   const replies = new QueryReplies(cues);
   const protocol = new ProtocolProcessor(
     kvy,
@@ -289,10 +332,11 @@ export function* createAgentRuntime(
     exc,
     vdr?.tvy ?? null,
     vdr?.vry ?? null,
-    acdc ? new RegistryObserver(hby.db, acdc.store) : null,
+    registry,
     protocolCues,
     cues,
     replies,
+    ipexAuxiliary?.owner,
   );
   const reactor = new Reactor(protocol);
   loadChallengeHandlers(hby.db, exc);
@@ -375,6 +419,7 @@ export function* createAgentRuntime(
     protocol,
     replies,
     exc,
+    ipexAuxiliary,
     oobiery,
     authenticator,
     mailboxDirector,
@@ -397,6 +442,9 @@ export function* createAgentRuntime(
     *close(): Operation<void> {
       const failures: unknown[] = [];
       const cleanup = [
+        function*() {
+          ipexAuxiliary?.owner.close();
+        },
         function*() {
           yield* querying.close();
         },
