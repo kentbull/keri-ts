@@ -94,6 +94,17 @@ their real assertions and topology. A skipped lane is not execution evidence.
 Periodic broad checks catch cross-feature regressions; full release qualification
 still includes the maintained manual/endurance gates.
 
+## KF provider allocation
+
+KF allocation is a finite Tufa caller over existing Habery, KRAM, Exchanger and
+HTTP owners. Use a separate existing onboarding signer and explicit account AID;
+discovery is public configuration, and allocation does not activate an account.
+Require current reply authentication plus route, recipient and selected subject
+checks, even when the provider KEL is already known. Pin the returned server AID
+on later invocations. Cancellation acknowledgement precedes service-owned cleanup.
+The application client does not establish TS witness/watcher/registry backend
+support; those require their own hosted service contracts and Locksmith proof.
+
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)

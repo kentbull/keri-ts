@@ -13,6 +13,7 @@ import { registerEndpointCmds } from "./command-definitions/endpoints.ts";
 import { registerHookCmds } from "./command-definitions/hook.ts";
 import { registerIdentityCmds } from "./command-definitions/identity.ts";
 import { registerIpexCmds } from "./command-definitions/ipex.ts";
+import { registerKfBootCmds } from "./command-definitions/kfboot.ts";
 import { registerLifecycleCmds } from "./command-definitions/lifecycle.ts";
 import { registerMailboxCmds } from "./command-definitions/mailbox.ts";
 import { registerMessagingCmds } from "./command-definitions/messaging.ts";
@@ -42,4 +43,5 @@ export function registerCmds(
   registerMailboxCmds(program, dispatch);
   registerWitnessCmds(program, dispatch);
   registerToolingCmds(program, dispatch);
+  registerKfBootCmds(program, dispatch);
 }

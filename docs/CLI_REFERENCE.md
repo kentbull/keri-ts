@@ -7,6 +7,20 @@ This document provides a concise reference for all CLI commands available in the
 
 Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` from `packages/keri` or the `packages/tufa` / `packages/cesr` directories) or via the published binaries after installation.
 
+## KERI Foundation provider allocation
+
+`tufa infra kf discover --url https://provider.example` reads advertised profiles without opening a local store.
+Use `tufa infra kf start -n store -a onboarding --url https://provider.example --account Eaccount` to allocate a session.
+The default profile is `3-of-4`; `--profile` selects another advertised profile. `--alias` selects an existing local onboarding signer; `--account` separately names the intended account AID.
+Allocation does not activate the account or complete onboarding. Start, status and cancel report signed provider response facts.
+
+Use the same store, signer and provider URL with `tufa infra kf status --session SESSION` or `--operation OPERATION` (exactly one),
+and `tufa infra kf cancel --session SESSION [--reason TEXT]`.
+These signed commands accept `--server-aid` to select the expected provider signing AID. All four commands accept `--timeout` in seconds, defaulting to `60`.
+Without a pin, the first authenticated reply supplies the server AID for that invocation; retain its `sender` value to pin later commands.
+Replies must pass v2 KRAM and exchange authentication. The command uses kf-boot's cache windows unless the store configures its own KRAM policy, and refuses an explicitly disabled policy.
+Cancellation acknowledges the request; wait for session `resources_cleaned_at` before treating resource cleanup as complete.
+
 ## Tufa Commands (KERI / Application)
 
 | Command                            | Description                                                                              |
