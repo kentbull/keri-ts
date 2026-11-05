@@ -13,6 +13,7 @@ import {
   systemClock,
 } from "keri-ts/runtime";
 import { TOTP } from "npm:otpauth@9.4.1";
+import { mailboxAddCommand } from "../src/cli/commands/mailbox.ts";
 import { runHostedWitnesses } from "../src/roles/hosted-witness.ts";
 
 /** Select distinct local ports before opening the real listeners. */
@@ -125,6 +126,23 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         assertEquals(oobi.status, 200);
         assertEquals(parseBytes(evidence).every(frame => (frame.body as SerderKERI).pvrsn.major === 2), true);
         yield* settleRuntimeIngress(runtime, [evidence]);
+
+        // The normal finite command selects one allocation at the shared public origin.
+        const mailboxClient = yield* createHabery({ name: "mailbox-client", headDirPath: folder, skipConfig: true });
+        const reader = mailboxClient.makeHab("reader");
+        const readerRuntime = yield* createAgentRuntime(mailboxClient, new FetchHttpClient(), systemClock);
+        try {
+          yield* settleRuntimeIngress(readerRuntime, [evidence]);
+        } finally {
+          yield* readerRuntime.close();
+          yield* mailboxClient.close();
+        }
+        yield* mailboxAddCommand({
+          name: "mailbox-client",
+          headDirPath: folder,
+          alias: reader.name,
+          mailbox: first.eid,
+        });
 
         // Rotate onto the allocated witness, then verify the returned v2 receipt independently.
         const rotation = controller.rotate({ adds: [first.eid], toad: 1 });
