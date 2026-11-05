@@ -1548,8 +1548,9 @@ export class Baser {
 
     const dater = this.dtss.get(dgkey);
     if (dater === null) throw new DatabaseOperationError(`Missing datetime stamp for ${pre}:${said}`);
-    // Huge ordinals remain legal Number primitives in both genera.
-    group("FirstSeenReplayCouples", 1, [encodeHugeOrdinal(fn).qb64b, dater.qb64b]);
+    // KERIpy: v1 attachments carry a Seqner; v2 carries the smallest automatic Number code.
+    const firstSeen = gvrsn.major === 1 ? encodeHugeOrdinal(fn) : NumberPrimitive.fromNum(BigInt(fn));
+    group("FirstSeenReplayCouples", 1, [firstSeen.qb64b, dater.qb64b]);
     const attachmentSize = attachments.reduce((size, part) => size + part.length, 0);
     if (attachmentSize % 4 !== 0) {
       throw new DatabaseOperationError(`Invalid attachment quadlet size for ${pre}:${said}`);
