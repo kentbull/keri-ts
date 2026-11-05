@@ -131,6 +131,14 @@ export function* approveAcdcV2Registry(
   ) {
     anchor = hby.db.getEvtSerder(group.pre, retained[1].qb64) ?? undefined;
   }
+  const seals = (candidate: SerderKERI | null | undefined) =>
+    !!candidate?.seals.some(value => isRecord(value) && value.i === seal.i && value.s === seal.s && value.d === seal.d);
+  // A rerun resumes an accepted group anchor whose TEL still awaits evidence; it never authors a second anchor.
+  for (let sn = group.kever.sn; !anchor && sn > 0; sn--) {
+    const said = hby.db.kels.getLast(group.pre, sn);
+    const candidate = said ? hby.db.getEvtSerder(group.pre, said) : null;
+    if (seals(candidate)) anchor = candidate!;
+  }
   let authored = false;
   if (!anchor) {
     const pending = hby.db.pses.getLast(group.pre, group.kever!.sn + 1);

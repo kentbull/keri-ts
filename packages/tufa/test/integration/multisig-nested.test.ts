@@ -248,7 +248,7 @@ Deno.test("tufa/multisig - nested weighted group inception joins without the thi
   }
 });
 
-Deno.test("tufa/multisig - witnessed group credential publication resumes the original VCP after receipt failure", async () => {
+Deno.test("tufa/multisig - witnessed group registry inception resumes the original RIP after receipt failure", async () => {
   const headRoot = await Deno.makeTempDir({ prefix: "tufa-witnessed-credentials-" });
   try {
     const port = reserveTcpPort();
@@ -307,7 +307,7 @@ Deno.test("tufa/multisig - witnessed group credential publication resumes the or
         ));
         const group = stringField(parseLastJson(incept.proposer.stdout), "group");
         assertEquals(hby.db.getKever(group)?.sn, 0);
-        const proposed = yield* waitForPromise(runTufa([
+        const registryArgs = [
           "vc",
           "registry",
           "incept",
@@ -319,63 +319,33 @@ Deno.test("tufa/multisig - witnessed group credential publication resumes the or
           "team",
           "--registry-name",
           "credentials",
+          "--acdc-v2",
           "--timeout",
-          "0",
-        ]));
-        assertCommandOk(proposed, "propose witnessed group registry");
-        const report = parseLastJson(proposed.stdout);
-        const regk = stringField(report, "registry");
-        assertEquals(report.publicationComplete, false);
-        const messages = report.messages;
-        if (!Array.isArray(messages)) throw new Error("Missing registry proposal messages");
-        const selected = messages.find(message => message.recipient === bob.pre);
-        assertExists(selected);
-        const join = (member: StoreSpec) => [
-          "multisig",
-          "join",
-          "--name",
-          member.name,
-          "--head-dir",
-          member.headDirPath,
-          "--group",
-          "team",
-          "--said",
-          selected.exnSaid,
-          "--auto",
-          "--approval-timeout",
-          "8",
+          "10",
         ];
         withhold = true;
-        const failed = yield* waitForPromise(runTufa(join(bob)));
-        assertEquals(failed.code === 0, false);
-        assertStringIncludes(failed.stderr, "failed to receipt");
-        assertEquals(runtime.vdr!.tvy.tevers.has(regk), false);
-        let anchor = "";
+        const failed = yield* waitForPromise(proposeAndJoin(registryArgs, bob, "team"));
+        assertEquals(failed.proposer.code === 0, false, "withheld witness receipts cannot accept the anchored RIP");
+        let anchor = "", regid = "";
         yield* waitForPromise(run(function*() {
-          const memberHby = yield* createHabery({ name: bob.name, headDirPath: bob.headDirPath, skipConfig: true });
+          const memberHby = yield* createHabery({ name: alice.name, headDirPath: alice.headDirPath, skipConfig: true });
           const memberRuntime = yield* createAgentRuntime(memberHby, new FetchHttpClient(), systemClock);
           try {
+            regid = memberRuntime.acdc!.registryByName("credentials")!.regk!;
             anchor = memberHby.db.kels.getLast(group, 1)!;
             assertExists(anchor);
-            assertEquals(memberRuntime.vdr!.publication.complete(regk), false);
-            assertEquals(
-              memberRuntime.vdr!.publication.pendingReceipts().some(target =>
-                target.pre === regk && target.anchorSaid === anchor
-              ),
-              true,
-            );
+            assertEquals(memberRuntime.acdc!.store.headEvent(regid), null, "the unreceipted RIP remains unaccepted");
           } finally {
             yield* memberRuntime.close();
             yield* memberHby.close();
           }
         }));
         withhold = false;
-        for (const member of [bob, alice]) {
-          const resumed = yield* waitForPromise(runTufa(join(member)));
-          assertCommandOk(resumed, "resume original witnessed VCP");
-          const completed = parseLastJson(resumed.stdout);
-          assertEquals(completed.accepted, true);
-          assertEquals(completed.tel, { pre: regk, sn: 0, publicationComplete: true });
+        // Rerunning the same named registry resumes the original RIP and its existing anchor.
+        const resumed = yield* waitForPromise(runProposalWithJoin(registryArgs, bob, "team"));
+        const report = parseLastJson(resumed.proposer.stdout);
+        assertEquals([report.registry, report.accepted], [regid, true]);
+        for (const member of [alice, bob]) {
           yield* waitForPromise(run(function*() {
             const memberHby = yield* createHabery({
               name: member.name,
@@ -384,20 +354,17 @@ Deno.test("tufa/multisig - witnessed group credential publication resumes the or
             });
             const memberRuntime = yield* createAgentRuntime(memberHby, new FetchHttpClient(), systemClock);
             try {
-              assertEquals(memberHby.db.kels.getLast(group, 1), anchor);
-              assertEquals(memberRuntime.vdr!.reger.ancs.get([regk, regk])?.[1].qb64, anchor);
-              assertEquals(memberRuntime.vdr!.publication.complete(regk), true);
+              assertEquals(memberHby.db.kels.getLast(group, 1), anchor, "resume reuses the original anchor");
+              if (member === alice) assertEquals(memberRuntime.acdc!.store.headEvent(regid)?.said, regid);
             } finally {
               yield* memberRuntime.close();
               yield* memberHby.close();
             }
           }));
         }
-        assertEquals(runtime.vdr!.tvy.tevers.get(regk)?.serder.said, regk);
         const schema = yield* waitForPromise(importCredentialSchema([alice, bob], headRoot));
-        const issued = yield* waitForPromise(assertGroupIssuanceCommands(alice, bob, group, regk, schema));
-        assertEquals(runtime.vdr!.tvy.tevers.get(regk)?.vcState(issued.credential)?.et, "iss");
-        assertEquals(runtime.vdr!.reger.tels.getOn(issued.credential, 0)?.qb64, issued.tel);
+        // The waiting proposer receipts each anchor; the witness holds the group KEL, not the v2 TEL.
+        yield* waitForPromise(assertGroupIssuanceCommands(alice, bob, group, regid, schema, [alice]));
         assertEquals(hby.db.getKever(group)?.sn, 2);
       } finally {
         yield* waitForTaskHalt(worker, 100);
@@ -412,46 +379,114 @@ Deno.test("tufa/multisig - witnessed group credential publication resumes the or
   }
 });
 
-/** Exercise weighted VCP/ISS approval through fresh CLI processes, keeping the third member absent. */
+/** Exercise weighted v2 registry and issuance approval through fresh CLI processes, keeping the third member absent. */
 async function assertGroupCredentialCommands(
   alice: StoreSpec,
   bob: StoreSpec,
   group: string,
   headRoot: string,
 ): Promise<void> {
-  const location = (store: StoreSpec) => ["--name", store.name, "--head-dir", store.headDirPath];
   const schema = await importCredentialSchema([alice, bob], headRoot);
+  const regid = await assertGroupRegistryCommands(alice, bob, group);
+  await assertGroupIssuanceCommands(alice, bob, group, regid, schema);
+}
+
+/** Incept one ACDC v2 group registry: the proposer waits while the joiner approves its anchored RIP. */
+async function assertGroupRegistryCommands(alice: StoreSpec, bob: StoreSpec, group: string): Promise<string> {
   const registry = await runProposalWithJoin(
     [
       "vc",
       "registry",
       "incept",
-      ...location(alice),
+      "--name",
+      alice.name,
+      "--head-dir",
+      alice.headDirPath,
       "--alias",
       "team",
       "--registry-name",
       "credentials",
+      "--acdc-v2",
       "--timeout",
-      "12",
+      "20",
     ],
     bob,
     "team",
   );
-  const registryStatus = parseLastJson(registry.proposer.stdout);
-  const joinedRegistry = parseLastJson(registry.joiner.stdout);
-  const regk = stringField(registryStatus, "registry");
-  assertEquals(registryStatus.accepted, true, JSON.stringify({ registryStatus, joinedRegistry }));
-  assertEquals(registryStatus.publicationComplete, true);
-  assertEquals(registryStatus.status, "accept");
-  assertEquals(joinedRegistry.accepted, true);
-  assertEquals(joinedRegistry.tel, { pre: regk, sn: 0, publicationComplete: true });
+  const status = parseLastJson(registry.proposer.stdout);
+  const joined = parseLastJson(registry.joiner.stdout);
+  const regid = stringField(status, "registry");
+  assertExists(regid);
+  assertEquals([status.controller, status.accepted], [group, true]);
+  assertEquals([joined.group, joined.embedded, joined.accepted], [group, regid, true]);
+  await assertRegistryHead(bob, regid, regid);
+  return regid;
+}
 
-  await assertGroupIssuanceCommands(alice, bob, group, regk, schema);
+/** Issue one public ACDC v2 credential through an approved group BUP and verify each member's registry head. */
+async function assertGroupIssuanceCommands(
+  alice: StoreSpec,
+  bob: StoreSpec,
+  group: string,
+  regid: string,
+  schema: string,
+  converged: readonly StoreSpec[] = [alice, bob],
+): Promise<{ credential: string; update: string }> {
+  const issue = await runProposalWithJoin(
+    [
+      "vc",
+      "create",
+      "--name",
+      alice.name,
+      "--head-dir",
+      alice.headDirPath,
+      "--alias",
+      "team",
+      "--registry-name",
+      "credentials",
+      "--acdc-v2",
+      "--public",
+      "--schema",
+      schema,
+      "--recipient",
+      bob.pre,
+      "--data",
+      "{\"role\":\"holder\"}",
+      "--timeout",
+      "20",
+    ],
+    bob,
+    "team",
+  );
+  const issued = parseLastJson(issue.proposer.stdout);
+  const joined = parseLastJson(issue.joiner.stdout);
+  const credential = stringField(issued, "credential"), update = stringField(issued, "update");
+  assertExists(credential);
+  assertExists(update);
+  assertEquals([issued.registry, issued.accepted], [regid, true]);
+  // The waiting proposer owns witness receipting; each member's accepted registry head is the outcome.
+  assertEquals([joined.group, joined.embedded], [group, update]);
+  for (const member of converged) await assertRegistryHead(member, regid, update);
+  return { credential, update };
+}
+
+/** Read one member's accepted ACDC v2 registry head through a fresh runtime. */
+async function assertRegistryHead(member: StoreSpec, regid: string, head: string): Promise<void> {
+  await run(function*() {
+    const hby = yield* createHabery({ name: member.name, headDirPath: member.headDirPath, skipConfig: true });
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    try {
+      assertEquals(runtime.acdc!.store.headEvent(regid)?.said, head);
+    } finally {
+      yield* runtime.close();
+      yield* hby.close();
+    }
+  });
 }
 
 /** Import the same real schema into each independent member store through the public CLI. */
 async function importCredentialSchema(stores: readonly StoreSpec[], headRoot: string): Promise<string> {
-  const schema = new Schemer({ sed: { $id: "", type: "object" } });
+  const schema = new Schemer({ sed: { $id: "", version: "1.0.0", type: "object" } });
   const schemaFile = `${headRoot}/credential-schema.json`;
   await Deno.writeFile(schemaFile, schema.raw);
   for (const member of stores) {
@@ -471,76 +506,6 @@ async function importCredentialSchema(stores: readonly StoreSpec[], headRoot: st
     );
   }
   return schema.said;
-}
-
-/** Resume the original ISS through independent member processes and verify both saved states. */
-async function assertGroupIssuanceCommands(
-  alice: StoreSpec,
-  bob: StoreSpec,
-  group: string,
-  regk: string,
-  schema: string,
-): Promise<{ credential: string; tel: string }> {
-  const location = (store: StoreSpec) => ["--name", store.name, "--head-dir", store.headDirPath];
-  const issue = await runTufa([
-    "vc",
-    "create",
-    ...location(alice),
-    "--alias",
-    "team",
-    "--registry-name",
-    "credentials",
-    "--schema",
-    schema,
-    "--recipient",
-    bob.pre,
-    "--data",
-    "{\"role\":\"holder\"}",
-    "--timeout",
-    "0",
-  ]);
-  assertCommandOk(issue, "propose group issuance without waiting");
-  const issued = parseLastJson(issue.stdout);
-  const credential = stringField(issued, "said");
-  assertEquals(issued.publicationComplete, false);
-  assertEquals(issued.saved, false);
-  const messages = issued.messages;
-  if (!Array.isArray(messages)) throw new Error("Missing credential coordination messages");
-  const selected = messages.find(message => message.recipient === bob.pre);
-  assertExists(selected);
-  // Bob approves the original EXN, then Alice resumes it after her proposing process exited.
-  for (const member of [bob, alice]) {
-    const joined = await runTufa([
-      "multisig",
-      "join",
-      ...location(member),
-      "--group",
-      "team",
-      "--said",
-      selected.exnSaid,
-      "--auto",
-      "--approval-timeout",
-      "8",
-    ]);
-    assertCommandOk(joined, "complete group issuance");
-    const report = parseLastJson(joined.stdout);
-    assertEquals(report.accepted, true);
-    assertEquals(report.embedded, issued.tel);
-    assertEquals(report.tel, { pre: credential, sn: 0, publicationComplete: true });
-    await run(function*() {
-      const hby = yield* createHabery({ name: member.name, headDirPath: member.headDirPath, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-      try {
-        assertEquals(runtime.vdr!.reger.saved.get(credential)?.qb64, credential);
-        assertEquals(runtime.vdr!.reger.tels.getOn(credential, 0)?.qb64, issued.tel);
-        assertEquals(runtime.vdr!.reger.states.get(regk)?.ii, group);
-      } finally {
-        yield* runtime.close();
-        yield* hby.close();
-      }
-    });
-  }
-  return { credential, tel: stringField(issued, "tel") };
 }
 
 /** Compare CLI send identities with actual persisted wrappers and Multiplexor indexes. */
@@ -785,6 +750,18 @@ async function runProposalWithJoin(
   joiner: StoreSpec,
   group: string,
 ): Promise<{ proposer: CmdResult; joiner: CmdResult }> {
+  const { proposer, joiner: joined } = await proposeAndJoin(proposerArgs, joiner, group);
+  assertCommandOk(joined, `join ${group}`);
+  assertCommandOk(proposer, proposerArgs.join(" "));
+  return { proposer, joiner: joined };
+}
+
+/** Run one proposing command while a second member joins it; callers judge both outcomes. */
+async function proposeAndJoin(
+  proposerArgs: string[],
+  joiner: StoreSpec,
+  group: string,
+): Promise<{ proposer: CmdResult; joiner: CmdResult }> {
   const child = spawnTufa(proposerArgs);
   await delay(750);
   const joined = await runTufa([
@@ -800,10 +777,7 @@ async function runProposalWithJoin(
     "--approval-timeout",
     "20",
   ]);
-  assertCommandOk(joined, `join ${group}`);
-  const proposed = await waitForChild(child, 20_000);
-  assertCommandOk(proposed, proposerArgs.join(" "));
-  return { proposer: proposed, joiner: joined };
+  return { proposer: await waitForChild(child, 30_000), joiner: joined };
 }
 
 async function writeDidWebsArtifacts(
