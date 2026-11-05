@@ -21,6 +21,11 @@ messages.
 
 ## Multisig Coordination
 
+Normal individual and group KEL authoring emits KERI v2 inception, rotation and
+interaction bodies with CESR v2 proofs. Existing Habitat methods provide this
+default to the CLI without an extra mode or persistent version setting. Reopening
+an identifier continues through its accepted KEL and keeper state.
+
 Public group workflows now use the CLI boundary:
 
 - `tufa multisig incept`
@@ -32,6 +37,9 @@ Public group workflows now use the CLI boundary:
 The group coordination message is not the business event. `/multisig/*`
 wrappers collect or distribute member approvals; the embedded KEL, TEL, reply,
 or IPEX event remains the behavior that must eventually be accepted.
+New ordinary KEL proposals use v2 nested wrappers, and the outer member signature
+uses the same attachment genus as that wrapper. Existing receiving and explicit
+serialization contracts are unchanged.
 
 ## Endpoint Roles
 

@@ -17,6 +17,7 @@ import {
   CtrDexV1,
   CtrDexV2,
   Diger,
+  parseBytes,
   parseCounterFromText,
   SerderKERI,
   Siger,
@@ -815,6 +816,7 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
   const name = `habery-load-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   const alias = "alice";
+  const lifecycle: Uint8Array[] = [];
 
   await run(function*() {
     const hby = yield* createHabery({
@@ -862,6 +864,17 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
       assertEquals(evtSerder instanceof SerderKERI, true);
       assertEquals(evtSerder?.pre, hab.pre);
       assertEquals(evtSerder?.said, said);
+      assertInstanceOf(evtSerder, SerderKERI);
+      const messages = [eventPayloadMessage(hby, evtSerder), hab.rotate(), hab.interact()];
+      for (const [sn, message] of messages.entries()) {
+        const [frame] = parseBytes(message);
+        assertInstanceOf(frame.body, SerderKERI);
+        assertEquals(frame.body.pvrsn, Vrsn_2_0);
+        assertEquals(frame.gvrsn, Vrsn_2_0);
+        assertEquals(frame.body.sn, sn);
+        assertEquals(frame.body.raw, hby.db.getEvtSerder(hab.pre, frame.body.said!)?.raw);
+        lifecycle.push(frame.body.raw);
+      }
     } finally {
       yield* hby.close();
     }
@@ -892,6 +905,18 @@ Deno.test("Habery eagerly loads persisted habitats on open", async () => {
         hab ? hby.db.getKever(hab.pre)?.pre : null,
         hab?.pre ?? null,
       );
+      assertExists(hab);
+      assertEquals(hab.kever?.sn, 2);
+      for (const [sn, original] of lifecycle.entries()) {
+        const said = hby.db.kels.getLast(hab.pre, sn);
+        assertExists(said);
+        const event = hby.db.getEvtSerder(hab.pre, said);
+        assertInstanceOf(event, SerderKERI);
+        const [replayed] = parseBytes(eventReplayMessage(hby, event));
+        assertEquals(replayed.body.raw, original);
+        assertEquals(replayed.body.pvrsn, Vrsn_2_0);
+        assertEquals(replayed.gvrsn, Vrsn_2_0);
+      }
     } finally {
       yield* hby.close();
     }

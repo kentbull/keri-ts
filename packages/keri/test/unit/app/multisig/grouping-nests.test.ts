@@ -38,7 +38,7 @@ import { deliverCredentialRevocation, revokeCredential } from "../../../../src/a
 import { createCredential, inceptCredentialRegistry } from "../../../../src/app/credentials/credential-workflows.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery, eventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
 import {
@@ -764,6 +764,55 @@ for (const remoteFirst of [false, true]) {
         assertEquals((await run(() => exchanger.processEvent(offered))).kind, "accept");
         assertEquals(left.db.enst.get([offered.serder.said!]), rows);
         assertEquals(left.db.meids.get([local.serder.said!]).length, 2);
+
+        // The independently owned member stores retain the same v2 inception before advancing keys.
+        assertEquals(local.serder.pvrsn, Vrsn_2_0);
+        assertEquals(parseBytes(local.message)[0].gvrsn, Vrsn_2_0);
+        const inception = parseBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }))[0];
+        await run(() => dispatchEnvelope(envelopeFromFrame(inception, true), right.rvy, right.kevery));
+        assertEquals(right.db.getKever(remote.hab.pre)?.said, local.serder.said);
+        alice.rotate();
+        bob.rotate();
+        await learn(left, bob);
+        await learn(right, alice);
+        for (const route of ["/multisig/rot", "/multisig/ixn"] as const) {
+          const own = route === "/multisig/rot" ? left.rotateGroupHab("group") : left.interactGroupHab("group");
+          const peer = route === "/multisig/rot" ? right.rotateGroupHab("group") : right.interactGroupHab("group");
+          assertEquals(own.serder.raw, peer.serder.raw);
+          assertEquals(own.serder.pvrsn, Vrsn_2_0);
+          assertEquals(parseBytes(own.message)[0].gvrsn, Vrsn_2_0);
+          assertEquals(own.sigers.map(siger => siger.index), [0]);
+          assertEquals(peer.sigers.map(siger => siger.index), [1]);
+          const request: MultisigEventProposal = route === "/multisig/rot"
+            ? { route, attrs: { gid: local.hab.pre, smids: mids, rmids: mids } }
+            : { route, attrs: { gid: local.hab.pre, smids: mids } };
+          const signed = [];
+          for (const [member, child, recipient] of [[alice, own, bob], [bob, peer, alice]] as const) {
+            const prepared = await run(() => prepareMultisigEventExn(member.pre, request, child.message));
+            const message = signGroupMessage(member, recipient.pre, prepared);
+            const [frame] = parseBytes(message.message);
+            assertEquals(frame.body.pvrsn, Vrsn_2_0);
+            assertEquals(frame.gvrsn, Vrsn_2_0);
+            assertEquals(frame.nests?.[0].body.raw, child.serder.raw);
+            assertEquals(frame.nests?.[0].gvrsn, Vrsn_2_0);
+            signed.push(frame);
+          }
+          const before = left.db.getKever(local.hab.pre)!.sn;
+          const ordered = remoteFirst ? signed.toReversed() : signed;
+          await run(() => dispatchEnvelope(envelopeFromFrame(ordered[0], true), left.rvy, left.kevery, exchanger));
+          left.kevery.processEscrows();
+          assertEquals(left.db.getKever(local.hab.pre)?.sn, before);
+          await run(() => dispatchEnvelope(envelopeFromFrame(ordered[1], true), left.rvy, left.kevery, exchanger));
+          left.kevery.processEscrows();
+          assertEquals(left.db.getKever(local.hab.pre)?.said, own.serder.said);
+          assertEquals(
+            left.db.getSigs(local.hab.pre, own.serder.said!).map(sig => new Siger({ qb64: sig }).index).sort(),
+            [0, 1],
+          );
+          const accepted = parseBytes(eventReplayMessage(left, own.serder))[0];
+          await run(() => dispatchEnvelope(envelopeFromFrame(accepted, true), right.rvy, right.kevery));
+          assertEquals(right.db.getKever(remote.hab.pre)?.said, own.serder.said);
+        }
       }
     });
   });

@@ -160,7 +160,7 @@ export function signGroupMessage(
 ): SignedGroupMessage {
   const payloadSaid = multisigPayloadSaid(serder);
   if (!serder.said || !payloadSaid) throw new Error("Constructed multisig wrapper lacks its proposal identity");
-  const endorsed = member.endorse(serder, { pipelined: false });
+  const endorsed = member.endorse(serder, { pipelined: false, gvrsn: serder.gvrsn ?? serder.pvrsn });
   const message = serder.pvrsn.major === 2
     ? concatBytes(
       serder.raw,
