@@ -137,6 +137,35 @@ pending authority. A successful ordinary OR does not need an unused child's auth
 primitive/BLID encoding is still refused before candidate classification.
 No pending path invents state or publishes observations. The independent older
 1f0f68a6 fixture remains historical evidence, without runtime outcome overrides.
+`Exchanger.presentationContext(said, {xid, sender, recipient})` reads an exact
+accepted or pending v2 Grant and its original nested view. It reauthenticates
+stored sender proofs and requires the original `epsd` deadline, exact parties
+and transaction ID, and no terminal response. At deadline equality it returns
+null; accepted presence, retransmission and cache pruning never renew authority.
+The lookup writes no state and emits no recovery or protocol cues. Missing or
+refused evidence returns null; corrupt accepted storage and infrastructure
+failures propagate.
+
+The result carries `registries`, a map from issuer registry ID to the disclosed
+node SAIDs authorized within that registry. The shared classifier validates every
+supplied opening and every non-registry issuer proof, including optional branches
+that ordinary graph acceptance may ignore. Fresh RIP-only issuance remains the
+separate `pendingGrant` scope. Presentation-registry and negotiated anchoring
+obligations must already be complete. Each returned registry requires every
+selected node to be disclosed by its issuer/Issuee or separately authorized by
+its issuer's authentication of this exact Grant. Current-key signatures and
+historical source seals retain their existing proof policy. Origin-issuer
+authority cannot authorize another issuer's registry. The map may exclude other
+disclosed registries; consumers must approve their exact required scope.
+
+`lead(hab, said, {pendingPresentation: true})` may elect a group sender from this
+live scope only when there is no accepted exchange. It still requires the full
+verified sender threshold and resolves the lowest verified index through the
+member's historical contribution. The default retains accepted-only election.
+Election and auxiliary scope supply neither delivery consent, credential-use
+policy nor Admit. This contract follows Python `28ccfc25` (the relevant modules
+are unchanged at `63a33e88`).
+
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.
 Maps and list indexes are traversed as carried; `_` follows that map's `n` to an

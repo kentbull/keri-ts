@@ -71,8 +71,21 @@ equality, excludes accepted/terminal conversations, and reauthenticates its stor
 complete sender evidence. The native route reuses shared conversation/disclosure/
 schema checks and requires an anchored fresh issuer RIP plus authentication of all
 other disclosed nodes. It returns deduplicated registry IDs, with no writes or
-cues. This authorizes a pending issuance scope, never acceptance; DHKE and network
-Unblind remain separate work.
+cues. This authorizes a pending issuance scope, never acceptance.
+`presentationContext` separately reauthenticates an accepted or pending Grant's
+exact retained view, original deadline and parties/XID; terminal responses and
+deadline equality end its scope. It returns registry-to-node authorization,
+validating every supplied opening and non-registry issuer factor even on optional
+branches. Each registry requires issuer/Issuee disclosure or exact-Grant issuer
+endorsement for all its disclosed nodes; an origin issuer cannot authorize
+another issuer's registry. The returned map may be a strict subset of the DAG.
+Reuse shared presentation-state classification without changing ordinary OR
+admission. Lookup changes no state or cues; missing/refused context returns null,
+while corrupt accepted storage and infrastructure failures propagate. Pending
+`lead` is an explicit opt-in to this scope only when no accepted exchange exists;
+full sender threshold and historical member-index election still apply. Neither
+scope nor election implies disclosure consent, issued-state policy or Admit.
+DHKE and network Unblind remain separate work.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.

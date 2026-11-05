@@ -310,6 +310,11 @@ Deno.test("Exchanger retains the authenticated group lead after member and group
         false,
         "A valid partial signer is not an elected sender",
       );
+      assertEquals(
+        exchanger.lead(pending.hab, incomplete.said!, { pendingPresentation: true }),
+        false,
+        "Opt-in does not authorize an arbitrary pending route or incomplete sender threshold",
+      );
       bob.rotate();
       assertEquals(
         exchanger.lead(group.hab, serder.said!),

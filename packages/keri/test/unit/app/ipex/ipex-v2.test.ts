@@ -16,7 +16,7 @@ import {
   type SealEvent,
   SerderACDC,
   SerderKERI,
-  type Siger,
+  Siger,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
@@ -782,6 +782,11 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       // Context returns this selected Grant's registry IDs only after fresh complete authentication.
       assertEquals(pending()!.serder.raw, grant.raw);
       assertEquals(pending()!.registries, [rip.said!]);
+      assertEquals(
+        runtime.exc.presentationContext(grant.said!, scope),
+        null,
+        "a fresh RIP authorizes pending issuance, never presentation scope",
+      );
       assertEquals(pending(credential.said!), null, "a node SAID cannot select its enclosing Grant");
       assertEquals(pending(grant.said!, { ...scope, xid: supporting.said! }), null);
       assertEquals(pending(grant.said!, { ...scope, sender: support.pre }), null);
@@ -912,6 +917,19 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       const originalDeadline = hby.db.epsd.get(grant.said!)!.dts;
       assertEquals(originalDeadline, makeNowIso8601(new Date(now + 300000)));
+      const scope = { xid: grant.said!, sender: sender.pre, recipient: issuee.pre };
+      const context = (said = grant.said!, selected = scope) => {
+        const transactions = () =>
+          [hby.db.env!, store.baser.env!].map(env => (env.getStats() as { lastTxnId: number }).lastTxnId);
+        const before = transactions(), cues = runtime.exc.cues.toArray(), nests = hby.db.enst.get(said);
+        const result = runtime.exc.presentationContext(said, selected);
+        assertEquals(transactions(), before, "presentation inspection writes neither exchange nor TEL state");
+        assertEquals(runtime.exc.cues.toArray(), cues);
+        assertEquals(hby.db.enst.get(said), nests, "inspection preserves the exact retained disclosure");
+        assertEquals(hby.db.epsd.get(grant.said!)!.dts, originalDeadline);
+        return result;
+      };
+      assertEquals(context(), null, "unavailable issuer TEL supplies no presentation authority");
       assertEquals(hby.db.exns.get([grant.said!]), null);
       assertEquals(observer.processEvent(ibup).kind, "accept");
       yield* runtime.protocol.processEscrowsOnce();
@@ -965,6 +983,27 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       );
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }), true);
+      assertEquals(context(), null, "an independent presenter needs this exact Grant's issuer endorsement");
+      const endorse = (body: SerderKERI) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: issuer.pre }),
+          NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+          new Diger({ qb64: issuer.kever!.lastEst.d }),
+          issuer.sign(body.raw, true),
+        );
+      // Feed supplemental proof to the exchange owner; KRAM suppresses an already accepted wire replay.
+      assertEquals(
+        (yield* runtime.exc.processEvent({ serder: grant, tsgs: [tsg, endorse(grant)], nests: [child] })).kind,
+        "accept",
+      );
+      assertEquals(hby.db.eidx.get(issuer.pre).map(diger => diger.qb64), [grant.said!]);
+      assertEquals(context()!.registries, new Map([[irip.said!, [credential.said!]]]));
+      assertEquals(context()!.serder.raw, grant.raw);
+      assertEquals(context()!.nests, loadNests(hby.db, grant.said!));
+      assertEquals(context(credential.said!), null);
+      assertEquals(context(grant.said!, { ...scope, xid: credential.said! }), null);
+      assertEquals(context(grant.said!, { ...scope, sender: issuer.pre }), null);
+      assertEquals(context(grant.said!, { ...scope, recipient: issuer.pre }), null);
       assertEquals(
         handler.verify({
           serder: grant,
@@ -1055,6 +1094,74 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         true,
         "retained BLID selects its exact authenticated issuer prefix behind an opaque successor",
       );
+      assertEquals(
+        context()!.registries,
+        new Map([[irip.said!, [credential.said!]]]),
+        "a stale opening retains authenticated auxiliary scope without claiming current issuance",
+      );
+
+      // A real 2-of-2 presenter elects only after full sender approval, with an explicit pending opt-in.
+      const alice = hby.makeHab("presenter-alice"), bob = hby.makeHab("presenter-bob");
+      const members = [alice.pre, bob.pre];
+      const group = hby.makeGroupHab("presenter", alice, members, members, undefined, { isith: "2", nsith: "2" });
+      const indexed = (member: typeof alice, body: SerderKERI, index: number) => {
+        const signature = member.sign(body.raw, true)[0];
+        return new Siger({ code: signature.code, raw: signature.raw, index });
+      };
+      yield* call(() =>
+        learn(hby, messagize(group.serder, { sigers: [...group.sigers, indexed(bob, group.serder, 1)] }))
+      );
+      assertEquals(group.hab.accepted, true);
+      const pending = ipexExnBody(group.hab.pre, "/ipex/grant", [credential], {
+        kind: Kinds.json,
+        message: "pending group presentation",
+        recipient: issuee.pre,
+        date: receipt,
+      });
+      const pendingBlind = makeBlindState({ acdc: pending.said!, state: "presented", sn: 4 });
+      const pendingBup = blindate(prip.said!, latest.said!, pendingBlind.d.nonce, { sn: 4, stamp: receipt });
+      const pendingSource = anchor(issuee, pendingBup);
+      assertEquals(observer.processEvent(pendingBup).kind, "accept");
+      const stale = yield* node([iblind, pendingBlind], [pendingSource]);
+      const proof = (indices: number[]) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: group.hab.pre }),
+          group.serder.sner!,
+          new Diger({ qb64: group.serder.said! }),
+          indices.map(index => indexed([alice, bob][index], pending, index)),
+        );
+      const receive = function*(indices: number[]) {
+        assertEquals(
+          (yield* runtime.exc.processEvent({
+            serder: pending,
+            nests: [stale],
+            tsgs: [proof(indices), endorse(pending)],
+            receiverTime: receipt,
+          })).kind,
+          "escrow",
+        );
+        yield* runtime.exc.processEscrows();
+      };
+      yield* receive([0]);
+      assertEquals(runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }), false);
+      const pendingDeadline = hby.db.epsd.get(pending.said!)!.dts;
+      yield* receive([1]);
+      assertEquals(runtime.exc.complete(pending.said!), false, "the newer opaque issuer state still needs an opening");
+      assertEquals(runtime.exc.lead(group.hab, pending.said!), false, "ordinary election requires acceptance");
+      assertEquals(runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }), true);
+      alice.rotate();
+      bob.rotate();
+      const rotation = hby.rotateGroupHab("presenter", [bob.pre, alice.pre], members);
+      yield* call(() =>
+        learn(hby, messagize(rotation.serder, { sigers: [...rotation.sigers, indexed(bob, rotation.serder, 0)] }))
+      );
+      assertEquals(group.hab.kever!.said, rotation.serder.said);
+      assertEquals(
+        runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }),
+        true,
+        "member rotation and reordered group indices preserve the original authenticated election",
+      );
+      assertEquals(hby.db.epsd.get(pending.said!)!.dts, pendingDeadline);
       const disclosedRevocation = yield* node([opaque, pblind]);
       assertEquals(
         (verify(disclosedRevocation) as { kind: string }).kind,
