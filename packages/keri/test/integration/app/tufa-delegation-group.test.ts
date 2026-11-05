@@ -9,7 +9,7 @@
  */
 import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
-import { concatBytes, Counter, CtrDexV1, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
+import { concatBytes, Counter, CtrDexV2, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/identity/delegating.ts";
 import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import {
@@ -132,12 +132,13 @@ function storeWitnessIndexedReceipts(
   );
 }
 
+/** V2 counters count quadlets; each 88-character Ed25519 indexed signature is 22. */
 function witnessCounter(count: number): string {
   return new TextDecoder().decode(
     new Counter({
-      code: CtrDexV1.WitnessIdxSigs,
-      count,
-      version: { major: 1, minor: 0 },
+      code: CtrDexV2.WitnessIdxSigs,
+      count: count * 22,
+      version: { major: 2, minor: 0 },
     }).qb64b,
   );
 }

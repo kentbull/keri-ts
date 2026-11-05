@@ -188,8 +188,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     "kli init",
     runCmd(ctx.kliCommand, [
       "init",
-      "--version",
-      "1.0",
       "--name",
       kliName,
       "--base",
@@ -206,8 +204,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
     "kli incept",
     runCmd(ctx.kliCommand, [
       "incept",
-      "--version",
-      "1.0",
       "--name",
       kliName,
       "--base",
@@ -421,8 +417,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
           [
             "oobi",
             "resolve",
-            "--version",
-            "1.0",
             "--name",
             kliName,
             "--base",
@@ -472,8 +466,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
           [
             "mailbox",
             "add",
-            "--version",
-            "1.0",
             "--name",
             kliName,
             "--base",
@@ -520,8 +512,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
           [
             "oobi",
             "resolve",
-            "--version",
-            "1.0",
             "--name",
             kliName,
             "--base",
@@ -650,8 +640,6 @@ Deno.test("Interop: kli mailbox add works against a tufa mailbox host and kli ch
           [
             "challenge",
             "verify",
-            "--version",
-            "1.0",
             "--name",
             kliName,
             "--base",
@@ -726,8 +714,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     "kli provider init",
     runCmd(ctx.kliCommand, [
       "init",
-      "--version",
-      "1.0",
       "--name",
       providerName,
       "--base",
@@ -744,8 +730,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     "kli provider incept",
     runCmd(ctx.kliCommand, [
       "incept",
-      "--version",
-      "1.0",
       "--name",
       providerName,
       "--base",
@@ -777,8 +761,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     runCmd(ctx.kliCommand, [
       "location",
       "add",
-      "--version",
-      "1.0",
       "--name",
       providerName,
       "--base",
@@ -796,8 +778,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     runCmd(ctx.kliCommand, [
       "ends",
       "add",
-      "--version",
-      "1.0",
       "--name",
       providerName,
       "--base",
@@ -817,8 +797,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     runCmd(ctx.kliCommand, [
       "ends",
       "add",
-      "--version",
-      "1.0",
       "--name",
       providerName,
       "--base",
@@ -999,8 +977,6 @@ Deno.test("Interop: tufa mailbox add works against the real KERIpy mailbox host"
     [
       "mailbox",
       "start",
-      "--protocol-version",
-      "1.0",
       "--name",
       providerName,
       "--base",

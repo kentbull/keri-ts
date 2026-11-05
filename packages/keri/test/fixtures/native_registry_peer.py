@@ -88,8 +88,8 @@ def service(request, observer=False):
             import kfobserver.core.evidence as selected
             observations = ObservationBaser(name=hby.name, headDirPath=str(root), temp=False)
             source = dict(url=request["source"], cafilepath=request["certificate"], certedhost="localhost")
-            ctx = ObserverContext(hby, reger=reger, observations=observations, sources=[source],
-                                  readers=request["readers"], maximumAge=5, config=DEFAULT_KRAM_CONFIG)
+            ctx = ObserverContext(hby, hab=hab, baser=reger, observations=observations, sources=[source],
+                                  readers=request["readers"], config=DEFAULT_KRAM_CONFIG)
             app = ctx.app
             workers = [RegistrarPuller(hab, ctx, ctx.sources, interval=.1, timeout=1)]
         else:

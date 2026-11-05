@@ -181,8 +181,6 @@ export async function resolveWitnessesForKli(
           [
             "oobi",
             "resolve",
-            "--version",
-            "1.0",
             "--name",
             name,
             "--base",
@@ -248,8 +246,6 @@ export async function queryKliPrefix(
       kliCommand,
       [
         "query",
-        "--version",
-        "1.0",
         "--name",
         name,
         "--base",

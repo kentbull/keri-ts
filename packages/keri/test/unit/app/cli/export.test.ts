@@ -43,8 +43,8 @@ Deno.test("CLI - export command works with custom head directory", async () => {
       })
     );
     const output = harness.getOutput().join("\n");
-    assertStringIncludes(output, "KERI10JSON");
-    assertStringIncludes(output, "-V");
+    assertStringIncludes(output, "KERICAACAAJSON");
+    assertStringIncludes(output, "-C");
     assertStringIncludes(output, "1AAG");
   } finally {
     harness.restoreOutput();
@@ -115,7 +115,7 @@ Deno.test("CLI - export command refuses unapproved delegated AIDs and exports ap
   try {
     await run(() => exportCommand({ name, headDirPath, alias }));
     const output = harness.getOutput().join("\n");
-    assertStringIncludes(output, "KERI10JSON");
+    assertStringIncludes(output, "KERICAACAAJSON");
   } finally {
     harness.restoreOutput();
   }

@@ -350,6 +350,20 @@ class IpexPeer:
         body, attachments = self.witnessed_message("grant", None, held=grant)
         return self.witnessed_deliver(body, bytes(body.raw + attachments))
 
+    def grant_deadline(self, said):
+        """Report the authenticated KRAM Grant lifetime, or pending escrow cleanup timing.
+
+        Accepted Grants keep their lifetime in the exact KRAM transaction row; epsd
+        only bounds signature-escrow cleanup and is removed once the Grant is accepted.
+        """
+        db = self.hby.db
+        grant = db.exns.get(keys=(said,)) or db.epse.get(keys=(said,))
+        deadline = self.exc.exchangeDeadline(grant) if grant is not None else None
+        if deadline is not None:
+            return deadline.isoformat(timespec='microseconds')
+        pending = db.epsd.get((said,))
+        return pending.dts if pending else None
+
     def auxiliary_grant(self, said):
         """Resolve the explicitly selected retained body; controls never reconstruct a missing conversation."""
         body = self.hby.db.exns.get((said,)) or self.hby.db.epse.get((said,))
@@ -564,12 +578,12 @@ class IpexPeer:
             ready = bool(operation and (operation["replySent"]
                 if owner is self.unblind and active.pre == self.hab.pre else owner.complete(operation["xid"])))
             head = self.rgy.store.headEvent(registry) if registry else None
-            expiry = db.epsd.get((inspect,)) if inspect else None
+            expiry = self.grant_deadline(inspect) if inspect else None
             admission = db.erpy.get((inspect,)) if inspect else None
             auxiliary = dict(registryHead=head.said if head else None,
                 openingPresent=bool(head and self.rgy.store.opening(head.said)),
                 rootPresent=bool(registry and self.hab.mgr.getRegistryRoot(self.hab.pre, registry)),
-                deadline=expiry.dts if expiry else None, auxiliaryReady=ready,
+                deadline=expiry, auxiliaryReady=ready,
                 encrypted=bool(self.hab.mgr.aeid and self.hab.mgr.encrypter and self.hab.mgr.decrypter),
                 grantRaw=selected.raw.decode() if selected else None, admit=admission.qb64 if admission else None,
                 witnesses=dict(threshold=self.hab.kever.toader.num, count=len(self.hab.kever.wits)))

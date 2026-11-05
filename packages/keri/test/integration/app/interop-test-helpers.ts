@@ -77,7 +77,7 @@ export interface TufaWitnessNode {
 
 /** Options for the explicit KERIpy witness harness. */
 export interface KeriPyWitnessHarnessOptions {
-  /** Actual witness endpoint/parser genus; historical interop matrices remain v1 by default. */
+  /** Actual witness endpoint/parser genus; v2 matches Tufa-authored KELs, v1-only profiles stay v1. */
   protocolVersion?: 1 | 2;
   aliases?: readonly string[];
   base?: string;
@@ -169,7 +169,7 @@ const KERIPY_DEMO_WITNESS_NODES: readonly KeriPyWitnessNode[] = [
   },
 ];
 
-/** Mailbox fork on main c102367e; an explicit verified source override takes precedence. */
+/** Default v2-spec peer; an explicit verified source override takes precedence. */
 export const KERIPY_INTEROP_COMMIT = keripyReference.commit;
 
 const KERIPY_INTEROP_REPO = "https://github.com/kentbull/keripy.git";
@@ -1470,7 +1470,7 @@ async function initializeKeriPyWitness(
   base: string,
   configRoot: string,
   alias: string,
-  protocolVersion: 1 | 2 = 1,
+  protocolVersion: 1 | 2,
 ): Promise<string> {
   await requireSuccess(
     `${alias} init`,
@@ -1530,12 +1530,15 @@ async function initializeKeriPyWitness(
   return extractPrefix(incepted.stdout);
 }
 
-/** Start real v1 KERIpy witness hosts from CLI-created stores and random ports. */
+/** Start real KERIpy witness hosts from CLI-created stores and random ports. */
 export async function startKeriPyWitnessHarness(
   ctx: InteropContext,
   options: KeriPyWitnessHarnessOptions = {},
 ): Promise<KeriPyWitnessHarness> {
   const aliases = options.aliases ?? DEFAULT_KERIPY_WITNESS_ALIASES;
+  const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
+  // Tufa authors v2 KELs; only v1-only reference profiles keep v1 witness parsers.
+  const protocolVersion = options.protocolVersion ?? (legacy ? 1 : 2);
   let home: string | undefined;
   let configRoot: string | undefined;
   const nodes: KeriPyWitnessNode[] = [];
@@ -1562,7 +1565,7 @@ export async function startKeriPyWitnessHarness(
         base,
         configRoot,
         alias,
-        options.protocolVersion,
+        protocolVersion,
       );
       nodes.push({
         alias,
@@ -1586,9 +1589,9 @@ export async function startKeriPyWitnessHarness(
           `${ctx.repoRoot}/scripts/ci/keripy-witness-v1.py`,
           "--test-root",
           home,
-          ...(selectedKeripyProfile(env)?.protocolVersionArgument === false ? ["--legacy"] : []),
+          ...(legacy ? ["--legacy"] : []),
           "--protocol-version",
-          String(options.protocolVersion ?? 1),
+          String(protocolVersion),
           ...(options.messengerProbe ? ["--messenger-probe"] : []),
           "--name",
           node.name,

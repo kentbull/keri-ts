@@ -176,8 +176,6 @@ export async function initKliStore(
     () =>
       runCmd(ctx.kliCommand, [
         "init",
-        "--version",
-        "1.0",
         "--name",
         args.name,
         "--base",
@@ -210,8 +208,6 @@ export async function inceptKliAlias(
     `${args.name} incept ${args.alias}`,
     runCmd(ctx.kliCommand, [
       "incept",
-      "--version",
-      "1.0",
       "--name",
       args.name,
       "--base",
@@ -367,8 +363,6 @@ export async function addKliHostedRoute(
     runCmd(ctx.kliCommand, [
       "location",
       "add",
-      "--version",
-      "1.0",
       "--name",
       args.name,
       "--base",
@@ -386,8 +380,6 @@ export async function addKliHostedRoute(
     runCmd(ctx.kliCommand, [
       "ends",
       "add",
-      "--version",
-      "1.0",
       "--name",
       args.name,
       "--base",
@@ -410,8 +402,6 @@ export async function addKliHostedRoute(
     runCmd(ctx.kliCommand, [
       "ends",
       "add",
-      "--version",
-      "1.0",
       "--name",
       args.name,
       "--base",
@@ -484,8 +474,6 @@ export async function resolveKliOobi(
       [
         "oobi",
         "resolve",
-        "--version",
-        "1.0",
         "--name",
         args.name,
         "--base",
@@ -559,8 +547,6 @@ export async function addKliMailbox(
       [
         "mailbox",
         "add",
-        "--version",
-        "1.0",
         "--name",
         args.name,
         "--base",
@@ -750,8 +736,6 @@ export async function startKliMailboxHost(
     [
       "mailbox",
       "start",
-      "--protocol-version",
-      "1.0",
       "--name",
       args.name,
       "--base",

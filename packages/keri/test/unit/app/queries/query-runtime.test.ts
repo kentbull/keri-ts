@@ -1,4 +1,5 @@
-import { run, sleep, spawn } from "effection";
+import { parseBytes } from "cesr-ts";
+import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
@@ -24,6 +25,7 @@ import { fetchOp, textOp, waitForServer, waitForTaskHalt } from "../../../effect
 import { reserveTcpPort } from "../../../http-test-support.ts";
 
 const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
 
 Deno.test("tufa agent host stays protocol-only", async () => {
   const name = `runtime-protocol-${crypto.randomUUID()}`;
@@ -427,7 +429,14 @@ Deno.test("witness anchor logs queries forward `/replay` to a separate relay mai
         maxDurationMs: 5_000,
       });
       assertStringIncludes(body, "event: /replay");
-      assertStringIncludes(body, delegator.pre);
+      // V2 replay data is a CESR stream whose JSON bodies are not plain text on the wire.
+      const replayed: string[] = [];
+      for (const line of body.split("\n")) {
+        if (!line.startsWith("data: ")) continue;
+        const frames = yield* call(() => parseBytes(textEncoder.encode(line.slice("data: ".length))));
+        for (const frame of frames) replayed.push(String(frame.body.ked?.i ?? ""));
+      }
+      assertEquals(replayed.includes(delegator.pre), true);
     } finally {
       yield* waitForTaskHalt(witnessRuntimeTask);
       yield* waitForTaskHalt(relayRuntimeTask);

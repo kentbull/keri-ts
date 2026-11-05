@@ -26,7 +26,7 @@ async function exportFrame(wire: string, major: 1 | 2): Promise<CesrFrame> {
   const frames: CesrFrame[] = [];
   for await (const frame of parse(source())) frames.push(frame);
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].body.pvrsn, { major: 1, minor: 0 });
+  assertEquals(frames[0].body.pvrsn, { major: 2, minor: 0 });
   return frames[0];
 }
 
@@ -72,7 +72,8 @@ export async function assertExportParity(
   const tufa = extractKelStream(tufaOutput);
   const kli = extractKelStream(kliOutput);
   // Timestamp normalization is the sole wire concession; counters/signatures stay byte-exact.
-  assertEquals(normalizeCesr(tufa), normalizeCesr(reference["1"]));
+  // Both Tufa and the KLI author v2 KELs, so both compare with the genus-2 clone.
+  assertEquals(normalizeCesr(tufa), normalizeCesr(reference["2"]));
   assertEquals(normalizeCesr(kli), normalizeCesr(reference["2"]));
-  assertEquals(evidence(await exportFrame(tufa, 1), 1), evidence(await exportFrame(kli, 2), 2));
+  assertEquals(evidence(await exportFrame(tufa, 2), 2), evidence(await exportFrame(kli, 2), 2));
 }

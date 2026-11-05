@@ -40,7 +40,7 @@ import {
   runTufaWithTimeout,
   startKeriPyWitnessHarness,
 } from "./interop-test-helpers.ts";
-import { keripyProtocolVersionArgs, selectedKeripyProfile } from "./keripy-runtime.ts";
+import { keripyProtocolVersionArgs, selectedKeripyProfile, v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 Deno.test("selected KERIpy CLI creates and exports a signed v1 inception accepted by TypeScript", async () => {
   const ctx = await createInteropContext();
@@ -131,7 +131,11 @@ Deno.test("selected KERIpy profile serves its real v1 witness OOBI", async () =>
   }
 });
 
-Deno.test("selected Python and Tufa query commands converge from stale accepted state through independent mailboxes", async () => {
+// Skipped for v1-only peers (GLEIF 1.2/1.3): pending decision on keri-ts v1 KEL authoring for v1-only peers.
+Deno.test({
+  name: "selected Python and Tufa query commands converge from stale accepted state through independent mailboxes",
+  ignore: v1OnlyKeripyPeer(),
+}, async () => {
   const ctx = await createInteropContext();
   try {
     const python = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
@@ -164,7 +168,7 @@ Deno.test("selected Python and Tufa query commands converge from stale accepted 
         const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: witness }));
         try {
           yield* call(async () => {
-            const versions = keripyProtocolVersionArgs(ctx.env, "1.0");
+            const versions = keripyProtocolVersionArgs(ctx.env, "2.0");
             const legacy = selectedKeripyProfile(ctx.env)?.protocolVersionArgument === false;
             const head = `${ctx.home}/tufa`,
               issuer = `issuer-${crypto.randomUUID()}`,

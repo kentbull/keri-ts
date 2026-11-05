@@ -11,7 +11,7 @@ import {
   runTufaWithTimeout,
   startKeriPyWitnessHarness,
 } from "./interop-test-helpers.ts";
-import { keripyProtocolVersionArgs } from "./keripy-runtime.ts";
+import { keripyProtocolVersionArgs, v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 /** Select the final structured Tufa result after its owned stores close. */
 function result(stdout: string): Record<string, unknown> {
@@ -27,7 +27,7 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
     const witness = witnesses.node("wan");
     const head = `${ctx.home}/tufa`, name = `member-${crypto.randomUUID()}`;
     const pyName = `python-${crypto.randomUUID()}`;
-    const versions = keripyProtocolVersionArgs(ctx.env, "1.0");
+    const versions = keripyProtocolVersionArgs(ctx.env, "2.0");
     /** Run a finite public command with a diagnostic deadline, without modifying the peer. */
     const tufa = (label: string, args: string[]) =>
       requireSuccess(
@@ -243,7 +243,14 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
   }
 }
 
-Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed group approval", () =>
-  reciprocalApproval(false));
-Deno.test("selected Python and Tufa weighted CLI group completes while a non-required member stays offline", () =>
-  reciprocalApproval(true));
+// Skipped for v1-only peers (GLEIF 1.2/1.3): pending decision on keri-ts v1 KEL authoring for v1-only peers.
+Deno.test({
+  name: "selected Python and Tufa CLI members complete reciprocal witnessed group approval",
+  ignore: v1OnlyKeripyPeer(),
+  fn: () => reciprocalApproval(false),
+});
+Deno.test({
+  name: "selected Python and Tufa weighted CLI group completes while a non-required member stays offline",
+  ignore: v1OnlyKeripyPeer(),
+  fn: () => reciprocalApproval(true),
+});
