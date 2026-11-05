@@ -32,7 +32,7 @@ retains exact source identity, validation and limits at its recorded revision.
 - [Crypto](learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md): suites, sodium and secrets.
 - [KELs](learnings/PROJECT_LEARNINGS_KELS.md): accepted state, delegation and replay.
 - [Exchange](learnings/PROJECT_LEARNINGS_EXCHANGE.md): proofs, multisig and IPEX.
-- [ACDC](learnings/PROJECT_LEARNINGS_ACDC.md): disclosure, TEL and verifier state.
+- [ACDC](learnings/PROJECT_LEARNINGS_ACDC.md): disclosure, TEL, verifier state and explicit newcomer root selection.
 - [Storage](learnings/PROJECT_LEARNINGS_STORAGE.md): DB parity and exchange evidence.
 - [Runtime](learnings/PROJECT_LEARNINGS_RUNTIME.md): scopes, transport and mailboxes.
 - [DID](learnings/PROJECT_LEARNINGS_DID.md): generation, resolution and aliases.

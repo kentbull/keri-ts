@@ -299,7 +299,7 @@ export {
   preferredUrl,
   resolveHostedEndpointPath,
 } from "../app/mailbox/mailboxing.ts";
-export { isLocalGroupHab } from "../app/multisig/group-members.ts";
+export { groupSigningMembers, isLocalGroupHab, latestGroupContribution } from "../app/multisig/group-members.ts";
 export {
   Multiplexor,
   MULTISIG_ROUTES,

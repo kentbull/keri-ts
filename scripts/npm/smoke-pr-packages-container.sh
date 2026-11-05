@@ -41,15 +41,16 @@ HOSTING_TARBALL="${5:-}"
 WALLET_TARBALL="${6:-}"
 REGISTRAR_TARBALL="${7:-}"
 OBSERVER_TARBALL="${8:-}"
-if [ -z "${CESR_TARBALL}" ] || [ -z "${KERI_TARBALL}" ] || [ -z "${TUFA_TARBALL}" ] || [ -z "${VERIFIER_TARBALL}" ] || [ -z "${HOSTING_TARBALL}" ] || [ -z "${WALLET_TARBALL}" ] || [ -z "${REGISTRAR_TARBALL}" ] || [ -z "${OBSERVER_TARBALL}" ]; then
-  echo "Usage: smoke-pr-packages-container.sh <cesr-ts.tgz> <keri-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz> <keri-ts-registrar.tgz> <keri-ts-observer.tgz>" >&2
+MULTISYNC_TARBALL="${9:-}"
+if [ -z "${CESR_TARBALL}" ] || [ -z "${KERI_TARBALL}" ] || [ -z "${TUFA_TARBALL}" ] || [ -z "${VERIFIER_TARBALL}" ] || [ -z "${HOSTING_TARBALL}" ] || [ -z "${WALLET_TARBALL}" ] || [ -z "${REGISTRAR_TARBALL}" ] || [ -z "${OBSERVER_TARBALL}" ] || [ -z "${MULTISYNC_TARBALL}" ]; then
+  echo "Usage: smoke-pr-packages-container.sh <cesr-ts.tgz> <keri-ts.tgz> <keri-ts-tufa.tgz> <keri-ts-verifier.tgz> <keri-ts-hosting.tgz> <keri-ts-wallet.tgz> <keri-ts-registrar.tgz> <keri-ts-observer.tgz> <keri-ts-multisync.tgz>" >&2
   exit 1
 fi
 
 WORK_DIR="$(mktemp -d)"
 cd "${WORK_DIR}"
 npm init -y >/dev/null 2>&1
-npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${VERIFIER_TARBALL}" "${HOSTING_TARBALL}" "${WALLET_TARBALL}" "${REGISTRAR_TARBALL}" "${OBSERVER_TARBALL}" "${TUFA_TARBALL}" >/dev/null
+npm install "${CESR_TARBALL}" "${KERI_TARBALL}" "${VERIFIER_TARBALL}" "${HOSTING_TARBALL}" "${WALLET_TARBALL}" "${REGISTRAR_TARBALL}" "${OBSERVER_TARBALL}" "${MULTISYNC_TARBALL}" "${TUFA_TARBALL}" >/dev/null
 echo "Node runtime: $(node --version), npm: $(npm --version)" >&2
 
 cp /smoke-scripts/package-targets.mjs /smoke-scripts/smoke-keri-installed.mjs /smoke-scripts/keri-consumer.ts /smoke-scripts/tufa-consumer.ts "${WORK_DIR}/"

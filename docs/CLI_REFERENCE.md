@@ -38,6 +38,7 @@ Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` f
 | `tufa vc registry incept`          | Create a local credential registry.                                                      |
 | `tufa vc registry list`            | List local credential registries.                                                        |
 | `tufa vc registry status`          | Show one credential registry state.                                                      |
+| `tufa vc registry root newcomers`  | Prepare existing-root files for newly accepted group signers and explicit registries.    |
 | `tufa vc registry root prepare`    | Write an encrypted existing-root reply and, for a group, its authenticated proposal.     |
 | `tufa vc registry root contribute` | Sign the selected elected-member proposal without changing its ciphertext.               |
 | `tufa vc registry root receive`    | Approve and ingest encrypted reply files against an exact accepted BUP and held opening. |
@@ -88,7 +89,7 @@ Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` f
 
 These ACDC v2 commands require an existing unlocked encrypted Keeper and explicit
 registry and party AIDs. They do not create an issuance root or require wallet inventory.
-All commands accept repeatable `--evidence` files containing public KEL/TEL or
+The prepare, contribute and receive commands accept repeatable `--evidence` files containing public KEL/TEL or
 endpoint support; the held opening is supplied separately for receipt.
 
 ```sh
@@ -109,7 +110,26 @@ reply, and succeeds only after ordinary author threshold verification, decryptio
 and matching the approved opening. `--opening` contains exactly one counted BSQ
 or BSS. Output files are created exclusively and contain encrypted replies or
 signed proposals, never plaintext roots. These commands perform finite file work;
-transport and newcomer selection remain separate.
+transport remains separate.
+
+For newly accepted signing members, `root newcomers` prepares one encrypted reply
+and authenticated proposal per selected registry and newcomer:
+
+```sh
+tufa vc registry root newcomers -n sender -a group --rotation ACCEPTED_ROTATION \
+  --previous-member OLD_MEMBER_A --previous-member OLD_MEMBER_B \
+  --registry REGISTRY --output-dir existing-directory
+```
+
+`--rotation` must be the current accepted group establishment. Supply the actual
+preceding signing roster through repeated `--previous-member` options; it is not
+persisted or inferred from next-key commitments. Next-key-only members are not
+newcomers until a rotation installs them as current signers. Registry selections
+are explicit and repeatable. The existing elected member must already hold each
+root. Files use `<registry>.<member>.reply.cesr` and `.proposal.cesr` names and are
+created exclusively. A later failure may leave earlier completed files; no files
+are overwritten. Continue with ordinary `root contribute` and explicit
+`root receive` approval; preparation never reports recipient acceptance.
 
 ## Tephra Commands (CESR Tools)
 

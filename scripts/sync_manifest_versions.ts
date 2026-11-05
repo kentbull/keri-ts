@@ -20,12 +20,17 @@ interface WorkspaceLock {
 }
 
 interface SyncTarget {
-  name: "tufa" | "keri" | "cesr" | "verifier" | "hosting" | "wallet" | "registrar" | "observer";
+  name: "tufa" | "keri" | "cesr" | "verifier" | "hosting" | "wallet" | "registrar" | "observer" | "multisync";
   packagePath: URL;
   denoPath: URL;
 }
 
 const TARGETS: SyncTarget[] = [
+  {
+    name: "multisync",
+    packagePath: new URL("../packages/multisync/package.json", import.meta.url),
+    denoPath: new URL("../packages/multisync/deno.json", import.meta.url),
+  },
   {
     name: "observer",
     packagePath: new URL("../packages/observer/package.json", import.meta.url),

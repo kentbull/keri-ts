@@ -1,4 +1,5 @@
 /** Finite encrypted registry-root files; protocol owners retain all authority and cryptography. */
+import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
 import {
   BlindState,
   BoundState,
@@ -28,7 +29,7 @@ import {
   RegistrySalt,
   ValidationError,
 } from "keri-ts/runtime";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { walletStoreArgs } from "../support/wallet.ts";
@@ -297,6 +298,74 @@ export function* registryRootCommand(args: Record<string, unknown>): Operation<v
     function*({ hab, runtime }) {
       if (!runtime.acdc) throw new ValidationError("ACDC v2 registry processing is unavailable");
       return yield* registryRootFile({ hab, rgy: runtime.acdc, protocol: runtime.protocol }, options);
+    },
+  );
+  writeJsonLine(result);
+}
+
+/** Explicit application selections for copies after one accepted current group rotation. */
+export interface NewcomerRootOptions {
+  rotation: string;
+  previousSigningMembers: readonly string[];
+  registries: readonly string[];
+  outputDirectory: string;
+}
+
+/** Prepared files still require ordinary group contributions and independent recipient approval. */
+export interface NewcomerRootResult {
+  operation: "newcomers";
+  rotation: string;
+  copies: Extract<RegistryRootFileResult, { operation: "prepare" }>[];
+}
+
+/** Prepare existing-root files for selected newcomers using the ordinary finite file owner. */
+export function* prepareNewcomerRoots(
+  context: { hab: Hab; rgy: AcdcV2Regery; protocol: ProtocolProcessor },
+  options: NewcomerRootOptions,
+): Operation<NewcomerRootResult> {
+  const selections = selectNewcomerCopies({
+    hby: context.rgy.hby,
+    group: context.hab,
+    rotation: options.rotation,
+    previousSigningMembers: options.previousSigningMembers,
+    registries: options.registries,
+  });
+  const directory = resolve(options.outputDirectory);
+  if (!(yield* call(() => Deno.stat(directory))).isDirectory) {
+    throw new ValidationError("Output directory must already exist");
+  }
+  const requests = selections.map(selection => ({
+    ...selection,
+    operation: "prepare" as const,
+    output: join(directory, `${selection.registry}.${selection.target}.reply.cesr`),
+    proposalOutput: join(directory, `${selection.registry}.${selection.target}.proposal.cesr`),
+  }));
+  yield* unusedOutputs(requests.flatMap(request => [request.output, request.proposalOutput]));
+  const copies: NewcomerRootResult["copies"] = [];
+  for (const request of requests) {
+    const result = yield* registryRootFile(context, request);
+    if (result.operation !== "prepare") throw new Error("Expected prepared root files");
+    copies.push(result);
+  }
+  return { operation: "newcomers", rotation: options.rotation, copies };
+}
+
+/** Own the same finite runtime as individual root-file commands; never start fresh DH. */
+export function* registryRootNewcomersCommand(args: Record<string, unknown>): Operation<void> {
+  const alias = required(args.alias, "alias");
+  const options: NewcomerRootOptions = {
+    rotation: required(args.rotation, "rotation"),
+    previousSigningMembers: paths(args.previousMember, "previous-member"),
+    registries: paths(args.registry, "registry"),
+    outputDirectory: required(args.outputDir, "output-dir"),
+  };
+  const result = yield* withHabAndAgentRuntime(
+    walletStoreArgs(args),
+    alias,
+    { skipConfig: false },
+    function*({ hab, runtime }) {
+      if (!runtime.acdc) throw new ValidationError("ACDC v2 registry processing is unavailable");
+      return yield* prepareNewcomerRoots({ hab, rgy: runtime.acdc, protocol: runtime.protocol }, options);
     },
   );
   writeJsonLine(result);

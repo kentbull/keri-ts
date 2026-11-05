@@ -53,6 +53,7 @@ const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
   "/cesr/src/",
   "/verifier/src/",
   "/hosting/src/",
+  "/multisync/v2/",
   "/wallet/src/",
   "/registrar/src/",
 ];
@@ -83,8 +84,10 @@ function dntPackageMappings(
   hostingVersion: string,
   walletVersion: string,
   registrarVersion: string,
+  multisyncVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
+    "../multisync/v2/mod.ts": { name: "@keri-ts/multisync", version: multisyncVersion, subPath: "v2" },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
@@ -206,6 +209,7 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
 const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
+const multisyncPackageVersion = resolveWorkspacePackageVersion("../multisync/package.json");
 const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
 const registrarPackageVersion = resolveWorkspacePackageVersion("../registrar/package.json");
 
@@ -223,6 +227,7 @@ await build({
     hostingPackageVersion,
     walletPackageVersion,
     registrarPackageVersion,
+    multisyncPackageVersion,
   ),
   typeCheck: false,
   test: false,
@@ -264,6 +269,7 @@ await build({
       "@keri-ts/hosting": hostingPackageVersion,
       "@keri-ts/wallet": walletPackageVersion,
       "@keri-ts/registrar": registrarPackageVersion,
+      "@keri-ts/multisync": multisyncPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
@@ -291,6 +297,7 @@ await build({
     removeIfExistsSync(`${OUT_DIR}/esm/cesr`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/verifier`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/hosting`, { recursive: true });
+    removeIfExistsSync(`${OUT_DIR}/esm/multisync`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/wallet`, { recursive: true });
     removeIfExistsSync(`${OUT_DIR}/esm/registrar`, { recursive: true });
     assertNoBundledWorkspaceSources();

@@ -15,7 +15,8 @@
     "packages/hosting",
     "packages/wallet",
     "packages/registrar",
-    "packages/observer"
+    "packages/observer",
+    "packages/multisync"
   ],
   "scripts": {
     "changeset": "npx --yes @changesets/cli add",
