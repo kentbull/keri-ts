@@ -102,6 +102,34 @@ function leafCommandNames(command: Command, prefix: string[] = []): string[] {
 }
 
 const CLI_COMMAND_EXAMPLES: string[][] = [
+  [
+    "registrar",
+    "start",
+    "-n",
+    "service",
+    "-a",
+    "registrar",
+    "--url",
+    "https://registrar.example",
+    "--tls-key",
+    "key.pem",
+    "--tls-cert",
+    "cert.pem",
+  ],
+  [
+    "observer",
+    "start",
+    "-n",
+    "service",
+    "-a",
+    "observer",
+    "--url",
+    "https://observer.example",
+    "--tls-key",
+    "key.pem",
+    "--tls-cert",
+    "cert.pem",
+  ],
   ["watcher", "backend", "-n", "backend", "--url", "https://watcher.example"],
   ["witness", "backend", "-n", "backend", "--url", "https://witness.example"],
   [
@@ -330,6 +358,66 @@ Deno.test("tufa/cli - parsed command names all have registered handlers", () => 
 
   const handlerNames = [...createCmdHandlers().keys()].sort();
   assertEquals(handlerNames, dispatchedNames);
+});
+
+Deno.test("tufa/cli - registry services preserve TLS, evidence and acquisition selections", () => {
+  const common = [
+    "-n",
+    "service",
+    "-a",
+    "existing",
+    "--url",
+    "https://service.example",
+    "--tls-key",
+    "key.pem",
+    "--tls-cert",
+    "cert.pem",
+  ];
+  const registrar = parseCommandSelection([
+    "registrar",
+    "start",
+    ...common,
+    "--observer",
+    "Eone",
+    "--observer",
+    "Etwo",
+    "--kel",
+    "public.cesr",
+  ]);
+  assertEquals([registrar.name, registrar.args.name, registrar.args.alias], ["registrar.start", "service", "existing"]);
+  assertEquals([registrar.args.tlsKey, registrar.args.tlsCert, registrar.args.observer, registrar.args.kel], [
+    "key.pem",
+    "cert.pem",
+    ["Eone", "Etwo"],
+    ["public.cesr"],
+  ]);
+
+  const observer = parseCommandSelection([
+    "observer",
+    "start",
+    ...common,
+    "--registrar",
+    "https://first.example",
+    "--registrar",
+    "https://second.example",
+    "--registrar-ca",
+    "ca.pem",
+    "--registrar-cert-name",
+    "registrar.example",
+    "--poll-interval",
+    "2.5",
+    "--timeout",
+    "3",
+    "--maximum-age",
+    "10",
+  ]);
+  assertEquals([observer.name, observer.args.name, observer.args.alias], ["observer.start", "service", "existing"]);
+  assertEquals([observer.args.registrar, observer.args.registrarCa, observer.args.registrarCertName], [
+    ["https://first.example", "https://second.example"],
+    "ca.pem",
+    "registrar.example",
+  ]);
+  assertEquals([observer.args.pollInterval, observer.args.timeout, observer.args.maximumAge], ["2.5", "3", "10"]);
 });
 
 Deno.test("tufa/cli - watcher backend preserves listener and polling selections", () => {

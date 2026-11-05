@@ -1,4 +1,5 @@
-import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
+import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
+import { get } from "node:https";
 import { openDenoServerHost, openNodeServerHost } from "../src/host/http-server.ts";
 
 for (const mode of ["failure", "foreign-abort", "owned-abort"] as const) {
@@ -63,6 +64,57 @@ for (const mode of ["failure", "foreign-abort", "owned-abort"] as const) {
 
 // Both platform close events precede asynchronous handler cleanup after a peer disconnects.
 for (const [name, open] of [["Node", openNodeServerHost], ["Deno", openDenoServerHost]] as const) {
+  Deno.test(`${name} HTTPS host serves trusted TLS and preserves its request URL scheme`, async () => {
+    const pem = await Deno.readTextFile(new URL("../../tufa/test/verifier/localhost.pem", import.meta.url));
+    const lifetime = new AbortController(), listening = Promise.withResolvers<number>();
+    assertThrows(
+      () =>
+        open({
+          port: 0,
+          hostname: "127.0.0.1",
+          signal: lifetime.signal,
+          tls: { key: "", cert: "" },
+          onListen() {},
+          onError: () => new Response(null, { status: 500 }),
+        }, () => Promise.resolve(new Response())),
+      Error,
+      "HTTPS requires both",
+    );
+    const host = open({
+      port: 0,
+      hostname: "127.0.0.1",
+      signal: lifetime.signal,
+      tls: { key: pem, cert: pem },
+      onListen: ({ port }) => listening.resolve(port),
+      onError: () => new Response(null, { status: 500 }),
+    }, request => Promise.resolve(new Response(request.url)));
+    try {
+      const port = await listening.promise;
+      const result = await new Promise<{ status: number | undefined; body: string }>((resolve, reject) => {
+        const request = get({
+          hostname: "127.0.0.1",
+          port,
+          path: "/tls?query=1",
+          servername: "localhost",
+          ca: pem,
+          agent: false,
+        }, response => {
+          let body = "";
+          response.setEncoding("utf8");
+          response.on("data", chunk => body += chunk);
+          response.once("error", reject);
+          response.once("end", () => resolve({ status: response.statusCode, body }));
+        });
+        request.once("error", reject);
+      });
+      assertEquals(result, { status: 200, body: `https://127.0.0.1:${port}/tls?query=1` });
+    } finally {
+      host.close();
+      lifetime.abort();
+      await host.server.finished;
+    }
+  });
+
   Deno.test(`${name} HTTP host joins request cleanup after its socket closes`, async () => {
     const lifetime = new AbortController();
     const disconnected = new AbortController();

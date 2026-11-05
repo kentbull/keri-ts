@@ -24,6 +24,23 @@ The private provisioning listener always binds loopback, with `--boot-port` defa
 `--poll-interval` sets a positive number of seconds between key-state polls (default `30`).
 Use `--base`, `--head-dir` and `--passcode` for explicit store placement and encryption.
 
+## Registry services
+
+`tufa registrar start -n service -a registrar --url https://registrar.example --tls-key key.pem --tls-cert cert.pem`
+starts publication with an existing persisted service AID. Repeat `--observer AID` to select its static observer allowlist.
+The public HTTPS listener defaults to `127.0.0.1:6632`; private loopback administration defaults to port `6631`.
+
+`tufa observer start -n service -a observer --url https://observer.example --tls-key key.pem --tls-cert cert.pem --registrar https://registrar.example --registrar-ca ca.pem`
+starts acquisition with an existing persisted service AID. Repeat `--registrar` for additional HTTPS origins.
+`--registrar-ca` supplies explicit CA trust; `--registrar-cert-name` selects the certificate server name when connecting to an IP address.
+The public HTTPS listener defaults to `127.0.0.1:6633`; private loopback administration defaults to port `6634`.
+`--poll-interval`, `--timeout` and `--maximum-age` accept finite positive seconds, defaulting to `5`, `5` and `15`.
+
+Both commands require an HTTPS origin without credentials, path, query or fragment, and load their TLS PEM files before startup.
+Use `--http`, `--listen-host` and `--boot-port` to select distinct listener ports; administration always stays on loopback.
+Repeat `--kel PATH` to load explicit public KEL evidence for peer service authentication.
+Use `--base`, `--head-dir` and `--passcode` for existing store placement and encryption.
+
 ## KERI Foundation provider allocation
 
 `tufa infra kf discover --url https://provider.example` reads advertised profiles without opening a local store.
@@ -109,6 +126,8 @@ Cancellation acknowledges the request; wait for session `resources_cleaned_at` b
 | `tufa mailbox list`                | List authorized mailboxes for one local identifier.                                      |
 | `tufa mailbox update`              | Update one local mailbox topic cursor.                                                   |
 | `tufa mailbox debug`               | Display mailbox cursor and remote mailbox topic state.                                   |
+| `tufa registrar start`             | Run authenticated registry publication with an existing service AID.                     |
+| `tufa observer start`              | Acquire and serve verified registry evidence using an existing service AID.              |
 | `tufa witness start`               | Provision and run one combined witness+mailbox host.                                     |
 | `tufa witness submit`              | Submit the current event to witnesses and converge receipts.                             |
 | `tufa notifications list`          | List local controller notifications.                                                     |
