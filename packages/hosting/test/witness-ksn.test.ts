@@ -1,4 +1,4 @@
-import { attachmentPayload, collectPayload, parseBytes, SerderKERI } from "cesr-ts";
+import { attachmentPayload, collectPayload, CtrDexV2, parseBytes, parseCounterFromText, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import {
@@ -57,25 +57,39 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       }
       const event = [...peer.db.clonePreIter(controller.pre)][0];
       const [frame] = parseBytes(event);
-      for (const major of [1, 2] as const) {
-        const attachments = yield* call(() => collectPayload(attachmentPayload(frame, { gvrsn: { major, minor: 0 } })));
-        const receipt = yield* call(() =>
-          fetch(origin + "/receipts", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/cesr",
-              "CESR-Genus": String(major),
-              "CESR-ATTACHMENT": new TextDecoder().decode(attachments),
-            },
-            body: new Uint8Array(frame.body.raw),
-            client,
-          })
-        );
-        yield* call(() => receipt.arrayBuffer());
-        assertEquals(receipt.status, 200);
-        assertEquals(hby.db.getKever(controller.pre)!.serder.raw, frame.body.raw);
-      }
+      const attachments = yield* call(() => collectPayload(attachmentPayload(frame, { gvrsn: frame.body.pvrsn })));
+      const receipt = yield* call(() =>
+        fetch(origin + "/receipts", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/cesr",
+            "CESR-Genus": String(frame.body.pvrsn.major),
+            "CESR-ATTACHMENT": new TextDecoder().decode(attachments),
+          },
+          body: new Uint8Array(frame.body.raw),
+          client,
+        })
+      );
+      const receiptBytes = new Uint8Array(yield* call(() => receipt.arrayBuffer()));
+      assertEquals(receipt.status, 200);
+      const receiptFrame = parseBytes(receiptBytes)[0];
+      assertEquals(receiptFrame.body.pvrsn, frame.body.pvrsn);
+      assertEquals(
+        parseCounterFromText(receiptBytes.subarray(receiptFrame.body.raw.length), { major: 2, minor: 0 }).code,
+        CtrDexV2.NonTransReceiptCouples,
+      );
+      assertEquals(hby.db.getKever(controller.pre)!.serder.raw, frame.body.raw);
       assertEquals((yield* witnessReceiptPost(runtime, witness, event)).kind, "accepted");
+      const stored = yield* call(() => fetch(origin + `/receipts?pre=${controller.pre}&sn=0`, { client }));
+      assertEquals(stored.status, 200);
+      const storedBytes = new Uint8Array(yield* call(() => stored.arrayBuffer()));
+      const storedFrame = parseBytes(storedBytes)[0];
+      assertEquals(storedFrame.body.pvrsn, frame.body.pvrsn);
+      assertEquals(
+        parseCounterFromText(storedBytes.subarray(storedFrame.body.raw.length), { major: 2, minor: 0 }).code,
+        CtrDexV2.WitnessIdxSigs,
+      );
+
       // The actual query handler captures metadata without hydrating an event or pulling output early.
       const read = hby.db.getEvt;
       hby.db.getEvt = () => {
@@ -115,7 +129,8 @@ Deno.test("tufa witness KSN requires destination and receipts and independently 
       assertEquals(response.headers.get("content-type"), "application/cesr");
       const bytes = new Uint8Array(yield* call(() => response.arrayBuffer()));
       const notice = new SerderKERI({ raw: bytes });
-      assertEquals(notice.pvrsn.major, 1, "preserve existing reply wire generation");
+      assertEquals(notice.pvrsn.major, 2);
+      assertEquals(notice.pre, witness.pre, "v2 reply identifies its actual signer");
       assertEquals(notice.ked?.r, `/ksn/${witness.pre}`);
       for (const tamper of [false, true]) {
         const observer = yield* createHabery({

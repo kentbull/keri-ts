@@ -11,6 +11,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { Readable } from "node:stream";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { createTufaApp } from "../http/app.ts";
+import type { ProtocolHandler } from "../http/protocol/types.ts";
 
 interface RunningServer {
   readonly finished: Promise<void>;
@@ -35,6 +36,8 @@ interface ServerOptions {
 
 /** HTTP host options. */
 export interface RuntimeHttpHostOptions extends ProtocolHostPolicy {
+  /** A concrete service may own routing across independent runtimes; it also owns handler cleanup. */
+  protocolHandler?: ProtocolHandler;
   hostname?: string;
   onListen?: (address: { port: number; hostname: string }) => void;
 }
@@ -292,6 +295,7 @@ function openServerHost(
   const app = createTufaApp({
     runtime,
     protocolPolicy: options,
+    protocolHandler: options.protocolHandler,
     app: { logger },
   });
   const handler = (req: Request): Promise<Response> => Promise.resolve(app.fetch(req));

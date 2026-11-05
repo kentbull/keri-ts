@@ -906,7 +906,7 @@ export class Hab {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
 
-    const reserder = receiptEvent(pre, sn, said);
+    const reserder = receiptEvent(pre, sn, said, { pvrsn: serder.pvrsn, gvrsn: serder.pvrsn });
 
     if (!kever.transferable) {
       const cigars = this.sign(serder.raw, false) as Cigar[];
@@ -917,7 +917,7 @@ export class Hab {
         tsgs: [],
         local: true,
       });
-      return messagize(reserder, { cigars, pipelined: true });
+      return messagize(reserder, { cigars, pipelined: true, gvrsn: serder.pvrsn });
     }
 
     const estSaid = kever.lastEst.d || kever.said;
@@ -946,6 +946,7 @@ export class Hab {
       sigers: tsg.sigers,
       seal: { i: tsg.prefixer, s: tsg.seqner, d: tsg.diger },
       pipelined: true,
+      gvrsn: serder.pvrsn,
     });
   }
 
@@ -982,7 +983,7 @@ export class Hab {
       );
     }
 
-    const reserder = receiptEvent(pre, sn, said);
+    const reserder = receiptEvent(pre, sn, said, { pvrsn: serder.pvrsn, gvrsn: serder.pvrsn });
     const wigers = this.mgr.sign(serder.raw, {
       pubs: [this.pre],
       indexed: true,
@@ -995,7 +996,7 @@ export class Hab {
       tsgs: [],
       local: true,
     });
-    return messagize(reserder, { wigers, pipelined: true });
+    return messagize(reserder, { wigers, pipelined: true, gvrsn: serder.pvrsn });
   }
 
   /**

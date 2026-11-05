@@ -7,6 +7,14 @@ This document provides a concise reference for all CLI commands available in the
 
 Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` from `packages/keri` or the `packages/tufa` / `packages/cesr` directories) or via the published binaries after installation.
 
+## Hosted witness backend
+
+`tufa witness backend --name backend --url https://witness.example` runs a hosted-witness backend.
+`--url` is the advertised HTTP(S) origin, without credentials, a path, query or fragment.
+The public receipt listener defaults to `127.0.0.1:5632`; set `--listen-host` and `--http` for the public service deployment.
+The private provisioning listener always binds loopback and defaults to port `5631`; `--boot-port` selects a distinct local port.
+Use `--base`, `--head-dir` and `--passcode` for explicit store placement and encryption.
+
 ## KERI Foundation provider allocation
 
 `tufa infra kf discover --url https://provider.example` reads advertised profiles without opening a local store.

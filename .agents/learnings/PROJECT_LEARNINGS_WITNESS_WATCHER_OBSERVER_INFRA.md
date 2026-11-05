@@ -105,6 +105,18 @@ on later invocations. Cancellation acknowledgement precedes service-owned cleanu
 The application client does not establish TS witness/watcher/registry backend
 support; those require their own hosted service contracts and Locksmith proof.
 
+`witness backend` separately owns KF witness allocations. Its private listener
+binds loopback; the public listener selects a distinct witness runtime/store by
+CESR destination or OOBI. Registration verifies current input signatures even if
+the inception is already accepted, then encrypts the TOTP seed to current keys.
+Only the allocated controller with a valid code gets witness-local ingress;
+ordinary public evidence stays remote. Stop workers and response streams, join
+requests, then close stores. Shutdown retains allocations; explicit deletion
+clears only that resource. Provider storage never implies mailbox polling.
+Receipt body/genus follows the receipted event; hosted KSN and advertised endpoint
+evidence use v2. Shared serialization owns counters. The hosted-backend test is
+scoped evidence; four-backend Locksmith onboarding remains a separate gate.
+
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
