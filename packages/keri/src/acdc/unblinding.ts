@@ -414,12 +414,21 @@ export class Unblind implements AuxiliaryQueryProcessor {
         ...attachments?.bsss ?? [],
       ]);
       for (const [said, opening] of verified) op.openings.set(said, opening);
+      const minimum = this.minimum(op, nests, (event) => this.opening(op.openings, event));
+      if (own) {
+        if (!sameSelection(selected, minimum.selected)) {
+          throw new ValidationError("Reply is not the minimum current suffix");
+        }
+      } else {
+        if (
+          Object.entries(minimum.selected).some(([regid, saids]) =>
+            saids.some(said => !selected[regid]?.includes(said))
+          )
+        ) throw new ValidationError("Reply does not cover the required current suffix");
+        for (const said of Object.values(selected).flat()) this.opening(op.openings, this.registry.store.event(said)!);
+      }
       const decision = this.rvy.acceptReply({ serder, saider: diger, route, aid: op.sender, cigars, tsgs });
       if (decision.kind !== "accept") return decision;
-      const minimum = this.minimum(op, nests, (event) => this.opening(op.openings, event));
-      if (!sameSelection(selected, minimum.selected)) {
-        throw new ValidationError("Reply is not the minimum current suffix");
-      }
       op.selected = selected;
       if (own) {
         this.groupMessage(

@@ -195,8 +195,8 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       const proof = makeBlindState({
         salt: root.qb64,
         sn,
-        acdc: sn === 2 ? credential.said! : "",
-        state: sn === 2 ? "issued" : "",
+        acdc: sn === 3 ? credential.said! : "",
+        state: sn === 3 ? "issued" : "",
       });
       const event = blindate(rip.said!, prior.said!, proof.d.nonce, { sn, stamp });
       const kel = sender.interact({ data: [{ i: rip.said!, s: sn.toString(16), d: event.said! }] });
@@ -233,10 +233,23 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     );
     const response = presenter.route.outgoing.pull()!;
     assertEquals(response.dest, verifier.pre);
-    const reply = parseBytes(response.msg)[0], replyEvidence = envelopeFromFrame(reply);
-    assertEquals((replyEvidence.serder.sad!.a as Record<string, unknown>).re, requestedEvents);
-    assertEquals(reply.nests ?? [], []);
-    assertEquals(replyEvidence.bsqs.map(proof => proof.d.nonce).sort(), proofs.map(proof => proof.d.nonce).sort());
+    const minimalReply = parseBytes(response.msg)[0], minimalEvidence = envelopeFromFrame(minimalReply);
+    assertEquals((minimalEvidence.serder.sad!.a as Record<string, unknown>).re, {
+      [rip.said!]: events.slice(1).map(event => event.said!),
+    });
+    assertEquals(minimalReply.nests ?? [], []);
+    assertEquals(
+      minimalEvidence.bsqs.map(proof => proof.d.nonce).sort(),
+      proofs.slice(1).map(proof => proof.d.nonce).sort(),
+    );
+    // An independent responder may disclose every requested event, including the earlier vacuous one.
+    const fullBody = reply(Unblind.Route, { x: xid, re: requestedEvents }, { pre: sender.pre, pvrsn: Vrsn_2_0 });
+    const replyFrame = parseBytes(sender.endorse(fullBody, { gvrsn: Vrsn_2_0 }))[0];
+    replyFrame.attachments = [
+      ...replyFrame.attachments ?? [],
+      ...proofs.map(proof => parseAttachmentGroup(publicOpeningAttachment(proof), Vrsn_2_0, "txt").group),
+    ];
+    const replyEvidence = envelopeFromFrame(replyFrame);
     assertEquals(replyEvidence.bsss, []);
     assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
     assertEquals(
@@ -246,7 +259,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     );
     const signature = replyEvidence.tsgs[0];
     const partialReply = (index: number, includeProofs: boolean): CesrFrame => ({
-      ...reply,
+      ...replyFrame,
       attachments: [
         ...messageAttachmentGroups({
           tsgs: [
