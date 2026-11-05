@@ -33,7 +33,11 @@ interface Snapshot {
 Deno.test("messenger factories exchange ordered POSTs and whole PUTs through actual Python witness and Tufa intake", async () => {
   const ctx = await createInteropContext();
   try {
-    const witnesses = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
+    const witnesses = await startKeriPyWitnessHarness(ctx, {
+      aliases: ["wan"],
+      messengerProbe: true,
+      protocolVersion: 1,
+    });
     try {
       const witness = witnesses.node("wan");
       /** Invoke the fixture's state observer or actual Python messenger, not a protocol substitute. */
@@ -204,7 +208,11 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
 Deno.test("signed mailbox queries retrieve and accept Python replies across reference media profiles", async () => {
   const ctx = await createInteropContext();
   try {
-    const witnesses = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"], messengerProbe: true });
+    const witnesses = await startKeriPyWitnessHarness(ctx, {
+      aliases: ["wan"],
+      messengerProbe: true,
+      protocolVersion: 1,
+    });
     try {
       const witness = witnesses.node("wan");
       /** Test controls publish signed output or inspect accepted state; protocol intake stays real. */
