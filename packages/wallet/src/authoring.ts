@@ -13,6 +13,7 @@ import {
   type RegistryDisclosure,
   validateAcdcSchema,
   ValidationError,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import type { RegistryCustody } from "./custody.ts";
 import type { Wallet } from "./wallet.ts";
@@ -22,6 +23,8 @@ export interface AcdcV2UpdateOptions {
   public?: boolean;
   stamp?: string;
   boundEvent?: string;
+  /** Transient witness codes for this operation; never retained with registry evidence. */
+  auths?: WitnessAuthMap;
 }
 
 /** Borrow the actual wallet, registry environment and receipt collector; acquire no handles or workers. */
@@ -61,7 +64,7 @@ export class WalletAuthor {
   }
 
   /** Idempotently stage an alias, then return only its exact accepted inception. */
-  *incept(name: string, controller: string): Operation<SerderACDC> {
+  *incept(name: string, controller: string, auths?: WitnessAuthMap): Operation<SerderACDC> {
     const hab = this.wallet.hby.habs.get(controller);
     if (!hab || isLocalGroupHab(this.wallet.hby, hab)) {
       throw new ValidationError("ACDC v2 inception requires a local individual controller.");
@@ -69,7 +72,7 @@ export class WalletAuthor {
     const reg = this.rgy.registryByName(name) ?? this.rgy.makeRegistry(name, controller);
     this.registry(name, controller);
     const event = reg.store.event(reg.regk!)!;
-    yield* this.anchor(reg, event);
+    yield* this.anchor(reg, event, auths);
     return event;
   }
 
@@ -193,7 +196,7 @@ export class WalletAuthor {
   ): Operation<SerderACDC> {
     this.individual(reg);
     const { event } = this.stage(reg, acdc, state, options);
-    yield* this.anchor(reg, event);
+    yield* this.anchor(reg, event, options.auths);
     return event;
   }
 
@@ -205,7 +208,7 @@ export class WalletAuthor {
     const old = this.wallet.db.issued.get([acdc.said!]);
     if (old) return this.wallet.recordIssued(acdc, old.update);
     const { event, opening } = this.stage(reg, acdc, "issued", options);
-    yield* this.anchor(reg, event);
+    yield* this.anchor(reg, event, options.auths);
     return this.wallet.recordIssued(acdc, event.said!, { blinder: opening });
   }
 
@@ -213,12 +216,12 @@ export class WalletAuthor {
   *revoke(reg: AcdcV2Registry, said: string, options: AcdcV2UpdateOptions = {}): Operation<SerderACDC> {
     this.individual(reg);
     const { event } = this.stageRevocation(reg, said, options);
-    yield* this.anchor(reg, event);
+    yield* this.anchor(reg, event, options.auths);
     return event;
   }
 
   /** Reuse the current branch's already signed seal even before receipts; no extra anchor merely to poll. */
-  *anchor(reg: AcdcV2Registry, event: SerderACDC): Operation<void> {
+  *anchor(reg: AcdcV2Registry, event: SerderACDC, auths?: WitnessAuthMap): Operation<void> {
     this.registry(reg.name, reg.hab.pre);
     this.individual(reg);
     const ordinal = Number(BigInt(`0x${event.sad!.n}`));
@@ -238,7 +241,7 @@ export class WalletAuthor {
       else hab.interact({ data });
       anchor = hab.kever!.serder;
     }
-    yield* this.receiptor.receipt(hab.pre, { sn: anchor.sn!, allowTcp: true });
+    yield* this.receiptor.receipt(hab.pre, { sn: anchor.sn!, allowTcp: true, auths });
     this.wallet.hby.kevery.processEscrows();
     reg.processEscrows();
     const exact = reg.store.seqEvent(reg.regk!, ordinal);

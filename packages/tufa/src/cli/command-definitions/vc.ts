@@ -1,7 +1,14 @@
 /** Commander registrations for vc operations; command adapters own effects. */
 import { Command } from "npm:commander@^10.0.1";
 import type { CommandDispatch } from "../command-types.ts";
-import { addHabOption, addStoreOptions, collectOption, dispatchArgs } from "./options.ts";
+import {
+  addHabOption,
+  addStoreOptions,
+  addWitnessAuthOptions,
+  collectOption,
+  dispatchArgs,
+  witnessAuthArgs,
+} from "./options.ts";
 import { registerDispatchedCommand, registerKeriCliCommand } from "./shared.ts";
 
 /**
@@ -91,7 +98,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
-        registry.command("incept")
+        addWitnessAuthOptions(registry.command("incept"))
           .description("Create a local credential registry")
           .option("--acdc-v2", "Use ACDC v2 registry acceptance")
           .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
@@ -109,6 +116,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       exportName: "vcRegistryInceptCommand",
       args: (options) => ({
         ...dispatchArgs(options),
+        ...witnessAuthArgs(options),
         estOnly: options.estOnly || false,
         usage: options.usage,
       }),
@@ -137,7 +145,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   registerDispatchedCommand(
     addHabOption(
       addStoreOptions(
-        vc.command("create")
+        addWitnessAuthOptions(vc.command("create"))
           .description("Create and issue a registry-backed credential")
           .option("--acdc-v2", "Use ACDC v2 issuance")
           .option("--prepare", "Write a fresh public ACDC v2 body to --out without root, BUP or inventory")
@@ -163,13 +171,13 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       name: "vc.create",
       load: () => import("../commands/credentials.ts"),
       exportName: "vcCreateCommand",
-      args: dispatchArgs,
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
     },
   );
 
   registerDispatchedCommand(
     addHabOption(addStoreOptions(
-      vc.command("update")
+      addWitnessAuthOptions(vc.command("update"))
         .description("Advance ACDC v2 BUP state; never authors historical upd")
         .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
         .requiredOption("--registry-name <name>", "ACDC v2 registry alias")
@@ -184,7 +192,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       name: "vc.update",
       load: () => import("../commands/acdc-v2-authoring.ts"),
       exportName: "acdcV2UpdateCommand",
-      args: dispatchArgs,
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
     },
   );
   registerKeriCliCommand(
@@ -232,7 +240,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
 
   registerDispatchedCommand(
     addStoreOptions(
-      vc.command("revoke")
+      addWitnessAuthOptions(vc.command("revoke"))
         .description("Revoke a local credential")
         .option("--acdc-v2", "Use an ACDC v2 revoked BUP")
         .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
@@ -259,7 +267,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
       name: "vc.revoke",
       load: () => import("../commands/credentials.ts"),
       exportName: "vcRevokeCommand",
-      args: dispatchArgs,
+      args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options) }),
     },
   );
 }

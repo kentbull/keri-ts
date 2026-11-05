@@ -41,6 +41,7 @@ import {
   timestampMicros,
   ValidationError,
   vet,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
 
@@ -245,7 +246,7 @@ export function* runGroupDerivedIssuance(
   runtime: AgentRuntime,
   wallet: Wallet,
   request: GroupIssuanceRequest,
-  { timeoutMs, witnessGvrsn }: { timeoutMs: number; witnessGvrsn?: Versionage },
+  { timeoutMs, witnessGvrsn, auths }: { timeoutMs: number; witnessGvrsn?: Versionage; auths?: WitnessAuthMap },
 ): Operation<GroupIssuanceResult> {
   const { hab, member, dh, coordinator, lead, rgy } = owners(runtime, wallet, request);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -542,7 +543,15 @@ export function* runGroupDerivedIssuance(
                   );
                   const staged = author.stage(reg, origin, "issued");
                   // Other issuer members approve this exact BUP in a separate multisig join invocation.
-                  yield* approveAcdcV2RegistryEvent(runtime.hby, runtime, hab, receiptor, staged.event, staged.opening);
+                  yield* approveAcdcV2RegistryEvent(
+                    runtime.hby,
+                    runtime,
+                    hab,
+                    receiptor,
+                    staged.event,
+                    staged.opening,
+                    auths,
+                  );
                   wallet.recordIssued(origin, staged.event.said!, { blinder: staged.opening });
                 } else if (wallet.registry.headEvent(registry)?.ilk !== "bup") {
                   yield* wait(runtime, 50);

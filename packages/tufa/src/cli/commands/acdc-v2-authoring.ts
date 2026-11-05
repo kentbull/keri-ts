@@ -18,10 +18,12 @@ import {
   Schemer,
   validateAcdcSchema,
   ValidationError,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import { authoringWitnessAuths } from "../support/witness-auth.ts";
 
 /** Inline JSON and explicit files retain their semantic values; builders own credential structure. */
 function section(value: unknown, flag: string): MapperMap | undefined {
@@ -48,6 +50,7 @@ export function* approveAcdcV2RegistryEvent(
   receiptor: Receiptor,
   event: SerderACDC,
   opening?: RegistryDisclosure,
+  auths?: WitnessAuthMap,
 ): Operation<void> {
   const approved = yield* approveAcdcV2Registry(hby, runtime.protocol, hab, event, { opening });
   yield* publishAcdcV2Registry(hby, runtime.postman, hab, approved);
@@ -56,7 +59,7 @@ export function* approveAcdcV2RegistryEvent(
   const regid = event.ilk === "rip" ? event.said! : event.regid!;
   while (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said !== event.said) {
     if (hby.db.kels.getLast(hab.pre, sealing.sn!) === anchor) {
-      yield* receiptor.receipt(hab.pre, { sn: sealing.sn!, allowTcp: true });
+      yield* receiptor.receipt(hab.pre, { sn: sealing.sn!, allowTcp: true, auths });
     }
     yield* runtime.protocol.processEscrowsOnce();
     if (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said === event.said) break;
@@ -112,6 +115,7 @@ export function* acdcV2AuthorCommand(
         function*({ hby, runtime, hab }) {
           return yield* scoped(function*() {
             if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
+            const auths = prepare ? undefined : authoringWitnessAuths(hab, args);
             const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
             const custody = !prepare && (withCustody || (operation !== "incept" && !publicOpening))
               ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
@@ -127,7 +131,7 @@ export function* acdcV2AuthorCommand(
             const group = isLocalGroupHab(hby, hab);
             if (group && !prepare) yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
             function* approve(event: SerderACDC, opening?: RegistryDisclosure): Operation<void> {
-              yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, opening);
+              yield* approveAcdcV2RegistryEvent(hby, runtime, hab, author.receiptor, event, opening, auths);
             }
             if (operation === "incept") {
               if (custody && (!hby.mgr.aeid || !hby.mgr.seed)) {
@@ -139,7 +143,7 @@ export function* acdcV2AuthorCommand(
               if (reg && reg.hab.pre !== hab.pre) {
                 throw new ValidationError("Registry belongs to a different controller.");
               }
-              const event = reg ? reg.store.event(reg.regk!)! : yield* author.incept(name, hab.pre);
+              const event = reg ? reg.store.event(reg.regk!)! : yield* author.incept(name, hab.pre, auths);
               if (group) yield* approve(event);
               custody?.createCustody(event.said!);
               return {
@@ -149,7 +153,7 @@ export function* acdcV2AuthorCommand(
               };
             }
             const reg = author.registry(name, hab.pre),
-              options = { public: publicOpening, boundEvent: parseStringOption(args.boundEvent, "bound-event") };
+              options = { auths, public: publicOpening, boundEvent: parseStringOption(args.boundEvent, "bound-event") };
             if (operation === "issue") {
               let schema = parseStringOption(args.schema, "schema");
               const schemaFile = parseStringOption(args.schemaFile, "schema-file");
