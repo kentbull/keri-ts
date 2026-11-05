@@ -41,6 +41,7 @@ import {
 } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
+  copyAuxiliaryQuery,
   envelopeFromFrame,
   type MessageDropDecision,
 } from "../app/protocol/parsering.ts";
@@ -52,6 +53,7 @@ import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
+import { timestampMicros } from "../time/mod.ts";
 import { validateUpdate, verifyRegistryAnchor } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
 
@@ -178,8 +180,13 @@ export interface DhkeOutgoing {
  */
 export class Dhke implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/dhke";
-  readonly retryQueryRoute = Dhke.Route;
+  readonly resource = Dhke.Route;
   readonly outgoing = new Deck<DhkeOutgoing>();
+  private readonly pendingQueries = new Map<
+    string,
+    { envelope: KeriDispatchEnvelope; expires: bigint; grant: string }
+  >();
+  private readonly now: () => number;
   private readonly operations = new Map<string, DhkeOperation>();
   readonly hab: Hab;
   readonly exc: Exchanger;
@@ -188,16 +195,18 @@ export class Dhke implements AuxiliaryQueryProcessor {
   readonly group: boolean;
 
   /** Bind concrete local owners; construction grants no consent and writes nothing. */
-  constructor({ hab, exc, registryStore, rvy = hab.rvy }: {
+  constructor({ hab, exc, registryStore, rvy = hab.rvy, now = Date.now }: {
     hab: Hab;
     exc: Exchanger;
     registryStore: RegistryStore;
     rvy?: Revery;
+    now?: () => number;
   }) {
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || rvy.db !== hab.db
       || exc.hby.habs.get(hab.pre!) !== hab
     ) throw new ValidationError("DH requires a local signing habitat");
+    this.now = now;
     this.hab = hab;
     this.exc = exc;
     this.rvy = rvy;
@@ -210,6 +219,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   /** Select one live fresh issuance and freeze its exact bodies, parties and registry order. */
   approve(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
+    this.pruneQueries();
     this.hab.mgr.requireRegistryRootAccess();
     for (const op of this.operations.values()) {
       if (op.grant === grant) {
@@ -273,6 +283,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
     this.roots(op);
     this.operations.set(xid, op);
+    this.replayQuery(xid);
     return xid;
   }
 
@@ -349,10 +360,16 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   /** Independently authenticate the full issuer threshold, even when KRAM is disabled. */
   processQuery(envelope: KeriDispatchEnvelope): { kind: "accept" } | MessageDropDecision {
+    this.pruneQueries();
     try {
       const { serder } = envelope;
       if (serder.ilk !== "qry" || serder.sad!.rr !== Dhke.Route) throw new ValidationError("Invalid DH query");
       const own = this.group && serder.pre === this.hab.pre;
+      const xid = (serder.sad?.q as { x?: unknown } | undefined)?.x;
+      if (!own && typeof xid === "string" && !this.operations.has(xid)) {
+        this.retainQuery(envelope);
+        return { kind: "accept" };
+      }
       const { op, peer } = this.preflight(serder, "q", own ? "issuer" : "issuee", own);
       if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
         throw new ValidationError("Own DH query lacks exact local proposal approval");
@@ -504,6 +521,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   /** Drop local ephemeral key references and permanently refuse this operation. */
   abandon(xid: string): void {
+    const retained = this.pendingQueries.delete(xid);
+    if (retained && !this.operations.has(xid)) return;
     const op = this.operation(xid);
     this.clearPrivate(op);
     op.abandoned = true;
@@ -513,7 +532,71 @@ export class Dhke implements AuxiliaryQueryProcessor {
   close(): void {
     for (const op of this.operations.values()) this.clearPrivate(op);
     this.operations.clear();
+    this.pendingQueries.clear();
     this.outgoing.clear();
+  }
+
+  /** Retain public query evidence against one exact pending Grant, without creating keys or consent. */
+  private retainQuery(envelope: KeriDispatchEnvelope): void {
+    const query = envelope.serder, data = this.parameters(query, "q");
+    if (!verifyQueryAttachments(this.hab.db, envelope)) throw new ValidationError("Unauthenticated DH query");
+    const candidates = [...this.hab.db.tmsc.getTopItemIter([query.pre!, data.x])]
+      .map(([key]) => this.hab.db.epse.get([key[2]]))
+      .filter(grant =>
+        grant && grant.pre === query.pre && grant.sad!.ri === this.hab.pre
+        && this.exc.pendingGrant(grant.said!, { xid: data.x, sender: query.pre!, recipient: this.hab.pre })
+      );
+    if (candidates.length !== 1) throw new ValidationError("DH query has no unique authenticated pending Grant");
+    const grant = candidates[0]!;
+    const scope = this.exc.pendingGrant(grant.said!, { xid: data.x, sender: query.pre!, recipient: this.hab.pre })!;
+    const entries = Object.entries(data.pk);
+    if (entries.length !== scope.registries.length || entries.some(([regid]) => !scope.registries.includes(regid))) {
+      throw new ValidationError("DH query differs from the authenticated registry scope");
+    }
+    for (const [, key] of entries) decodePublicKey(key);
+    const expires = this.retainUntil(envelope, grant);
+    const prior = this.pendingQueries.get(data.x);
+    if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) throw new ValidationError("Conflicting DH query");
+    if (!prior) {
+      this.pendingQueries.set(data.x, { envelope: copyAuxiliaryQuery(envelope), expires, grant: grant.said! });
+    }
+  }
+
+  /** Expired evidence cannot survive another owner interaction. */
+  private pruneQueries(): bigint {
+    const now = BigInt(this.now()) * 1000n;
+    for (const [xid, query] of this.pendingQueries) if (now >= query.expires) this.pendingQueries.delete(xid);
+    return now;
+  }
+
+  /** Consume the first authenticated request only after explicit approval; never renew either clock. */
+  private replayQuery(xid: string): void {
+    const pending = this.pendingQueries.get(xid);
+    this.pendingQueries.delete(xid);
+    if (
+      pending && pending.grant === this.operations.get(xid)?.grant
+      && BigInt(this.now()) * 1000n < pending.expires
+    ) this.processQuery(pending.envelope);
+  }
+
+  /** Bound process-local public evidence by the original query and accepted Grant lifetimes. */
+  private retainUntil(envelope: KeriDispatchEnvelope, grant: SerderKERI): bigint {
+    const now = this.pruneQueries();
+    const cache = this.hab.db.msgc.get([envelope.serder.pre!, envelope.serder.said!]);
+    const messageTime = cache && timestampMicros(cache.mdt);
+    const grantTime = timestampMicros(this.exc.exchangeDeadline(grant) ?? undefined);
+    if (
+      !cache || this.hab.db.pmkm.get([envelope.serder.pre!, envelope.serder.said!]) || messageTime === null
+      || messageTime === undefined || grantTime === null
+      || !Number.isSafeInteger(cache.d) || !Number.isSafeInteger(cache.ml)
+      || cache.d! < 0 || cache.ml! < 0 || !Number.isSafeInteger(cache.d! + cache.ml!)
+    ) {
+      throw new ValidationError("Query has no accepted original lifetime");
+    }
+    const queryTime = messageTime + BigInt(cache.d! + cache.ml!) * 1000n;
+    const expires = queryTime < grantTime ? queryTime : grantTime;
+    if (now >= expires) throw new ValidationError("Query or Grant has expired");
+    return expires;
   }
 
   private operation(xid: string): DhkeOperation {
@@ -557,7 +640,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
     }
   }
 
-  private preflight(serder: SerderKERI, field: "q" | "a", role: "issuer" | "issuee", own = false) {
+  /** Decode only the exact DH message contract; authorization belongs to the selected operation. */
+  private parameters(serder: SerderKERI, field: "q" | "a"): { x: string; pk: Record<string, unknown> } {
     const data = serder.sad?.[field];
     if (
       !serder.verify() || serder.pvrsn.major !== 2 || serder.pvrsn.minor !== 0 || serder.route !== Dhke.Route
@@ -567,6 +651,11 @@ export class Dhke implements AuxiliaryQueryProcessor {
     ) {
       throw new ValidationError("Invalid DH message shape");
     }
+    return data as { x: string; pk: Record<string, unknown> };
+  }
+
+  private preflight(serder: SerderKERI, field: "q" | "a", role: "issuer" | "issuee", own = false) {
+    const data = this.parameters(serder, field);
     const op = this.operation(data.x);
     this.live(op);
     if (this.hab.pre !== op[role] || serder.pre !== op[own ? role : role === "issuer" ? "issuee" : "issuer"]) {

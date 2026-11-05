@@ -221,7 +221,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(requestedEvents, { [rip.said!]: events.map(event => event.said!) });
     assertEquals(requested.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
     assertEquals(envelopeFromFrame(requested).bsqs, [], "query carries public state, never openings");
-    assertEquals(presenter.route.processQuery(envelopeFromFrame(requested)).kind, "drop");
+    yield* presenter.reactor.processBytes(query);
     assertEquals(presenter.route.outgoing.length, 0, "receipt without release consent discloses no proofs");
     assertEquals(presenter.store.head(rip.said!)!.qb64, event1.said!, "unapproved public suffix is not imported");
     assertEquals(presenter.route.approve(pending.said!), xid);

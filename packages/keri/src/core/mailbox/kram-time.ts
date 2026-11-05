@@ -12,10 +12,6 @@ export interface KramTimeRefusal {
   kind: "drop";
   reason: "timestamp" | "replay" | "timeliness" | "unknownThread" | "lifetime";
 }
-/** A cached query may be retried only with a new complete proof and unchanged cached time limits. */
-export interface KramQueryRetry {
-  kind: "queryRetry";
-}
 /** Receiver-independent inspection lets callers drop completed replays before source queries. */
 export interface KramReplayInspection {
   kind: "new" | "cached";
@@ -50,19 +46,7 @@ export function kramCacheValues(cache: MsgCacheRecord | TxnMsgCacheRecord): Requ
  * Inspect frozen message/xid routing and strict completed-message replay rules.
  * Only an incomplete multi-signature message retains partial state.
  */
-export function inspectKramReplay(db: Baser, body: SerderKERI): KramReplayInspection | KramTimeRefusal;
-/** Selected auxiliary owners may request cached-query time eligibility, before full incoming authentication. */
-export function inspectKramReplay(
-  db: Baser,
-  body: SerderKERI,
-  queryRetryAt: string | undefined,
-): KramReplayInspection | KramTimeRefusal | KramQueryRetry;
-/** Read cached scope without modifying its timestamp or retaining new query factors. */
-export function inspectKramReplay(
-  db: Baser,
-  body: SerderKERI,
-  queryRetryAt?: string,
-): KramReplayInspection | KramTimeRefusal | KramQueryRetry {
+export function inspectKramReplay(db: Baser, body: SerderKERI): KramReplayInspection | KramTimeRefusal {
   const mdt = timestampMicros(body.stamp);
   if (mdt === null) return { kind: "drop", reason: "timestamp" };
   const sender = body.pre, said = body.said;
@@ -75,13 +59,6 @@ export function inspectKramReplay(
   if (cache) {
     const values = kramCacheValues(cache);
     if (mdt <= timestampMicros(values.mdt)! && !partial) {
-      if (queryRetryAt !== undefined && body.ilk === "qry" && mdt === timestampMicros(values.mdt)) {
-        const now = timestampMicros(queryRetryAt);
-        if (now === null) throw new Error("Invalid KRAM receiver clock");
-        return within(now, mdt - BigInt(values.d) * 1000n, mdt + (BigInt(values.d) + BigInt(values.ml)) * 1000n)
-          ? { kind: "queryRetry" }
-          : { kind: "drop", reason: "timeliness" };
-      }
       return { kind: "drop", reason: "replay" };
     }
   }

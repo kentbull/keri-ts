@@ -4,6 +4,8 @@ import {
   BoundState,
   type CesrFrame,
   Cigar,
+  concatBytes,
+  Counter,
   Dater,
   Diger,
   FirstSeen,
@@ -14,6 +16,7 @@ import {
   Labeler,
   Noncer,
   NumberPrimitive,
+  parseBytes,
   parseSerder,
   Prefixer,
   requireFlatFrame,
@@ -43,6 +46,7 @@ import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/pro
 import { Kevery, type QueryEnvelope } from "../../core/kel/eventing.ts";
 import type { KeverDecision, QueryProcessDecision } from "../../core/kel/kever-decisions.ts";
 import { type KramRefusal } from "../../core/mailbox/kraming.ts";
+import { serializeMessage } from "../../core/protocol-serialization.ts";
 import { type ReplyProcessDecision, Revery } from "../../core/routing.ts";
 import type { TelProcessDecision, Tevery } from "../../vdr/eventing.ts";
 import type { Verifier, VerifierDecision } from "../credentials/verifying.ts";
@@ -140,8 +144,8 @@ export type DispatchDecision =
  * grants no authority. It borrows the full envelope during this synchronous call.
  */
 export interface AuxiliaryQueryProcessor {
-  /** Opt one concrete route into complete-wire retries; this owner reauthenticates proof and live consent. */
-  readonly retryQueryRoute?: string;
+  /** Concrete custom query route selected by composition before any replay-cache admission. */
+  readonly resource: string;
   processQuery(envelope: KeriDispatchEnvelope): DispatchDecision;
 }
 
@@ -316,10 +320,14 @@ function* dispatchMessage(
       return { envelope, decision: { kind: "drop", reason: "senderNotAllowed" } };
     }
   }
-  const retryQuery = serder.ilk === "qry" && qvy?.retryQueryRoute !== undefined
-    && qvy.retryQueryRoute === serder.route && !["logs", "ksn", "mbx", "tels", "tsn"].includes(serder.route!);
-  const result = kevery.kramer?.intake(envelope, { retryQuery });
-  if (result && result.kind !== "ready" && result.kind !== "queryRetry") return { envelope, decision: result };
+  if (
+    serder.ilk === "qry" && !["logs", "ksn", "mbx", "tels", "tsn"].includes(serder.route ?? "")
+    && qvy?.resource !== serder.route
+  ) {
+    return { envelope, decision: { kind: "drop", reason: "missingProcessor" } };
+  }
+  const result = kevery.kramer?.intake(envelope);
+  if (result && result.kind !== "ready") return { envelope, decision: result };
   const ready = result?.kind === "ready" ? result.envelope : envelope;
   const decision = yield* dispatchReadyMessage(
     ready,
@@ -659,6 +667,51 @@ export function envelopeFromFrame(
     collectAttachments(group, envelope);
   }
   return envelope;
+}
+
+/** Own an auxiliary query's normalized full proof and public nested evidence beyond synchronous intake. */
+export function copyAuxiliaryQuery(envelope: KeriDispatchEnvelope): KeriDispatchEnvelope {
+  const version = envelope.gvrsn ?? envelope.serder.gvrsn ?? envelope.serder.pvrsn;
+  const copyFrame = (
+    body: SerderKERI | SerderACDC,
+    groups: readonly AttachmentGroup[],
+    genus: Versionage,
+    nests: readonly CesrFrame[],
+  ): CesrFrame => {
+    const frame = parseBytes(concatBytes(
+      Counter.makeGVC(genus),
+      body.raw,
+      Counter.enclose({
+        code: "AttachmentGroup",
+        version: genus,
+        qb64: concatBytes(...groups.map(group => group.raw)),
+      }),
+    ))[0];
+    frame.nests = nests.map(child =>
+      copyFrame(
+        child.body as SerderKERI | SerderACDC,
+        child.attachments,
+        child.gvrsn ?? genus,
+        child.nests ?? [],
+      )
+    );
+    return frame;
+  };
+  const copied = envelopeFromFrame(
+    copyFrame(envelope.serder, envelope.attachmentGroups, version, envelope.nests),
+    envelope.local,
+  );
+  // One-key raw/last-establishment proofs remain in the copied groups. KRAM's
+  // completed multi-key TSG may include earlier inputs, so copy that normalized proof too.
+  const normalized = envelopeFromFrame(
+    parseBytes(serializeMessage(envelope.serder, {
+      tsgs: envelope.tsgs,
+      gvrsn: version,
+      genusify: true,
+    }))[0],
+  );
+  copied.tsgs.splice(0, copied.tsgs.length, ...normalized.tsgs);
+  return copied;
 }
 
 /** Normalize the actual query endorsements for ingress and per-request authorization. */

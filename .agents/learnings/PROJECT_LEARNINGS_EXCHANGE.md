@@ -164,11 +164,16 @@ foreign factors. Auxiliary query receivers must use that full envelope rather
 than the legacy requester projection, which omits TSGs. A valid sender seal
 retains the reference's separate authentication path; it does not itself grant
 auxiliary authority.
-Selected Dhke/Unblind query retries use complete incoming current-sender proofs,
-not cached factors or a claim of prior threshold completion. The query cache and
-original timestamp/window remain unchanged, no current partial pool qualifies,
-and the owner rechecks explicit live consent and the original Grant deadline.
-Ordinary query replay policy remains unchanged.
+Custom queries without their selected owner are refused before KRAM. HTTP204
+acknowledges transport only for missing owners or typed KRAM replay drops; neither
+redispatches, replies nor changes cache state. Auth/window/policy refusals remain HTTP403; built-in query
+rules are unchanged. Actual DH/Unblind owners retain only the first fully
+verified query for an exact authenticated Grant before consent. The public
+envelope expires at the earlier original MSGC window or accepted Grant lifetime;
+MSGC has no accepted-receipt field, so full current proof and normal completion
+remain necessary. Approval locally replays this evidence through the owner,
+without network replay exceptions, new timestamps, keys or replies before consent.
+Retention is process-local and removed on expiry, abandonment or owner close.
 Reciprocal fixtures deliberately deliver a full query before recipient consent,
 then exercise exact caller retries. Direct delivery requires authenticated controller
 roles and original endpoint-signed location replies; a witnessed KEL alone can
