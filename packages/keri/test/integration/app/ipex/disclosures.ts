@@ -125,6 +125,7 @@ export type PathShapeCase = "required-edge" | "optional-edge";
 export type GraphCase =
   | PathShapeCase
   | "I2I"
+  | "DI2I"
   | "NI2I"
   | "E1E"
   | "AND"
@@ -149,6 +150,7 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
   }
   if (graphCase === "required-edge" || graphCase === "optional-edge") return pathShapeGraph(hby, hab, graphCase);
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
+  if (graphCase === "DI2I") return delegatedGraph(hby, hab);
   switch (graphCase) {
     case "I2I":
     case "NI2I":
@@ -159,6 +161,26 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
     default:
       return edgeRefusalGraph(hby, hab, graphCase);
   }
+}
+
+/** Two approved delegation hops authorize the near issuer; a different far issuee is a fixed refusal. */
+function delegatedGraph(hby: Habery, hab: Hab): DisclosureGraph {
+  const root = hby.makeHab("delegation-root");
+  const middle = hby.makeHab("delegation-middle", undefined, { delpre: root.pre });
+  const issuer = hby.makeHab("delegated-issuer", undefined, { delpre: middle.pre });
+  root.interact({ data: [{ i: middle.pre, s: "0", d: middle.pre }] });
+  middle.interact({ data: [{ i: issuer.pre, s: "0", d: issuer.pre }] });
+  const far = disclosure(root.pre, { issuee: root.pre }), badFar = disclosure(root.pre, { issuee: hab.pre });
+  const near = (target: SerderACDC) =>
+    disclosure(issuer.pre, { edge: { d: "", authority: { n: target.said, o: "DI2I" } } });
+  const valid = near(far.partial);
+  return {
+    fullNodes: [valid.full, far.full],
+    nodes: [valid.partial, far.partial],
+    badNodes: [near(badFar.partial).partial, badFar.partial],
+    issuers: [hab, root, middle, issuer],
+    unsigned: null,
+  };
 }
 
 /** Same two-node authority graph with either required or optional schema membership. */

@@ -91,11 +91,31 @@ def graph_disclosures(hby, hab, graph_case):
         return path_shape_graph(hby, hab, graph_case)
     if graph_case in ("multi-hop", "branching"):
         return deep_graph(hby, hab, graph_case)
+    if graph_case == "DI2I":
+        return delegated_graph(hby, hab)
     if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
         return relation_graph(hby, hab, graph_case)
     if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "simple-edge", "edge-schema", "inherited-schema", "malformed-schema"):
         return edge_refusal_graph(hby, hab, graph_case)
     raise ValueError(f"Unknown fixture graph: {graph_case}")
+
+
+def delegated_graph(hby, hab):
+    """Two approved delegation hops authorize the issuer; a different far issuee refuses."""
+    root = hby.makeHab(name="delegation-root")
+    middle = hby.makeHab(name="delegation-middle", delpre=root.pre)
+    issuer = hby.makeHab(name="delegated-issuer", delpre=middle.pre)
+    root.interact(data=[dict(i=middle.pre, s="0", d=middle.pre)])
+    middle.interact(data=[dict(i=issuer.pre, s="0", d=issuer.pre)])
+    far_full, far = disclosure(root.pre, issuee=root.pre)
+    _, bad_far = disclosure(root.pre, issuee=hab.pre)
+
+    def near(target):
+        return disclosure(issuer.pre, edge=dict(d="", authority=dict(n=target.said, o="DI2I")))
+
+    full, partial = near(far)
+    return DisclosureGraph([full, far_full], [partial, far], [near(bad_far)[1], bad_far],
+                           [hab, root, middle, issuer], None)
 
 
 def path_shape_graph(hby, hab, shape):

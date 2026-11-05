@@ -27,7 +27,7 @@
   },
   "profiles": {
     "candidate": {
-      "commit": "86d651f1c3085296c9008b45c0d4a45f3489c7e5",
+      "commit": "5fdef8d94a917802dfd23c03023f1ae9451420e2",
       "python": "3.14",
       "hio": "0.7.20",
       "lmdb": "2.3.0",
