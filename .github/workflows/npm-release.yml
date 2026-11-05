@@ -86,6 +86,12 @@ jobs:
               echo "artifact=observer-npm" >> "$GITHUB_OUTPUT"
               echo "title=@keri-ts/observer" >> "$GITHUB_OUTPUT"
               ;;
+            multisync)
+              echo "path=packages/multisync/package.json" >> "$GITHUB_OUTPUT"
+              echo "npm_name=@keri-ts/multisync" >> "$GITHUB_OUTPUT"
+              echo "artifact=multisync-npm" >> "$GITHUB_OUTPUT"
+              echo "title=@keri-ts/multisync" >> "$GITHUB_OUTPUT"
+              ;;
             *) exit 2 ;;
           esac
 
@@ -122,6 +128,7 @@ jobs:
             wallet) deno task test:wallet ;;
             registrar) deno task test:registrar ;;
             observer) deno task test:observer ;;
+            multisync) deno test -A --filter "v2 KERI/ACDC bilateral group DH keeps custody with approved elected members" packages/keri/test/unit/acdc/dhking.test.ts ;;
           esac
 
       - name: test package tooling
@@ -136,7 +143,7 @@ jobs:
           case "$PACKAGE" in
             cesr) (cd packages/cesr && deno task build:npm) ;;
             keri) (cd packages/keri && deno task build:npm) ;;
-            tufa|verifier|hosting|wallet|registrar|observer)
+            tufa|verifier|hosting|wallet|registrar|observer|multisync)
               (cd packages/cesr && deno run -A scripts/build_npm.ts)
               (cd packages/keri && deno run -A scripts/build_npm.ts)
               (cd packages/verifier && deno run -A scripts/build_npm.ts)
@@ -144,6 +151,7 @@ jobs:
               (cd packages/wallet && deno run -A scripts/build_npm.ts)
               (cd packages/registrar && deno run -A scripts/build_npm.ts)
               (cd packages/observer && deno run -A scripts/build_npm.ts)
+              (cd packages/multisync && deno run -A scripts/build_npm.ts)
               (cd packages/tufa && deno run -A scripts/build_npm.ts)
               ;;
           esac
@@ -179,7 +187,7 @@ jobs:
               cd ../../..
               bash scripts/smoke-test-keri-npm.sh "packages/keri/npm/$TARBALL"
               ;;
-            tufa|verifier|hosting|wallet|registrar|observer)
+            tufa|verifier|hosting|wallet|registrar|observer|multisync)
               cd packages/cesr/npm
               CESR_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../keri/npm
@@ -194,6 +202,8 @@ jobs:
               REGISTRAR_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../observer/npm
               OBSERVER_TARBALL=$(npm pack --silent | tail -n 1)
+              cd ../../multisync/npm
+              MULTISYNC_TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../tufa/npm
               TARBALL=$(npm pack --silent | tail -n 1)
               cd ../../..
@@ -205,12 +215,14 @@ jobs:
                 "packages/hosting/npm/$HOSTING_TARBALL" \
                 "packages/wallet/npm/$WALLET_TARBALL" \
                 "packages/registrar/npm/$REGISTRAR_TARBALL" \
-                "packages/observer/npm/$OBSERVER_TARBALL"
+                "packages/observer/npm/$OBSERVER_TARBALL" \
+                "packages/multisync/npm/$MULTISYNC_TARBALL"
               if [[ "$PACKAGE" == verifier ]]; then TARBALL="$VERIFIER_TARBALL"; fi
               if [[ "$PACKAGE" == hosting ]]; then TARBALL="$HOSTING_TARBALL"; fi
               if [[ "$PACKAGE" == wallet ]]; then TARBALL="$WALLET_TARBALL"; fi
               if [[ "$PACKAGE" == registrar ]]; then TARBALL="$REGISTRAR_TARBALL"; fi
               if [[ "$PACKAGE" == observer ]]; then TARBALL="$OBSERVER_TARBALL"; fi
+              if [[ "$PACKAGE" == multisync ]]; then TARBALL="$MULTISYNC_TARBALL"; fi
               ;;
           esac
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"

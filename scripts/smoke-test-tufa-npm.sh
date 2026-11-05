@@ -23,6 +23,7 @@ HOSTING_TARBALL_PATH="${5:-}"
 WALLET_TARBALL_PATH="${6:-}"
 REGISTRAR_TARBALL_PATH="${7:-}"
 OBSERVER_TARBALL_PATH="${8:-}"
+MULTISYNC_TARBALL_PATH="${9:-}"
 if [[ -z "${TARBALL_PATH}" ]]; then
   echo "No tarball provided; building and packing @keri-ts/tufa..."
   (
@@ -62,6 +63,13 @@ if [[ -z "${OBSERVER_TARBALL_PATH}" ]]; then
   (cd "${ROOT_DIR}/packages/observer" && deno task build:npm)
   OBSERVER_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/observer/npm" && npm pack --silent | tail -n1)"
   OBSERVER_TARBALL_PATH="${ROOT_DIR}/packages/observer/npm/${OBSERVER_TARBALL_NAME}"
+fi
+
+# Multisync supplies the Tufa newcomer selector.
+if [[ -z "${MULTISYNC_TARBALL_PATH}" ]]; then
+  (cd "${ROOT_DIR}/packages/multisync" && deno task build:npm)
+  MULTISYNC_TARBALL_NAME="$(cd "${ROOT_DIR}/packages/multisync/npm" && npm pack --silent | tail -n1)"
+  MULTISYNC_TARBALL_PATH="${ROOT_DIR}/packages/multisync/npm/${MULTISYNC_TARBALL_NAME}"
 fi
 
 if [[ ! -f "${TARBALL_PATH}" ]]; then
@@ -161,6 +169,15 @@ OBSERVER_TARBALL_DIR="$(cd "$(dirname "${OBSERVER_TARBALL_PATH}")" && pwd)"
 OBSERVER_TARBALL_NAME="$(basename "${OBSERVER_TARBALL_PATH}")"
 DOCKER_ARGS+=(-v "${OBSERVER_TARBALL_DIR}:/observer-pkg")
 INSTALL_TARGETS=("/observer-pkg/${OBSERVER_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
+
+if [[ ! -f "${MULTISYNC_TARBALL_PATH}" ]]; then
+  echo "Multisync tarball not found: ${MULTISYNC_TARBALL_PATH}" >&2
+  exit 1
+fi
+MULTISYNC_TARBALL_DIR="$(cd "$(dirname "${MULTISYNC_TARBALL_PATH}")" && pwd)"
+MULTISYNC_TARBALL_NAME="$(basename "${MULTISYNC_TARBALL_PATH}")"
+DOCKER_ARGS+=(-v "${MULTISYNC_TARBALL_DIR}:/multisync-pkg")
+INSTALL_TARGETS=("/multisync-pkg/${MULTISYNC_TARBALL_NAME}" "${INSTALL_TARGETS[@]}")
 
 SMOKE_NODE_IMAGE="${SMOKE_NODE_IMAGE:-node:alpine}"
 

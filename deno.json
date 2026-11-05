@@ -5,10 +5,10 @@
     "fmt:check": "deno task fmt:dprint:check",
     "fmt:dprint": "deno run -A npm:dprint@0.49.0 fmt --config dprint.json",
     "fmt:dprint:check": "deno run -A npm:dprint@0.49.0 check --config dprint.json",
-    "lint": "cd packages/observer && deno task lint && cd ../.. && cd packages/registrar && deno task lint && cd ../.. && cd packages/wallet && deno task lint && cd ../.. && cd packages/hosting && deno task lint && cd ../.. && cd packages/verifier && deno task lint && cd ../.. && cd packages/tufa && deno task lint && cd ../keri && deno task lint && cd ../cesr && deno task lint && cd ../.. && deno lint scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
+    "lint": "cd packages/multisync && deno task lint && cd ../.. && cd packages/observer && deno task lint && cd ../.. && cd packages/registrar && deno task lint && cd ../.. && cd packages/wallet && deno task lint && cd ../.. && cd packages/hosting && deno task lint && cd ../.. && cd packages/verifier && deno task lint && cd ../.. && cd packages/tufa && deno task lint && cd ../keri && deno task lint && cd ../cesr && deno task lint && cd ../.. && deno lint scripts --rules-tags=recommended --rules-exclude=no-import-prefix,no-unversioned-import,verbatim-module-syntax,no-explicit-any,no-unused-vars,prefer-const,require-yield",
     "docs:check": "deno run --allow-read scripts/check_class_docstrings.ts",
     "inline-code:check": "deno run --allow-read scripts/check_no_inline_code.ts",
-    "check": "cd packages/observer && deno task check && cd ../.. && cd packages/registrar && deno task check && cd ../.. && cd packages/wallet && deno task check && cd ../.. && cd packages/hosting && deno task check && cd ../.. && cd packages/verifier && deno task check && cd ../.. && cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
+    "check": "cd packages/multisync && deno task check && cd ../.. && cd packages/observer && deno task check && cd ../.. && cd packages/registrar && deno task check && cd ../.. && cd packages/wallet && deno task check && cd ../.. && cd packages/hosting && deno task check && cd ../.. && cd packages/verifier && deno task check && cd ../.. && cd packages/tufa && deno task check && cd ../keri && deno task check && cd ../cesr && deno check mod.ts && cd ../.. && deno run --allow-read scripts/check_no_direct_cbor_x.ts",
     "quality:check": "deno task docs:check && deno task inline-code:check && deno task check && deno task version:check",
     "quality": "deno task fmt:check && deno task lint && deno task quality:check && deno task test:quality",
     "quality:report": "deno run --allow-run=rg,scc --allow-read --allow-env=PATH,HOME,TMPDIR scripts/quality-report.ts",
@@ -48,7 +48,7 @@
     "tephra:annotate": "cd packages/cesr && deno task annotate",
     "tephra:validate": "cd packages/cesr && deno task validate",
     "tephra:build:npm": "deno task version:generate && cd packages/cesr && deno task build:npm",
-    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task verifier:build:npm && deno task hosting:build:npm && deno task wallet:build:npm && deno task registrar:build:npm && deno task observer:build:npm && deno task tufa:build:npm",
+    "npm:build:all": "deno task build:npm && deno task tephra:build:npm && deno task verifier:build:npm && deno task hosting:build:npm && deno task wallet:build:npm && deno task registrar:build:npm && deno task observer:build:npm && deno task multisync:build:npm && deno task tufa:build:npm",
     "docker:did-webs-ts:build": "bash scripts/docker/did-webs-ts.sh build",
     "docker:did-webs-ts:test": "bash scripts/docker/did-webs-ts.sh test",
     "docker:did-webs-ts:push": "bash scripts/docker/did-webs-ts.sh push",
@@ -101,7 +101,8 @@
     "registrar:build:npm": "cd packages/registrar && deno task build:npm",
     "test:registrar": "cd packages/registrar && deno task test",
     "observer:build:npm": "cd packages/observer && deno task build:npm",
-    "test:observer": "cd packages/observer && deno task test"
+    "test:observer": "cd packages/observer && deno task test",
+    "multisync:build:npm": "cd packages/multisync && deno task build:npm"
   },
   "fmt": {
     "include": [
@@ -139,7 +140,8 @@
     "@keri-ts/hosting": "./packages/hosting/mod.ts",
     "@keri-ts/wallet": "./packages/wallet/mod.ts",
     "@keri-ts/registrar": "./packages/registrar/mod.ts",
-    "@keri-ts/observer": "./packages/observer/mod.ts"
+    "@keri-ts/observer": "./packages/observer/mod.ts",
+    "@keri-ts/multisync/v2": "./packages/multisync/v2/mod.ts"
   },
   "nodeModulesDir": "auto",
   "compilerOptions": {

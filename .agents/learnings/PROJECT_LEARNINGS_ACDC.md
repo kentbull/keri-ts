@@ -191,7 +191,12 @@ selects an exact BUP and counted held BSQ/BSS; same-body files enter ordinary
 KRAM/Revery processing. The invocation installs its receipt handler on the actual
 ProtocolProcessor Revery, restores prior routing and abandons approval on every
 exit. Only that handler's successful decryption/retention reports receipt; a
-cached replay or existing root alone does not. Newcomer selection remains separate.
+cached replay or existing root alone does not. `@keri-ts/multisync/v2` selects
+newcomers from current signing membership at an explicit accepted current rotation,
+compared with a caller-supplied transient prior roster. Next-key-only members do
+not qualify. Tufa `root newcomers` consumes those selections for explicit registries
+through the same finite file owner; missing custody never starts fresh DH. The
+selector adds no roster persistence, root discovery or transport.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

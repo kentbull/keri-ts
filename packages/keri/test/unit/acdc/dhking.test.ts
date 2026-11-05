@@ -1,6 +1,7 @@
 /** RFC7748 fixture copied byte-for-byte from KERIpy 63a33e8869aa2309757ea9c1ab7b4447c5bf70e3,
  * tests/acdc/fixtures/dhke.json, Git blob 548bc1702a4bde93831c2ab125b24a4a71311d90.
  */
+import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
 import {
   type CesrFrame,
   collectPayload,
@@ -18,11 +19,12 @@ import {
   SealLast,
   type SerderACDC,
   type SerderKERI,
+  unblindBlindState,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, run } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
+import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
@@ -492,6 +494,103 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(fileRuntime.protocol.rvy.rtr.routes.every((route, index) => route === previousRoutes[index]), true);
     assertEquals(recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64, ciphertext);
     assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
+
+    // A next-key participant is not eligible until a real accepted rotation makes it a signer.
+    const newcomer = issuers[1], previousSigningMembers = issuees.map(side => side.member.pre);
+    const expandedMembers = [...previousSigningMembers, newcomer.member.pre];
+    const rotateHolder = function*(signing: string[], rotating: string[]) {
+      const proposals = issuees.map(side =>
+        side.hby.rotateGroupHab("group", signing, rotating, { isith: "2", nsith: "2" })
+      );
+      assertEquals(proposals[0].serder.raw, proposals[1].serder.raw);
+      yield* intakeAll(
+        messagize(proposals[0].serder, { sigers: proposals.flatMap(part => part.sigers), gvrsn: Vrsn_2_0 }),
+        true,
+      );
+      for (const side of issuees) {
+        assertEquals(side.hab.kever!.said, proposals[0].serder.said);
+        side.hby.joinGroupHab(side.hab.pre, "group", side.member, signing, rotating);
+      }
+      return proposals[0].serder;
+    };
+    yield* intakeAll(holder.member.rotate());
+    const nextOnly = yield* rotateHolder(previousSigningMembers, expandedMembers);
+    assertEquals(holder.hab.kever!.verfers.length, 2);
+    assertEquals(holder.hab.kever!.ndigers.length, 3);
+    const nextScope = { rotation: nextOnly.said!, previousSigningMembers, registries: [rip.said!] };
+    assertEquals(selectNewcomerCopies({ hby: holder.hby, group: holder.hab, ...nextScope }), []);
+    assertEquals((yield* prepareNewcomerRoots(sourceContext, { ...nextScope, outputDirectory: directory })).copies, []);
+    assertEquals(newcomer.hby.mgr.getRegistryRoot(holder.hab.pre, rip.said!), null);
+
+    // Seal a later update while the issuer's old group keys remain available; publish its TEL after provisioning.
+    const laterOpening = makeBlindState({ salt: root.qb64, sn: 2, acdc: credential.said!, state: "issued" });
+    const later = blindate(rip.said!, event.said!, laterOpening.d.nonce, { sn: 2 });
+    yield* groupInteraction(issuers, [{ i: rip.said!, s: "2", d: later.said! }]);
+    for (const side of [...issuees, newcomer]) yield* intakeAll(side.member.rotate());
+    const current = yield* rotateHolder(expandedMembers, expandedMembers);
+    assertEquals(holder.hab.kever!.verfers.length, 3);
+    const selectedNewcomer = {
+      registry: rip.said!,
+      recipient: holder.hab.pre,
+      target: newcomer.member.pre,
+      coordinator: current.said!,
+    };
+    const currentScope = { rotation: current.said!, previousSigningMembers, registries: [rip.said!] };
+    assertEquals(selectNewcomerCopies({ hby: holder.hby, group: holder.hab, ...currentScope }), [selectedNewcomer]);
+    const newcomerHab = newcomer.hby.joinGroupHab(
+      holder.hab.pre,
+      "holder-newcomer",
+      newcomer.member,
+      expandedMembers,
+      expandedMembers,
+    );
+    const newcomerRgy = new Regery(newcomer.hby, newcomer.store.baser);
+    const newcomerRuntime = yield* createAgentRuntime(newcomer.hby, new FetchHttpClient(), systemClock, {
+      acdc: newcomerRgy,
+      kram: { enabled: true },
+    });
+    yield* ensure(() => newcomerRuntime.close());
+    const newcomerContext = { hab: newcomerHab, rgy: newcomerRgy, protocol: newcomerRuntime.protocol };
+    const preparedNewcomer = yield* prepareNewcomerRoots(sourceContext, {
+      ...currentScope,
+      outputDirectory: directory,
+    });
+    assertEquals(preparedNewcomer.copies.length, 1);
+    const files = preparedNewcomer.copies[0];
+    assertExists(files.proposalOutput);
+    const newcomerContribution = `${directory}/newcomer-contribution.cesr`;
+    yield* registryRootFile(targetContext, {
+      operation: "contribute",
+      ...selectedNewcomer,
+      proposal: files.proposalOutput,
+      output: newcomerContribution,
+    });
+    const provisioned = yield* registryRootFile(newcomerContext, {
+      operation: "receive",
+      registry: rip.said!,
+      sender: holder.hab.pre,
+      event: event.said!,
+      opening: openingFile,
+      messages: [files.output, newcomerContribution],
+    });
+    assert(provisioned.operation === "receive");
+    assertEquals(provisioned.received, true);
+    const provisionedRoot = newcomerHab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!;
+    assertEquals(provisionedRoot.qb64, root.qb64);
+
+    // The provisioned member opens a later accepted event without another DH operation or history rewrite.
+    yield* intakeAll(later.raw);
+    assertEquals(newcomer.store.head(rip.said!)!.qb64, later.said!);
+    const derived = unblindBlindState({
+      said: laterOpening.d.nonce,
+      uuid: makeBlindUuid({ salt: provisionedRoot.qb64, sn: 2 }),
+      acdc: credential.said!,
+      states: ["issued"],
+    });
+    assertExists(derived);
+    assertEquals(derived.d.nonce, laterOpening.d.nonce);
+    assertEquals(newcomer.hby.db.exns.get(admit.said!)!.raw, admit.raw);
+    assertEquals(newcomer.hby.db.epsd.get(grant.said!)!.dts, deadlines[1]);
   });
 });
 

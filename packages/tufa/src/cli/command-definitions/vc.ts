@@ -48,6 +48,21 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
 
   const registry = vc.command("registry").description("Credential registry operations");
   const root = registry.command("root").description("Explicit encrypted copies of existing ACDC v2 registry roots");
+  registerDispatchedCommand(
+    addHabOption(addStoreOptions(root.command("newcomers")))
+      .description("Prepare encrypted existing-root files for newly accepted signing members")
+      .requiredOption("--rotation <said>", "Exact accepted current group rotation SAID")
+      .requiredOption("--previous-member <aid>", "Previous signing member AID (repeatable)", collectOption, [])
+      .requiredOption("--registry <said>", "Explicit registry to copy (repeatable)", collectOption, [])
+      .requiredOption("--output-dir <directory>", "Existing directory for new reply and proposal files"),
+    dispatch,
+    {
+      name: "vc.registry.root.newcomers",
+      load: () => import("../commands/registry-root.ts"),
+      exportName: "registryRootNewcomersCommand",
+      args: dispatchArgs,
+    },
+  );
   for (const operation of ["prepare", "contribute", "receive"] as const) {
     const command = addHabOption(addStoreOptions(root.command(operation)))
       .requiredOption("--registry <said>", "Accepted registry SAID")
