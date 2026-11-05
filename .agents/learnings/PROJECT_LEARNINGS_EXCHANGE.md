@@ -100,7 +100,9 @@ bodies; it never authors Admit. `acceptPendingGrantProof` repeats the original
 pending deadline, terminal-response and exact body/order checks inside Exchanger's
 writer after nested serialization. DH, pending Unblind and selected rootless group
 completion use this path; ordinary intake and accepted-live proof refresh remain
-separate. No proof retry renews the original lifetime. Group DH public evidence
+separate. No proof retry renews the original lifetime. Pending DH authorization substitutes
+only eligible fresh-registry node-own proofs, then requires a valid full graph;
+unresolved DI2I authority cannot borrow the registry proof exception. Group DH public evidence
 aggregates use Poster.sendStream; Poster.send is reserved for one CESR message,
 including when the destination is a witness-hosted mailbox.
 Exact file consent uses `acceptPreparedGrantContribution` for a retained partial

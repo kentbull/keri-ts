@@ -688,9 +688,15 @@ Deno.test("nested IPEX between two Haberies retains missing issuer evidence for 
 Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and original lifetime through retry and pruning", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const issuer = hby.makeHab("issuer", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" }),
-      issuee = hby.makeHab("issuee"),
-      support = hby.makeHab("support");
+    const support = hby.makeHab("support");
+    const issuer = hby.makeHab("issuer", undefined, {
+        icount: 2,
+        isith: "2",
+        ncount: 2,
+        nsith: "2",
+        delpre: support.pre,
+      }),
+      issuee = hby.makeHab("issuee");
     let now = Math.floor(Date.now() / 1000) * 1000 + 123;
     const started = now, stamp = makeNowIso8601(new Date(now));
     const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
@@ -706,12 +712,15 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       const schema = new Schemer({
         sed: { $id: "", version: "1.0.0", type: "object", properties: { name: { type: "string" } } },
       });
-      const supporting = acdcmap(support.pre, { schema: schema.said, attribute: { d: "", name: "Support" } });
+      const supporting = acdcmap(support.pre, {
+        schema: schema.said,
+        attribute: { d: "", i: support.pre, name: "Support" },
+      });
       const credential = acdcmap(issuer.pre, {
         regid: rip.said,
         schema: schema.said,
         attribute: { d: "", i: issuee.pre, name: "Ada" },
-        edge: { d: "", link: { n: supporting.said! } },
+        edge: { d: "", link: { n: supporting.said!, o: "DI2I" } },
       });
       const grant = ipexExnBody(issuer.pre, "/ipex/grant", [credential, supporting], {
         kind: Kinds.json,
@@ -779,7 +788,10 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       assertEquals(hby.db.emse!.get([grant.said!, schema.said]), null);
       assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
       assertEquals(runtime.exc.complete(grant.said!), false, "an accepted RIP never supplies issuance");
-      // Context returns this selected Grant's registry IDs only after fresh complete authentication.
+      assertEquals(pending(), null, "unresolved DI2I authority cannot authorize pending-issuance DH");
+      assertExists(hby.db.epse.get(grant.said!), "refused DH scope leaves the actual Grant pending");
+      support.interact({ data: [{ i: issuer.pre, s: "0", d: issuer.pre }] });
+      // Fresh registry authentication is hypothetical for DH; every edge must now be valid.
       assertEquals(pending()!.serder.raw, grant.raw);
       assertEquals(pending()!.registries, [rip.said!]);
       assertEquals(
