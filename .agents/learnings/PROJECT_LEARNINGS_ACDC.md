@@ -69,7 +69,10 @@ every hop. Read DND from accepted inception, not mutable current-state projectio
 Cached first-seen approval and uncached last-accepted KEL lookup preserve the
 84301a9f upstream distinction; protected-party source hints still require an exact
 dip seal. Missing approval is retryable and never bypasses pin/far-node reduction.
-KEL intake owns cache writes; legacy Verifier and wallet evidence export are separate.
+KEL intake owns cache writes; the legacy Verifier remains outside the v2 scope.
+Wallet disclosure exports deduplicated ancestor KELs root-first, including retained
+first-seen history and exact attachments. Receiver intake still establishes
+authority; export cannot override superseding policy or imply convergence.
 
 Legacy Tevery/Tever owns accepted TEL state and out-of-order/anchorless/partial-backer escrow.
 BIS/BRV select the full accepted management tuple, never a raw or escrowed VCP/VRT.
