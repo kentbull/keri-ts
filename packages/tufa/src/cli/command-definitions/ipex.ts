@@ -96,6 +96,14 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .option("--said <said>", "Credential SAID")
             .option("--acdc-v2", "Grant an exact ACDC v2 wallet disclosure")
             .option("--issue", "Explicitly derive a fresh registry root with the recipient before issuing")
+            .option("--coordinator <said>", "Exact accepted group coordinator event")
+            .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
+            .option("--proposal <file>", "Exact group issuance Grant proposal, with --resume")
+            .option("--proposal-output <file>", "Write the new exact group Grant proposal before waiting")
+            .option(
+              "--proof-output <file>",
+              "Write final public proof for issuer members after their separate BUP join",
+            )
             .option("--credential <file>", "Exact fresh ACDC v2 credential body for --issue")
             .option("--artifact <files...>", "Explicit authenticated far-node streams for --issue")
             .option("--resume <said>", "Resume the exact prepared pending issuance Grant, within its original deadline")
@@ -137,6 +145,9 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       ipex.command("setup")
         .description("Explicitly approve DH for one pending issuance Grant; does not Admit")
         .requiredOption("--said <said>", "Exact pending ACDC v2 issuance Grant")
+        .option("--coordinator <said>", "Exact accepted group coordinator event")
+        .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
+        .option("--proof <file>", "Explicitly verify final group issuance proof after separate BUP approval")
         .option("--input <file>", "Ingest signed Grant/public evidence before explicit setup")
         .option("--timeout <seconds>", "Elapsed setup limit (default: 60)"),
     )),

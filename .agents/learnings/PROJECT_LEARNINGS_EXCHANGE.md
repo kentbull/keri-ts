@@ -96,7 +96,12 @@ or retaining roots. Sign cues request review, never confer consent or copy roots
 `retainedInput(..., {pending:true})` reuses stored authentication and Exchanger's
 original deadline clock without requiring fresh RIP after BUP arrival. Finish
 verifies all current anchored issued openings before retrying exact Grant/child
-bodies; it never authors Admit. Shared `verifyQueryAttachments` prefers named
+bodies; it never authors Admit. `acceptPendingGrantProof` repeats the original
+pending deadline, terminal-response and exact body/order checks inside Exchanger's
+writer after nested serialization. DH, pending Unblind and selected rootless group
+completion use this path; ordinary intake and accepted-live proof refresh remain
+separate. No proof retry renews the original lifetime.
+Shared `verifyQueryAttachments` prefers named
 sender TSGs, otherwise resolves raw/last signatures against accepted current
 establishment state; a valid factor suffices but missing claimed coordinates
 refuse. KRAM admission alone supplies no consent.

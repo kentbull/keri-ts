@@ -171,8 +171,16 @@ recipient's separate approval; unchanged-query retry accommodates delayed consen
 without renewing the original cache/Grant lifetime. Only completed DH supplies
 custody to WalletAuthor for a real anchored issued BUP. Both sides finish the
 same Grant; held inventory still requires a separate explicit wallet Admit.
-The finite caller rejects group habitats and abandons operation state on every
-exit; optional prepared files do not imply persistent DH restart support.
+Finite callers abandon operation state on every exit; optional prepared files
+do not imply persistent DH restart support. Group issuance uses exact accepted
+coordinator/custodian selection and ordinary member signatures. Issuer contributors
+return after their DH query contribution, before separately approving the exact
+BUP with multisig join. Elected issuers return a public proof artifact for explicit
+post-join consumption; recipient members stay live through reply and proof delivery.
+Rootless proof intake preserves original issuer factors, node bodies and far-node
+attachments and adds only the fresh origin's issued opening. The normal Exchanger
+writer rechecks the original pending deadline after serialization. Local partial
+Grant consent starts that deadline before waiting for the remaining signatures.
 Group DH freezes its accepted coordinator's custodian and ordinary threshold;
 only that member retains the scalar-derived root, while other members contribute
 ordinary signatures to the exact proposal. No automatic root copying follows;

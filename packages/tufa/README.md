@@ -127,8 +127,47 @@ Optional `--artifact FILE...` supplies exact authenticated far-node streams, and
 writes the signed pending Grant plus public support without starting DH; later
 `--resume GRANT` selects those same retained bytes within their original lifetime.
 Recipient `setup --input FILE` can ingest that evidence before explicit approval.
-Group habitats are refused by this individual caller. Timeouts abandon local
-operation state; there is no persistent DH restart or replacement-root recovery.
+Timeouts abandon local operation state; there is no persistent DH restart or replacement-root recovery.
+
+Group issuance uses the same fresh body and pending Grant, with each invocation
+selecting the accepted `--coordinator EVENT_SAID` and its elected `--custodian MEMBER_AID`. Every member explicitly selects the exact Grant proposal; ordinary
+signature thresholds still gate the Grant and DH messages. Only the elected
+member derives and retains the root. Group/member mailbox routes or all selected
+controller endpoints must deliver the peer query to every recipient member.
+
+```sh
+# Issuer custodian prepares the exact proposal file before waiting for members.
+tufa ipex grant --issue -n ISSUER_LEAD_STORE -a ISSUER_GROUP -r RECIPIENT_GROUP \
+  --credential credential.cesr --coordinator ISSUER_EVENT --custodian ISSUER_LEAD \
+  --proposal-output proposal.cesr --proof-output final-proof.cesr --timeout 120
+# Other issuer members select that file and the printed Grant SAID.
+tufa ipex grant --issue -n ISSUER_PEER_STORE -a ISSUER_GROUP -r RECIPIENT_GROUP \
+  --resume GRANT --proposal proposal.cesr --coordinator ISSUER_EVENT \
+  --custodian ISSUER_LEAD --timeout 120
+# Each recipient member explicitly runs setup against the delivered pending Grant.
+tufa ipex setup -n RECIPIENT_STORE -a RECIPIENT_GROUP --said GRANT \
+  --coordinator RECIPIENT_EVENT --custodian RECIPIENT_LEAD --timeout 120
+```
+
+The issuer contributor returns after its DH query contribution. It must then
+separately review and approve the proposed BUP with the existing `multisig join`
+command; DH setup does not authorize that registry update. The issuer custodian
+waits for that approval and writes `final-proof.cesr`, containing accepted public
+evidence and the exact original Grant with its issued opening. After BUP approval,
+each departed issuer contributor explicitly verifies that file:
+
+```sh
+tufa ipex setup -n ISSUER_PEER_STORE -a ISSUER_GROUP --said GRANT \
+  --coordinator ISSUER_EVENT --custodian ISSUER_LEAD --proof final-proof.cesr
+```
+
+Recipient members remain live through reply contribution and proof delivery.
+Rootless members verify the original issuer authentication and appended opening;
+they do not claim root custody or run root-dependent DH finish. All phases retain
+the original Grant deadline, and acceptance still requires a separate explicit
+`ipex admit --acdc-v2 --consent --said GRANT` to record held inventory. A group
+`grant --issue --out FILE` prepares only the exact proposal, for explicit later
+`--resume GRANT --proposal FILE`; it does not persist an ephemeral DH session.
 
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
@@ -168,8 +207,8 @@ Issuee event. IPEX `--derive` requires the selected sender's custody and retaine
 exact event coordinates. Missing coordinates refuse disclosure even if the Keeper
 root survives wallet loss. Fresh individual DH issuance uses the `grant --issue`
 and `setup` flow above; explicit existing-root transfer uses the registry root
-commands below. Network Unblind and the group DH command caller remain separate
-work; ordinary group authoring retains its explicit approval workflow.
+commands below. Network Unblind remains separate work; group DH uses the finite member phases
+above, and ordinary group authoring retains its explicit approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying

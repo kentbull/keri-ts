@@ -15,6 +15,7 @@ import {
   framePayload,
   parseBytes,
   SerderACDC,
+  SerderKERI,
   type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -22,12 +23,12 @@ import { action, call, type Operation, race, scoped, spawn } from "effection";
 import { parseBooleanOption, parseGvrsn, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
-  CesrHttpRefusal,
   createAgentRuntime,
   CREDENTIAL_MAILBOX_TOPIC,
   FetchHttpClient,
   isLocalGroupHab,
   type KramConfig,
+  localGroupMember,
   messagize,
   Organizer,
   Receiptor,
@@ -40,6 +41,12 @@ import {
 import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import {
+  acceptGroupIssuanceProof,
+  isPendingSetupRefusal,
+  prepareGroupDerivedIssuance,
+  runGroupDerivedIssuance,
+} from "./ipex-group-issuance.ts";
 
 /** Explicit consent to one retained Grant, not a selector for other pending exchanges. */
 export interface DerivedIssuanceRequest {
@@ -186,7 +193,7 @@ export function* runDerivedIssuance(
                 } catch (error) {
                   // Explicit recipient consent may follow the first query. Only that HTTP refusal
                   // keeps this bounded wait alive; no refusal establishes protocol acceptance.
-                  if (!(error instanceof CesrHttpRefusal) || error.status !== 403) throw error;
+                  if (!isPendingSetupRefusal(error)) throw error;
                 }
                 nextQuery = runtime.clock.now() + 1000;
               }
@@ -248,11 +255,21 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
     alias,
     { skipConfig: false },
     function*({ hby, hab }) {
-      if (isLocalGroupHab(hby, hab)) {
-        throw new ValidationError(
-          "Derived issuance currently requires an individual habitat",
-        );
+      const group = isLocalGroupHab(hby, hab);
+      const coordinator = parseStringOption(args.coordinator, "coordinator"),
+        custodian = parseStringOption(args.custodian, "custodian");
+      if (group && (!coordinator || !custodian)) {
+        throw new ValidationError("Group issuance requires --coordinator and --custodian");
       }
+      if (
+        !group
+        && [args.coordinator, args.custodian, args.proposal, args.proposalOutput, args.proof, args.proofOutput].some(
+          Boolean,
+        )
+      ) {
+        throw new ValidationError("Group selection/proof options require a group habitat");
+      }
+      const selection = group ? { coordinator: coordinator!, custodian: custodian! } : undefined;
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
         ipexAuxiliary: { kind: "dhke", hab },
@@ -265,6 +282,35 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(input)));
             yield* runtime.protocol.processEscrowsOnce();
           }
+          const proofFile = parseStringOption(args.proof, "proof");
+          if (proofFile) {
+            const grant = parseStringOption(args.said, "said");
+            if (!selection || !grant) {
+              throw new ValidationError("Final group proof requires --said and exact group selection");
+            }
+            const verified = yield* acceptGroupIssuanceProof(
+              runtime,
+              wallet,
+              grant,
+              selection,
+              yield* call(() => Deno.readFile(proofFile)),
+            );
+            if (!verified) throw new ValidationError("Final group proof requires its accepted current issued BUP");
+            return { grant, registryIssued: true, admitted: false };
+          }
+          const proofOutput = parseStringOption(args.proofOutput, "proof-output");
+          if (
+            selection && role === "issuer" && localGroupMember(hby, hab.pre).pre === selection.custodian && !args.out
+            && !proofOutput
+          ) {
+            throw new ValidationError(
+              "Issuer custodian requires --proof-output for members' explicit post-BUP proof phase",
+            );
+          }
+          const proposalFile = parseStringOption(args.proposal, "proposal");
+          let proposal: Uint8Array | undefined = proposalFile
+            ? yield* call(() => Deno.readFile(proposalFile))
+            : undefined;
           let selected = parseStringOption(
             role === "issuer" ? args.resume : args.said,
             role === "issuer" ? "resume" : "said",
@@ -284,7 +330,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             if (artifacts.some(path => typeof path !== "string")) {
               throw new ValidationError("Artifact paths must be strings");
             }
-            const prepared = yield* prepareDerivedIssuance(runtime, wallet, credential, {
+            const options: IssuanceGrantOptions = {
               recipient: new Organizer(hby.db, hby.signator).resolveRecipient(recipient),
               message: parseStringOption(args.message, "message") ?? "",
               priorSaid: parseStringOption(args.prior ?? args.agree, "prior"),
@@ -292,11 +338,20 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
                 ? JSON.parse(planText.startsWith("@") ? Deno.readTextFileSync(planText.slice(1)) : planText)
                 : undefined,
               artifacts: yield* call(() => Promise.all(artifacts.map(path => Deno.readFile(path)))),
-            });
+            };
+            const prepared = selection
+              ? yield* prepareGroupDerivedIssuance(runtime, wallet, credential, options, selection)
+              : yield* prepareDerivedIssuance(runtime, wallet, credential, options);
+            if ("proposal" in prepared) proposal = prepared.proposal;
             selected = prepared.grant;
             const out = parseStringOption(args.out, "out");
             if (out) {
-              yield* call(() => Deno.writeFile(out, prepared.wire, { createNew: true, mode: 0o600 }));
+              yield* call(() =>
+                Deno.writeFile(out, "wire" in prepared ? prepared.wire : prepared.proposal, {
+                  createNew: true,
+                  mode: 0o600,
+                })
+              );
               return { grant: selected, prepared: true, registryIssued: false, admitted: false, output: out };
             }
           } else if (
@@ -309,15 +364,41 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             );
           }
           if (!selected) throw new ValidationError("Recipient setup requires the exact pending Grant --said");
+          if (selection && role === "issuer") {
+            if (!proposal) {
+              throw new ValidationError("Group issuer members must select --proposal FILE with --resume GRANT");
+            }
+            const output = parseStringOption(args.proposalOutput, "proposal-output");
+            if (output) yield* call(() => Deno.writeFile(output, proposal!, { createNew: true, mode: 0o600 }));
+            if (localGroupMember(hby, hab.pre).pre === selection.custodian && !proposalFile && !output) {
+              throw new ValidationError(
+                "New group issuance requires --proposal-output for the other members' exact selection",
+              );
+            }
+          }
           if (role === "issuer" && args.recipient) {
             const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
               parseStringOption(args.recipient, "recipient")!,
             );
-            if (runtime.exc.retainedInput(selected, { pending: true })?.serder.sad?.ri !== recipient) {
+            const selectedRecipient = selection && proposal
+              ? (parseBytes(proposal)[0].nests?.[0].body as SerderKERI | undefined)?.sad?.ri
+              : runtime.exc.retainedInput(selected, { pending: true })?.serder.sad?.ri;
+            if (selectedRecipient !== recipient) {
               throw new ValidationError("Recipient differs from the selected pending Grant");
             }
           }
           writeJsonLine({ grant: selected, role, phase: "selected", registryIssued: false, admitted: false });
+          if (selection) {
+            const completed = yield* runGroupDerivedIssuance(runtime, wallet, {
+              role,
+              grant: selected,
+              proposal,
+              ...selection,
+            }, { timeoutMs: timeout * 1000, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1") });
+            const { proof, ...facts } = completed;
+            if (proof) yield* call(() => Deno.writeFile(proofOutput!, proof, { createNew: true, mode: 0o600 }));
+            return { ...facts, ...(proof ? { proofOutput } : {}) };
+          }
           return yield* runDerivedIssuance(runtime, wallet, { role, grant: selected }, {
             timeoutMs: timeout * 1000,
             witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),

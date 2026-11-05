@@ -21,7 +21,7 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
-import { loadNests } from "../../../../db.ts";
+import { loadNests, publicOpeningAttachment } from "../../../../db.ts";
 import { type AcdcGraph, type ChainVerdict, evaluateChain } from "../../../../src/acdc/chaining.ts";
 import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
@@ -826,9 +826,33 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       now += 2;
       kramer.prune();
       assertEquals(hby.db.ctyp.get("~")!.xl, 900000, "expanded policy is active before original expiry");
+
+      // A caller may select live proof immediately before asynchronous nested serialization crosses expiry.
+      const opening = makeBlindState({ acdc: credential.said!, state: "issued" });
+      const issued = blindate(rip.said!, rip.said!, opening.d.nonce);
+      issuer.interact({ data: [{ i: rip.said!, s: "1", d: issued.said! }] });
+      assertEquals(new RegistryObserver(hby.db, store).processEvent(issued).kind, "accept");
+      now = started + 300000 - 1;
+      const selected = runtime.exc.retainedInput(grant.said!, { pending: true });
+      assertExists(selected);
+      const previousNests = hby.db.enst.get([grant.said!]);
+      selected.nests = [
+        parseBytes(messagize(credential, publicOpeningAttachment(opening), { gvrsn: Vrsn_2_0 }))[0],
+        ...selected.nests!.slice(1),
+      ];
+      const completing = run(() => runtime.exc.acceptPendingGrantProof(selected));
       now = started + 300000;
-      yield* runtime.exc.processEscrows();
-      assertExists(hby.db.epse.get(grant.said!), "deadline equality remains eligible");
+      const refused = yield* call(() => completing);
+      assertEquals(refused, {
+        kind: "reject",
+        said: grant.said!,
+        reason: "Selected pending Grant proof is expired, terminated or changes the original disclosure",
+      }, "writer rechecks original deadline after serializing otherwise complete proof");
+      assertEquals(hby.db.enst.get([grant.said!]), previousNests, "late completion cannot replace retained disclosure");
+      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
+      assertEquals(runtime.exc.complete(grant.said!), false);
+      assertEquals(hby.db.exrs.get([grant.said!, credential.said!]), null);
+      assertExists(hby.db.epse.get(grant.said!), "refused completion leaves pending cleanup with its original owner");
       assertEquals(pending(), null, "auxiliary pending authority expires at equality before escrow cleanup");
       now++;
       yield* runtime.exc.processEscrows();
