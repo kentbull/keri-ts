@@ -7,6 +7,8 @@ import { createWalletBaser, Wallet, WalletAuthor, WalletDiscloser } from "@keri-
 import {
   type CesrFrame,
   collectPayload,
+  concatBytes,
+  Counter,
   Diger,
   Encrypter,
   framePayload,
@@ -36,6 +38,7 @@ import {
   preparePresentationGrant,
   resumePresentationGrant,
 } from "../../../../tufa/src/cli/commands/ipex-presentation.ts";
+import { joinWalletIpex } from "../../../../tufa/src/cli/commands/ipex.ts";
 import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
@@ -46,6 +49,7 @@ import { RegistrySalt } from "../../../src/acdc/salting.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
+import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
 import { approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
@@ -392,13 +396,51 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       assertEquals(side.hby.db.erpy.get(grant.said!), null, "setup and issuance do not Admit");
       assertEquals(side.wallet.inventory().held, []);
     }
-    const admit = ipexExnBody(holder.hab.pre, "/ipex/admit", [], {
-      prior: grant,
+    const admit = yield* holder.wallet.prepareAdmitBody(grant.said!, holder.hab.pre, {
+      consent: true,
       message: "Separate group acceptance",
+      gvrsn: Vrsn_2_0,
     });
-    yield* intakeAll(holder.hab.endorse(admit, { gvrsn: Vrsn_2_0 }));
-    for (const side of actors) assertEquals(side.exc.complete(admit.said!), false);
-    yield* intakeAll(issuees[1].hab.endorse(admit, { gvrsn: Vrsn_2_0 }));
+    const candidate = concatBytes(
+      Counter.makeGVC(Vrsn_2_0),
+      admit.raw,
+      Counter.enclose({ qb64: new Uint8Array(), version: Vrsn_2_0 }),
+    );
+    const own = yield* prepareAcdcV2GroupIpex(holder.hby, holder.protocol, holder.hab, candidate);
+    assertExists(own);
+    const admitHost = yield* spawn(() => runAgentRuntime(holder.runtime, { hab: holder.member }));
+    try {
+      const publication = yield* publishInitialGroupIpex(
+        holder.hby,
+        holder.protocol,
+        holder.runtime.postman,
+        holder.hab,
+        own,
+        Vrsn_2_0,
+      );
+      const peer = issuees[1];
+      const options = { said: publication.messages[0].exnSaid, approvalTimeoutSeconds: 5, gvrsn: Vrsn_2_0 };
+      assertEquals(holder.exc.complete(admit.said!), false);
+      assertEquals(holder.wallet.inventory().held, []);
+      const review = yield* joinWalletIpex(peer.wallet, peer.runtime, options);
+      assertEquals(review.group?.approved, null);
+      assertEquals(peer.wallet.inventory().held, [], "review does not record consent");
+      const joined = yield* joinWalletIpex(peer.wallet, peer.runtime, { ...options, auto: true });
+      assertEquals(joined.group?.approved, true);
+      assertEquals(joined.group?.accepted, true);
+      assertEquals(joined.group?.credentialSaved, true);
+      assertEquals(peer.wallet.inventory().held[0].admit, admit.said!);
+      yield* admitHost.halt();
+      const author = yield* joinWalletIpex(holder.wallet, holder.runtime, {
+        ...options,
+        said: joined.group!.messages[0].exnSaid,
+        auto: true,
+      });
+      assertEquals(author.group?.accepted, true);
+      assertEquals(holder.wallet.inventory().held[0].admit, admit.said!);
+    } finally {
+      yield* admitHost.halt();
+    }
     for (const side of actors) {
       assertEquals(side.exc.complete(admit.said!), true);
       assertEquals(side.hby.db.erpy.get(grant.said!)!.qb64, admit.said!);
@@ -409,6 +451,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
 
     // The same held view becomes one exact group presentation file, with ordinary sender contributions.
     const presentationHistory = actors.map(side => side.hby.db.enst.get(grant.said!));
+    const heldBeforePresentation = actors.map((side) => side.wallet.inventory().held);
     const transferredView = yield* call(() => collectPayload(framePayload(loadNests(holder.hby.db, grant.said!)[0])));
     const viewSelection = { transferred: transferredView, presenterAuthorized: true };
     const presentationOptions = { recipient: issuerPeer.member.pre, message: "Exact group presentation file" };
@@ -520,7 +563,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     for (const [index, side] of actors.entries()) {
       assertEquals(side.hby.db.enst.get(grant.said!), presentationHistory[index]);
       assertEquals(side.hby.db.erpy.get(firstPresentation.grant), null, "file approvals do not Admit");
-      assertEquals(side.wallet.inventory().held, []);
+      assertEquals(side.wallet.inventory().held, heldBeforePresentation[index]);
     }
 
     // Explicitly copy the holder's existing root to its already rotated, rootless signing member.

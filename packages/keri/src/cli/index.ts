@@ -38,6 +38,7 @@ export {
   ipexGrantCommand,
   type IpexGrantResult,
   ipexJoinCommand,
+  type IpexJoinOptions,
   type IpexJoinResult,
   ipexListCommand,
   ipexOfferCommand,
@@ -45,6 +46,7 @@ export {
   type IpexPollResult,
   type IpexSendResult,
   ipexSpurnCommand,
+  joinIpexProposal,
 } from "./credentials/ipex.ts";
 export {
   vcCreateCommand,

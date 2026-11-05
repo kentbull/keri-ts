@@ -73,7 +73,10 @@ interface IpexAdmitArgs extends IpexBaseArgs {
   approvalTimeoutSeconds: number;
 }
 
-interface IpexJoinArgs extends IpexBaseArgs {
+/** Selected proposal and finite approval policy; stores and runtime remain borrowed. */
+export interface IpexJoinOptions {
+  alias?: string;
+  gvrsn?: Versionage;
   said?: string;
   auto?: boolean;
   approvalTimeoutSeconds: number;
@@ -491,100 +494,109 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<IpexP
  * @param args Parsed command flags and positionals; required identifiers and policy values are validated before effects.
  */
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<IpexJoinResult> {
-  const ipexArgs: IpexJoinArgs = {
+  const ipexArgs: IpexJoinOptions = {
     ...ipexBaseArgs(args),
     said: parseStringOption(args.said, "said"),
     auto: parseBooleanOption(args.auto, "auto"),
     approvalTimeoutSeconds: nonNegativeNumber(args.approvalTimeoutSeconds, 60, "approval timeout seconds"),
   };
-  return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime, reger }) {
-    const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
-    const exn = ipexArgs.said ? hby.db.exns.get([ipexArgs.said]) : yield* nextPendingMultisigIpex(hby, runtime, {
-      hab: pollHab,
-      timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000,
-    });
-    if (!exn) {
-      throw new ValidationError(
-        ipexArgs.said
-          ? `IPEX message ${ipexArgs.said} not found.`
-          : "No pending multisig IPEX proposal was available to join.",
-      );
-    }
+  return yield* withIpexRuntime(ipexArgs, ({ hby, runtime, reger }) => joinIpexProposal(hby, runtime, reger, ipexArgs));
+}
 
-    if (exn.route?.startsWith("/ipex/")) {
-      return { exn };
-    }
-
-    if (exn.route !== MULTISIG_EXN_ROUTE) {
-      throw new ValidationError(`EXN ${ipexArgs.said} is not an IPEX or multisig IPEX message.`);
-    }
-
-    const embedded = storedMultisigIpexBody(hby.db, exn);
-    if (!embedded?.route?.startsWith("/ipex/")) {
-      throw new ValidationError(`Multisig EXN ${ipexArgs.said} does not wrap an IPEX message.`);
-    }
-    const group = embedded.pre;
-    if (!group || !hby.habs.has(group)) {
-      throw new ValidationError(`Multisig IPEX sender ${group ?? "<missing>"} is not a local group AID.`);
-    }
-
-    if (!ipexArgs.auto) {
-      return { exn, group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [] } };
-    }
-
-    const host = yield* spawn(() => runAgentRuntime(runtime, { hab: localGroupMember(hby, group) }));
-    let credentialSaved: boolean | undefined;
-    try {
-      if (embedded.route === IPEX_ADMIT_ROUTE) {
-        const prior = embedded.ked?.p;
-        const grant = typeof prior === "string" && prior.length > 0 ? hby.db.exns.get([prior]) : null;
-        credentialSaved = !!grant && (yield* settleGrantCredential(
-          hby,
-          runtime.protocol,
-          reger,
-          grant,
-          group,
-          ipexArgs.gvrsn,
-          ipexArgs.approvalTimeoutSeconds,
-        ));
-        if (!credentialSaved) {
-          return {
-            exn,
-            group: {
-              embedded,
-              accepted: runtime.exc.complete(embedded.said!),
-              approved: false,
-              lead: null,
-              credentialSaved,
-              messages: [],
-              deliveries: [],
-            },
-          };
-        }
-      }
-      // Collect independent stored child proofs before deciding completion or
-      // electing delivery, without losing the original approved wrapper identity.
-      yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embedded.said!, reger);
-      const approval = yield* approveMultisigIpex(hby, runtime.protocol, runtime.postman, reger, exn, {
-        publish: true,
-        gvrsn: ipexArgs.gvrsn,
-      });
-      return {
-        exn,
-        group: {
-          embedded,
-          accepted: approval.accepted,
-          approved: approval.approved !== null,
-          lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
-          credentialSaved,
-          messages: approval.messages,
-          deliveries: approval.deliveries,
-        },
-      };
-    } finally {
-      yield* host.halt();
-    }
+/** Borrow existing protocol owners for one selected proposal; review never signs. */
+export function* joinIpexProposal(
+  hby: Habery,
+  runtime: AgentRuntime,
+  reger: Reger | null,
+  ipexArgs: IpexJoinOptions,
+): Operation<IpexJoinResult> {
+  const pollHab = ipexArgs.alias ? requireHab(hby, ipexArgs.alias) : undefined;
+  const exn = ipexArgs.said ? hby.db.exns.get([ipexArgs.said]) : yield* nextPendingMultisigIpex(hby, runtime, {
+    hab: pollHab,
+    timeoutMs: ipexArgs.approvalTimeoutSeconds * 1000,
   });
+  if (!exn) {
+    throw new ValidationError(
+      ipexArgs.said
+        ? `IPEX message ${ipexArgs.said} not found.`
+        : "No pending multisig IPEX proposal was available to join.",
+    );
+  }
+
+  if (exn.route?.startsWith("/ipex/")) {
+    return { exn };
+  }
+
+  if (exn.route !== MULTISIG_EXN_ROUTE) {
+    throw new ValidationError(`EXN ${ipexArgs.said} is not an IPEX or multisig IPEX message.`);
+  }
+
+  const embedded = storedMultisigIpexBody(hby.db, exn);
+  if (!embedded?.route?.startsWith("/ipex/")) {
+    throw new ValidationError(`Multisig EXN ${ipexArgs.said} does not wrap an IPEX message.`);
+  }
+  const group = embedded.pre;
+  if (!group || !hby.habs.has(group)) {
+    throw new ValidationError(`Multisig IPEX sender ${group ?? "<missing>"} is not a local group AID.`);
+  }
+
+  if (!ipexArgs.auto) {
+    return { exn, group: { embedded, accepted: null, approved: null, lead: null, messages: [], deliveries: [] } };
+  }
+
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: localGroupMember(hby, group) }));
+  let credentialSaved: boolean | undefined;
+  try {
+    if (embedded.pvrsn.major === 1 && embedded.route === IPEX_ADMIT_ROUTE) {
+      if (!reger) throw new ValidationError("VDR runtime did not open Reger.");
+      const prior = embedded.ked?.p;
+      const grant = typeof prior === "string" && prior.length > 0 ? hby.db.exns.get([prior]) : null;
+      credentialSaved = !!grant && (yield* settleGrantCredential(
+        hby,
+        runtime.protocol,
+        reger,
+        grant,
+        group,
+        ipexArgs.gvrsn,
+        ipexArgs.approvalTimeoutSeconds,
+      ));
+      if (!credentialSaved) {
+        return {
+          exn,
+          group: {
+            embedded,
+            accepted: runtime.exc.complete(embedded.said!),
+            approved: false,
+            lead: null,
+            credentialSaved,
+            messages: [],
+            deliveries: [],
+          },
+        };
+      }
+    }
+    // Collect independent stored child proofs before deciding completion or
+    // electing delivery, without losing the original approved wrapper identity.
+    yield* approveStoredMultisigIpexWrappers(hby, runtime.protocol, embedded.said!, reger);
+    const approval = yield* approveMultisigIpex(hby, runtime.protocol, runtime.postman, reger, exn, {
+      publish: true,
+      gvrsn: ipexArgs.gvrsn,
+    });
+    return {
+      exn,
+      group: {
+        embedded,
+        accepted: approval.accepted,
+        approved: approval.approved !== null,
+        lead: runtime.exc.lead(hby.habs.get(group)!, embedded.said!),
+        credentialSaved,
+        messages: approval.messages,
+        deliveries: approval.deliveries,
+      },
+    };
+  } finally {
+    yield* host.halt();
+  }
 }
 
 /**

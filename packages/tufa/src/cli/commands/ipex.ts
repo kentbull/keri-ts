@@ -1,5 +1,5 @@
 /** IPEX presentation after the KERI command has joined workers and closed owned stores. */
-import { RegistryCustody, WalletDiscloser } from "@keri-ts/wallet";
+import { RegistryCustody, type Wallet, WalletDiscloser } from "@keri-ts/wallet";
 import {
   BlindState,
   BoundState,
@@ -17,11 +17,13 @@ import {
   ipexAgreeCommand as agree,
   ipexApplyCommand as apply,
   ipexGrantCommand as grant,
-  ipexJoinCommand as join,
+  type IpexJoinOptions,
+  type IpexJoinResult,
   ipexOfferCommand as offer,
   ipexPollCommand as poll,
   type IpexSendResult,
   ipexSpurnCommand as spurn,
+  joinIpexProposal,
   parseBooleanOption,
   parseGvrsn,
   parseNumberOption,
@@ -44,7 +46,7 @@ import {
   sendCompletedGroupIpex,
   ValidationError,
 } from "keri-ts/runtime";
-import { withHabAndAgentRuntime } from "../support/context.ts";
+import { withAgentRuntime, withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
@@ -469,9 +471,47 @@ export function* ipexPollCommand(args: Record<string, unknown>): Operation<void>
   });
 }
 
+/** Explicit peer consent records v2 inventory only after the exact Admit reaches threshold. */
+export function* joinWalletIpex(
+  wallet: Wallet,
+  runtime: AgentRuntime,
+  options: IpexJoinOptions,
+): Operation<IpexJoinResult> {
+  const result = yield* joinIpexProposal(wallet.hby, runtime, runtime.vdr?.reger ?? null, options);
+  const group = result.group;
+  if (
+    group?.embedded.pvrsn.major === 2 && group.embedded.route === "/ipex/admit"
+    && group.approved === true && group.accepted === true
+  ) {
+    yield* call(() => wallet.recordAdmission(group.embedded.ked!.p as string, group.embedded.said!, { consent: true }));
+    group.credentialSaved = true;
+  }
+  return result;
+}
+
 /** Display selected coordination identity and approval facts, including poll-discovered outer SAIDs. */
 export function* ipexJoinCommand(args: Record<string, unknown>): Operation<void> {
-  const { exn, group } = yield* join(args);
+  const options: IpexJoinOptions = {
+    alias: parseStringOption(args.alias, "alias"),
+    said: parseStringOption(args.said, "said"),
+    auto: parseBooleanOption(args.auto, "auto"),
+    gvrsn: parseGvrsn(args.gvrsn),
+    approvalTimeoutSeconds: parseNumberOption(args.approvalTimeoutSeconds, "approval-timeout") ?? 60,
+  };
+  if (!Number.isFinite(options.approvalTimeoutSeconds) || options.approvalTimeoutSeconds < 0) {
+    throw new ValidationError("--approval-timeout must be nonnegative.");
+  }
+  const { exn, group } = yield* withAgentRuntime(
+    walletStoreArgs(args),
+    { skipConfig: false },
+    function*({ hby, runtime }) {
+      return yield* scoped(function*() {
+        if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
+        const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
+        return yield* joinWalletIpex(wallet, runtime, options);
+      });
+    },
+  );
   if (!group) {
     writeJsonLine({ said: exn.said, route: exn.route, status: "single-sig" });
     return;
