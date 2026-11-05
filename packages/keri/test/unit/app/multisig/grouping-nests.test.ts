@@ -37,7 +37,11 @@ import {
 import { deliverCredentialRevocation, revokeCredential } from "../../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../../src/app/credentials/credential-workflows.ts";
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
+import {
+  endpointRoleAccepted,
+  groupEndorseReply,
+  proposeGroupEndpointRole,
+} from "../../../../src/app/identity/endpoint-roleing.ts";
 import { createHabery, eventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
@@ -2427,6 +2431,29 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             yield* spawn(() => receiver.postman.deliverDo()),
             yield* spawn(() => sender.postman.deliverDo()),
           );
+          // Endpoint approval returns a v2 nested reply, including on retained-contribution retry.
+          const role = yield* proposeGroupEndpointRole(left, receiver.protocol, receiver.postman, local.hab, {
+            eid: bob.pre,
+            role: "agent",
+          });
+          const callbacks = {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "native-ipex",
+            chooseRegistryName: () => "unused",
+          };
+          const peerRole = yield* approvePendingMultisigProposal(right, sender, {
+            said: role.messages[0].exnSaid,
+            callbacks,
+          });
+          assertExists(peerRole);
+          const returned = peerRole.messages[0].exnSaid;
+          assertEquals(left.db.exns.get([returned])?.pvrsn, Vrsn_2_0);
+          const completedRole = yield* approvePendingMultisigProposal(left, receiver, { said: returned, callbacks });
+          assertEquals(completedRole?.accepted, true);
+          const resumedRole = yield* approvePendingMultisigProposal(right, sender, { said: returned, callbacks });
+          assertEquals(resumedRole?.accepted, true);
+          assertEquals(endpointRoleAccepted(left, local.hab.pre, "agent", bob.pre), true);
+          assertEquals(endpointRoleAccepted(right, remote.hab.pre, "agent", bob.pre), true);
           /** Deliver through actual member endpoints and inspect the exact retained native child. */
           const publish = function*(runtime: typeof receiver, hby: Habery, group: Hab, raw: Uint8Array) {
             const result = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, group, raw, Vrsn_2_0);
