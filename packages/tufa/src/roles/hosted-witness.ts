@@ -184,8 +184,10 @@ class HostedWitness {
     const form = await new Response(body, { headers: { "Content-Type": req.headers.get("Content-Type")! } })
       .formData();
     const kel = form.get("kel"), delegator = form.get("delkel"), supplied = form.get("secret");
-    if (!(kel instanceof Blob)) throw new RequestError(400, "Signed inception kel part required");
-    const frames = parseBytes(new Uint8Array(await kel.arrayBuffer()));
+    if (kel === null) throw new RequestError(400, "Signed inception kel part required");
+    // Python clients send text fields; file parts carry the same signed CESR evidence.
+    const bytes = typeof kel === "string" ? new TextEncoder().encode(kel) : new Uint8Array(await kel.arrayBuffer());
+    const frames = parseBytes(bytes);
     const frame = frames[0], event = frame?.body;
     if (
       frames.length !== 1 || !(event instanceof SerderKERI) || event.pvrsn.major !== 2
@@ -197,11 +199,13 @@ class HostedWitness {
     if (!event.tholder?.satisfy(verified.indices)) throw new RequestError(403, "Controller signatures incomplete");
     // Delegation and KEL acceptance still belong to the ordinary protocol processor.
     const runtime = this.runtime;
+    const delegation = typeof delegator === "string"
+      ? new TextEncoder().encode(delegator)
+      : delegator
+      ? new Uint8Array(await delegator.arrayBuffer())
+      : null;
     await run(function*() {
-      if (delegator instanceof Blob) {
-        const bytes = yield* call(() => delegator.arrayBuffer());
-        yield* settleRuntimeIngress(runtime, [new Uint8Array(bytes)]);
-      }
+      if (delegation) yield* settleRuntimeIngress(runtime, [delegation]);
       yield* runtime.protocol.dispatch(frame, { local: false, escrows: true });
     });
     if (this.hby.db.kels.getLast(this.record.cid, 0) !== event.said) {

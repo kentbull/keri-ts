@@ -70,9 +70,10 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         assertEquals(response.status, 200);
         return await response.json() as { eid: string; cid: string; oobis: string[] };
       };
-      const register = async (eid: string, inception: Uint8Array) => {
+      const register = async (eid: string, inception: Uint8Array, file = false) => {
         const form = new FormData();
-        form.set("kel", new Blob([new Uint8Array(inception)]), "inception.cesr");
+        if (file) form.set("kel", new Blob([new Uint8Array(inception)]), "inception.cesr");
+        else form.set("kel", new TextDecoder().decode(inception));
         return await fetchAt(publicUrl + "/aids", {
           method: "POST",
           headers: { "CESR-DESTINATION": eid },
@@ -85,6 +86,12 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         const second = yield* call(() => allocate(other.pre));
         assertEquals(first.cid, controller.pre);
         assertEquals(first.eid === second.eid, false);
+        // File and text parts both authenticate through the ordinary controller checks.
+        const fileRegistration = yield* call(() =>
+          register(second.eid, acceptedEventReplayMessage(hby, other.pre, 0, Vrsn_2_0).message, true)
+        );
+        yield* call(() => fileRegistration.arrayBuffer());
+        assertEquals(fileRegistration.status, 200);
         const inception = acceptedEventReplayMessage(hby, controller.pre, 0, Vrsn_2_0).message;
 
         // The public boot route cannot allocate; one tenant cannot register another's inception.
