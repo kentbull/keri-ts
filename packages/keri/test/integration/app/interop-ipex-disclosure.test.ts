@@ -2,7 +2,7 @@
 import { b, collectPayload, nestedPayload, parseBytes, Vrsn_2_0 } from "cesr-ts";
 import { assertEquals, assertExists, assertNotEquals, assertRejects } from "jsr:@std/assert";
 import type { DerivedIpexPeers, IpexPeer, IpexPeers, Verb } from "./ipex/peers.ts";
-import { observed, withDerivedIpexPeers, withIpexPeers } from "./ipex/peers.ts";
+import { observed, withDerivedGroupIpexPeers, withDerivedIpexPeers, withIpexPeers } from "./ipex/peers.ts";
 
 /** Python rebuilds empty signature lists; compare every carried proof byte without that zero-item counter. */
 async function comparableProof(proof: string | undefined): Promise<Uint8Array> {
@@ -377,3 +377,225 @@ Deno.test("IPEX reciprocal TypeScript issuer → KERIpy holder: derived issuance
 
 Deno.test("IPEX reciprocal KERIpy issuer → TypeScript holder: derived issuance and rootless verifier Unblind", () =>
   withDerivedIpexPeers({ issuer: "KERIpy" }, derivedIssuanceAndUnblind));
+
+Deno.test("IPEX reciprocal groups: KERIpy issuer → TypeScript holder → rootless KERIpy verifier", () =>
+  withDerivedGroupIpexPeers(async ({ issuers, holders, verifier, plan, rotateHolders }) => {
+    assertEquals(issuers.map(peer => peer.implementation), ["KERIpy", "KERIpy"]);
+    assertEquals(holders.map(peer => peer.implementation), ["TypeScript", "TypeScript"]);
+    assertEquals(verifier.implementation, "KERIpy");
+    const members = [...issuers, ...holders];
+    const initial = await Promise.all(members.map(peer => peer.snapshot()));
+    assertEquals(
+      new Set([...initial.map(state => state.member), verifier.info.pre]).size,
+      5,
+      "four group members and the verifier keep independent encrypted stores",
+    );
+    assertEquals(issuers[0].info.pre, issuers[1].info.pre);
+    assertEquals(holders[0].info.pre, holders[1].info.pre);
+    for (const state of [...initial, await verifier.snapshot()]) {
+      assertEquals(state.encrypted, true);
+      assertEquals(state.witnesses, { threshold: 2, count: 3 });
+      assertEquals(state.rootPresent, false);
+    }
+
+    // Each registry anchor and the fresh Grant need the second issuer's explicit contribution.
+    const inception = await issuers[0].prepareGroupRegistry();
+    await issuers[1].approveGroupEvent(inception.proposal);
+    for (const peer of issuers) {
+      await observed(
+        "issuer group accepted the witnessed RIP",
+        async () =>
+          (await peer.snapshot(undefined, inception.registry)).registryHead === inception.registry ? true : undefined,
+      );
+    }
+    // Select the lifetime before the first partial; later contributions never renew it.
+    const proposed = await issuers[0].prepareGroupDerived(holders[0].info.pre, 120);
+    assertEquals((await issuers[0].snapshot(proposed.grant)).inspected?.accepted, false);
+    await issuers[1].approveGroupDerived(proposed.proposal, 120);
+    for (const peer of holders) {
+      await observed(
+        "holder member retained the threshold-authenticated pending Grant",
+        async () => (await peer.snapshot(proposed.grant)).inspected?.escrowed ? true : undefined,
+      );
+    }
+    const prepared = await Promise.all(members.map(peer => peer.snapshot(proposed.grant)));
+    for (const state of prepared) {
+      assertEquals(state.inspected?.accepted, false);
+      assertEquals(state.rootPresent, false);
+      assertEquals(state.admit, null);
+      assertExists(state.deadline);
+      assertEquals(state.grantRaw, prepared[0].grantRaw);
+    }
+
+    // Both members receive the full query before consent; the finite issuer must retry the same query.
+    const query = await observed(
+      "issuer froze its group query",
+      async () => (await issuers[0].snapshot(proposed.grant)).querySaid ?? undefined,
+    );
+    for (const peer of holders) {
+      await observed(
+        "unapproved holder received the query",
+        async () => (await peer.snapshot(proposed.grant)).received.includes(query) || undefined,
+      );
+    }
+
+    // Setup consent contributes DH signatures; only the elected members retain the derived root.
+    await holders[0].approveDh(proposed.grant);
+    for (const peer of holders) assertEquals((await peer.snapshot(proposed.grant)).rootPresent, false);
+    await holders[1].approveDh(proposed.grant);
+    for (const peer of [issuers[0], holders[0]]) {
+      await observed(
+        "elected member completed group DH",
+        async () => (await peer.snapshot(proposed.grant)).rootPresent ? true : undefined,
+      );
+    }
+    assertEquals(
+      (await Promise.all(members.map(peer => peer.snapshot(proposed.grant)))).map(state => state.rootPresent),
+      [true, false, true, false],
+    );
+    const issue = await observed(
+      "issuer staged the exact BUP for separate peer approval",
+      async () => await issuers[0].pendingGroupEvent() ?? undefined,
+    );
+    for (const peer of issuers) {
+      assertEquals(
+        (await peer.snapshot(proposed.grant)).registryHead,
+        inception.registry,
+        "DH setup does not approve the later BUP",
+      );
+    }
+    await issuers[1].approveGroupEvent(issue.wire);
+    for (const peer of holders) await peer.finishDh(proposed.grant);
+    const proof = await issuers[0].finalProof(proposed.grant);
+    await issuers[1].acceptGroupProof(proposed.grant, proof);
+    const issued = (await issuers[0].snapshot(proposed.grant)).registryHead;
+    assertExists(issued);
+    assertNotEquals(issued, inception.registry);
+    for (const [index, peer] of members.entries()) {
+      const state = await peer.snapshot(proposed.grant);
+      assertEquals(state.inspected?.accepted, true);
+      assertEquals(state.grantRaw, prepared[index].grantRaw);
+      assertEquals(state.deadline, prepared[index].deadline);
+      assertEquals(state.admit, null, "threshold issuance is separate from holder admission");
+    }
+
+    // Both holder members decide to Admit the same exact issued view before onward presentation.
+    const admitted = await holders[0].prepareGroupIpex("admit", proposed.grant);
+    for (const peer of members) assertEquals((await peer.snapshot(proposed.grant)).admit, null);
+    await holders[1].approveGroupIpex(admitted.wire);
+    for (const peer of holders) await peer.finishGroupIpex(admitted.said);
+    for (const peer of members) {
+      await observed(
+        "group Admit reached each independent member store",
+        async () => (await peer.snapshot(proposed.grant)).admit === admitted.said ? true : undefined,
+      );
+    }
+    const histories = await Promise.all(members.map(peer => peer.snapshot(proposed.grant)));
+    for (const state of histories) {
+      assertEquals(state.nodes.length, 1);
+      assertEquals(state.nodes[0].attributes.status.value, "citizen");
+      assertEquals(typeof state.nodes[0].attributes.private, "string");
+      assertEquals(state.nodes[0].raw.includes("hidden-value"), false);
+      assertEquals(JSON.parse(state.nodes[0].raw).a.i, holders[0].info.pre);
+      assertExists(state.nodes[0].proof);
+    }
+    const heldView = histories[2].nodes.map(({ raw, proof }) => ({ raw, proof }));
+    const custodian = histories[2].member, rootless = histories[3].member;
+    assertEquals(histories[2].rootPresent, true);
+    assertEquals(histories[3].rootPresent, false);
+
+    // A real accepted rotation reverses indices; custody stays put while delivery election moves.
+    await rotateHolders();
+    for (const peer of holders) {
+      const state = await peer.snapshot(proposed.grant);
+      assertEquals(state.signingMembers, [rootless, custodian]);
+      assertEquals(state.groupReady, true);
+    }
+    assertEquals((await holders[0].snapshot(proposed.grant)).rootPresent, true);
+    assertEquals((await holders[1].snapshot(proposed.grant)).rootPresent, false);
+    for (const peer of [...holders, verifier]) await peer.useUnblind();
+    for (const peer of holders) await peer.connect(verifier.info, plan);
+    await verifier.connect(holders[0].info, plan);
+    const publishing = issuers[0].publishUpdate(verifier.info);
+    const update = await observed("issuer staged a new BUP for explicit second-member approval", async () => {
+      const pending = await issuers[0].pendingGroupEvent();
+      return pending && pending.said !== issue.said ? pending : undefined;
+    });
+    await issuers[1].approveGroupEvent(update.wire);
+    const updated = await publishing;
+    await observed(
+      "rootless verifier accepted the newer public BUP",
+      async () => (await verifier.snapshot(undefined, inception.registry)).registryHead === updated ? true : undefined,
+    );
+    assertEquals((await verifier.snapshot(undefined, inception.registry)).openingPresent, false);
+    for (const peer of holders) assertEquals((await peer.snapshot(proposed.grant)).registryHead, issued);
+    const presentation = await holders[0].prepareGroupIpex("grant", proposed.grant);
+    await holders[1].approveGroupIpex(presentation.wire);
+    for (const peer of holders) await peer.finishGroupIpex(presentation.said);
+    await observed(
+      "verifier retained the exact stale group presentation",
+      async () => (await verifier.snapshot(presentation.said)).inspected?.escrowed ? true : undefined,
+    );
+    for (const [index, peer] of holders.entries()) {
+      assertEquals(
+        (await peer.snapshot(presentation.said)).nodes.map(({ raw, proof }) => ({ raw, proof })),
+        histories[index + 2].nodes.map(({ raw, proof }) => ({ raw, proof })),
+        "each member presents its exact admitted view",
+      );
+    }
+    const pending = await verifier.snapshot(presentation.said);
+    assertEquals(pending.inspected?.accepted, false);
+    assertEquals(pending.rootPresent, false);
+    assertEquals(
+      await Promise.all(pending.nodes.map(async ({ raw, proof }) => ({ raw, proof: await comparableProof(proof) }))),
+      await Promise.all(heldView.map(async ({ raw, proof }) => ({ raw, proof: await comparableProof(proof) }))),
+    );
+    assertExists(pending.deadline);
+
+    // The custodian authors the proof; rootless index zero validates it and elects actual peer delivery.
+    await holders[1].approveUnblind(presentation.said, custodian);
+    await holders[0].approveUnblind(presentation.said, custodian);
+    assertEquals((await holders[1].snapshot(presentation.said)).deliveredReply, false);
+    await verifier.approveUnblind(presentation.said);
+    await observed(
+      "rootless holder delivered the threshold-complete opening reply",
+      async () => (await holders[1].snapshot(presentation.said)).deliveredReply ? true : undefined,
+    );
+    assertEquals((await holders[1].snapshot(presentation.said)).rootPresent, false);
+    assertEquals((await holders[0].snapshot(presentation.said)).deliveredReply, false);
+    await observed(
+      "verifier authenticated the complete group opening reply",
+      async () => (await verifier.snapshot(presentation.said)).auxiliaryReady ? true : undefined,
+    );
+    assertEquals((await verifier.snapshot(presentation.said)).inspected?.accepted, false);
+    for (const peer of holders) await peer.finishUnblind(presentation.said);
+    await verifier.finishUnblind(presentation.said);
+    const repaired = await verifier.snapshot(presentation.said);
+    assertEquals(repaired.inspected?.accepted, true);
+    assertEquals(repaired.grantRaw, pending.grantRaw);
+    assertEquals(repaired.deadline, pending.deadline);
+    assertEquals(repaired.nodes.map(node => node.raw), heldView.map(node => node.raw));
+    assertNotEquals(repaired.nodes[0].proof, heldView[0].proof, "only the new presentation gains the current opening");
+    assertEquals(repaired.admit, null);
+    assertEquals(repaired.rootPresent, false);
+    const acceptance = await exchange(verifier, holders[0], "admit", presentation.said);
+    for (const peer of holders) {
+      await observed(
+        "verifier Admit reached each holder member",
+        async () => (await peer.snapshot(presentation.said)).admit === acceptance ? true : undefined,
+      );
+    }
+    for (const [index, peer] of members.entries()) {
+      const state = await peer.snapshot(proposed.grant), original = histories[index];
+      assertEquals(state.grantRaw, original.grantRaw);
+      assertEquals(state.deadline, original.deadline);
+      assertEquals(state.admit, original.admit);
+      assertEquals(
+        state.nodes.map(({ raw, proof }) => ({ raw, proof })),
+        original.nodes.map(({ raw, proof }) => ({ raw, proof })),
+        "group rotation, new proof and later Admit preserve the original admitted view",
+      );
+      assertEquals(state.rootPresent, index === 0 || index === 2);
+    }
+    assertEquals((await verifier.snapshot(undefined, inception.registry)).rootPresent, false);
+  }));

@@ -101,7 +101,11 @@ class IpexPeer:
             self.hab.rvy.processEscrowReply()
             self.exc.processEscrow()
             self.send_auxiliary_cues()
+            self.progress()
             time.sleep(.005)
+
+    def progress(self):
+        """Advance only explicitly selected fixture work, if this profile has any."""
 
     def receive(self):
         """Observe structurally decoded frames after real intake; None records nothing."""
@@ -116,13 +120,14 @@ class IpexPeer:
         """Detach each exact SAD and its complete proof subtree for normal CESR HTTP intake."""
         destination = remote or self.remote
         for serder, attachments in messageParts(wire):
-            req = Request(destination["url"], data=serder.raw, method="POST",
-                          headers={"Content-Type": CESR_CONTENT_TYPE,
-                                   CESR_ATTACHMENT_HEADER: attachments.decode("utf-8"),
-                                   CESR_GENUS_HEADER: "2", CESR_DESTINATION_HEADER: destination["pre"]})
-            with urlopen(req, timeout=10) as rep:
-                assert rep.status == 204
-                rep.read()
+            for url in destination.get("urls", [destination["url"]]):
+                req = Request(url, data=serder.raw, method="POST",
+                              headers={"Content-Type": CESR_CONTENT_TYPE,
+                                       CESR_ATTACHMENT_HEADER: attachments.decode("utf-8"),
+                                       CESR_GENUS_HEADER: "2", CESR_DESTINATION_HEADER: destination["pre"]})
+                with urlopen(req, timeout=10) as rep:
+                    assert rep.status == 204
+                    rep.read()
 
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
@@ -132,6 +137,19 @@ class IpexPeer:
                 self.post(b"".join(self.hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)))
                 continue
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))
+        if self.derived:
+            # Real Poster delivery requires authenticated controller/location
+            # records; a fixture control URL is not protocol endpoint authority.
+            if self.hab.fetchLoc(self.hab.pre) is None:
+                wire = self.hab.makeLocScheme(url=self.info()["url"], gvrsn=Vrsn_2_0)
+                self.parser.parse(ims=bytearray(wire), local=True)
+            if not self.hab.fetchEndAllowed(self.hab.pre, "controller", self.hab.pre):
+                wire = self.hab.makeEndRole(eid=self.hab.pre, gvrsn=Vrsn_2_0)
+                self.parser.parse(ims=bytearray(wire), local=True)
+            assert self.hab.fetchLoc(self.hab.pre) is not None
+            assert self.hab.fetchEndAllowed(self.hab.pre, "controller", self.hab.pre)
+            self.post(self.hab.loadLocScheme(self.hab.pre, gvrsn=Vrsn_2_0)
+                      + self.hab.loadEndRole(self.hab.pre, self.hab.pre, gvrsn=Vrsn_2_0))
 
     def signed(self, node, proof_body=None, *, owner=None, nests=None):
         """Each child is signed by its own issuer; an explicit sender signs a test reply."""
@@ -580,7 +598,10 @@ class PeerControl:
             elif action == "witnessed_evidence":
                 rep.media = self.peer.enable_witnessed_evidence(**command)
             elif action in ("prepare_derived", "approve_dh", "issue_derived", "finish_dh", "use_unblind",
-                             "publish_update", "approve_unblind", "finish_unblind"):
+                             "publish_update", "approve_unblind", "finish_unblind", "create_group",
+                             "prepare_group_registry", "pending_group_event", "approve_group_event",
+                             "group_endpoints", "approve_group_endpoints",
+                             "prepare_group_derived", "approve_group_derived", "final_group_proof", "accept_group_proof"):
                 rep.media = getattr(self.peer, action)(**command)
             elif action == "present":
                 rep.media = self.peer.present(**command)
@@ -606,7 +627,7 @@ class PeerControl:
 
 
 @contextmanager
-def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=False):
+def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=False, group=False):
     """Fresh peer stores/listener; KEL version is independent of v2 IPEX messages."""
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
@@ -614,7 +635,9 @@ def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=Fal
         with openHby(name="python-peer", base="test", temp=root is None, version=version, cf=cf,
                      **(dict(headDirPath=root) if root is not None else {}),
                      **(dict(bran="DerivedFixturePasscode") if derived else {})) as hby:
-            peer = IpexPeer(hby, cf, graph_case, port, version, derived=derived)
+            if group:
+                from ipex_group_peer import GroupIpexPeer
+            peer = (GroupIpexPeer if group else IpexPeer)(hby, cf, graph_case, port, version, derived=derived)
             try:
                 peer.doist.enter()
                 if not peer.server.servant.opened:
@@ -624,3 +647,5 @@ def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=Fal
                 peer.doist.exit()
                 peer.server.close()
                 peer.rgy.close()
+                if group:
+                    peer.notifier.noter.close()

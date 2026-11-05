@@ -159,6 +159,11 @@ not cached factors or a claim of prior threshold completion. The query cache and
 original timestamp/window remain unchanged, no current partial pool qualifies,
 and the owner rechecks explicit live consent and the original Grant deadline.
 Ordinary query replay policy remains unchanged.
+Reciprocal fixtures deliberately deliver a full query before recipient consent,
+then exercise exact caller retries. Direct delivery requires authenticated controller
+roles and original endpoint-signed location replies; a witnessed KEL alone can
+select witness mailboxes. After distributed group rotation, commit the selected
+member order only after the exact rotation and ordered keys have been accepted.
 ESSR syntax failures reject; unexpected evidence read/hash failures propagate
 before retry can remove pending proofs or fragments.
 Schema query cues do not imply a host fetcher or completed IPEX schema gates.

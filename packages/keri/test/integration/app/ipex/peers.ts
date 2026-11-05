@@ -11,7 +11,11 @@ import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
 import { runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { collectBytes } from "../../../../src/app/transport/byte-source.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import {
+  FetchHttpClient,
+  type HttpRequestInit,
+  type HttpStreamResponse,
+} from "../../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../../src/app/witness/receipting.ts";
 
 import {
@@ -29,13 +33,15 @@ import {
   parseBytes,
   Prefixer,
   SerderACDC,
-  type SerderKERI,
+  SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, ensure, run, scoped, suspend, type Task, useScope } from "effection";
+import { call, ensure, type Operation, run, scoped, suspend, type Task, useScope } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
+import { runGroupDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
 import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
+import { runPresentationUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
 import { openRegistry } from "../../../../src/acdc/registering.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
@@ -47,13 +53,17 @@ import {
 } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import type { DisclosurePlan } from "../../../../src/app/ipex/ipex-graph.ts";
+import { prepareAcdcV2GroupIpex } from "../../../../src/app/ipex/ipex-grouping.ts";
+import { groupSigningMembers } from "../../../../src/app/multisig/group-members.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { reply } from "../../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
+import { dgKey } from "../../../../src/db/core/keys.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
@@ -84,6 +94,8 @@ export type Verb = "apply" | "offer" | "agree" | "grant" | "admit" | "spurn";
 export interface PeerInfo {
   pre: string;
   url: string;
+  urls?: string[];
+  member?: string;
   schemas: string[];
   commitment: string;
 }
@@ -152,6 +164,43 @@ export interface DerivedIpexPeer extends IpexPeer {
   snapshot(inspect?: string, registry?: string): Promise<DerivedPeerSnapshot>;
 }
 
+export interface GroupPeerSnapshot extends DerivedPeerSnapshot {
+  member: string;
+  groupReady: boolean;
+  signingMembers: string[];
+  groupPhase: string;
+  /** Issuer query identity observed from its existing exact proposal. */
+  querySaid?: string | null;
+  deliveredReply: boolean;
+  groupEndpoints?: boolean;
+}
+export interface GroupProposal {
+  said: string;
+  wire: string;
+}
+
+/** Python's finite group issuer actions retain their ordinary explicit proposal boundaries. */
+export interface GroupIssuerPeer extends DerivedIpexPeer {
+  createGroup(members: PeerInfo[], witnesses: readonly KeriPyWitnessNode[]): Promise<void>;
+  groupEndpoints(): Promise<string[]>;
+  approveGroupEndpoints(wires: string[]): Promise<void>;
+  prepareGroupRegistry(): Promise<{ registry: string; proposal: string }>;
+  approveGroupEvent(wire: string): Promise<void>;
+  pendingGroupEvent(): Promise<GroupProposal | null>;
+  prepareGroupDerived(recipient: string, consentLifetime: number): Promise<{ grant: string; proposal: string }>;
+  approveGroupDerived(proposal: string, consentLifetime: number): Promise<void>;
+  finalProof(grant: string): Promise<string>;
+  acceptGroupProof(grant: string, proof: string): Promise<void>;
+  snapshot(inspect?: string, registry?: string): Promise<GroupPeerSnapshot>;
+}
+export interface GroupHolderPeer extends DerivedIpexPeer {
+  prepareGroupIpex(verb: "grant" | "admit", prior: string): Promise<GroupProposal>;
+  approveGroupIpex(wire: string): Promise<void>;
+  finishGroupIpex(said: string): Promise<void>;
+  approveUnblind(grant: string, proposer?: string): Promise<void>;
+  snapshot(inspect?: string, registry?: string): Promise<GroupPeerSnapshot>;
+}
+
 /** Poll actual state; a failed read fails immediately with its original diagnostic. */
 export async function observed<T>(label: string, read: () => T | undefined | Promise<T | undefined>): Promise<T> {
   const deadline = performance.now() + 35_000;
@@ -169,25 +218,25 @@ class TypeScriptPeer implements DerivedIpexPeer {
   readonly server: Deno.HttpServer<Deno.NetAddr>;
   readonly info: PeerInfo;
   private readonly graph: DisclosureGraph;
-  private readonly hab: Hab;
+  protected hab: Hab;
   private readonly received: { said: string; decision: string | undefined; reason?: string }[] = [];
-  private remote?: PeerInfo;
-  private plan?: DisclosurePlan;
+  protected remote?: PeerInfo;
+  protected plan?: DisclosurePlan;
   private intakeFailure?: unknown;
-  private wallet?: Wallet;
+  protected wallet?: Wallet;
   private walletDb?: WalletBaser;
-  private discloser?: WalletDiscloser;
+  protected discloser?: WalletDiscloser;
   private remotes = new Map<string, PeerInfo>();
-  private operation?: { grant: string; xid: string; replySent?: boolean };
+  protected operation?: { grant: string; xid: string; replySent?: boolean };
   private pumping?: Promise<void>;
   private derivedSchema?: MapperMap;
 
   constructor(
-    private hby: Habery,
-    private runtime: AgentRuntime,
+    protected hby: Habery,
+    protected runtime: AgentRuntime,
     private graphCase?: GraphCase,
     hab?: Hab,
-    private selectRuntime?: (kind: "dhke" | "unblind") => Promise<AgentRuntime>,
+    protected selectRuntime?: (kind: "dhke" | "unblind", hab?: Hab) => Promise<AgentRuntime>,
   ) {
     this.hab = hab ?? hby.makeHab("typescript");
     this.graph = graphDisclosures(hby, this.hab, graphCase);
@@ -232,17 +281,19 @@ class TypeScriptPeer implements DerivedIpexPeer {
     }
   }
 
-  private async post(frame: CesrFrame, destination?: string): Promise<void> {
+  protected async post(frame: CesrFrame, destination?: string): Promise<void> {
     const remote = destination ? this.remotes.get(destination) : this.remote;
     assertExists(remote, "connect the peer before sending");
     const http = this.runtime.http;
-    await run(() =>
-      scoped(function*() {
-        const response = yield* requestFrame(remote.url, frame, http, { destination: remote.pre });
-        yield* call(() => collectBytes(response.body()));
-        assertEquals(response.status, 204);
-      })
-    );
+    for (const url of remote.urls ?? [remote.url]) {
+      await run(() =>
+        scoped(function*() {
+          const response = yield* requestFrame(url, frame, http, { destination: remote.pre });
+          yield* call(() => collectBytes(response.body()));
+          assertEquals(response.status, 204);
+        })
+      );
+    }
   }
 
   async connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void> {
@@ -453,7 +504,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     return this.walletSend("grant", undefined, grant);
   }
   /** Only selected owner cues are delivered; this never creates consent or issues a credential. */
-  private async drainAuxiliary(): Promise<void> {
+  protected async drainAuxiliary(): Promise<void> {
     if (this.pumping) return await this.pumping;
     this.pumping = (async () => {
       const selected = this.runtime.ipexAuxiliary;
@@ -752,12 +803,271 @@ class TypeScriptPeer implements DerivedIpexPeer {
   }
 }
 
+/** Observe real HTTP completion without replacing protocol processing or transport. */
+class GroupHttpClient extends FetchHttpClient {
+  replied = false;
+  override *open(url: string, init?: HttpRequestInit): Operation<HttpStreamResponse> {
+    const response = yield* super.open(url, init);
+    if (response.ok && init?.method === "POST" && init.body) {
+      const bytes = yield* call(() =>
+        readCesrRequestBytes(
+          new Request(url, {
+            method: "POST",
+            headers: init.headers,
+            body: init.body as BodyInit,
+          }),
+        )
+      );
+      if (
+        parseBytes(bytes).some(frame =>
+          frame.body instanceof SerderKERI && frame.body.ilk === "rpy" && frame.body.route === "/ipex/unblind"
+        )
+      ) {
+        this.replied = true;
+      }
+    }
+    return response;
+  }
+}
+
+/** Two holder invocations borrow the same maintained finite coordinators as Tufa. */
+class TypeScriptGroupHolder extends TypeScriptPeer implements GroupHolderPeer {
+  readonly memberHab = this.hab;
+  members: PeerInfo[] = [];
+  private work?: Promise<void>;
+  private task?: Task<unknown>;
+  private failure?: unknown;
+  private phase = "idle";
+  private approvedAdmits = new Map<string, string>();
+  private readonly text = new TextDecoder();
+  private endpointEvidence: Uint8Array[] = [];
+
+  /** Finite coordinators own auxiliary cues; the individual fixture pump must not consume them. */
+  protected override async drainAuxiliary(): Promise<void> {}
+
+  async selectGroup(hab: Hab, members: PeerInfo[]): Promise<void> {
+    this.hab = hab;
+    this.members = members;
+    this.info.member = this.memberHab.pre;
+    this.info.pre = hab.pre;
+    this.info.urls = members.map(member => member.url);
+    this.runtime = await this.selectRuntime!("dhke", hab);
+    this.wallet = new Wallet({
+      hby: this.hby,
+      registry: this.runtime.acdc!.store,
+      exc: this.runtime.exc,
+      db: this.wallet!.db,
+    });
+    this.discloser = new WalletDiscloser(
+      this.wallet,
+      new Receiptor(this.hby, this.runtime.protocol, this.runtime.http, this.runtime.clock, { gvrsn: Vrsn_2_0 }),
+    );
+  }
+
+  override async connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void> {
+    await super.connect(remote, plan);
+    if (this.hab.pre === this.memberHab.pre) return;
+    const kel = [this.hab.pre, ...this.members.map(member => member.pre)].flatMap(
+      pre => [...this.hby.db.clonePreIter(pre, 0, Vrsn_2_0)],
+    );
+    for (const wire of [...kel, ...this.endpointEvidence]) {
+      for (const frame of parseBytes(wire)) await this.post(frame, remote.pre);
+    }
+  }
+  async intake(wire: Uint8Array): Promise<void> {
+    for (const frame of parseBytes(wire)) await run(() => this.runtime.protocol.dispatch(frame));
+    await run(() => this.runtime.protocol.processEscrowsOnce());
+  }
+  memberEvidence(): Uint8Array {
+    return concatBytes(
+      ...this.hby.db.clonePreIter(this.memberHab.pre, 0, Vrsn_2_0),
+      this.memberHab.makeLocScheme(this.info.url, this.memberHab.pre, "http"),
+      this.memberHab.makeEndRole(this.memberHab.pre, "controller", true),
+    );
+  }
+  async form(members: PeerInfo[], witnesses: readonly KeriPyWitnessNode[]): Promise<Uint8Array> {
+    const prefixes = members.map(member => member.pre);
+    const made = this.hby.makeGroupHab("holder-group", this.memberHab, prefixes, prefixes, undefined, {
+      isith: "2",
+      nsith: "2",
+      wits: witnesses.map(node => node.pre),
+      toad: 2,
+    });
+    await this.selectGroup(made.hab, members);
+    return made.message;
+  }
+  async witnessGroup(): Promise<void> {
+    await run(() => this.discloser!.receiptor.receipt(this.hab.pre));
+  }
+  groupKel(): Uint8Array {
+    return concatBytes(...this.hby.db.clonePreIter(this.hab.pre, 0, Vrsn_2_0));
+  }
+  endpointBody(member: string): SerderKERI {
+    return reply("/end/role/add", { cid: this.hab.pre, role: "controller", eid: member }, {
+      pre: this.hab.pre,
+      pvrsn: Vrsn_2_0,
+    });
+  }
+  endorseEndpoint(body: SerderKERI): Uint8Array {
+    return this.hab.endorse(body, { gvrsn: Vrsn_2_0 });
+  }
+  async rememberEndpoints(wires: Uint8Array[]): Promise<void> {
+    for (const wire of wires) await this.intake(wire);
+    this.endpointEvidence.push(...wires);
+  }
+  async rotateMember(): Promise<Uint8Array> {
+    this.memberHab.rotate();
+    await run(() => this.discloser!.receiptor.receipt(this.memberHab.pre));
+    return this.memberEvidence();
+  }
+  rotateGroup(order: string[]): Uint8Array {
+    return this.hby.rotateGroupHab("holder-group", order, order, { isith: "2", nsith: "2" }).message;
+  }
+  /** Distributed approval finishes after authoring; bind membership only to its accepted rotation. */
+  commitRotation(wire: Uint8Array, order: string[]): void {
+    const rotation = parseBytes(wire)[0].body;
+    assertInstanceOf(rotation, SerderKERI);
+    assertEquals(this.hab.kever!.said, rotation.said);
+    assertEquals(rotation.ilk, "rot");
+    assertEquals(
+      this.hab.kever!.verfers.map(key => key.qb64),
+      order.map(member => {
+        const state = this.hby.db.getKever(member)!;
+        assertEquals(state.verfers.length, 1);
+        return state.verfers[0].qb64;
+      }),
+    );
+    this.hby.commitGroupHabMembers(this.hab.pre, order, order);
+  }
+
+  private start(phase: string, operation: () => Operation<unknown>): void {
+    if (this.work) throw new Error("Finish the previous finite group invocation first");
+    this.phase = phase;
+    this.task = run(operation);
+    this.work = Promise.resolve(this.task).then(() => {
+      this.phase = `${phase}-complete`;
+      this.operation = undefined;
+    }, error => {
+      this.failure = error;
+    });
+  }
+  private async finish(): Promise<void> {
+    if (!this.work) throw new Error("No selected group invocation");
+    await this.work;
+    if (this.failure) throw this.failure;
+    this.work = undefined;
+    this.operation = undefined;
+  }
+  override approveDh(grant: string): Promise<void> {
+    const selected = this.runtime.ipexAuxiliary;
+    if (selected?.kind !== "dhke") throw new Error("Select group DH runtime");
+    const coordinator = this.hab.kever!.said, custodian = this.members[0].pre;
+    const xid = selected.owner.approve(grant, {
+      coordinator: { sn: this.hab.kever!.sn, said: coordinator },
+      custodian,
+    });
+    this.operation = { grant, xid };
+    this.start("dh", () =>
+      runGroupDerivedIssuance(this.runtime, this.wallet!, {
+        role: "recipient",
+        grant,
+        coordinator,
+        custodian,
+      }, { timeoutMs: 120000, witnessGvrsn: Vrsn_2_0 }));
+    return Promise.resolve();
+  }
+  override async finishDh(_grant: string): Promise<void> {
+    await this.finish();
+  }
+
+  /** Both explicit member approvals select the same exact IPEX body and retained node bytes. */
+  async prepareGroupIpex(verb: "grant" | "admit", prior: string): Promise<GroupProposal> {
+    let body: SerderKERI, nests: CesrFrame[];
+    if (verb === "grant") {
+      const prepared = await run(() =>
+        this.discloser!.prepareGrantBody(this.hab.pre, { fromGrant: prior }, {
+          recipient: this.remote!.pre,
+          message: "Exact group presentation",
+          plan: this.plan,
+        })
+      );
+      body = prepared.exn;
+      nests = parseBytes(prepared.nests);
+    } else {
+      body = ipexExnBody(this.hab.pre, "/ipex/admit", [], {
+        prior: this.hby.db.exns.get(prior)!,
+        message: "Separate group acceptance",
+      });
+      nests = [];
+    }
+    const raw = await collectPayload(framePayload({ body, attachments: [], nests, gvrsn: Vrsn_2_0 }));
+    const wire = await run(() => prepareAcdcV2GroupIpex(this.hby, this.runtime.protocol, this.hab, raw));
+    assertExists(wire, "selected group IPEX policy must authorize this exact contribution");
+    if (verb === "admit") this.approvedAdmits.set(body.said!, prior);
+    return { said: body.said!, wire: this.text.decode(wire) };
+  }
+  async approveGroupIpex(wire: string): Promise<void> {
+    const raw = new TextEncoder().encode(wire), body = parseBytes(raw)[0].body as SerderKERI;
+    const approved = await run(() => prepareAcdcV2GroupIpex(this.hby, this.runtime.protocol, this.hab, raw));
+    assertExists(approved);
+    if (body.route === "/ipex/admit") this.approvedAdmits.set(body.said!, body.sad!.p as string);
+    await this.deliverGroup(approved);
+  }
+  async finishGroupIpex(said: string): Promise<void> {
+    assertEquals(this.runtime.exc.complete(said), true);
+    const grant = this.approvedAdmits.get(said);
+    if (grant) await this.wallet!.recordAdmission(grant, said, { consent: true });
+  }
+  private async deliverGroup(wire: Uint8Array): Promise<void> {
+    for (const frame of parseBytes(wire)) {
+      for (const peer of this.members) {
+        if (peer.pre === this.memberHab.pre) continue;
+        await run(() =>
+          scoped(function*(this: TypeScriptGroupHolder) {
+            const response = yield* requestFrame(peer.url, frame, this.runtime.http, { destination: this.hab.pre });
+            yield* call(() => collectBytes(response.body()));
+            assertEquals(response.status, 204);
+          }.bind(this))
+        );
+      }
+      await this.post(frame);
+    }
+  }
+  override approveUnblind(grant: string, proposer?: string): Promise<void> {
+    if (!proposer) throw new Error("Select the ordinary group Unblind proposer");
+    this.start("unblind", () => runPresentationUnblind(this.runtime, grant, { proposer, timeoutMs: 120000 }));
+    return Promise.resolve();
+  }
+  override async finishUnblind(_grant: string): Promise<void> {
+    await this.finish();
+  }
+  override async snapshot(inspect?: string, registry?: string): Promise<GroupPeerSnapshot> {
+    if (this.failure) throw this.failure;
+    const snapshot = await super.snapshot(inspect, registry);
+    return {
+      ...snapshot,
+      member: this.memberHab.pre,
+      groupReady: Boolean(
+        this.hab.kever && this.hab.pre !== this.memberHab.pre
+          && this.hby.db.wigs.get(dgKey(this.hab.pre, this.hab.kever.said)).length >= Number(this.hab.kever.toader.num),
+      ),
+      signingMembers: groupSigningMembers(this.hby, this.hab.pre),
+      groupPhase: this.phase,
+      auxiliaryReady: this.phase.endsWith("-complete") || snapshot.auxiliaryReady,
+      deliveredReply: this.phase === "unblind-complete" && (this.runtime.http as GroupHttpClient).replied,
+    };
+  }
+  async closeGroup(): Promise<void> {
+    if (this.task) await this.task.halt();
+  }
+}
+
 /** Control client for the independent Python process; never builds its protocol bytes. */
 class PythonPeer implements DerivedIpexPeer {
   readonly implementation = "KERIpy";
   constructor(readonly info: PeerInfo) {}
 
-  private async command<T>(action: string, args: object): Promise<T> {
+  protected async command<T>(action: string, args: object): Promise<T> {
     const response = await fetch(new URL("_fixture", this.info.url), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -824,18 +1134,66 @@ class PythonPeer implements DerivedIpexPeer {
   }
 }
 
+/** Public commands run the Python command owners in their own encrypted member stores. */
+class PythonGroupPeer extends PythonPeer implements GroupIssuerPeer {
+  async groupEndpoints(): Promise<string[]> {
+    return (await this.command<{ wires: string[] }>("group_endpoints", {})).wires;
+  }
+  async approveGroupEndpoints(wires: string[]): Promise<void> {
+    await this.command("approve_group_endpoints", { wires });
+  }
+  async createGroup(members: PeerInfo[], witnesses: readonly KeriPyWitnessNode[]): Promise<void> {
+    Object.assign(this.info, await this.command("create_group", { members, witnesses }));
+  }
+  prepareGroupRegistry(): Promise<{ registry: string; proposal: string }> {
+    return this.command("prepare_group_registry", {});
+  }
+  async approveGroupEvent(wire: string): Promise<void> {
+    await this.command("approve_group_event", { wire });
+  }
+  pendingGroupEvent(): Promise<GroupProposal | null> {
+    return this.command("pending_group_event", {});
+  }
+  async prepareGroupDerived(recipient: string, consentLifetime: number): Promise<{ grant: string; proposal: string }> {
+    const result = await this.command<{ grant: string; proposal: string; info: PeerInfo }>("prepare_group_derived", {
+      recipient,
+      consentLifetime,
+    });
+    Object.assign(this.info, result.info);
+    return result;
+  }
+  async approveGroupDerived(proposal: string, consentLifetime: number): Promise<void> {
+    await this.command("approve_group_derived", { proposal, consentLifetime });
+  }
+  async finalProof(grant: string): Promise<string> {
+    return (await this.command<{ proof: string }>("final_group_proof", { grant })).proof;
+  }
+  async acceptGroupProof(grant: string, proof: string): Promise<void> {
+    await this.command("accept_group_proof", { grant, proof });
+  }
+  override snapshot(inspect?: string, registry?: string): Promise<GroupPeerSnapshot> {
+    return this.command("snapshot", { inspect, registry });
+  }
+}
+
 /** Start the subprocess without scenario flags; preserve live output on failure. */
 async function withPythonPeer(
   context: InteropContext,
   graph: GraphCase | undefined,
   body: (peer: DerivedIpexPeer) => Promise<void>,
   witnessed: boolean | "derived" = false,
+  group = false,
 ): Promise<void> {
   // HIO HTTP treats port=0 as port 80; select an available unprivileged port explicitly.
   const port = randomPort();
   const child = spawnChild(
     context.pythonCommand,
-    [PEER, context.home, witnessed === "derived" ? "derived" : witnessed ? "witnessed" : graph ?? "-", String(port)],
+    [
+      PEER,
+      context.home,
+      group ? "derived-group" : witnessed === "derived" ? "derived" : witnessed ? "witnessed" : graph ?? "-",
+      String(port),
+    ],
     context.env,
     context.repoRoot,
   );
@@ -857,7 +1215,7 @@ async function withPythonPeer(
       }
     });
     assertEquals(Number(new URL(info.url).port), port, "KERIpy peer must bind the selected unprivileged port");
-    await body(new PythonPeer(info));
+    await body(group ? new PythonGroupPeer(info) : new PythonPeer(info));
   } catch (error) {
     failure = { cause: error };
   } finally {
@@ -948,7 +1306,7 @@ export interface DerivedIpexPeers {
 }
 
 /** Keep actual borrowed registry/wallet stores open across the holder's ordinary invocation switch. */
-async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promise<void>): Promise<void> {
+async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promise<void>, group = false): Promise<void> {
   await run(function*() {
     const hby = yield* createHabery({
       name: crypto.randomUUID(),
@@ -957,16 +1315,24 @@ async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promis
       bran: "ReciprocalSecretABCD12",
     });
     yield* ensure(() => hby.close(true));
-    const hab = hby.makeHab("typescript", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+    let hab = hby.makeHab(
+      "typescript",
+      undefined,
+      group
+        ? { icount: 1, isith: "1", ncount: 1, nsith: "1" }
+        : { icount: 2, isith: "2", ncount: 2, nsith: "2" },
+    );
+    const http = group ? new GroupHttpClient() : new FetchHttpClient();
     const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
     yield* ensure(() => baser.close(true));
     const rgy = new Regery(hby, baser), scope = yield* useScope();
     let phase: Task<void> | undefined;
-    const select = async (kind: "dhke" | "unblind"): Promise<AgentRuntime> => {
+    const select = async (kind: "dhke" | "unblind", selectedHab?: Hab): Promise<AgentRuntime> => {
       if (phase) await phase.halt();
+      if (selectedHab) hab = selectedHab;
       return await new Promise<AgentRuntime>((resolve, reject) => {
         phase = scope.run(function*() {
-          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+          const runtime = yield* createAgentRuntime(hby, http, systemClock, {
             acdc: rgy,
             kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
             ipexAuxiliary: kind === "dhke" ? { kind, hab } : { kind, hab, states: ["issued", "revoked", ""] },
@@ -982,10 +1348,13 @@ async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promis
       });
     };
     const runtime = yield* call(() => select("dhke"));
-    const peer = new TypeScriptPeer(hby, runtime, undefined, hab, select);
+    const peer = group
+      ? new TypeScriptGroupHolder(hby, runtime, undefined, hab, select)
+      : new TypeScriptPeer(hby, runtime, undefined, hab, select);
     try {
       yield* call(() => body(peer));
     } finally {
+      if (peer instanceof TypeScriptGroupHolder) yield* call(() => peer.closeGroup());
       yield* call(() => peer.server.shutdown());
       if (phase) yield* phase.halt();
       yield* call(() => peer.closeWallet());
@@ -1035,6 +1404,121 @@ export async function withDerivedIpexPeers(
               }
               await scenario({ issuer, holder, verifier, plan });
             }),
+        ),
+    );
+  } finally {
+    await witnesses.close();
+    await Deno.remove(context.home, { recursive: true });
+  }
+}
+
+export interface DerivedGroupIpexPeers {
+  issuers: [GroupIssuerPeer, GroupIssuerPeer];
+  holders: [GroupHolderPeer, GroupHolderPeer];
+  verifier: DerivedIpexPeer;
+  plan: DisclosurePlan;
+  rotateHolders(): Promise<void>;
+}
+
+/** One five-store topology; every public introduction still enters ordinary HTTP/Parser owners. */
+export async function withDerivedGroupIpexPeers(
+  scenario: (peers: DerivedGroupIpexPeers) => Promise<void>,
+): Promise<void> {
+  const context = await createInteropContext();
+  const witnesses = await startKeriPyWitnessHarness(context, { aliases: ["wan", "wil", "wes"], protocolVersion: 2 });
+  const python = async (role: string, group: boolean, body: (peer: DerivedIpexPeer) => Promise<void>) => {
+    const home = `${context.home}/${role}`;
+    await Deno.mkdir(home);
+    await withPythonPeer({ ...context, home }, undefined, body, "derived", group);
+  };
+  try {
+    await python(
+      "issuer-0",
+      true,
+      first =>
+        python(
+          "issuer-1",
+          true,
+          second =>
+            withDerivedTypeScriptPeer(left =>
+              withDerivedTypeScriptPeer(right =>
+                python("verifier", false, async verifier => {
+                  const issuers = [first, second] as [GroupIssuerPeer, GroupIssuerPeer];
+                  const holders = [left, right] as [TypeScriptGroupHolder, TypeScriptGroupHolder];
+                  const all = [...issuers, ...holders, verifier];
+                  for (const peer of all) {
+                    await peer.enableWitnessedEvidence(witnesses.nodes);
+                  }
+                  const plan: DisclosurePlan = [[first.info.schemas[0], "/", []]];
+                  // Introduce actual member KELs before group construction, preserving each member's coordinates.
+                  for (const source of all) {
+                    for (const target of all) {
+                      if (source !== target) await source.connect(target.info, plan);
+                    }
+                  }
+                  const issuerMembers = issuers.map(peer => structuredClone(peer.info));
+                  const holderMembers = holders.map(peer => structuredClone(peer.info));
+                  await issuers[0].createGroup(issuerMembers, witnesses.nodes);
+                  await issuers[1].createGroup(issuerMembers, witnesses.nodes);
+                  for (const peer of issuers) {
+                    await observed(
+                      "Python group accepted",
+                      async () => (await peer.snapshot()).groupReady || undefined,
+                    );
+                  }
+                  await issuers[1].approveGroupEndpoints(await issuers[0].groupEndpoints());
+                  for (const peer of issuers) {
+                    await observed("Python group controller endpoints authenticated", async () =>
+                      (await peer.snapshot()).groupEndpoints || undefined);
+                  }
+                  const memberWires = holders.map(peer =>
+                    peer.memberEvidence()
+                  );
+                  for (const peer of holders) for (const wire of memberWires) await peer.intake(wire);
+                  const inceptions = [];
+                  for (const peer of holders) inceptions.push(await peer.form(holderMembers, witnesses.nodes));
+                  for (const peer of holders) for (const wire of inceptions) await peer.intake(wire);
+                  await holders[0].witnessGroup();
+                  await holders[1].intake(holders[0].groupKel());
+                  const endpoints = [...memberWires];
+                  for (const member of holderMembers) {
+                    const body = holders[0].endpointBody(member.pre);
+                    endpoints.push(...holders.map(peer => peer.endorseEndpoint(body)));
+                  }
+                  for (const peer of holders) await peer.rememberEndpoints(endpoints);
+                  // Current endpoints carry both member URLs, while each process retains only its own private keys.
+                  for (const source of all) {
+                    for (const target of all) {
+                      if (source !== target && source.info.pre !== target.info.pre) {
+                        await source.connect(target.info, plan);
+                      }
+                    }
+                  }
+                  for (const peer of issuers) {
+                    await peer.connect(holders[0].info, plan);
+                  }
+                  for (const peer of holders) await peer.connect(issuers[0].info, plan);
+                  await verifier.connect(holders[0].info, plan);
+                  await scenario({
+                    issuers,
+                    holders,
+                    verifier,
+                    plan,
+                    async rotateHolders() {
+                      const memberRotations = await Promise.all(holders.map(peer => peer.rotateMember()));
+                      for (const peer of holders) for (const wire of memberRotations) await peer.intake(wire);
+                      const order = holderMembers.map(peer => peer.pre).reverse();
+                      const rotations = holders.map(peer => peer.rotateGroup(order));
+                      for (const peer of holders) for (const wire of rotations) await peer.intake(wire);
+                      await holders[1].witnessGroup();
+                      await holders[0].intake(holders[1].groupKel());
+                      for (const peer of holders) peer.commitRotation(rotations[0], order);
+                      for (const source of holders) {
+                        for (const target of [...issuers, verifier]) await source.connect(target.info, plan);
+                      }
+                    },
+                  });
+                }), true), true),
         ),
     );
   } finally {
