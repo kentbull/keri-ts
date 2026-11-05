@@ -159,6 +159,16 @@ export function authenticateIpexNode(
       ? { kind: "authenticated", registration: result.state }
       : { kind: "reject" };
   }
+  // Disclosed inner rd without top-level rd is an unsupported hidden issuer registry.
+  // Compact aggregate entries expose no declaration and remain opaque here.
+  const aggregate = serder.sad!.A;
+  const sections = [serder.sad!.a, ...(Array.isArray(aggregate) ? aggregate.slice(1) : [aggregate])];
+  if (
+    sections.some(section =>
+      section && typeof section === "object" && !Array.isArray(section)
+      && (section as Record<string, unknown>).rd
+    )
+  ) return { kind: "reject" };
   if (!serder.issuer) return { kind: "reject" };
   let issuer: Prefixer;
   try {

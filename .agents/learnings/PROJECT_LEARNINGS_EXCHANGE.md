@@ -364,6 +364,9 @@ sealed by the verified Issuee source. Completed receiver KRAM remains a separate
 acceptance prerequisite; its timestamp does not select TEL history or infer
 publication time. Later accepted TEL updates cannot refresh the old source proof. Preserve missing proof escrow and
 independent issuer verification; deeper/hidden paths and unfinished routes remain guarded.
+Disclosed inner `rd` without top-level `rd` is unsupported issuer registration in
+`a`, mapping `A`, or expanded aggregate entries; compact entries remain opaque.
+Issuee presentation-registry obligations come only from top-level `a`, never `A`.
 
 The four multisig event builders carry one MultisigEventProposal with correlated
 icp/rot/ixn/rpy attributes through byte preparation and synchronous body building.
