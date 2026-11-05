@@ -44,6 +44,8 @@ export interface RegistrarServiceOptions extends RegistryServiceOptions {
 }
 /** Source acquisition stays scheduled independently of reader activation and incoming queries. */
 export interface ObserverServiceOptions extends RegistryServiceOptions {
+  /** Fixed operator readers remain independent of revocable account enrollment. */
+  readers?: readonly string[];
   sources: readonly SourceConfig[];
   pollIntervalMs?: number;
   timeoutMs?: number;
@@ -91,6 +93,7 @@ class RegistryService {
     readonly service: Registrar | Observer,
     readonly evidence: Registrar,
     readonly staticObservers: ReadonlySet<string>,
+    readonly staticReaders: ReadonlySet<string>,
   ) {
     this.introductions = createProtocolHandler(runtime, { serviceHab: hab, hostedPrefixes: [hab.pre] });
   }
@@ -104,12 +107,12 @@ class RegistryService {
       this.apply(record.aid, record.roles);
     }
   }
-  /** Keep fixed Registrar source permissions separate from revocable tenant roles. */
+  /** Keep fixed source-service permissions separate from revocable tenant roles. */
   private apply(aid: string, roles: readonly RegistryServiceRole[]): void {
     if (this.service instanceof Registrar) {
       this.service.setPublisher(aid, roles.includes("publisher"));
       this.service.setObserver(aid, this.staticObservers.has(aid) || roles.includes("observer"));
-    } else this.service.setReader(aid, roles.includes("reader"));
+    } else this.service.setReader(aid, this.staticReaders.has(aid) || roles.includes("reader"));
   }
   /** Only the named service's concrete role vocabulary can be activated. */
   private validateRoles(value: unknown): asserts value is RegistryServiceRole[] {
@@ -263,6 +266,7 @@ function* runService(selection: Selection): Operation<void> {
     });
     if (!(yield* access.reopen())) throw new ValidationError("Service access store could not open");
     const staticObservers = new Set(selection.kind === "registrar" ? selection.options.observers : []);
+    const staticReaders = new Set(selection.kind === "observer" ? selection.options.readers : []);
     const evidence = new Registrar(runtime.protocol, runtime.acdc!.store, {
       observers: [...staticObservers],
       fullEvidence: true,
@@ -276,11 +280,11 @@ function* runService(selection: Selection): Operation<void> {
       });
       service = new Observer(runtime.protocol, runtime.acdc!.store, observations, {
         sources: selection.options.sources,
-        readers: [],
+        readers: [...staticReaders],
         maximumAgeMs: selection.options.maximumAgeMs,
       });
     }
-    owner = new RegistryService(runtime, hab, access, service, evidence, staticObservers);
+    owner = new RegistryService(runtime, hab, access, service, evidence, staticObservers, staticReaders);
     for (const raw of options.initialEvidence ?? []) yield* call(() => introduce(evidence, raw));
     owner.reload();
     const endpoints = [

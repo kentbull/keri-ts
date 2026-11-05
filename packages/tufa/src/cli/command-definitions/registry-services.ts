@@ -9,6 +9,7 @@ export function registerRegistryServiceCmds(program: Command, dispatch: CommandD
   const registrar = serviceStart(program, "registrar", "6632", "6631")
     .option("--observer <aid>", "Allowed observer service AID (repeatable)", collectOption, []);
   const observer = serviceStart(program, "observer", "6633", "6634")
+    .option("--reader <aid>", "Fixed operator reader AID (repeatable; public KEL via --kel)", collectOption, [])
     .option("--registrar <url>", "HTTPS registrar origin (repeatable)", collectOption, [])
     .option("--registrar-ca <path>", "Explicit registrar CA PEM bundle")
     .option("--registrar-cert-name <name>", "Registrar certificate server name")

@@ -26,6 +26,7 @@ export function* observerStartCommand(args: Record<string, unknown>): Operation<
   yield* runObserver({
     ...options,
     sources,
+    readers: parseStringListOption(args.reader, "reader") ?? [],
     pollIntervalMs: seconds(args.pollInterval, "poll-interval", 5),
     timeoutMs: seconds(args.timeout, "timeout", 5),
     maximumAgeMs: seconds(args.maximumAge, "maximum-age", 15),
