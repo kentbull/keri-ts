@@ -271,13 +271,21 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const schemas = this.nodeSchemas(graph);
     if (schemas !== true) return schemas;
     if (!evidence) return false; // Exchanger must supply its selected supplemental factor set.
+    const originNode = graph.nodes.get(origin)!.body;
+    const grantors = new Set([serder.pre!, originNode.issuee || originNode.issuer]);
+    for (const group of evidence.tsgs ?? []) grantors.add(group.pre);
+    for (const cigar of evidence.cigars ?? []) grantors.add(cigar.verfer!.qb64);
+    for (const seal of evidence.sourceSeals ?? []) grantors.add(seal.i.qb64);
+    const issuance = serder.pre === originNode.issuer && serder.sad!.ri === originNode.issuee;
     const tethered = new Set<string>();
     for (const said of graph.order) {
       const node = graph.nodes.get(said)!;
       const declarations = this.presentationRegistries(node.body);
       if (declarations === null) return false;
-      if (declarations.length && !receiverTime) return false;
       for (const [issuee, registry] of declarations) {
+        // Only participating Grantors present; direct issuance exempts its recipient.
+        if (!grantors.has(issuee) || (issuance && issuee === serder.sad!.ri)) continue;
+        if (!receiverTime) return false;
         const result = this.presentation(node, registry, issuee, serder.said!);
         if (result !== true) return result;
         tethered.add(issuee);

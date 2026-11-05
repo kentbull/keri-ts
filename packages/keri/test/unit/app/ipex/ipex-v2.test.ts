@@ -1022,6 +1022,57 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         "accept",
         "Issuee presentation proof alone satisfies permitted ax anchoring",
       );
+      const issuerOnly = yield* node([iblind], []);
+      const signedBy = (hab: typeof issuer, body: SerderKERI | SerderACDC) =>
+        new TransIdxSigGroup(
+          new Prefixer({ qb64: hab.pre }),
+          NumberPrimitive.fromNum(BigInt(hab.kever!.lastEst.s)),
+          new Diger({ qb64: hab.kever!.lastEst.d }),
+          hab.sign(body.raw, true),
+        );
+      const issuance = ipexExnBody(issuer.pre, "/ipex/grant", [credential], {
+        message: "direct issuance",
+        recipient: issuee.pre,
+        date: receipt,
+      });
+      assertEquals(
+        (yield* runtime.exc.processEvent({
+          serder: issuance,
+          tsgs: [signedBy(issuer, issuance)],
+          nests: [issuerOnly],
+        })).kind,
+        "accept",
+        "direct issuance requires neither recipient presentation proof nor receiver-time provenance",
+      );
+      const linked = acdcmap(issuer.pre, {
+        attribute: { d: "", i: sender.pre, name: "Linked" },
+        edge: { d: "", link: { n: credential.said!, o: "NI2I" } },
+      });
+      const linkedNode: CesrFrame = {
+        body: linked,
+        attachments: messageAttachmentGroups({ tsgs: [signedBy(issuer, linked)] }, Vrsn_2_0),
+      };
+      for (const participates of [false, true]) {
+        const linkedGrant = ipexExnBody(sender.pre, "/ipex/grant", [linked, credential], {
+          recipient: issuer.pre,
+          date: receipt,
+          message: participates ? "with far Issuee consent" : "without far Issuee participation",
+          plan: [
+            [(linked.schema as { $id: string }).$id, "/", []],
+            [(credential.schema as { $id: string }).$id, "/e/link/_/", []],
+          ],
+        });
+        const result = yield* runtime.exc.processEvent({
+          serder: linkedGrant,
+          tsgs: [signedBy(sender, linkedGrant), ...(participates ? [signedBy(issuee, linkedGrant)] : [])],
+          nests: [linkedNode, issuerOnly],
+        });
+        assertEquals(
+          result.kind,
+          participates ? "reject" : "accept",
+          "a far Issuee declaration applies only when that Issuee supplies verified Grant consent",
+        );
+      }
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
       assertEquals(runtime.exc.verifyAccepted(grant.said!, "/ipex/grant", { historical: true }), true);
       assertEquals(context(), null, "an independent presenter needs this exact Grant's issuer endorsement");

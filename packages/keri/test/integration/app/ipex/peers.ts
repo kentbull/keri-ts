@@ -1,5 +1,12 @@
 /** Independent HTTP peers. Fixtures own resources; tests own conversation order. */
-import { createWalletBaser, Wallet, WalletAuthor, type WalletBaser, WalletDiscloser } from "@keri-ts/wallet";
+import {
+  createWalletBaser,
+  RegistryCustody,
+  Wallet,
+  WalletAuthor,
+  type WalletBaser,
+  WalletDiscloser,
+} from "@keri-ts/wallet";
 import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
 import { runAgentRuntimeUntil } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -25,10 +32,13 @@ import {
   type SerderKERI,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run, scoped } from "effection";
+import { call, ensure, run, scoped, suspend, type Task, useScope } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
+import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
+import { openRegistry } from "../../../../src/acdc/registering.ts";
+import { Regery } from "../../../../src/acdc/registraring.ts";
 import {
   acceptedEventReplayMessage,
   createHabery,
@@ -43,6 +53,7 @@ import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
+import { Schemer } from "../../../../src/core/scheming.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import {
   createInteropContext,
@@ -116,6 +127,30 @@ export interface IpexPeer {
   present(grant: string): Promise<string>;
   reopenEvidence(): Promise<void>;
 }
+/** Public observations only; registry roots never cross the control interface. */
+export interface DerivedPeerSnapshot extends PeerSnapshot {
+  registryHead: string | null;
+  openingPresent: boolean;
+  rootPresent: boolean;
+  encrypted: boolean;
+  auxiliaryReady: boolean;
+  deadline: string | null;
+  grantRaw: string | null;
+  admit: string | null;
+  witnesses: { threshold: number; count: number };
+}
+/** Explicit scenario actions; receipt alone never approves auxiliary work or Admit. */
+export interface DerivedIpexPeer extends IpexPeer {
+  prepareDerived(recipient: string): Promise<string>;
+  approveDh(grant: string): Promise<void>;
+  issueDerived(grant: string): Promise<string>;
+  finishDh(grant: string): Promise<void>;
+  useUnblind(): Promise<void>;
+  publishUpdate(recipient: PeerInfo): Promise<string>;
+  approveUnblind(grant: string): Promise<void>;
+  finishUnblind(grant: string): Promise<void>;
+  snapshot(inspect?: string, registry?: string): Promise<DerivedPeerSnapshot>;
+}
 
 /** Poll actual state; a failed read fails immediately with its original diagnostic. */
 export async function observed<T>(label: string, read: () => T | undefined | Promise<T | undefined>): Promise<T> {
@@ -129,7 +164,7 @@ export async function observed<T>(label: string, read: () => T | undefined | Pro
 }
 
 /** Native runtime behind a real CESR listener, with observations from its own store. */
-class TypeScriptPeer implements IpexPeer {
+class TypeScriptPeer implements DerivedIpexPeer {
   readonly implementation = "TypeScript";
   readonly server: Deno.HttpServer<Deno.NetAddr>;
   readonly info: PeerInfo;
@@ -142,9 +177,19 @@ class TypeScriptPeer implements IpexPeer {
   private wallet?: Wallet;
   private walletDb?: WalletBaser;
   private discloser?: WalletDiscloser;
+  private remotes = new Map<string, PeerInfo>();
+  private operation?: { grant: string; xid: string; replySent?: boolean };
+  private pumping?: Promise<void>;
+  private derivedSchema?: MapperMap;
 
-  constructor(private hby: Habery, private runtime: AgentRuntime, private graphCase?: GraphCase) {
-    this.hab = hby.makeHab("typescript");
+  constructor(
+    private hby: Habery,
+    private runtime: AgentRuntime,
+    private graphCase?: GraphCase,
+    hab?: Hab,
+    private selectRuntime?: (kind: "dhke" | "unblind") => Promise<AgentRuntime>,
+  ) {
+    this.hab = hab ?? hby.makeHab("typescript");
     this.graph = graphDisclosures(hby, this.hab, graphCase);
     this.server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, (request) => this.receive(request));
     this.info = {
@@ -153,6 +198,13 @@ class TypeScriptPeer implements IpexPeer {
       schemas: this.graph.fullNodes.map((node) => (node.schema as { $id: string }).$id),
       commitment: this.graph.fullNodes[0].said!,
     };
+    if (selectRuntime) {
+      const schema = structuredClone(this.graph.fullNodes[0].schema) as MapperMap;
+      schema.$id = "";
+      (schema.properties as MapperMap).rd = { type: "string" };
+      this.derivedSchema = new Schemer({ sed: schema }).sed as MapperMap;
+      this.info.schemas = [this.derivedSchema.$id as string];
+    }
   }
 
   private async receive(request: Request): Promise<Response> {
@@ -167,6 +219,12 @@ class TypeScriptPeer implements IpexPeer {
       }
       // Finite introduction must advance ordinary delegation dependencies, as the Python peer's loop does.
       this.runtime.protocol.processKelReplyEscrowsOnce();
+      // Let HTTP acknowledge before reciprocal delivery; Python's synchronous POST must return first.
+      if (this.operation) {
+        setTimeout(() => {
+          void this.drainAuxiliary().catch(error => this.intakeFailure = error);
+        }, 0);
+      }
       return new Response(null, { status: 204 });
     } catch (error) {
       this.intakeFailure = error;
@@ -174,8 +232,8 @@ class TypeScriptPeer implements IpexPeer {
     }
   }
 
-  private async post(frame: CesrFrame): Promise<void> {
-    const remote = this.remote;
+  private async post(frame: CesrFrame, destination?: string): Promise<void> {
+    const remote = destination ? this.remotes.get(destination) : this.remote;
     assertExists(remote, "connect the peer before sending");
     const http = this.runtime.http;
     await run(() =>
@@ -188,6 +246,7 @@ class TypeScriptPeer implements IpexPeer {
   }
 
   async connect(remote: PeerInfo, plan: DisclosurePlan): Promise<void> {
+    this.remotes.set(remote.pre, remote);
     this.remote = remote;
     this.plan = plan;
     for (const issuer of this.graph.issuers) {
@@ -320,6 +379,19 @@ class TypeScriptPeer implements IpexPeer {
         db: this.walletDb,
       });
       this.discloser = new WalletDiscloser(this.wallet, receipts);
+      if (this.selectRuntime) {
+        this.discloser = new WalletDiscloser(
+          this.wallet,
+          receipts,
+          new RegistryCustody({
+            hby: this.hby,
+            hab: this.hab,
+            registry: this.wallet.registry,
+            db: this.wallet.db,
+          }),
+        );
+        return; // The derived story explicitly authors its fresh RIP and first BUP later.
+      }
       const author = new WalletAuthor(this.wallet, this.runtime.acdc!, receipts);
       yield* author.incept("wallet", this.hab.pre);
       const old = this.graph.fullNodes[0], schema = structuredClone(old.schema) as MapperMap;
@@ -344,7 +416,7 @@ class TypeScriptPeer implements IpexPeer {
 
         plan: prior ? undefined : this.plan,
         priorSaid: prior,
-        anchor: true,
+        anchor: !this.selectRuntime,
       };
       const prepared = verb === "apply"
         ? yield* d.prepareApply(this.hab.pre, options)
@@ -379,6 +451,146 @@ class TypeScriptPeer implements IpexPeer {
   }
   present(grant: string): Promise<string> {
     return this.walletSend("grant", undefined, grant);
+  }
+  /** Only selected owner cues are delivered; this never creates consent or issues a credential. */
+  private async drainAuxiliary(): Promise<void> {
+    if (this.pumping) return await this.pumping;
+    this.pumping = (async () => {
+      const selected = this.runtime.ipexAuxiliary;
+      if (!selected || !this.operation) return;
+      while (selected.owner.outgoing.length) {
+        const cue = selected.owner.outgoing.pull()!;
+        if (cue.kin === "sign") throw new Error("Individual reciprocal fixture received a group contribution cue");
+        for (const frame of parseBytes(cue.msg)) await this.post(frame, cue.dest);
+        if (cue.kin === "reply" && this.operation) this.operation.replySent = true;
+      }
+    })();
+    try {
+      await this.pumping;
+    } finally {
+      this.pumping = undefined;
+    }
+  }
+  /** Borrow the real encrypted custody capability; no root creation fallback is allowed. */
+  private author(): WalletAuthor {
+    assertExists(this.wallet);
+    return new WalletAuthor(
+      this.wallet,
+      this.runtime.acdc!,
+      this.discloser!.receiptor,
+      new RegistryCustody({
+        hby: this.hby,
+        hab: this.hab,
+        registry: this.wallet.registry,
+        db: this.wallet.db,
+      }),
+    );
+  }
+  async prepareDerived(recipient: string): Promise<string> {
+    assertExists(this.derivedSchema);
+    return await run(function*(this: TypeScriptPeer) {
+      const author = this.author();
+      yield* author.incept("derived", this.hab.pre);
+      const old = this.graph.fullNodes[0], reg = author.registry("derived", this.hab.pre);
+      const full = author.create(reg, {
+        schema: this.derivedSchema,
+        uuid: old.sad!.u as string,
+        attribute: { ...old.attrib as MapperMap, i: recipient },
+      });
+      const selected = partialDisclosure(full, ["a/i", "a/status/"]);
+      this.graph.fullNodes = [full];
+      this.graph.nodes = [selected];
+      this.info.commitment = full.said!;
+      const prepared = yield* prepareDerivedIssuance(this.runtime, this.wallet!, selected, {
+        recipient,
+        message: "derived issuance",
+        plan: this.plan,
+      });
+      for (const frame of parseBytes(prepared.wire)) yield* call(() => this.post(frame, recipient));
+      return prepared.grant;
+    }.bind(this));
+  }
+  async approveDh(grant: string): Promise<void> {
+    const selected = this.runtime.ipexAuxiliary;
+    assertEquals(selected?.kind, "dhke");
+    if (selected?.kind !== "dhke") throw new Error("Select DH runtime");
+    const xid = selected.owner.approve(grant);
+    this.operation = { grant, xid };
+    const body = this.runtime.exc.retainedInput(grant)!.serder;
+    if (body.pre === this.hab.pre) {
+      for (const frame of parseBytes(selected.owner.start(grant))) await this.post(frame, body.sad!.ri as string);
+    }
+    await this.drainAuxiliary();
+  }
+  async issueDerived(grant: string): Promise<string> {
+    const selected = this.runtime.ipexAuxiliary;
+    if (selected?.kind !== "dhke" || this.operation?.grant !== grant || !selected.owner.complete(this.operation.xid)) {
+      throw new Error("Issuance requires the explicitly approved completed DH exchange");
+    }
+    const body = this.runtime.exc.retainedInput(grant)!.serder;
+    return await run(function*(this: TypeScriptPeer) {
+      const author = this.author(), reg = author.registry("derived", this.hab.pre);
+      const issued = yield* author.issue(reg, this.graph.nodes[0]);
+      const evidence = concatBytes(this.discloser!.kel(this.hab), this.wallet!.registry.cloneTel(reg.regk!));
+      for (const frame of parseBytes(evidence)) yield* call(() => this.post(frame, body.sad!.ri as string));
+      return issued.update;
+    }.bind(this));
+  }
+  async finishDh(grant: string): Promise<void> {
+    const selected = this.runtime.ipexAuxiliary;
+    if (selected?.kind !== "dhke" || this.operation?.grant !== grant) throw new Error("Select approved DH Grant");
+    assertEquals((await run(() => selected.owner.finish(this.operation!.xid))).kind, "accept");
+    selected.owner.abandon(this.operation.xid);
+    this.operation = undefined;
+  }
+  async useUnblind(): Promise<void> {
+    assertExists(this.selectRuntime);
+    if (this.operation) throw new Error("Finish the selected auxiliary operation before changing invocation");
+    await this.pumping;
+    this.runtime = await this.selectRuntime("unblind");
+    this.wallet = new Wallet({
+      hby: this.hby,
+      registry: this.runtime.acdc!.store,
+      exc: this.runtime.exc,
+      db: this.walletDb!,
+    });
+    this.discloser = new WalletDiscloser(
+      this.wallet,
+      new Receiptor(this.hby, this.runtime.protocol, this.runtime.http, this.runtime.clock, { gvrsn: Vrsn_2_0 }),
+      new RegistryCustody({ hby: this.hby, hab: this.hab, registry: this.wallet.registry, db: this.wallet.db }),
+    );
+  }
+  async publishUpdate(recipient: PeerInfo): Promise<string> {
+    this.remotes.set(recipient.pre, recipient);
+    return await run(function*(this: TypeScriptPeer) {
+      const author = this.author(), reg = author.registry("derived", this.hab.pre);
+      const event = yield* author.update(reg, this.graph.nodes[0], "issued");
+      const kel = this.discloser!.kel(this.hab);
+      for (const frame of parseBytes(kel)) yield* call(() => this.post(frame));
+      for (const frame of parseBytes(concatBytes(kel, this.wallet!.registry.cloneTel(reg.regk!)))) {
+        yield* call(() => this.post(frame, recipient.pre));
+      }
+      return event.said!;
+    }.bind(this));
+  }
+  async approveUnblind(grant: string): Promise<void> {
+    const selected = this.runtime.ipexAuxiliary;
+    if (selected?.kind !== "unblind") throw new Error("Select Unblind runtime");
+    this.operation = { grant, xid: selected.owner.approve(grant) };
+    const body = this.runtime.exc.retainedInput(grant)!.serder;
+    if (body.sad!.ri === this.hab.pre) {
+      for (const frame of parseBytes(selected.owner.start(grant))) await this.post(frame, body.pre!);
+    }
+    await this.drainAuxiliary();
+  }
+  async finishUnblind(grant: string): Promise<void> {
+    const selected = this.runtime.ipexAuxiliary;
+    if (selected?.kind !== "unblind" || this.operation?.grant !== grant) {
+      throw new Error("Select approved presentation");
+    }
+    assertEquals((await run(() => selected.owner.finish(this.operation!.xid))).kind, "accept");
+    selected.owner.abandon(this.operation.xid);
+    this.operation = undefined;
   }
   async reopenEvidence(): Promise<void> {
     await run(function*(this: TypeScriptPeer) {
@@ -486,13 +698,33 @@ class TypeScriptPeer implements IpexPeer {
     for (const frame of parseBytes(concatBytes(...chunks))) await this.post(frame);
   }
 
-  async snapshot(inspect?: string): Promise<PeerSnapshot> {
+  async snapshot(inspect?: string, registry?: string): Promise<DerivedPeerSnapshot> {
     if (this.intakeFailure) throw this.intakeFailure;
     const db = this.hby.db;
     const messages = [...db.exns.getItemIter()].map(([, body]) => body);
-    const selected = inspect ? db.exns.get(inspect) : null;
+    const selected = inspect ? db.exns.get(inspect) ?? db.epse.get(inspect) : null;
     const grant = selected?.route === "/ipex/grant" ? selected : messages.find((body) => body.route === "/ipex/grant");
+    registry ??= grant
+      ? (loadNests(db, grant.said!)[0]?.body as SerderACDC | undefined)?.regid ?? undefined
+      : undefined;
+    const head = registry ? this.runtime.acdc!.store.headEvent(registry) : null;
     return {
+      registryHead: head?.said ?? null,
+      openingPresent: Boolean(head && this.runtime.acdc!.store.opening(head.said!)),
+      rootPresent: Boolean(
+        this.selectRuntime && registry && this.hab.mgr.getRegistryRoot(this.hab.pre, registry),
+      ),
+      encrypted: Boolean(this.hab.mgr.aeid),
+      auxiliaryReady: Boolean(
+        this.operation && (this.runtime.ipexAuxiliary!.kind === "unblind"
+            && (db.exns.get(this.operation.grant) ?? db.epse.get(this.operation.grant))?.pre === this.hab.pre
+          ? this.operation.replySent
+          : this.runtime.ipexAuxiliary!.owner.complete(this.operation.xid)),
+      ),
+      deadline: grant ? db.epsd.get([grant.said!])?.dts ?? null : null,
+      grantRaw: grant ? new TextDecoder().decode(grant.raw) : null,
+      admit: grant ? db.erpy.get([grant.said!])?.qb64 ?? null : null,
+      witnesses: { threshold: Number(this.hab.kever!.toader.num), count: this.hab.kever!.wits.length },
       messages: messages.map((body) => body.sad as unknown as PeerSnapshot["messages"][number]),
       received: this.received.map(({ said }) => said),
       known: [...db.kevers.keys()],
@@ -521,7 +753,7 @@ class TypeScriptPeer implements IpexPeer {
 }
 
 /** Control client for the independent Python process; never builds its protocol bytes. */
-class PythonPeer implements IpexPeer {
+class PythonPeer implements DerivedIpexPeer {
   readonly implementation = "KERIpy";
   constructor(readonly info: PeerInfo) {}
 
@@ -552,8 +784,8 @@ class PythonPeer implements IpexPeer {
   async replay(said: string): Promise<void> {
     await this.command("replay", { said });
   }
-  snapshot(inspect?: string): Promise<PeerSnapshot> {
-    return this.command("snapshot", { inspect });
+  snapshot(inspect?: string, registry?: string): Promise<DerivedPeerSnapshot> {
+    return this.command("snapshot", { inspect, registry });
   }
   async enableWitnessedEvidence(witnesses: readonly KeriPyWitnessNode[]): Promise<void> {
     Object.assign(this.info, await this.command("witnessed_evidence", { witnesses }));
@@ -564,20 +796,46 @@ class PythonPeer implements IpexPeer {
   async reopenEvidence(): Promise<void> {
     await this.command("reopen_evidence", {});
   }
+  async prepareDerived(recipient: string): Promise<string> {
+    const result = await this.command("prepare_derived", { recipient }) as { grant: string; info: PeerInfo };
+    Object.assign(this.info, result.info);
+    return result.grant;
+  }
+  async approveDh(grant: string): Promise<void> {
+    await this.command("approve_dh", { grant });
+  }
+  async issueDerived(grant: string): Promise<string> {
+    return (await this.command("issue_derived", { grant }) as { event: string }).event;
+  }
+  async finishDh(grant: string): Promise<void> {
+    await this.command("finish_dh", { grant });
+  }
+  async useUnblind(): Promise<void> {
+    await this.command("use_unblind", {});
+  }
+  async publishUpdate(recipient: PeerInfo): Promise<string> {
+    return (await this.command("publish_update", { recipient }) as { event: string }).event;
+  }
+  async approveUnblind(grant: string): Promise<void> {
+    await this.command("approve_unblind", { grant });
+  }
+  async finishUnblind(grant: string): Promise<void> {
+    await this.command("finish_unblind", { grant });
+  }
 }
 
 /** Start the subprocess without scenario flags; preserve live output on failure. */
 async function withPythonPeer(
   context: InteropContext,
   graph: GraphCase | undefined,
-  body: (peer: IpexPeer) => Promise<void>,
-  witnessed = false,
+  body: (peer: DerivedIpexPeer) => Promise<void>,
+  witnessed: boolean | "derived" = false,
 ): Promise<void> {
   // HIO HTTP treats port=0 as port 80; select an available unprivileged port explicitly.
   const port = randomPort();
   const child = spawnChild(
     context.pythonCommand,
-    [PEER, context.home, witnessed ? "witnessed" : graph ?? "-", String(port)],
+    [PEER, context.home, witnessed === "derived" ? "derived" : witnessed ? "witnessed" : graph ?? "-", String(port)],
     context.env,
     context.repoRoot,
   );
@@ -677,6 +935,110 @@ export async function withIpexPeers(
     );
   } finally {
     await witnesses?.close();
+    await Deno.remove(context.home, { recursive: true });
+  }
+}
+
+/** Three independent stores; only the issuer and holder take part in DH. */
+export interface DerivedIpexPeers {
+  issuer: DerivedIpexPeer;
+  holder: DerivedIpexPeer;
+  verifier: DerivedIpexPeer;
+  plan: DisclosurePlan;
+}
+
+/** Keep actual borrowed registry/wallet stores open across the holder's ordinary invocation switch. */
+async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promise<void>): Promise<void> {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: crypto.randomUUID(),
+      temp: true,
+      skipConfig: true,
+      bran: "ReciprocalSecretABCD12",
+    });
+    yield* ensure(() => hby.close(true));
+    const hab = hby.makeHab("typescript", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    yield* ensure(() => baser.close(true));
+    const rgy = new Regery(hby, baser), scope = yield* useScope();
+    let phase: Task<void> | undefined;
+    const select = async (kind: "dhke" | "unblind"): Promise<AgentRuntime> => {
+      if (phase) await phase.halt();
+      return await new Promise<AgentRuntime>((resolve, reject) => {
+        phase = scope.run(function*() {
+          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+            acdc: rgy,
+            kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
+            ipexAuxiliary: kind === "dhke" ? { kind, hab } : { kind, hab, states: ["issued", "revoked", ""] },
+          });
+          resolve(runtime);
+          try {
+            yield* suspend();
+          } finally {
+            yield* runtime.close();
+          }
+        });
+        void Promise.resolve(phase).catch(reject);
+      });
+    };
+    const runtime = yield* call(() => select("dhke"));
+    const peer = new TypeScriptPeer(hby, runtime, undefined, hab, select);
+    try {
+      yield* call(() => body(peer));
+    } finally {
+      yield* call(() => peer.server.shutdown());
+      if (phase) yield* phase.halt();
+      yield* call(() => peer.closeWallet());
+    }
+  });
+}
+
+/** Reuse the real three-witness quorum while assigning every Python process its own home/ready file. */
+export async function withDerivedIpexPeers(
+  { issuer: implementation }: { issuer: Implementation },
+  scenario: (peers: DerivedIpexPeers) => Promise<void>,
+): Promise<void> {
+  const context = await createInteropContext();
+  const witnesses = await startKeriPyWitnessHarness(context, { aliases: ["wan", "wil", "wes"], protocolVersion: 2 });
+  const withPeer = async (kind: Implementation, role: string, body: (peer: DerivedIpexPeer) => Promise<void>) => {
+    if (kind === "TypeScript") return await withDerivedTypeScriptPeer(body);
+    const home = `${context.home}/${role}`;
+    await Deno.mkdir(home);
+    return await withPythonPeer({ ...context, home }, undefined, body, "derived");
+  };
+  try {
+    await withPeer(
+      implementation,
+      "issuer",
+      issuer =>
+        withPeer(
+          implementation === "TypeScript" ? "KERIpy" : "TypeScript",
+          "holder",
+          holder =>
+            withPeer(implementation, "verifier", async verifier => {
+              for (const peer of [issuer, holder, verifier]) {
+                await peer.enableWitnessedEvidence(witnesses.nodes);
+              }
+              const plan: DisclosurePlan = [[issuer.info.schemas[0], "/", ["a/i", "a/status/"]]];
+              // Introductions carry only public KEL evidence; final connection selects each initial conversation partner.
+              await issuer.connect(verifier.info, plan);
+              await verifier.connect(issuer.info, plan);
+              await holder.connect(verifier.info, plan);
+              await verifier.connect(holder.info, plan);
+              await issuer.connect(holder.info, plan);
+              await holder.connect(issuer.info, plan);
+              for (const peer of [issuer, holder, verifier]) {
+                await observed(`${peer.implementation} ${peer.info.pre} introduced peers`, async () => {
+                  const known = (await peer.snapshot()).known;
+                  return [issuer, holder, verifier].every(other => known.includes(other.info.pre)) || undefined;
+                });
+              }
+              await scenario({ issuer, holder, verifier, plan });
+            }),
+        ),
+    );
+  } finally {
+    await witnesses.close();
     await Deno.remove(context.home, { recursive: true });
   }
 }

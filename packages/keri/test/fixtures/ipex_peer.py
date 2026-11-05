@@ -15,9 +15,14 @@ from hio.core import http
 from keri import Kinds, Vrsn_2_0
 from keri.acdc import RegBaser, Regery, Registrar, acdcmap, admit, agree, apply, grant, loadHandlers, offer, spurn
 from keri.acdc.chaining import Verdicts
+from keri.acdc.dhking import Dhke
+from keri.acdc.unblinding import Unblind
+from keri.cli.common.sending import messageParts
+from keri.core.scheming import Schemer
 from keri.core.kraming import Pruner
 from keri.app import openCF, openHby
 from keri.app.indirecting import HttpEnd, createHttpServer
+from keri.app.httping import CESR_ATTACHMENT_HEADER, CESR_CONTENT_TYPE, CESR_DESTINATION_HEADER, CESR_GENUS_HEADER
 from keri.core import Codens, Counter, Diger, Kevery, Number, Parser, SealSource, SerderACDC, exchange, messagize
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, serializeParsedSubstream
@@ -36,11 +41,21 @@ class Recorder:
 
 class IpexPeer:
     """Own one key store, protocol receiver and listener, independent of scenario order."""
-    def __init__(self, hby, cf, graph_case, port, version):
+    def __init__(self, hby, cf, graph_case, port, version, *, derived=False):
         self.hby = hby
         self.hab = hby.makeHab(name="peer", version=version, kind=Kinds.json)
         self.graph_case = graph_case
         self.graph = graph_disclosures(hby, self.hab, graph_case)
+        self.derived = derived
+        if derived:
+            original = self.graph.full_nodes[0]
+            schema = copy.deepcopy(original.sad["s"])
+            schema["$id"] = ""
+            schema["properties"]["rd"] = dict(type="string")
+            schema = Schemer(sed=schema).sed
+            self.graph.full_nodes = [acdcmap(self.hab.pre, schema=schema,
+                uuid=original.sad["u"], attribute=original.sad["a"])]
+            self.graph.nodes = [partial_disclosure(self.graph.full_nodes[0], ["a/status/"])]
         self.recorder = Recorder()
         self.rgy = Regery(hby, name="ipex-peer", baser=RegBaser(
             name="ipex-peer", headDirPath=hby.db.headDirPath, temp=hby.db.temp))
@@ -50,6 +65,15 @@ class IpexPeer:
                           enableKram=True, exc=self.exc, rvy=self.hab.rvy)
         self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc,
                              rgy=self.rgy, rvy=self.hab.rvy, framed=False)
+        self.dh = self.unblind = None
+        self.operation = None
+        if derived:
+            assert self.hab.mgr.aeid and self.hab.mgr.encrypter and self.hab.mgr.decrypter
+            self.dh = Dhke(self.hab, self.exc)
+            self.unblind = Unblind(self.hab, self.exc, self.rgy, states=("issued", "revoked", ""))
+            hby.rtr.addRoute(Dhke.Route, self.dh)
+            hby.rtr.addRoute(Unblind.Route, self.unblind, blinders=True, attachments=True)
+            self.kvy.qvy = self.dh
         self.received = []
         self.running = True
         self.witnessed = False
@@ -76,6 +100,7 @@ class IpexPeer:
             self.rgy.processEscrows()
             self.hab.rvy.processEscrowReply()
             self.exc.processEscrow()
+            self.send_auxiliary_cues()
             time.sleep(.005)
 
     def receive(self):
@@ -87,13 +112,17 @@ class IpexPeer:
         decoded = Parser(version=Vrsn_2_0).parse(ims=arrived, processive=False)
         self.received.extend(frame.serder.said for frame in decoded or ())
 
-    def post(self, wire):
-        wire = Counter.makeGVC(version=Vrsn_2_0) + bytes(wire)
-        req = Request(self.remote["url"], data=bytes(wire), method="POST",
-                      headers={"Content-Type": "application/cesr"})
-        with urlopen(req, timeout=10) as rep:
-            assert rep.status == 204
-            rep.read()
+    def post(self, wire, remote=None):
+        """Detach each exact SAD and its complete proof subtree for normal CESR HTTP intake."""
+        destination = remote or self.remote
+        for serder, attachments in messageParts(wire):
+            req = Request(destination["url"], data=serder.raw, method="POST",
+                          headers={"Content-Type": CESR_CONTENT_TYPE,
+                                   CESR_ATTACHMENT_HEADER: attachments.decode("utf-8"),
+                                   CESR_GENUS_HEADER: "2", CESR_DESTINATION_HEADER: destination["pre"]})
+            with urlopen(req, timeout=10) as rep:
+                assert rep.status == 204
+                rep.read()
 
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
@@ -218,6 +247,8 @@ class IpexPeer:
         self.hab.rotate(adds=[node["pre"] for node in witnesses], toad=2, version=Vrsn_2_0, gvrsn=Vrsn_2_0)
         self.receipt()
         self.witnessed = True
+        if self.derived:
+            return self.info()  # No registry, opening or custody is created by witness configuration.
         registry = Registrar(self.rgy).makeRegistry(name="witnessed", prefix=self.hab.pre)
         rip = self.rgy.store.event(registry.regk)
         self.hab.interact(data=[dict(i=registry.regk, s="0", d=rip.said)], gvrsn=Vrsn_2_0)
@@ -296,8 +327,153 @@ class IpexPeer:
         return body.said
 
     def present(self, grant):
+        if self.derived:
+            return self.present_derived(grant)
         body, attachments = self.witnessed_message("grant", None, held=grant)
         return self.witnessed_deliver(body, bytes(body.raw + attachments))
+
+    def auxiliary_grant(self, said):
+        """Resolve the explicitly selected retained body; controls never reconstruct a missing conversation."""
+        body = self.hby.db.exns.get((said,)) or self.hby.db.epse.get((said,))
+        assert body is not None and body.route == "/ipex/grant"
+        return body, body.said if body.ilk == "xip" else body.sad["x"]
+
+    def public_registry(self, registry):
+        """Replay accepted issuer KEL and public TEL source evidence, never private openings or roots."""
+        support = b"".join(self.hby.db.clonePreIter(pre=self.hab.pre, gvrsn=Vrsn_2_0))
+        for raw in self.rgy.store.cloneTelIter(registry):
+            support += raw + Counter.enclose(qb64=b"", code=Codens.AttachmentGroup, version=Vrsn_2_0)
+        return support
+
+    def anchor_registry(self, registry, event):
+        """Use the existing three-witness receipt path for the exact staged RIP/BUP."""
+        self.hab.interact(data=[dict(i=registry.regk, s=event.sad["n"], d=event.said)], gvrsn=Vrsn_2_0)
+        self.receipt()
+        assert registry.anchorMsg(event.said)
+
+    def prepare_derived(self, recipient):
+        """Prepare one fresh proofless issuance Grant without creating a registry root."""
+        assert self.derived and self.witnessed and recipient == self.remote["pre"]
+        registry = Registrar(self.rgy).makeRegistry(name="derived", prefix=self.hab.pre)
+        self.anchor_registry(registry, self.rgy.store.event(registry.regk))
+        old = self.graph.full_nodes[0]
+        full = acdcmap(self.hab.pre, iseaid=recipient, schema=old.sad["s"], regid=registry.regk,
+                       uuid=old.sad["u"], attribute=old.sad["a"])
+        partial = partial_disclosure(full, ["a/i", "a/status/"])
+        assert partial.sad["a"]["i"] == recipient and "rd" not in partial.sad["a"]
+        self.graph.full_nodes, self.graph.nodes = [full], [partial]
+        body, atc = grant(self.hab, recipient, "derived issuance", origin=partial,
+                          modifiers=dict(dp=[[[partial.schema["$id"], "/", ["a/i", "a/status/"]]]]))
+        wire = bytes(body.raw + atc)
+        self.parser.parse(ims=bytearray(wire))
+        assert self.hby.db.epse.get((body.said,)) is not None and not self.exc.complete(body.said)
+        assert self.hab.mgr.getRegistryRoot(self.hab.pre, registry.regk) is None
+        self.post(self.public_registry(registry.regk) + wire)
+        return dict(grant=body.said, info=self.info())
+
+    def approve_dh(self, grant):
+        """Explicit local DH consent; the issuer's separate invocation starts its frozen query."""
+        assert self.derived and self.kvy.qvy is self.dh
+        body, xid = self.auxiliary_grant(grant)
+        assert self.dh.approve(grant) == xid
+        self.operation = dict(grant=grant, xid=xid, replySent=False)
+        if body.pre == self.hab.pre:
+            self.post(self.dh.start(grant))
+        return dict(xid=xid)
+
+    def issue_derived(self, grant):
+        """After actual DH completion, derive and anchor the issued BUP; do not send its opening."""
+        body, xid = self.auxiliary_grant(grant)
+        assert body.pre == self.hab.pre and self.dh.complete(xid)
+        node = loadParsedNestedSubstreams(self.hby, grant)[0].serder
+        registry = self.rgy.regs[node.regid]
+        root = self.hab.mgr.getRegistryRoot(self.hab.pre, registry.regk)
+        assert root is not None
+        _, event = Registrar(self.rgy).issue(registry, acdc=node, salt=root.qb64)
+        self.anchor_registry(registry, event)
+        self.post(self.public_registry(registry.regk))
+        return dict(event=event.said)
+
+    def finish_dh(self, grant):
+        """Verify the same Grant from the locally derived root; Admit remains a separate action."""
+        _, xid = self.auxiliary_grant(grant)
+        assert self.dh.finish(xid) and self.exc.complete(grant)
+        self.dh.abandon(xid)
+        self.operation = None
+        return dict(accepted=True)
+
+    def use_unblind(self):
+        """Switch the concrete query owner only; the new phase starts without release consent."""
+        assert self.derived
+        self.kvy.qvy = self.unblind
+        return dict(selected=True)
+
+    def present_derived(self, held):
+        """Present exactly the admitted holder view without an Issuee registry or fabricated issuer authority."""
+        source = self.hby.db.exns.get((held,))
+        response = self.hby.db.erpy.get((held,))
+        consent = self.hby.db.exns.get((response.qb64,)) if response else None
+        assert source is not None and source.sad["ri"] == self.hab.pre
+        assert consent is not None and consent.route == "/ipex/admit" and consent.pre == self.hab.pre
+        assert consent.sad["p"] == held and consent.sad["ri"] == source.pre
+        assert consent.sad["x"] == (source.said if source.ilk == "xip" else source.sad["x"])
+        nests = loadParsedNestedSubstreams(self.hby, held)
+        assert len(nests) == 1 and nests[0].serder.sad["a"]["i"] == self.hab.pre
+        body, atc = grant(self.hab, self.remote["pre"], "exact held presentation",
+                          origin=serializeParsedSubstream(nests[0]),
+                          modifiers=dict(dp=[[[nests[0].serder.schema["$id"], "/", ["a/i", "a/status/"]]]]))
+        wire = bytes(body.raw + atc)
+        self.parser.parse(ims=bytearray(wire))
+        assert self.hby.db.exns.get((body.said,)) or self.hby.db.epse.get((body.said,))
+        support = b"".join(self.hby.db.clonePreIter(pre=source.pre, gvrsn=Vrsn_2_0))
+        support += b"".join(self.hby.db.clonePreIter(pre=self.hab.pre, gvrsn=Vrsn_2_0))
+        for raw in self.rgy.store.cloneTelIter(nests[0].serder.regid):
+            support += raw + Counter.enclose(qb64=b"", code=Codens.AttachmentGroup, version=Vrsn_2_0)
+        self.post(support + wire)
+        return body.said
+
+    def publish_update(self, recipient):
+        """Publish a real newer head to the verifier, withholding its opening from both peers."""
+        node = self.graph.nodes[0]
+        registry = self.rgy.regs[node.regid]
+        root = self.hab.mgr.getRegistryRoot(self.hab.pre, registry.regk)
+        assert root is not None
+        _, event = Registrar(self.rgy).issue(registry, acdc=node, salt=root.qb64)
+        self.anchor_registry(registry, event)
+        # The holder learns the actual source KEL; Unblind must carry the newer TEL itself.
+        self.post(b"".join(self.hby.db.clonePreIter(pre=self.hab.pre, gvrsn=Vrsn_2_0)))
+        self.post(self.public_registry(registry.regk), remote=recipient)
+        return dict(event=event.said)
+
+    def approve_unblind(self, grant):
+        """Explicitly approve release or request for this one exact retained presentation."""
+        assert self.derived and self.kvy.qvy is self.unblind
+        body, xid = self.auxiliary_grant(grant)
+        assert self.unblind.approve(grant) == xid
+        self.operation = dict(grant=grant, xid=xid, replySent=False)
+        if body.sad["ri"] == self.hab.pre:
+            self.post(self.unblind.start(grant))
+        return dict(xid=xid)
+
+    def finish_unblind(self, grant):
+        """Retry the exact selected proof view; prior admission and deadline remain in their stores."""
+        _, xid = self.auxiliary_grant(grant)
+        assert self.unblind.finish(xid) and self.exc.complete(grant)
+        self.unblind.abandon(xid)
+        self.operation = None
+        return dict(accepted=True)
+
+    def send_auxiliary_cues(self):
+        """Transport only real owner cues after explicit approval; never issue, present or Admit automatically."""
+        if not self.derived:
+            return
+        owner = self.kvy.qvy
+        while owner.cues:
+            cue = owner.cues.popleft()
+            assert cue["kin"] in ("query", "reply") and cue["dest"] == self.remote["pre"]
+            self.post(cue["msg"])
+            if cue["kin"] == "reply" and self.operation is not None:
+                self.operation["replySent"] = True
 
     def reopen_evidence(self):
         """Reopen existing native evidence stores; no view is rebuilt from fuller held data."""
@@ -349,11 +525,11 @@ class IpexPeer:
         wire = self.signed(body, owner=owner, nests=[self.signed(node) for node in nodes] or None)
         return dict(said=self.deliver(body, bytes(wire), False), sender=owner.pre)
 
-    def snapshot(self, inspect=None):
+    def snapshot(self, inspect=None, registry=None):
         """Expose observations; scenario assertions belong to the calling test."""
         db = self.hby.db
         messages = [body for _, body in db.exns.getTopItemIter()]
-        selected = db.exns.get(keys=(inspect,)) if inspect else None
+        selected = (db.exns.get(keys=(inspect,)) or (db.epse.get(keys=(inspect,)) if self.derived else None)) if inspect else None
         accepted_grant = selected if selected and selected.route == "/ipex/grant" else next(
             (body for body in messages if body.route == "/ipex/grant"), None)
         nests = loadParsedNestedSubstreams(self.hby, accepted_grant.said) if accepted_grant else []
@@ -361,7 +537,25 @@ class IpexPeer:
             accepted=db.exns.get(keys=(inspect,)) is not None,
             escrowed=db.epse.get(keys=(inspect,)) is not None,
             nests=len(db.enst.get(keys=(inspect,))))
-        return dict(messages=[body.sad for body in messages], received=self.received,
+        auxiliary = {}
+        if self.derived:
+            registry = registry or (nests[0].serder.regid if nests else None)
+            owner = self.kvy.qvy
+            operation = self.operation
+            active = self.auxiliary_grant(operation["grant"])[0] if operation else None
+            ready = bool(operation and (operation["replySent"]
+                if owner is self.unblind and active.pre == self.hab.pre else owner.complete(operation["xid"])))
+            head = self.rgy.store.headEvent(registry) if registry else None
+            expiry = db.epsd.get((inspect,)) if inspect else None
+            admission = db.erpy.get((inspect,)) if inspect else None
+            auxiliary = dict(registryHead=head.said if head else None,
+                openingPresent=bool(head and self.rgy.store.opening(head.said)),
+                rootPresent=bool(registry and self.hab.mgr.getRegistryRoot(self.hab.pre, registry)),
+                deadline=expiry.dts if expiry else None, auxiliaryReady=ready,
+                encrypted=bool(self.hab.mgr.aeid and self.hab.mgr.encrypter and self.hab.mgr.decrypter),
+                grantRaw=selected.raw.decode() if selected else None, admit=admission.qb64 if admission else None,
+                witnesses=dict(threshold=self.hab.kever.toader.num, count=len(self.hab.kever.wits)))
+        return dict(messages=[body.sad for body in messages], received=self.received, **auxiliary,
                     known=list(self.kvy.kevers), **({} if self.witnessed else dict(notifications=len(self.recorder.items))), inspected=inspected,
                     nodes=[dict(said=nest.serder.said, attributes=nest.serder.sad["a"],
                                 raw=nest.serder.raw.decode(),
@@ -385,6 +579,9 @@ class PeerControl:
                 rep.media = dict(connected=True)
             elif action == "witnessed_evidence":
                 rep.media = self.peer.enable_witnessed_evidence(**command)
+            elif action in ("prepare_derived", "approve_dh", "issue_derived", "finish_dh", "use_unblind",
+                             "publish_update", "approve_unblind", "finish_unblind"):
+                rep.media = getattr(self.peer, action)(**command)
             elif action == "present":
                 rep.media = self.peer.present(**command)
             elif action == "reopen_evidence":
@@ -409,14 +606,15 @@ class PeerControl:
 
 
 @contextmanager
-def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None):
+def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=False):
     """Fresh peer stores/listener; KEL version is independent of v2 IPEX messages."""
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
             "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000]})))
         with openHby(name="python-peer", base="test", temp=root is None, version=version, cf=cf,
-                     **(dict(headDirPath=root) if root is not None else {})) as hby:
-            peer = IpexPeer(hby, cf, graph_case, port, version)
+                     **(dict(headDirPath=root) if root is not None else {}),
+                     **(dict(bran="DerivedFixturePasscode") if derived else {})) as hby:
+            peer = IpexPeer(hby, cf, graph_case, port, version, derived=derived)
             try:
                 peer.doist.enter()
                 if not peer.server.servant.opened:
