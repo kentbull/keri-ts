@@ -142,6 +142,13 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<void
 
 /** Project grant facts, retaining the distinction between pending group evidence and completed business EXNs. */
 export function* ipexGrantCommand(args: Record<string, unknown>): Operation<void> {
+  if (parseBooleanOption(args.issue, "issue") ?? false) {
+    const { ipexIssueCommand } = yield* call(() => import("./ipex-issuance.ts"));
+    return yield* ipexIssueCommand(args);
+  }
+  if (args.credential || args.resume || args.artifact) {
+    throw new ValidationError("Fresh issuance options require --issue");
+  }
   if (args.acdcV2) return yield* acdcV2Disclosure(args, "grant");
   const { grant: exn, credential, support, deliveries, group } = yield* grant(args);
   const identity = { said: exn.said, credential, support, deliveries };

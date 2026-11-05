@@ -140,6 +140,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
         vc.command("create")
           .description("Create and issue a registry-backed credential")
           .option("--acdc-v2", "Use ACDC v2 issuance")
+          .option("--prepare", "Write a fresh public ACDC v2 body to --out without root, BUP or inventory")
           .option("--witness-gvrsn <version>", "Configured witness attachment genus (default: 1)")
           .option("--public", "Deliberately publish the BUP opening; otherwise derive from custody")
           .option("--bound-event <said>", "Exact accepted witnessed Issuee event for derived BUP")

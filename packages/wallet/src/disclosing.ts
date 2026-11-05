@@ -37,7 +37,9 @@ import {
   prepareIpexExn,
   type Receiptor,
   type RegistryDisclosure,
+  validateAcdcSchema,
   ValidationError,
+  vet,
   vetBlind,
   vetBound,
   walkIpexGraph,
@@ -56,6 +58,12 @@ export interface PreparedGrantBody {
   exn: SerderKERI;
   raw: Uint8Array;
   nests: Uint8Array;
+}
+/** Fresh origin and explicit far-node proofs; preparation grants neither DH nor inventory consent. */
+export interface IssuanceGrantOptions extends Omit<IpexV2BodyOptions, "prior"> {
+  recipient: string;
+  priorSaid?: string;
+  artifacts?: readonly Uint8Array[];
 }
 /** Select an exact issued credential or a retained Grant, never the fullest cached credential. */
 export interface DisclosureSelection {
@@ -397,6 +405,67 @@ export class WalletDiscloser {
     return { exn, raw, nests };
   }
 
+  /** Prepare one fresh issuer origin with explicit authenticated far nodes, without changing disclosure authority. */
+  *prepareIssuanceGrantBody(
+    sender: string,
+    credential: SerderACDC,
+    options: IssuanceGrantOptions,
+  ): Operation<PreparedGrantBody> {
+    const hab = this.wallet.hby.habs.get(sender), origin = new SerderACDC({ raw: credential.raw.slice() });
+    if (
+      !hab?.kever || (options.gvrsn ?? Vrsn_2_0).major < 2 || origin.pvrsn.major !== 2
+      || !origin.verify() || !["acm", "act", "acg"].includes(origin.ilk!) || origin.issuer !== sender
+      || !options.recipient || options.recipient === sender || origin.issuee !== options.recipient || !origin.regid
+    ) {
+      throw new ValidationError(
+        "Fresh issuance requires an exact v2 credential from the local issuer to its selected issuee.",
+      );
+    }
+    const chain = acceptedRegistryEvidence(this.wallet.registry, origin.regid);
+    if (
+      !chain || chain.updates.length || chain.rip.issuer !== sender
+      || vet({ ...chain, db: this.wallet.hby.db }).kind !== "verified"
+    ) {
+      throw new ValidationError("Fresh issuance requires the issuer's accepted anchored RIP without updates.");
+    }
+    const raw = concatBytes(
+      Counter.makeGVC(Vrsn_2_0),
+      origin.raw,
+      Counter.enclose({ qb64: new Uint8Array(), version: Vrsn_2_0 }),
+      ...(options.artifacts ?? []).map(artifact => artifact.slice()),
+    );
+    const graph = walkIpexGraph(origin.said!, parseBytes(raw), true);
+    if (!graph) {
+      throw new ValidationError("Fresh issuance requires its complete explicitly disclosed credential graph.");
+    }
+    for (const [said, node] of graph.nodes) {
+      const schema = validateAcdcSchema(node.body, this.wallet.hby.db);
+      if (schema.kind !== "valid") {
+        throw new ValidationError(schema.kind === "missing" ? `Missing ACDC schema: ${schema.said}` : schema.reason);
+      }
+      if (
+        said !== origin.said
+        && authenticateIpexNode(node.body, envelopeFromFrame(node), this.wallet.hby.db, this.wallet.registry).kind
+          !== "authenticated"
+      ) {
+        throw new ValidationError(
+          "Fresh issuance supports one new origin; every far node requires authenticated issuer proof.",
+        );
+      }
+    }
+    const prior = yield* this.prior(options.priorSaid);
+    if (
+      options.anchor || prior && (!["/ipex/apply", "/ipex/agree"].includes(prior.route!)
+          || (prior.sad!.a as { ax?: boolean[] }).ax?.[0])
+    ) {
+      throw new ValidationError(
+        "Fresh issuance requires an unanchored Grant and an accepted Apply or Agree when linked.",
+      );
+    }
+    const [exn, nests] = yield* prepareIpexExn(sender, "/ipex/grant", raw, { ...options, prior });
+    return { exn, raw, nests };
+  }
+
   /** Extend the frozen Grant's exact origin proof; ordinary intake still authenticates the supplied presentation evidence. */
   *attachPresentationProof(
     prepared: PreparedGrantBody,
@@ -469,7 +538,7 @@ export class WalletDiscloser {
     };
   }
   /** Carry selected public evidence and root-first delegation ancestry; receiver intake still verifies every approval. */
-  private proofSupport(raw: Uint8Array, hab: Hab): Uint8Array {
+  proofSupport(raw: Uint8Array, hab: Hab): Uint8Array {
     const aids = new Set([hab.pre]), registries = new Set<string>();
     for (const frame of parseBytes(raw)) {
       if (!(frame.body instanceof SerderACDC)) continue;

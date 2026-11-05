@@ -98,6 +98,38 @@ original admitted proof after revocation. Prepare a presentation BUP against the
 frozen unsigned Grant before its first member approval; recorded wrapper retries
 replay their exact original nests.
 
+Fresh individual issuance uses a managed fresh accepted RIP, an encrypted Keeper,
+accepted peer KEL/endpoints, and explicitly enabled KRAM configuration. The exact
+schema must be available locally. Incept without `--with-custody`, then prepare a
+body without issuing it or creating a root. Run the issuer; its `phase: selected`
+output supplies the Grant SAID for explicit recipient setup:
+
+```sh
+tufa vc registry incept --acdc-v2 -n ISSUER_STORE -a ISSUER --registry-name FRESH
+tufa vc create --acdc-v2 --prepare -n ISSUER_STORE -a ISSUER \
+  --registry-name FRESH -r RECIPIENT --data '{"name":"Ada"}' --out credential.cesr
+tufa ipex grant --issue -n ISSUER_STORE -a ISSUER -r RECIPIENT \
+  --credential credential.cesr --timeout 60
+tufa ipex setup -n RECIPIENT_STORE -a RECIPIENT --said GRANT --timeout 60
+```
+
+The issuer sends the pending Grant and retries the same signed DH query until
+recipient setup approves that exact Grant. A direct HTTP 403 for that query keeps
+the bounded wait active; other delivery failures propagate. Retry preserves the original query,
+keys and Grant deadline. DH completion supplies the existing encrypted root to
+wallet authoring; the issuer anchors an issued BUP and sends accepted public
+KEL/TEL evidence. Both commands finish the same Grant. `setup` creates no held
+inventory or Admit. After reviewing acceptance, admit separately with
+`ipex admit --acdc-v2 --consent --said GRANT`.
+
+Optional `--artifact FILE...` supplies exact authenticated far-node streams, and
+`--plan`/`--prior` retain existing disclosure/DI2I checks. `--out FILE` prepares and
+writes the signed pending Grant plus public support without starting DH; later
+`--resume GRANT` selects those same retained bytes within their original lifetime.
+Recipient `setup --input FILE` can ingest that evidence before explicit approval.
+Group habitats are refused by this individual caller. Timeouts abandon local
+operation state; there is no persistent DH restart or replacement-root recovery.
+
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
 writes the matching raw opening tuple. A match does not establish accepted standing
@@ -122,7 +154,9 @@ Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then
 `vc create --acdc-v2 --registry-name NAME --alias AID_ALIAS --data JSON`. ACDC v2
 create/revoke default to derived custody; `--public` deliberately publishes the
 BUP opening instead. `vc update --registry-name NAME --alias AID_ALIAS --said CREDENTIAL --state STATE` advances ACDC v2 BUP state. `vc revoke --acdc-v2` uses the
-same exact acceptance path. All four authoring commands accept `--witness-gvrsn 2`
+same exact acceptance path. `vc create --acdc-v2 --prepare --out FILE` instead
+writes only a schema-checked public body against a fresh accepted RIP, before any
+custody or BUP work; it creates no issued inventory. All four authoring commands accept `--witness-gvrsn 2`
 for the known v2 witness profile; the default remains 1.0. Legacy commands retain
 their existing defaults.
 
@@ -132,8 +166,10 @@ replacement rewraps the root atomically; retained roots prevent disabling
 encryption. Derived state commands accept `--bound-event` for an exact witnessed
 Issuee event. IPEX `--derive` requires the selected sender's custody and retained
 exact event coordinates. Missing coordinates refuse disclosure even if the Keeper
-root survives wallet loss. DHKE, root transfer and network Unblind are separate
-work; groups retain their explicit approval workflow.
+root survives wallet loss. Fresh individual DH issuance uses the `grant --issue`
+and `setup` flow above; explicit existing-root transfer uses the registry root
+commands below. Network Unblind and the group DH command caller remain separate
+work; ordinary group authoring retains its explicit approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
 A timeout or receipt failure leaves protocol staging for explicit retry; retrying

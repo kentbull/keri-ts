@@ -15,7 +15,13 @@ import { TxnMsgCacheRecord } from "../records.ts";
 import { authenticateKramSource } from "./kram-auth.ts";
 import type { KramPolicy } from "./kram-policy.ts";
 import { normalizeKramSenderFactors, verifyKramSignatures } from "./kram-signatures.ts";
-import { evaluateKramTime, inspectKramReplay, type KramTimePlan, type KramTimeRefusal } from "./kram-time.ts";
+import {
+  evaluateKramTime,
+  inspectKramReplay,
+  type KramQueryRetry,
+  type KramTimePlan,
+  type KramTimeRefusal,
+} from "./kram-time.ts";
 
 /** Normal refusals retain their cause; infrastructure and corruption errors propagate. */
 export type KramStageRefusal =
@@ -23,7 +29,7 @@ export type KramStageRefusal =
   | { kind: "drop"; reason: "authentication" }
   | { kind: "missing"; sender: string; sn: bigint | null };
 /** Ready evidence borrows children and payloads from the current parser input. */
-export type KramStageResult = KramStageRefusal | { kind: "pending"; key: readonly string[] } | {
+export type KramStageResult = KramStageRefusal | KramQueryRetry | { kind: "pending"; key: readonly string[] } | {
   kind: "ready";
   key: readonly string[];
   receiverTime: string;
@@ -71,12 +77,24 @@ function candidate(
   policy: KramPolicy,
   incoming: KeriDispatchEnvelope,
   receiverTime: string,
-): Candidate | RotatedPartial | KramStageRefusal {
+  retryQuery = false,
+): Candidate | RotatedPartial | KramStageRefusal | KramQueryRetry {
   const body = incoming.serder, sender = body.pre, said = body.said;
   if (!sender || !said) throw new Error("KRAM staging requires sender and message SAID");
   const key = [sender, said];
-  const inspection = inspectKramReplay(db, body);
+  const inspection = inspectKramReplay(db, body, retryQuery ? receiverTime : undefined);
   if (inspection.kind === "drop") return inspection;
+  if (inspection.kind === "queryRetry") {
+    // Cache presence is not proof of prior threshold completion: rotated partials
+    // also lose their factor rows. Reauthenticate this entire input without a pool.
+    const kever = db.getKever(sender, { refresh: true });
+    if (!kever) return { kind: "missing", sender, sn: null };
+    const proof = verifyKramSignatures(db, incoming, kever);
+    return proof.kind === "verified" && (proof.auth === "cigar"
+        || kever.tholder?.satisfy([...new Set(proof.sigers.map(siger => siger.index))]))
+      ? inspection
+      : { kind: "drop", reason: "authentication" };
+  }
   const envelope = normalizeKramSenderFactors(incoming);
   const hasSeal = envelope.sscs.length > 0;
   const hasSigs = envelope.sigers.length > 0 || envelope.tsgs.some((group) => group.pre === sender)
@@ -144,10 +162,11 @@ export function stageKram(
   policy: KramPolicy,
   incoming: KeriDispatchEnvelope,
   receiverTime: string,
+  retryQuery = false,
 ): KramStageResult {
   if (!db.env) throw new Error("KRAM staging database is closed");
   return db.env.transactionSync(() => {
-    const fresh = candidate(db, policy, incoming, receiverTime);
+    const fresh = candidate(db, policy, incoming, receiverTime, retryQuery);
     if (fresh.kind === "rotated") {
       removeKramFactors(db, fresh.key);
       return { kind: "drop", reason: "replay" } as const;

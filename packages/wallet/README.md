@@ -82,6 +82,27 @@ KEL seal, even when receipts were missing. They do not author another anchor jus
 to poll. Issuance inventory follows accepted TEL evidence and preserves the
 original issuance reference after later state advances or revocation.
 
+`WalletDiscloser.prepareIssuanceGrantBody(sender, credential, options)` prepares a
+different operation: one exact new credential at its issuer's accepted anchored
+RIP, before DH and before an issued inventory row exists. `recipient` is explicit
+and must equal its issuee. The method returns the same unsigned `PreparedGrantBody`
+shape without creating custody, signing, approving DH or admitting a credential.
+Ordinary `prepareGrantBody` retains its issued/held disclosure authorization.
+
+Supply every referenced far node through `artifacts`, including its exact issuer
+proof; no prior exchange or credential cache fills missing nodes. Far nodes must
+already authenticate, so this finite issuer publishes only one fresh origin.
+A multinode standalone Grant needs an explicit `plan`; `priorSaid` may select an
+accepted unanchored Apply or Agree. Normal IPEX intake still verifies graph,
+disclosure and DI2I policy before DH can approve the pending Grant. Python's
+selected issuance CLI carries only one origin, while its underlying IPEX supports
+explicit graph artifacts; the one-fresh-origin caller scope is not a protocol limit.
+
+After DH provisions the encrypted root, use `RegistryCustody` without calling
+`createCustody`, then `WalletAuthor.issue`. Publish accepted BUP/KEL evidence and
+finish the original Grant through DH. Recipient Admit remains separate explicit
+consent, and only verified Admit may enter held inventory.
+
 ## Optional local encrypted custody
 
 `RegistryCustody({hby, hab, registry, db})` binds the actual local habitat,

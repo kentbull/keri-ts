@@ -51,6 +51,7 @@ Commands are invoked in the monorepo via Deno tasks (e.g. `deno task tufa ...` f
 | `tufa ipex offer`                  | Send an IPEX offer.                                                                      |
 | `tufa ipex agree`                  | Send an IPEX agree.                                                                      |
 | `tufa ipex grant`                  | Send or write an IPEX credential grant.                                                  |
+| `tufa ipex setup`                  | Explicit individual DH setup for one pending issuance Grant; does not Admit.             |
 | `tufa ipex admit`                  | Send or write an IPEX admit.                                                             |
 | `tufa ipex spurn`                  | Send an IPEX spurn.                                                                      |
 | `tufa ipex list`                   | List stored IPEX EXNs.                                                                   |
