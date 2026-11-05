@@ -5,13 +5,16 @@ import {
   type CesrFrame,
   collectPayload,
   Diger,
+  Encrypter,
   framePayload,
   makeBlindState,
   makeBlindUuid,
+  MtrDex,
   NumberPrimitive,
   parseAttachmentGroup,
   parseBytes,
   Prefixer,
+  Salter,
   SealLast,
   type SerderACDC,
   type SerderKERI,
@@ -24,6 +27,8 @@ import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
+import { Regery } from "../../../src/acdc/registraring.ts";
+import { RegistrySalt } from "../../../src/acdc/salting.ts";
 import { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
@@ -37,7 +42,7 @@ import { Deck } from "../../../src/core/deck.ts";
 import { TransIdxSigGroup } from "../../../src/core/dispatch.ts";
 import { Kevery } from "../../../src/core/kel/eventing.ts";
 import { Kramer } from "../../../src/core/mailbox/kraming.ts";
-import { interact as interactEvent } from "../../../src/core/protocol-eventing.ts";
+import { interact as interactEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
@@ -309,6 +314,91 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     for (const peer of [issuers[1], issuees[1]]) {
       assertEquals(peer.hab.mgr.getRegistryRoot(peer.hab.pre, rip.said!), null);
     }
+
+    // Explicitly copy the holder's existing root to its already rotated, rootless signing member.
+    const recipient = issuees[1];
+    const exporter = new RegistrySalt({ hab: holder.hab, rgy: new Regery(holder.hby, holder.store.baser) });
+    const importer = new RegistrySalt({ hab: recipient.hab, rgy: new Regery(recipient.hby, recipient.store.baser) });
+    recipient.hab.rvy.rtr.addRoute(RegistrySalt.Route, importer);
+    const retainedHistory = recipient.hby.db.enst.get(grant.said!);
+    const copy = exporter.prepare(rip.said!, holder.hab.pre, recipient.member.pre, {
+      coordinator: recipientSelection.coordinator,
+    });
+    const frame = parseBytes(copy)[0], selected = envelopeFromFrame(frame);
+    assertEquals(Object.keys(selected.serder.sad!.a as Record<string, unknown>).sort(), [
+      "cipher",
+      "recipient",
+      "registry",
+      "target",
+    ]);
+    assertEquals(new TextDecoder().decode(copy).includes(root.qb64), false);
+    assertEquals(
+      new TextDecoder().decode(copy).includes(opening.d.qb64),
+      false,
+      "held opening remains local approval evidence",
+    );
+    const unapproved = importer.processReply({
+      serder: selected.serder,
+      diger: new Diger({ qb64: selected.serder.said! }),
+      route: RegistrySalt.Route,
+      tsgs: selected.tsgs,
+      attachments: selected,
+    });
+    assertEquals(unapproved.kind, "unverified");
+    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
+    importer.approve(rip.said!, holder.hab.pre, { event: event.said!, opening });
+
+    // A complete current group signature cannot authorize a root with a different disclosure UUID.
+    const wrongRoot = new Salter({ raw: new TextEncoder().encode("wrong-test-root!"), code: MtrDex.Salt_128 });
+    const wrongCipher = new Encrypter({ verkey: recipient.member.kever!.verfers[0].qb64 }).encrypt({ prim: wrongRoot });
+    const wrong = reply(RegistrySalt.Route, {
+      registry: rip.said!,
+      recipient: holder.hab.pre,
+      target: recipient.member.pre,
+      cipher: wrongCipher.qb64,
+    }, { pre: holder.hab.pre, pvrsn: Vrsn_2_0 });
+    const refused = yield* recipient.protocol.dispatch(
+      parseBytes(messagize(wrong, { tsgs: [groupProof(wrong, issuees)], gvrsn: Vrsn_2_0 }))[0],
+    );
+    assertEquals(refused.decision?.kind, "unverified");
+    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
+    yield* recipient.reactor.processBytes(copy);
+    yield* recipient.reactor.processBytes(copy);
+    assertEquals(
+      recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!),
+      null,
+      "duplicate index zero cannot satisfy the group threshold",
+    );
+    const contribution = recipient.hab.endorse(selected.serder, { gvrsn: Vrsn_2_0 });
+    assertEquals(
+      parseBytes(contribution)[0].body.raw,
+      frame.body.raw,
+      "the second member signs the exact ciphertext and scope",
+    );
+    yield* recipient.reactor.processBytes(contribution);
+    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!)!.qb64, root.qb64);
+    const ciphertext = recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64;
+    const complete =
+      parseBytes(messagize(selected.serder, { tsgs: [groupProof(selected.serder, issuees)], gvrsn: Vrsn_2_0 }))[0];
+    const accepted = envelopeFromFrame(complete);
+    assertEquals(
+      importer.processReply({
+        serder: accepted.serder,
+        diger: new Diger({ qb64: accepted.serder.said! }),
+        route: RegistrySalt.Route,
+        tsgs: accepted.tsgs,
+        attachments: accepted,
+      }).kind,
+      "accept",
+    );
+    assertEquals(
+      recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64,
+      ciphertext,
+      "identical receipt preserves immutable encrypted retention",
+    );
+    assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
+    assertEquals(recipient.hby.db.exns.get(admit.said!)!.raw, admit.raw);
+    assertEquals(recipient.hby.db.epsd.get(grant.said!)!.dts, deadlines[3]);
   });
 });
 
