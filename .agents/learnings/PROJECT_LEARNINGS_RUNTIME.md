@@ -17,7 +17,10 @@ required component arguments. MailboxPoller owns its concrete HTTP/SSE request
 operation; there is no separately injected polling strategy. Optional finite IPEX
 listeners borrow the command's exact runtime, bind before consent and drain before
 runtime/store close. Group direct intake serves the local member and group prefixes;
-all contributing members retain separate signed endpoint roles and listeners. Requests carry data
+all contributing members retain separate signed endpoint roles and listeners. Rotation resolves authorization for the
+prospective witness set before changing local keys. Tufa owns encrypted provider
+credential access; core accepts an optional resolver over its existing open Hab
+without importing provider code or opening a second store. Requests carry data
 rather than collaborator bundles.
 Finite IPEX composition selects one `ipexAuxiliary` (`dhke` or `unblind`) with
 an actual local Hab and explicitly enabled KRAM. Runtime supplies its exact

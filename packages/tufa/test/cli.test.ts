@@ -1741,6 +1741,16 @@ Deno.test("lifecycle CLI preserves omitted file overrides and raw numeric syntax
   assertEquals(explicit.args.ncount, "0");
   const malformed = parseCommandSelection(["rotate", "-n", "store", "-a", "alice", "--next-count", "1e2"]);
   assertEquals(malformed.args.nextCount, "1e2", "the command boundary must validate the original syntax");
+  const credentialRotation = parseCommandSelection([
+    "rotate",
+    "-n",
+    "store",
+    "-a",
+    "member",
+    "--witness-credentials",
+    "witnesses.json",
+  ]);
+  assertEquals(credentialRotation.args.witnessCredentials, "witnesses.json");
 });
 
 Deno.test("multisig rotation preserves omitted file overrides", () => {
