@@ -60,13 +60,17 @@ Group leadership intentionally uses group signatures, excluding foreign endorsem
 Missing-schema EXNs retain the same LMDB evidence ownership through emse/emsd
 and retry. One absolute deadline spans sequential schema dependencies;
 TMSC opener plus lifetime differs from the receiver receipt. Equality is eligible.
-`epsd.` freezes an absolute partial-signature deadline. Native V2 Grants use their
-accepted TMSC `xdt + xl`, otherwise the original ten-second PSE window; they retain
-that deadline across schema/proof transitions, acceptance and pending-body eviction.
-Policy changes, retransmission, cache pruning and reopen do not renew it. `pxl`
-separately bounds schema/replay retention, never original Grant validity. Other
-exchange routes clear their PSE deadline with pending state. This storage contract
-does not itself authorize auxiliary operations. `pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only native Grant before deadline
+`epsd.` bounds only actual partial-signature escrow cleanup and is removed on
+acceptance or schema wait. `exchangeDeadline(serder)` reads the exact accepted TMSC
+(sender, transaction XID, message SAID), requires `rdt`, and returns original
+`xdt + xl` at microsecond precision. Policy changes, retransmission and reopen never
+renew it; absent/pruned TMSC yields no live authority. `pxl` bounds retention, not
+Grant lifetime. Live DH/Unblind requires this accepted KRAM record; ordinary
+nonauxiliary KRAM-off processing remains supported. Partial group proposals use
+only the command wait limit until sender authentication accepts TMSC; their
+presentation result has no deadline yet. Offline file endorsement may precede
+local KRAM intake and does not grant live auxiliary authority.
+`pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only native Grant before deadline
 equality, excludes accepted/terminal conversations, and reauthenticates its stored
 complete sender evidence. The native route reuses shared conversation/disclosure/
 schema checks and requires an anchored fresh issuer RIP plus authentication of all

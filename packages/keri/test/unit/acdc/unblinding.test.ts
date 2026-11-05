@@ -181,7 +181,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     }
     const historical = parties.map(party => ({
       nests: party.hby.db.enst.get(original.said!),
-      deadline: party.hby.db.epsd.get(original.said!)!.dts,
+      deadline: party.exc.exchangeDeadline(original),
       grant: party.hby.db.exns.get(original.said!)!.raw,
       admit: party.hby.db.exns.get(admitted.said!)!.raw,
     }));
@@ -212,7 +212,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(presenter.exc.complete(pending.said!), true);
     assertEquals(observer.exc.complete(pending.said!), false);
     assertExists(observer.hby.db.epse.get(pending.said!));
-    const deadline = observer.hby.db.epsd.get(pending.said!)!.dts;
+    const deadline = observer.exc.exchangeDeadline(pending);
     assertThrows(() => presenter.route.approve(original.said!), Error, undefined, "an admitted Grant is terminal");
     const xid = observer.route.approve(pending.said!);
     const query = observer.route.start(pending.said!), requested = parseBytes(query)[0];
@@ -284,7 +284,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     );
     assertEquals((yield* observer.route.finish(xid)).kind, "accept");
     assertEquals(observer.hby.db.exns.get(pending.said!)!.raw, pending.raw);
-    assertEquals(observer.hby.db.epsd.get(pending.said!)!.dts, deadline);
+    assertEquals(observer.exc.exchangeDeadline(pending), deadline);
     assertEquals(observer.hby.db.erpy.get(pending.said!), null, "opening completion does not Admit");
     const acceptance = ipexExnBody(verifier.pre, "/ipex/admit", [], {
       prior: pending,
@@ -297,7 +297,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     }
 
     // An explicit finish may update another live accepted view; ordinary intake cannot enrich history.
-    const liveView = observer.hby.db.enst.get(live.said!), liveDeadline = observer.hby.db.epsd.get(live.said!)!.dts;
+    const liveView = observer.hby.db.enst.get(live.said!), liveDeadline = observer.exc.exchangeDeadline(live);
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), false);
     assertEquals(observer.hby.db.enst.get(live.said!), liveView);
     const liveRequest = yield* spawn(() => runPresentationUnblind(observer.runtime, live.said!, { timeoutMs: 15000 }));
@@ -305,13 +305,13 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals((yield* liveRequest).completed, true);
     assertEquals(liveRelease.admitted, false);
     assertEquals(observer.exc.verifyAccepted(live.said!, "/ipex/grant"), true);
-    assertEquals(observer.hby.db.epsd.get(live.said!)!.dts, liveDeadline);
+    assertEquals(observer.exc.exchangeDeadline(live), liveDeadline);
     assertEquals(loadNests(observer.hby.db, live.said!)[0].body.raw, credential.raw);
     for (const [index, party] of parties.entries()) {
       assertEquals(party.hby.db.enst.get(original.said!), historical[index].nests);
       assertEquals(party.hby.db.exns.get(original.said!)!.raw, historical[index].grant);
       assertEquals(party.hby.db.exns.get(admitted.said!)!.raw, historical[index].admit);
-      assertEquals(party.hby.db.epsd.get(original.said!)!.dts, historical[index].deadline);
+      assertEquals(party.exc.exchangeDeadline(original), historical[index].deadline);
       assertEquals(party.hby.db.erpy.get(original.said!)!.qb64, admitted.said!);
     }
     assertEquals(
@@ -495,7 +495,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       grant: side.hby.db.exns.get(original.said!)!.raw,
       admit: side.hby.db.exns.get(admitted.said!)!.raw,
       nests: side.hby.db.enst.get(original.said!),
-      deadline: side.hby.db.epsd.get(original.said!)!.dts,
+      deadline: side.runtime.exc.exchangeDeadline(original),
     }));
     const proofs = [], events = [];
     let prior = event1;
@@ -518,7 +518,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       message: "Exact stale group presentation",
     });
     yield* intakeAll(yield* call(() => collectPayload(framePayload(signed(grant, presenters, [child])))));
-    const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
+    const deadlines = actors.map(side => side.runtime.exc.exchangeDeadline(grant));
     for (const side of verifiers) assertEquals(side.exc.complete(grant.said!), false);
     // The finite command replaces its fixture listener on the same signed endpoint.
     yield* call(finiteListener.stop);
@@ -600,12 +600,12 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     for (const [index, side] of actors.entries()) {
       assertEquals(side.exc.verifyAccepted(grant.said!, "/ipex/grant"), true);
       assertEquals(side.hby.db.exns.get(grant.said!)!.raw, grant.raw);
-      assertEquals(side.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
+      assertEquals(side.runtime.exc.exchangeDeadline(grant), deadlines[index]);
       assertEquals(side.hby.db.erpy.get(grant.said!), null);
       assertEquals(side.hby.db.enst.get(original.said!), history[index].nests);
       assertEquals(side.hby.db.exns.get(original.said!)!.raw, history[index].grant);
       assertEquals(side.hby.db.exns.get(admitted.said!)!.raw, history[index].admit);
-      assertEquals(side.hby.db.epsd.get(original.said!)!.dts, history[index].deadline);
+      assertEquals(side.runtime.exc.exchangeDeadline(original), history[index].deadline);
       assertEquals(
         side.hab.mgr.getRegistryRoot(side.hab.pre, rip.said!)?.qb64 ?? null,
         side === presenters[1] ? root.qb64 : null,

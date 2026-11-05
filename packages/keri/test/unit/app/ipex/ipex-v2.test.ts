@@ -763,7 +763,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       assertEquals(accepted.rdt, stamp);
       assertEquals(accepted.xl, 300000);
       const deadline = makeNowIso8601(new Date(started + accepted.xl!));
-      assertEquals(hby.db.epsd.get(grant.said!)?.dts, deadline);
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
       assertExists(hby.db.emse!.get([grant.said!, schema.said]));
       const scope = { xid: grant.said!, sender: issuer.pre, recipient: issuee.pre };
       const transactionIds = () =>
@@ -786,7 +786,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       yield* runtime.exc.processEscrows();
       assertExists(hby.db.epse.get(grant.said!));
       assertEquals(hby.db.emse!.get([grant.said!, schema.said]), null);
-      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
       assertEquals(runtime.exc.complete(grant.said!), false, "an accepted RIP never supplies issuance");
       assertEquals(pending(), null, "unresolved DI2I authority cannot authorize pending-issuance DH");
       assertExists(hby.db.epse.get(grant.said!), "refused DH scope leaves the actual Grant pending");
@@ -809,9 +809,16 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
         "native handler is required",
       );
       const originalDeadline = hby.db.epsd.get(grant.said!)!;
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
       hby.db.epsd.rem(grant.said!);
-      assertEquals(pending(), null, "body presence cannot replace the original deadline");
+      assertEquals(pending()!.serder.raw, grant.raw, "escrow cleanup state grants no auxiliary authority");
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
       hby.db.epsd.put(grant.said!, originalDeadline);
+      hby.db.tmsc.rem(key);
+      assertEquals(runtime.exc.exchangeDeadline(grant), null);
+      assertEquals(pending(), null, "an escrow deadline cannot replace accepted KRAM authority");
+      hby.db.tmsc.pin(key, accepted);
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
 
       // Remove real retained proof bytes, then restore those same bytes; cached KRAM acceptance is insufficient.
       assertEquals(group.sigers.length, 2);
@@ -878,7 +885,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
         reason: "Selected pending Grant proof is expired, terminated or changes the original disclosure",
       }, "writer rechecks original deadline after serializing otherwise complete proof");
       assertEquals(hby.db.enst.get([grant.said!]), previousNests, "late completion cannot replace retained disclosure");
-      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline);
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline);
       assertEquals(runtime.exc.complete(grant.said!), false);
       assertEquals(hby.db.exrs.get([grant.said!, credential.said!]), null);
       assertExists(hby.db.epse.get(grant.said!), "refused completion leaves pending cleanup with its original owner");
@@ -886,7 +893,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       now++;
       yield* runtime.exc.processEscrows();
       assertEquals(hby.db.epse.get(grant.said!), null);
-      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline, "body eviction retains the original lifetime");
+      assertEquals(runtime.exc.exchangeDeadline(grant), deadline, "body eviction retains the original lifetime");
       assertEquals(runtime.exc.complete(grant.said!), false);
       assertEquals(pending(), null, "expired pending bodies confer no context");
       now = started + 600001;
@@ -894,7 +901,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       assertEquals(hby.db.tmsc.get(key), null);
       yield* hby.db.close();
       yield* hby.db.reopen({ reuse: true });
-      assertEquals(hby.db.epsd.get(grant.said!)!.dts, deadline, "TMSC pruning and reopen cannot renew validity");
+      assertEquals(runtime.exc.exchangeDeadline(grant), null, "TMSC pruning cannot recreate auxiliary authority");
     } finally {
       yield* runtime.close();
       yield* hby.close(true);
@@ -968,7 +975,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       yield* runtime.reactor.process((signal) => framePayload(frame).open(signal));
       assertExists(hby.db.epse.get([grant.said!]));
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
-      const originalDeadline = hby.db.epsd.get(grant.said!)!.dts;
+      const originalDeadline = runtime.exc.exchangeDeadline(grant);
       assertEquals(originalDeadline, makeNowIso8601(new Date(now + 300000)));
       const scope = { xid: grant.said!, sender: sender.pre, recipient: issuee.pre };
       const context = (said = grant.said!, selected = scope) => {
@@ -979,7 +986,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         assertEquals(transactions(), before, "presentation inspection writes neither exchange nor TEL state");
         assertEquals(runtime.exc.cues.toArray(), cues);
         assertEquals(hby.db.enst.get(said), nests, "inspection preserves the exact retained disclosure");
-        assertEquals(hby.db.epsd.get(grant.said!)!.dts, originalDeadline);
+        assertEquals(runtime.exc.exchangeDeadline(grant), originalDeadline);
         return result;
       };
       assertEquals(context(), null, "unavailable issuer TEL supplies no presentation authority");
@@ -1011,7 +1018,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       assertEquals(observer.processEvent(latest).kind, "accept");
       yield* runtime.exc.processEscrows();
       assertExists(hby.db.exns.get([grant.said!]));
-      assertEquals(hby.db.epsd.get(grant.said!)!.dts, originalDeadline, "acceptance keeps original Grant validity");
+      assertEquals(runtime.exc.exchangeDeadline(grant), originalDeadline, "acceptance keeps original Grant validity");
       assertEquals(hby.db.exchangeMeta.get([grant.said!])?.receiverTime, receipt);
       assertEquals(hby.db.exns.get([credential.said!]), null, "parent acceptance never dispatches its child");
       const handler = new IpexV2Handler("/ipex/grant", hby, null, store);
@@ -1248,7 +1255,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
       };
       yield* receive([0]);
       assertEquals(runtime.exc.lead(group.hab, pending.said!, { pendingPresentation: true }), false);
-      const pendingDeadline = hby.db.epsd.get(pending.said!)!.dts;
+      const pendingDeadline = runtime.exc.exchangeDeadline(pending);
       yield* receive([1]);
       assertEquals(runtime.exc.complete(pending.said!), false, "the newer opaque issuer state still needs an opening");
       assertEquals(runtime.exc.lead(group.hab, pending.said!), false, "ordinary election requires acceptance");
@@ -1265,7 +1272,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
         true,
         "member rotation and reordered group indices preserve the original authenticated election",
       );
-      assertEquals(hby.db.epsd.get(pending.said!)!.dts, pendingDeadline);
+      assertEquals(runtime.exc.exchangeDeadline(pending), pendingDeadline);
       const disclosedRevocation = yield* node([opaque, pblind]);
       assertEquals(
         (verify(disclosedRevocation) as { kind: string }).kind,

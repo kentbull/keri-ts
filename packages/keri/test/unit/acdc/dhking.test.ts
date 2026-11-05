@@ -309,7 +309,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         })
       )
     ) yield* sleep(10);
-    const deadlines = actors.map(side => side.hby.db.epsd.get(grant.said!)!.dts);
+    const deadlines = actors.map(side => side.runtime.exc.exchangeDeadline(grant));
     assertEquals(responses, [], "receiving the full Grant does not approve recipient setup");
     const receiving = yield* spawn(() =>
       runGroupDerivedIssuance(holder.runtime, holder.wallet, {
@@ -396,7 +396,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     for (const [index, side] of actors.entries()) {
       assertEquals(side.exc.complete(grant.said!), true);
       assertEquals(side.hby.db.exns.get(grant.said!)!.raw, grant.raw);
-      assertEquals(side.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
+      assertEquals(side.runtime.exc.exchangeDeadline(grant), deadlines[index]);
       assertEquals(side.hby.db.erpy.get(grant.said!), null, "setup and issuance do not Admit");
       assertEquals(side.wallet.inventory().held, []);
     }
@@ -554,7 +554,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       firstPresentation.grant,
       completeEndorsement.wire,
     );
-    assertEquals(resumedPresentation.deadline, firstPresentation.deadline);
+    assertEquals(firstPresentation.deadline, null, "a partial sender proposal grants no live lifetime");
+    assertEquals(resumedPresentation.deadline, fullPresentation.deadline);
     assertEquals(parseBytes(resumedPresentation.wire)[0].body.raw, presentationBody);
     assertEquals(
       yield* call(() =>
@@ -653,7 +654,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     );
     assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
     assertEquals(recipient.hby.db.exns.get(admit.said!)!.raw, admit.raw);
-    assertEquals(recipient.hby.db.epsd.get(grant.said!)!.dts, deadlines[3]);
+    assertEquals(recipient.runtime.exc.exchangeDeadline(grant), deadlines[3]);
 
     // Exercise Tufa's maintained finite file command with fresh ciphertext and exact reviewed group scope.
     importer.abandon(rip.said!, holder.hab.pre);
@@ -839,7 +840,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertExists(derived);
     assertEquals(derived.d.nonce, laterOpening.d.nonce);
     assertEquals(newcomer.hby.db.exns.get(admit.said!)!.raw, admit.raw);
-    assertEquals(newcomer.hby.db.epsd.get(grant.said!)!.dts, deadlines[1]);
+    assertEquals(newcomer.runtime.exc.exchangeDeadline(grant), deadlines[1]);
   });
 });
 
@@ -933,7 +934,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
         "retained Grant intake does not approve runtime DH",
       );
     }
-    const deadlines = parties.map(party => party.hby.db.epsd.get(grant.said!)!.dts);
+    const deadlines = parties.map(party => party.runtime.exc.exchangeDeadline(grant));
     const originalBodies = parties.map(party => loadNests(party.hby.db, grant.said!).map(nest => nest.body.raw));
     now += 11000;
     assertEquals(left.dh.approve(grant.said!), grant.said!);
@@ -1010,7 +1011,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       yield* party.reactor.processBytes(bupWire);
       assertEquals((yield* party.dh.finish(grant.said!)).kind, "accept");
       assertEquals(party.hby.db.exns.get(grant.said!)!.raw, grant.raw);
-      assertEquals(party.hby.db.epsd.get(grant.said!)!.dts, deadlines[index]);
+      assertEquals(party.runtime.exc.exchangeDeadline(grant), deadlines[index]);
       const finished = loadNests(party.hby.db, grant.said!);
       assertEquals(finished.map(nest => nest.body.raw), originalBodies[index]);
       assertEquals(envelopeFromFrame(finished[0]).bsqs[0].d.nonce, opening.d.nonce);
@@ -1101,7 +1102,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       message: "Finite derived issuance",
     });
     const body = source.runtime.exc.retainedInput(prepared.grant, { pending: true })!.serder;
-    const sourceDeadline = source.runtime.hby.db.epsd.get(prepared.grant)!.dts;
+    const sourceDeadline = source.runtime.exc.exchangeDeadline(body);
     assertEquals(source.wallet.inventory().issued, []);
     assertEquals(issuer.mgr.getRegistryRoot(issuer.pre, freshRip.said!), null);
     const issuing = yield* spawn(() =>
@@ -1114,7 +1115,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     const firstQuery = parseBytes(observedQueries[0])[0];
     const queryKey = [issuer.pre, firstQuery.body.said!];
     const queryCache = recipient.runtime.hby.db.msgc.get(queryKey)!;
-    const recipientDeadline = recipient.runtime.hby.db.epsd.get(prepared.grant)!.dts;
+    const recipientDeadline = recipient.runtime.exc.exchangeDeadline(body);
     assertExists(queryCache);
     assertEquals(
       recipient.runtime.ipexAuxiliary!.owner.outgoing.length,
@@ -1162,8 +1163,8 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assert(observedQueries.length >= 2, "explicit delayed setup requires an actual frozen-query retry");
     for (const repeated of observedQueries) assertEquals(repeated, observedQueries[0]);
     assertEquals(recipient.runtime.hby.db.msgc.get(queryKey), queryCache);
-    assertEquals(source.runtime.hby.db.epsd.get(prepared.grant)!.dts, sourceDeadline);
-    assertEquals(recipient.runtime.hby.db.epsd.get(prepared.grant)!.dts, recipientDeadline);
+    assertEquals(source.runtime.exc.exchangeDeadline(body), sourceDeadline);
+    assertEquals(recipient.runtime.exc.exchangeDeadline(body), recipientDeadline);
     for (const side of finite) {
       assertEquals(side.runtime.hby.db.exns.get(prepared.grant)!.raw, body.raw);
       assertEquals(loadNests(side.runtime.hby.db, prepared.grant)[0].body.raw, fresh.raw);

@@ -626,9 +626,10 @@ export class WalletDiscloser {
         throw new ValidationError("Issuer contributions name another establishment event.");
       }
     }
+    // Offline file endorsement may precede local KRAM intake; it grants no live auxiliary authority.
     const checkDeadline = () => {
-      const deadline = this.wallet.hby.db.epsd.get([exn.said!]);
-      const expiry = deadline ? timestampMicros(deadline.dts) : null;
+      const deadline = this.wallet.exc.exchangeDeadline(exn);
+      const expiry = deadline ? timestampMicros(deadline) : null;
       if (
         this.wallet.hby.db.erpy.get([exn.said!]) || deadline
           && (expiry === null || BigInt(this.receiptor.clock.now()) * 1000n >= expiry)
