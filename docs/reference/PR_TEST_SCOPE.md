@@ -38,7 +38,9 @@ graph cases separately from the legacy `interop-acdc-deep` workflows, so disclos
 changes can select that file alone. Its reciprocal derived-issuance stories swap
 Python and TypeScript roles, retain three witnesses, and use a separate rootless
 verifier for exact holder presentation and Unblind. DH, Unblind and Admit remain
-explicit actions on independent stores. `interop-kram` separately owns the live
+explicit actions on independent stores. The same owner includes one Python issuer-group
+→ TypeScript holder-group story with an independent Python verifier, ordinary member
+thresholds, and rootless elected Unblind delivery. `interop-kram` separately owns the live
 single/group mailbox-authentication cases. Disclosure includes direct witnessed
 presentation and uses the manifest's candidate pin; ESSR storage retains main. The separate
 `interop-native-registry` owner uses the candidate profile for the existing reciprocal
