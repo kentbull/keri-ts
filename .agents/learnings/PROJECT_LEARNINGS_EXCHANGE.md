@@ -86,7 +86,13 @@ while corrupt accepted storage and infrastructure failures propagate. Pending
 full sender threshold and historical member-index election still apply. Neither
 scope nor election implies disclosure consent, issued-state policy or Admit.
 Individual `Dhke` uses explicit local approval (`start` itself approves issuer
-work), process-local fresh keys and stable retry bytes; local groups refuse.
+work), process-local fresh keys and stable retry bytes. Groups explicitly approve
+their own accepted coordinator and custodian, freezing the historical verified
+index/key. Later signatures do not reelect; current member authority is rechecked.
+Members contribute to exact custodian-signed proposals through ordinary Hab.sign;
+only the custodian generates or retains roots. Own full query/reply intake uses
+Parser/KRAM plus independent query verification/Revery before becoming outstanding
+or retaining roots. Sign cues request review, never confer consent or copy roots.
 `retainedInput(..., {pending:true})` reuses stored authentication and Exchanger's
 original deadline clock without requiring fresh RIP after BUP arrival. Finish
 verifies all current anchored issued openings before retrying exact Grant/child

@@ -1,8 +1,9 @@
-import type { SerderKERI } from "cesr-ts";
+import type { SerderKERI, Verfer } from "cesr-ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
+import { dgKey } from "../../db/core/keys.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 
 /** True when the selected habitat is a local group habitat. */
@@ -18,6 +19,63 @@ export function localGroupMember(hby: Habery, groupPre: string): Hab {
     throw new ValidationError(`Group ${groupPre} is missing local member metadata.`);
   }
   return member;
+}
+
+/** Find the member's latest accepted single-key contribution to the supplied group keys. */
+export function latestGroupContribution(
+  db: Baser,
+  member: string,
+  verfers: readonly Verfer[],
+): { event: SerderKERI; index: number; verfer: Verfer } | null {
+  const state = db.getKever(member);
+  if (!state) return null;
+  const pubs = verfers.map(verfer => verfer.qb64);
+  for (const [, sn, said] of db.kels.getOnItemBackIter(member, state.sn)) {
+    if (db.kels.getLast(member, sn) !== said) continue;
+    const event = db.getEvtSerder(member, said);
+    if (!event) throw new ValidationError(`Missing accepted member event ${member}:${said}.`);
+    if (!event.estive) continue;
+    const keys = event.verfers ?? [];
+    if (keys.length !== 1) throw new ValidationError(`Group signing requires single-key member events for ${member}.`);
+    const index = pubs.indexOf(keys[0].qb64);
+    if (index >= 0) return { event, index, verfer: keys[0] };
+  }
+  return null;
+}
+
+/** Exact accepted group event that supplies the ordinary witnesser election. */
+export interface GroupCoordinator {
+  sn: number;
+  said: string;
+}
+
+/**
+ * Verify an accepted coordinator against its historical establishment threshold.
+ * index is the initial election; a frozen operation rechecks indices without
+ * replacing its earlier choice when more valid signatures arrive.
+ */
+export function groupWitnesserSelection(
+  db: Baser,
+  group: string,
+  { sn, said }: GroupCoordinator,
+): { establishment: SerderKERI; index: number; indices: number[] } | null {
+  if (!Number.isSafeInteger(sn) || sn < 0 || db.kels.getLast(group, sn) !== said) return null;
+  const event = db.getEvtSerder(group, said);
+  if (!event || event.pre !== group || event.sn !== sn || event.said !== said) return null;
+  for (const [, ordinal, digest] of db.kels.getOnItemBackIter(group, sn)) {
+    if (db.kels.getLast(group, ordinal) !== digest) continue;
+    const establishment = db.getEvtSerder(group, digest);
+    if (!establishment) throw new ValidationError(`Missing accepted group event ${group}:${digest}.`);
+    if (!establishment.estive) continue;
+    const { indices } = Kever.verifyIndexedSignatures(
+      event.raw,
+      db.sigs.get(dgKey(group, said)),
+      establishment.verfers,
+    );
+    if (!indices.length || !establishment.tholder?.satisfy(indices)) return null;
+    return { establishment, index: Math.min(...indices), indices };
+  }
+  return null;
 }
 
 /** Return current group signing member AIDs in signing-index order. */

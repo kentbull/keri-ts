@@ -166,13 +166,32 @@ Election and auxiliary scope supply neither delivery consent, credential-use
 policy nor Admit. This contract follows Python `28ccfc25` (the relevant modules
 are unchanged at `63a33e88`).
 
-`Dhke` implements the individual issuer/issuee flow for an explicitly selected
-fresh pending Grant. `start(grant)` is the issuer's explicit approval and returns
+`Dhke` implements individual and group issuer/issuee flows for an explicitly selected
+fresh pending Grant. For individuals, `start(grant)` is the issuer's explicit approval and returns
 stable signed query bytes; the issuee must call `approve(grant)` before query
 intake. Composition injects the owner as `ProtocolProcessor.qvy`, registers
-`/ipex/dhke` on the same habitat Revery's Router, and delivers its `outgoing` reply
-Deck. Constructor or wire intake never supplies consent. Local groups refuse;
-custodian election and member contributions are not implemented by this owner yet.
+`/ipex/dhke` on the same habitat Revery's Router, and delivers its `outgoing`
+Deck. Constructor or wire intake never supplies consent.
+
+Each group member explicitly calls `approve(grant, {coordinator: {sn, said}, custodian})` with its own group's accepted KEL event and elected member. The
+coordinator can be an interaction: its governing accepted establishment supplies
+the keys and threshold. Approval freezes the lowest verified coordinator-signature
+index and its key. Subsequent checks require that original threshold evidence and
+index, the custodian's historical contribution, and both custodian/local-member
+contributions to current group keys. Later signatures or group reordering do not
+reelect custody; removing either member's authority refuses further use.
+
+Only the elected custodian generates ephemeral keys. `start` returns its partial
+query proposal until ordinary full query intake makes it outstanding. Other
+members explicitly `contribute(xid, proposal)` to that unchanged, custodian-signed
+body. An issuee contribution also requires the authenticated peer query. Own full
+query and reply messages pass through Parser/KRAM and ordinary independent query
+verification or Revery. Only own complete reply acceptance permits the issuee
+custodian to retain roots. The `query`/`reply` cues carry completed wire for peer
+delivery; `sign` carries the exact reply proposal for member review, not approval.
+Noncustodians sign without generating or retaining roots. This uses the same
+scalar shared-root profile below, with no signature pool, durable consent or
+automatic root copying. Final Admit remains a separate ordinary IPEX operation.
 
 The derivation ports Python's local profile
 `KERI/ipex/dhke/X25519-HKDF-SHA256-Salt128/v1`, carried in KERI/CESR v2 JSON
