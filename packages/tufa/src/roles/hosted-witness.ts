@@ -385,7 +385,9 @@ export class HostedWitnesses {
     if (this.closing) return new Response("Provider is stopping", { status: 503 });
     const path = new URL(req.url).pathname;
     if (path === "/health" && req.method === "GET") return Response.json({ status: "ok" });
-    const oobi = /^\/oobi\/([^/]+)(?:\/|$)/.exec(path)?.[1];
+    const oobiPath = /^\/oobi\/([^/]+)(?:\/[^/]+(?:\/([^/]+))?)?\/?$/.exec(path);
+    // An account witness OOBI names the subject first and the serving witness last.
+    const oobi = oobiPath?.[2] ?? oobiPath?.[1];
     const destination = req.headers.get(CESR_DESTINATION_HEADER);
     if (oobi && destination && oobi !== destination) {
       return new Response("Conflicting witness destination", { status: 400 });

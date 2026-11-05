@@ -21,6 +21,7 @@ import { registerNotificationCmds } from "./command-definitions/notifications.ts
 import { registerToolingCmds } from "./command-definitions/tooling.ts";
 import { registerVcCmds } from "./command-definitions/vc.ts";
 import { registerVerifierCmds } from "./command-definitions/verifier.ts";
+import { registerWatcherCmds } from "./command-definitions/watcher.ts";
 import { registerWitnessCmds } from "./command-definitions/witness.ts";
 import type { CommandDispatch } from "./command-types.ts";
 
@@ -42,6 +43,7 @@ export function registerCmds(
   registerNotificationCmds(program, dispatch);
   registerMailboxCmds(program, dispatch);
   registerWitnessCmds(program, dispatch);
+  registerWatcherCmds(program, dispatch);
   registerToolingCmds(program, dispatch);
   registerKfBootCmds(program, dispatch);
 }
