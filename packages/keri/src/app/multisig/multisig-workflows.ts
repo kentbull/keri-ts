@@ -502,7 +502,7 @@ function* approveRpyProposal(
     throw new ValidationError(`Group ${groupPre} must be joined before approving ${route}.`);
   }
   const member = localGroupMember(hby, groupPre);
-  const child = multisigChild(hby, exn, "rpy");
+  const child = yield* replyChild(hby, runtime, exn);
   if (!child) return null;
   const { event: rpySerder, attachment, genus } = child;
   const embeddedSaid = rpySerder.said ?? "";
@@ -517,8 +517,13 @@ function* approveRpyProposal(
   );
 
   let localRpy: Uint8Array;
-  if (prior) localRpy = storedContribution(hby, prior, "rpy", embeddedSaid);
-  else localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
+  if (prior) {
+    const retained = yield* replyChild(hby, runtime, prior);
+    if (!retained || retained.event.said !== embeddedSaid || !retained.attachment.length) {
+      throw new ValidationError(`Stored multisig approval ${prior.said} lacks its rpy contribution.`);
+    }
+    localRpy = concatBytes(retained.event.raw, retained.attachment);
+  } else localRpy = groupEndorseReply(hby, groupPre, rpySerder, genus);
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localRpy), { local: true });
   yield* runtime.protocol.processEscrowsOnce();
 
@@ -779,6 +784,16 @@ function* approveVdrProposal(
 function kelApprovalMembers({ proposal }: KelApproval): string[] {
   if (proposal.route === MULTISIG_IXN_ROUTE) return [...proposal.attrs.smids];
   return uniqueMembers([...proposal.attrs.smids, ...proposal.attrs.rmids]);
+}
+
+/** Revalidate v2 nested reply commitments through ordinary exchange admission before reading proofs. */
+function* replyChild(hby: Habery, runtime: AgentRuntime, wrapper: SerderKERI): Operation<MultisigChild | null> {
+  if (wrapper.pvrsn.major === 1) return multisigChild(hby, wrapper, "rpy");
+  if (!wrapper.said || !runtime.exc.verifyAccepted(wrapper.said, MULTISIG_RPY_ROUTE)) return null;
+  const [child] = loadNests(hby.db, wrapper.said);
+  if (!(child?.body instanceof SerderKERI)) return null;
+  const attachment = yield* abortable(signal => collectPayload(attachmentPayload(child), signal));
+  return { event: child.body, attachment, genus: child.gvrsn ?? child.body.gvrsn ?? child.body.pvrsn };
 }
 
 /** Reuse a recorded member's child proof; never sign a replacement during resume. */

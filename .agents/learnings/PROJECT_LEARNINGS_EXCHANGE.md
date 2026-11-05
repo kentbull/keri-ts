@@ -224,8 +224,10 @@ serialization and receiving remain separate from normal authoring. Shared propos
 publication registers its actual signed wire through intake before transmission,
 so later peer proofs can replay without another approval prompt. Endpoint-role
 initiation likewise records each recipient-specific wrapper before delivery and
-returns those actual proposal identities. Preserve first-notice behavior or retries
-can republish approval unnecessarily.
+returns those actual proposal identities. Reply approval and retained-contribution
+retry must read v2 nested evidence after ordinary exchange verification; the v1
+named-child reader cannot consume a flat signed child SAID. Preserve first-notice
+behavior or retries can republish approval unnecessarily.
 Native RIP/BUP proposals instead carry exactly two V2 TEL/anchor children on their
 explicit routes. Read-only validation requires a full contained TEL seal, exact
 source locators, accepted controlling RIP and next BUP linkage or identical replay.
