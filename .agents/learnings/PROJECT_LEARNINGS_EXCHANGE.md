@@ -107,6 +107,10 @@ and immutable encrypted root retention. Group reply preparation/contribution and
 receiver approval are explicit; neither native `/multisig/rpy` intake nor public
 rotation grants them. Route intake requires full parsed attachment context and
 rejects non-authentication evidence rather than silently discarding it.
+`RegistrySalt.contribute` authenticates the elected member's `/multisig/rpy`
+wrapper, exact ciphertext scope and current group-establishment partial before
+local endorsement. It reuses the receipt owner's scope validation and requires
+an unlocked encrypted Keeper, but no local root. It creates no transfer record.
 `Unblind` separately approves one live presentation and freezes its
 exact bodies, registry scope and original deadline. The disclosee's signed query
 carries a contiguous accepted public BUP suffix; the sender authenticates its full

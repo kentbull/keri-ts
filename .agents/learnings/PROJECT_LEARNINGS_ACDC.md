@@ -185,8 +185,13 @@ process-local receive approval snapshots an exact accepted BUP and held ordinary
 or bound opening; decryption must reproduce its UUID before immutable Keeper
 retention. Group preparation uses the accepted coordinator's elected current
 member; contributors endorse the same ciphertext. Public TEL and wallet custody
-creation remain unchanged. Application newcomer selection/provisioning workflows
-are separate from this core receipt owner.
+creation remain unchanged. Tufa's finite `vc registry root` prepare/contribute/
+receive commands use this owner without opening inventory. Receiver consent
+selects an exact BUP and counted held BSQ/BSS; same-body files enter ordinary
+KRAM/Revery processing. The invocation installs its receipt handler on the actual
+ProtocolProcessor Revery, restores prior routing and abandons approval on every
+exit. Only that handler's successful decryption/retention reports receipt; a
+cached replay or existing root alone does not. Newcomer selection remains separate.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
