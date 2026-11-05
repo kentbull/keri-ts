@@ -166,7 +166,14 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     const context = this.verifyContext({ ...args, historical: false });
     if (typeof context !== "object" || context.kind !== "grant") return null;
     const fresh = this.pendingIssuance(args.serder, context.graph, context.authentications);
-    return fresh?.size ? [...new Set(fresh.values())] : null;
+    if (!fresh?.size) return null;
+    // DH may supply fresh node-own registry proofs, but cannot satisfy unresolved edge authority.
+    const verdicts = new Map<string, ChainVerdict>([...context.authentications].map(([said, auth]) => [
+      said,
+      fresh.has(said) ? { kind: "valid" } : authenticatedNodeVerdict(auth),
+    ]));
+    const verdict = evaluateChain(context.graph, verdicts, this.hby.db);
+    return verdict?.kind === "valid" ? [...new Set(fresh.values())] : null;
   }
 
   /**
