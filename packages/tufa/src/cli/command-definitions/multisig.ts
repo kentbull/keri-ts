@@ -40,6 +40,10 @@ function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch)
         .option(
           "--approval-timeout <seconds>",
           "Maximum wait for delegated multisig completion",
+        )
+        .option(
+          "--version <version>",
+          "KERI protocol version for the group inception, such as 1.0 or 2.0 (default 2.0)",
         ),
     ),
     dispatch,
@@ -59,6 +63,7 @@ function registerMultisigInceptCmd(multisig: Command, dispatch: CommandDispatch)
         ...witnessAuthArgs(options),
         proxy: options.proxy,
         approvalTimeoutSeconds: options.approvalTimeout,
+        version: options.version,
       }),
     },
   );
@@ -80,6 +85,10 @@ function registerMultisigInteractCmd(multisig: Command, dispatch: CommandDispatc
             "Anchor data, '@' allowed",
             collectOption,
             [],
+          )
+          .option(
+            "--version <version>",
+            "KERI protocol version for the group interaction; must match the accepted KEL",
           ),
       ),
     ),
@@ -98,6 +107,7 @@ function registerMultisigInteractCmd(multisig: Command, dispatch: CommandDispatc
         passcode: options.passcode,
         data: options.data || [],
         ...witnessAuthArgs(options),
+        version: options.version,
       }),
     },
   );
@@ -193,7 +203,8 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
             collectOption,
           )
           .option("--smids <prefix>", "Signing member prefix", collectOption)
-          .option("--rmids <prefix>", "Rotation member prefix", collectOption),
+          .option("--rmids <prefix>", "Rotation member prefix", collectOption)
+          .option("--version <version>", "KERI protocol version for the group rotation; must match the accepted KEL"),
       )
         .option("--proxy <alias>", "Alias for delegation communication proxy"),
     ),
@@ -222,6 +233,7 @@ function registerMultisigRotateCmd(multisig: Command, dispatch: CommandDispatch)
         rmids: options.rmids,
         ...witnessAuthArgs(options),
         proxy: options.proxy,
+        version: options.version,
       }),
     },
   );

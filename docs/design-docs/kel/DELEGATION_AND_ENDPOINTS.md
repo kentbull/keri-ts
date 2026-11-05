@@ -22,9 +22,11 @@ messages.
 ## Multisig Coordination
 
 Normal individual and group KEL authoring emits KERI v2 inception, rotation and
-interaction bodies with CESR v2 proofs. Existing Habitat methods provide this
-default to the CLI without an extra mode or persistent version setting. Reopening
-an identifier continues through its accepted KEL and keeper state.
+interaction bodies with CESR v2 proofs. Inception may explicitly select KERI v1
+(Tufa `--version 1.0`, mirroring KLI) for v1-only peers; later rotation and
+interaction keep the identifier's accepted KEL version and refuse a conflicting
+`--version`, so one KEL never mixes versions. No persistent version setting exists.
+Reopening an identifier continues through its accepted KEL and keeper state.
 
 Public group workflows now use the CLI boundary:
 

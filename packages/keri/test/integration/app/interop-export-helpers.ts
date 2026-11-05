@@ -16,7 +16,7 @@ import { extractKelStream, normalizeCesr } from "./interop-test-helpers.ts";
 const EXPORT = fromFileUrl(new URL("../../../../../scripts/ci/keripy-export-genera.py", import.meta.url));
 
 /** Parse this finite fixture with an explicit external genus, not body-based guessing. */
-async function exportFrame(wire: string, major: 1 | 2): Promise<CesrFrame> {
+async function exportFrame(wire: string, major: 1 | 2, body: 1 | 2 = major): Promise<CesrFrame> {
   /** Supply the known stream genus before the unmodified finite CLI output. */
   async function* source() {
     // CLI export has no selector; this supplies the independently known source context.
@@ -26,7 +26,7 @@ async function exportFrame(wire: string, major: 1 | 2): Promise<CesrFrame> {
   const frames: CesrFrame[] = [];
   for await (const frame of parse(source())) frames.push(frame);
   assertEquals(frames.length, 1);
-  assertEquals(frames[0].body.pvrsn, { major: 2, minor: 0 });
+  assertEquals(frames[0].body.pvrsn, { major: body, minor: 0 });
   return frames[0];
 }
 
@@ -60,6 +60,8 @@ export async function assertExportParity(
   store: { name: string; base: string; passcode: string; alias: string },
   tufaOutput: string,
   kliOutput: string,
+  /** KERI version both CLIs authored; v1 is selected explicitly for v1-only peers. */
+  major: 1 | 2 = 2,
 ): Promise<void> {
   const result = await new Deno.Command(ctx.pythonCommand, {
     args: [EXPORT, "--name", store.name, "--base", store.base, "--passcode", store.passcode, "--alias", store.alias],
@@ -72,8 +74,8 @@ export async function assertExportParity(
   const tufa = extractKelStream(tufaOutput);
   const kli = extractKelStream(kliOutput);
   // Timestamp normalization is the sole wire concession; counters/signatures stay byte-exact.
-  // Both Tufa and the KLI author v2 KELs, so both compare with the genus-2 clone.
-  assertEquals(normalizeCesr(tufa), normalizeCesr(reference["2"]));
+  // Tufa exports in its KEL's genus; KLI export carries no genus selector and always emits genus 2.
+  assertEquals(normalizeCesr(tufa), normalizeCesr(reference[major === 1 ? "1" : "2"]));
   assertEquals(normalizeCesr(kli), normalizeCesr(reference["2"]));
-  assertEquals(evidence(await exportFrame(tufa, 2), 2), evidence(await exportFrame(kli, 2), 2));
+  assertEquals(evidence(await exportFrame(tufa, major), major), evidence(await exportFrame(kli, 2, major), 2));
 }

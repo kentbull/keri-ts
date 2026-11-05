@@ -1,4 +1,4 @@
-import { Tholder, type ThresholdSith } from "cesr-ts";
+import { Tholder, type ThresholdSith, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { ValidationError } from "../../core/errors.ts";
 
 /** Keep omission and explicit empty strings distinct; command policy handles emptiness. */
@@ -50,6 +50,14 @@ export function parseStringListOption(value: unknown, flag: string): string[] | 
     throw new ValidationError(`${flag} must be an array of strings`);
   }
   return [...value];
+}
+
+/** Parse a KLI-style `--version` KERI protocol selection (`1.0` or `2.0`); omission stays undefined. */
+export function parseKeriVersionOption(value: unknown, flag = "version"): Versionage | undefined {
+  if (value === undefined) return undefined;
+  if (value === "1.0") return Vrsn_1_0;
+  if (value === "2.0") return Vrsn_2_0;
+  throw new ValidationError(`${flag} must be 1.0 or 2.0`);
 }
 
 /** Require nonnegative whole counts for key and witness options. */

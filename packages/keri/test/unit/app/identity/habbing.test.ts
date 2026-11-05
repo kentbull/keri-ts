@@ -24,6 +24,7 @@ import {
   Signer,
   smell,
   Verfer,
+  Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { type Poster, type PosterEvent, type PosterMsg } from "../../../../src/app/delivery/forwarding.ts";
@@ -1106,6 +1107,27 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
     } finally {
       yield* remoteHby.close(true);
       yield* runtime.close();
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("a v1 identifier keeps its KEL version and refuses conflicting v2 events", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `habery-v1-${crypto.randomUUID()}`, temp: true });
+    try {
+      const hab = hby.makeHab("legacy", undefined, { transferable: true, version: Vrsn_1_0 });
+      const messages = [eventPayloadMessage(hby, hab.kever!.serder), hab.rotate(), hab.interact()];
+      for (const [sn, message] of messages.entries()) {
+        const [frame] = parseBytes(message);
+        assertInstanceOf(frame.body, SerderKERI);
+        assertEquals(frame.body.pvrsn, Vrsn_1_0);
+        assertEquals(frame.body.sn, sn);
+      }
+      assertThrows(() => hab.interact({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
+      assertThrows(() => hab.rotate({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
+      assertEquals(hab.kever!.sn, 2);
+    } finally {
       yield* hby.close(true);
     }
   });

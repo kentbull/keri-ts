@@ -1,3 +1,4 @@
+import type { Versionage } from "cesr-ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../app/transport/http-client.ts";
@@ -16,7 +17,13 @@ import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHab } from "../common/context.ts";
-import { parseBooleanOption, parseDataItems, parseStringListOption, parseStringOption } from "../common/parsing.ts";
+import {
+  parseBooleanOption,
+  parseDataItems,
+  parseKeriVersionOption,
+  parseStringListOption,
+  parseStringOption,
+} from "../common/parsing.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
 
 /** Parsed command arguments for one `tufa interact` invocation. */
@@ -32,6 +39,8 @@ interface InteractArgs {
   code?: string[];
   codeTime?: string;
   data?: string[];
+  /** Must match the identifier's accepted KEL version (KLI `--version`). */
+  version?: Versionage;
 }
 
 /**
@@ -61,6 +70,7 @@ export function* interactCommand(
     code: parseStringListOption(args.code, "code"),
     codeTime: parseStringOption(args.codeTime, "codeTime"),
     data: parseStringListOption(args.data, "data"),
+    version: parseKeriVersionOption(args.version),
   };
 
   if (!interactArgs.name) {
@@ -91,7 +101,7 @@ export function* interactCommand(
         throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
 
-      hab.interact({ data });
+      hab.interact({ data, version: interactArgs.version });
 
       if (hab.kever?.wits.length) {
         const auths = resolveWitnessAuths(

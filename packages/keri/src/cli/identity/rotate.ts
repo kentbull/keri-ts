@@ -1,4 +1,4 @@
-import type { ThresholdSith } from "cesr-ts";
+import type { ThresholdSith, Versionage } from "cesr-ts";
 import type { Hab } from "../../app/identity/habbing.ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
@@ -34,6 +34,7 @@ import {
   parseBooleanOption,
   parseCountOption,
   parseDataItems,
+  parseKeriVersionOption,
   parseStringListOption,
   parseStringOption,
   parseThresholdOption,
@@ -63,6 +64,8 @@ interface RotateArgs {
   cuts?: string[];
   witnessAdd?: string[];
   data?: string[];
+  /** Must match the identifier's accepted KEL version (KLI `--version`). */
+  version?: Versionage;
 }
 
 /** Empty baseline used before CLI/file precedence is applied. */
@@ -148,6 +151,7 @@ export function* rotateCommand(
     cuts: parseStringListOption(args.cuts, "cuts"),
     witnessAdd: parseStringListOption(args.witnessAdd, "witnessAdd"),
     data: parseStringListOption(args.data, "data"),
+    version: parseKeriVersionOption(args.version),
   };
 
   if (!rotateArgs.name) {
@@ -208,6 +212,7 @@ export function* rotateCommand(
         cuts,
         adds,
         data: options.data ?? [],
+        version: rotateArgs.version,
       });
 
       if (hab.kever?.wits.length) {

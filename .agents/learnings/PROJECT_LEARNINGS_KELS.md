@@ -3,7 +3,11 @@
 ## Accepted state and decisions
 
 Normal local individual and group inception, rotation and interaction author
-KERI v2 bodies with CESR v2 controller proofs. The existing event builders own
+KERI v2 bodies with CESR v2 controller proofs. Inception may select v1 (`version`
+on `makeHab`/`makeGroupHab`, KLI-style `--version 1.0` on Tufa incept and
+multisig incept) for v1-only peers. Rotation and interaction keep the accepted
+KEL version and refuse a conflicting explicit selection; group proposals follow
+the child event version, so v1 and v2 never nest. The existing event builders own
 encoding; Habitat APIs select the version. Reopen uses accepted KEL and keeper
 state, without a separate version record or migration. Stored-event replay keeps
 its existing minimum attachment genus derived from the signed body.

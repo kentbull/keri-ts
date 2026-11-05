@@ -1,4 +1,4 @@
-import type { ThresholdSith } from "cesr-ts";
+import type { ThresholdSith, Versionage } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
 import { resolveBootstrap } from "../../app/bootstrap/bootstrapping.ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
@@ -21,6 +21,7 @@ import {
   parseBooleanOption,
   parseCountOption,
   parseDataItems,
+  parseKeriVersionOption,
   parseStringListOption,
   parseStringOption,
   parseThresholdOption,
@@ -48,6 +49,8 @@ interface InceptArgs {
   estOnly?: boolean;
   data?: string[];
   delpre?: string;
+  /** KERI version of the new KEL (KLI `--version`); defaults to 2.0. */
+  version?: Versionage;
 }
 
 /**
@@ -105,6 +108,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
     estOnly: parseBooleanOption(args.estOnly, "estOnly"),
     data: parseStringListOption(args.data, "data"),
     delpre: parseStringOption(args.delpre, "delpre"),
+    version: parseKeriVersionOption(args.version),
   };
 
   if (!inceptArgs.name) {
@@ -160,6 +164,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         estOnly: opts.estOnly ?? false,
         data: opts.data ?? [],
         delpre: opts.delpre,
+        version: inceptArgs.version,
       });
 
       if (hab.kever?.wits.length) {

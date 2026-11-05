@@ -13,7 +13,10 @@ import {
 /** Compare independently initialized and incepted identifiers plus exported KEL bytes. */
 async function runInitInceptExportParity(
   ctx: ScenarioContext,
+  version: "1.0" | "2.0" = "2.0",
 ): Promise<void> {
+  // Both CLIs select the KEL version explicitly; 2.0 is each one's default.
+  const versionArgs = ["--version", version];
   const base = `keystore-parity-${crypto.randomUUID().slice(0, 8)}`;
   const alias = "interop-aid";
   const passcode = "MyPasscodeARealSecret";
@@ -23,6 +26,7 @@ async function runInitInceptExportParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
+    ...versionArgs,
     "--name",
     kliName,
     "--base",
@@ -38,6 +42,7 @@ async function runInitInceptExportParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
+    ...versionArgs,
     "--name",
     kliName,
     "--base",
@@ -86,6 +91,7 @@ async function runInitInceptExportParity(
   const tufaIncept = await runTufa(
     [
       "incept",
+      ...versionArgs,
       "--name",
       tufaName,
       "--base",
@@ -163,6 +169,7 @@ async function runInitInceptExportParity(
     { name: kliName, base, passcode, alias },
     tufaExport.stdout,
     kliExport.stdout,
+    version === "1.0" ? 1 : 2,
   );
 }
 
@@ -393,6 +400,10 @@ async function runListAidVisibilityParity(
 
 Deno.test("interop/keystore initialization, inception, and exported KEL match KERIpy", async () => {
   await runInitInceptExportParity(await createScenarioContext());
+});
+
+Deno.test("interop/keystore v1 inception and exported KEL match KERIpy for the same inputs", async () => {
+  await runInitInceptExportParity(await createScenarioContext(), "1.0");
 });
 
 Deno.test("interop/keystore list and AID visibility match KERIpy", async () => {

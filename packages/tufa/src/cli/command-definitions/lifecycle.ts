@@ -155,6 +155,7 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
       )
       .option("-di, --delpre <prefix>", "Delegator AID for delegated identifiers")
       .option("--proxy <alias>", "Alias for delegation communication proxy")
+      .option("--version <version>", "KERI protocol version for the inception event, such as 1.0 or 2.0 (default 2.0)")
       .option(
         "--receipt-endpoint",
         "Attempt to connect to witness receipt endpoint for witness receipts.",
@@ -184,6 +185,7 @@ function registerInceptCmd(program: Command, dispatch: CommandDispatch): void {
       delpre: options.delpre,
       proxy: options.proxy,
       endpoint: options.receiptEndpoint || false,
+      version: options.version,
     }),
   );
 }
@@ -249,7 +251,8 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
           "-d, --data <data>",
           "Anchor data, '@' allowed",
           collectOption,
-        ),
+        )
+        .option("--version <version>", "KERI protocol version for the rotation event; must match the accepted KEL"),
       true,
     ),
     dispatch,
@@ -275,6 +278,7 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
         cuts: options.witnessCut,
         witnessAdd: options.witnessAdd,
         data: options.data,
+        version: options.version,
       }),
     },
   );
@@ -307,7 +311,8 @@ function registerInteractCmd(
           "Anchor data, '@' allowed",
           collectOption,
           [],
-        ),
+        )
+        .option("--version <version>", "KERI protocol version for the interaction event; must match the accepted KEL"),
     ),
     dispatch,
     "interact",
@@ -321,6 +326,7 @@ function registerInteractCmd(
       passcode: options.passcode,
       data: options.data || [],
       ...witnessAuthArgs(options),
+      version: options.version,
     }),
   );
 }
