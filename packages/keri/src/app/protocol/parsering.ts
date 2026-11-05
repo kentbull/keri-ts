@@ -233,6 +233,7 @@ export function* dispatchEnvelope(
           serder,
           cigars: envelope.cigars,
           tsgs: envelope.tsgs,
+          attachments: envelope,
         }),
       };
     case Ilks.qry:
@@ -359,7 +360,7 @@ function* dispatchReadyMessage(
     }
     case Ilks.rpy:
       if (!envelope.cigars.length && !envelope.tsgs.length) return { kind: "drop", reason: "missingAuthentication" };
-      return revery.processReply({ serder, cigars: envelope.cigars, tsgs: envelope.tsgs });
+      return revery.processReply({ serder, cigars: envelope.cigars, tsgs: envelope.tsgs, attachments: envelope });
     case Ilks.xip:
     case Ilks.exn:
       if (!envelope.cigars.length && !envelope.tsgs.length && !envelope.sscs.length && !envelope.ssts.length) {
@@ -630,9 +631,12 @@ export function envelopeFromFrame(
 ): KeriDispatchEnvelope {
   // Only completed consumers may retain parent-owned children through normalization.
   const route = String(message.body.ked?.r ?? "");
+  const unblindQuery = message.body.ilk === "qry" && message.body.pvrsn.major === 2 && route === "/ipex/unblind";
   if (
-    (message.body.ilk !== "exn" && !(message.body.ilk === "xip" && nestedIpexRoute(route)))
-    || !supportsNestedExchange(route, message.body.pvrsn.major)
+    !unblindQuery && (
+      (message.body.ilk !== "exn" && !(message.body.ilk === "xip" && nestedIpexRoute(route)))
+      || !supportsNestedExchange(route, message.body.pvrsn.major)
+    )
   ) {
     requireFlatFrame(message, "KERI runtime normalization");
   }

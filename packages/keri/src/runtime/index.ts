@@ -117,6 +117,7 @@ export {
   type DhkeOutgoing,
   generateKeyPair,
 } from "../acdc/dhking.ts";
+export { Unblind, type UnblindOutgoing } from "../acdc/unblinding.ts";
 export {
   Oobiery,
   oobiRequestExn,

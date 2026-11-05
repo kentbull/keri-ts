@@ -4,7 +4,7 @@ import { encodeDateTimeToDater, timestampMicros } from "../time/mod.ts";
 import type { AgentCue } from "./cues.ts";
 import type { QueryCue } from "./cues.ts";
 import { Deck } from "./deck.ts";
-import { type DispatchOrdinal, TransIdxSigGroup } from "./dispatch.ts";
+import { type DispatchOrdinal, type KeriDispatchEnvelope, TransIdxSigGroup } from "./dispatch.ts";
 import { ValidationError } from "./errors.ts";
 import {
   acceptEscrow,
@@ -304,6 +304,8 @@ export class Router {
     diger: Diger;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
+    /** Parsed reply evidence; route owners decide which non-authentication families are allowed. */
+    attachments?: KeriDispatchEnvelope;
   }): ReplyProcessDecision {
     const route = args.serder.route;
     if (!route) {
@@ -424,6 +426,8 @@ export class Revery {
     serder: SerderKERI;
     cigars?: Cigar[];
     tsgs?: TransIdxSigGroup[];
+    /** Borrowed exact reply evidence, including BSQ/BSS for the Unblind owner. */
+    attachments?: KeriDispatchEnvelope;
   }): ReplyProcessDecision {
     // Missing signer groups can each request state; the accepted route may also emit one cue.
     if (!args.serder.verify()) {
