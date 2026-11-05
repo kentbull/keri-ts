@@ -117,6 +117,15 @@ Receipt body/genus follows the receipted event; hosted KSN and advertised endpoi
 evidence use v2. Shared serialization owns counters. The hosted-backend test is
 scoped evidence; four-backend Locksmith onboarding remains a separate gate.
 
+`watcher backend` owns independent controller-authorized allocations and actual
+periodic witness observations. Signed watcher-add/cut replies use the existing
+Kevery stores and OOBI processing; polling records only the current response's
+verification result. Ahead states trigger ordinary KEL acquisition, not direct
+state replacement. Retained observations describe their recorded query time,
+not global freshness. Controller queries require ordinary signature acceptance
+and return v2 KSN evidence. Account witness OOBIs select the serving endpoint AID
+at the end of the path, separately from the observed account at the beginning.
+
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)

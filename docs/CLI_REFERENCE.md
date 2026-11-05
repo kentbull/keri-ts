@@ -15,6 +15,15 @@ The public receipt listener defaults to `127.0.0.1:5632`; set `--listen-host` an
 The private provisioning listener always binds loopback and defaults to port `5631`; `--boot-port` selects a distinct local port.
 Use `--base`, `--head-dir` and `--passcode` for explicit store placement and encryption.
 
+## Hosted watcher backend
+
+`tufa watcher backend --name backend --url https://watcher.example` runs a hosted-watcher backend.
+`--url` is the advertised HTTP(S) origin without credentials, a path, query or fragment.
+The public observation listener defaults to `127.0.0.1:5642`; `--listen-host` and `--http` select its binding.
+The private provisioning listener always binds loopback, with `--boot-port` defaulting to `5641`.
+`--poll-interval` sets a positive number of seconds between key-state polls (default `30`).
+Use `--base`, `--head-dir` and `--passcode` for explicit store placement and encryption.
+
 ## KERI Foundation provider allocation
 
 `tufa infra kf discover --url https://provider.example` reads advertised profiles without opening a local store.

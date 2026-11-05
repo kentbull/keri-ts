@@ -102,6 +102,7 @@ function leafCommandNames(command: Command, prefix: string[] = []): string[] {
 }
 
 const CLI_COMMAND_EXAMPLES: string[][] = [
+  ["watcher", "backend", "-n", "backend", "--url", "https://watcher.example"],
   ["witness", "backend", "-n", "backend", "--url", "https://witness.example"],
   [
     "ipex",
@@ -329,6 +330,54 @@ Deno.test("tufa/cli - parsed command names all have registered handlers", () => 
 
   const handlerNames = [...createCmdHandlers().keys()].sort();
   assertEquals(handlerNames, dispatchedNames);
+});
+
+Deno.test("tufa/cli - watcher backend preserves listener and polling selections", () => {
+  const defaults = parseCommandSelection(["watcher", "backend", "-n", "backend", "--url", "https://watcher.example"]);
+  assertEquals([
+    defaults.name,
+    defaults.args.http,
+    defaults.args.bootPort,
+    defaults.args.listenHost,
+    defaults.args.pollInterval,
+  ], [
+    "watcher.backend",
+    "5642",
+    "5641",
+    "127.0.0.1",
+    "30",
+  ]);
+  const selected = parseCommandSelection([
+    "watcher",
+    "backend",
+    "-n",
+    "backend",
+    "--url",
+    "https://watcher.example",
+    "--http",
+    "9002",
+    "--boot-port",
+    "9001",
+    "--listen-host",
+    "0.0.0.0",
+    "--poll-interval",
+    "2.5",
+    "--head-dir",
+    "/tmp/watcher",
+  ]);
+  assertEquals([
+    selected.args.http,
+    selected.args.bootPort,
+    selected.args.listenHost,
+    selected.args.pollInterval,
+    selected.args.headDirPath,
+  ], [
+    "9002",
+    "9001",
+    "0.0.0.0",
+    "2.5",
+    "/tmp/watcher",
+  ]);
 });
 
 Deno.test("tufa/cli - witness backend separates public receipt and private provisioning ports", () => {
