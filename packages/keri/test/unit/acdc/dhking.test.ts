@@ -172,6 +172,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       const rgy = new Regery(side.hby, baser);
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
+        enableMailboxStore: index === 0,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
         ipexAuxiliary: { kind: "dhke", hab },
       });
@@ -251,7 +252,10 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         })
       );
       yield* intakeAll(side.member.makeLocScheme(`http://127.0.0.1:${server.addr.port}/`, side.member.pre, "http"));
-      yield* intakeAll(side.member.makeEndRole(side.member.pre, Roles.controller, true));
+      if (side === issuers[1]) {
+        // This member receives through a real hosted mailbox, including multi-frame evidence.
+        yield* intakeAll(side.member.makeEndRole(lead.member.pre, Roles.mailbox, true));
+      } else yield* intakeAll(side.member.makeEndRole(side.member.pre, Roles.controller, true));
       const controller = reply("/end/role/add", {
         cid: side.hab.pre,
         role: Roles.controller,
@@ -293,6 +297,9 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       custodian: lead.member.pre,
     }, { timeoutMs: 15000 });
     assertEquals([contributed.contributed, contributed.registryIssued, contributed.admitted], [true, false, false]);
+    const peerHost = yield* spawn(() =>
+      runAgentRuntime(issuers[1].runtime, { hab: issuers[1].member, pollMailbox: true })
+    );
     while (
       issuees.some(side =>
         !side.exc.pendingGrant(grant.said!, {
@@ -346,9 +353,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }
     const event = staged.tel, opening = envelopeFromFrame(nests[0]).bsqs[0];
     assertExists(opening);
-    const peerHost = yield* spawn(() =>
-      runAgentRuntime(issuerPeer.runtime, { hab: issuerPeer.member, pollMailbox: true })
-    );
     const approved = yield* approvePendingMultisigProposal(issuerPeer.hby, issuerPeer.runtime, {
       said: bup.said!,
       callbacks: {

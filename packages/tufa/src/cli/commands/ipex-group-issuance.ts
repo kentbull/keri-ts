@@ -441,6 +441,17 @@ function* runGroupIssuance(
             const outcome = yield* runtime.postman.wait(event);
             if (outcome.kin === "failed") throw outcome.error;
           }
+          // Public evidence aggregates contain several CESR frames, rather than one message.
+          function* sendEvidence(msg: Uint8Array, dest: string, topic = "multisig"): Operation<void> {
+            const event = runtime.postman.sendStream({ src: member.pre, dest, topic, msgs: [msg] }, { notify: true });
+            const outcome = yield* runtime.postman.wait(event);
+            if (outcome.kin === "failed") throw outcome.error;
+          }
+          function* broadcastEvidence(msg: Uint8Array): Operation<void> {
+            for (const peer of groupSigningMembers(runtime.hby, hab.pre)) {
+              if (peer !== member.pre) yield* sendEvidence(msg, peer);
+            }
+          }
           function* broadcast(msg: Uint8Array): Operation<void> {
             for (const peer of groupSigningMembers(runtime.hby, hab.pre)) {
               if (peer !== member.pre) yield* send(msg, peer);
@@ -488,9 +499,9 @@ function* runGroupIssuance(
                 parseBytes(messagize(input.serder, { tsgs: input.tsgs, cigars: input.cigars, gvrsn: Vrsn_2_0 }))[0];
               frame.nests = [...input.nests ?? []];
               const full = concatBytes(discloser.proofSupport(raw, hab), yield* wire(frame));
-              yield* broadcast(full);
+              yield* broadcastEvidence(full);
               if (request.role === "issuer") {
-                yield* send(full, frozenGrant.sad!.ri as string, "credential");
+                yield* sendEvidence(full, frozenGrant.sad!.ri as string, "credential");
                 const child = parseBytes(dh.start(request.grant))[0];
                 frozen = child.body.raw;
                 yield* runtime.protocol.dispatch(child, { local: true });
@@ -608,10 +619,10 @@ function* runGroupIssuance(
                   discloser.proofSupport(raw, hab),
                   yield* wrapper(runtime, completed, ProofRoute),
                 );
-                if (request.role === "recipient") yield* broadcast(publicProof);
+                if (request.role === "recipient") yield* broadcastEvidence(publicProof);
                 else finalProof = publicProof;
                 if (request.role === "issuer") {
-                  yield* send(discloser.proofSupport(raw, hab), frozenGrant.sad!.ri as string, "credential");
+                  yield* sendEvidence(discloser.proofSupport(raw, hab), frozenGrant.sad!.ri as string, "credential");
                 }
               }
               yield* wait(runtime, 50);
