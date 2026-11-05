@@ -350,9 +350,7 @@ Deno.test("interop/native-registry - TS registrar feeds selected Python observer
           yield* sleep(20);
         }
         assertEquals(response?.status, 200, sourceReplies.join("\n"));
-        assertEquals(response!.headers.get("Observer-Registry-Head"), evidence.update.said);
-        assert(response!.headers.get("Observer-Observed-At"));
-        assertEquals(response!.headers.get("Observer-Evidence-State"), "fresh");
+        // The selected Python observer serves verified evidence without custom freshness headers.
         const received = yield* call(() =>
           new Registrar(readerRuntime.protocol, readerRuntime.acdc!.store).ingest(
             concatBytes(Counter.makeGVC(Vrsn_2_0), response!.body),

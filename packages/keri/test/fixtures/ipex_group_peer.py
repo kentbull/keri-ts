@@ -318,13 +318,14 @@ class GroupIpexPeer(IpexPeer):
 
     def accept_group_proof(self, grant, proof):
         before, _ = self.auxiliary_grant(grant)
-        deadline = self.hby.db.epsd.get((grant,)).dts
+        # The exact authenticated KRAM transaction owns the Grant lifetime; epsd is cleanup only.
+        deadline = self.exc.exchangeDeadline(before)
         packet = Parser(version=V2).parseOneBare(ims=bytearray(proof.encode()), processive=False)
-        assert packet.serder.raw == before.raw and nowUTC() < self.hby.db.epsd.get((grant,)).datetime
+        assert packet.serder.raw == before.raw and deadline is not None and nowUTC() < deadline
         # Ordinary original group threshold/registry verification owns acceptance.
         Parser(version=V2, kvy=self.hby.kvy, exc=self.exc, rvy=self.hby.rvy,
                rgy=self.rgy).parse(ims=bytearray(proof.encode()), local=True)
-        assert self.exc.complete(grant) and self.hby.db.epsd.get((grant,)).dts == deadline
+        assert self.exc.complete(grant) and self.exc.exchangeDeadline(before) == deadline
         self.operation = None
         return dict(accepted=True)
 
