@@ -45,14 +45,26 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         witnessHab: witnesses[i],
       })
     );
+    const auths = Object.fromEntries(
+      witnesses.map(witness => [witness.pre, "12345678#2026-11-05T12:00:00.000000+00:00"]),
+    );
+    const receivedAuths = new Set<string>();
+    let requireAuth = false;
     let receiptLimit = 3;
     const servers = handlers.map((handler, i) =>
       Deno.serve(
         { hostname: "127.0.0.1", port: 0, onListen() {} },
-        (request) =>
-          i >= receiptLimit && new URL(request.url).pathname === "/receipts"
-            ? new Response("withheld", { status: 403 })
-            : handler(request),
+        (request) => {
+          if (new URL(request.url).pathname === "/receipts") {
+            const authorization = request.headers.get("Authorization");
+            if (requireAuth && authorization !== auths[witnesses[i].pre]) {
+              return new Response("witness code required", { status: 401 });
+            }
+            if (authorization) receivedAuths.add(witnesses[i].pre);
+            if (i >= receiptLimit) return new Response("withheld", { status: 403 });
+          }
+          return handler(request);
+        },
       )
     );
     const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
@@ -69,33 +81,54 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         yield* runtime.reactor.processBytes(witness.makeEndRole(witness.pre, Roles.controller, true));
       }
       yield* receiptor.receipt(issuer.pre, { sn: 0 });
+      requireAuth = true;
       receiptLimit = 1;
-      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre))));
+      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre, auths))));
       const sealing = issuer.kever!.serder;
       assertEquals([rgy.registryByName("native")!.sn, hby.db.fullyWitnessed(sealing)], [-1n, false]);
       receiptLimit = 2;
       // Receipt collection still propagates the third endpoint refusal, but two genuine signatures establish quorum.
-      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre))));
+      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre, auths))));
       assertEquals(hby.db.wigs.get([issuer.pre, sealing.said!]).map((signature) => signature.index).sort(), [0, 1]);
       assertEquals(hby.db.fullyWitnessed(sealing), true);
-      const rip = yield* author.incept("native", issuer.pre);
+      const rip = yield* author.incept("native", issuer.pre, auths);
       assertEquals(sealing.seals, [{ i: rip.said, s: "0", d: rip.said }]);
       assertEquals(issuer.kever!.serder.said, sealing.said, "retry collects receipts for the same signed KEL event");
       receiptLimit = 3;
-      yield* receiptor.receipt(issuer.pre, { sn: sealing.sn! }); // Catch up the third witness before later KEL events.
+      yield* receiptor.receipt(issuer.pre, { sn: sealing.sn!, auths }); // Catch up the third witness before later KEL events.
       const reg = author.registry("native", issuer.pre);
       const acdc = acdcmap(issuer.pre, { regid: rip.said, issuee: issuer.pre, attribute: { role: "holder" } });
-      const original = yield* author.issue(reg, acdc, { public: true });
+      receivedAuths.clear();
+      yield* call(() => assertRejects(() => run(() => author.issue(reg, acdc, { public: true }))));
+      const authPendingSeal = issuer.kever!.said;
+      assertEquals(reg.sn, 0n, "missing witness authorization cannot accept issuance");
+      const original = yield* author.issue(reg, acdc, { public: true, auths });
+      assertEquals(issuer.kever!.said, authPendingSeal, "authorized retry retains the exact signed anchor");
+      assertEquals(receivedAuths.size, 3, "all three real HTTP receipt requests carry operation auth");
       assertEquals(reg.sn, 1n);
       assertEquals(reg.store.publicOpening(original.update)!.td.nonce, acdc.said);
+      const disclosure = new WalletDiscloser(wallet, receiptor);
+      receivedAuths.clear();
+      const grant = yield* disclosure.prepareGrant(issuer.pre, { said: acdc.said! }, {
+        recipient: issuer.pre,
+        message: "authenticated source anchor",
+        anchor: true,
+        auths,
+      });
+      assertEquals(receivedAuths.size, 3, "anchored disclosure forwards auth through the same real receipt endpoints");
+      assertEquals(issuer.kever!.serder.seals, [{ d: grant.exn.said! }]);
       const sn = issuer.kever!.sn;
-      yield* author.issue(reg, acdc, { public: true });
+      yield* author.issue(reg, acdc, { public: true, auths });
       assertEquals(issuer.kever!.sn, sn);
       receiptLimit = 1;
-      yield* call(() => assertRejects(() => run(() => author.revoke(reg, acdc.said!, { public: true }))));
+      yield* call(() => assertRejects(() => run(() => author.revoke(reg, acdc.said!, { public: true, auths }))));
       const pendingSeal = issuer.kever!.said;
       assertEquals(reg.sn, 1n);
-      assertThrows(() => author.stage(reg, acdc, "different", { public: true }), ValidationError, "different pending");
+      assertThrows(
+        () => author.stage(reg, acdc, "different", { public: true }),
+        ValidationError,
+        "different pending",
+      );
       yield* rgy.baser.close(false);
       yield* rgy.baser.reopen({ reuse: true });
       yield* db.close(false);
@@ -103,11 +136,11 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       rgy = new AcdcV2Regery(hby, rgy.baser);
       author = new WalletAuthor(wallet, rgy, receiptor);
       receiptLimit = 3;
-      const revoked = yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true });
+      const revoked = yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true, auths });
       assertEquals([revoked.sad!.n, issuer.kever!.said], ["2", pendingSeal]);
       const revokedSeal = issuer.kever!.said;
       assertEquals(
-        (yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true })).said,
+        (yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true, auths })).said,
         revoked.said,
       );
       assertEquals(issuer.kever!.said, revokedSeal, "accepted revocation retry must not create another anchor");
@@ -154,18 +187,22 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       yield* db.reopen({ reuse: true });
       const retry = author.stage(author.registry("native", issuer.pre), acdc, "renewed", { boundEvent });
       assertEquals(retry.event.said, staged.event.said);
-      yield* author.anchor(author.registry("native", issuer.pre), staged.event);
+      yield* author.anchor(author.registry("native", issuer.pre), staged.event, auths);
       const recovered = custody.derivedOpening(staged.event);
       assertEquals(recovered.d.nonce, staged.opening.d.nonce);
       assertEquals("bd" in recovered ? recovered.bd.nonce : null, boundEvent);
       author = new WalletAuthor(wallet, rgy, receiptor);
       const successor = yield* author.update(author.registry("native", issuer.pre), acdc, "renewed", {
         public: true,
+        auths,
       });
       assertEquals(rgy.store.publicOpening(successor.said!)!.ts.label, "renewed");
       assertEquals(custody.derivedOpening(staged.event).d.nonce, staged.opening.d.nonce);
       assertEquals([...rgy.store.cloneTelIter(rip.said!)].length, 5);
-      const reissued = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      const reissued = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", {
+        public: true,
+        auths,
+      });
       const advance = author.stage(author.registry("native", issuer.pre), acdc, "issued", { public: true });
       assertEquals(advance.event.sad!.n, (BigInt(`0x${reissued.sad!.n}`) + 1n).toString(16));
       assertEquals(
@@ -177,11 +214,11 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       // Even a fully witnessed abbreviated seal cannot satisfy a native author retry.
       issuer.interact({ data: [{ s: advance.event.sad!.n, d: advance.event.said! }] });
       const abbreviated = issuer.kever!.serder;
-      yield* receiptor.receipt(issuer.pre, { sn: abbreviated.sn! });
+      yield* receiptor.receipt(issuer.pre, { sn: abbreviated.sn!, auths });
       receiptLimit = 1;
       yield* call(() =>
         assertRejects(() =>
-          run(() => author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true }))
+          run(() => author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true, auths }))
         )
       );
       const pendingAdvanceSeal = issuer.kever!.said;
@@ -194,7 +231,10 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       rgy = new AcdcV2Regery(hby, rgy.baser);
       author = new WalletAuthor(wallet, rgy, receiptor);
       receiptLimit = 3;
-      const resumed = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      const resumed = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", {
+        public: true,
+        auths,
+      });
       assertEquals(resumed.raw, advance.event.raw, "retry reuses the exact pending next event");
       assertEquals(issuer.kever!.said, pendingAdvanceSeal, "retry gathers receipts for the same pending anchor");
       assertEquals(issuer.kever!.serder.seals, [{ i: rip.said, s: resumed.sad!.n, d: resumed.said }]);
@@ -206,7 +246,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       const opening = custody.derive(rip.said!, ordinal, acdc.said!, "issued");
       const update = blindate(rip.said!, resumed.said!, opening.d.nonce, { sn: ordinal });
       current.processEvent(update);
-      yield* author.anchor(current, update);
+      yield* author.anchor(current, update, auths);
       const discloser = new WalletDiscloser(
         wallet,
         receiptor,

@@ -384,12 +384,38 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
     "Egrant",
     "--acdc-v2",
     "--consent",
+    "--code",
+    "Ewitness:12345678",
   ]);
   assertEquals([acdcV2.name, acdcV2.args.acdcV2, acdcV2.args.consent, acdcV2.args.said], [
     "ipex.admit",
     true,
     true,
     "Egrant",
+  ]);
+  assertEquals(acdcV2.args.code, ["Ewitness:12345678"]);
+  const agreement = parseCommandSelection([
+    "ipex",
+    "agree",
+    "-n",
+    "store",
+    "-a",
+    "holder",
+    "-r",
+    "issuer",
+    "--offer",
+    "Eoffer",
+    "--acdc-v2",
+    "--authenticate",
+    "--code",
+    "Ewitness:12345678",
+    "--code-time",
+    "2026-11-05T12:00:00.000000+00:00",
+  ]);
+  assertEquals([agreement.args.authenticate, agreement.args.code, agreement.args.codeTime], [
+    true,
+    ["Ewitness:12345678"],
+    "2026-11-05T12:00:00.000000+00:00",
   ]);
   for (
     const command of [
@@ -411,8 +437,18 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
       ...(command[0] === "update" ? [] : ["--acdc-v2"]),
       "--witness-gvrsn",
       "2",
+      "--authenticate",
+      "--code",
+      "Ewitness:12345678",
+      "--code-time",
+      "2026-11-05T12:00:00.000000+00:00",
     ]);
     assertEquals(selected.args.witnessGvrsn, "2");
+    assertEquals([selected.args.authenticate, selected.args.code, selected.args.codeTime], [
+      true,
+      ["Ewitness:12345678"],
+      "2026-11-05T12:00:00.000000+00:00",
+    ]);
     if (command[0] !== "update") assertEquals(selected.args.acdcV2, true);
   }
   const read = parseCommandSelection(["vc", "wallet", "read", "-n", "store", "--grant", "Egrant"]);
@@ -428,9 +464,12 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", () => {
     "holder",
     "--said",
     "Ecredential",
+    "--code",
+    "Ewitness:12345678",
     "--approval-timeout",
     "0",
   ]);
+  assertEquals(grant.args.code, ["Ewitness:12345678"]);
   assertEquals(grant.name, "ipex.grant");
   assertEquals(grant.args.approvalTimeoutSeconds, "0");
 

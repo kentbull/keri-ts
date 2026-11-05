@@ -112,6 +112,11 @@ and accepted issuance before any anchor signature. Explicit retry reuses the
 accepted REV or original locally tracked tmse candidate and its source seal;
 unrelated remote escrow cannot select a local authoring event. Corrupt retained
 evidence fails instead of authoring a replacement anchor.
+Native WalletAuthor operations, anchored IPEX disclosures/replies/Admit and finite issuer DH commands pass transient witness
+codes to the existing Receiptor for the exact sealing event. CLI resolution happens
+before registry/DH mutation; the receipt owner selects exact anchor witnesses. Codes and
+captured timestamps are per invocation and never become registry or custody state.
+Group BUP approval retains its ordinary member quorum and exact anchor selection.
 Regery/Registry/Credentialer compose issuer operations. Normal outcomes
 stay typed. No queue capacity or metadata-credit contract belongs in these paths.
 

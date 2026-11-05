@@ -37,10 +37,12 @@ import {
   systemClock,
   timestampMicros,
   ValidationError,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import { authoringWitnessAuths } from "../support/witness-auth.ts";
 import {
   acceptGroupIssuanceProof,
   isPendingSetupRefusal,
@@ -124,7 +126,7 @@ export function* runDerivedIssuance(
   runtime: AgentRuntime,
   wallet: Wallet,
   request: DerivedIssuanceRequest,
-  { timeoutMs, witnessGvrsn }: { timeoutMs: number; witnessGvrsn?: Versionage },
+  { timeoutMs, witnessGvrsn, auths }: { timeoutMs: number; witnessGvrsn?: Versionage; auths?: WitnessAuthMap },
 ): Operation<DerivedIssuanceResult> {
   const { dh, hab, rgy } = owners(runtime, wallet);
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
@@ -201,7 +203,7 @@ export function* runDerivedIssuance(
             }
             if (request.role === "issuer") {
               const custody = new RegistryCustody({ hby: runtime.hby, hab, registry: wallet.registry, db: wallet.db });
-              yield* new WalletAuthor(wallet, rgy, receiptor, custody).issue(reg!, credential);
+              yield* new WalletAuthor(wallet, rgy, receiptor, custody).issue(reg!, credential, { auths });
             } else {
               while (wallet.registry.headEvent(registry)?.ilk === "rip") {
                 dh.complete(xid);
@@ -255,6 +257,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
     alias,
     { skipConfig: false },
     function*({ hby, hab }) {
+      const auths = role === "issuer" ? authoringWitnessAuths(hab, args) : undefined;
       const group = isLocalGroupHab(hby, hab);
       const coordinator = parseStringOption(args.coordinator, "coordinator"),
         custodian = parseStringOption(args.custodian, "custodian");
@@ -394,13 +397,14 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               grant: selected,
               proposal,
               ...selection,
-            }, { timeoutMs: timeout * 1000, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1") });
+            }, { timeoutMs: timeout * 1000, auths, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1") });
             const { proof, ...facts } = completed;
             if (proof) yield* call(() => Deno.writeFile(proofOutput!, proof, { createNew: true, mode: 0o600 }));
             return { ...facts, ...(proof ? { proofOutput } : {}) };
           }
           return yield* runDerivedIssuance(runtime, wallet, { role, grant: selected }, {
             timeoutMs: timeout * 1000,
+            auths,
             witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),
           });
         });

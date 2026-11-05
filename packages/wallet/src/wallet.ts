@@ -26,6 +26,7 @@ import {
   ValidationError,
   vet,
   walkIpexGraph,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import { Buffer } from "node:buffer";
 import { anchorExchange, exchangeWire, WalletDiscloser } from "./disclosing.ts";
@@ -198,11 +199,12 @@ export class Wallet {
   *prepareAdmit(
     grant: string,
     holder: string,
-    { consent = false, message = "", gvrsn = Vrsn_2_0, receiptor }: {
+    { consent = false, message = "", gvrsn = Vrsn_2_0, receiptor, auths }: {
       consent?: boolean;
       message?: string;
       gvrsn?: Versionage;
       receiptor?: Receiptor;
+      auths?: WitnessAuthMap;
     } = {},
   ): Operation<PreparedAdmit> {
     if (consent !== true) throw new ValidationError("Explicit consent is required.");
@@ -215,7 +217,7 @@ export class Wallet {
     const admit = yield* this.prepareAdmitBody(grant, holder, { consent, message, gvrsn });
     const anchored = (admit.sad!.a as { ax?: boolean[] }).ax?.[0] === true;
     if (anchored && !receiptor) throw new ValidationError("Anchored Admit requires its actual receipt owner.");
-    const source = anchored ? yield* anchorExchange(this, receiptor!, hab, admit) : undefined;
+    const source = anchored ? yield* anchorExchange(this, receiptor!, hab, admit, auths) : undefined;
     if (!this.graphAccepted(grant, this.origin(this.hby.db.exns.get([grant])!))) {
       throw new ValidationError("Current authenticated graph acceptance is required after source receipts.");
     }

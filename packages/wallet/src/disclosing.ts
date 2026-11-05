@@ -52,6 +52,7 @@ import {
   vetBlind,
   vetBound,
   walkIpexGraph,
+  type WitnessAuthMap,
 } from "keri-ts/runtime";
 import type { RegistryCustody } from "./custody.ts";
 import type { Wallet } from "./wallet.ts";
@@ -115,6 +116,7 @@ export function* anchorExchange(
   receiptor: Receiptor,
   hab: Hab,
   body: SerderKERI | SerderACDC,
+  auths?: WitnessAuthMap,
 ): Operation<SealSource> {
   if (receiptor.hby !== wallet.hby) throw new ValidationError("Receipt owner must share this wallet's Habery.");
   let anchor: SerderKERI | null = null, event: SerderKERI | null = hab.kever!.serder;
@@ -138,7 +140,7 @@ export function* anchorExchange(
     else hab.interact({ data });
     anchor = hab.kever!.serder;
   }
-  yield* receiptor.receipt(hab.pre, { sn: anchor.sn!, allowTcp: true });
+  yield* receiptor.receipt(hab.pre, { sn: anchor.sn!, allowTcp: true, auths });
   if (!hab.db.fullyWitnessed(anchor)) throw new ValidationError("Source anchor remains pending witness receipts.");
   return { s: NumberPrimitive.fromNum(BigInt(anchor.sn!)), d: new Diger({ qb64: anchor.said! }) };
 }
@@ -452,11 +454,12 @@ export class WalletDiscloser {
     priorSaid: string,
     message = "",
     recipient?: string,
+    auths?: WitnessAuthMap,
   ): Operation<PreparedDisclosure> {
     const hab = this.signer(sender), prior = yield* this.prior(priorSaid);
     const exn = ipexExnBody(sender, `/ipex/${verb}`, [], { message, prior, recipient });
     const source = verb === "agree" && (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
-      ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn)
+      ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn, auths)
       : undefined;
     return { exn, wire: exchangeWire(hab, exn, undefined, source), support: source ? this.kel(hab) : new Uint8Array() };
   }
@@ -748,7 +751,7 @@ export class WalletDiscloser {
   *prepareGrant(
     sender: string,
     selection: DisclosureSelection,
-    options: IpexV2BodyOptions & { priorSaid?: string; presentation?: AcdcV2Registry },
+    options: IpexV2BodyOptions & { priorSaid?: string; presentation?: AcdcV2Registry; auths?: WitnessAuthMap },
   ): Operation<PreparedDisclosure> {
     const hab = this.signer(sender, options.gvrsn ?? Vrsn_2_0);
     const prepared = yield* this.prepareGrantBody(sender, selection, options);
@@ -767,7 +770,7 @@ export class WalletDiscloser {
       }
       // The Grant SAID is frozen before the BUP/KEL commitment. Only its nested proof is extended.
       const [proof, update] = reg.present(exn, "presented", { stamp: options.stamp });
-      const seal = yield* anchorExchange(this.wallet, this.receiptor, hab, update);
+      const seal = yield* anchorExchange(this.wallet, this.receiptor, hab, update, options.auths);
       reg.processEscrows();
       if (reg.store.seqEvent(reg.regk!, Number(BigInt(`0x${update.sad!.n}`)))?.said !== update.said) {
         throw new ValidationError("Presentation BUP remains pending authenticated acceptance.");
@@ -775,7 +778,7 @@ export class WalletDiscloser {
       ({ raw, nests } = yield* this.attachPresentationProof({ exn, raw, nests }, proof, seal));
     }
     const source = (exn.sad!.a as { ax?: boolean[] }).ax?.[0]
-      ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn)
+      ? yield* anchorExchange(this.wallet, this.receiptor, hab, exn, options.auths)
       : undefined;
     this.requireGraph(origin, raw);
     return {

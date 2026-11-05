@@ -47,6 +47,7 @@ import {
 import { withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";
+import { authoringWitnessAuths } from "../support/witness-auth.ts";
 import { approveAcdcV2RegistryEvent } from "./acdc-v2-authoring.ts";
 
 /** Completed transport destinations do not establish peer protocol acceptance. */
@@ -211,6 +212,7 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
     function*({ hby, runtime, hab }) {
       return yield* scoped(function*() {
         if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
+        const auths = authoringWitnessAuths(hab, args);
         const wallet = yield* openWallet(hby, runtime.acdc.store, runtime.exc);
         if (isLocalGroupHab(hby, hab)) {
           const admit = yield* wallet.prepareAdmitBody(said, hab.pre, { consent, message, gvrsn });
@@ -226,6 +228,7 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
         }
         const prepared = yield* wallet.prepareAdmit(said, hab.pre, {
           consent,
+          auths,
           message,
           gvrsn,
           receiptor: new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock, {
@@ -299,6 +302,7 @@ function* acdcV2Disclosure(
     function*({ hby, runtime, hab }) {
       return yield* scoped(function*() {
         if (!runtime.acdc) throw new ValidationError("ACDC v2 registry evidence is unavailable.");
+        const auths = verb === "grant" || verb === "agree" ? authoringWitnessAuths(hab, args) : undefined;
         const input = parseStringOption(args.input, "input");
         if (input) {
           yield* runtime.reactor.processBytes(Deno.readFileSync(input));
@@ -330,6 +334,7 @@ function* acdcV2Disclosure(
           openings: (Array.isArray(args.opening) ? args.opening as string[] : []).map(openingFile),
         };
         const options = {
+          auths,
           attrs: json(args.attrs, "attrs"),
           gvrsn: parseGvrsn(args.gvrsn ?? "2"),
           message,
@@ -363,7 +368,7 @@ function* acdcV2Disclosure(
               (function*() {
                 yield* scoped(function*() {
                   yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: true }));
-                  yield* approveAcdcV2RegistryEvent(hby, runtime, hab, discloser.receiptor, update, proof);
+                  yield* approveAcdcV2RegistryEvent(hby, runtime, hab, discloser.receiptor, update, proof, auths);
                 });
               })(),
               (function*() {
@@ -390,7 +395,7 @@ function* acdcV2Disclosure(
             ...options,
             presentation: registryName ? runtime.acdc.registryByName(registryName) ?? undefined : undefined,
           })
-          : yield* discloser.prepareReply(hab.pre, verb, priorSaid ?? "", message, recipient);
+          : yield* discloser.prepareReply(hab.pre, verb, priorSaid ?? "", message, recipient, auths);
         const wire = concatBytes(discloser.kel(hab), prepared.support, prepared.wire);
         yield* runtime.reactor.processBytes(wire, { local: true });
         yield* runtime.protocol.processEscrowsOnce();
