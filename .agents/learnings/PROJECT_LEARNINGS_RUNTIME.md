@@ -10,7 +10,9 @@ owns remaining qualification. Keep this routing memory concise, not a removal lo
 One runtime serves a Habery or command invocation. Hosted AID selection is
 separate from listener topology; never auto-host all Habs or expose signatory/AEID
 as normal identities. Provider storage is explicit enableMailboxStore or a borrowed
-Mailboxer, not AgentMode/runtimeMode. HTTP and clock dependencies are separate
+Mailboxer, not AgentMode/runtimeMode. Mailbox administration must carry the selected
+mailbox AID in CESR-DESTINATION for both CESR and multipart encodings; a shared
+provider origin does not identify one allocation. HTTP and clock dependencies are separate
 required component arguments. MailboxPoller owns its concrete HTTP/SSE request
 operation; there is no separately injected polling strategy. Requests carry data
 rather than collaborator bundles.

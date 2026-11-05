@@ -387,6 +387,7 @@ function* completeMailboxAdmin(
   const submission = collectMailboxAdminSubmission(hby, hab.pre);
   const response = yield* postMailboxAdmin(
     endpointUrl,
+    mailboxAid,
     submission,
     rpy,
   );
@@ -589,6 +590,7 @@ function collectMailboxAdminSubmission(
  */
 function* postMailboxAdmin(
   url: string,
+  mailboxAid: string,
   submission: {
     replay: Uint8Array;
     kel: Uint8Array;
@@ -596,24 +598,26 @@ function* postMailboxAdmin(
   },
   rpy: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
-  const raw = yield* call(() => postMailboxAdminCesr(url, concatBytes(submission.replay, rpy)));
+  const raw = yield* call(() => postMailboxAdminCesr(url, mailboxAid, concatBytes(submission.replay, rpy)));
   if (raw.ok || (raw.status !== 406 && raw.status !== 415)) {
     return raw;
   }
-  return yield* call(() => postMailboxAdminMultipart(url, submission, rpy));
+  return yield* call(() => postMailboxAdminMultipart(url, mailboxAid, submission, rpy));
 }
 
 /**
  * Send finite administrative CESR bytes and inspect the completed response.
  *
  * @param url Provider administration endpoint.
+ * @param mailboxAid Exact hosted mailbox selected at the shared provider origin.
  * @param bytes Finite signed administrative CESR wire.
  */
 function* postMailboxAdminCesr(
   url: string,
+  mailboxAid: string,
   bytes: Uint8Array,
 ): Operation<{ ok: boolean; status: number; body: string }> {
-  const request = buildCesrStreamRequest(bytes);
+  const request = buildCesrStreamRequest(bytes, { destination: mailboxAid });
   const response = yield* new FetchHttpClient().request(mailboxAdminUrl(url), {
     method: "POST",
     headers: request.headers,
@@ -629,11 +633,13 @@ function* postMailboxAdminCesr(
  * Prepare multipart control bytes before starting the administrative HTTP request.
  *
  * @param url Provider administration endpoint.
+ * @param mailboxAid Exact hosted mailbox selected at the shared provider origin.
  * @param submission Prepared administrative submission fields/artifacts.
  * @param rpy Signed endpoint-role reply bytes included in the multipart body.
  */
 function* postMailboxAdminMultipart(
   url: string,
+  mailboxAid: string,
   submission: {
     kel: Uint8Array;
     delkel: Uint8Array;
@@ -649,6 +655,7 @@ function* postMailboxAdminMultipart(
 
   // Use the platform encoder once, preserving its generated multipart boundary.
   const prepared = new Response(form);
+  prepared.headers.set("CESR-DESTINATION", mailboxAid);
   const bytes = yield* call(() => prepared.arrayBuffer());
   const response = yield* new FetchHttpClient().request(mailboxAdminUrl(url), {
     method: "POST",
