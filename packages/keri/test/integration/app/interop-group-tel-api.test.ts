@@ -84,7 +84,8 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
       const accepted = await run(function*() {
         const hby = yield* createHabery({ name: "group-api", headDirPath: ctx.home, skipConfig: true });
         const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
-        const member = hby.makeHab("member");
+        // Legacy group credentials use v1 member and group KELs, as the v1 Python peer expects.
+        const member = hby.makeHab("member", undefined, { version: Vrsn_1_0 });
         const handler = createProtocolHandler(runtime, { serviceHab: member, hostedPrefixes: [member.pre] });
         const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, handler);
         const url = `http://127.0.0.1:${server.addr.port}/`;
@@ -115,6 +116,7 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
           const made = hby.makeGroupHab("group", member, [member.pre, pyPre], [member.pre, pyPre], undefined, {
             isith: "2",
             nsith: "2",
+            version: Vrsn_1_0,
           });
           yield* post(made.message);
           const joined = yield* call(() => control("group", { member: member.pre }));

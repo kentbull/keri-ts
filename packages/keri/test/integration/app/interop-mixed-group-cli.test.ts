@@ -27,7 +27,9 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
     const witness = witnesses.node("wan");
     const head = `${ctx.home}/tufa`, name = `member-${crypto.randomUUID()}`;
     const pyName = `python-${crypto.randomUUID()}`;
-    const versions = keripyProtocolVersionArgs(ctx.env, "2.0");
+    // v1-only reference peers (GLEIF 1.2/1.3) need both members to author v1 KELs.
+    const kelVersion = v1OnlyKeripyPeer(ctx.env) ? "1.0" : "2.0";
+    const versions = keripyProtocolVersionArgs(ctx.env, kelVersion);
     /** Run a finite public command with a diagnostic deadline, without modifying the peer. */
     const tufa = (label: string, args: string[]) =>
       requireSuccess(
@@ -56,6 +58,8 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
     const tsPre = extractPrefix(
       (await tufa("incept Tufa member", [
         "incept",
+        "--version",
+        kelVersion,
         "--alias",
         "member",
         "--transferable",
@@ -152,6 +156,8 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
       tufa("Tufa proposes witnessed group", [
         "multisig",
         "incept",
+        "--version",
+        kelVersion,
         "--alias",
         "member",
         "--group",
@@ -243,14 +249,7 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
   }
 }
 
-// Skipped for v1-only peers (GLEIF 1.2/1.3): pending decision on keri-ts v1 KEL authoring for v1-only peers.
-Deno.test({
-  name: "selected Python and Tufa CLI members complete reciprocal witnessed group approval",
-  ignore: v1OnlyKeripyPeer(),
-  fn: () => reciprocalApproval(false),
-});
-Deno.test({
-  name: "selected Python and Tufa weighted CLI group completes while a non-required member stays offline",
-  ignore: v1OnlyKeripyPeer(),
-  fn: () => reciprocalApproval(true),
-});
+Deno.test("selected Python and Tufa CLI members complete reciprocal witnessed group approval", () =>
+  reciprocalApproval(false));
+Deno.test("selected Python and Tufa weighted CLI group completes while a non-required member stays offline", () =>
+  reciprocalApproval(true));

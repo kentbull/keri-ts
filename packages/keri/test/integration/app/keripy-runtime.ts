@@ -57,10 +57,8 @@ export function selectedKeripyProfile(env: Record<string, string>): typeof refer
 }
 
 /**
- * Tufa authors only v2 KELs, which v1-only reference peers cannot accept.
- * Cases that need such a peer to accept Tufa-authored KEL are skipped until
- * the pending decision on restoring selectable v1 authoring is made.
  * True when the selected reference peer only speaks KERI v1 (GLEIF 1.2/1.3 profiles).
+ * Tufa then selects `--version 1.0` for KELs that peer must accept.
  */
 export function v1OnlyKeripyPeer(env: Record<string, string> = Deno.env.toObject()): boolean {
   return selectedKeripyProfile(env)?.protocolVersionArgument === false;

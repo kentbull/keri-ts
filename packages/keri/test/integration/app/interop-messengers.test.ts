@@ -51,7 +51,8 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
         const hby = yield* createHabery({ name: `messengers-${crypto.randomUUID()}`, temp: true, skipConfig: true });
         const http = new FetchHttpClient();
         const runtime = yield* createAgentRuntime(hby, http, systemClock);
-        const receiver = hby.makeHab("receiver");
+        // These reference media profiles exercise v1 KEL evidence across every profile.
+        const receiver = hby.makeHab("receiver", undefined, { version: Vrsn_1_0 });
         const handler = createProtocolHandler(runtime, { serviceHab: receiver });
         const received: {
           method: string;
@@ -76,7 +77,8 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
             hab.interact();
             return [0, 1].map(sn => acceptedEventReplayMessage(hby, hab.pre, sn, Vrsn_1_0).message);
           };
-          const ordinary = hby.makeHab("ordinary"), stream = hby.makeHab("stream");
+          const ordinary = hby.makeHab("ordinary", undefined, { version: Vrsn_1_0 }),
+            stream = hby.makeHab("stream", undefined, { version: Vrsn_1_0 });
           const ordinaryParts = kel(ordinary), streamParts = kel(stream);
           const raw = new Uint8Array([0, 255, 128, 1, 2, 3]);
           const [essr] = exchange("/essr/req", {}, {
@@ -105,7 +107,7 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
 
           // At least the unmodified GLEIF 1.2.17 peer qualifies TCP intake. Main/1.3's Python-origin factory defect is separate.
           const tcp = ctx.env.KERIPY_INTEROP_PROFILE === "1.2"
-            ? hby.makeHab("tcp", undefined, { wits: [witness.pre], toad: 1 })
+            ? hby.makeHab("tcp", undefined, { wits: [witness.pre], toad: 1, version: Vrsn_1_0 })
             : undefined;
           const tcpParts = tcp ? kel(tcp) : [];
           if (tcp) {
@@ -220,7 +222,7 @@ Deno.test("signed mailbox queries retrieve and accept Python replies across refe
         const hby = yield* createHabery({ name: `mailbox-media-${crypto.randomUUID()}`, temp: true, skipConfig: true });
         const http = new FetchHttpClient();
         const runtime = yield* createAgentRuntime(hby, http, systemClock);
-        const recipient = hby.makeHab("recipient");
+        const recipient = hby.makeHab("recipient", undefined, { version: Vrsn_1_0 });
         try {
           const inception = acceptedEventReplayMessage(hby, recipient.pre, 0, Vrsn_1_0).message;
           yield* messengerFrom(witness.pre, { http: witness.httpOrigin }, http, systemClock).send(inception);
