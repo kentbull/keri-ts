@@ -1,6 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
-import { Diger, Prefixer } from "../../../../../cesr/mod.ts";
+import { Diger, Prefixer, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
@@ -24,8 +24,9 @@ import {
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
+import { reply } from "../../../../src/core/protocol-eventing.ts";
 
-Deno.test("multisig builders produce KERIpy route payload and embed shapes", async () => {
+Deno.test("multisig builders produce v2 KEL and reply proposals and KERIpy legacy VDR and EXN shapes", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-builders-${crypto.randomUUID()}`,
@@ -51,13 +52,18 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
       const acdc = exchangeMessage("/dummy/acdc", { d: "data" }, { sender: group.pre })[0];
       const iss = exchangeMessage("/dummy/iss", { i: true }, { sender: group.pre })[0];
       const rev = exchangeMessage("/dummy/rev", { r: true }, { sender: group.pre })[0];
-      const rpy = exchangeMessage("/dummy/rpy", { r: true }, { sender: group.pre })[0];
+      const rpy = reply("/end/role/add", { cid: group.pre, role: "mailbox", eid: member.pre }, {
+        pre: group.pre,
+        pvrsn: Vrsn_2_0,
+      });
       const [grant] = ipexGrantExn(group, member.pre, "grant", acdc);
 
+      // Group KEL and reply proposals are v2 wrappers committing to one nested child by SAID.
       const [micp] = yield* multisigInceptExn(member, [member.pre], [member.pre], icp);
       assertEquals(micp.route, MULTISIG_ICP_ROUTE);
-      assertEquals(micp.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre] });
-      assertExists((micp.ked?.e as Record<string, unknown>).icp);
+      assertEquals(micp.pvrsn, Vrsn_2_0);
+      assertEquals(micp.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre], icp: icp.said });
+      assertEquals(micp.ked?.e, undefined);
 
       const [vcpExn] = multisigRegistryInceptExn(group, member, "issue credentials", vcp, anc);
       assertEquals(vcpExn.route, MULTISIG_VCP_ROUTE);
@@ -80,8 +86,9 @@ Deno.test("multisig builders produce KERIpy route payload and embed shapes", asy
 
       const [rpyExn] = yield* multisigRpyExn(group, member, rpy);
       assertEquals(rpyExn.route, MULTISIG_RPY_ROUTE);
-      assertEquals(rpyExn.ked?.a, { gid: group.pre });
-      assertExists((rpyExn.ked?.e as Record<string, unknown>).rpy);
+      assertEquals(rpyExn.pvrsn, Vrsn_2_0);
+      assertEquals(rpyExn.ked?.a, { gid: group.pre, rpy: rpy.said });
+      assertEquals(rpyExn.ked?.e, undefined);
 
       const [wrapped] = multisigExn(group, member, grant);
       assertEquals(wrapped.route, MULTISIG_EXN_ROUTE);
