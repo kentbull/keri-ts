@@ -9,9 +9,10 @@ import {
   type Cigar,
   concatBytes,
   Counter,
-  type Diger,
+  Diger,
   Kinds,
   makeBlindUuid,
+  NumberPrimitive,
   parseAttachmentGroup,
   parseBytes,
   SealSource,
@@ -24,7 +25,7 @@ import type { Operation } from "effection";
 import type { ExchangeDecision, Exchanger, PresentationScope } from "../app/exchanges/exchanging.ts";
 import { Hab } from "../app/identity/habbing.ts";
 import { IpexV2Handler } from "../app/ipex/ipex-v2.ts";
-import { isLocalGroupHab } from "../app/multisig/group-members.ts";
+import { isLocalGroupHab, latestGroupContribution, localGroupMember } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
   envelopeFromFrame,
@@ -32,12 +33,13 @@ import {
 } from "../app/protocol/parsering.ts";
 import { abortable } from "../app/runtime/abortable.ts";
 import { Deck } from "../core/deck.ts";
-import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
+import { type KeriDispatchEnvelope, TransIdxSigGroup } from "../core/dispatch.ts";
 import { ValidationError } from "../core/errors.ts";
 import { verifyExchangeProofs, verifyQueryAttachments } from "../core/exchange/exchange-proofing.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
-import { type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { fetchStoredTsgs, type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
 import type { RegistryObserver } from "./observing.ts";
 import {
@@ -67,11 +69,13 @@ interface UnblindOperation {
   requestedByPeer: boolean;
   received: boolean;
   abandoned: boolean;
+  proposal: Uint8Array | null;
+  contribution: Uint8Array | null;
 }
 
-/** Caller-owned delivery of a fully signed reply; approval and bytes are process-local. */
+/** Member signing proposals or elected delivery of full aggregates; all bytes are process-local. */
 export interface UnblindOutgoing {
-  kin: "reply";
+  kin: "sign" | "query" | "reply";
   dest: string;
   msg: Uint8Array;
 }
@@ -99,10 +103,11 @@ function ordinal(event: SerderACDC): number {
 }
 
 /**
- * One individual presentation's explicit proof-release consent. Inject as qvy
+ * One presentation's explicit proof-release consent. Inject as qvy
  * and register Route on the habitat's existing Revery Router. Wire intake cannot
- * approve work; a fresh owner cannot resume an unfinished operation. Group query
- * and reply contribution requires a separate implementation and refuses here.
+ * approve work; a fresh owner cannot resume an unfinished operation. Group members
+ * sign exact proposals under that approval. Ordinary thresholds elect delivery
+ * from the completed aggregate; neither contribution nor delivery requires a root.
  */
 export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
@@ -112,6 +117,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly exc: Exchanger;
   readonly registry: RegistryObserver;
   readonly states: readonly string[];
+  readonly group: boolean;
 
   /** Bind the exact Grant verifier's store and an explicit ordinary-state vocabulary. */
   constructor({ hab, exc, registry, states }: {
@@ -122,10 +128,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
   }) {
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db
-      || exc.hby.habs.get(hab.pre!) !== hab || isLocalGroupHab(exc.hby, hab)
+      || exc.hby.habs.get(hab.pre!) !== hab
     ) {
-      throw new ValidationError("Unblind requires a local individual signing habitat");
+      throw new ValidationError("Unblind requires a local signing habitat");
     }
+    this.group = isLocalGroupHab(exc.hby, hab);
+    if (this.group) localGroupMember(exc.hby, hab.pre!);
     if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
       throw new ValidationError("Unblind requires an explicit sequence of state strings");
     }
@@ -173,6 +181,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
       requestedByPeer: false,
       received: false,
       abandoned: false,
+      proposal: null,
+      contribution: null,
     });
     return xid;
   }
@@ -181,49 +191,108 @@ export class Unblind implements AuxiliaryQueryProcessor {
   start(grant: string): Uint8Array {
     const op = this.operation(this.approve(grant));
     if (this.hab.pre !== op.recipient) throw new ValidationError("Only the disclosee starts Unblind");
-    if (!op.query) {
-      const nests = this.live(op).nests, carried = this.carried(op, nests);
-      const requested: Selection = {}, children: Uint8Array[] = [];
-      for (const regid of op.scope.keys()) {
-        const events = this.events(regid);
-        let missing = false, start = 0;
-        for (let index = events.length - 1; index >= 0; index--) {
-          const opening = carried.get(events[index].said!);
-          if (!opening) missing = true;
-          else if (this.checkOpening(op, events[index], opening, nests)) {
-            start = index + 1;
-            break;
-          }
-        }
-        if (!missing) continue;
-        requested[regid] = [];
-        for (const event of events.slice(start)) {
-          const anchor = this.registry.store.anchor(event.said!);
-          if (!anchor) throw new ValidationError("Requested event lacks accepted source evidence");
-          requested[regid].push(event.said!);
-          children.push(messagize(
-            event,
-            Counter.enclose({
-              code: "SealSourceCouples",
-              version: Vrsn_2_0,
-              qb64: SealSource.qb64b({ s: anchor[0], d: anchor[1] }),
-            }),
-            { nested: true, gvrsn: Vrsn_2_0 },
-          ));
-        }
-      }
-      if (!Object.keys(requested).length) throw new ValidationError("Grant already carries the current openings");
+    if (!op.query && !op.contribution) {
+      const { requested, children } = this.request(op);
       const message = query(Unblind.Route, { x: op.xid, re: requested }, {
         pre: this.hab.pre,
         replyRoute: Unblind.Route,
         pvrsn: Vrsn_2_0,
         kind: Kinds.json,
       });
-      op.query = this.signed(message, children);
+      const signed = this.signed(message, children);
       op.requested = requested;
+      if (this.group) {
+        op.proposal = message.raw.slice();
+        op.contribution = signed;
+        this.outgoing.push({ kin: "sign", dest: this.hab.pre!, msg: signed.slice() });
+      } else op.query = signed;
     }
     this.current(op);
-    return op.query.slice();
+    return (op.query ?? op.contribution!).slice();
+  }
+
+  /**
+   * Contribute to one exact group proposal under the existing local approval.
+   * Validate every member signature and the public suffix/minimum openings before
+   * signing. A rootless member signs the supplied proof, never derives a root.
+   */
+  contribute(xid: string, proposal: Uint8Array): Uint8Array {
+    if (!this.group) throw new ValidationError("Unblind contribution requires a local group member");
+    const envelope = parsed(proposal), message = envelope.serder, querying = message.ilk === "qry";
+    if (!querying && message.ilk !== "rpy") throw new ValidationError("Expected a signed Unblind query or reply");
+    this.attachments(envelope, querying ? "query" : "reply");
+    if (envelope.sigers.length || envelope.cigars.length) {
+      throw new ValidationError("Group proposal requires named group signing factors");
+    }
+    const { op, selected, nests } = this.preflight(
+      message,
+      querying ? "q" : "a",
+      querying ? "recipient" : "sender",
+      true,
+    );
+    if (op.xid !== xid || querying && message.sad!.rr !== Unblind.Route) {
+      throw new ValidationError("Proposal differs from the approved Unblind transaction");
+    }
+    if (!querying && !op.requestedByPeer) {
+      throw new ValidationError("Group reply requires its authenticated peer query");
+    }
+    this.current(op);
+    if (op.proposal && !bytesEqual(op.proposal, message.raw)) {
+      throw new ValidationError("Unblind proposal body is frozen");
+    }
+    const kever = this.hab.kever!;
+    const groups = [
+      ...envelope.tsgs,
+      ...envelope.ssgs.map(group =>
+        new TransIdxSigGroup(
+          group.prefixer,
+          NumberPrimitive.fromNum(BigInt(kever.lastEst.s)),
+          new Diger({ qb64: kever.lastEst.d }),
+          group.sigers,
+        )
+      ),
+    ];
+    if (!groups.length) throw new ValidationError("Proposal lacks a group member signature");
+    for (const group of groups) {
+      if (group.pre !== this.hab.pre || group.sn !== BigInt(kever.lastEst.s) || group.said !== kever.lastEst.d) {
+        throw new ValidationError("Proposal names different group establishment keys");
+      }
+      const verified = Kever.verifyIndexedSignatures(message.raw, group.sigers, kever.verfers);
+      if (!verified.sigers.length || verified.sigers.length !== group.sigers.length) {
+        throw new ValidationError("Proposal lacks valid member contributions");
+      }
+    }
+    const extra = querying
+      ? this.queryEvidence(op, selected, envelope.nests)
+      : envelope.attachmentGroups.filter(group =>
+        ["BlindedStateQuadruples", "BoundStateSextuples"]
+          .includes(group.name.replace(/^Big/, ""))
+      ).map(group => group.raw);
+    if (!querying) {
+      const openings = this.replyOpenings(op, selected, nests, [...envelope.bsqs, ...envelope.bsss]);
+      const minimum = this.minimum(op, nests, event => this.opening(openings, event));
+      if (!sameSelection(selected, minimum.selected)) {
+        throw new ValidationError("Reply is not the minimum current suffix");
+      }
+    }
+    if (op.contribution) {
+      const previous = parsed(op.contribution);
+      const old = querying
+        ? this.publicEvents(previous.nests)
+        : previous.attachmentGroups.filter(group =>
+          ["BlindedStateQuadruples", "BoundStateSextuples"]
+            .includes(group.name.replace(/^Big/, ""))
+        ).map(group => group.raw);
+      if (old.length !== extra.length || old.some((wire, index) => !bytesEqual(wire, extra[index]))) {
+        throw new ValidationError("Unblind proposal evidence is frozen");
+      }
+    } else {
+      const signed = this.signed(message, extra);
+      op.proposal = message.raw.slice();
+      op.contribution = signed;
+      if (querying) op.requested = selected;
+    }
+    return op.contribution.slice();
   }
 
   /** Authenticate the full peer threshold before public evidence intake or proof release. */
@@ -232,16 +301,42 @@ export class Unblind implements AuxiliaryQueryProcessor {
       const { serder } = envelope;
       if (serder.ilk !== "qry" || serder.sad!.rr !== Unblind.Route) throw new ValidationError("Invalid Unblind query");
       this.attachments(envelope, "query");
-      const { op, selected } = this.preflight(serder, "q", "sender");
+      const own = this.group && serder.pre === this.hab.pre;
+      const { op, selected } = this.preflight(serder, "q", own ? "recipient" : "sender", own);
+      if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
+        throw new ValidationError("Own Unblind query lacks its exact locally approved proposal");
+      }
       if (!verifyQueryAttachments(this.hab.db, envelope)) return { kind: "drop", reason: "missingAuthentication" };
       if (op.requested && !sameSelection(op.requested, selected)) {
         throw new ValidationError("Conflicting Unblind request");
+      }
+      if (own) {
+        const extra = this.queryEvidence(op, selected, envelope.nests);
+        this.current(op);
+        const kever = this.hab.kever!;
+        let groups = envelope.tsgs.filter(group => group.pre === this.hab.pre);
+        if (!groups.length) {
+          const sigers = [
+            ...envelope.sigers,
+            ...envelope.ssgs.filter(group => group.pre === this.hab.pre).flatMap(group => group.sigers),
+          ];
+          groups = [
+            new TransIdxSigGroup(
+              kever.prefixer,
+              NumberPrimitive.fromNum(BigInt(kever.lastEst.s)),
+              new Diger({ qb64: kever.lastEst.d }),
+              sigers,
+            ),
+          ];
+        }
+        this.groupMessage(op, "query", serder, groups, extra);
+        return { kind: "accept" };
       }
       this.receiveEvents(selected, envelope.nests);
       this.live(op);
       op.requested = selected;
       op.requestedByPeer = true;
-      this.respond(op.xid);
+      if (!this.group) this.respond(op.xid);
       return { kind: "accept" };
     } catch (error) {
       if (error instanceof ValidationError) return { kind: "drop", reason: "invalidQuery" };
@@ -254,6 +349,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     const op = this.operation(xid), { nests } = this.live(op);
     if (this.hab.pre !== op.sender || !op.requestedByPeer) throw new ValidationError("No authenticated peer request");
     this.current(op);
+    if (this.group && op.contribution) return (op.reply ?? op.contribution).slice();
     if (!op.reply) {
       const { selected, openings } = this.minimum(op, nests, (event) => this.held(op, event, nests));
       const message = reply(Unblind.Route, { x: op.xid, re: selected }, {
@@ -261,7 +357,14 @@ export class Unblind implements AuxiliaryQueryProcessor {
         pvrsn: Vrsn_2_0,
         kind: Kinds.json,
       });
-      op.reply = this.signed(message, openings.map(publicOpeningAttachment));
+      const signed = this.signed(message, openings.map(publicOpeningAttachment));
+      if (this.group) {
+        op.proposal = message.raw.slice();
+        op.contribution = signed;
+        this.outgoing.push({ kin: "sign", dest: this.hab.pre!, msg: signed.slice() });
+        return signed.slice();
+      }
+      op.reply = signed;
     }
     this.outgoing.push({ kin: "reply", dest: op.recipient, msg: op.reply.slice() });
     return op.reply.slice();
@@ -286,8 +389,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
         }
         this.attachments(attachments, "reply");
       }
-      const { op, selected, nests } = this.preflight(serder, "a", "recipient");
-      if (!op.query) throw new ValidationError("Reply has no outstanding Unblind query");
+      const own = this.group && serder.pre === this.hab.pre;
+      const { op, selected, nests } = this.preflight(serder, "a", own ? "sender" : "recipient", own);
+      if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw) || !op.requestedByPeer)) {
+        throw new ValidationError("Own Unblind reply lacks its exact locally approved proposal");
+      }
+      if (!own && !op.query) throw new ValidationError("Reply has no outstanding Unblind query");
       this.current(op);
       const verified = this.replyOpenings(op, selected, nests, [
         ...attachments?.bsqs ?? [],
@@ -301,6 +408,16 @@ export class Unblind implements AuxiliaryQueryProcessor {
         throw new ValidationError("Reply is not the minimum current suffix");
       }
       op.selected = selected;
+      if (own) {
+        this.groupMessage(
+          op,
+          "reply",
+          serder,
+          fetchStoredTsgs(this.hab.db, diger.qb64).filter(group => group.pre === this.hab.pre),
+          minimum.openings.map(publicOpeningAttachment),
+        );
+        return decision;
+      }
       op.received = true;
       return decision;
     } catch (error) {
@@ -314,7 +431,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     const op = this.operation(xid);
     this.live(op);
     this.current(op);
-    return op.received;
+    return this.group && this.hab.pre === op.sender ? op.reply !== null : op.received;
   }
 
   /** Retry this exact Grant, or atomically update only its live accepted proof view. */
@@ -390,12 +507,54 @@ export class Unblind implements AuxiliaryQueryProcessor {
   /** Discard approved work and unsent replies; delivered bytes remain caller-owned. */
   abandon(xid: string): void {
     const op = this.operation(xid);
-    const keep = [...this.outgoing].filter((item) => !op.reply || !bytesEqual(item.msg, op.reply));
+    const keep = [...this.outgoing].filter(item =>
+      ![op.query, op.reply, op.contribution]
+        .some(wire => wire && bytesEqual(item.msg, wire))
+    );
     this.outgoing.clear();
     this.outgoing.extend(keep);
-    op.query = op.reply = null;
+    op.query = null;
+    op.reply = null;
+    op.proposal = null;
+    op.contribution = null;
     op.openings.clear();
     op.abandoned = true;
+  }
+
+  /** Select the exact missing public suffix without signing or changing registry state. */
+  private request(op: UnblindOperation): { requested: Selection; children: Uint8Array[] } {
+    const nests = this.live(op).nests, carried = this.carried(op, nests);
+    const requested: Selection = {}, children: Uint8Array[] = [];
+    for (const regid of op.scope.keys()) {
+      const events = this.events(regid);
+      let missing = false, start = 0;
+      for (let index = events.length - 1; index >= 0; index--) {
+        const opening = carried.get(events[index].said!);
+        if (!opening) missing = true;
+        else if (this.checkOpening(op, events[index], opening, nests)) {
+          start = index + 1;
+          break;
+        }
+      }
+      if (!missing) continue;
+      requested[regid] = [];
+      for (const event of events.slice(start)) {
+        const anchor = this.registry.store.anchor(event.said!);
+        if (!anchor) throw new ValidationError("Requested event lacks accepted source evidence");
+        requested[regid].push(event.said!);
+        children.push(messagize(
+          event,
+          Counter.enclose({
+            code: "SealSourceCouples",
+            version: Vrsn_2_0,
+            qb64: SealSource.qb64b({ s: anchor[0], d: anchor[1] }),
+          }),
+          { nested: true, gvrsn: Vrsn_2_0 },
+        ));
+      }
+    }
+    if (!Object.keys(requested).length) throw new ValidationError("Grant already carries the current openings");
+    return { requested, children };
   }
 
   private operation(xid: string): UnblindOperation {
@@ -455,14 +614,73 @@ export class Unblind implements AuxiliaryQueryProcessor {
   }
 
   /** Encode the endorsed finite body and explicit counted evidence in one attachment enclosure. */
-  private signed(message: SerderKERI, extra: readonly Uint8Array[]): Uint8Array {
-    const auth = parsed(this.hab.endorse(message, { gvrsn: Vrsn_2_0 }));
+  private signed(message: SerderKERI, extra: readonly Uint8Array[], groups?: readonly TransIdxSigGroup[]): Uint8Array {
+    const auth = parsed(
+      groups
+        ? messagize(message, { tsgs: groups, gvrsn: Vrsn_2_0 })
+        : this.hab.endorse(message, { gvrsn: Vrsn_2_0 }),
+    );
     const attachments = concatBytes(...auth.attachmentGroups.map((group) => group.raw), ...extra);
     return concatBytes(
       Counter.makeGVC(Vrsn_2_0),
       message.raw,
       Counter.enclose({ code: "AttachmentGroup", qb64: attachments, version: Vrsn_2_0 }),
     );
+  }
+
+  /** Reconstruct only allowed finite public event children; credentials never pass this encoder. */
+  private publicEvents(nests: readonly CesrFrame[]): Uint8Array[] {
+    return nests.map(nest => {
+      if (!(nest.body instanceof SerderACDC) || nest.body.ilk !== "bup") {
+        throw new ValidationError("Unblind query must carry public BUP evidence");
+      }
+      this.attachments(envelopeFromFrame(nest), "event");
+      return messagize(nest.body, concatBytes(...nest.attachments.map(group => group.raw)), {
+        nested: true,
+        gvrsn: Vrsn_2_0,
+      });
+    });
+  }
+
+  /** Local group signatures cover exactly the suffix selected from this member's accepted state. */
+  private queryEvidence(op: UnblindOperation, selected: Selection, nests: readonly CesrFrame[]): Uint8Array[] {
+    const expected = this.request(op), supplied = this.publicEvents(nests);
+    if (
+      !sameSelection(selected, expected.requested) || supplied.length !== expected.children.length
+      || supplied.some((wire, index) => !bytesEqual(wire, expected.children[index]))
+    ) {
+      throw new ValidationError("Group query differs from the selected public events and sources");
+    }
+    return supplied;
+  }
+
+  /** Freeze a complete aggregate, then elect delivery from its own historical signing indices. */
+  private groupMessage(
+    op: UnblindOperation,
+    field: "query" | "reply",
+    message: SerderKERI,
+    groups: readonly TransIdxSigGroup[],
+    extra: readonly Uint8Array[],
+  ): void {
+    if (field === "query" && op.query) return;
+    if (!op[field]) {
+      const verified = verifyExchangeProofs(this.hab.db, message, {
+        tsgs: groups.filter(group => group.pre === this.hab.pre),
+      });
+      if (!verified.tsgs.length || verified.invalid || verified.missing.length) {
+        throw new ValidationError("Own Unblind message lacks a verified group signature threshold");
+      }
+      op[field] = this.signed(message, extra, verified.tsgs);
+    }
+    // Later contributions cannot change which member is elected by these frozen bytes.
+    const proof = parsed(op[field]!).tsgs[0];
+    const establishment = this.hab.db.getEvtSerder(proof.pre, proof.said);
+    if (!establishment?.estive) throw new ValidationError("Group aggregate establishment is unavailable");
+    const member = localGroupMember(this.exc.hby, this.hab.pre!);
+    const contribution = latestGroupContribution(this.hab.db, member.pre!, establishment.verfers);
+    if (contribution?.index === Math.min(...proof.sigers.map(siger => siger.index))) {
+      this.outgoing.push({ kin: field, dest: field === "query" ? op.sender : op.recipient, msg: op[field]!.slice() });
+    }
   }
 
   /** Reject foreign evidence families, including unknown raw attachment groups. */

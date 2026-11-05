@@ -100,7 +100,7 @@ bodies; it never authors Admit. Shared `verifyQueryAttachments` prefers named
 sender TSGs, otherwise resolves raw/last signatures against accepted current
 establishment state; a valid factor suffices but missing claimed coordinates
 refuse. KRAM admission alone supplies no consent.
-Individual `Unblind` separately approves one live presentation and freezes its
+`Unblind` separately approves one live presentation and freezes its
 exact bodies, registry scope and original deadline. The disclosee's signed query
 carries a contiguous accepted public BUP suffix; the sender authenticates its full
 threshold before ordinary registry intake or proof release. Replies contain only
@@ -111,7 +111,14 @@ vetted event openings may survive a partial reply only in the approved operation
 Finish retries a pending Grant or uses `verifyGrantProofs` and the ordinary route
 verifier before atomically replacing only that live accepted Grant's proof rows
 and current observations. Exact node bodies, earlier admitted Grants and deadlines
-stay unchanged. No automatic Admit, durable approval or group fallback exists.
+stay unchanged. Group members use `contribute(xid, proposal)` under that same
+approval: verify the exact body, public suffix/proof bytes and accepted group
+establishment before signing, without requiring a root. Only full own query/reply
+thresholds freeze completed aggregates. Delivery belongs to the member whose
+latest accepted historical contribution matches the aggregate's lowest verified
+index; it is not DH custody or a Grant/KEL coordinator election. The root holder
+may author a reply proposal while another rootless member delivers its aggregate.
+No automatic Admit, durable approval or additional consent stage exists.
 Remote dependency outcomes are typed; storage/corruption failures propagate.
 KRAM's ordinary multi-signature handoff supplies the complete verified sender
 TSG for qry/rpy/XIP/EXN, preserving its accepted establishment coordinates and

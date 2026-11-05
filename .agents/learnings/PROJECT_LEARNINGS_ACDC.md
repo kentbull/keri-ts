@@ -168,14 +168,18 @@ and exact-Grant retry remain bounded by the original deadline after BUP arrives.
 Group DH freezes its accepted coordinator's custodian and ordinary threshold;
 only that member retains the scalar-derived root, while other members contribute
 ordinary signatures to the exact proposal. No automatic root copying follows;
-Admit stays explicit. Individual `Unblind` uses exact held ordinary or bound
+Admit stays explicit. `Unblind` uses exact held ordinary or bound
 openings, or derives ordinary openings from the existing Keeper root using an
 explicit application state vocabulary. It never derives a bound proof or sends a
 root. Public query BUPs must form a fully anchored contiguous suffix before any
 intake; newly accepted heads invalidate the frozen request. Only requested missing
 proofs through the latest non-placeholder binding are released. Same-recipient
 presentation-registry and DI2I policy remain in the existing Grant verifier.
-Group Unblind and RegistrySalt transfer remain separate work.
+Group Unblind contributors verify the supplied minimum openings without root
+custody. Public query suffixes remain exact on every member contribution, and
+ordinary group signature thresholds gate peer delivery. Delivery election uses
+the completed auxiliary message's accepted signing keys, independently of any DH
+custodian. RegistrySalt transfer remains separate work.
 WalletAuthor composes the existing native Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

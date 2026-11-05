@@ -114,15 +114,15 @@ operation scope. It owns no parser, queue or transport through this interface.
 KRAM hands complete accumulated sender signatures to query, reply, XIP and EXN
 receivers as one establishment-bound group, preserving foreign evidence.
 
-Individual `Unblind({hab, exc, registry, states})` composes that query seam with
+`Unblind({hab, exc, registry, states})` composes that query seam with
 the existing Revery Router at `/ipex/unblind`. Each party explicitly approves the
 same retained live Grant. Only this v2 query route admits nested public BUPs;
 the Unblind owner verifies their exact requested order, anchors and contiguous
 accepted prefix before ordinary registry intake. Revery forwards the parsed reply
 envelope so BSQ/BSS evidence survives KRAM signature accumulation. Route owners
 validate allowed evidence families; forwarding neither authenticates openings nor
-changes Revery's threshold/BADA rules. Unblind's outgoing Deck contains signed
-replies for caller delivery. Approval, cached proofs and retry bytes are local to
+changes Revery's threshold/BADA rules. For individuals, Unblind's outgoing Deck
+contains signed replies for caller delivery. Approval, cached proofs and retry bytes are local to
 the owner and end at the original Grant deadline or terminal response.
 
 Unblind finish supplies the minimum verified event openings to the same pending
@@ -130,7 +130,23 @@ Grant, or reverifies one live accepted Grant through its ordinary route before
 atomically updating that Grant's nested proof rows and current observations.
 Serialization occurs outside the writer; live scope, body/order and evidence
 snapshot checks repeat inside it. Earlier admitted Grants remain unchanged.
-No root disclosure, automatic Admit or group fallback is part of this owner.
+No root disclosure or automatic Admit is part of this owner.
+
+For groups, `start` and `respond` freeze a member's signing proposal and emit
+`kin: sign` to the local group AID. `contribute(xid, proposal)` verifies that exact
+body and its public suffix or minimum openings before adding the local member's
+signature under the existing approval. It introduces no second consent stage.
+Every query contribution carries the same public suffix; ordinary KRAM and Revery
+own signature accumulation and threshold verification. Feed the contributions
+through the same protocol intake in each member store. Full own-group intake
+freezes an aggregate and only its elected member emits `kin: query|reply` to the
+peer group. Election uses the lowest verified index in the aggregate's accepted
+establishment and the local member's latest matching accepted contribution.
+Root custody is irrelevant to contribution and delivery election: a proof holder
+can author a reply that a different rootless member delivers. Group peer-query
+intake records the authenticated request; the application calls `respond` on a
+member holding the required proofs instead of automatically authoring competing
+reply bodies. Delivery, proposal distribution and final Admit remain caller-owned.
 
 All enabled built-in diagnostic levels (debug/info/warn/error) write to stderr.
 Loglevel selects verbosity; CLI command data, including JSON, remains on stdout.
