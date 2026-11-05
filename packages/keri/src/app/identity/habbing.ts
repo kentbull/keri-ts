@@ -30,6 +30,7 @@ import {
   Verfer,
   type Versionage,
   Vrsn_1_0,
+  Vrsn_2_0,
 } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import type { AgentCue, QueryInstruction } from "../../core/cues.ts";
@@ -490,7 +491,7 @@ export class Hab {
   }
 
   /**
-   * Incept this habitat through the shared accepted-state path.
+   * Incept this habitat as KERI v2 through the shared accepted-state path.
    *
    * KERIpy correspondence:
    * - mirrors the pattern where local inception is signed in the habitat layer
@@ -551,6 +552,7 @@ export class Hab {
     const currentSith = isith ?? defaultThreshold(keys.length, 1);
     const nextThreshold = nextSith ?? defaultThreshold(ndigs.length, 0);
     const serder = inceptEvent(keys, {
+      version: Vrsn_2_0,
       code: prefixCode,
       isith: currentSith,
       ndigs,
@@ -660,6 +662,7 @@ export class Hab {
         keys,
         kever.serder.said ?? kever.said,
         {
+          version: Vrsn_2_0,
           ilk: kever.delpre !== null ? Ilks.drt : Ilks.rot,
           sn: kever.sn + 1,
           isith: currentSith,
@@ -682,7 +685,7 @@ export class Hab {
         this.ks.pris.rem(pub);
       }
 
-      return messagize(serder, { sigers, pipelined: true });
+      return messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 });
     } catch (error) {
       // Roll keeper state back if the event was not accepted locally. The
       // accepted-state machine, not keeper progression alone, defines success.
@@ -721,10 +724,11 @@ export class Hab {
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
+      { version: Vrsn_2_0 },
     );
     const sigers = this.sign(serder.raw, true) as Siger[];
     this.acceptLocally(serder, sigers);
-    return messagize(serder, { sigers, pipelined: true });
+    return messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 });
   }
 
   /**
@@ -1567,6 +1571,7 @@ export class Habery {
     const serder = inceptEvent(keys, {
       // A group identifier is always self-addressing, even with a single signing
       // key, matching KERIpy's GroupHab.make (code defaults to Blake3_256).
+      version: Vrsn_2_0,
       code: DigDex.Blake3_256,
       isith: args.isith,
       ndigs,
@@ -1641,7 +1646,7 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: Vrsn_2_0 }),
     };
   }
 
@@ -1759,7 +1764,7 @@ export class Habery {
    * - member AIDs should already be in the key state intended for the new
    *   group key list, matching KLI's operator workflow of rotating members
    *   before rotating the group
-   * An explicit version selects both body and returned proof framing; omission remains V1.
+   * Body and returned proof framing default to KERI/CESR v2.
    */
   rotateGroupHab(
     group: string,
@@ -1810,7 +1815,7 @@ export class Habery {
         cuts: args.cuts,
         adds: args.adds,
         data: args.data,
-        version: args.version,
+        version: args.version ?? Vrsn_2_0,
       },
     );
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1840,11 +1845,11 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_1_0 }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_2_0 }),
     };
   }
 
-  /** Create a locally signed group interaction; explicit version selects body/proofs, otherwise V1. */
+  /** Create a locally signed group interaction with KERI/CESR v2 body/proofs by default. */
   interactGroupHab(
     group: string,
     smids?: string[],
@@ -1872,7 +1877,7 @@ export class Habery {
       kever.serder.said ?? kever.said,
       kever.sn + 1,
       args.data ?? [],
-      { version: args.version },
+      { version: args.version ?? Vrsn_2_0 },
     );
     const keys = kever.verfers.map((verfer) => verfer.qb64);
     const sigers = this.signGroupEventWithLocalMembers(
@@ -1900,7 +1905,7 @@ export class Habery {
       hab,
       serder,
       sigers,
-      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_1_0 }),
+      message: messagize(serder, { sigers, pipelined: true, gvrsn: serder.gvrsn ?? args.version ?? Vrsn_2_0 }),
     };
   }
 

@@ -2,6 +2,12 @@
 
 ## Accepted state and decisions
 
+Normal local individual and group inception, rotation and interaction author
+KERI v2 bodies with CESR v2 controller proofs. The existing event builders own
+encoding; Habitat APIs select the version. Reopen uses accepted KEL and keeper
+state, without a separate version record or migration. Stored-event replay keeps
+its existing minimum attachment genus derived from the signed body.
+
 `Kever` decides validity; `Kevery` routes, persists escrows, handles duplicates and
 applies post-acceptance effects. Kever has no queue dependency: decision-carried
 cue descriptions are data, and processing/publication stays with Kevery.
