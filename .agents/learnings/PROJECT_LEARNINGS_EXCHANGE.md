@@ -217,7 +217,8 @@ root, or metadata with matching issuer, promised registry and every nonempty
 section commitment. Compare only Serder-verified d/$id/AGID claims; missing named
 metadata uses proof escrow, known contradictions reject. Then validate all own schemas and presentations/ax before reducing issuer authentication
 and edges together. IPEX’s local evaluator uses strong AND/OR, inherited conjunctive
-pins, default/last delegative I2I/NI2I and E1E. Unsupported operators and compact Edge
+pins, default/last delegative I2I/NI2I/DI2I and E1E. DI2I uses accepted inception
+delegation evidence through the shared read-only relation. Unsupported operators and compact Edge
 blocks are permanent unknown; malformed shape aborts globally even in an unused OR
 branch. Eligible proofless fresh-RIP issuance precedes final reduction and requires
 all noncandidate nodes authenticated. Otherwise ordinary reduction runs first;
