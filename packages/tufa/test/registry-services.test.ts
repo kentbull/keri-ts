@@ -36,6 +36,8 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
     await run(function*() {
       const accountStore = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const account = accountStore.makeHab("account");
+      const fixedReader = accountStore.makeHab("dolly-service");
+      const fixedReaderKel = concatBytes(...accountStore.db.clonePreIter(fixedReader.pre, 0, Vrsn_2_0));
       const registrarStore = yield* createHabery({
         name: "registrar",
         headDirPath: folder,
@@ -74,6 +76,8 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
         httpPort: observerPort,
         bootPort: observerBoot,
         sources: [{ url: registrarUrl + "/", caFile: certificate }],
+        readers: [fixedReader.pre],
+        initialEvidence: [fixedReaderKel],
         pollIntervalMs: 100,
         timeoutMs: 1000,
         maximumAgeMs: 5000,
@@ -111,10 +115,10 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
           method: "POST",
           ...buildCesrStreamRequest(signed(account, "tels/publish", { stream: t(stream) })),
         });
-      const read = (regid: string) =>
+      const read = (regid: string, signer = account) =>
         fetchAt(observerUrl + "/", {
           method: "POST",
-          ...buildCesrStreamRequest(signed(account, "tels", { i: regid })),
+          ...buildCesrStreamRequest(signed(signer, "tels", { i: regid })),
         });
       try {
         yield* start();
@@ -129,9 +133,7 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
         assertEquals(deniedRead.status, 403);
         const accountKel = concatBytes(...accountStore.db.clonePreIter(account.pre, 0, Vrsn_2_0));
         const publisher = yield* call(() => enroll(registrarAdmin, account.pre, ["publisher"], accountKel));
-        const reader = yield* call(() => enroll(observerAdmin, account.pre, ["reader"], accountKel));
         assertEquals(publisher, { aid: account.pre, roles: ["publisher"], service: registrarAid });
-        assertEquals(reader, { aid: account.pre, roles: ["reader"], service: observerAid });
 
         // Public routes cannot grant roles. The independent Observer pulls accepted evidence over verified TLS.
         const publicEnrollment = yield* call(() =>
@@ -146,10 +148,10 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
         const publishedBody = yield* call(() => published.json());
         assertEquals(published.status, 200);
         assertEquals(publishedBody.heads[credential.rip.said!], credential.update.said);
-        const waitRead = function*(observedAfter = 0) {
+        const waitRead = function*(observedAfter = 0, signer = account) {
           const until = Date.now() + 10_000;
           while (Date.now() < until) {
-            const res = yield* call(() => read(credential.rip.said!));
+            const res = yield* call(() => read(credential.rip.said!, signer));
             const evidence = new Uint8Array(yield* call(() => res.arrayBuffer()));
             if (res.status === 200 && Date.parse(res.headers.get("Observer-Observed-At")!) > observedAfter) {
               assertEquals(res.headers.get("Observer-Registry-Head"), credential.update.said);
@@ -160,6 +162,17 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
           }
           throw new Error("Observer did not acquire the enrolled publication");
         };
+        // The independent operator signer reads before any enrollment, then survives revocation of its dynamic grant.
+        yield* waitRead(0, fixedReader);
+        yield* call(() => enroll(observerAdmin, fixedReader.pre, ["reader"], fixedReaderKel));
+        const revokeFixedGrant = yield* call(() =>
+          fetchAt(observerAdmin + "/accounts/" + fixedReader.pre, { method: "DELETE" })
+        );
+        yield* call(() => revokeFixedGrant.arrayBuffer());
+        assertEquals(revokeFixedGrant.status, 204);
+        yield* waitRead(0, fixedReader);
+        const reader = yield* call(() => enroll(observerAdmin, account.pre, ["reader"], accountKel));
+        assertEquals(reader, { aid: account.pre, roles: ["reader"], service: observerAid });
         yield* waitRead();
 
         // Close both real owners, reopen the same stores and use the retained role grants.
@@ -172,6 +185,7 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
         yield* call(() => republished.arrayBuffer());
         assertEquals(republished.status, 200);
         yield* waitRead();
+        yield* waitRead(0, fixedReader);
 
         // Wallet revocation changes only its grant; the configured service-to-service reader remains authorized.
         const revokePublisher = yield* call(() =>
@@ -191,6 +205,7 @@ Deno.test("registry service enrollment survives restart and revokes wallet acces
         const afterReaderRevoke = yield* call(() => read(credential.rip.said!));
         yield* call(() => afterReaderRevoke.arrayBuffer());
         assertEquals(afterReaderRevoke.status, 403);
+        yield* waitRead(0, fixedReader);
       } finally {
         if (observerTask) yield* observerTask.halt();
         if (registrarTask) yield* registrarTask.halt();

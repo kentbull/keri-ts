@@ -138,8 +138,10 @@ at the end of the path, separately from the observed account at the beginning.
 Their public listeners use TLS; private loopback `PUT /accounts/{aid}` accepts
 public KEL evidence plus service-specific roles, then commits activation before
 changing live permissions. GET returns activation; DELETE revokes only the
-dynamic grant. Registrar's configured Observer source identities remain separate
-from wallet enrollment. An empty reader/publisher set denies access while the
+dynamic grant. Registrar's configured Observer source identities and Observer's
+explicit `--reader` identities remain separate from wallet enrollment. Public
+`--kel` bootstrap authenticates configured service readers such as Dolly; deleting
+a dynamic grant cannot revoke that operator-owned reader permission. An empty reader/publisher set denies access while the
 normal routes stay mounted. Observer acquisition remains scheduled independently
 of incoming wallet queries. The shared Deno/Node host retains TLS through startup
 fallback; certificate trust and URL/name verification remain client policy.

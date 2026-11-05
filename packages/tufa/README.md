@@ -309,6 +309,12 @@ and the default onboarding surface. Both require the ordinary store/provider
 options. Discovery remains unsigned configuration; authenticated replies carry
 the service facts.
 
+For an independently operated verifier such as Dolly, `observer start` accepts
+repeatable `--reader AID` with signed public `--kel FILE` evidence. The verifier
+keeps its own keys and authenticates its queries normally. This configured
+reader permission survives deletion of a dynamic provider account grant; an
+empty configured and enrolled reader set denies access.
+
 ## ACDC v2 registry authoring
 
 Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then
