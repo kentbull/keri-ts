@@ -342,7 +342,11 @@ retryable unknown; no known sibling hides malformed graph or own-schema failures
 Strong OR can accept with a valid alternative despite unused invalid/unknown node
 verdicts. Historical accepted Grants and consent remain evidence, not current policy.
 Conversation acceptance is not wallet acceptance. Observer registry import
-is separate from issuer registry processing. Presentation registries still require
+is separate from issuer registry processing. Presentation declarations apply to
+the sender, the origin Issuee (or issuer when absent), and verified supplemental
+Grant factor signers. Direct issuance exempts recipient-targeted declarations;
+nonparticipating far-node Issuees impose no presentation requirement. Hidden or
+malformed declarations still reject before this selection. Selected presentation registries require
 receiver-owned KRAM time, node-local BLIDs and explicit fully witnessed Issuee
 source triples. Bind the exact grant target at the highest accepted BUP actually
 sealed by the verified Issuee source. Completed receiver KRAM remains a separate

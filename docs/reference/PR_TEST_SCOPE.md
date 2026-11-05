@@ -35,7 +35,10 @@ required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (th
 introduced. Existing suite isolation and participant topology remain in force.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
 graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
-changes can select that file alone. `interop-kram` separately owns the live
+changes can select that file alone. Its reciprocal derived-issuance stories swap
+Python and TypeScript roles, retain three witnesses, and use a separate rootless
+verifier for exact holder presentation and Unblind. DH, Unblind and Admit remain
+explicit actions on independent stores. `interop-kram` separately owns the live
 single/group mailbox-authentication cases. Disclosure includes direct witnessed
 presentation and uses the manifest's candidate pin; ESSR storage retains main. The separate
 `interop-native-registry` owner uses the candidate profile for the existing reciprocal

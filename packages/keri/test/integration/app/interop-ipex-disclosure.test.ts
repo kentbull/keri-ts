@@ -1,7 +1,20 @@
 /** Independent HTTP peers exercise IPEX lineage and status-only graduated disclosure. */
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
-import type { IpexPeer, IpexPeers, Verb } from "./ipex/peers.ts";
-import { observed, withIpexPeers } from "./ipex/peers.ts";
+import { b, collectPayload, nestedPayload, parseBytes, Vrsn_2_0 } from "cesr-ts";
+import { assertEquals, assertExists, assertNotEquals, assertRejects } from "jsr:@std/assert";
+import type { DerivedIpexPeers, IpexPeer, IpexPeers, Verb } from "./ipex/peers.ts";
+import { observed, withDerivedIpexPeers, withIpexPeers } from "./ipex/peers.ts";
+
+/** Python rebuilds empty signature lists; compare every carried proof byte without that zero-item counter. */
+async function comparableProof(proof: string | undefined): Promise<Uint8Array> {
+  assertExists(proof);
+  const frames = parseBytes(b(proof));
+  assertEquals(frames.length, 1);
+  const frame = frames[0];
+  frame.attachments = frame.attachments.filter(group =>
+    !(group.name.replace(/^Big/, "") === "ControllerIdxSigs" && group.items.length === 0)
+  );
+  return await collectPayload(nestedPayload(frame, Vrsn_2_0));
+}
 
 /** Complete one real HTTP delivery before the scenario chooses its next action. */
 async function exchange(sender: IpexPeer, receiver: IpexPeer, verb: Verb, prior?: string): Promise<string> {
@@ -210,3 +223,157 @@ for (const implementation of ["TypeScript", "KERIpy"] as const) {
       }
     }));
 }
+
+/** The same protocol story swaps concrete implementations while every actor keeps its own encrypted store. */
+async function derivedIssuanceAndUnblind({ issuer, holder, verifier, plan }: DerivedIpexPeers): Promise<void> {
+  assertEquals(new Set([issuer.info.pre, holder.info.pre, verifier.info.pre]).size, 3, "three independent identities");
+  const grant = await issuer.prepareDerived(holder.info.pre);
+  await observed(
+    "holder retained the fresh pending Grant",
+    async () => (await holder.snapshot(grant)).inspected?.escrowed ? true : undefined,
+  );
+  const original = await Promise.all([issuer.snapshot(grant), holder.snapshot(grant)]);
+  const registry = JSON.parse(original[0].nodes[0].raw).rd as string;
+  assertExists(registry);
+  for (const snapshot of original) {
+    assertEquals(snapshot.inspected?.accepted, false);
+    assertEquals(snapshot.rootPresent, false, "a pending Grant cannot create root custody");
+    assertEquals(snapshot.encrypted, true);
+    assertEquals(snapshot.admit, null);
+    assertExists(snapshot.deadline);
+    assertExists(snapshot.grantRaw);
+    assertEquals(snapshot.witnesses, { threshold: 2, count: 3 });
+  }
+  assertEquals(original[0].grantRaw, original[1].grantRaw, "both stores retain the exact fresh Grant body");
+  assertEquals((await verifier.snapshot(undefined, registry)).rootPresent, false);
+
+  // Each side explicitly approves setup; only authenticated DH completion supplies issuance custody.
+  await holder.approveDh(grant);
+  for (const peer of [issuer, holder]) assertEquals((await peer.snapshot(grant)).rootPresent, false);
+  await issuer.approveDh(grant);
+  for (const peer of [issuer, holder]) {
+    await observed(
+      `${peer.implementation} completed DH`,
+      async () => (await peer.snapshot(grant)).auxiliaryReady ? true : undefined,
+    );
+    const snapshot = await peer.snapshot(grant);
+    assertEquals(snapshot.rootPresent, true);
+    assertEquals(snapshot.inspected?.accepted, false, "DH completion is separate from issued Grant acceptance");
+    assertEquals(snapshot.admit, null);
+  }
+  const issued = await issuer.issueDerived(grant);
+  for (const peer of [issuer, holder]) {
+    await observed(
+      `${peer.implementation} accepted the witnessed issued BUP`,
+      async () => (await peer.snapshot(grant)).registryHead === issued ? true : undefined,
+    );
+  }
+  for (const peer of [issuer, holder]) await peer.finishDh(grant);
+  for (const [index, peer] of [issuer, holder].entries()) {
+    const snapshot = await peer.snapshot(grant);
+    assertEquals(snapshot.inspected?.accepted, true);
+    assertEquals(snapshot.registryHead, issued, "the derived BUP is accepted under the witnessed issuer anchor");
+    assertEquals(snapshot.grantRaw, original[index].grantRaw);
+    assertEquals(snapshot.deadline, original[index].deadline);
+    assertEquals(snapshot.admit, null, "derived issuance does not Admit");
+  }
+  const admitted = await exchange(holder, issuer, "admit", grant);
+  const histories = await Promise.all([issuer.snapshot(grant), holder.snapshot(grant)]);
+  for (const snapshot of histories) {
+    assertEquals(snapshot.admit, admitted);
+    assertEquals(snapshot.nodes.length, 1);
+    assertEquals(snapshot.nodes[0].said, issuer.info.commitment);
+    assertEquals(snapshot.nodes[0].attributes.status.value, "citizen");
+    assertEquals(typeof snapshot.nodes[0].attributes.private, "string");
+    assertEquals(snapshot.nodes[0].raw.includes("hidden-value"), false);
+    assertExists(snapshot.nodes[0].proof);
+  }
+  const heldView = histories[1].nodes.map(({ raw, proof }) => ({ raw, proof }));
+
+  // The verifier learns the newer public BUP, while the holder still presents its exact admitted old view.
+  await holder.useUnblind();
+  await verifier.useUnblind();
+  await holder.connect(verifier.info, plan);
+  await verifier.connect(holder.info, plan);
+  const updated = await issuer.publishUpdate(verifier.info);
+  assertNotEquals(updated, issued);
+  await observed(
+    "verifier accepted the newer public BUP",
+    async () => (await verifier.snapshot(undefined, registry)).registryHead === updated ? true : undefined,
+  );
+  assertEquals(
+    (await verifier.snapshot(undefined, registry)).openingPresent,
+    false,
+    "public state does not disclose its opening",
+  );
+  assertEquals((await holder.snapshot(grant)).registryHead, issued);
+  assertEquals((await verifier.snapshot(undefined, registry)).rootPresent, false);
+  const presentation = await holder.present(grant);
+  await observed(
+    "rootless verifier retained the stale presentation",
+    async () => (await verifier.snapshot(presentation)).inspected?.escrowed ? true : undefined,
+  );
+  const pending = await verifier.snapshot(presentation), sent = await holder.snapshot(presentation);
+  assertEquals(pending.inspected?.accepted, false);
+  assertEquals(
+    await Promise.all(pending.nodes.map(async ({ raw, proof }) => ({ raw, proof: await comparableProof(proof) }))),
+    await Promise.all(heldView.map(async ({ raw, proof }) => ({ raw, proof: await comparableProof(proof) }))),
+  );
+  assertEquals(sent.nodes.map(({ raw, proof }) => ({ raw, proof })), heldView);
+  assertEquals(pending.admit, null);
+  assertExists(pending.deadline);
+  assertEquals(pending.rootPresent, false);
+  assertEquals(pending.auxiliaryReady, false, "receipt cannot approve opening disclosure");
+
+  // Explicit release and request carry the new public suffix, then finish this presentation only.
+  await holder.approveUnblind(presentation);
+  await verifier.approveUnblind(presentation);
+  for (const peer of [holder, verifier]) {
+    await observed(
+      `${peer.implementation} verified the opening reply`,
+      async () => (await peer.snapshot(presentation)).auxiliaryReady ? true : undefined,
+    );
+  }
+  assertEquals(
+    (await holder.snapshot(presentation)).registryHead,
+    updated,
+    "the authenticated query imports the public suffix",
+  );
+  assertEquals(
+    (await verifier.snapshot(presentation)).inspected?.accepted,
+    false,
+    "verified reply still needs explicit finish",
+  );
+  await holder.finishUnblind(presentation);
+  await verifier.finishUnblind(presentation);
+  const repaired = await verifier.snapshot(presentation);
+  assertEquals(repaired.inspected?.accepted, true);
+  assertEquals(repaired.grantRaw, pending.grantRaw);
+  assertEquals(repaired.deadline, pending.deadline);
+  assertEquals(repaired.nodes.map(node => node.raw), heldView.map(node => node.raw));
+  assertNotEquals(repaired.nodes[0].proof, heldView[0].proof, "the new presentation alone gains current opening proof");
+  assertEquals(repaired.admit, null);
+  assertEquals(repaired.rootPresent, false, "Unblind never transfers the registry root");
+  const acceptance = await exchange(verifier, holder, "admit", presentation);
+  for (const peer of [holder, verifier]) assertEquals((await peer.snapshot(presentation)).admit, acceptance);
+
+  for (const [index, peer] of [issuer, holder].entries()) {
+    const after = await peer.snapshot(grant), before = histories[index];
+    assertEquals(after.grantRaw, before.grantRaw);
+    assertEquals(after.deadline, before.deadline);
+    assertEquals(after.admit, before.admit);
+    assertEquals(
+      after.nodes.map(({ raw, proof }) => ({ raw, proof })),
+      before.nodes.map(({ raw, proof }) => ({ raw, proof })),
+      "later presentation and Admit preserve the original admitted evidence",
+    );
+    assertEquals(after.rootPresent, true);
+  }
+  assertEquals((await verifier.snapshot(undefined, registry)).rootPresent, false);
+}
+
+Deno.test("IPEX reciprocal TypeScript issuer → KERIpy holder: derived issuance and rootless verifier Unblind", () =>
+  withDerivedIpexPeers({ issuer: "TypeScript" }, derivedIssuanceAndUnblind));
+
+Deno.test("IPEX reciprocal KERIpy issuer → TypeScript holder: derived issuance and rootless verifier Unblind", () =>
+  withDerivedIpexPeers({ issuer: "KERIpy" }, derivedIssuanceAndUnblind));
