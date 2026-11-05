@@ -1161,11 +1161,12 @@ Deno.test("eventReplayMessage includes stored witness indexed signatures", async
       const replayAttachments = new TextDecoder().decode(
         replay.slice(event.size),
       );
+      // V2 counters count quadlets: one 88-character Ed25519 indexed signature is 22.
       const witnessCounter = new TextDecoder().decode(
         new Counter({
-          code: CtrDexV1.WitnessIdxSigs,
-          count: 1,
-          version: { major: 1, minor: 0 },
+          code: CtrDexV2.WitnessIdxSigs,
+          count: 22,
+          version: { major: 2, minor: 0 },
         }).qb64b,
       );
       assertStringIncludes(replayAttachments, witnessCounter);
@@ -1235,10 +1236,11 @@ Deno.test("eventPayloadMessage can clone a pre-approval delegated event", async 
       assertStringIncludes(
         new TextDecoder().decode(payload.slice(group.serder.size)),
         new TextDecoder().decode(
+          // V2 counters count quadlets: two 88-character Ed25519 indexed signatures are 44.
           new Counter({
-            code: CtrDexV1.ControllerIdxSigs,
-            count: 2,
-            version: { major: 1, minor: 0 },
+            code: CtrDexV2.ControllerIdxSigs,
+            count: 44,
+            version: { major: 2, minor: 0 },
           }).qb64b,
         ),
       );

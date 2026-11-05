@@ -23,8 +23,6 @@ async function runInitInceptExportParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
-    "--version",
-    "1.0",
     "--name",
     kliName,
     "--base",
@@ -40,8 +38,6 @@ async function runInitInceptExportParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
-    "--version",
-    "1.0",
     "--name",
     kliName,
     "--base",
@@ -183,8 +179,6 @@ async function runListAidVisibilityParity(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
-    "--version",
-    "1.0",
     "--name",
     kliName,
     "--base",
@@ -256,8 +250,6 @@ async function runListAidVisibilityParity(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
-    "--version",
-    "1.0",
     "--name",
     kliName,
     "--base",

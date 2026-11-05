@@ -131,21 +131,14 @@ Run these scenario files with their maintained owner:
 
 ## Verified KERIpy selection
 
-The default CLI runtime is the published `kentbull/keripy` `mailbox-impl` branch
+The default CLI runtime is the published `kentbull/keripy` `v2-spec` head
 selected by [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `331f32e4de13cc5cb699587c5b1f1e5bc4468035`, rebased on upstream main
-`c102367ea0b8416ffb3c01403d18b3fd4a6a38bf` plus mailbox commands, admission
-checks, explicit protocol/genus selection for mailbox startup and authorization,
-the transferable receipt-table lookup repair, and explicit VC export genus
-selection, and JSON mailbox queries for topic names that cannot be native CESR
-labels. Credential commands expose explicit anchor, grant, admit, and mailbox
-consumption versions; admit rehydrates embedded KERI/ACDC bodies with the
-protocol-specific serder. Explicit query encodings and CLI protocol defaults
-remain unchanged. Legacy pathed IPEX grants still do not support protocol v2;
-these existing credential scenarios explicitly select v1. Mailbox intake confirms
-the submitted accepted reply, reads UTF-8 multipart streams without Falcon's text
-buffer restriction, isolates storage by Habery base and ignores malformed forwarding
-selectors. Accepted reply-body replay remains idempotent.
+currently `2464b75cf44c008d6abc3d87fe3af8571ddfb9e4`. It defaults to KERI v2, matching
+Tufa's v2 KEL authoring, so KEL and KERI-message KLI calls no longer pin `--version 1.0`
+and KERIpy witness fixtures default to v2 except for v1-only release profiles. Legacy
+pathed IPEX/VDR credential scenarios still select v1 explicitly. `v2-spec` has no
+standalone mailbox host (`keri.app.mailboxing`, `kli mailbox start`); the cases that
+start one fail until that capability is restored or a separate mailbox peer is chosen.
 This is fork-on-main qualification, not pure upstream parity. Historical
 table-source pins are independent data provenance, not claims about the live peer.
 No test silently switches to a sibling checkout, PATH `kli`, or another Python.
@@ -156,17 +149,13 @@ keeps inception, ingress, and OOBIs in one version, rehydrates embedded proofs
 with protocol-specific Serders, and projects issuer AIDs to strings for webhook
 JSON. A nearby verifier checkout never overrides this pin.
 
-Existing Tufa CLI parity fixtures select KERI 1.0 explicitly at KLI call sites
-that expose protocol selection. Body protocol and attachment genus remain
-independent: an explicit v1 body does not force a v1 replay enclosure. Keep
-same-version byte parity distinct from mixed-version parsing checks. Export tests
-compare exact v1 Tufa bytes with an explicitly v1 Python clone and exact default
-v2 KLI bytes with a v2 clone, then compare complete ordered signature evidence.
-KLI event export carries no genus selector, so parsing uses known external v2
-context. The v1 credential fixture selects `vc export --version 1.0` explicitly.
-The CESR v1/v2 vectors remain independent coverage. Mailbox fixtures use
-`mailbox add --version 1.0` and `mailbox start --protocol-version 1.0`;
-`mailbox start --version` still prints the Python distribution version.
+Tufa CLI parity fixtures compare v2 KEL bytes with the KLI's default v2 output.
+Body protocol and attachment genus remain independent. Export tests compare
+Tufa bytes and the KLI bytes with explicit-genus Python clones of the same store,
+then compare complete ordered signature evidence. KLI event export carries no
+genus selector, so parsing uses known external context. The v1 credential
+fixture selects `vc export --version 1.0` explicitly. The CESR v1/v2 vectors
+remain independent coverage.
 
 Witness fixtures use an explicit public test passcode throughout initialization,
 inception, startup, and compatibility inspection. Every scenario owns a fresh

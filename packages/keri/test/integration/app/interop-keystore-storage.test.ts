@@ -26,8 +26,6 @@ async function runKliCompatStoreOpen(
 
   const kliInit = await runCmd(ctx.kliCommand, [
     "init",
-    "--version",
-    "1.0",
     "--name",
     name,
     "--passcode",
@@ -41,8 +39,6 @@ async function runKliCompatStoreOpen(
 
   const kliIncept = await runCmd(ctx.kliCommand, [
     "incept",
-    "--version",
-    "1.0",
     "--name",
     name,
     "--passcode",

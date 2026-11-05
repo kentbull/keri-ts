@@ -333,8 +333,6 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         [
           "delegate",
           "confirm",
-          "--version",
-          "1.0",
           "--name",
           delegatorName,
           "--base",
@@ -424,8 +422,6 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         [
           "delegate",
           "confirm",
-          "--version",
-          "1.0",
           "--name",
           delegatorName,
           "--base",
@@ -662,8 +658,6 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         ctx.kliCommand,
         [
           "incept",
-          "--version",
-          "1.0",
           "--name",
           delegateName,
           "--base",
@@ -767,8 +761,6 @@ for (const profile of DELEGATE_KEY_PROFILES) {
         ctx.kliCommand,
         [
           "rotate",
-          "--version",
-          "1.0",
           "--name",
           delegateName,
           "--base",

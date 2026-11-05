@@ -48,12 +48,22 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Select the native candidate or a frozen release peer; absence retains the mailbox-fork lane. */
+/** Select the native candidate or a frozen release peer; absence retains the default v2-spec lane. */
 export function selectedKeripyProfile(env: Record<string, string>): typeof reference.profiles.main | undefined {
   const name = env.KERIPY_INTEROP_PROFILE;
   if (name === undefined) return undefined;
   if (!Object.hasOwn(reference.profiles, name)) throw new Error(`Unknown KERIpy profile: ${name}`);
   return reference.profiles[name as keyof typeof reference.profiles];
+}
+
+/**
+ * Tufa authors only v2 KELs, which v1-only reference peers cannot accept.
+ * Cases that need such a peer to accept Tufa-authored KEL are skipped until
+ * the pending decision on restoring selectable v1 authoring is made.
+ * True when the selected reference peer only speaks KERI v1 (GLEIF 1.2/1.3 profiles).
+ */
+export function v1OnlyKeripyPeer(env: Record<string, string> = Deno.env.toObject()): boolean {
+  return selectedKeripyProfile(env)?.protocolVersionArgument === false;
 }
 
 /** Express the known init/incept CLI difference without rewriting peer commands. */

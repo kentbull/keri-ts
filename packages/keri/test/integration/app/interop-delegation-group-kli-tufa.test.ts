@@ -400,8 +400,6 @@ function spawnKliMultisigJoin(
     [
       "multisig",
       "join",
-      "--version",
-      "1.0",
       "--name",
       participant.name,
       "--base",
@@ -428,8 +426,6 @@ function spawnKliMultisigIncept(
     [
       "multisig",
       "incept",
-      "--version",
-      "1.0",
       "--name",
       participant.name,
       "--base",
@@ -957,8 +953,6 @@ Deno.test("Interop delegation: public KLI approval completes a Tufa-generated de
       [
         "delegate",
         "confirm",
-        "--version",
-        "1.0",
         "--name",
         delegator.name,
         "--base",
