@@ -10,4 +10,5 @@ export {
 export { createTufaApp, type CreateTufaAppOptions } from "./src/http/app.ts";
 export type { TufaCorsPolicy, TufaHttpAppOptions, TufaHttpAppPolicy } from "./src/http/policy.ts";
 export { createProtocolHandler, type ProtocolHandler } from "./src/http/protocol-handler.ts";
+export { handleWitnessReceiptPost } from "./src/http/protocol/endpoints/witness-http.ts";
 export { type SourceConfig, sourceRequest, SourceTrust } from "./src/http/source.ts";

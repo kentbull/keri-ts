@@ -12,7 +12,7 @@ import {
   settleRuntimeIngress,
   systemClock,
 } from "keri-ts/runtime";
-import { TOTP } from "npm:otpauth@9.4.1";
+import { Secret, TOTP } from "npm:otpauth@9.4.1";
 import { mailboxAddCommand } from "../src/cli/commands/mailbox.ts";
 import { rotateWithCredentialsCommand } from "../src/cli/commands/rotate.ts";
 import { runHostedWitnesses } from "../src/roles/hosted-witness.ts";
@@ -117,18 +117,6 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         const plain = hby.mgr.decrypt(credentials.totp, { verfers: controller.kever!.verfers });
         const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
         assertEquals(secret.length, 32);
-
-        // A retained accepted KEL must not authenticate a new registration with a damaged signature.
-        const original = envelopeFromFrame(parseBytes(inception)[0]);
-        const signature = original.sigers[0], altered = signature.raw.slice();
-        altered[0] ^= 1;
-        const damaged = messagize(original.serder, {
-          sigers: [new Siger({ code: signature.code, raw: altered, index: signature.index, ondex: signature.ondex })],
-          gvrsn: Vrsn_2_0,
-        });
-        const badSignature = yield* call(() => register(first.eid, damaged));
-        yield* call(() => badSignature.arrayBuffer());
-        assertEquals(badSignature.status, 403);
         const oobi = yield* call(() => fetchAt(credentials.oobi));
         const evidence = new Uint8Array(yield* call(() => oobi.arrayBuffer()));
         assertEquals(oobi.status, 200);
@@ -163,9 +151,10 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
           }
           return await fetchAt(publicUrl + path, { method: "POST", headers, body: new Uint8Array(bytes) });
         };
+        // As in witness-hk, a missing code escrows the new event instead of refusing it.
         const missing = yield* call(() => post(rotation, false));
         yield* call(() => missing.arrayBuffer());
-        assertEquals(missing.status, 403);
+        assertEquals(missing.status, 202);
         const receipt = yield* call(() => post(rotation, true));
         const receiptBytes = new Uint8Array(yield* call(() => receipt.arrayBuffer()));
         assertEquals(receipt.status, 200);
@@ -263,6 +252,185 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
           yield* runtime.close();
           yield* hby.close();
         }
+      }
+    });
+  } finally {
+    client.close();
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+Deno.test("KF witness backend follows witness-hk registration and receipt outcomes", async () => {
+  const folder = await Deno.makeTempDir({ prefix: "tufa-kf-witness-hk-" });
+  const [httpPort, bootPort] = ports();
+  const publicUrl = `http://127.0.0.1:${httpPort}`, bootUrl = `http://127.0.0.1:${bootPort}`;
+  const client = Deno.createHttpClient({});
+  const passcode = "abcdefghijklmnopqrstu";
+  const fetchAt = (url: string, init?: RequestInit) => fetch(url, { ...init, client });
+  /** Read the whole response so no body outlives its assertion. */
+  const status = async (response: Promise<Response>) => {
+    const done = await response;
+    await done.arrayBuffer();
+    return done.status;
+  };
+  const allocate = async (aid: string) => {
+    const response = await fetchAt(bootUrl + "/witnesses", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ aid }),
+    });
+    assertEquals(response.status, 200);
+    return (await response.json() as { eid: string }).eid;
+  };
+  /** KERIpy and Locksmith send the KEL (and an optional secret) as multipart text fields. */
+  const register = (eid: string, kel: Uint8Array, secret?: string) => {
+    const form = new FormData();
+    form.set("kel", new TextDecoder().decode(kel));
+    if (secret !== undefined) form.set("secret", secret);
+    return fetchAt(publicUrl + "/aids", { method: "POST", headers: { "CESR-DESTINATION": eid }, body: form });
+  };
+  const code = (secret: string) => {
+    const timestamp = Date.now();
+    return new TOTP({ secret }).generate({ timestamp }) + "#" + new Date(timestamp).toISOString();
+  };
+  const post = (eid: string, bytes: Uint8Array, authorization?: string, path = "/receipts", method = "POST") => {
+    const headers: Record<string, string> = { "Content-Type": "application/cesr", "CESR-DESTINATION": eid };
+    if (authorization) headers.Authorization = authorization;
+    return fetchAt(publicUrl + path, { method, headers, body: new Uint8Array(bytes) });
+  };
+  const concat = (messages: Iterable<Uint8Array>) => {
+    const parts = [...messages], out = new Uint8Array(parts.reduce((size, part) => size + part.length, 0));
+    let offset = 0;
+    for (const part of parts) {
+      out.set(part, offset);
+      offset += part.length;
+    }
+    return out;
+  };
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: "controller",
+        headDirPath: folder,
+        bran: passcode,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const server = yield* spawn(() =>
+        runHostedWitnesses({
+          name: "provider",
+          headDirPath: folder,
+          passcode,
+          publicUrl,
+          httpPort,
+          httpHost: "127.0.0.1",
+          bootPort,
+        })
+      );
+      try {
+        const until = Date.now() + 10_000;
+        while ((yield* call(() => status(fetchAt(bootUrl + "/health")).catch(() => 0))) !== 200) {
+          if (Date.now() > until) throw new Error("Backend did not start");
+          yield* sleep(25);
+        }
+        const kel = (pre: string) => concat(hby.db.clonePreIter(pre, 0, Vrsn_2_0));
+        const secretOf = (cipher: string, verfers = hby.habByName("controller")!.kever!.verfers) =>
+          new TextDecoder().decode(new Matter({ qb64b: hby.mgr.decrypt(cipher, { verfers }) }).raw);
+        const controller = hby.makeHab("controller"), other = hby.makeHab("other"), fresh = hby.makeHab("fresh");
+        const multi = hby.makeHab("multi", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+        const unregistered = hby.makeHab("unregistered");
+        const witness = yield* call(() => allocate(controller.pre));
+        const freshWitness = yield* call(() => allocate(fresh.pre));
+        const multiWitness = yield* call(() => allocate(multi.pre));
+        const otherWitness = yield* call(() => allocate(other.pre));
+        const idleWitness = yield* call(() => allocate(unregistered.pre));
+
+        // Unknown destinations are 400 on registration and receipts, 404 elsewhere.
+        const unknown = other.pre;
+        assertEquals(yield* call(() => status(register(unknown, kel(controller.pre)))), 400);
+        assertEquals(yield* call(() => status(post(unknown, kel(controller.pre)))), 400);
+        assertEquals(
+          yield* call(() =>
+            status(fetchAt(publicUrl + "/ksn?pre=" + controller.pre, { headers: { "CESR-DESTINATION": unknown } }))
+          ),
+          404,
+        );
+
+        // An unverifiable first event registers nothing until the controller is accepted.
+        const damage = (message: Uint8Array) => {
+          const original = envelopeFromFrame(parseBytes(message)[0]);
+          const signature = original.sigers[0], altered = signature.raw.slice();
+          altered[0] ^= 1;
+          return messagize(original.serder, {
+            sigers: [new Siger({ code: signature.code, raw: altered, index: signature.index, ondex: signature.ondex })],
+            gvrsn: Vrsn_2_0,
+          });
+        };
+        const freshInception = acceptedEventReplayMessage(hby, fresh.pre, 0, Vrsn_2_0).message;
+        assertEquals(yield* call(() => status(register(freshWitness, damage(freshInception)))), 400);
+        assertEquals(yield* call(() => status(register(freshWitness, freshInception))), 200);
+        // Once accepted, any first frame re-registers the allocated controller (upstream contract).
+        assertEquals(yield* call(() => status(register(freshWitness, damage(freshInception)))), 200);
+
+        // The first frame names the subject; another AID's KEL is refused even with ours behind it.
+        assertEquals(
+          yield* call(() => status(register(witness, concat([kel(other.pre), kel(controller.pre)])))),
+          400,
+        );
+
+        // Full KEL after a rotation: registration answers to the current keys.
+        controller.rotate();
+        controller.interact();
+        const registered = yield* call(() => register(witness, kel(controller.pre)));
+        assertEquals(registered.status, 200);
+        const secret = secretOf((yield* call(() => registered.json())).totp);
+        assertEquals(secret.length, 32);
+
+        // /receipts: one event only, the registered controller only, and only after registration.
+        const rotation = controller.rotate({ adds: [witness], toad: 1 });
+        assertEquals(yield* call(() => status(post(witness, concat([rotation, rotation]), code(secret)))), 400);
+        assertEquals(yield* call(() => status(post(witness, kel(other.pre), code(secret)))), 403);
+        const idleRotation = unregistered.rotate({ adds: [idleWitness], toad: 1 });
+        assertEquals(yield* call(() => status(post(idleWitness, idleRotation))), 412);
+
+        // An invalid code escrows the new event; a valid one receipts it; an accepted event is receipted anyway.
+        assertEquals(yield* call(() => status(post(witness, rotation, "000000#" + new Date().toISOString()))), 202);
+        assertEquals(hby.db.fullyWitnessed(controller.kever!.serder), false);
+        const valid = yield* call(() => post(witness, rotation, code(secret)));
+        const receipt = new Uint8Array(yield* call(() => valid.arrayBuffer()));
+        assertEquals(valid.status, 200);
+        yield* settleRuntimeIngress(runtime, [receipt]);
+        assertEquals(hby.db.fullyWitnessed(controller.kever!.serder), true);
+        assertEquals(yield* call(() => status(post(witness, rotation, "000000#" + new Date().toISOString()))), 200);
+
+        // `/` accepts ordinary KERI input with or without a code (204).
+        const interaction = controller.interact();
+        assertEquals(yield* call(() => status(post(witness, interaction, undefined, "/"))), 204);
+        assertEquals(yield* call(() => status(post(witness, interaction, code(secret), "/", "PUT"))), 204);
+
+        // A supplied secret is used as given; a non-base32 one only makes every code invalid.
+        const unusable = "0".repeat(32);
+        assertEquals(yield* call(() => status(register(otherWitness, kel(other.pre), unusable))), 200);
+        const otherRotation = other.rotate({ adds: [otherWitness], toad: 1 });
+        assertEquals(yield* call(() => status(post(otherWitness, otherRotation, code(secret)))), 202);
+        // Re-registration with a usable supplied secret (Locksmith's batch secret) repairs it.
+        const batch = new Secret({ size: 20 }).base32;
+        assertEquals(yield* call(() => status(register(otherWitness, kel(other.pre), batch))), 200);
+        assertEquals(yield* call(() => status(post(otherWitness, otherRotation, code(batch)))), 200);
+
+        // A multi-key controller gets one ciphertext per current key, in key order.
+        const multiRegistered = yield* call(() => register(multiWitness, kel(multi.pre)));
+        assertEquals(multiRegistered.status, 200);
+        const credentials: { totp: string; totps: string[] } = yield* call(() => multiRegistered.json());
+        assertEquals(credentials.totps.length, 2);
+        assertEquals(credentials.totp, credentials.totps[0]);
+        const keys = multi.kever!.verfers;
+        assertEquals(secretOf(credentials.totps[0], [keys[0]]), secretOf(credentials.totps[1], [keys[1]]));
+      } finally {
+        yield* server.halt();
+        yield* runtime.close();
+        yield* hby.close();
       }
     });
   } finally {

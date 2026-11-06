@@ -61,11 +61,24 @@ function witnessReceiptEligibility(
   return { kind: "accept", accepted: serder };
 }
 
+/** Options for one witness receipt POST. */
+export interface WitnessReceiptPostOptions {
+  /**
+   * Process the event with witness-local authority (default true). Hosts that
+   * gate receipting on controller authentication pass false for an
+   * unauthenticated request: the event is processed as remote input, so a new
+   * event naming this witness goes to misfit escrow (202) while an already
+   * accepted event is still receipted (200), as witness-hk does.
+   */
+  local?: boolean;
+}
+
 /** Handle the synchronous witness receipt POST policy. */
 export function* witnessReceiptPost(
   runtime: AgentRuntime,
   serviceHab: Hab,
   bytes: Uint8Array,
+  { local = true }: WitnessReceiptPostOptions = {},
 ): Operation<WitnessReceiptPostResult> {
   const serder = inspectCesrRequest(bytes);
   if (!serder) {
@@ -86,7 +99,7 @@ export function* witnessReceiptPost(
   }
 
   yield* processWitnessIngress(runtime, serviceHab, bytes, {
-    local: true,
+    local,
     deliver: false,
   });
   const eligibility = witnessReceiptEligibility(serviceHab, serder);

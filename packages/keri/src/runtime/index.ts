@@ -367,6 +367,7 @@ export {
   witnessReceiptGet,
   type WitnessReceiptGetResult,
   witnessReceiptPost,
+  type WitnessReceiptPostOptions,
   type WitnessReceiptPostResult,
 } from "../app/witness/http-endpoints.ts";
 export {

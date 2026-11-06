@@ -142,6 +142,7 @@ export const suites: Record<string, TestSuite> = {
   "interop-witness-main": {
     files: [
       "test/integration/app/interop-witness-kli-tufa.test.ts",
+      "test/integration/app/interop-hosted-witness-kli-tufa.test.ts",
     ],
   },
   "runtime-medium": {

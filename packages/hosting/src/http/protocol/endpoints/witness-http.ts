@@ -8,6 +8,7 @@ import {
   witnessQueryGet,
   witnessReceiptGet,
   witnessReceiptPost,
+  type WitnessReceiptPostOptions,
 } from "keri-ts/runtime";
 import { cesrResponse, textResponse } from "../responses.ts";
 import type { ProtocolRequestContext, ProtocolRoute } from "../types.ts";
@@ -51,11 +52,12 @@ export function classifyWitnessHttpRoute(
   return null;
 }
 
-/** Handle one witness `/receipts` POST request. */
+/** Handle one witness `/receipts` POST request; `options.local` follows the core receipt policy. */
 export async function handleWitnessReceiptPost(
   runtime: AgentRuntime,
   req: Request,
   witnessHab: Hab,
+  options: WitnessReceiptPostOptions = {},
 ): Promise<Response> {
   const bytes = await readRequiredCesrRequestBytes(req);
   if (!bytes) {
@@ -63,7 +65,7 @@ export async function handleWitnessReceiptPost(
   }
 
   const result = await run(function*() {
-    return yield* witnessReceiptPost(runtime, witnessHab, bytes);
+    return yield* witnessReceiptPost(runtime, witnessHab, bytes, options);
   });
   if (result.kind === "accepted") {
     return cesrResponse(result.body, result.status);
