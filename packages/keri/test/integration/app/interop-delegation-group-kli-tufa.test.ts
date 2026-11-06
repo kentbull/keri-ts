@@ -759,8 +759,6 @@ async function createKliDelegatorWithMailbox(
 
 Deno.test({
   name: "Interop delegation: Tufa approval completes a public KLI GroupHab delegated inception",
-  // Gap: KLI proxy /fwd never reaches the Tufa delegator's witness; root cause open (follow-up).
-  ignore: true,
 }, async () => {
   const ctx = await createInteropContext();
   const fixture = await setupKliGroupDelegateToTufaDelegator({
