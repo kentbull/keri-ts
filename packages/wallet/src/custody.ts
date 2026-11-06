@@ -46,7 +46,7 @@ export class RegistryCustody {
     return { derivations: this.derivations! };
   }
 
-  /** Load only this habitat's native Keeper root; possession confers no protocol authority. */
+  /** Load only this habitat's Keeper root; possession confers no protocol authority. */
   private load(registry: string): Salter {
     this.owner();
     const root = this.options.hby.mgr.getRegistryRoot(this.options.hab.pre, registry);

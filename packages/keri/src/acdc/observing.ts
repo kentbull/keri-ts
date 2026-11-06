@@ -1,4 +1,4 @@
-/** Public native registry intake with event-local opening preflight and durable retention. */
+/** Public v2 registry intake with event-local opening preflight and durable retention. */
 import { type BlindState, type BoundState, bytesEqual, Diger, Ilks, ParserError, type SerderACDC } from "cesr-ts";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import type { Baser } from "../db/basing.ts";
@@ -13,7 +13,7 @@ import {
 } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
 
-/** Typed public attachments deliberately carried on this native TEL frame only. */
+/** Typed public attachments deliberately carried on this v2 TEL frame only. */
 export interface RegistryIntakeEvidence extends RegistrySourceLocators {
   bsqs?: readonly BlindState[];
   bsss?: readonly BoundState[];
@@ -29,7 +29,7 @@ export type RegistryObserverDecision =
  * Reconstruct the engine's issuer from stored inception after reopen. Intake uses the engine's
  * exact registry-seal and historical witness policy shared with observer vetting. Each accepted
  * event commits independently; a later failure preserves the already accepted prefix.
- * Parsed evidence stays borrowed. Composition supplies this owner to native protocol dispatch;
+ * Parsed evidence stays borrowed. Composition supplies this owner to v2 protocol dispatch;
  * no local habitat, alias or application disclosure custody is created by public intake.
  */
 export class RegistryObserver {

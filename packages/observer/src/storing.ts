@@ -1,4 +1,4 @@
-/** Completed configured-source observations; protocol acceptance remains in native stores. */
+/** Completed configured-source observations; protocol acceptance remains in v2 stores. */
 import type { Operation } from "effection";
 import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
 import { DatabaseNotOpenError, RawRecord } from "keri-ts/runtime";

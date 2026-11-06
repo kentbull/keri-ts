@@ -86,7 +86,7 @@ function jobs(suite: TestSuite): number {
 /** Select the concrete owner's peer without allowing main setup to replace the candidate. */
 export function keripySuiteEnvironment(name: string, inherited: Record<string, string>): Record<string, string> {
   const env = { ...inherited, ...suites[name]?.env };
-  if (["interop-native-registry", "interop-ipex-disclosure"].includes(name)) {
+  if (["interop-v2-registry", "interop-ipex-disclosure"].includes(name)) {
     if (env.KERIPY_INTEROP_PROFILE !== "candidate") {
       const root = env.KERIPY_CANDIDATE_ROOT?.trim();
       const python = env.KERIPY_CANDIDATE_PYTHON?.trim();

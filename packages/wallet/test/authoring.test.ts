@@ -83,20 +83,20 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       yield* receiptor.receipt(issuer.pre, { sn: 0 });
       requireAuth = true;
       receiptLimit = 1;
-      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre, auths))));
+      yield* call(() => assertRejects(() => run(() => author.incept("v2", issuer.pre, auths))));
       const sealing = issuer.kever!.serder;
-      assertEquals([rgy.registryByName("native")!.sn, hby.db.fullyWitnessed(sealing)], [-1n, false]);
+      assertEquals([rgy.registryByName("v2")!.sn, hby.db.fullyWitnessed(sealing)], [-1n, false]);
       receiptLimit = 2;
       // Receipt collection still propagates the third endpoint refusal, but two genuine signatures establish quorum.
-      yield* call(() => assertRejects(() => run(() => author.incept("native", issuer.pre, auths))));
+      yield* call(() => assertRejects(() => run(() => author.incept("v2", issuer.pre, auths))));
       assertEquals(hby.db.wigs.get([issuer.pre, sealing.said!]).map((signature) => signature.index).sort(), [0, 1]);
       assertEquals(hby.db.fullyWitnessed(sealing), true);
-      const rip = yield* author.incept("native", issuer.pre, auths);
+      const rip = yield* author.incept("v2", issuer.pre, auths);
       assertEquals(sealing.seals, [{ i: rip.said, s: "0", d: rip.said }]);
       assertEquals(issuer.kever!.serder.said, sealing.said, "retry collects receipts for the same signed KEL event");
       receiptLimit = 3;
       yield* receiptor.receipt(issuer.pre, { sn: sealing.sn!, auths }); // Catch up the third witness before later KEL events.
-      const reg = author.registry("native", issuer.pre);
+      const reg = author.registry("v2", issuer.pre);
       const acdc = acdcmap(issuer.pre, { regid: rip.said, issuee: issuer.pre, attribute: { role: "holder" } });
       receivedAuths.clear();
       yield* call(() => assertRejects(() => run(() => author.issue(reg, acdc, { public: true }))));
@@ -136,11 +136,11 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       rgy = new AcdcV2Regery(hby, rgy.baser);
       author = new WalletAuthor(wallet, rgy, receiptor);
       receiptLimit = 3;
-      const revoked = yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true, auths });
+      const revoked = yield* author.revoke(author.registry("v2", issuer.pre), acdc.said!, { public: true, auths });
       assertEquals([revoked.sad!.n, issuer.kever!.said], ["2", pendingSeal]);
       const revokedSeal = issuer.kever!.said;
       assertEquals(
-        (yield* author.revoke(author.registry("native", issuer.pre), acdc.said!, { public: true, auths })).said,
+        (yield* author.revoke(author.registry("v2", issuer.pre), acdc.said!, { public: true, auths })).said,
         revoked.said,
       );
       assertEquals(issuer.kever!.said, revokedSeal, "accepted revocation retry must not create another anchor");
@@ -157,7 +157,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       assertThrows(
         () =>
           new WalletAuthor(wallet, rgy, receiptor, otherCustody).stage(
-            author.registry("native", issuer.pre),
+            author.registry("v2", issuer.pre),
             acdc,
             "renewed",
           ),
@@ -180,30 +180,30 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       );
       author = new WalletAuthor(wallet, rgy, receiptor, custody);
       const boundEvent = issuer.kever!.said;
-      const staged = author.stage(author.registry("native", issuer.pre), acdc, "renewed", { boundEvent });
+      const staged = author.stage(author.registry("v2", issuer.pre), acdc, "renewed", { boundEvent });
       assertEquals(rgy.store.seqEvent(rip.said!, 3), null);
       assertEquals(rgy.store.opening(staged.event.said!), null, "derived openings are not automatically public");
       yield* db.close(false);
       yield* db.reopen({ reuse: true });
-      const retry = author.stage(author.registry("native", issuer.pre), acdc, "renewed", { boundEvent });
+      const retry = author.stage(author.registry("v2", issuer.pre), acdc, "renewed", { boundEvent });
       assertEquals(retry.event.said, staged.event.said);
-      yield* author.anchor(author.registry("native", issuer.pre), staged.event, auths);
+      yield* author.anchor(author.registry("v2", issuer.pre), staged.event, auths);
       const recovered = custody.derivedOpening(staged.event);
       assertEquals(recovered.d.nonce, staged.opening.d.nonce);
       assertEquals("bd" in recovered ? recovered.bd.nonce : null, boundEvent);
       author = new WalletAuthor(wallet, rgy, receiptor);
-      const successor = yield* author.update(author.registry("native", issuer.pre), acdc, "renewed", {
+      const successor = yield* author.update(author.registry("v2", issuer.pre), acdc, "renewed", {
         public: true,
         auths,
       });
       assertEquals(rgy.store.publicOpening(successor.said!)!.ts.label, "renewed");
       assertEquals(custody.derivedOpening(staged.event).d.nonce, staged.opening.d.nonce);
       assertEquals([...rgy.store.cloneTelIter(rip.said!)].length, 5);
-      const reissued = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", {
+      const reissued = yield* author.update(author.registry("v2", issuer.pre), acdc, "issued", {
         public: true,
         auths,
       });
-      const advance = author.stage(author.registry("native", issuer.pre), acdc, "issued", { public: true });
+      const advance = author.stage(author.registry("v2", issuer.pre), acdc, "issued", { public: true });
       assertEquals(advance.event.sad!.n, (BigInt(`0x${reissued.sad!.n}`) + 1n).toString(16));
       assertEquals(
         advance.event.said === reissued.said,
@@ -211,14 +211,14 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
         "explicit same-state update creates a fresh BUP/opening",
       );
       assertEquals(advance.opening.d.nonce === reissued.sad!.b, false, "an explicit advance has a fresh opening");
-      // Even a fully witnessed abbreviated seal cannot satisfy a native author retry.
+      // Even a fully witnessed abbreviated seal cannot satisfy a v2 author retry.
       issuer.interact({ data: [{ s: advance.event.sad!.n, d: advance.event.said! }] });
       const abbreviated = issuer.kever!.serder;
       yield* receiptor.receipt(issuer.pre, { sn: abbreviated.sn!, auths });
       receiptLimit = 1;
       yield* call(() =>
         assertRejects(() =>
-          run(() => author.update(author.registry("native", issuer.pre), acdc, "issued", { public: true, auths }))
+          run(() => author.update(author.registry("v2", issuer.pre), acdc, "issued", { public: true, auths }))
         )
       );
       const pendingAdvanceSeal = issuer.kever!.said;
@@ -231,7 +231,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       rgy = new AcdcV2Regery(hby, rgy.baser);
       author = new WalletAuthor(wallet, rgy, receiptor);
       receiptLimit = 3;
-      const resumed = yield* author.update(author.registry("native", issuer.pre), acdc, "issued", {
+      const resumed = yield* author.update(author.registry("v2", issuer.pre), acdc, "issued", {
         public: true,
         auths,
       });
@@ -241,7 +241,7 @@ Deno.test("ACDC v2 author retries exact pending seals, requires witness quorum a
       assertEquals(wallet.db.issued.get([acdc.said!])!.update, original.update);
 
       // Public acceptance alone cannot recover missing private derivation coordinates.
-      const current = author.registry("native", issuer.pre);
+      const current = author.registry("v2", issuer.pre);
       const ordinal = current.sn + 1n;
       const opening = custody.derive(rip.said!, ordinal, acdc.said!, "issued");
       const update = blindate(rip.said!, resumed.said!, opening.d.nonce, { sn: ordinal });

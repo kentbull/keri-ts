@@ -4,4 +4,4 @@
 "@keri-ts/tufa": patch
 ---
 
-Retain registry custody roots in the native encrypted Keeper and preserve them across AEID rotation.
+Retain registry custody roots in the encrypted Keeper and preserve them across AEID rotation.

@@ -144,7 +144,7 @@ export function validateUpdate(serder: SerderACDC, regid: string, prior?: string
 
 /**
  * Check a local TEL anchor against the current accepted KEL branch and its witness quorum.
- * Native TEL admission requires the full registry/ordinal/event-SAID seal.
+ * V2 TEL admission requires the full registry/ordinal/event-SAID seal.
  * Missing or mismatched evidence returns false; database failures propagate.
  */
 export function verifyRegistryAnchor(
@@ -181,7 +181,7 @@ function onCurrentRegistryBranch(db: Baser, issuer: string, anchor: SerderKERI):
   return false;
 }
 
-/** Match the full registry/ordinal/event-SAID tuple required for native TEL authority. */
+/** Match the full registry/ordinal/event-SAID tuple required for v2 TEL authority. */
 export function matchesRegistrySeal(candidate: unknown, event: SerderACDC): boolean {
   if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return false;
   const seal = candidate as Record<string, unknown>;
@@ -241,7 +241,7 @@ export function findRegistryAnchor(db: Baser, issuer: string, registry: SerderAC
   return earliest;
 }
 
-/** Find a public digest commitment without granting native registry admission authority. */
+/** Find a public digest commitment without granting v2 registry admission authority. */
 function findDigestAnchor(db: Baser, issuer: string, digest: string): readonly [number, string] | null {
   let earliest: readonly [number, string] | null = null;
   for (const event of currentRegistryBranch(db, issuer)) {

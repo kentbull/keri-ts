@@ -67,7 +67,7 @@ with (openHby(name="state-source", temp=True, salt=salt) as source,
     ipexing.loadHandlers(hby=receiver, exc=exc, notifier=None, rgy=receiverRgy)
     try:
         def publish(event):
-            """Replicate public TEL bytes through the receiver's native owner."""
+            """Replicate public TEL bytes through the receiver's v2 owner."""
             support.append(dict(kind="tel", wire=event.raw.decode()))
             assert receiverRgy.processEvent(event)
 

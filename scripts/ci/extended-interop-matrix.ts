@@ -27,8 +27,8 @@ export function extendedInteropMatrix(target: string): { include: ExtendedIntero
         suite,
         profile,
         main: suite === "interop-essr-storage",
-        candidate: ["interop-native-registry", "interop-ipex-disclosure", "interop-kram"].includes(suite),
-        services: suite === "interop-native-registry",
+        candidate: ["interop-v2-registry", "interop-ipex-disclosure", "interop-kram"].includes(suite),
+        services: suite === "interop-v2-registry",
       }));
     }),
   };

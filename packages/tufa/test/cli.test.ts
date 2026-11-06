@@ -264,7 +264,7 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
     "-a",
     "issuer",
     "--registry-name",
-    "native",
+    "v2",
     "--said",
     "credential",
     "--state",
@@ -1431,7 +1431,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
           const [received] = parseBytes(yield* call(() => collectPayload(framePayload(frame))));
           const { decision } = yield* runtime.protocol.dispatch(received, {}, runtime.reactor.kvy);
           const refused = mode === "false" || mode === "unknown";
-          // Native intake now refuses invalid graphs; they never become accepted history for CLI use.
+          // V2 intake now refuses invalid graphs; they never become accepted history for CLI use.
           assertEquals(decision?.kind, refused ? "reject" : "accept", mode);
           if (refused) {
             assertEquals(
@@ -1495,7 +1495,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
           "Accepted ACDC v2 exchange at the exact route is required.",
         );
       }
-      assertEquals(signatures, 0, "consent and native false/unknown refusal precede holder signing");
+      assertEquals(signatures, 0, "consent and v2 false/unknown refusal precede holder signing");
       closed = false;
       await run(() => walletListCommand({ name, headDirPath }));
       assertEquals(JSON.parse(records.pop()!).held, []);
@@ -1510,7 +1510,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
       const held = JSON.parse(records.pop()!);
       assertEquals([held.grant, held.admit, held.credential], [acdcV2Grants[0], admitted.admit, disclosed!]);
       assertEquals(typeof held.credential.a.private, "string");
-      const presentationPath = `${headDirPath}/native-presentation.cesr`;
+      const presentationPath = `${headDirPath}/v2-presentation.cesr`;
       closed = false;
       await run(() =>
         ipexGrantCommand({

@@ -142,7 +142,7 @@ of binding-suppressed failures.
 ## Deferred publication
 
 Native rip/bup/upd-dependent CLI/wallet/lifecycle completion remains with the
-[side-chat roadmap](../../plans/credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
+[side-chat roadmap](../../plans/credentials/V2_ACDC_REGISTRY_ROADMAP.md).
 Retained partial native APIs/tests are not a complete native credential workflow.
 Retries, durable outboxes, delivery acknowledgements, generic database providers
 and broad Python porting remain deferred. No npm publish/unpublish, release tag,

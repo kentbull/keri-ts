@@ -69,9 +69,9 @@ Grant lifetime. Live DH/Unblind requires this accepted KRAM record; ordinary
 nonauxiliary KRAM-off processing remains supported. Partial group proposals use
 only the command wait limit until sender authentication accepts TMSC; their
 presentation result has no deadline yet.
-`pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only native Grant before deadline
+`pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only v2 Grant before deadline
 equality, excludes accepted/terminal conversations, and reauthenticates its stored
-complete sender evidence. The native route reuses shared conversation/disclosure/
+complete sender evidence. The v2 route reuses shared conversation/disclosure/
 schema checks and requires an anchored fresh issuer RIP plus authentication of all
 other disclosed nodes. It returns deduplicated registry IDs, with no writes or
 cues. This authorizes a pending issuance scope, never acceptance.
@@ -242,11 +242,11 @@ returns those actual proposal identities. Reply approval and retained-contributi
 retry must read v2 nested evidence after ordinary exchange verification; the v1
 named-child reader cannot consume a flat signed child SAID. Preserve first-notice
 behavior or retries can republish approval unnecessarily.
-Native RIP/BUP proposals instead carry exactly two V2 TEL/anchor children on their
+V2 RIP/BUP proposals instead carry exactly two V2 TEL/anchor children on their
 explicit routes. Read-only validation requires a full contained TEL seal, exact
 source locators, accepted controlling RIP and next BUP linkage or identical replay.
 Authenticate exact route/gid/tel/anc wrappers in either arrival order before counting
-consent; an anchor bucket alone is insufficient. Native group authors explicitly
+consent; an anchor bucket alone is insufficient. V2 group authors explicitly
 select V2 body/proof framing, also the default for ordinary group KEL authoring. Historical
 accepted anchors reuse retained local contributions, including after key retirement.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
@@ -492,10 +492,10 @@ hidden declarations and unfinished graphs remain guarded.
 [storage](../../docs/design-docs/db/PAYLOAD_STORAGE.md).
 
 Group IPEX approval derives its child, stored proof and genus from the wrapper.
-Native XIP Grants and EXN Admits use V2 `/multisig/exn` wrappers with one exact
+V2 XIP Grants and EXN Admits use V2 `/multisig/exn` wrappers with one exact
 framed group-authored IPEX child and `{gid, exn: childSAID}` commitments. Only
 Offer/Grant children carry credential trees. Require the current signing member,
-local participation and actual native IPEX/registry/Revery/KRAM bindings before
+local participation and actual v2 IPEX/registry/Revery/KRAM bindings before
 indexing. Local approval verifies this member's child contribution; peer-first
 replay waits for that approval. Both approval entry points reauthenticate the exact
 stored wrapper. Preserve child body, source seals, signatures and nested proofs;

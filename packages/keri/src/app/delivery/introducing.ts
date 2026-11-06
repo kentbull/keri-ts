@@ -7,7 +7,7 @@ import type { Hab } from "../identity/habbing.ts";
  * Borrow a Hab/store for lazy introduction output, preserving target KEL, oldest
  * delegator first, then endpoint/location replies. Capture begins on iteration.
  * No source is opened when a witness/receipt already makes introduction unnecessary.
- * Native proof/key copies and the large-history transport caller remain separately qualified.
+ * V2 proof/key copies and the large-history transport caller remain separately qualified.
  *
  * @param hab Local signing habitat; its state/store lifetime remains with the caller.
  * @param remote Remote endpoint AID whose receipt history determines whether introduction is needed.

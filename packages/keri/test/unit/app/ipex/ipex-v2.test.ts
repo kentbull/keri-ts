@@ -806,7 +806,7 @@ Deno.test("IPEX fresh-registry Grant keeps authenticated pending scope and origi
       assertEquals(
         new Exchanger(hby, { now: () => now }).pendingGrant(grant.said!, scope),
         null,
-        "native handler is required",
+        "v2 handler is required",
       );
       const originalDeadline = hby.db.epsd.get(grant.said!)!;
       assertEquals(runtime.exc.exchangeDeadline(grant), deadline);

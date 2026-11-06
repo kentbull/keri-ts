@@ -590,7 +590,7 @@ Deno.test("selected Python observer accepts indexed legacy TEL evidence", async 
   }
 });
 
-Deno.test("selected Python profile accepts v1 KEL and enforces its independent native-v2 boundary", async () => {
+Deno.test("selected Python profile accepts v1 KEL and enforces its independent v2 boundary", async () => {
   const ctx = await createInteropContext();
   try {
     const signer = new Signer({ raw: crypto.getRandomValues(new Uint8Array(32)), code: "A", transferable: true });

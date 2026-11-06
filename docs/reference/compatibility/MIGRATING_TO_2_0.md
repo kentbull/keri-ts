@@ -58,7 +58,7 @@ work, and an input-owned `new Reactor(runtime.protocol)` when another input is
 needed. `ReactorDispatchResult` becomes `ProtocolDispatchResult`. There is no global
 protocol mutex. Exchange route `reconcile` and `verify` must now return synchronous
 decisions; asynchronous preparation/handling must not split validation from commit.
-The processor borrows a native `RegistryObserver`, not a registry-authoring manager.
+The processor borrows a v2 `RegistryObserver`, not a registry-authoring manager.
 
 `runtime.poster` is now `runtime.postman`. `Hab.processCuesIter` yields
 `Uint8Array`, `Hab.interpretCue` and root/runtime `CueEmission`/`CueEmissionKind`
@@ -278,10 +278,10 @@ refusal. Whole-cue responders send nothing from an incompatible cue; TCP records
 `unsupported-replay` locally and closes that connection. Signed bodies are not
 rewritten and no remote refusal protocol is added.
 
-Native-v2 rip/bup/upd CLI, wallet and lifecycle completion is
-[deferred](../../plans/credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md).
-Retained partial library/native validation tests do not establish a complete
-native credential workflow. The Tufa verifier application uses legacy Reger.
+V2 rip/bup/upd CLI, wallet and lifecycle completion is
+[deferred](../../plans/credentials/V2_ACDC_REGISTRY_ROADMAP.md).
+Retained partial library/v2 validation tests do not establish a complete
+v2 credential workflow. The Tufa verifier application uses legacy Reger.
 Independent KERI/CESR v2 remains supported; main and legacy peer capabilities differ.
 The current peer matrix and separately blocked Python CLI lanes are documented in
 [protocol compatibility](KERI_V1_V2_COMPATIBILITY.md) and the

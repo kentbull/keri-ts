@@ -11,7 +11,7 @@ const second = branToSeedAeid("AnotherPasscodeSecretX");
 const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
 const registry = new Diger({ code: "E", raw: Diger.digest(b("registry root"), "E") }).qb64;
 
-/** Copy the actual affected native rows, including opaque encrypted signer bytes. */
+/** Copy the actual affected v2 rows, including opaque encrypted signer bytes. */
 function snapshot(keeper: Keeper) {
   return [keeper.gbls.sdb, keeper.prms.sdb, keeper.pris.sdb, keeper.rroots.sdb].map((table) =>
     Array.from(table.getRange(), ({ key, value }) => [t(key), Array.from(value)])

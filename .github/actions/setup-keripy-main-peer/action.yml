@@ -6,7 +6,7 @@ inputs:
     required: false
     default: main
   services:
-    description: Include selected registrar/observer sources for native service interop
+    description: Include selected registrar/observer sources for v2 service interop
     required: false
     default: "false"
 runs:

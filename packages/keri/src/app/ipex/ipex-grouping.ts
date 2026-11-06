@@ -283,7 +283,7 @@ export function* approveMultisigIpex(
   };
 }
 
-/** Read the exact stored native child, or decode the separately framed legacy embed. */
+/** Read the exact stored v2 child, or decode the separately framed legacy embed. */
 export function storedMultisigIpexBody(db: Baser, wrapper: SerderKERI): SerderKERI | null {
   if (wrapper.pvrsn.major === 1) {
     const sad = embeddedBusinessExnSAD(wrapper);
@@ -348,7 +348,7 @@ function* approveIpexChild(
       !retained || !bytesEqual(retained.raw, wrapper.raw)
       || !protocol.exc.verifyAccepted(wrapper.said!, MULTISIG_EXN_ROUTE)
     ) {
-      throw new ValidationError("Native IPEX approval requires the exact authenticated stored wrapper.");
+      throw new ValidationError("V2 IPEX approval requires the exact authenticated stored wrapper.");
     }
   }
   const { event: embedded, attachment: peerAttachment, genus } = child;

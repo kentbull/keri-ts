@@ -101,7 +101,7 @@ Every supplied event must have a valid chain position and issuer KEL anchor.
 Verifier anchors compare seal digests, including bare digest seals; sequence
 hints in the seal are not load-bearing. This differs from issuer-side local TEL
 anchor processing, which requires the full seal tuple and witnessed event.
-Native discovery, explicit source-locator checks and author retry share the full
+V2 discovery, explicit source-locator checks and author retry share the full
 seal matcher; public stateless vetting uses a separate digest lookup.
 Shared `validateRip`/`validateUpdate` helpers return parsed facts or a typed
 rejection. They check inception issuer and optional update predecessor without

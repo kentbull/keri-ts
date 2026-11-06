@@ -297,7 +297,7 @@ class IpexPeer:
         return body, nests
 
     def witnessed_message(self, verb, prior, held=None):
-        """Use native proof objects; onward presentation selects only a locally admitted exact view."""
+        """Use v2 proof objects; onward presentation selects only a locally admitted exact view."""
         if verb == "apply":
             return apply(self.hab, self.remote["pre"], "status", modifiers=dict(dp=[self.plan]), ax=[True])
         if verb in ("offer", "grant"):
@@ -508,7 +508,7 @@ class IpexPeer:
                 self.operation["replySent"] = True
 
     def reopen_evidence(self):
-        """Reopen existing native evidence stores; no view is rebuilt from fuller held data."""
+        """Reopen existing v2 evidence stores; no view is rebuilt from fuller held data."""
         for db in (self.rgy.baser, self.hby.ks, self.hby.db):
             db.close()
             db.reopen(reuse=True)

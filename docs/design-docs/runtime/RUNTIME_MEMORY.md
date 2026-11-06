@@ -86,7 +86,7 @@ copying text logs or package artifacts back for review.
 The recorded five-round Node comparison measured three installed CLI paths and
 found about 2–5% lower median peak RSS with the caged build. Larger differences in
 end-of-command heap snapshots do not establish a universal 50% process-memory
-saving. Byte buffers, native state and workload shape matter. The report records
+saving. Byte buffers, v2 state and workload shape matter. The report records
 raw samples, ranges, source/image identities and reproduction artifacts; it does
 not qualify long-lived host latency, large heaps or every deployment topology.
 

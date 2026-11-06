@@ -830,7 +830,7 @@ export class Exchanger {
   /**
    * Read one selected live pending issuance Grant and its exact registry scope.
    * Escrow presence grants no authority: reauthenticate retained sender factors,
-   * then reuse the native route's context checks. This changes no stores or cues
+   * then reuse the v2 route's context checks. This changes no stores or cues
    * and never accepts the Grant. Auxiliary authority expires at deadline equality.
    */
   pendingGrant(
@@ -1324,13 +1324,13 @@ export class Exchanger {
     emse.put([said, schema], serder);
     return stored;
   }
-  /** Native Grant validity survives dependency changes and acceptance; it is not cache retention. */
+  /** V2 Grant validity survives dependency changes and acceptance; it is not cache retention. */
   private isV2Grant(serder: SerderKERI): boolean {
     return serder.pvrsn.major >= 2 && serder.route === "/ipex/grant";
   }
 
   /**
-   * Bound PSE cleanup by the accepted native Grant lifetime (xdt + xl) once KRAM
+   * Bound PSE cleanup by the accepted v2 Grant lifetime (xdt + xl) once KRAM
    * records sender-threshold receipt; before that, freeze one local PSE timeout
    * that retransmission never extends. Mirrors KERIpy `_partialSignedDeadline`.
    */

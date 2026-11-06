@@ -32,7 +32,7 @@ Working crypto and a possible future use are insufficient reasons to retain it.
 KERIpy's legacy event model and receipt observer support do not imply that an
 autonomous backer service is an active reference feature. The pinned Tevery
 receipt cue paths are disabled; the TypeScript service was additional behavior.
-Native ACDC v2 registries use a different model and do not require this mechanism.
+V2 ACDC registries use a different model and do not require this mechanism.
 These facts justify a product boundary, not removal of legacy protocol decoding
 or a claim that no deployment ever used backers.
 

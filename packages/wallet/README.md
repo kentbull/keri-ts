@@ -117,7 +117,7 @@ consent, and only verified Admit may enter held inventory.
 ## Optional local encrypted custody
 
 `RegistryCustody({hby, hab, registry, db})` binds the actual local habitat,
-Keeper and wallet owners. `createCustody(registry)` reuses that habitat's native
+Keeper and wallet owners. `createCustody(registry)` reuses that habitat's
 Keeper root, or provisions a new Salt128 root for its accepted issuer inception.
 It refuses regeneration behind undisclosed blinded history. Ordinary inventory
 needs no private capability.

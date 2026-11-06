@@ -240,70 +240,70 @@ Deno.test("credential CLI waits for witnessed establishment-only registry and is
         assertEquals(observer.vdr!.tvy.tevers.get(registry.registry)?.vcState(issued.said)?.et, "iss");
         assertEquals(witnessHby.db.getKever(issuer.pre)?.sn, 2);
         assertEquals(witnessHby.db.getKever(issuer.pre)?.ilk, "rot");
-        // The same real CLI/store/witness fixture also owns native BUP authoring.
-        const native = yield* call(() =>
-          runTufa(["vc", "registry", "incept", ...location, "--registry-name", "native", "--acdc-v2"])
+        // The same real CLI/store/witness fixture also owns v2 BUP authoring.
+        const v2Registry = yield* call(() =>
+          runTufa(["vc", "registry", "incept", ...location, "--registry-name", "v2", "--acdc-v2"])
         );
-        assertEquals(native.code, 0, native.stdout + native.stderr);
-        const rip = JSON.parse(native.stdout.trim().split(/\r?\n/).at(-1)!);
+        assertEquals(v2Registry.code, 0, v2Registry.stdout + v2Registry.stderr);
+        const rip = JSON.parse(v2Registry.stdout.trim().split(/\r?\n/).at(-1)!);
         assertEquals(rip.accepted, true);
-        const nativeIssue = yield* call(() =>
+        const v2Issue = yield* call(() =>
           runTufa([
             "vc",
             "create",
             ...location,
             "--registry-name",
-            "native",
+            "v2",
             "--acdc-v2",
             "--public",
             "--data",
             "{\"role\":\"holder\"}",
           ])
         );
-        assertEquals(nativeIssue.code, 0, nativeIssue.stdout + nativeIssue.stderr);
-        const issuedNative = JSON.parse(nativeIssue.stdout.trim().split(/\r?\n/).at(-1)!);
+        assertEquals(v2Issue.code, 0, v2Issue.stdout + v2Issue.stderr);
+        const issuedV2 = JSON.parse(v2Issue.stdout.trim().split(/\r?\n/).at(-1)!);
         const advance = yield* call(() =>
           runTufa([
             "vc",
             "update",
             ...location,
             "--registry-name",
-            "native",
+            "v2",
             "--said",
-            issuedNative.credential,
+            issuedV2.credential,
             "--state",
             "renewed",
             "--public",
           ])
         );
         assertEquals(advance.code, 0, advance.stdout + advance.stderr);
-        const nativeRevoke = [
+        const v2Revoke = [
           "vc",
           "revoke",
           ...location,
           "--registry-name",
-          "native",
+          "v2",
           "--said",
-          issuedNative.credential,
+          issuedV2.credential,
           "--acdc-v2",
           "--public",
         ];
-        const revoked = yield* call(() => runTufa(nativeRevoke));
+        const revoked = yield* call(() => runTufa(v2Revoke));
         assertEquals(revoked.code, 0, revoked.stdout + revoked.stderr);
-        const revokedNative = JSON.parse(revoked.stdout.trim().split(/\r?\n/).at(-1)!);
-        const repeatedRevoke = yield* call(() => runTufa(nativeRevoke));
+        const revokedV2 = JSON.parse(revoked.stdout.trim().split(/\r?\n/).at(-1)!);
+        const repeatedRevoke = yield* call(() => runTufa(v2Revoke));
         assertEquals(repeatedRevoke.code, 0, repeatedRevoke.stdout + repeatedRevoke.stderr);
-        assertEquals(JSON.parse(repeatedRevoke.stdout.trim().split(/\r?\n/).at(-1)!).update, revokedNative.update);
+        assertEquals(JSON.parse(repeatedRevoke.stdout.trim().split(/\r?\n/).at(-1)!).update, revokedV2.update);
         const reopened = yield* createHabery(store);
-        const nativeRuntime = yield* createAgentRuntime(reopened, http, systemClock);
+        const v2Runtime = yield* createAgentRuntime(reopened, http, systemClock);
         try {
-          const exact = nativeRuntime.acdc!.store.seqEvent(rip.registry, 3)!;
-          assertEquals(exact.said, revokedNative.update);
-          assertEquals(nativeRuntime.acdc!.store.publicOpening(exact.said!)!.ts.label, "revoked");
-          const anchor = nativeRuntime.acdc!.store.anchor(exact.said!)!;
+          const exact = v2Runtime.acdc!.store.seqEvent(rip.registry, 3)!;
+          assertEquals(exact.said, revokedV2.update);
+          assertEquals(v2Runtime.acdc!.store.publicOpening(exact.said!)!.ts.label, "revoked");
+          const anchor = v2Runtime.acdc!.store.anchor(exact.said!)!;
           assertEquals(reopened.db.fullyWitnessed(reopened.db.getEvtSerder(issuer.pre, anchor[1].qb64)!), true);
         } finally {
-          yield* nativeRuntime.close();
+          yield* v2Runtime.close();
           yield* reopened.close();
         }
       } finally {
