@@ -105,9 +105,9 @@ on later invocations. Cancellation acknowledgement precedes service-owned cleanu
 `infra kf onboard` composes registration, an accepted witnessed rotation, watcher
 introduction/actual quorum observation, account completion and signed service
 activation. Existing individual account/onboarding aliases remain separate.
-Explicit encrypted credentials retain the registration ciphertext and recipient
-public key; historical signer keys in the encrypted Keeper decrypt fresh transient
-codes after rotation. No client operation ledger is needed. Retrying a selected
+Witness TOTP seeds are encrypted only in transit; the explicit credentials file
+stores them as plaintext (0600) so rotation never strands them. No client
+operation ledger is needed. Retrying a selected
 session reuses matching accepted rotation. Account operations use an explicit
 account surface; operation status cannot infer its signing principal from a route.
 The CLI flow does not establish normal Locksmith UI integration; that remains a
@@ -116,7 +116,8 @@ separate application gate even when the same TS backends pass client onboarding.
 `witness backend` separately owns KF witness allocations. Its private listener
 binds loopback; the public listener selects a distinct witness runtime/store by
 CESR destination or OOBI. Registration verifies current input signatures even if
-the inception is already accepted, then encrypts the TOTP seed to current keys.
+the inception is already accepted, stores the TOTP seed as plaintext and returns
+it encrypted to the controller's current keys.
 Only the allocated controller with a valid code gets witness-local ingress;
 ordinary public evidence stays remote. Stop workers and response streams, join
 requests, then close stores. Shutdown retains allocations; explicit deletion

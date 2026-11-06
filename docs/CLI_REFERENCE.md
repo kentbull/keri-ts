@@ -58,7 +58,7 @@ Cancellation acknowledges the request; wait for session `resources_cleaned_at` b
 ## Credential-backed account rotation
 
 `tufa rotate -n store -a member --receipt-endpoint --witness-credentials witnesses.json`
-rotates an existing KF-onboarded member with its retained encrypted witness credentials.
+rotates an existing KF-onboarded member with its retained witness credentials (plaintext TOTP seeds in a 0600 file).
 Authorization is resolved for the selected post-rotation witness set before keys change;
 a file that fails local validation leaves the KEL unchanged. The encrypted
 artifact retains its original recipient public key, so later rotations can reuse it.

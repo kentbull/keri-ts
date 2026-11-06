@@ -25,7 +25,7 @@ export function registerKfBootCmds(program: Command, dispatch: CommandDispatch):
     addHabOption(addStoreOptions(kf.command("onboard")))
       .description("Enroll an existing permanent account using a distinct existing onboarding signer")
       .requiredOption("--onboarding-alias <alias>", "Existing temporary onboarding signer alias")
-      .requiredOption("--credentials <file>", "Output file for encrypted witness credentials")
+      .requiredOption("--credentials <file>", "Output file (0600) for witness TOTP credentials")
       .requiredOption("--url <url>", "Base provider URL")
       .option("--server-aid <aid>", "Expected provider signing AID")
       .option("--profile <profile>", "Advertised witness allocation profile", "3-of-4")

@@ -3,7 +3,7 @@ import type { Operation } from "effection";
 import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
 import { RawRecord } from "keri-ts/runtime";
 
-/** One allocated witness and its encrypted registration secret. */
+/** One allocated witness and its plaintext base32 registration TOTP secret. */
 export interface WitnessAllocation {
   name: string;
   eid: string;
@@ -11,7 +11,7 @@ export interface WitnessAllocation {
   code: string | null;
 }
 
-/** Persist only resource identity and encrypted authorization material. */
+/** Persist only resource identity and the registration secret (encrypted only in transit). */
 export class WitnessAllocationRecord extends RawRecord<WitnessAllocation> implements WitnessAllocation {
   declare name: string;
   declare eid: string;
