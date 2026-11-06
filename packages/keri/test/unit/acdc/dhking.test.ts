@@ -3,7 +3,7 @@
  */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { selectNewcomerCopies } from "@keri-ts/multisync/v2";
-import { createWalletBaser, Wallet, WalletAuthor, WalletDiscloser } from "@keri-ts/wallet";
+import { createWalletBaser, Wallet, WalletAuthor } from "@keri-ts/wallet";
 import {
   type CesrFrame,
   collectPayload,
@@ -492,7 +492,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       firstPresentation.wire,
     );
     assertEquals(peerPresentation.prepared, true);
-    const fullPresentation = yield* preparePresentationGrant(
+    yield* preparePresentationGrant(
       holder.runtime,
       holder.wallet,
       holder.hab,
@@ -500,72 +500,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       presentationOptions,
       peerPresentation.wire,
     );
-    const exactPresentation = {
-      said: firstPresentation.grant,
-      sender: holder.hab.pre,
-      recipient: issuerPeer.member.pre,
-    };
-    const presentationFrame = parseBytes(fullPresentation.wire)[0], presentationBody = presentationFrame.body.raw;
-    const presentationNests = yield* call(() =>
-      Promise.all(presentationFrame.nests!.map(node => collectPayload(framePayload(node))))
-    );
-    const groupEndorser = (side: typeof lead) =>
-      new WalletDiscloser(side.wallet, new Receiptor(side.hby, side.protocol, side.runtime.http, side.runtime.clock));
-    assertExists(holder.hab.mgr.getRegistryRoot(holder.hab.pre, rip.said!));
-    yield* call(() =>
-      assertRejects(
-        () => run(() => groupEndorser(holder).endorseGrant(holder.hab.pre, fullPresentation.wire, exactPresentation)),
-        ValidationError,
-        undefined,
-        "root custody does not grant issuer permission",
-      )
-    );
-    const partialEndorsement = yield* groupEndorser(lead).endorseGrant(
-      lead.hab.pre,
-      fullPresentation.wire,
-      exactPresentation,
-    );
-    assertEquals(partialEndorsement.endorsed, false);
-    yield* call(() =>
-      assertRejects(
-        () =>
-          run(() =>
-            resumePresentationGrant(
-              holder.runtime,
-              holder.wallet,
-              holder.hab,
-              firstPresentation.grant,
-              partialEndorsement.wire,
-            )
-          ),
-        ValidationError,
-      )
-    );
-    const completeEndorsement = yield* groupEndorser(issuerPeer).endorseGrant(
-      issuerPeer.hab.pre,
-      fullPresentation.wire,
-      { ...exactPresentation, contributions: [partialEndorsement.wire] },
-    );
-    assertEquals(completeEndorsement.endorsed, true);
-    assertEquals(completeEndorsement.exn.raw, presentationBody);
-    const resumedPresentation = yield* resumePresentationGrant(
-      holder.runtime,
-      holder.wallet,
-      holder.hab,
-      firstPresentation.grant,
-      completeEndorsement.wire,
-    );
     assertEquals(firstPresentation.deadline, null, "a partial sender proposal grants no live lifetime");
-    assertEquals(resumedPresentation.deadline, fullPresentation.deadline);
-    assertEquals(parseBytes(resumedPresentation.wire)[0].body.raw, presentationBody);
-    assertEquals(
-      yield* call(() =>
-        Promise.all(parseBytes(resumedPresentation.wire)[0].nests!.map(node => collectPayload(framePayload(node))))
-      ),
-      presentationNests,
-    );
-    yield* issuerPeer.reactor.processBytes(resumedPresentation.wire);
-    assertEquals(issuerPeer.exc.complete(firstPresentation.grant), true);
     for (const [index, side] of actors.entries()) {
       assertEquals(side.hby.db.enst.get(grant.said!), presentationHistory[index]);
       assertEquals(side.hby.db.erpy.get(firstPresentation.grant), null, "file approvals do not Admit");

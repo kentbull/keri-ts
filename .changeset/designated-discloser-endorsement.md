@@ -4,4 +4,4 @@
 "@keri-ts/tufa": patch
 ---
 
-Add exact-file presentation preparation, independent issuer endorsement and resume for individual/group disclosers and issuer groups. Preserve original bodies, public nested evidence, authentication and deadlines while allowing endorsed presentations with retryably missing current openings to proceed to live Unblind. Keep view-selection consent, issuer authority and wallet Admit separate.
+Remove the issuer-endorsement file workflow (`tufa ipex endorse` and `WalletDiscloser.endorseGrant`), matching KERIpy and Locksmith. Exact-file `--prepare`, `--proposal` and `--resume` remain for collecting group sender signatures, and core issuer-designation verification is unchanged.

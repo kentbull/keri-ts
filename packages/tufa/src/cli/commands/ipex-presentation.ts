@@ -1,4 +1,4 @@
-/** Exact public Grant files separate local view selection, sender signatures and independent issuer consent. */
+/** Exact public Grant files separate local view selection from group sender-threshold signatures. */
 import { type DisclosureSelection, exchangeWire, type Wallet, WalletDiscloser } from "@keri-ts/wallet";
 import {
   bytesEqual,
@@ -100,7 +100,7 @@ function input(frame: CesrFrame): ExchangeInput {
     gvrsn: Vrsn_2_0,
   };
 }
-/** Reconstruct the authenticated original before importing any endorsed file. */
+/** Reconstruct the authenticated original before importing any completed file. */
 function retained(runtime: AgentRuntime, said: string): CesrFrame {
   const saved = runtime.exc.retainedInput(said);
   if (!saved) throw new ValidationError("Resume requires the original locally prepared sender threshold");
@@ -139,7 +139,7 @@ function requireScope(runtime: AgentRuntime, frame: CesrFrame): void {
       || context.registries.get(regid)!.some(said => !nodes.has(said))
     )
   ) {
-    throw new ValidationError("Exact Grant lacks complete issuer endorsement for every selected registry node");
+    throw new ValidationError("Exact Grant lacks complete issuer authorization for every selected registry node");
   }
 }
 /** Freeze one selected public view; a group member may append its signature to the same exact proposal file. */
@@ -319,7 +319,7 @@ export function* ipexPresentationFileCommand(args: Record<string, unknown>): Ope
         const { wire: _, ...facts } = prepared;
         return { ...facts, output: out, transmitted: false };
       }
-      if (!filename) throw new ValidationError("Resume requires the exact independently endorsed --input file");
+      if (!filename) throw new ValidationError("Resume requires the exact completed --input file");
       const original = retained(runtime, resume!);
       if ((original.body as SerderKERI).sad!.ri !== recipient) {
         throw new ValidationError("Recipient differs from the original prepared Grant");
@@ -380,42 +380,6 @@ export function* ipexPresentationFileCommand(args: Record<string, unknown>): Ope
         admitted: false,
         ...(out ? { output: out } : {}),
       };
-    });
-  });
-  writeJsonLine(completed);
-}
-/** Independently endorse the exact discloser/verifier pair and preserve every supplied proof in a new file. */
-export function* ipexEndorseCommand(args: Record<string, unknown>): Operation<void> {
-  const file = parseStringOption(args.grant, "grant"),
-    said = parseStringOption(args.said, "said"),
-    out = parseStringOption(args.out, "out");
-  const sender = parseStringOption(args.sender, "sender"), recipient = parseStringOption(args.recipient, "recipient");
-  if (!file || !said || !out || !sender || !recipient) {
-    throw new ValidationError("Endorse requires --grant, --said, --sender, --recipient and --out");
-  }
-  const completed = yield* withHabAndAgentRuntime(walletStoreArgs(args), parseStringOption(args.alias, "alias"), {
-    skipConfig: false,
-  }, function*({ hby, hab, runtime }) {
-    return yield* scoped(function*() {
-      const wallet = yield* openWallet(hby, runtime.acdc!.store, runtime.exc), owner = discloser(runtime, wallet, hab);
-      const support = parseStringOption(args.input, "input");
-      if (support) {
-        yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(support)));
-        yield* runtime.protocol.processEscrowsOnce();
-      }
-      const contributions = Array.isArray(args.contribution) ? args.contribution : [];
-      if (contributions.some(path => typeof path !== "string")) {
-        throw new ValidationError("Contributions must be exact Grant file paths");
-      }
-      const organizer = new Organizer(hby.db, hby.signator);
-      const endorsed = yield* owner.endorseGrant(hab.pre, yield* call(() => Deno.readFile(file)), {
-        said,
-        sender: organizer.resolveRecipient(sender),
-        recipient: organizer.resolveRecipient(recipient),
-        contributions: yield* call(() => Promise.all(contributions.map(path => Deno.readFile(path)))),
-      });
-      yield* call(() => Deno.writeFile(out, endorsed.wire, { createNew: true, mode: 0o600 }));
-      return { grant: said, issuer: hab.pre, endorsed: endorsed.endorsed, output: out, transmitted: false };
     });
   });
   writeJsonLine(completed);

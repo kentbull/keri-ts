@@ -88,35 +88,32 @@ concatenated BlindState or BoundState CESR tuple, without attachment counters. `
 selects a local registry matching the disclosed Issuee declaration. `--input FILE`
 first admits supplied signed evidence through ordinary ingress.
 
-Designated disclosers need independent issuer authorization on the exact outgoing
-Grant. `--presenter-authorized` permits local selection of a transferred view;
-it does not supply that issuer signature. Use the explicit file phases when
-issuer consent or a current opening is still pending:
+Designated disclosers need the registry issuer's authorization on the exact
+outgoing Grant, as the core exchange rule requires. `--presenter-authorized`
+permits local selection of a transferred view; it does not supply that
+authorization. Group senders collect their threshold signatures through explicit
+file phases:
 
 ```sh
 # Freeze the local exact view, sender, verifier and disclosure plan.
 tufa ipex grant --acdc-v2 --prepare -n DISCLOSER_STORE -a DISCLOSER -r VERIFIER \
   --from-grant HELD_GRANT --out prepared.cesr
-# The registry issuer independently checks the Grant SAID and both parties.
-tufa ipex endorse -n ISSUER_STORE -a ISSUER --grant prepared.cesr \
-  --said PREPARED_GRANT --sender DISCLOSER --recipient VERIFIER --out endorsed.cesr
 # Resume only the existing local preparation; no body or proof is rebuilt.
 tufa ipex grant --acdc-v2 -n DISCLOSER_STORE -a DISCLOSER -r VERIFIER \
-  --resume PREPARED_GRANT --input endorsed.cesr
+  --resume PREPARED_GRANT --input completed.cesr
 ```
 
 These file commands require enabled KRAM and accepted public KEL/TEL/schema
 inputs. Preparation writes one exact Grant frame and its public nested evidence;
-`--input FILE` on prepare/endorse may import public support first. Resume instead
-interprets `--input` as the endorsed exact Grant and captures the original retained
+`--input FILE` on prepare may import public support first. Resume instead
+interprets `--input` as the completed exact Grant and captures the original retained
 preparation before import. It refuses missing preparation, changed parties/body/
 nested proofs, removed or invalid authentication, terminal exchanges and expiry.
 Only signature/source-authentication additions are permitted; neither the original
 deadline nor earlier admitted history is replaced. Each selected registry-backed
-node must have complete issuer authorization. A fully endorsed Grant with retryably
-unknown current openings may be delivered pending, then use live `ipex unblind --grant` below. Normal non-file Grant delivery retains its stricter current-proof
-checks, and Admit remains separate. `--out` on resume writes public support plus
-the completed authentication file instead of delivering it.
+node must have complete issuer authorization. Normal non-file Grant delivery retains
+its stricter current-proof checks, and Admit remains separate. `--out` on resume
+writes public support plus the completed authentication file instead of delivering it.
 
 Group disclosers use the same explicit file path. The first member's prepare may
 report `prepared:false`: each further member runs the same view/party selection
@@ -124,11 +121,7 @@ with `--prepare --proposal PREVIOUS_FILE --out NEXT_FILE`, preserving every
 existing factor and adding its ordinary group signature. The final file reports
 `prepared:true` only at the sender threshold. A member that will resume must first
 import that final file through its own prepare/proposal step, retaining its local
-original deadline. Group issuers independently use `ipex endorse` with the same
-original `--grant` and `--contribution MEMBER_FILE...`; `endorsed:false` denotes a
-valid partial issuer threshold, never permission to deliver. Mixed-issuer views
-require each relevant issuer's independent endorsement. Root possession alone
-cannot endorse for another issuer. Exact-file preparation does not refresh proofs
+original deadline. Exact-file preparation does not refresh proofs
 or author a new Issuee presentation BUP; those remain the existing explicit paths.
 
 ACDC v2 group registry commands stage the same RIP/BUP bodies and publish exact

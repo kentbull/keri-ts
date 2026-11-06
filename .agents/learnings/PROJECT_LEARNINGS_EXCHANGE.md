@@ -68,8 +68,7 @@ renew it; absent/pruned TMSC yields no live authority. `pxl` bounds retention, n
 Grant lifetime. Live DH/Unblind requires this accepted KRAM record; ordinary
 nonauxiliary KRAM-off processing remains supported. Partial group proposals use
 only the command wait limit until sender authentication accepts TMSC; their
-presentation result has no deadline yet. Offline file endorsement may precede
-local KRAM intake and does not grant live auxiliary authority.
+presentation result has no deadline yet.
 `pendingGrant(said, {xid, sender, recipient})` separately selects an exact epse-only native Grant before deadline
 equality, excludes accepted/terminal conversations, and reauthenticates its stored
 complete sender evidence. The native route reuses shared conversation/disclosure/
@@ -81,7 +80,7 @@ exact retained view, original deadline and parties/XID; terminal responses and
 deadline equality end its scope. It returns registry-to-node authorization,
 validating every supplied opening and non-registry issuer factor even on optional
 branches. Each registry requires issuer/Issuee disclosure or exact-Grant issuer
-endorsement for all its disclosed nodes; an origin issuer cannot authorize
+authorization for all its disclosed nodes; an origin issuer cannot authorize
 another issuer's registry. The returned map may be a strict subset of the DAG.
 Reuse shared presentation-state classification without changing ordinary OR
 admission. Lookup changes no state or cues; missing/refused context returns null,
