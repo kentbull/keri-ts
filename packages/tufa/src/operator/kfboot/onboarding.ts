@@ -252,7 +252,8 @@ function* onboard(
   if (watcher) {
     const post = function*(bytes: Uint8Array): Operation<void> {
       const result = yield* client.http.request(new URL("/", watcher.url).href, {
-        method: "POST",
+        // Python watcher-hk accepts raw CESR streams only on PUT /; POST is its single-event route.
+        method: "PUT",
         redirect: "error",
         headers: { "Content-Type": "application/cesr", "CESR-DESTINATION": watcher.eid },
         body: bytes,
