@@ -235,20 +235,22 @@ nothing, a copy that can never be retained (shape, identifiers, ESSR digest,
 non-local or group recipient, `i == ri`, foreign local holder, non-Ed25519 key,
 or membership/sender failure against complete state). Missing local state
 (registry TEL, a KEL, the local group Hab, or a holder rotation whose next keys
-commit to the recipient but is not accepted here) defers: the copy is stored. An
-already stored SAID is ignored, so duplicates are idempotent. KRAM exempts the
+commit to the recipient but is not accepted here) defers: the copy is stored. A
+stored SAID is ignored while it is escrowed or its holder already retains a root
+for the registry, so duplicates are idempotent; an identical resend of any other
+stored copy is escrowed again (kentbull/keripy#171). KRAM exempts the
 route by default; the SAID-keyed store and immutable retention replace replay
 protection.
 
 Acceptance is automatic (KERIpy kentbull/keripy#168). After commit `handle`
-escrows the copy in `Baser.rrpe` (exn SAID to a deadline `TimeoutRRE` = 3600 s
-ahead) and attempts it at once: full re-authorization, decryption, the inner
+escrows the copy in `Baser.rrpe` (exn SAID to the time it entered escrow; like the
+v2 TEL dependency escrows it has no timeout) and attempts it at once: full re-authorization, decryption, the inner
 `i/ri/gid/rd` equal to the outer exchange, and the Salt128 root verified against
 a held opening or by reproducing the accepted BUP `b` commitment from the `td`
 hint before retain-once encrypted Keeper storage. Success removes the escrow
 entry; a newly retained root adds one informational `/exn/registry/root` note
 (`d, i, ri, gid, rd`). `RootUnverified` (including `RootDeferred` and a locked
-Keeper) keeps the entry until its deadline; `RootRefused` or any other
+Keeper) keeps the entry until a later attempt retains or refuses it; `RootRefused` or any other
 `ValidationError` (membership lost, plaintext mismatch, undecryptable, a
 different retained root) drops it, leaving the signed exchange in `exns`.
 `Exchanger.processEscrows` calls `processEscrows()` on any registered route
