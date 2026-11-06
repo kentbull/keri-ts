@@ -12,13 +12,16 @@
  * only the v1 form, so this handler verifies it.
  *
  * Copies are store-and-forward: KRAM exempts the route (built-in
- * `KramPolicy` store-and-forward exemption), the exchange store keys them by
- * SAID, and copies that cannot yet be authorized because local KEL, TEL or group
- * state is missing are stored pending rather than dropped.
+ * `KramPolicy` store-and-forward exemption) and the exchange store keys them by
+ * SAID. Received copies are accepted automatically, with no approval step: a
+ * copy that verifies on arrival is retained at once, and one that cannot yet
+ * verify because local KEL, TEL, group or opening evidence is missing waits in a
+ * bounded escrow (`Baser.rrpe`) that `processEscrows` retries.
  */
 import {
   concatBytes,
   Counter,
+  Dater,
   Diger,
   Encrypter,
   essrChunks,
@@ -46,6 +49,7 @@ import type { Notifier } from "../app/notifications/notifying.ts";
 import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-eventing.ts";
 import type { Baser } from "../db/basing.ts";
+import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
 import type { Regery } from "./registraring.ts";
 
@@ -58,7 +62,7 @@ export class RootUnverified extends ValidationError {}
 /** A registry-root copy whose authorization needs KEL, TEL or group state not yet local. */
 export class RootDeferred extends RootUnverified {}
 
-/** One pending copy in the exchange store; `error` names a conflict with a retained root. */
+/** One escrowed copy awaiting automatic retention; `deadline` ends its retries. */
 export interface PendingRootCopy {
   said: string;
   sender: string;
@@ -66,7 +70,7 @@ export interface PendingRootCopy {
   gid: string;
   registry: string;
   dt: string;
-  error?: string;
+  deadline: string;
 }
 
 /** Sealed-box plaintext field map. */
@@ -193,32 +197,42 @@ export function rootExn(
  * here: malformed exchange or identifiers, ESSR digest mismatch, `ri` not a
  * local individual habitat, `i == ri`, `gid` a local habitat that is not this
  * member's group, a non-Ed25519 recipient key, or a membership or
- * sender-authority failure against complete local state. When the failure is
- * only missing local state (registry TEL, sender or group KEL, local group
- * habitat, or a group rotation that commits to the recipient's key but is not
- * yet accepted here) the copy is deferred: it is stored with a note carrying
- * `deferred`, so an offline newcomer never needs a resend. A SAID already
- * stored is ignored, so duplicate deliveries add no note.
+ * sender-authority failure against complete local state. A SAID already
+ * stored is ignored, so duplicate deliveries are idempotent.
  *
- * Stored copies persist in the Exchanger's `exns.`/`essrs.` stores with a
- * Notifier note, so pending copies survive restart without a new ledger.
- * Nothing is decrypted until `receive`, the explicit receiver approval, which
- * re-runs the full authorization, checks the plaintext binding and verifies the
- * root against a held opening or by reproducing the BUP `b` commitment before
- * retention.
+ * Acceptance is automatic. `handle` escrows the stored copy (exchange store plus
+ * an `rrpe` deadline) and immediately tries to retain it: full authorization,
+ * decryption, plaintext binding and root verification against a held opening or
+ * by reproducing the BUP `b` commitment. On success the root is retained and the
+ * escrow entry removed; a newly retained root adds one informational Notifier
+ * note. A copy not yet verifiable (missing registry TEL, sender, recipient or
+ * holder key state, local group habitat, an unaccepted rotation that adds the
+ * recipient, missing opening evidence or a locked Keeper) stays escrowed and
+ * `processEscrows` retries it, which the Exchanger drives from its own
+ * `processEscrows`, until `TimeoutRRE` elapses. A copy refused on any attempt
+ * (plaintext mismatch, undecryptable, membership lost, or a different root
+ * already retained, which is never replaced) is dropped from escrow; the signed
+ * exchange stays in `exns`. `receive` is a manual retry that can supply a BUP or
+ * opening.
  *
- * TypeScript divergence: `verify` runs inside the Exchanger's synchronous LMDB
- * writer, so it only reads stores; the note is added by `handle` after commit.
+ * TypeScript divergences: `verify` runs inside the Exchanger's synchronous LMDB
+ * writer, so it only reads stores; `handle` escrows and attempts after commit.
+ * A locked Keeper is a `RootUnverified` here (KERIpy raises `AuthError`), so it
+ * keeps the copy escrowed rather than refusing it.
  */
 export class RegistryRoot implements ExchangeRouteHandler {
   static readonly Route = "/registry/root";
   static readonly Note = "/exn/registry/root";
+  /** Seconds a stored copy is retried before it is dropped. */
+  static readonly TimeoutRRE = 3600;
   static readonly States = ["issued", "revoked"] as const;
   readonly resource = RegistryRoot.Route;
   readonly protocolMajor = 2;
   readonly hby: Habery;
   readonly rgy: Regery;
   readonly notifier: Notifier | null;
+  /** Retry window for newly escrowed copies; `TimeoutRRE` unless a test shortens it. */
+  timeoutRRE: number = RegistryRoot.TimeoutRRE;
 
   constructor(hby: Habery, rgy: Regery, notifier: Notifier | null = null) {
     if (rgy.hby !== hby) throw new ValidationError("registry root replication requires the Habery's registry owner");
@@ -481,49 +495,24 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return digest.code === MtrDex.Blake3_256 && digest.verify(essr);
   }
 
-  /** Return null when authorized now, else the RootDeferred reason; throw on refusal. */
-  private deferral(serder: SerderKERI, essr: Uint8Array): string | null {
-    try {
-      this.scope(serder, essr);
-    } catch (error) {
-      if (error instanceof RootDeferred) return error.message;
-      throw error;
-    }
-    return null;
-  }
-
   /** Store authorized or deferred copies once; refuse the rest; never decrypt here. */
   verify(args: { serder: SerderKERI; essrs?: readonly Texter[] }): boolean {
     if (this.hby.db.exns.get([args.serder.said!])) return false;
     try {
-      this.deferral(args.serder, essrBytes(args.essrs));
+      this.scope(args.serder, essrBytes(args.essrs));
     } catch (error) {
+      if (error instanceof RootDeferred) return true;
       if (error instanceof ValidationError) return false;
       throw error;
     }
     return true;
   }
 
-  /** Add one Notifier note, carrying `deferred` when authorization still needs local state. */
+  /** Escrow the stored copy and retain its root now when it verifies. */
   handle(args: { serder: SerderKERI; essrs?: readonly Texter[] }): void {
-    if (!this.notifier) return;
-    const serder = args.serder, data = serder.sad!.a as Record<string, string>;
-    const attrs: Record<string, string> = {
-      r: RegistryRoot.Note,
-      d: serder.said!,
-      i: serder.pre!,
-      ri: serder.sad!.ri as string,
-      gid: data.gid,
-      rd: data.rd,
-    };
-    let reason: string | null = null;
-    try {
-      reason = this.deferral(serder, essrBytes(args.essrs));
-    } catch (error) {
-      if (!(error instanceof ValidationError)) throw error;
-    }
-    if (reason !== null) attrs.deferred = reason;
-    this.notifier.add(attrs);
+    const said = args.serder.said!;
+    this.hby.db.rrpe.put([said], new Dater({ dts: makeNowIso8601(new Date(Date.now() + this.timeoutRRE * 1000)) }));
+    this.attempt(said);
   }
 
   private stored(said: string): [SerderKERI, Uint8Array] {
@@ -535,7 +524,12 @@ export class RegistryRoot implements ExchangeRouteHandler {
   /** Return [gid, rd, root, plaintext] after decrypting and binding the box. */
   private open(serder: SerderKERI, essr: Uint8Array): [string, string, Salter, RootPlaintext] {
     const [hab, gid, registry] = this.scope(serder, essr);
-    hab.mgr.requireRegistryRootAccess();
+    try {
+      hab.mgr.requireRegistryRootAccess();
+    } catch (error) {
+      if (error instanceof ValidationError) throw new RootUnverified(error.message, { cause: error });
+      throw error;
+    }
     let plain: unknown;
     try {
       const opened = hab.mgr.open(essr, hab.kever!.verfers[0]);
@@ -566,16 +560,13 @@ export class RegistryRoot implements ExchangeRouteHandler {
   }
 
   /**
-   * Explicitly approve one stored copy; verify and retain its root.
+   * Verify one stored copy and retain its root; return true when newly retained.
    *
-   * `event` overrides the sender's BUP hint; `opening` is a held opening for
-   * that BUP. Without one, a held public opening in the registry store is used,
-   * else the BUP `b` commitment is reproduced from `(uuid, td, ts)` using the
-   * sender's `td` hint. Returns true on retention. RootRefused marks a copy that
-   * can never be retained; RootUnverified leaves it pending; its RootDeferred
-   * subclass names the local KEL, TEL or group state still missing.
+   * Throws RootUnverified (or its RootDeferred) while the copy may still verify
+   * later, and RootRefused or another ValidationError when it never can be
+   * retained here.
    */
-  receive(said: string, { event, opening }: { event?: string; opening?: RegistryDisclosure } = {}): boolean {
+  private accept(said: string, { event, opening }: { event?: string; opening?: RegistryDisclosure } = {}): boolean {
     const [serder, essr] = this.stored(said);
     let opened: [string, string, Salter, RootPlaintext];
     try {
@@ -603,8 +594,71 @@ export class RegistryRoot implements ExchangeRouteHandler {
     if (retained && retained.qb64 !== root.qb64) {
       throw new RootRefused("a different root is already retained for this holder and registry");
     }
-    this.hby.mgr.putRegistryRoot(gid, registry, root);
-    this.notes(said, true);
+    const added = this.hby.mgr.putRegistryRoot(gid, registry, root);
+    this.hby.db.rrpe.rem([said]);
+    if (added && this.notifier) {
+      this.notifier.add({
+        r: RegistryRoot.Note,
+        d: said,
+        i: serder.pre!,
+        ri: serder.sad!.ri as string,
+        gid,
+        rd: registry,
+      });
+    }
+    return added;
+  }
+
+  /** Try one escrowed copy: true retained, null still pending, false dropped. */
+  private attempt(said: string): boolean | null {
+    try {
+      this.accept(said);
+    } catch (error) {
+      if (error instanceof RootUnverified) {
+        const deadline = this.hby.db.rrpe.get([said]);
+        const expiry = deadline ? timestampMicros(deadline.dts) : null;
+        if (expiry === null || BigInt(Date.now()) * 1000n > expiry) {
+          this.hby.db.rrpe.rem([said]);
+          return false;
+        }
+        return null;
+      }
+      if (error instanceof ValidationError) {
+        this.hby.db.rrpe.rem([said]);
+        return false;
+      }
+      throw error;
+    }
+    return true;
+  }
+
+  /**
+   * Retry every escrowed copy; drop refused or timed-out ones. The Exchanger
+   * calls this from its own `processEscrows` when this handler is registered,
+   * so ordinary escrow loops drive it.
+   */
+  processEscrows(): void {
+    for (const [keys] of [...this.hby.db.rrpe.getTopItemIter()]) this.attempt(keys.join("."));
+  }
+
+  /**
+   * Manually retry one stored copy with an optional BUP and held opening.
+   *
+   * Retention is automatic; use this only to supply evidence the copy lacks:
+   * `event` overrides the sender's BUP hint and `opening` is a held opening for
+   * that BUP. Without one, a held public opening in the registry store is used,
+   * else the BUP `b` commitment is reproduced from `(uuid, td, ts)` using the
+   * sender's `td` hint. Returns true on retention. RootRefused marks a copy that
+   * can never be retained and drops it from escrow; RootUnverified leaves it as
+   * it was; its RootDeferred subclass names the local state still missing.
+   */
+  receive(said: string, { event, opening }: { event?: string; opening?: RegistryDisclosure } = {}): boolean {
+    try {
+      this.accept(said, { event, opening });
+    } catch (error) {
+      if (error instanceof ValidationError && !(error instanceof RootUnverified)) this.hby.db.rrpe.rem([said]);
+      throw error;
+    }
     return true;
   }
 
@@ -619,60 +673,23 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return unblindBoundState({ said: blid, uuid, acdc: td, states, bounds }) !== null;
   }
 
-  /**
-   * List stored copies to local recipients whose root is not yet retained.
-   * With an unlocked Keeper a retained identical root resolves the copy; a
-   * different retained root is reported with `error`.
-   */
+  /** List escrowed copies awaiting automatic retention, without decrypting. */
   pending(): PendingRootCopy[] {
     const items: PendingRootCopy[] = [];
-    for (const [keys, serder] of this.hby.db.exns.getTopItemIter()) {
-      const recipient = serder.sad?.ri;
-      if (serder.route !== RegistryRoot.Route || typeof recipient !== "string" || !this.hby.habs.has(recipient)) {
-        continue;
-      }
+    for (const [keys, deadline] of this.hby.db.rrpe.getTopItemIter()) {
+      const said = keys.join("."), serder = this.hby.db.exns.get([said]);
+      if (!serder) continue;
       const data = (serder.sad?.a ?? {}) as Record<string, string>;
-      const item: PendingRootCopy = {
-        said: keys.join("."),
+      items.push({
+        said,
         sender: serder.pre!,
-        recipient,
+        recipient: serder.sad?.ri as string,
         gid: data.gid,
         registry: data.rd,
         dt: serder.sad?.dt as string,
-      };
-      let retained: Salter | null = null;
-      try {
-        retained = this.hby.mgr.getRegistryRoot(item.gid, item.registry);
-      } catch {
-        retained = null;
-      }
-      if (retained) {
-        try {
-          const [, , root] = this.open(...this.stored(item.said));
-          if (root.qb64 === retained.qb64) continue;
-          item.error = "a different root is already retained";
-        } catch (error) {
-          if (!(error instanceof Error)) throw error;
-          item.error = error.message;
-        }
-      }
-      items.push(item);
+        deadline: deadline.dts,
+      });
     }
     return items;
-  }
-
-  private notes(said: string, read = false): number {
-    if (!this.notifier) return 0;
-    let count = 0;
-    for (const [, note] of [...this.notifier.noter.notes.getTopItemIter()]) {
-      if (note.attrs.r !== RegistryRoot.Note || note.attrs.d !== said) continue;
-      if (read ? (!note.read && this.notifier.markRead(note.rid)) : this.notifier.remove(note.rid)) count++;
-    }
-    return count;
-  }
-
-  /** Remove this copy's Notifier note; the exchange store is unchanged. */
-  dismiss(said: string): number {
-    return this.notes(said);
   }
 }

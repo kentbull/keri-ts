@@ -7,8 +7,9 @@
  * (topic `credential`) through the runtime Poster. `--out` writes the same bytes
  * to a file instead. `receive` ingests copies from the `credential` mailbox
  * (`--listen`) or `--message` files through the ordinary Reactor, KRAM and
- * Exchanger path, then explicitly approves one stored copy, which verifies and
- * retains the root. No new ledger is kept.
+ * Exchanger path; the handler retains each verifiable root automatically and
+ * escrows the rest for retry. `receive` then drains that escrow once and reports
+ * what is retained or still pending, as KERIpy `kli vc registry root receive`.
  */
 import {
   BlindState,
@@ -30,7 +31,6 @@ import {
   isLocalGroupHab,
   localGroupMember,
   Organizer,
-  type PendingRootCopy,
   type RegistryDisclosure,
   RegistryRoot,
   RootUnverified,
@@ -55,7 +55,6 @@ export interface RegistryRootOptions {
   acdc?: string;
   out?: string;
   said?: string;
-  sender?: string;
   opening?: string;
   listen: boolean;
   messages: readonly string[];
@@ -185,36 +184,27 @@ function* send(context: Replication, options: RegistryRootOptions): Operation<vo
   }
 }
 
-/** Pending copies addressed to this alias's local member for this alias's holder AID. */
-function selected(context: Replication, options: RegistryRootOptions, sender: string | null): PendingRootCopy[] {
-  return context.root.pending().filter(item =>
-    item.recipient === context.member.pre && item.gid === context.hab.pre
-    && (!options.said || item.said === options.said)
-    && (!options.registry || item.registry === options.registry)
-    && (!sender || item.sender === sender)
-  );
+/** True when a root is retained for this alias's holder AID and `registry`. */
+function retained(context: Replication, registry: string): boolean {
+  return context.runtime.hby.mgr.getRegistryRoot(context.hab.pre!, registry) !== null;
 }
 
-/** Ingest from mailbox or files, then explicitly approve one stored copy. */
+/** Ingest copies and let the handler retain them; drain the escrow once and report what remains. */
 function* receive(context: Replication, options: RegistryRootOptions): Operation<void> {
-  const { runtime, root, member } = context;
-  if (!(options.said || options.registry) && (options.listen || options.messages.length)) {
-    throw new ValidationError("receive requires --said or --registry to select a copy");
+  const { runtime, root, member, hab } = context;
+  if (options.listen && !options.registry) throw new ValidationError("receive --listen requires --registry");
+  if ((options.event || options.opening) && !options.said) {
+    throw new ValidationError("--event and --opening retry one stored copy; add --said");
   }
   const proof = options.opening ? heldOpening(yield* call(() => Deno.readFile(options.opening!))) : undefined;
   runtime.exc.addHandler(root);
-  const sender = options.sender ? recipient(runtime.hby, options.sender) : null;
-  if (!(options.said || options.registry)) {
-    for (const item of selected(context, options, sender)) writeJsonLine(item);
-    return;
-  }
   if (options.messages.length) {
     for (const path of options.messages) yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(path)));
   } else if (options.listen) {
     const host = yield* spawn(() => runAgentRuntime(runtime, { hab: member, pollMailbox: true }));
     try {
-      writeJsonLine({ registry: options.registry ?? null, said: options.said ?? null, phase: "listening" });
-      while (!selected(context, options, sender).length) {
+      writeJsonLine({ registry: options.registry, phase: "listening" });
+      while (!retained(context, options.registry!)) {
         check(context);
         yield* wait(runtime.clock, 50);
       }
@@ -222,22 +212,25 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
       yield* host.halt();
     }
   }
-  const items = selected(context, options, sender);
-  if (!items.length) throw new ValidationError("no matching pending registry root copy");
-  if (
-    items.length > 1 && !options.said
-    && (new Set(items.map(item => item.sender)).size > 1 || new Set(items.map(item => item.registry)).size > 1)
-  ) {
-    throw new ValidationError("several pending copies match; select one with --said");
+  // Drain: retry every stored copy whose local state may now be present.
+  root.processEscrows();
+  if (options.said) {
+    try {
+      root.receive(options.said, { event: options.event, opening: proof });
+    } catch (error) {
+      if (error instanceof RootUnverified) throw new ValidationError(`${error.message}; the copy stays pending`);
+      throw error;
+    }
   }
-  const item = items[0];
-  try {
-    root.receive(item.said, { event: options.event, opening: proof });
-  } catch (error) {
-    if (error instanceof RootUnverified) throw new ValidationError(`${error.message}; the copy stays pending`);
-    throw error;
+  for (const item of root.pending()) {
+    if (item.recipient === member.pre && item.gid === hab.pre) writeJsonLine({ ...item, retained: false });
   }
-  writeJsonLine({ ...item, received: true });
+  if (options.registry) {
+    if (!retained(context, options.registry)) {
+      throw new ValidationError("no registry root is retained for this registry");
+    }
+    writeJsonLine({ gid: hab.pre, registry: options.registry, retained: true });
+  }
 }
 
 /** Run one verb over the alias's actual runtime and registry owners. */
@@ -300,7 +293,6 @@ function commandOptions(args: Record<string, unknown>, verb: RegistryRootOptions
     acdc: parseStringOption(args.acdc, "acdc"),
     out: parseStringOption(args.out, "out"),
     said: parseStringOption(args.said, "said"),
-    sender: parseStringOption(args.sender, "sender"),
     opening: parseStringOption(args.opening, "opening"),
     listen: parseBooleanOption(args.listen, "listen") ?? false,
     messages: list(args.message, "message"),

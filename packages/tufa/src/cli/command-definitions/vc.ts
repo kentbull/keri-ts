@@ -61,7 +61,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
     ["send", "Send one held registry root to members by ESSR exn through their mailboxes", "registryRootSendCommand"],
     [
       "receive",
-      "List, ingest and explicitly approve pending registry root copies",
+      "Ingest registry root copies; verifiable roots are retained automatically",
       "registryRootReceiveCommand",
     ],
     [
@@ -96,12 +96,11 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
         .option("--acdc <said>", "ACDC SAID hint for commitment reproduction")
         .option("--out <file>", "Exclusive-create file for the signed exns instead of mailbox delivery");
     } else {
-      command.option("--registry <said>", "Approve the pending copy for this registry SAID")
-        .option("--said <said>", "Approve this exact pending exn SAID")
-        .option("--sender <aid>", "Require this sender AID or alias")
-        .option("--event <said>", "Accepted BUP SAID overriding the sender hint")
-        .option("--opening <file>", "Held CESR state opening file for --event")
-        .option("--listen", "Wait for the copy on the credential mailbox topic")
+      command.option("--registry <said>", "Require a retained root for this registry SAID; --listen waits for it")
+        .option("--said <said>", "Manually retry this stored exn SAID (with --event/--opening)")
+        .option("--event <said>", "Accepted BUP SAID overriding the sender hint for --said")
+        .option("--opening <file>", "Held CESR state opening file for --said")
+        .option("--listen", "Process the credential mailbox until --registry is retained")
         .option("--message <file>", "Fallback: signed exn file (repeatable)", collectOption, []);
     }
     registerDispatchedCommand(command, dispatch, {

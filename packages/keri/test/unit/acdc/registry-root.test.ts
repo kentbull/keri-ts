@@ -1,7 +1,7 @@
 /**
  * Registry roots replicate to members as ESSR exchanges over real KELs, TELs and Keepers.
  *
- * Ports KERIpy kentbull/keripy v2-spec fedf9bf5 tests/acdc/test_registry_root.py.
+ * Ports KERIpy kentbull/keripy v2-spec eaa38aa1 tests/acdc/test_registry_root.py (automatic acceptance).
  * The wire vector is copied byte-for-byte from tests/acdc/fixtures/registry_root_essr.json,
  * Git blob 50dc56f4c79cbbae675e1d2f5f76a272d2db171f.
  */
@@ -91,6 +91,19 @@ function stored(side: Side): string[] {
 
 function notes(side: Side) {
   return [...side.runtime.notifier!.noter.notes.getTopItemIter()].map(([, note]) => note);
+}
+
+/** Run the side's ordinary Exchanger escrow pass, which drives `RegistryRoot.processEscrows`. */
+function* escrows(side: Side): Operation<void> {
+  yield* side.runtime.exc.processEscrows();
+}
+
+/** Deliver the late side's deferred issuer KEL and TEL. */
+function* catchUp(w: World): Operation<void> {
+  for (const [side, kel, tel] of w.late) {
+    yield* receive(side, kel);
+    yield* receive(side, tel);
+  }
 }
 
 function held(w: World, side: Side, gid = w.gid) {
@@ -195,11 +208,11 @@ function* copy(w: World, sender: Side, recipient: Side, { td, gid }: { td?: stri
   return said(wire);
 }
 
-/** The issuer's cross-party copy gives Alice's group its first root. */
+/** The issuer's cross-party copy gives Alice's group its first root on arrival. */
 function* seed(w: World): Operation<void> {
   yield* copy(w, w.issuer, w.alice);
-  assertEquals(w.alice.root.receive(stored(w.alice)[0]), true);
   assertEquals(held(w, w.alice)?.qb64, w.root.qb64);
+  assertEquals(stored(w.alice), []);
 }
 
 /** Real member and group rotations; `current` becomes the signing roster. */
@@ -275,70 +288,100 @@ function plaintext(w: World, sender: Side, recipient: Side, extra: Record<string
 }
 
 for (const enabled of [false, true]) {
-  Deno.test(`registry root: cross-party then member copy with commitment or held opening (KRAM ${enabled})`, async () => {
+  Deno.test(`registry root: a member copy is retained on arrival by commitment reproduction (KRAM ${enabled})`, async () => {
     await run(function*() {
       const w = yield* world({ enabled });
       yield* seed(w);
       const bob = w.bob;
       assertEquals(held(w, bob), null);
-      yield* copy(w, w.alice, bob);
-      const pending = bob.root.pending();
-      assertEquals(pending.map(item => [item.sender, item.gid, item.registry]), [
-        [w.alice.hab.pre, w.gid, w.registry],
-      ]);
-      const [note] = notes(bob);
-      assertEquals([note.attrs.r, note.attrs.d, note.attrs.deferred], [RegistryRoot.Note, pending[0].said, undefined]);
-      // Nothing decrypts or retains until the receiver explicitly approves.
-      assertEquals(held(w, bob), null);
-      assertEquals(bob.root.receive(pending[0].said, { opening: w.opening }), true);
+      const pending = yield* copy(w, w.alice, bob);
+      // No approval step: the handler verifies and retains the root at once.
       assertEquals(held(w, bob)?.qb64, w.root.qb64);
       assertEquals(bob.root.pending(), []);
-      assertEquals(notes(bob)[0].read, true);
-      // A second holder's identical copy is idempotent.
-      const duplicate = yield* copy(w, w.issuer, bob);
-      assertEquals(bob.root.receive(duplicate), true);
+      assertExists(bob.hby.db.exns.get([pending]));
+      const [note] = notes(bob);
+      assertEquals(notes(bob).length, 1);
+      assertEquals([note.attrs.r, note.attrs.d, note.attrs.deferred], [RegistryRoot.Note, pending, undefined]);
+      assertEquals([note.attrs.i, note.attrs.ri, note.attrs.gid, note.attrs.rd], [
+        w.alice.hab.pre,
+        bob.hab.pre,
+        w.gid,
+        w.registry,
+      ]);
+      // A second holder's identical copy is retained idempotently with no second note.
+      yield* copy(w, w.issuer, bob);
+      assertEquals(held(w, bob)?.qb64, w.root.qb64);
       assertEquals(bob.root.pending(), []);
+      assertEquals(notes(bob).length, 1);
     });
   });
 
-  Deno.test(`registry root: duplicate delivery is stored once with one note (KRAM ${enabled})`, async () => {
+  Deno.test(`registry root: duplicate delivery is idempotent (KRAM ${enabled})`, async () => {
     await run(function*() {
       const w = yield* world({ enabled });
       yield* seed(w);
-      const wire = w.alice.root.prepare(w.alice.hab, w.bob.hab.pre!, w.gid, w.registry, { td: w.acdc });
+      let wire = w.alice.root.prepare(w.alice.hab, w.bob.hab.pre!, w.gid, w.registry, { td: w.acdc });
+      yield* receive(w.bob, wire);
+      yield* receive(w.bob, wire);
+      assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+      assertEquals(stored(w.bob), []);
+      assertEquals(notes(w.bob).length, 1);
+      // A duplicate of a still-escrowed copy is not escrowed twice.
+      wire = w.alice.root.prepare(w.alice.hab, w.bob.hab.pre!, w.gid, w.registry, { td: "" });
       yield* receive(w.bob, wire);
       yield* receive(w.bob, wire);
       assertEquals(stored(w.bob), [said(wire)]);
-      assertEquals(notes(w.bob).length, 1);
-      assertEquals(w.bob.root.receive(said(wire)), true);
-      yield* receive(w.bob, wire);
-      assertEquals(notes(w.bob).length, 1);
-      assertEquals(w.bob.root.pending(), []);
     });
   });
 }
 
-Deno.test("registry root: an unverifiable root stays pending until evidence is held", async () => {
+Deno.test("registry root: an unverifiable root stays escrowed until a held opening is supplied", async () => {
   await run(function*() {
     const w = yield* world();
     yield* seed(w);
     const pending = yield* copy(w, w.alice, w.bob, { td: "" });
-    assertThrows(() => w.bob.root.receive(pending), RootUnverified);
     assertEquals(stored(w.bob), [pending]);
     assertEquals(held(w, w.bob), null);
+    assertEquals(notes(w.bob), []);
+    yield* escrows(w.bob);
+    assertEquals(stored(w.bob), [pending]);
+    assertThrows(() => w.bob.root.receive(pending), RootUnverified);
+    assertEquals(stored(w.bob), [pending]);
+    // Manual retry supplies evidence the copy lacks.
     assertEquals(w.bob.root.receive(pending, { opening: w.opening }), true);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(stored(w.bob), []);
   });
 });
 
-Deno.test("registry root: a pending copy survives a fresh handler over the same store", async () => {
+Deno.test("registry root: an escrowed copy is retried by a fresh handler over the same store", async () => {
   await run(function*() {
-    const w = yield* world();
+    const w = yield* world({ late: ["bob"] });
     yield* seed(w);
     const pending = yield* copy(w, w.alice, w.bob);
+    assertEquals(stored(w.bob), [pending]);
+    yield* catchUp(w);
+    // A fresh command runtime over Bob's store installs its own route owner.
+    const runtime = yield* createAgentRuntime(w.bob.hby, new FetchHttpClient(), systemClock, { acdc: w.bob.rgy });
+    yield* ensure(() => runtime.close());
     const restarted = new RegistryRoot(w.bob.hby, w.bob.rgy);
+    runtime.exc.addHandler(restarted);
     assertEquals(restarted.pending().map(item => item.said), [pending]);
-    assertEquals(restarted.receive(pending), true);
+    yield* runtime.exc.processEscrows();
     assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(restarted.pending(), []);
+  });
+});
+
+Deno.test("registry root: an escrowed copy is dropped after its timeout", async () => {
+  await run(function*() {
+    const w = yield* world({ late: ["bob"] });
+    yield* seed(w);
+    w.bob.root.timeoutRRE = -1;
+    const pending = yield* copy(w, w.alice, w.bob);
+    assertEquals(stored(w.bob), []);
+    assertExists(w.bob.hby.db.exns.get([pending]));
+    assertEquals(held(w, w.bob), null);
   });
 });
 
@@ -352,56 +395,76 @@ Deno.test("registry root: KRAM exempts a copy delivered long after its window", 
     const stale = makeNowIso8601(new Date(Date.now() - 86_400_000));
     const wire = forge(w.alice, w.bob.hab.pre!, w.gid, w.registry, plaintext(w, w.alice, w.bob), { stamp: stale });
     yield* receive(w.bob, wire);
-    assertEquals(stored(w.bob), [said(wire)]);
-    assertEquals(w.bob.root.receive(said(wire)), true);
+    assertEquals(stored(w.bob), []);
     assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
   });
 });
 
 for (const missing of ["tel", "rotation"] as const) {
-  Deno.test(`registry root: offline newcomer copy is stored, then approved once ${missing} state arrives`, async () => {
+  Deno.test(`registry root: offline newcomer copy is retained by escrow once ${missing} state arrives`, async () => {
     await run(function*() {
       const w = yield* world({ newcomer: true, late: missing === "tel" ? ["outsider"] : [] });
       yield* seed(w);
       yield* copy(w, w.alice, w.bob);
-      w.bob.root.receive(stored(w.bob)[0]);
+      assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
       const current = [w.alice, w.bob, w.outsider];
       yield* rotate(w, current, current, "2", missing === "rotation" ? [w.outsider] : []);
       // The witnesser sends catch-up while the newcomer still lacks local state.
       const pending = yield* copy(w, w.alice, w.outsider);
       assertEquals(stored(w.outsider), [pending]);
-      const [note] = notes(w.outsider);
-      assertEquals(note.attrs.d, pending);
-      assert(typeof note.attrs.deferred === "string" && note.attrs.deferred.length);
-      const error = assertThrows(() => w.outsider.root.receive(pending), RootDeferred);
-      assert(error.message.includes("not yet verifiable"));
+      assertEquals(notes(w.outsider), []);
+      yield* escrows(w.outsider);
       assertEquals(held(w, w.outsider), null);
       assertEquals(stored(w.outsider), [pending]);
-      if (missing === "tel") {
-        for (const [side, kel, tel] of w.late) {
-          yield* receive(side, kel);
-          yield* receive(side, tel);
-        }
-      } else {
-        for (const wire of w.held) yield* receive(w.outsider, wire, true);
-      }
-      assertEquals(w.outsider.root.receive(pending), true);
+      const error = assertThrows(() => w.outsider.root.receive(pending), RootDeferred);
+      assert(error.message.includes("not yet verifiable"));
+      if (missing === "tel") yield* catchUp(w);
+      else for (const wire of w.held) yield* receive(w.outsider, wire, true);
+      assertEquals(held(w, w.outsider), null);
+      // Ordinary escrow processing retains it; no approval, no resend.
+      yield* escrows(w.outsider);
       assertEquals(held(w, w.outsider)?.qb64, w.root.qb64);
+      assertEquals(stored(w.outsider), []);
+      assertEquals(notes(w.outsider).map(note => note.attrs.d), [pending]);
     });
   });
 }
 
-Deno.test("registry root: a member removed between arrival and approval is refused", async () => {
+Deno.test("registry root: a member removed before escrow retry is refused and dropped", async () => {
   await run(function*() {
-    const w = yield* world({ newcomer: true });
+    const w = yield* world({ newcomer: true, late: ["bob"] });
     yield* seed(w);
     const pending = yield* copy(w, w.alice, w.bob);
     assertEquals(stored(w.bob), [pending]);
     yield* rotate(w, [w.alice, w.outsider], [w.alice, w.outsider], "2");
+    yield* catchUp(w);
+    yield* escrows(w.bob);
+    assertEquals(held(w, w.bob), null);
+    assertEquals(stored(w.bob), []);
+    assertEquals(notes(w.bob), []);
     const error = assertThrows(() => w.bob.root.receive(pending), ValidationError, "current signing member");
     assert(!(error instanceof RootUnverified));
+  });
+});
+
+Deno.test("registry root: a deferred copy with unbound plaintext is dropped on retry", async () => {
+  await run(function*() {
+    const w = yield* world({ late: ["bob"] });
+    yield* seed(w);
+    const wire = forge(
+      w.alice,
+      w.bob.hab.pre!,
+      w.gid,
+      w.registry,
+      plaintext(w, w.alice, w.bob, { i: w.issuer.hab.pre! }),
+    );
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), [said(wire)]);
+    yield* catchUp(w);
+    yield* escrows(w.bob);
+    assertEquals(stored(w.bob), []);
     assertEquals(held(w, w.bob), null);
-    assertEquals(stored(w.bob), [pending]);
+    assertEquals(notes(w.bob), []);
   });
 });
 
@@ -448,7 +511,8 @@ for (const fault of ["unknown-registry", "holder-not-local"] as const) {
       const wire = forge(alice, bob.hab.pre!, gid, registry, plaintext(w, alice, bob, { gid, rd: registry }));
       yield* receive(bob, wire);
       assertEquals(stored(bob), [said(wire)]);
-      assert(notes(bob)[0].attrs.deferred);
+      assertEquals(notes(bob), []);
+      yield* escrows(bob);
       assertThrows(() => bob.root.receive(said(wire)), RootDeferred);
       assertEquals(held(w, bob), null);
       assertEquals(stored(bob), [said(wire)]);
@@ -466,7 +530,7 @@ const plaintextFaults = [
   "stale-key",
 ] as const;
 for (const fault of plaintextFaults) {
-  Deno.test(`registry root: stored copy with ${fault} is refused on receive`, async () => {
+  Deno.test(`registry root: a copy with ${fault} is never retained`, async () => {
     await run(function*() {
       const w = yield* world();
       yield* seed(w);
@@ -487,13 +551,15 @@ for (const fault of plaintextFaults) {
       }
       yield* receive(bob, wire);
       const pending = said(wire);
-      assertEquals(stored(bob), [pending]);
+      assertEquals(held(w, bob), null);
+      assertEquals(notes(bob), []);
+      assertExists(bob.hby.db.exns.get([pending]));
+      // Hard refusals leave escrow at once; a wrong root may still be an
+      // unknown commitment, so it waits for evidence until its timeout.
+      assertEquals(stored(bob), fault === "wrong-root" ? [pending] : []);
       const error = assertThrows(() => bob.root.receive(pending));
       assertInstanceOf(error, fault === "wrong-root" ? RootUnverified : RootRefused);
       assertEquals(held(w, bob), null);
-      assertEquals(stored(bob), [pending]);
-      assertEquals(bob.root.dismiss(pending), 1);
-      assertEquals(notes(bob).length, 0);
     });
   });
 }
@@ -505,9 +571,12 @@ Deno.test("registry root: a conflicting retained root is never replaced", async 
     const other = new Salter({ raw: encoder.encode("wrong-test-root!"), code: MtrDex.Salt_128 });
     w.bob.hby.mgr.putRegistryRoot(w.gid, w.registry, other);
     const pending = yield* copy(w, w.alice, w.bob);
+    // Refused on arrival and dropped from escrow; the retained root stays.
+    assertEquals(held(w, w.bob)?.qb64, other.qb64);
+    assertEquals(stored(w.bob), []);
+    assertEquals(notes(w.bob), []);
     assertThrows(() => w.bob.root.receive(pending, { opening: w.opening }), RootRefused);
     assertEquals(held(w, w.bob)?.qb64, other.qb64);
-    assertExists(w.bob.root.pending()[0].error);
   });
 });
 
@@ -516,7 +585,7 @@ Deno.test("registry root: newcomer catches up after a real rotation; next-key me
     const w = yield* world({ newcomer: true });
     yield* seed(w);
     yield* copy(w, w.alice, w.bob);
-    w.bob.root.receive(stored(w.bob)[0]);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
     assertThrows(
       () => w.alice.root.prepare(w.alice.hab, w.outsider.hab.pre!, w.gid, w.registry),
       ValidationError,
@@ -530,7 +599,7 @@ Deno.test("registry root: newcomer catches up after a real rotation; next-key me
     assertEquals(w.alice.root.witnesser(w.alice.group!, rotation), true);
     assertEquals(w.bob.root.witnesser(w.bob.group!, rotation), false);
     yield* copy(w, w.alice, w.outsider);
-    assertEquals(w.outsider.root.receive(stored(w.outsider)[0]), true);
+    assertEquals(stored(w.outsider), []);
     // Every current member holds every root the group knows.
     assertEquals(new Set(current.map(side => held(w, side)?.qb64)), new Set([w.root.qb64]));
   });
@@ -541,7 +610,7 @@ Deno.test("registry root: full roster replacement catches up from a removed hist
     const w = yield* world({ newcomer: true });
     yield* seed(w);
     yield* copy(w, w.alice, w.bob);
-    w.bob.root.receive(stored(w.bob)[0]);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
     const rotation = yield* rotate(w, [w.outsider], [w.outsider], "1");
     assertEquals(w.bob.root.newcomers(w.bob.group!, rotation), [w.outsider.hab.pre]);
     // Bob left the roster: never a recipient, still an authorized historical sender.
@@ -550,8 +619,7 @@ Deno.test("registry root: full roster replacement catches up from a removed hist
       ValidationError,
       "current signing member",
     );
-    const pending = yield* copy(w, w.bob, w.outsider);
-    assertEquals(w.outsider.root.receive(pending), true);
+    yield* copy(w, w.bob, w.outsider);
     assertEquals(held(w, w.outsider)?.qb64, w.root.qb64);
   });
 });
@@ -633,7 +701,6 @@ Deno.test("registry root: Tufa send --out and receive --message use the same exc
       ...base,
       verb: "receive",
       registry: w.registry,
-      sender: w.alice.hab.pre!,
       messages: [out],
     });
     assertEquals(held(w, w.bob)?.qb64, w.root.qb64);

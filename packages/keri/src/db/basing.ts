@@ -288,6 +288,8 @@ export class Baser {
    * a write failure. This binding does not claim legacy `.essrs` interchange.
    */
   public essrs!: CesrIoSetSuber<Texter>;
+  /** KERIpy `rrpe.`: `/registry/root` copies in `exns`/`essrs` awaiting automatic retention; SAID -> deadline. */
+  public rrpe!: CesrSuber<Dater>;
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
   public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
@@ -723,6 +725,9 @@ export class Baser {
         subkey: "essrs.",
         ctor: Texter,
       });
+
+      // Registry root copies awaiting automatic retention, keyed by exchange SAID.
+      this.rrpe = new CesrSuber<Dater>(this.lmdber, { subkey: "rrpe.", ctor: Dater });
 
       // Accepted signed challenge-response exchange-message SAIDs keyed by the
       // signer prefix.

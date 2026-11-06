@@ -152,6 +152,12 @@ export interface ExchangeRouteHandler {
     /** Qualified first receiver receipt, retained through dependency retry. */
     receiverTime?: string;
   }): void | Operation<void>;
+  /**
+   * Retry this route's own escrow of accepted exchanges awaiting later local
+   * work (for example `RegistryRoot`). The Exchanger calls it after its own
+   * escrows, as KERIpy `Exchanger.processEscrow` does for handlers that define it.
+   */
+  processEscrows?(): void;
 }
 /** One signed exchange and its attachment views at runtime admission. */
 export interface ExchangeInput {
@@ -590,11 +596,13 @@ export class Exchanger {
   processEscrows(): Operation<void> {
     return call(() => this.retryEscrows());
   }
-  /** Retry each bounded escrow inside one structured child scope. */
+  /** Retry each bounded escrow inside one structured child scope, then each opted-in route handler's own escrow. */
   private *retryEscrows(): Operation<void> {
     if (this.hby.db.inWriteTransaction) throw new Error("Exchanger must own escrow transactions");
     yield* this.retryEscrowType(false);
     if (this.hby.db.emse) yield* this.retryEscrowType(true);
+    const versioned = [...this.versionedRoutes.values()].flatMap(versions => [...versions.values()]);
+    for (const handler of new Set([...this.routes.values(), ...versioned])) handler.processEscrows?.();
   }
   /**
    * Close each cursor before replay; newly discovered dependencies wait for the next finite pass.
