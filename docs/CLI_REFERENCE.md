@@ -203,8 +203,9 @@ that verifies on arrival (authorization, decryption, plaintext binding, and the
 root checked against a held opening or the accepted BUP commitment with the `td`
 hint) is retained at once with one informational notification. A copy that
 cannot verify yet because local KEL, TEL, group or opening evidence is missing is
-escrowed and retried by the ordinary escrow loop for up to an hour, so an offline
-newcomer never needs a resend; a copy refused on any attempt is dropped.
+escrowed and retried by the ordinary escrow loop until it is retained or refused,
+with no timeout, so an offline newcomer never needs a resend. A copy refused on
+any attempt, including one that conflicts with the retained root, is dropped.
 
 `receive` is a drain. `--listen` processes the `credential` mailbox until the
 root for `--registry` is retained; `--message FILE` ingests a file copy through

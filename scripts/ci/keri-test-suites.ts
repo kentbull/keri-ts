@@ -58,7 +58,6 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/protocol/nested-frame-boundary.test.ts",
       "test/unit/app/protocol/message-admission.test.ts",
       "test/unit/app/cli/notifications-cli.test.ts",
-      "test/unit/app/cli/init-credentials.test.ts",
       "test/unit/app/cli/init-terminal.test.ts",
       "test/unit/app/cli/oobi-clean-cli.test.ts",
       "test/unit/app/notifications/notifying.test.ts",
@@ -211,6 +210,8 @@ export const suites: Record<string, TestSuite> = {
   },
   "app-fast-isolated": {
     files: [
+      // Mutates process-wide TMPDIR, so it cannot share a process with other app tests.
+      "test/unit/app/cli/init-credentials.test.ts",
       "test/unit/app/multisig/endpoint-roleing.test.ts",
     ],
   },
