@@ -22,13 +22,18 @@ function result(stdout: string): Record<string, unknown> {
 async function reciprocalApproval(weighted: boolean): Promise<void> {
   const ctx = await createInteropContext();
   ctx.env.PYTHONUNBUFFERED = "1";
-  const witnesses = await startKeriPyWitnessHarness(ctx, { aliases: ["wan"] });
+  // v1-only reference peers (GLEIF 1.2/1.3) need both members to author v1 KELs. Upstream
+  // WebOfTrust main cannot read v2 multisig proposals, so its group stays v1 end to end
+  // (witness, member and group KELs); the candidate profile keeps the v2 group.
+  const kelVersion = v1OnlyKeripyPeer(ctx.env) || ctx.env.KERIPY_INTEROP_PROFILE === "main" ? "1.0" : "2.0";
+  const witnesses = await startKeriPyWitnessHarness(ctx, {
+    aliases: ["wan"],
+    protocolVersion: kelVersion === "1.0" ? 1 : 2,
+  });
   try {
     const witness = witnesses.node("wan");
     const head = `${ctx.home}/tufa`, name = `member-${crypto.randomUUID()}`;
     const pyName = `python-${crypto.randomUUID()}`;
-    // v1-only reference peers (GLEIF 1.2/1.3) need both members to author v1 KELs.
-    const kelVersion = v1OnlyKeripyPeer(ctx.env) ? "1.0" : "2.0";
     const versions = keripyProtocolVersionArgs(ctx.env, kelVersion);
     /** Run a finite public command with a diagnostic deadline, without modifying the peer. */
     const tufa = (label: string, args: string[]) =>
