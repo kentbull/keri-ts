@@ -167,6 +167,16 @@ Where upstream differs the contract is the status class: health any 2xx
 (witness-hk 204, watcher-hk none), an enrollment KEL that does not establish the
 account any 4xx (Python 400, TS 409). Do not change the Python services to match.
 
+`roles/boot-service.ts` (+ `boot-service-store.ts`) ports upstream kf-boot; its wire
+surfaces are the contract, Python is the reference. Route handlers are synchronous
+Exchanger handlers whose outcome is keyed by the exn SAID, so concurrent surface
+requests never share a reply; the async worker re-reads the session after every
+backend call. Records keep kf-boot's snake_case fields because payloads expose them.
+Python-only by justification: per-IP limits/tiers, sweeper/cleanup CLI, capacity
+counters; expiry is on access only and closed rows are never purged, so a closed but
+uncleaned session still blocks a new start (as kf-boot with its runner disabled).
+The shared host answers CORS preflight `OPTIONS` 204 (kf-boot 200): both 2xx.
+
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
