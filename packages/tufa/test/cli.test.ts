@@ -144,18 +144,16 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
     "member",
     "--rotation",
     "Erotation",
-    "--previous-member",
-    "Eprevious",
     "--registry",
     "Eregistry",
-    "--output-dir",
-    "replies",
+    "--out",
+    "replies.cesr",
   ],
   [
     "vc",
     "registry",
     "root",
-    "prepare",
+    "send",
     "-n",
     "store",
     "-a",
@@ -164,30 +162,8 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
     "Eregistry",
     "--recipient",
     "Erecipient",
-    "--target",
-    "Etarget",
-    "--output",
+    "--out",
     "reply.cesr",
-  ],
-  [
-    "vc",
-    "registry",
-    "root",
-    "contribute",
-    "-n",
-    "store",
-    "-a",
-    "member",
-    "--registry",
-    "Eregistry",
-    "--recipient",
-    "Erecipient",
-    "--target",
-    "Etarget",
-    "--output",
-    "reply.cesr",
-    "--proposal",
-    "proposal.cesr",
   ],
   [
     "vc",
@@ -1196,7 +1172,7 @@ Deno.test("tufa/cli - interact reaches the real command body through the Tufa bi
     "--alias",
     alias,
     "--data",
-    "{\"anchor\":\"acdc\"}",
+    '{"anchor":"acdc"}',
   ]);
   assertEquals(
     interact.code,
@@ -1367,7 +1343,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-ipex-shutdown-" });
   const name = "ipex-shutdown";
   let transmissions = 0;
-  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+  const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
     await request.arrayBuffer();
     transmissions++;
     return new Response(null, { status: 204 });
@@ -1382,7 +1358,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
   let closed = false, failClose = false, injected = false;
   const fault = new Error("IPEX owned shutdown failed");
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({ name, headDirPath, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
@@ -1462,7 +1438,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
       }
     });
     // Inject only after real shutdown; no native handle or failure classification is mocked.
-    Habery.prototype.close = function*(clear = false) {
+    Habery.prototype.close = function* (clear = false) {
       yield* close.call(this, clear);
       if (this.name === name) {
         closed = true;
@@ -1492,7 +1468,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
     failClose = false;
     const sign = Hab.prototype.sign;
     let signatures = 0;
-    Hab.prototype.sign = function(this: Hab, ...args: Parameters<typeof sign>) {
+    Hab.prototype.sign = function (this: Hab, ...args: Parameters<typeof sign>) {
       if (this.pre === sender) signatures++;
       return sign.apply(this, args);
     } as typeof sign;
@@ -1568,7 +1544,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
             opening,
             out,
             said: held.credential.d,
-            states: "[\"issued\"]",
+            states: '["issued"]',
           })
         );
         assertEquals(JSON.parse(records.pop()!).matched, true);
@@ -1590,7 +1566,7 @@ Deno.test("tufa/cli - IPEX success follows owned shutdown and a close failure re
                   alias: "sender",
                   opening,
                   said: held.credential.d,
-                  states: "[\"issued\"]",
+                  states: '["issued"]',
                 })
               )
             );
@@ -1666,7 +1642,7 @@ Deno.test("tufa/cli - local group credential authoring reports coordination sepa
   const store = ["--name", name, "--head-dir", head, "--alias", "team"];
   let groupPre = "";
   try {
-    await run(function*() {
+    await run(function* () {
       const hby = yield* createHabery({ name, headDirPath: head, skipConfig: true });
       try {
         const member = hby.makeHab("member");
