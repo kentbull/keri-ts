@@ -2,7 +2,7 @@
   "commit": "7c12050cbf517a2bad0f95695d9c0f33d7025887",
   "candidate": {
     "applications": {
-      "dolly": { "repository": "kentbull/dolly", "commit": "88e406442fb9271850793ed063a658478d36ba83" },
+      "dolly": { "repository": "kentbull/dolly", "commit": "7f9ebe35dbe5288e91ddd86c760946e5e94269eb" },
       "registrar": { "repository": "kentbull/kf-registrar", "commit": "913ce2445f7dd50d847129e1fec496c0af960fba" },
       "observer": { "repository": "kentbull/kf-observer", "commit": "3fd2ba6af326a1bbafb7c19944e665858a56a5ec" },
       "witness": { "repository": "kentbull/witness-hk", "commit": "03e0e9751d83a9a0caa634ea5f330a84bd1f6552" },
