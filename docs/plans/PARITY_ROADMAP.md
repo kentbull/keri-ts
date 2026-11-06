@@ -122,6 +122,23 @@ activated implementation queue. A proposal to hide DB access, replace reflective
 dispatch, rename records or simplify generics needs a demonstrated current problem
 under ADR-0013; the old scratchpad does not authorize new facades or cleanup.
 
+## Deferred witness authentication
+
+Kent postponed these items on 2026-11-06 to a fast follow-up; neither is an
+active implementation queue.
+
+- **Multi-key AID witness authentication.** KERIpy `kli witness authenticate`
+  fails for multi-key AIDs because `Manager.decrypt` tries every current key on
+  one ciphertext. Upstream witness-hk has the same limit: it returns `totps`, one
+  ciphertext per member key. The Tufa hosted witness already returns per-key
+  `totps` (covered by `packages/tufa/test/hosted-witness.test.ts`), and core
+  `Hab.decrypt(ser, verfers?)` lets a caller select one key. Re-entry adds a
+  multi-key `tufa witness authenticate` and its KERIpy interop case, which was
+  dropped from `interop-hosted-witness-kli-tufa.test.ts` until then.
+- **`tufa witness authenticate`.** Add KERIpy `kli witness authenticate` parity,
+  including the otpauth label. Single-key behavior is the first slice; the
+  multi-key item above extends it.
+
 ## Logging qualification
 
 The stderr routing, threshold filtering and original-cause ejection diagnostics
