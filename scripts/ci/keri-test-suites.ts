@@ -42,6 +42,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/multisig/group-members.test.ts",
       "test/unit/app/multisig/grouping.test.ts",
       "test/unit/app/multisig/grouping-nests.test.ts",
+      "test/unit/app/multisig/coordination-routes.test.ts",
       "test/unit/app/credentials/tel-publishing.test.ts",
       "test/unit/app/credentials/credential-import.test.ts",
       "test/unit/app/ipex/ipex-credentialing.test.ts",

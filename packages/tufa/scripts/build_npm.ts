@@ -86,10 +86,8 @@ function dntPackageMappings(
   walletVersion: string,
   registrarVersion: string,
   observerVersion: string,
-  multisyncVersion: string,
 ): Record<string, string | { name: string; version: string; subPath?: string }> {
   return {
-    "../multisync/v2/mod.ts": { name: "@keri-ts/multisync", version: multisyncVersion, subPath: "v2" },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../observer/mod.ts": { name: "@keri-ts/observer", version: observerVersion },
     "../wallet/mod.ts": { name: "@keri-ts/wallet", version: walletVersion },
@@ -212,7 +210,6 @@ const cesrPackageVersion = resolveWorkspacePackageVersion(
 
 const verifierPackageVersion = resolveWorkspacePackageVersion("../verifier/package.json");
 const hostingPackageVersion = resolveWorkspacePackageVersion("../hosting/package.json");
-const multisyncPackageVersion = resolveWorkspacePackageVersion("../multisync/package.json");
 const walletPackageVersion = resolveWorkspacePackageVersion("../wallet/package.json");
 const registrarPackageVersion = resolveWorkspacePackageVersion("../registrar/package.json");
 const observerPackageVersion = resolveWorkspacePackageVersion("../observer/package.json");
@@ -232,7 +229,6 @@ await build({
     walletPackageVersion,
     registrarPackageVersion,
     observerPackageVersion,
-    multisyncPackageVersion,
   ),
   typeCheck: false,
   test: false,
@@ -275,7 +271,6 @@ await build({
       "@keri-ts/wallet": walletPackageVersion,
       "@keri-ts/registrar": registrarPackageVersion,
       "@keri-ts/observer": observerPackageVersion,
-      "@keri-ts/multisync": multisyncPackageVersion,
       "cesr-ts": cesrPackageVersion,
       "commander": "^10.0.1",
       "effection": "^3.6.0",
