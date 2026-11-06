@@ -941,6 +941,18 @@ Deno.test("tufa/cli - IPEX elapsed deadlines dispatch seconds", async () => {
     ValidationError,
     "--listen",
   );
+  // Live Unblind is the default, as in KERIpy; --opening selects the offline fallback.
+  const { grant: _grant, listen: _listen, ...live } = unblind.args;
+  await assertRejects(
+    () => run(() => handlers.get(unblind.name)!(live)),
+    ValidationError,
+    "Live Unblind requires --grant",
+  );
+  await assertRejects(
+    () => run(() => handlers.get(unblind.name)!({ ...unblind.args, opening: "opening.cesr", said: "Ecredential" })),
+    ValidationError,
+    "Offline --opening",
+  );
 });
 
 Deno.test("tufa/cli - DID Webs and DID KERI commands dispatch expected handlers", () => {

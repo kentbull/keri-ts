@@ -430,14 +430,18 @@ function* acdcV2Disclosure(
   writeJsonLine(completed);
 }
 
-/** Select live exact-Grant acquisition or offline candidate recovery; neither creates an Admit. */
+/**
+ * Live exact-Grant Unblind qry/rpy is the default, as in KERIpy; offline candidate
+ * recovery from an `--opening` file is the explicit fallback. Neither creates an Admit.
+ */
 export function* ipexUnblindCommand(args: Record<string, unknown>): Operation<void> {
-  if (args.listen !== undefined && !args.grant) throw new ValidationError("--listen requires live --grant Unblind");
-  if (args.grant) {
+  if (!args.opening) {
     const { ipexLiveUnblindCommand } = yield* call(() => import("./ipex-unblinding.ts"));
     return yield* ipexLiveUnblindCommand(args);
   }
-  if (args.timeout || args.input || args.proposer) throw new ValidationError("Live Unblind options require --grant");
+  if (args.grant || args.listen !== undefined || args.timeout || args.input || args.proposer) {
+    throw new ValidationError("Offline --opening recovery excludes the live --grant options");
+  }
   const path = parseStringOption(args.opening, "opening"), said = parseStringOption(args.said, "said");
   if (!path || !said) throw new ValidationError("Unblind requires --opening and --said.");
   const states = JSON.parse(parseStringOption(args.states, "states") ?? "[]");

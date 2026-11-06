@@ -310,6 +310,33 @@ export class Dhke implements AuxiliaryQueryProcessor {
     return (op.query ?? op.contribution!).slice();
   }
 
+  /**
+   * Re-sign this issuer's started individual query for delivery now.
+   *
+   * KERIpy `Dhke.requery` (kentbull/keripy#159): a queued query can age past the
+   * issuee's KRAM timeliness window before transport begins. The renewal keeps
+   * the approved Grant, ephemeral keys and registry scope; only the query's own
+   * `dt`, SAID and signatures change, and it becomes the outstanding query. It
+   * never extends the Grant's exchange deadline. A group threshold query needs
+   * a new member proposal, so groups cannot renew here.
+   */
+  requery(xid: string): Uint8Array {
+    const op = this.operation(xid);
+    if (this.group) throw new ValidationError("one group member cannot renew a threshold DH query");
+    if (this.hab.pre !== op.issuer || !op.query) throw new ValidationError("DH has no started issuer query");
+    this.live(op);
+    this.roots(op);
+    if (op.completed) throw new ValidationError("DH operation has already completed");
+    const message = query(Dhke.Route, { x: op.xid, pk: op.publicKeys }, {
+      pre: this.hab.pre,
+      replyRoute: Dhke.Route,
+      pvrsn: Vrsn_2_0,
+      kind: Kinds.json,
+    });
+    op.query = this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+    return op.query.slice();
+  }
+
   /** Explicitly sign one exact custodian proposal; partial proof authorizes review, never DH. */
   contribute(xid: string, proposal: Uint8Array): Uint8Array {
     if (!this.group) throw new ValidationError("DH contribution requires a local group member");
