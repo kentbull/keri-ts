@@ -139,6 +139,23 @@ active implementation queue.
   including the otpauth label. Single-key behavior is the first slice; the
   multi-key item above extends it.
 
+## Deferred v2 registry opening retention alignment
+
+KERIpy `v2-spec` now owns pending disclosed-opening retention in core
+(`RegBaser.opes`, `RegistryStore.escrowOpening`/`pendingOpening`,
+`Regery.processEscrowOpenings`). Two keri-ts divergences remain, to align with
+KERIpy later; neither is a current defect or an active queue.
+
+- **Retention without caller opt-in.** `RegistryObserver.processEvent`
+  (`packages/keri/src/acdc/observing.ts`) retains any vetted carried BUP opening
+  at intake. KERIpy retains only on an explicit `putOpening` (accepted) or
+  `escrowOpening` (pending) call. Every current TS TEL intake path is publisher-
+  or source-authorized, so behavior matches in practice.
+- **Pending bodies served.** `RegistryStore.publicOpening`
+  (`packages/keri/src/acdc/registering.ts`) serves openings for pending bodies;
+  KERIpy `opening()` is accepted-only and `pendingOpening()` is a separate,
+  non-publishing read.
+
 ## Logging qualification
 
 The stderr routing, threshold filtering and original-cause ejection diagnostics
