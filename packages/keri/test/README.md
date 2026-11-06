@@ -133,7 +133,7 @@ Run these scenario files with their maintained owner:
 
 The default CLI runtime is the `kentbull/keripy` `v2-spec` peer selected by
 [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `eaa38aa14a72dd71f3e163369cf8b4b17df273b9`, which includes the v2 Poster
+currently `65c80c7773992d7359d308bf2c99b41f693d5cc9`, which includes the v2 Poster
 nested-forwarding fix that v2 group proposals need (kentbull/keripy#157, #158), the core
 `/multisig/qry` and `/multisig/ipex-proof` routes (#149), `Unblind.openings` (#156) and
 DH/Unblind `requery` (#159) and `/registry/root` ESSR root replication with its KRAM
