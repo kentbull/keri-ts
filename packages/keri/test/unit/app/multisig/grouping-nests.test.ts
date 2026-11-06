@@ -482,6 +482,71 @@ Deno.test("multisig join selects, signs and resumes v2 group inception and reply
     });
   });
 });
+Deno.test("multisig join skips an accepted rotation that only names the local member as a next member", async () => {
+  await participants(async (left, right, alice, bob) => {
+    await run(function*() {
+      const third = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      const noter = yield* openNoterForHabery(third);
+      const notifier = new Notifier(third.signator!, { noter });
+      try {
+        const carol = third.makeHab("carol");
+        yield* call(() => learn(left, carol));
+        yield* call(() => learn(right, carol));
+        yield* call(() => learn(third, alice));
+        yield* call(() => learn(third, bob));
+        const mids = [alice.pre, bob.pre], next = [...mids, carol.pre];
+        const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const icp = parseBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }))[0];
+        for (const target of [left, right, third]) {
+          yield* dispatchEnvelope(envelopeFromFrame(icp, true), target.rvy, target.kevery);
+        }
+        alice.rotate();
+        bob.rotate();
+        for (const [target, member] of [[left, bob], [right, alice], [third, alice], [third, bob]] as const) {
+          yield* call(() => learn(target, member));
+        }
+        // A/B rotate and commit to C as a next-only member; C cannot sign this event.
+        const own = left.rotateGroupHab("group", mids, next, { isith: "2", nsith: "3" });
+        const peer = right.rotateGroupHab("group", mids, next, { isith: "2", nsith: "3" });
+        assertEquals(own.serder.raw, peer.serder.raw);
+        const rot = parseBytes(messagize(own.serder, { sigers: [...own.sigers, ...peer.sigers] }))[0];
+        yield* dispatchEnvelope(envelopeFromFrame(rot, true), third.rvy, third.kevery);
+        assertEquals(third.db.getKever(local.hab.pre)?.said, own.serder.said);
+        const runtime = yield* createAgentRuntime(third, new FetchHttpClient(), systemClock, { notifier });
+        try {
+          // The earlier proposal reaches C's mailbox; a later join must skip it, not fail.
+          const stale = signGroupMessage(
+            alice,
+            carol.pre,
+            yield* multisigRotateExn(local.hab, alice, mids, next, own.message),
+          );
+          yield* runtime.reactor.processBytes(stale.message, { local: true });
+          let prompts = 0;
+          const result = yield* approvePendingMultisigProposal(third, runtime, {
+            callbacks: {
+              approveProposal: () => {
+                prompts++;
+                return true;
+              },
+              chooseGroupAlias: () => "group",
+              chooseRegistryName: () => "registry",
+            },
+          });
+          assertEquals(result, null);
+          assertEquals(prompts, 0);
+          assertEquals(third.habByName("group"), null);
+        } finally {
+          yield* runtime.close();
+        }
+      } finally {
+        yield* noter.close(true);
+        yield* third.close(true);
+      }
+    });
+  });
+});
+
 for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
   for (const remoteFirst of [false, true]) {
     Deno.test(`v1 multisig replays genus ${genus.major} children after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
