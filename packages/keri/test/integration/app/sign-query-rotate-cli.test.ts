@@ -1,5 +1,6 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import { t } from "../../../../cesr/mod.ts";
+import { type GuardedChild, spawnGuardedChild } from "../../support/child-lifetime.ts";
 
 interface CmdResult {
   code: number;
@@ -7,7 +8,7 @@ interface CmdResult {
   stderr: string;
 }
 
-type SpawnedChild = Deno.ChildProcess;
+type SpawnedChild = GuardedChild;
 
 function packageRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
@@ -53,12 +54,12 @@ function spawnChild(
   args: string[],
   cwd: string,
 ): SpawnedChild {
-  return new Deno.Command(command, {
+  return spawnGuardedChild(command, {
     args,
     cwd,
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
+  });
 }
 
 async function runCmdWithTimeout(

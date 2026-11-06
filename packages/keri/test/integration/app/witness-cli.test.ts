@@ -3,6 +3,7 @@ import { assertEquals, assertExists, assertNotEquals, assertStringIncludes } fro
 import { createHabery } from "../../../src/app/identity/habbing.ts";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { type GuardedChild, spawnGuardedChild } from "../../support/child-lifetime.ts";
 import { randomPort } from "./interop-test-helpers.ts";
 
 interface CmdResult {
@@ -11,7 +12,7 @@ interface CmdResult {
   stderr: string;
 }
 
-type SpawnedChild = Deno.ChildProcess;
+type SpawnedChild = GuardedChild;
 
 function packageRoot(): string {
   return new URL("../../../../../", import.meta.url).pathname;
@@ -52,12 +53,12 @@ function spawnChild(
   args: string[],
   cwd: string,
 ): SpawnedChild {
-  return new Deno.Command(command, {
+  return spawnGuardedChild(command, {
     args,
     cwd,
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
+  });
 }
 
 async function runTufa(args: string[]): Promise<CmdResult> {
@@ -119,7 +120,7 @@ async function stopChild(child: SpawnedChild): Promise<string> {
   }
   const status = await child.status;
   const output = await readChildOutput(child);
-  if (status.code !== 0 && status.signal !== "SIGTERM") {
+  if (status.code !== 0 && status.code !== 128 + 15 && status.signal !== "SIGTERM") {
     console.error(`Witness host failed (code ${status.code}, signal ${status.signal ?? "none"}):\n${output}`);
   }
   return output;
