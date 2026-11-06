@@ -29,16 +29,18 @@ import { call, ensure, type Operation } from "effection";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import { type RegistryEvent, validateRip, validateUpdate } from "../../acdc/regeventing.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
+import { ValidationError } from "../../core/errors.ts";
 import {
   exchange,
   isIpexVerb,
   isV2RegistryRoute,
+  multisigChildField,
   nestedIpexRoute,
   nestedMultisigIlks,
 } from "../../core/exchange/protocol-exchanging.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
-import { Exchanger, type ExchangeRouteHandler } from "../exchanges/exchanging.ts";
+import { Exchanger, type ExchangeRouteHandler, type ExchangeRouteVerification } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { IpexV2Handler } from "../ipex/ipex-v2.ts";
 import type { Notifier } from "../notifications/notifying.ts";
@@ -58,6 +60,9 @@ export const MULTISIG_ISS_ROUTE = "/multisig/iss";
 export const MULTISIG_REV_ROUTE = "/multisig/rev";
 export const MULTISIG_EXN_ROUTE = "/multisig/exn";
 export const MULTISIG_RPY_ROUTE = "/multisig/rpy";
+/** Local v2 coordination profile routes, as in KERIpy core; not upstream KERI or #1740 routes. */
+export const MULTISIG_QRY_ROUTE = "/multisig/qry";
+export const MULTISIG_IPEX_PROOF_ROUTE = "/multisig/ipex-proof";
 
 /** Ordered route list used for handler registration. */
 export const MULTISIG_ROUTES = [
@@ -71,7 +76,12 @@ export const MULTISIG_ROUTES = [
   MULTISIG_REV_ROUTE,
   MULTISIG_EXN_ROUTE,
   MULTISIG_RPY_ROUTE,
+  MULTISIG_QRY_ROUTE,
+  MULTISIG_IPEX_PROOF_ROUTE,
 ] as const;
+
+/** Children whose verification needs caller-owned processors; the Multiplexor indexes and notifies only. */
+const UNREPLAYED_ROUTES: readonly string[] = [MULTISIG_QRY_ROUTE, MULTISIG_IPEX_PROOF_ROUTE];
 
 export type MultisigRoute = typeof MULTISIG_ROUTES[number];
 
@@ -90,7 +100,9 @@ export type MultisigEventProposal =
     attrs: { gid: string; smids: readonly string[] };
   }
   | { route: typeof MULTISIG_RPY_ROUTE; attrs: { gid: string } }
-  | { route: typeof MULTISIG_EXN_ROUTE; attrs: { gid: string } };
+  | { route: typeof MULTISIG_EXN_ROUTE; attrs: { gid: string } }
+  | { route: typeof MULTISIG_QRY_ROUTE; attrs: { gid: string } }
+  | { route: typeof MULTISIG_IPEX_PROOF_ROUTE; attrs: { gid: string } };
 
 /** Legacy registry proposals require their own named evidence, not arbitrary embed bags. */
 export type MultisigVdrProposal =
@@ -429,6 +441,47 @@ export function* multisigRpyExn(
   );
 }
 
+/**
+ * Propose one exact signed v2 query authored by the group to its members.
+ *
+ * KERIpy `multisigQueryExn`: local v2 coordination profile route `/multisig/qry`
+ * whose `a` is `{gid, qry}` and whose single nested substream is the query stream.
+ */
+export function* multisigQueryExn(
+  group: string | Hab,
+  member: Hab,
+  qry: Uint8Array | RawMessage,
+  options: Omit<MultisigBuilderOptions, "version" | "pvrsn"> = {},
+): Operation<MultisigMessage> {
+  return yield* prepareMultisigEventExn(
+    member.pre,
+    { route: MULTISIG_QRY_ROUTE, attrs: { gid: groupPrefix(group) } },
+    rawMessage(qry),
+    { ...options, pvrsn: Vrsn_2_0 },
+  );
+}
+
+/**
+ * Share one exact v2 IPEX Grant stream, with its proofs, with group members.
+ *
+ * KERIpy `multisigIpexProofExn`: local v2 coordination profile route
+ * `/multisig/ipex-proof` whose `a` is `{gid, grant}` and whose single nested
+ * substream is the complete Grant stream, authored by or addressed to the group.
+ */
+export function* multisigIpexProofExn(
+  group: string | Hab,
+  member: Hab,
+  grant: Uint8Array | RawMessage,
+  options: Omit<MultisigBuilderOptions, "version" | "pvrsn"> = {},
+): Operation<MultisigMessage> {
+  return yield* prepareMultisigEventExn(
+    member.pre,
+    { route: MULTISIG_IPEX_PROOF_ROUTE, attrs: { gid: groupPrefix(group) } },
+    rawMessage(grant),
+    { ...options, pvrsn: Vrsn_2_0 },
+  );
+}
+
 /** Wrap one business EXN, such as `/ipex/grant`, for group approval. */
 export function multisigExn(
   group: string | Hab,
@@ -464,7 +517,9 @@ export function multisigExnBody(
   if (route === MULTISIG_EXN_ROUTE && !v2IpexChild(child, attrs.gid)) {
     throw new Error("Multisig IPEX requires a v2 child authored by the selected group.");
   }
-  const field = route.slice(route.lastIndexOf("/") + 1);
+  const coordination = v2CoordinationChild(route, child, "gid" in attrs ? attrs.gid : undefined);
+  if (coordination) throw new Error(coordination);
+  const field = multisigChildField(route);
   const payload = route === MULTISIG_ICP_ROUTE
     ? { gid: requireString(child.pre, "group inception prefix"), ...attrs, [field]: child.said }
     : { ...attrs, [field]: child.said };
@@ -476,6 +531,24 @@ function v2IpexChild(child: SerderKERI, group: unknown): boolean {
   return child.pvrsn.major === 2 && child.pvrsn.minor === 0 && child.pre === group
     && ["xip", "exn"].includes(child.ilk ?? "") && child.route?.startsWith("/ipex/") === true
     && isIpexVerb(child.route.slice(6));
+}
+
+/**
+ * KERIpy core checks for the two local coordination routes: a group-authored v2
+ * query, or a v2 Grant authored by or addressed to the group. Returns a reason.
+ */
+function v2CoordinationChild(route: string, child: SerderKERI, group: unknown): string | null {
+  const v2 = child.pvrsn.major === 2 && child.pvrsn.minor === 0;
+  if (route === MULTISIG_QRY_ROUTE && (!v2 || child.ilk !== "qry" || child.pre !== group)) {
+    return "Multisig query requires a v2 query authored by the selected group.";
+  }
+  if (
+    route === MULTISIG_IPEX_PROOF_ROUTE
+    && (!v2 || child.route !== "/ipex/grant" || (child.pre !== group && child.sad?.ri !== group))
+  ) {
+    return "Multisig IPEX proof requires a v2 Grant for the selected group.";
+  }
+  return null;
 }
 
 /** Signed replay hint for a legacy child whose attachments use a different genus. */
@@ -531,13 +604,18 @@ export function* prepareMultisigEventExn(
     const child = frames[0];
     if (
       frames.length !== 1 || !(child.body instanceof SerderKERI)
-      || (child.nests?.length && (route !== MULTISIG_EXN_ROUTE || !nestedIpexRoute(child.body.route ?? "")))
+      || (child.nests?.length && !nestedChildAllowed(route, child.body))
     ) {
       throw new Error("Multisig proposal requires one supported direct child.");
     }
     const serder = multisigExnBody(sender, captured, child.body, options);
     return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), signal)] as const;
   });
+}
+
+/** Coordination and IPEX children may carry their own nests; KEL and reply children may not. */
+function nestedChildAllowed(route: string, child: SerderKERI): boolean {
+  return UNREPLAYED_ROUTES.includes(route) || (route === MULTISIG_EXN_ROUTE && nestedIpexRoute(child.route ?? ""));
 }
 
 /** Proposal routes KERIpy authors as v1 `e`-embed wrappers for both v1 and v2 groups. */
@@ -564,13 +642,25 @@ export class MultisigNotificationHandler implements ExchangeRouteHandler {
     return nestedMultisigIlks(this.resource) !== null;
   }
 
-  /** Authenticate the signed child relationship before exchange evidence is published. */
-  verify(args: { serder: SerderKERI; nests?: readonly CesrFrame[] }): boolean {
+  /**
+   * Authenticate the signed child relationship before exchange evidence is published.
+   * A child handler registered with `Multiplexor.addChildHandler` for this route and
+   * the nested child's route owns verification instead.
+   */
+  verify(args: Parameters<NonNullable<ExchangeRouteHandler["verify"]>>[0]): ExchangeRouteVerification {
+    const delegate = this.mux.childHandlerFor(args.serder, args.nests);
+    if (delegate) return delegate.verify ? delegate.verify(args) : false;
     return args.serder.route === this.resource && this.mux.verify(args.serder, args.nests);
   }
 
   /** Borrow persisted children until approval replay and coordination indexing finish. */
-  *handle(args: { serder: SerderKERI; nests?: readonly CesrFrame[] }): Operation<void> {
+  *handle(args: Parameters<ExchangeRouteHandler["handle"]>[0]): Operation<void> {
+    const delegate = this.mux.childHandlerFor(args.serder, args.nests);
+    if (delegate) {
+      const handled = delegate.handle(args);
+      if (handled) yield* handled;
+      return;
+    }
     yield* this.mux.add(args.serder, args.nests);
   }
 }
@@ -609,6 +699,8 @@ export class Multiplexor {
   private readonly exchanger?: Exchanger;
   private readonly registry?: RegistryObserver;
   private readonly messageKevery: Kevery;
+  /** Owners sharing one registered wrapper route, keyed by wrapper and nested child route. */
+  private readonly childHandlers = new Map<string, ExchangeRouteHandler>();
 
   /** Reuse durable group membership and separate child processors without sharing parent proof state. */
   constructor(
@@ -635,6 +727,40 @@ export class Multiplexor {
     this.kvy.registerReplyRoutes(router);
     this.replay = new Exchanger(hby);
   }
+  /**
+   * Delegate one wrapper route's v2 children with route `child` to `handler`.
+   *
+   * KERIpy `Multiplexor.addChildHandler`: several owners share one registered
+   * `/multisig/*` Exchanger route without replacing `Exchanger.routes` entries.
+   * The delegate's `verify` and `handle` own all validation, indexing and
+   * notification for those children; the Multiplexor performs none of them.
+   * Registering a key twice is refused.
+   */
+  addChildHandler(route: string, child: string, handler: ExchangeRouteHandler): void {
+    const key = childHandlerKey(route, child);
+    if (this.childHandlers.has(key)) {
+      throw new ValidationError(`child handler for ${route} ${child} already registered`);
+    }
+    this.childHandlers.set(key, handler);
+  }
+
+  /**
+   * Release a finite owner's delegation. A TypeScript runtime can outlive one
+   * command phase, unlike KERIpy's per-process CLI owners; the shared route stays.
+   */
+  removeChildHandler(route: string, child: string, handler: ExchangeRouteHandler): void {
+    const key = childHandlerKey(route, child);
+    if (this.childHandlers.get(key) === handler) this.childHandlers.delete(key);
+  }
+
+  /** Return the delegate for this v2 wrapper's single child route, if any. */
+  childHandlerFor(serder: SerderKERI, nests: readonly CesrFrame[] = []): ExchangeRouteHandler | null {
+    if (!this.childHandlers.size || serder.pvrsn.major !== 2 || nests.length !== 1) return null;
+    const child = nests[0].body;
+    const route = child instanceof SerderKERI ? child.route : undefined;
+    return route ? this.childHandlers.get(childHandlerKey(serder.route ?? "", route)) ?? null : null;
+  }
+
   /** V2 child replay borrows the caller's configured IPEX, registry, reply and KRAM owners. */
   private v2IpexOwners(child: SerderKERI): boolean {
     const kvy = this.messageKevery, rvy = kvy.rvy, exc = this.exchanger;
@@ -687,8 +813,9 @@ export class Multiplexor {
       return { existing, submitters };
     });
     const firstSubmission = existing.length === 0;
+    const unreplayed = UNREPLAYED_ROUTES.includes(route);
     if (!this.isLocalHab(sender)) {
-      if (submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
+      if (!unreplayed && submitters.some((submitter) => this.isLocalHab(submitter.qb64))) {
         // The parent is durable, but approval never lends its signatures to the child.
         if (serder.pvrsn.major === 1) yield* this.processLegacyApproved(serder);
         else yield* this.processApproved(nests);
@@ -696,7 +823,7 @@ export class Multiplexor {
         // Legacy approval polling consumes its first notice; repeated v1 notices would re-propose it.
         this.notifier?.add(firstSubmission ? { r: route, d: said } : { r: route, d: said, e: embeddedSaid });
       }
-    } else if (submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {
+    } else if (!unreplayed && submitters.some((submitter) => !this.isLocalHab(submitter.qb64))) {
       // Remote evidence can precede approval. Replay one durable wrapper at a time after reopen.
       for (const prior of existing) yield* call(() => this.replayApproved(prior.qb64));
     }
@@ -848,7 +975,8 @@ export class Multiplexor {
       const signed = multisigPayloadSaid(serder);
       if (
         typeof signed !== "string" || !child.body.said || !allowed.includes(child.body.ilk ?? "")
-        || !(child.body instanceof SerderKERI) || (route !== MULTISIG_EXN_ROUTE && child.nests?.length)
+        || !(child.body instanceof SerderKERI)
+        || (route !== MULTISIG_EXN_ROUTE && !UNREPLAYED_ROUTES.includes(route) && child.nests?.length)
       ) {
         return { ok: false, said, reason: "Invalid multisig child kind, descendants, or signed SAID." };
       }
@@ -875,6 +1003,17 @@ export class Multiplexor {
           && !localIpexContribution(this.hby.db, sender, child.body, envelopeFromFrame(child).tsgs)
         ) {
           return { ok: false, said, reason: "Local IPEX approval has no verified member contribution." };
+        }
+      }
+      if (UNREPLAYED_ROUTES.includes(route)) {
+        const attrs = isRecord(serder.sad?.a) ? serder.sad.a : {};
+        const coordination = v2CoordinationChild(route, child.body, attrs.gid);
+        if (coordination) return { ok: false, said, reason: coordination };
+        if (
+          typeof attrs.gid !== "string" || !this.isLocalHab(attrs.gid)
+          || !groupSigningMembers(this.hby, attrs.gid).includes(sender)
+        ) {
+          return { ok: false, said, reason: "Proposal sender is not a group signing member." };
         }
       }
       embeddedSaid = signed;
@@ -1062,6 +1201,10 @@ function memberPrefixes(smids: unknown, rmids: unknown): string[] {
   const strings = (value: unknown): string[] =>
     Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
   return [...strings(smids), ...strings(rmids)];
+}
+
+function childHandlerKey(route: string, child: string): string {
+  return `${route}\u0000${child}`;
 }
 
 function groupPrefix(group: string | Hab): string {

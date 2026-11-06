@@ -28,7 +28,6 @@ import {
   consoleLogger,
   Dhke,
   envelopeFromFrame,
-  exchange,
   type ExchangeRouteHandler,
   groupSigningMembers,
   groupWitnesserSelection,
@@ -115,13 +114,10 @@ function* wrapper(
   route: typeof QueryRoute | typeof ProofRoute | "/multisig/exn" | "/multisig/rpy",
 ): Operation<Uint8Array> {
   const hab = runtime.ipexAuxiliary!.owner.hab, member = localGroupMember(runtime.hby, hab.pre);
-  const body = route === ProofRoute || route === QueryRoute
-    ? exchange(route, { gid: hab.pre, [route === QueryRoute ? "qry" : "grant"]: child.body.said }, {
-      sender: member.pre,
-      version: Vrsn_2_0,
-      gvrsn: Vrsn_2_0,
-    })[0]
-    : multisigExnBody(member.pre, { route, attrs: { gid: hab.pre } }, child.body as SerderKERI, { version: Vrsn_2_0 });
+  // Core builder checks: qry authored by the group; ipex-proof a Grant for the group.
+  const body = multisigExnBody(member.pre, { route, attrs: { gid: hab.pre } }, child.body as SerderKERI, {
+    version: Vrsn_2_0,
+  });
   const frame = parseBytes(member.endorse(body, { gvrsn: Vrsn_2_0 }))[0];
   frame.nests = [child];
   return yield* wire(frame);
@@ -182,17 +178,8 @@ export function* acceptGroupIssuanceProof(
     || JSON.stringify(parent.body.sad!.a) !== JSON.stringify({ gid: hab.pre, grant })
     || parent.nests?.length !== 1 || !child
   ) throw new ValidationError("Proof wrapper is outside the selected group issuance");
-  const previous = runtime.exc.routes.get(ProofRoute);
-  runtime.exc.routes.set(ProofRoute, {
-    resource: ProofRoute,
-    acceptsNests: true,
-    verify(args) {
-      return args.serder.said === parent.body.said && args.serder.pre === custodian
-        && args.nests?.length === 1 && bytesEqual(args.nests[0].body.raw, child.body.raw);
-    },
-    handle() {},
-  });
-  try {
+  {
+    // The core /multisig/ipex-proof route authenticates the wrapper and indexes it without replay.
     yield* runtime.reactor.processBytes(proposal);
     if (!runtime.exc.verifyAccepted(parent.body.said!, ProofRoute)) {
       throw new ValidationError("Group proof wrapper is not authenticated");
@@ -231,9 +218,6 @@ export function* acceptGroupIssuanceProof(
     }
     yield* runtime.exc.acceptPendingGrantProof({ ...input, nests: child.nests });
     return runtime.exc.complete(grant);
-  } finally {
-    if (previous) runtime.exc.routes.set(ProofRoute, previous);
-    else runtime.exc.routes.delete(ProofRoute);
   }
 }
 
@@ -372,7 +356,7 @@ function* runGroupIssuance(
     nextQuery = 0;
   let finalProof: Uint8Array | undefined;
   let frozenDeadline = runtime.exc.exchangeDeadline(frozenGrant) ?? undefined;
-  const previous = new Map<string, ExchangeRouteHandler | undefined>();
+  const delegated: Array<[route: string, handler: ExchangeRouteHandler]> = [];
   const result = (issued: boolean): GroupIssuanceResult => ({
     grant: request.grant,
     xid,
@@ -405,25 +389,19 @@ function* runGroupIssuance(
       )
       && (!frozen || bytesEqual(frozen, body.raw));
   };
-  for (const route of [QueryRoute, "/multisig/rpy", ProofRoute]) {
-    const prior = runtime.exc.routes.get(route);
-    previous.set(route, prior);
-    runtime.exc.routes.set(route, {
+  // DH children share the core /multisig/qry and /multisig/rpy routes by child route
+  // (KERIpy Multiplexor.addChildHandler); the core route authenticates ipex-proof.
+  for (const route of [QueryRoute, "/multisig/rpy"]) {
+    const handler: ExchangeRouteHandler = {
       resource: route,
       acceptsNests: true,
-      verify(args) {
-        return selectedWrapper(args.serder, args.nests)
-          || (route === "/multisig/rpy" && prior?.verify ? prior.verify(args) : false);
+      verify: args => selectedWrapper(args.serder, args.nests),
+      handle(args) {
+        pending.set(args.serder.said!, { wrapper: args.serder, child: args.nests![0] });
       },
-      *handle(args) {
-        if (selectedWrapper(args.serder, args.nests)) {
-          pending.set(args.serder.said!, { wrapper: args.serder, child: args.nests![0] });
-        } else if (prior) {
-          const handled = prior.handle(args);
-          if (handled) yield* handled;
-        }
-      },
-    });
+    };
+    runtime.mux.addChildHandler(route, Dhke.Route, handler);
+    delegated.push([route, handler]);
   }
   try {
     return yield* race([
@@ -631,10 +609,7 @@ function* runGroupIssuance(
     ]);
   } finally {
     if (approved) dh.abandon(xid);
-    for (const [route, handler] of previous) {
-      if (handler) runtime.exc.routes.set(route, handler);
-      else runtime.exc.routes.delete(route);
-    }
+    for (const [route, handler] of delegated) runtime.mux.removeChildHandler(route, Dhke.Route, handler);
   }
 }
 /** Replay accepted wrapper or completed Grant bytes through the existing exact evidence serializer. */

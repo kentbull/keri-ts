@@ -318,8 +318,10 @@ export {
   multisigExnBody,
   multisigInceptExn,
   multisigInteractExn,
+  multisigIpexProofExn,
   multisigIssueExn,
   type MultisigMessage,
+  multisigQueryExn,
   multisigRegistryInceptExn,
   multisigRevokeExn,
   multisigRotateExn,
@@ -330,6 +332,7 @@ export type {
   GroupMessageRef,
   GroupSendResult,
 } from "../app/multisig/multisig-messaging.ts";
+export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
   Notifier,
