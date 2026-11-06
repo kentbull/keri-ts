@@ -6,7 +6,7 @@
  * real in-process TypeScript witness and watcher backends.
  */
 import { parseBytes, Vrsn_2_0 } from "cesr-ts";
-import { run, type Task } from "effection";
+import { run, suspend, type Task } from "effection";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
 import {
   acceptedEventReplayMessage,
@@ -17,27 +17,57 @@ import {
   FetchHttpClient,
   type Hab,
   type Habery,
+  Receiptor,
   reply,
   systemClock,
 } from "keri-ts/runtime";
 import { discoverKfBoot, KfBootClient, type KfBootClient as Client } from "../src/operator/kfboot/client.ts";
+import { onboardKfAccount } from "../src/operator/kfboot/onboarding.ts";
 import { bootServiceConfig, runBootService } from "../src/roles/boot-service.ts";
-import { freePorts, type RunningService, SERVICE_PASSCODE, startWatcher, startWitness } from "./contract/services.ts";
+import {
+  freePorts,
+  type RunningRegistries,
+  type RunningService,
+  SERVICE_PASSCODE,
+  startRegistries,
+  startWatcher,
+  startWitness,
+} from "./contract/services.ts";
 
 /** One boot service over four TypeScript witnesses and one watcher. */
 interface Provider {
   url: string;
   witnesses: RunningService[];
   watcher: RunningService;
+  registries?: RunningRegistries;
   boot: Task<void>;
   stop(): Promise<void>;
 }
 
 /** Start the backends and the boot service with the launcher's `KF_BOOT_*` shape. */
-export async function startProvider(folder: string, extra: Record<string, string> = {}): Promise<Provider> {
+export async function startProvider(
+  folder: string,
+  extra: Record<string, string> = {},
+  { witnessCount = 4, registries: withRegistries = false } = {},
+): Promise<Provider> {
   const witnesses: RunningService[] = [];
-  for (let index = 0; index < 4; index++) witnesses.push(await startWitness("typescript", folder, `witness-${index}`));
+  for (let index = 0; index < witnessCount; index++) {
+    witnesses.push(await startWitness("typescript", folder, `witness-${index}`));
+  }
   const watcher = await startWatcher("typescript", folder);
+  const registries = withRegistries ? await startRegistries("typescript", folder) : undefined;
+  const services: Record<string, string> = registries
+    ? {
+      REGISTRAR_BOOT_URL: registries.registrar.boot,
+      REGISTRAR_PUBLIC_URL: registries.registrar.url,
+      REGISTRAR_SERVICE_AID: registries.registrar.aid!,
+      REGISTRAR_CA_FILE: registries.caFile,
+      OBSERVER_BOOT_URL: registries.observer.boot,
+      OBSERVER_PUBLIC_URL: registries.observer.url,
+      OBSERVER_SERVICE_AID: registries.observer.aid!,
+      OBSERVER_CA_FILE: registries.caFile,
+    }
+    : {};
   const [port] = freePorts(1);
   const url = `http://127.0.0.1:${port}`;
   const config = bootServiceConfig({
@@ -48,6 +78,7 @@ export async function startProvider(folder: string, extra: Record<string, string
     WAT_PUBLIC_URL: watcher.url,
     ONBOARDING_PUBLIC_URL: url + "/onboarding",
     ACCOUNT_PUBLIC_URL: url + "/account",
+    ...services,
     ...extra,
   });
   const boot = run(() => runBootService({ name: "boot", headDirPath: folder, passcode: SERVICE_PASSCODE, config }));
@@ -65,9 +96,12 @@ export async function startProvider(folder: string, extra: Record<string, string
     url,
     witnesses,
     watcher,
+    registries,
     boot,
     stop: async () => {
       await boot.halt();
+      await registries?.observer.stop();
+      await registries?.registrar.stop();
       await watcher.stop();
       for (const witness of witnesses) await witness.stop();
     },
@@ -85,26 +119,40 @@ export interface Wallet {
 
 /** Open a temporary wallet store whose clients talk to `provider`. */
 export async function wallet(provider: string): Promise<Wallet> {
-  return await run(function*() {
-    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
-    const http = new FetchHttpClient();
-    const runtime = yield* createAgentRuntime(hby, http, systemClock, {
-      kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },
-    });
-    const discovery = yield* discoverKfBoot(http, provider);
-    return {
-      hby,
-      runtime,
-      http,
-      client: (hab: Hab, surface: "onboarding" | "account" = "onboarding") =>
-        Promise.resolve(new KfBootClient(hby, hab, runtime.protocol, http, discovery, undefined, surface)),
-      close: () =>
-        run(function*() {
-          yield* runtime.close();
-          yield* hby.close();
-        }),
-    };
+  // Runtime-owned stores live in the creating scope, so one task holds them until close.
+  let ready!: (value: Wallet) => void, fail!: (error: unknown) => void;
+  const opened = new Promise<Wallet>((resolve, reject) => {
+    ready = resolve;
+    fail = reject;
   });
+  const owner = run(function*() {
+    try {
+      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+      const http = new FetchHttpClient();
+      const runtime = yield* createAgentRuntime(hby, http, systemClock, {
+        kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },
+      });
+      try {
+        const discovery = yield* discoverKfBoot(http, provider);
+        ready({
+          hby,
+          runtime,
+          http,
+          client: (hab: Hab, surface: "onboarding" | "account" = "onboarding") =>
+            Promise.resolve(new KfBootClient(hby, hab, runtime.protocol, http, discovery, undefined, surface)),
+          close: () => owner.halt(),
+        });
+        yield* suspend();
+      } finally {
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    } catch (error) {
+      fail(error);
+      throw error;
+    }
+  });
+  return await opened;
 }
 
 /** POST one complete message to a surface with explicit transport headers. */
@@ -328,5 +376,172 @@ Deno.test("boot service: configuration follows kf-boot validation", () => {
       failed = true;
     }
     assert(failed, JSON.stringify(bad));
+  }
+});
+
+/** Locksmith `localdev/services.py` `service_settings`, ported as the capability expectation. */
+function locksmithServiceSettings(payload: Record<string, unknown>, account: string): void {
+  assertEquals(payload.account_aid, account);
+  const capabilities = payload.services as Record<string, Record<string, unknown>>;
+  assertEquals(Object.keys(capabilities).sort(), ["observer", "registrar"]);
+  for (const [kind, role] of [["registrar", "publisher"], ["observer", "reader"]]) {
+    const value = capabilities[kind];
+    assertEquals(value.aid, account);
+    assertEquals(value.roles, [role]);
+    assert(typeof value.service === "string" && value.service.length === 44);
+    const url = new URL(String(value.url));
+    assert(
+      url.protocol === "https:" && url.hostname && !url.username && !url.search && ["", "/"].includes(url.pathname),
+    );
+    assert(typeof value.ca_pem === "string" && value.ca_pem.startsWith("-----BEGIN CERTIFICATE-----"));
+    assert(!String(value.ca_pem).includes("PRIVATE KEY"), "only certificates are handed to wallets");
+  }
+}
+
+/** Wait for a signed operation to leave pending/running. */
+async function settled(client: Client, id: string): Promise<Record<string, unknown>> {
+  const until = Date.now() + 30_000;
+  while (true) {
+    const operation = (await run(() => client.operation(id))).payload.operation as Record<string, unknown>;
+    if (!["pending", "running"].includes(String(operation.state))) return operation;
+    if (Date.now() > until) throw new Error("Operation did not settle: " + JSON.stringify(operation));
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+/** Run `tufa infra kf onboard`'s flow for `account` through `signer`. */
+async function onboard(
+  store: Wallet,
+  account: Hab,
+  signer: Hab,
+  profile: string,
+  credentialFile: string,
+  sessionId?: string,
+) {
+  const client = await store.client(signer);
+  return await run(() =>
+    onboardKfAccount({
+      client,
+      account,
+      receiptor: new Receiptor(store.hby, store.runtime.protocol, store.runtime.http, store.runtime.clock),
+      profile,
+      sessionId,
+      timeoutMs: 60_000,
+      credentialFile,
+    })
+  );
+}
+
+Deno.test("boot service: account create/complete, services, lists, watcher status and deletes", async () => {
+  const folder = await Deno.makeTempDir({ prefix: "tufa-boot-account-" });
+  const provider = await startProvider(folder, {}, { registries: true });
+  const store = await wallet(provider.url);
+  try {
+    const account = store.hby.makeHab("account"), signer = store.hby.makeHab("signer");
+    const stranger = store.hby.makeHab("stranger");
+    const result = await onboard(store, account, signer, "3-of-4", folder + "/credentials.json");
+    assertEquals(result.witnesses.length, 4);
+    assertEquals(result.services.registrar.roles, ["publisher"]);
+    assertEquals(result.services.observer.roles, ["reader"]);
+    assertEquals(result.services.registrar.service, provider.registries!.registrar.aid);
+
+    // Completed sessions stay readable by the ephemeral signer and the account; complete is idempotent.
+    const ephemeral = await store.client(signer);
+    const completed = await run(() =>
+      ephemeral.request("/onboarding/complete", { session_id: result.sessionId, account_aid: account.pre })
+    );
+    assertEquals((completed.payload.account as Record<string, unknown>).status, "onboarded");
+    assertEquals(completed.payload.state, "completed");
+    const asAccount = await store.client(account);
+    assertEquals((await run(() => asAccount.session(result.sessionId))).payload.state, "completed");
+    await assertRejects(() => run(() => asAccount.cancel(result.sessionId)));
+    await assertRejects(() => run(() => ephemeral.cancel(result.sessionId)));
+
+    const permanent = await store.client(account, "account");
+    const call = (route: string, payload: Record<string, unknown> = {}) =>
+      run(() => permanent.request(route as never, payload)).then(reply => reply.payload);
+    const services = await call("/account/services", {});
+    const operation = await settled(permanent, String((services.operation as Record<string, unknown>).operation_id));
+    assertEquals(operation.state, "succeeded");
+    assertEquals(operation.kind, "account_services");
+    assertEquals(operation.subject, `account:${account.pre}`);
+    locksmithServiceSettings(operation.result as Record<string, unknown>, account.pre);
+    // Re-activation re-PUTs the same roles and compares the acknowledgement.
+    const again = await call("/account/services", { account_aid: account.pre });
+    assertEquals(
+      (await settled(permanent, String((again.operation as Record<string, unknown>).operation_id))).state,
+      "succeeded",
+    );
+    await assertRejects(() => call("/account/services", { account_aid: account.pre, extra: true }));
+    const strangerClient = await store.client(stranger, "account");
+    await assertRejects(() => run(() => strangerClient.operation(String(operation.operation_id))));
+    await assertRejects(() => run(() => strangerClient.request("/account/services" as never, {})));
+
+    const witnesses = (await call("/account/witnesses")).witnesses as Record<string, unknown>[];
+    assertEquals(witnesses.length, 4);
+    assert(witnesses.every(row => row.cid === account.pre && !("boot_url" in row) && row.witness_url === row.url));
+    const watchers = (await call("/account/watchers")).watchers as Record<string, unknown>[];
+    assertEquals(watchers.map(row => row.eid), [result.watcher!.eid]);
+
+    const status = await call("/account/watchers/status", { watcher_eid: result.watcher!.eid });
+    const observed = await settled(permanent, String((status.operation as Record<string, unknown>).operation_id));
+    assertEquals(observed.kind, "watcher_status_query");
+    assertEquals((observed.result as Record<string, unknown>).watcher_id, result.watcher!.eid);
+    assertEquals(((await call("/account/watchers")).watchers as Record<string, unknown>[])[0].status, "connected");
+    await assertRejects(() => call("/account/watchers/status", { watcher_eid: witnesses[0].eid }));
+
+    const removed = await call("/account/witnesses/delete", { witness_eid: String(witnesses[0].eid) });
+    assertEquals(removed.deleted, false);
+    assertEquals(
+      (await settled(permanent, String((removed.operation as Record<string, unknown>).operation_id))).state,
+      "succeeded",
+    );
+    assertEquals(((await call("/account/witnesses")).witnesses as unknown[]).length, 3);
+
+    const deletion = await call("/account/delete");
+    const deleted = await settled(permanent, String((deletion.operation as Record<string, unknown>).operation_id));
+    assertEquals(deleted.state, "succeeded");
+    assertEquals((deleted.result as Record<string, unknown>).session_ids, [result.sessionId]);
+    assertEquals((await call("/account/delete")).deleted, true);
+    await assertRejects(() => call("/account/witnesses"));
+    const revoked = await fetch(provider.registries!.registrar.boot + "/accounts/" + account.pre);
+    await revoked.body?.cancel();
+    assertEquals(revoked.status, 404);
+  } finally {
+    await store.close();
+    await provider.stop();
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+Deno.test("boot service: a differing service acknowledgement fails the activation operation", async () => {
+  const folder = await Deno.makeTempDir({ prefix: "tufa-boot-ack-" });
+  const registries = await startRegistries("typescript", folder);
+  const provider = await startProvider(folder, {
+    BOOTSTRAP_ACCOUNT_OPTIONS: "1-of-1",
+    REGISTRAR_BOOT_URL: registries.registrar.boot,
+    REGISTRAR_PUBLIC_URL: registries.registrar.url,
+    // The registrar acknowledges with its own AID, not this one.
+    REGISTRAR_SERVICE_AID: registries.observer.aid!,
+  }, { witnessCount: 1 });
+  const store = await wallet(provider.url);
+  try {
+    const account = store.hby.makeHab("account"), signer = store.hby.makeHab("signer");
+    await assertRejects(() => onboard(store, account, signer, "1-of-1", folder + "/credentials.json"));
+    const permanent = await store.client(account, "account");
+    const reply = await run(() => permanent.request("/account/services", {}));
+    const operation = await settled(
+      permanent,
+      String((reply.payload.operation as Record<string, unknown>).operation_id),
+    );
+    assertEquals(operation.state, "failed");
+    assertEquals(operation.last_error, "Credential-service activation acknowledgement differs from request");
+    assertEquals(operation.result, { status_code: 409 });
+  } finally {
+    await store.close();
+    await provider.stop();
+    await registries.observer.stop();
+    await registries.registrar.stop();
+    await Deno.remove(folder, { recursive: true });
   }
 });

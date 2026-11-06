@@ -40,11 +40,13 @@ import { readFileSync } from "node:fs";
 import { blake2b } from "npm:@noble/hashes@1.8.0/blake2";
 import {
   BootApiError,
+  RegistryAdmin,
   type ServiceAllocation,
   WatcherAdmin,
   WitnessAdmin,
 } from "../operator/kfboot/service-admin.ts";
 import {
+  AccountRecord,
   AccountStates,
   type BootOperationRecord,
   BootServiceBaser,
@@ -52,6 +54,8 @@ import {
   makeResource,
   nowIso,
   OperationKinds,
+  OperationStates,
+  ResourceRecord,
   resourceToApi,
   type SessionRecord,
   SessionStates,
@@ -415,6 +419,15 @@ export class BootService {
     this.addRoute("/onboarding/session/status", (sender, payload) => this.sessionStatus(sender, payload));
     this.addRoute("/onboarding/cancel", (sender, payload) => this.cancel(sender, payload));
     this.addRoute("/operations/status", (sender, payload) => this.operationStatus(sender, payload));
+    this.addRoute("/onboarding/account/create", (sender, payload) => this.accountCreate(sender, payload));
+    this.addRoute("/onboarding/complete", (sender, payload) => this.complete(sender, payload));
+    this.addRoute("/account/services", (sender, payload) => this.accountServices(sender, payload));
+    this.addRoute("/account/witnesses", (sender, payload) => this.accountResources("witness", sender, payload));
+    this.addRoute("/account/watchers", (sender, payload) => this.accountResources("watcher", sender, payload));
+    this.addRoute("/account/watchers/status", (sender, payload) => this.watcherStatus(sender, payload));
+    this.addRoute("/account/witnesses/delete", (sender, payload) => this.resourceDelete("witness", sender, payload));
+    this.addRoute("/account/watchers/delete", (sender, payload) => this.resourceDelete("watcher", sender, payload));
+    this.addRoute("/account/delete", (sender, payload) => this.accountDelete(sender, payload));
   }
 
   /** Register one exn route with the shared Exchanger; its outcome is keyed by the exn SAID. */
@@ -941,6 +954,346 @@ export class BootService {
     this.queueReply("/operations/status", sender, { operation: this.store.operationPayload(operation) });
   }
 
+  // Account creation and completion
+
+  /** `requireSessionProvisioned`: account creation waits for the provision operation. */
+  private requireSessionProvisioned(session: SessionRecord): void {
+    const operation = this.latestProvision(session);
+    if (operation && (operation.state === OperationStates.pending || operation.state === OperationStates.running)) {
+      throw new BootRefusal(
+        409,
+        "Session provisioning pending",
+        "Hosted resource provisioning is still in progress for this session.",
+      );
+    }
+    if (operation?.state === OperationStates.failed) {
+      throw new BootRefusal(
+        409,
+        "Session provisioning failed",
+        operation.last_error || "Hosted resource provisioning failed for this session.",
+      );
+    }
+  }
+
+  /** `/onboarding/account/create`: bind the provisioned allocations to the permanent account. */
+  private accountCreate(sender: string, payload: Record<string, unknown>): void {
+    const route = "/onboarding/account/create";
+    const session = this.requireSession(requiredStr(payload, "session_id"));
+    this.requireOpenSession(session);
+    this.requireEphemeralPrincipal(sender, session);
+    const accountAid = requiredStr(payload, "account_aid");
+    if (session.account_aid && session.account_aid !== accountAid) {
+      throw new BootRefusal(
+        409,
+        "Session already bound",
+        "This onboarding session is already bound to a different account AID.",
+      );
+    }
+    this.requireSessionProvisioned(session);
+    if (!session.witness_eids.length || (session.watcher_required && !session.watcher_eid)) {
+      throw new BootRefusal(409, "Resources missing", "Witness or watcher allocation is incomplete for this session.");
+    }
+    let account = this.store.getAccount(accountAid);
+    if (account?.status === AccountStates.expired) {
+      throw new BootRefusal(
+        409,
+        "Account not available",
+        "The permanent account AID is currently expired and cannot be reused for onboarding.",
+      );
+    }
+    if (account && account.session_id !== "" && account.session_id !== session.session_id) {
+      throw new BootRefusal(
+        409,
+        "Account already exists",
+        "The permanent account AID is already bound to a different onboarding session.",
+      );
+    }
+    if (
+      (session.state === SessionStates.accountCreated || session.state === SessionStates.completed)
+      && session.account_aid === accountAid
+    ) {
+      this.replyAccount(route, sender, session);
+      return;
+    }
+    const alias = optionalStr(payload, "account_alias");
+    if (!account) {
+      account = new AccountRecord({
+        account_aid: accountAid,
+        account_alias: alias || session.account_alias,
+        status: AccountStates.pendingOnboarding,
+        created_at: nowIso(),
+        onboarded_at: "",
+        witness_profile_code: session.chosen_profile_code,
+        witness_count: session.witness_count,
+        toad: session.toad,
+        watcher_required: session.watcher_required,
+        region_id: session.region_id,
+        region_name: session.region_name,
+        session_id: session.session_id,
+        witness_eids: [...session.witness_eids],
+        watcher_eid: session.watcher_eid,
+        tier: session.account_tier,
+        expires_at: "",
+        expired_at: "",
+        resources_cleaned_at: "",
+      });
+    } else {
+      Object.assign(account, {
+        account_alias: alias || account.account_alias,
+        status: AccountStates.pendingOnboarding,
+        witness_eids: [...session.witness_eids],
+        watcher_eid: session.watcher_eid,
+        session_id: session.session_id,
+        onboarded_at: "",
+        expired_at: "",
+        resources_cleaned_at: "",
+        expires_at: "",
+      });
+    }
+    session.account_aid = accountAid;
+    session.state = SessionStates.accountCreated;
+    session.updated_at = nowIso();
+    this.store.saveAccount(account);
+    this.store.bindResourcesToAccount(session, accountAid);
+    this.store.refreshSessionLease(session);
+    this.replyAccount(route, sender, session);
+  }
+
+  /** `/onboarding/complete`: idempotent, including on an already completed session (recovery). */
+  private complete(sender: string, payload: Record<string, unknown>): void {
+    const route = "/onboarding/complete";
+    const session = this.requireSession(requiredStr(payload, "session_id"));
+    this.requireOpenSession(session, true);
+    this.requireEphemeralPrincipal(sender, session);
+    const accountAid = requiredStr(payload, "account_aid");
+    if (session.account_aid && session.account_aid !== accountAid) {
+      throw new BootRefusal(
+        409,
+        "Session already bound",
+        "This onboarding session is already bound to a different account AID.",
+      );
+    }
+    const account = this.store.getAccount(accountAid);
+    if (!account) {
+      throw new BootRefusal(
+        404,
+        "Account not found",
+        "No account record exists for the requested permanent account AID.",
+      );
+    }
+    if (session.state === SessionStates.completed && account.status === AccountStates.onboarded) {
+      this.store.refreshAccountLease(account);
+      this.replyAccount(route, sender, session);
+      return;
+    }
+    if (session.watcher_required && !session.watcher_eid) {
+      Object.assign(session, {
+        state: SessionStates.failed,
+        updated_at: nowIso(),
+        failure_reason: "Hosted watcher is required before onboarding can complete.",
+      });
+      this.store.saveSession(session);
+      if (account.status !== AccountStates.onboarded) {
+        account.status = AccountStates.failed;
+        this.store.saveAccount(account);
+      }
+      throw new BootRefusal(
+        409,
+        "Watcher missing",
+        "This boot service requires one hosted watcher before onboarding completes.",
+      );
+    }
+    session.state = SessionStates.completed;
+    session.updated_at = nowIso();
+    account.status = AccountStates.onboarded;
+    account.onboarded_at = nowIso();
+    this.store.saveSession(session);
+    this.store.saveAccount(account);
+    this.store.refreshAccountLease(account, account.onboarded_at);
+    this.replyAccount(route, sender, session);
+  }
+
+  // Account surface
+
+  /** `requireOnboardedAccount`: the sender is an onboarded, unexpired account (expiry on access). */
+  private requireOnboardedAccount(sender: string, payload: Record<string, unknown>): AccountRecord {
+    const aid = optionalStr(payload, "account_aid");
+    if (aid && aid !== sender) {
+      throw new BootRefusal(401, "Account principal mismatch", "The authenticated sender must match account_aid.");
+    }
+    const account = this.store.getAccount(sender);
+    if (!account) {
+      throw new BootRefusal(404, "Account not found", "No account exists for the authenticated sender.");
+    }
+    const expired = () =>
+      new BootRefusal(
+        409,
+        "Account expired",
+        "This account has expired and must be renewed or deleted before accessing account routes.",
+      );
+    if (account.status === AccountStates.expired) throw expired();
+    if (pastDue(account.expires_at)) {
+      account.status = AccountStates.expired;
+      account.expired_at ||= nowIso();
+      this.store.saveAccount(account);
+      throw expired();
+    }
+    if (account.status !== AccountStates.onboarded) {
+      throw new BootRefusal(
+        409,
+        "Account not onboarded",
+        "Approved-account routes require an onboarded account principal.",
+      );
+    }
+    return account;
+  }
+
+  /** Pending or running deletion of this account. */
+  private activeAccountDelete(aid: string): BootOperationRecord | null {
+    return this.store.findActiveOperation(OperationKinds.accountDelete, `account:${aid}`, aid);
+  }
+
+  /** `requireNoAccountDeletePending`. */
+  private requireNoAccountDeletePending(aid: string): void {
+    if (this.activeAccountDelete(aid)) {
+      throw new BootRefusal(409, "Account deletion pending", "Account deletion is already pending for this account.");
+    }
+  }
+
+  /** `/account/services`: the account authorizes its own registrar/observer enrollment. */
+  private accountServices(sender: string, payload: Record<string, unknown>): void {
+    if (Object.keys(payload).some(key => key !== "account_aid")) {
+      throw new BootRefusal(400, undefined, "services enroll only the authenticated account AID");
+    }
+    const account = this.requireOnboardedAccount(sender, payload);
+    this.requireNoAccountDeletePending(sender);
+    const services = (["registrar", "observer"] as const).filter(kind => this.config[kind] !== null);
+    if (!services.length) throw new BootRefusal(503, undefined, "credential services are not configured");
+    const operation = this.store.ensureOperation({
+      kind: OperationKinds.accountServices,
+      subject: `account:${sender}`,
+      requester: sender,
+      route: "/account/services",
+      payload: { account_aid: sender, services },
+    });
+    this.store.refreshAccountLease(account);
+    this.queueReply("/account/services", sender, {
+      account_aid: sender,
+      operation: this.store.operationPayload(operation),
+    });
+  }
+
+  /** `/account/witnesses` and `/account/watchers`: the account's resource rows. */
+  private accountResources(kind: "witness" | "watcher", sender: string, payload: Record<string, unknown>): void {
+    const account = this.requireOnboardedAccount(sender, payload);
+    const rows = this.store.listResourcesForAccount(kind, sender).map(row => resourceToApi(row));
+    const deletion = this.activeAccountDelete(sender);
+    this.store.refreshAccountLease(account);
+    const plural = kind === "witness" ? "witnesses" : "watchers";
+    const reply: Record<string, unknown> = { account_aid: sender, [plural]: rows };
+    if (deletion) reply.account_delete_operation = this.store.operationPayload(deletion);
+    this.queueReply(`/account/${plural}`, sender, reply);
+  }
+
+  /** The account's own resource named by `<kind>_eid` or `<kind>_id`. */
+  private ownedResource(kind: "witness" | "watcher", sender: string, payload: Record<string, unknown>) {
+    const id = optionalStr(payload, `${kind}_eid`) || requiredStr(payload, `${kind}_id`);
+    const record = this.store.getResource(kind, id);
+    if (!record || record.principal !== sender) {
+      throw new BootRefusal(404, kind === "witness" ? "Witness not found" : "Watcher not found");
+    }
+    return { id, record };
+  }
+
+  /** `/account/watchers/status`: an operation whose result is the watcher's status JSON. */
+  private watcherStatus(sender: string, payload: Record<string, unknown>): void {
+    const route = "/account/watchers/status";
+    const account = this.requireOnboardedAccount(sender, payload);
+    this.requireNoAccountDeletePending(sender);
+    const { id, record } = this.ownedResource("watcher", sender, payload);
+    const watcher = resourceToApi(record);
+    const deletion = this.store.findActiveOperation(OperationKinds.resourceDelete, `watcher:${id}`, sender);
+    const operation = deletion ?? this.store.ensureOperation({
+      kind: OperationKinds.watcherStatusQuery,
+      subject: `watcher:${id}`,
+      requester: sender,
+      route,
+      payload: { account_aid: sender, watcher_id: id },
+    });
+    this.store.refreshAccountLease(account);
+    this.queueReply(route, sender, {
+      account_aid: sender,
+      watcher,
+      watcher_id: id,
+      operation: this.store.operationPayload(operation),
+    });
+  }
+
+  /** `/account/witnesses/delete` and `/account/watchers/delete`: queue one resource deletion. */
+  private resourceDelete(kind: "witness" | "watcher", sender: string, payload: Record<string, unknown>): void {
+    const route = kind === "witness" ? "/account/witnesses/delete" : "/account/watchers/delete";
+    const account = this.requireOnboardedAccount(sender, payload);
+    this.requireNoAccountDeletePending(sender);
+    const { id, record } = this.ownedResource(kind, sender, payload);
+    const operation = this.store.ensureOperation({
+      kind: OperationKinds.resourceDelete,
+      subject: `${kind}:${id}`,
+      requester: sender,
+      route,
+      payload: { account_aid: sender, resource_kind: kind, resource_id: id, session_id: record.session_id },
+    });
+    this.store.refreshAccountLease(account);
+    this.queueReply(route, sender, {
+      account_aid: sender,
+      [`${kind}_id`]: id,
+      deleted: false,
+      operation: this.store.operationPayload(operation),
+    });
+  }
+
+  /** `/account/delete`: onboarded, expired or failed accounts delete all resources and rows. */
+  private accountDelete(sender: string, payload: Record<string, unknown>): void {
+    const route = "/account/delete";
+    const aid = optionalStr(payload, "account_aid");
+    if (aid && aid !== sender) {
+      throw new BootRefusal(401, "Account principal mismatch", "The authenticated sender must match account_aid.");
+    }
+    const account = this.store.getAccount(sender);
+    if (
+      account
+      && ![AccountStates.onboarded, AccountStates.expired, AccountStates.failed].includes(account.status as never)
+    ) {
+      throw new BootRefusal(
+        409,
+        "Account not onboarded",
+        "Approved-account routes require an onboarded account principal.",
+      );
+    }
+    if (!account) {
+      const latest = this.store.listOperations({
+        kind: OperationKinds.accountDelete,
+        subject: `account:${sender}`,
+        requester: sender,
+      })[0];
+      const reply: Record<string, unknown> = { account_aid: sender, deleted: true };
+      if (latest) reply.operation = this.store.operationPayload(latest);
+      this.queueReply(route, sender, reply);
+      return;
+    }
+    const operation = this.store.ensureOperation({
+      kind: OperationKinds.accountDelete,
+      subject: `account:${sender}`,
+      requester: sender,
+      route,
+      payload: { account_aid: sender },
+    });
+    this.queueReply(route, sender, {
+      account_aid: sender,
+      deleted: false,
+      operation: this.store.operationPayload(operation),
+    });
+  }
+
   // Operation worker (`operating.py`)
 
   /** Drive due operations until halted; claimed work from a previous process is requeued first. */
@@ -983,7 +1336,268 @@ export class BootService {
       if (!this.store.getSession(id)) throw bootError(`Session '${id}' was not found.`, 404);
       return yield* this.provisionSession(id, operation.operation_id);
     }
+    const data = operation.payload;
+    if (operation.kind === OperationKinds.accountServices) {
+      const aid = String(data.account_aid ?? "");
+      if (!aid || operation.requester !== aid) {
+        throw bootError("Service operation must belong to its enrolled account", 400);
+      }
+      return yield* this.provisionAccountServices(aid, data.services, operation.operation_id);
+    }
+    if (operation.kind === OperationKinds.watcherStatusQuery) {
+      return yield* this.watcherStatusQuery(String(data.watcher_id ?? ""));
+    }
+    if (operation.kind === OperationKinds.resourceDelete) {
+      const kind = String(data.resource_kind ?? ""), id = String(data.resource_id ?? "");
+      if ((kind !== "witness" && kind !== "watcher") || !id) {
+        throw bootError("Resource delete operation is missing a valid resource subject.", 400);
+      }
+      const aid = String(data.account_aid ?? "");
+      const sessionId = String(data.session_id || this.store.getResource(kind, id)?.session_id || "");
+      yield* this.deleteHostedResource(kind, id, {
+        session: sessionId ? this.store.getSession(sessionId) : null,
+        account: aid ? this.store.getAccount(aid) : null,
+      });
+      return { kind, eid: id, deleted: true };
+    }
+    if (operation.kind === OperationKinds.accountDelete) {
+      return yield* this.deleteAccount(String(data.account_aid ?? ""));
+    }
     throw bootError(`Unsupported boot operation kind '${operation.kind}'.`, 400);
+  }
+
+  /** Re-check service eligibility around every backend call (`_serviceAccount`). */
+  private serviceAccount(aid: string): AccountRecord {
+    try {
+      const account = this.requireOnboardedAccount(aid, {});
+      this.requireNoAccountDeletePending(aid);
+      return account;
+    } catch (error) {
+      if (error instanceof BootRefusal) throw bootError(error.description ?? error.title, error.status);
+      throw error;
+    }
+  }
+
+  /** Registry admin client for a retained enrollment's boot URL. */
+  private registryAdmin(bootUrl: string): RegistryAdmin {
+    return new RegistryAdmin(bootUrl, this.http, this.config.bootApiTimeoutSeconds * 1000);
+  }
+
+  /**
+   * `provisionAccountServicesDo`: enroll the account's accepted public KEL (delegation
+   * chain, then KEL) with each configured service and require the exact acknowledgement.
+   */
+  private *provisionAccountServices(
+    aid: string,
+    services: unknown,
+    operationId: string,
+  ): Operation<Record<string, unknown>> {
+    if (
+      !Array.isArray(services) || !services.length || new Set(services).size !== services.length
+      || services.some(kind => kind !== "registrar" && kind !== "observer")
+    ) throw bootError("Invalid credential-service selection", 400);
+    let account = this.serviceAccount(aid);
+    const kever = this.hby.db.getKever(aid, { refresh: true });
+    if (!kever) throw bootError("Accepted account KEL is unavailable", 409);
+    const kel = new TextDecoder().decode(concatBytes(
+      ...this.hby.db.cloneDelegation(kever, Vrsn_2_0),
+      ...this.hby.db.clonePreIter(aid, 0, Vrsn_2_0),
+    ));
+    const capabilities: Record<string, unknown> = {};
+    for (const kind of services as ("registrar" | "observer")[]) {
+      account = this.serviceAccount(aid);
+      const backend = this.config[kind];
+      if (!backend) throw bootError(`${kind} is no longer configured`, 409);
+      const role = kind === "registrar" ? "publisher" : "reader";
+      let record = this.store.getResource(kind, aid);
+      if (
+        record && (record.principal !== aid || record.cid !== aid || record.boot_url !== backend.bootUrl
+          || record.url !== backend.publicUrl || record.service_aid !== backend.serviceAid
+          || record.ca_pem !== backend.caPem)
+      ) throw bootError("Retained service activation differs from configured backend", 409);
+      record ??= new ResourceRecord({
+        kind,
+        eid: aid,
+        backend_id: kind,
+        cid: aid,
+        principal: aid,
+        session_id: "",
+        name: "",
+        identifier_alias: "",
+        region_id: "",
+        region_name: "",
+        url: backend.publicUrl,
+        boot_url: backend.bootUrl,
+        public_host: "",
+        public_port: null,
+        oobis: [],
+        status: "pending",
+        created_at: nowIso(),
+        service_aid: backend.serviceAid,
+        ca_pem: backend.caPem,
+      });
+      // Record cleanup debt before the remote side effect, including a lost response.
+      this.store.saveResource(record);
+      if (account.resources_cleaned_at) {
+        account.resources_cleaned_at = "";
+        this.store.saveAccount(account);
+      }
+      let accepted;
+      try {
+        accepted = yield* this.registryAdmin(record.boot_url).enroll(aid, [role], kel, {
+          idempotencyKey: `${operationId}:${kind}`,
+        });
+      } catch (error) {
+        // Signed operation status must not expose private backend URLs or response bodies.
+        if (error instanceof BootApiError) throw bootError(`${kind} account enrollment failed`, error.status);
+        throw error;
+      }
+      this.serviceAccount(aid);
+      if (
+        accepted.aid !== aid || accepted.roles.length !== 1 || accepted.roles[0] !== role
+        || accepted.service !== record.service_aid
+      ) throw bootError("Credential-service activation acknowledgement differs from request", 409);
+      record.status = "active";
+      this.store.saveResource(record);
+      capabilities[kind] = { aid, roles: [role], service: record.service_aid, url: record.url, ca_pem: record.ca_pem };
+    }
+    this.serviceAccount(aid);
+    return { account_aid: aid, services: capabilities };
+  }
+
+  /** `operating.py` watcher status: the backend JSON plus the derived resource status. */
+  private *watcherStatusQuery(id: string): Operation<Record<string, unknown>> {
+    if (!id) throw bootError("Watcher status operation is missing watcher_id.", 400);
+    const record = this.store.getResource("watcher", id);
+    if (!record) throw bootError(`Watcher '${id}' was not found.`, 404);
+    const status = yield* this.watcherAdmin.status(id);
+    let derived = "";
+    if (typeof status.status === "string" && status.status) derived = status.status;
+    else if (status.summary && typeof status.summary === "object") {
+      const summary = status.summary as Record<string, unknown>;
+      const total = Number(summary.total_witnesses || 0), responsive = Number(summary.responsive_witnesses || 0);
+      if (total > 0 && responsive >= total) derived = "connected";
+      else if (total > 0 && responsive <= 0) derived = "disconnected";
+      else if (total > 0) derived = "query_pending";
+    }
+    if (derived) {
+      const current = this.store.getResource("watcher", id) ?? record;
+      current.status = derived;
+      this.store.saveResource(current);
+    }
+    return status;
+  }
+
+  /** `_stopServiceActivation`: cancel queued enrollment; a running one must finish first (425). */
+  private stopServiceActivation(aid: string): void {
+    if (!aid) return;
+    let running = false;
+    for (
+      const operation of this.store.listOperations({
+        kind: OperationKinds.accountServices,
+        subject: `account:${aid}`,
+        requester: aid,
+      })
+    ) {
+      if (operation.state === OperationStates.pending) {
+        this.store.failOperation(operation.operation_id, "Account cleanup cancelled pending service activation", {
+          status_code: 409,
+        });
+      } else if (operation.state === OperationStates.running) running = true;
+    }
+    if (running) throw bootError("Account service activation is still running", 425);
+  }
+
+  /** `deleteHostedResourceDo`: delete remotely (404 tolerated), then forget the row and owners' references. */
+  private *deleteHostedResource(
+    kind: string,
+    eid: string,
+    owners: { session?: SessionRecord | null; account?: AccountRecord | null },
+  ): Operation<void> {
+    if (!eid) return;
+    const record = this.store.getResource(kind, eid);
+    if (record) {
+      try {
+        if (kind === "witness") {
+          const backend = this.config.witnessBackends.find(item => item.id === record.backend_id)
+            ?? this.config.witnessBackends.find(item => item.bootUrl === record.boot_url)
+            ?? (this.config.witnessBackends.length === 1 ? this.config.witnessBackends[0] : undefined);
+          if (!backend) throw bootError(`Witness backend for '${eid}' is not configured.`, 503);
+          yield* this.witnessAdmin(backend.id).remove(eid);
+        } else if (kind === "watcher") {
+          yield* this.watcherAdmin.remove(eid);
+        } else if (kind === "registrar" || kind === "observer") {
+          if (record.eid !== record.principal || record.cid !== record.principal) {
+            throw bootError("Credential-service enrollment has inconsistent account coordinates", 409);
+          }
+          this.stopServiceActivation(record.principal);
+          try {
+            yield* this.registryAdmin(record.boot_url).remove(eid);
+          } catch (error) {
+            if (error instanceof BootApiError && error.status !== 404) {
+              throw bootError(`${kind} account revocation failed`, error.status);
+            }
+            if (!(error instanceof BootApiError)) throw error;
+          }
+        } else throw bootError("Unsupported resource kind", 400);
+      } catch (error) {
+        if (!(error instanceof BootApiError && error.status === 404)) throw error;
+      }
+      this.store.deleteResource(kind, eid);
+    }
+    const { session, account } = owners;
+    if (session) {
+      if (kind === "witness") session.witness_eids = session.witness_eids.filter(item => item !== eid);
+      else if (kind === "watcher" && session.watcher_eid === eid) session.watcher_eid = "";
+      session.updated_at = nowIso();
+      this.store.saveSession(session);
+    }
+    if (account) {
+      if (kind === "witness") account.witness_eids = account.witness_eids.filter(item => item !== eid);
+      else if (kind === "watcher" && account.watcher_eid === eid) account.watcher_eid = "";
+      this.store.saveAccount(account);
+    }
+  }
+
+  /** `deleteAccountDo`: revoke services, delete watchers then witnesses, then forget account and sessions. */
+  private *deleteAccount(aid: string): Operation<Record<string, unknown>> {
+    if (!aid) throw bootError("Account delete operation is missing account_aid.", 400);
+    const account = this.store.getAccount(aid);
+    this.stopServiceActivation(aid);
+    const sessions = this.store.listSessionsForAccount(aid);
+    const ids = (kind: "witness" | "watcher") => {
+      const candidates: string[] = [];
+      if (kind === "witness") {
+        candidates.push(...(account?.witness_eids ?? []), ...sessions.flatMap(session => session.witness_eids));
+      } else {
+        candidates.push(account?.watcher_eid ?? "", ...sessions.map(session => session.watcher_eid));
+      }
+      candidates.push(...this.store.listResourcesForAccount(kind, aid).map(row => row.eid));
+      for (const session of sessions) {
+        candidates.push(...this.store.listResourcesForSession(kind, session.session_id).map(row => row.eid));
+      }
+      return [...new Set(candidates.filter(Boolean))];
+    };
+    const operations: [string, string][] = [
+      ...(["registrar", "observer"] as const).flatMap(kind =>
+        this.store.listResourcesForAccount(kind, aid).map(row => [kind, row.eid] as [string, string])
+      ),
+      ...ids("watcher").map(eid => ["watcher", eid] as [string, string]),
+      ...ids("witness").map(eid => ["witness", eid] as [string, string]),
+    ];
+    const errors: BootApiError[] = [];
+    for (const [kind, eid] of operations) {
+      try {
+        yield* this.deleteHostedResource(kind, eid, { account });
+      } catch (error) {
+        if (!(error instanceof BootApiError)) throw error;
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw bootError(errors.map(error => error.message).join("; "), errors[0].status);
+    this.store.deleteAccount(aid);
+    for (const session of sessions) this.store.deleteSession(session.session_id);
+    return { account_aid: aid, deleted: true, session_ids: sessions.map(session => session.session_id) };
   }
 
   /** `_terminalProvisionResult`: stop provisioning a closed session. */

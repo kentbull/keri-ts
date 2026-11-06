@@ -176,6 +176,11 @@ Python-only by justification: per-IP limits/tiers, sweeper/cleanup CLI, capacity
 counters; expiry is on access only and closed rows are never purged, so a closed but
 uncleaned session still blocks a new start (as kf-boot with its runner disabled).
 The shared host answers CORS preflight `OPTIONS` 204 (kf-boot 200): both 2xx.
+Completed sessions stay readable by the ephemeral signer and the account and
+`/onboarding/complete` is idempotent on them; `--session` recovery depends on it.
+Service activation enrolls `cloneDelegation`+`clonePreIter` text KEL and fails the
+operation (409) unless the ack echoes `aid`, `[role]` and the configured service AID.
+Test wallets must hold runtime-owned stores in a live task: `run()` returning closes them.
 
 ## Packaging and release
 
