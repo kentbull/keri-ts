@@ -175,7 +175,7 @@ controller endpoints must deliver the peer query to every recipient member.
 # Issuer custodian prepares the exact proposal file before waiting for members.
 tufa ipex grant --issue -n ISSUER_LEAD_STORE -a ISSUER_GROUP -r RECIPIENT_GROUP \
   --credential credential.cesr --coordinator ISSUER_EVENT --custodian ISSUER_LEAD \
-  --proposal-output proposal.cesr --proof-output final-proof.cesr --timeout 120
+  --proposal-output proposal.cesr --timeout 120
 # Other issuer members select that file and the printed Grant SAID.
 tufa ipex grant --issue -n ISSUER_PEER_STORE -a ISSUER_GROUP -r RECIPIENT_GROUP \
   --resume GRANT --proposal proposal.cesr --coordinator ISSUER_EVENT \
@@ -188,14 +188,19 @@ tufa ipex setup -n RECIPIENT_STORE -a RECIPIENT_GROUP --said GRANT \
 The issuer contributor returns after its DH query contribution. It must then
 separately review and approve the proposed BUP with the existing `multisig join`
 command; DH setup does not authorize that registry update. The issuer custodian
-waits for that approval and writes `final-proof.cesr`, containing accepted public
-evidence and the exact original Grant with its issued opening. After BUP approval,
-each departed issuer contributor explicitly verifies that file:
+waits for that approval, then sends each other issuer member, by mailbox on topic
+`multisig`, the accepted public evidence and a `/multisig/ipex-proof` wrapper of
+the exact original Grant with its issued opening (KERIpy's form). After BUP
+approval, each departed issuer contributor explicitly polls its mailbox and
+verifies that proof:
 
 ```sh
 tufa ipex setup -n ISSUER_PEER_STORE -a ISSUER_GROUP --said GRANT \
-  --coordinator ISSUER_EVENT --custodian ISSUER_LEAD --proof final-proof.cesr
+  --coordinator ISSUER_EVENT --custodian ISSUER_LEAD --timeout 120
 ```
+
+As a fallback, the custodian's `--proof-output FILE` also writes the same proof,
+and a member's `setup --proof FILE` verifies it without the mailbox.
 
 Recipient members remain live through reply contribution and proof delivery.
 Rootless members verify the original issuer authentication and appended opening;

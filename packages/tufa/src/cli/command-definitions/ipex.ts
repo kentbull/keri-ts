@@ -114,7 +114,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .option("--proposal-output <file>", "Write the new exact group Grant proposal before waiting")
             .option(
               "--proof-output <file>",
-              "Write final public proof for issuer members after their separate BUP join",
+              "Also write the final public proof that issuer members receive by mailbox (fallback)",
             )
             .option("--credential <file>", "Exact fresh ACDC v2 credential body for --issue")
             .option("--artifact <files...>", "Explicit authenticated far-node streams for --issue")
@@ -163,7 +163,10 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
         .option("--listen <port>", "Loopback direct intake during live group setup")
         .option("--coordinator <said>", "Exact accepted group coordinator event")
         .option("--custodian <aid>", "Elected member frozen by the selected coordinator")
-        .option("--proof <file>", "Explicitly verify final group issuance proof after separate BUP approval")
+        .option(
+          "--proof <file>",
+          "Verify final group issuance proof from a file instead of the mailbox after separate BUP approval",
+        )
         .option("--input <file>", "Ingest signed Grant/public evidence before explicit setup")
         .option("--timeout <seconds>", "Elapsed setup limit (default: 60)"),
     )),

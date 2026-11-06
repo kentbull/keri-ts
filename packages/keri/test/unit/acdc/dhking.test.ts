@@ -29,7 +29,7 @@ import { call, ensure, run, sleep, spawn } from "effection";
 import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { prepareAcdcV2Credential } from "../../../../tufa/src/cli/commands/acdc-v2-authoring.ts";
 import {
-  acceptGroupIssuanceProof,
+  awaitGroupIssuanceProof,
   prepareGroupDerivedIssuance,
   runGroupDerivedIssuance,
 } from "../../../../tufa/src/cli/commands/ipex-group-issuance.ts";
@@ -376,17 +376,23 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       true,
       true,
     ]);
-    assertExists(issued.proof);
+    assertExists(issued.proof, "the custodian keeps the file fallback copy");
+    // The custodian delivered the same proof by mailbox; the peer's host received it.
     assertEquals(
-      yield* acceptGroupIssuanceProof(
+      yield* awaitGroupIssuanceProof(
         issuerPeer.runtime,
         issuerPeer.wallet,
         grant.said!,
         { coordinator: coordinator.said!, custodian: lead.member.pre },
-        issued.proof,
+        15000,
       ),
       true,
     );
+    const delivered = [...issuerPeer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
+      .filter(body => body.route === "/multisig/ipex-proof");
+    assertEquals(delivered.map(body => body.pre), [lead.member.pre]);
+    // The file fallback carries the same exact wrapper.
+    assertEquals(parseBytes(issued.proof).at(-1)!.body.said, delivered[0].said);
     yield* peerHost.halt();
     assert(queries.length > 0 && responses.length > 0, "DH messages traverse real Poster HTTP delivery");
     for (const wire of queries) assertEquals(wire, queries[0], "group fanout and retries keep the exact signed query");
