@@ -1,0 +1,25 @@
+{
+  "profile": "KERIpy local profile /registry/root ESSR exn v1; a={essr,gid,rd}",
+  "sender": "EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7",
+  "sender_kel": "{\"v\":\"KERICAACAAJSONAAEt.\",\"t\":\"icp\",\"d\":\"EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7\",\"i\":\"EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7\",\"s\":\"0\",\"kt\":\"1\",\"k\":[\"DGVApNRdPyb_7V9lm6HsimSDFO75Set9QGNSMq0AP-E4\"],\"nt\":\"1\",\"n\":[\"ECobgnoJHKhGzL3wd4-r6ol6rYFl5zODqTb_8Wn6jdxK\"],\"bt\":\"0\",\"b\":[],\"c\":[],\"a\":[]}-CAX-KAWAABqGLHambEc1mNEi6qJOoVuorRBj9yNyUNpD7xsDNX29xo8jA8aKE-rOwkmw8iE-cFmB19QxXTiiYGlhQYV0WsD",
+  "recipient": "EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit",
+  "recipient_key": "DHcdVrQuIN2deTweI9TGc7ju31RnpIbgYvuJFXewxsdN",
+  "recipient_seed": "ABYBTK7BH4hPWJfw6xZGiOJkHc-8v7hotxrv6THiFn_z",
+  "plaintext": {
+    "i": "EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7",
+    "ri": "EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit",
+    "gid": "EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit",
+    "rd": "ELnEDetuCmTjm3sBBLDc34w8-j8iFqNpLFYa98BKZndi",
+    "s": "0ABmaXh0dXJlLXJvb3QtMTZi",
+    "e": "ELI_RMjw_lvigu4pl8hQNpP8W-mOwn4Fs0X9UDbvqxpI",
+    "td": "EN1NhtE2_ux3_XZDBUy00EJPnri86bpDA3T9cMjfiPoA"
+  },
+  "wire": "{\"v\":\"KERICAACAAJSONAAG2.\",\"t\":\"exn\",\"d\":\"EPHmcYkNpglpITdYlO4Hyk1OTNgnQ6M-09LehPJdRRNg\",\"i\":\"EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7\",\"ri\":\"EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-11-06T06:22:15.656249+00:00\",\"r\":\"/registry/root\",\"q\":{},\"a\":{\"essr\":\"EN_GO9xBaToKLW_86CUjpp8l_96vv2UvcD-JeFs2qYEA\",\"gid\":\"EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit\",\"rd\":\"ELnEDetuCmTjm3sBBLDc34w8-j8iFqNpLFYa98BKZndi\"}}-CC0-XAuEPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7MAAAEPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7-KAWAABr9vS1lAyU2r7y-IOkBFSGinbnSxYq4xtNH9dtrCL_7txrYq1v9RpLMgArgbJkkJNT6Y4gzsORTkJE1jVvz84D-ZCE6BCDAABAhlcnVaAGoDHSXwhgBC9-2fgTq6UCOWYRFVZDn7wnWhz_M0fP_4oR0qjFp2TqWTHA1jFhYyHSla5r_71JpoqmIvB24x9_VdC2IBkY6cICFcHC1tEKPwbRNhlYuDliimM8H_Y9vUfFbM_bEodUmUVc3vBoowzqhW48ICl8QO87E9mFLkNvniq9e2w-qvzzx7aR4dMIimoNZD-nR4_inZRyY88rCYjGTlr6vx8cmxf30qYZvyAgcxqvWZ0ePcu33nM3-gZGYoJ1bI-wn7KutxtERyTX2d3q3Xrf0nhyYdIj58pinCmGARTmGSTmr28u1-RZYS_DehW3FHe9Ptg74141DllxQx8fXPrt1nzGQzgN6k7u6fWJ8xmtJjpqH8RVnuin89dxLuLSBxYHk7i1YzYa-ApGq02qUUq3r9uE23MLfOhv_oJlxo8zKdJ3f11XjaNRjnJ6GjF-kwJnTAJ2z9iDuTmq5WZqeGXvvKqAU70lbNZrQCu8uWNamDZF92BwCcA_GtyuKuz6",
+  "negative": [
+    {
+      "name": "essr-digest-mismatch",
+      "description": "Signed exn unchanged; last byte of the sealed-box ESSR payload flipped, so a.essr no longer matches. Receivers refuse and persist nothing.",
+      "wire": "{\"v\":\"KERICAACAAJSONAAG2.\",\"t\":\"exn\",\"d\":\"EPHmcYkNpglpITdYlO4Hyk1OTNgnQ6M-09LehPJdRRNg\",\"i\":\"EPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7\",\"ri\":\"EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit\",\"x\":\"\",\"p\":\"\",\"dt\":\"2026-11-06T06:22:15.656249+00:00\",\"r\":\"/registry/root\",\"q\":{},\"a\":{\"essr\":\"EN_GO9xBaToKLW_86CUjpp8l_96vv2UvcD-JeFs2qYEA\",\"gid\":\"EF3jwIp5bwsy9l4Oq71m6TApOTLZRiJRVu_T4AKeILit\",\"rd\":\"ELnEDetuCmTjm3sBBLDc34w8-j8iFqNpLFYa98BKZndi\"}}-CC0-XAuEPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7MAAAEPpU4WvFSyGtkakqh_jIFgu8KQ4kzCjhkR0JCgaDEbS7-KAWAABr9vS1lAyU2r7y-IOkBFSGinbnSxYq4xtNH9dtrCL_7txrYq1v9RpLMgArgbJkkJNT6Y4gzsORTkJE1jVvz84D-ZCE6BCDAABAhlcnVaAGoDHSXwhgBC9-2fgTq6UCOWYRFVZDn7wnWhz_M0fP_4oR0qjFp2TqWTHA1jFhYyHSla5r_71JpoqmIvB24x9_VdC2IBkY6cICFcHC1tEKPwbRNhlYuDliimM8H_Y9vUfFbM_bEodUmUVc3vBoowzqhW48ICl8QO87E9mFLkNvniq9e2w-qvzzx7aR4dMIimoNZD-nR4_inZRyY88rCYjGTlr6vx8cmxf30qYZvyAgcxqvWZ0ePcu33nM3-gZGYoJ1bI-wn7KutxtERyTX2d3q3Xrf0nhyYdIj58pinCmGARTmGSTmr28u1-RZYS_DehW3FHe9Ptg74141DllxQx8fXPrt1nzGQzgN6k7u6fWJ8xmtJjpqH8RVnuin89dxLuLSBxYHk7i1YzYa-ApGq02qUUq3r9uE23MLfOhv_oJlxo8zKdJ3f11XjaNRjnJ6GjF-kwJnTAJ2z9iDuTmq5WZqeGXvvKqAU70lbNZrQCu8uWNamDZF92BwCcA_GtyuKuz7"
+    }
+  ]
+}

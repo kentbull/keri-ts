@@ -1,398 +1,678 @@
-/** Explicit encrypted copies of existing registry roots, following Python's RegistrySalt profile. */
+/**
+ * Explicit encrypted copies of existing registry roots.
+ *
+ * `RegistryRoot` replicates held roots to individual members with ESSR `exn`
+ * messages, ported from KERIpy `keri.acdc.salting` (kentbull/keripy v2-spec).
+ *
+ * Local profile, not a KERI, ACDC or #1740 standard. Upstream KERIpy uses ESSR
+ * only as the v1 `/essr/req` transport envelope on direct sends.
+ * `/registry/root` is the first application-route ESSR payload and the first
+ * ESSR carried through a witness mailbox. Its v2 `a` field map `{essr, gid, rd}`
+ * carries the payload digest that v1 puts in a string `a`; the Exchanger checks
+ * only the v1 form, so this handler verifies it.
+ *
+ * Copies are store-and-forward: KRAM exempts the route (built-in
+ * `KramPolicy` store-and-forward exemption), the exchange store keys them by
+ * SAID, and copies that cannot yet be authorized because local KEL, TEL or group
+ * state is missing are stored pending rather than dropped.
+ */
 import {
-  BlindState,
-  BoundState,
-  bytesEqual,
-  type Cigar,
-  Cipher,
   concatBytes,
   Counter,
-  type Diger,
+  Diger,
   Encrypter,
+  essrChunks,
   Kinds,
+  LabelDex,
   makeBlindUuid,
-  Matter,
+  type Matter,
   MtrDex,
-  parseBytes,
   ParserError,
   Prefixer,
+  Saider,
   Salter,
+  type SerderACDC,
   type SerderKERI,
+  Texter,
+  unblindBlindState,
+  unblindBoundState,
   type Verfer,
   Vrsn_2_0,
 } from "cesr-ts";
-import { Hab } from "../app/identity/habbing.ts";
-import {
-  type GroupCoordinator,
-  groupWitnesserSelection,
-  isLocalGroupHab,
-  latestGroupContribution,
-  localGroupMember,
-} from "../app/multisig/group-members.ts";
-import { envelopeFromFrame } from "../app/protocol/parsering.ts";
-import { KeriDispatchEnvelope, type TransIdxSigGroup } from "../core/dispatch.ts";
+import type { ExchangeRouteHandler } from "../app/exchanges/exchanging.ts";
+import type { Hab, Habery } from "../app/identity/habbing.ts";
+import { groupWitnesserSelection, isLocalGroupHab } from "../app/multisig/group-members.ts";
+import type { Notifier } from "../app/notifications/notifying.ts";
 import { ValidationError } from "../core/errors.ts";
-import { verifyExchangeProofs } from "../core/exchange/exchange-proofing.ts";
-import { Kever } from "../core/kel/kever.ts";
-import { reply } from "../core/protocol-eventing.ts";
-import { messagize } from "../core/protocol-serialization.ts";
-import { type ReplyProcessDecision, unverifiedReplyDecision } from "../core/routing.ts";
+import { exchange } from "../core/protocol-eventing.ts";
+import type { Baser } from "../db/basing.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
 import type { Regery } from "./registraring.ts";
 
-interface ReceiveApproval {
-  event: string;
-  opening: RegistryDisclosure;
-  uuid: string;
+/** A stored registry-root copy that can never be retained as received. */
+export class RootRefused extends ValidationError {}
+
+/** A stored registry-root copy whose root cannot yet be verified locally. */
+export class RootUnverified extends ValidationError {}
+
+/** A registry-root copy whose authorization needs KEL, TEL or group state not yet local. */
+export class RootDeferred extends RootUnverified {}
+
+/** One pending copy in the exchange store; `error` names a conflict with a retained root. */
+export interface PendingRootCopy {
+  said: string;
+  sender: string;
+  recipient: string;
+  gid: string;
+  registry: string;
+  dt: string;
+  error?: string;
+}
+
+/** Sealed-box plaintext field map. */
+interface RootPlaintext {
+  i: string;
+  ri: string;
+  gid: string;
+  rd: string;
+  s: string;
+  e: string;
+  td?: string;
+}
+
+const ED25519 = new Set<string>([MtrDex.Ed25519, MtrDex.Ed25519N]);
+const PLAIN_REQUIRED = ["i", "ri", "gid", "rd", "s", "e"];
+const PLAIN_ALLOWED = new Set([...PLAIN_REQUIRED, "td"]);
+
+/** Parse a canonical primitive; malformed remote text is a ValidationError, never a parser crash. */
+function canonical<T extends Matter>(value: unknown, ctor: new(args: { qb64: string }) => T): T {
+  if (typeof value !== "string") throw new ValidationError("invalid registry root identity");
+  try {
+    const material = new ctor({ qb64: value });
+    if (material.qb64 !== value) throw new ValidationError("invalid registry root identity");
+    return material;
+  } catch (error) {
+    if (error instanceof ParserError || error instanceof RangeError || error instanceof TypeError) {
+      throw new ValidationError("invalid registry root identity", { cause: error });
+    }
+    throw error;
+  }
+}
+
+/** Latest member establishment whose first key is in `verfers`, as KERIpy `fetchLatestContribTo`. */
+function contribution(db: Baser, member: string, verfers: readonly Verfer[]): { sn: number; index: number } | null {
+  const state = db.getKever(member);
+  if (!state) return null;
+  const keys = verfers.map(verfer => verfer.qb64);
+  for (const [, sn, said] of db.kels.getOnItemBackIter(member, state.lastEst.s)) {
+    if (db.kels.getLast(member, sn) !== said) continue;
+    const event = db.getEvtSerder(member, said);
+    if (!event?.estive) continue;
+    const index = keys.indexOf(event.verfers[0]?.qb64 ?? "");
+    if (index >= 0) return { sn, index };
+  }
+  return null;
+}
+
+/** Qualify one sealed box as a variable-size bytes Texter, as KERIpy `Texter(raw=...)`. */
+function essrTexter(raw: Uint8Array): Texter {
+  const rem = raw.length % 3;
+  return new Texter({ code: rem === 0 ? LabelDex.Bytes_L0 : rem === 1 ? LabelDex.Bytes_L1 : LabelDex.Bytes_L2, raw });
+}
+
+/** Concatenate ordered ESSR fragments into the sealed box bytes. */
+function essrBytes(essrs: readonly Texter[] | null | undefined): Uint8Array {
+  return concatBytes(...(essrs ?? []).map(texter => texter.raw));
 }
 
 /**
- * Copy a retained root only after explicit local approval and current reply
- * authentication. Register Route on the habitat's existing Revery Router;
- * composition delivers signed bytes and explicitly approves group contributions.
- * Receive approvals are process-local. Public TEL evidence is read-only, and
- * neither this owner nor restarting it creates roots, consent or transfer rows.
+ * Return one signed v2 `/registry/root` ESSR exchange carrying `root`.
+ *
+ * The individual `hab` signs a bare `exn` (`x`/`p` empty) whose `a` is
+ * `{essr, gid, rd}`: `essr` is the Blake3-256 digest of a libsodium sealed box
+ * to `recipient`'s current first signing key. The box holds the JSON field map
+ * `{i, ri, gid, rd, s, e[, td]}`: sender, recipient, holder AID, registry,
+ * Salt128 root, one accepted BUP SAID and an optional ACDC SAID hint. The box
+ * travels as one ESSR payload Texter inside the message's attachment group.
+ * Callers apply policy first.
  */
-export class RegistrySalt {
-  static readonly Route = "/registry/salt";
-  readonly hab: Hab;
+export function rootExn(
+  hab: Hab,
+  recipient: string,
+  gid: string,
+  registry: string,
+  root: Salter,
+  { event, td }: { event: string; td?: string },
+): Uint8Array {
+  if (!hab.pre || hab.db.getHab(hab.pre)?.mid) {
+    throw new ValidationError("registry root copies are signed by an individual habitat");
+  }
+  if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128) {
+    throw new ValidationError("registry root must be a Salt128 primitive");
+  }
+  const verfer = hab.db.getKever(recipient)?.verfers[0];
+  if (!verfer || !ED25519.has(verfer.code)) {
+    throw new ValidationError("recipient encryption requires a current Ed25519 key");
+  }
+  const plain: RootPlaintext = { i: hab.pre, ri: recipient, gid, rd: registry, s: root.qb64, e: event };
+  if (td) plain.td = td;
+  const sealed = new Encrypter({ verkey: verfer.qb64 }).encrypt({
+    ser: new TextEncoder().encode(JSON.stringify(plain)),
+  }).raw;
+  const texter = essrTexter(sealed);
+  const digest = new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(sealed, MtrDex.Blake3_256) });
+  const serder = exchange(RegistryRoot.Route, {
+    sender: hab.pre,
+    receiver: recipient,
+    attributes: { essr: digest.qb64, gid, rd: registry },
+    pvrsn: Vrsn_2_0,
+    kind: Kinds.json,
+  });
+  const signed = hab.endorse(serder, { gvrsn: Vrsn_2_0, pipelined: false });
+  const atc = concatBytes(signed.slice(serder.raw.length), ...essrChunks([texter], { gvrsn: Vrsn_2_0 }));
+  return concatBytes(serder.raw, Counter.enclose({ qb64: atc, code: "AttachmentGroup", version: Vrsn_2_0 }));
+}
+
+/**
+ * Replicate held registry roots to individual members by ESSR `exn`.
+ *
+ * Local profile route `/registry/root`; see `rootExn` for the wire. Register on
+ * the Habery's Exchanger with `exc.addHandler`. Authorization uses the accepted
+ * KEL and TEL only:
+ *
+ * - recipient `ri`: a local individual habitat that is a current signing member
+ *   of `gid` (or is `gid`, an individual holder) with a local group habitat for
+ *   `gid`;
+ * - sender `i`: an individual AID, other than the recipient, that is a
+ *   historical signing member of `gid`, the registry issuer, or a historical
+ *   signing member of the issuer group;
+ * - registry `rd`: an accepted, issuer-anchored registry with a BUP head;
+ * - `a.essr`: the Blake3-256 digest of the attached ESSR payload.
+ *
+ * `verify` refuses, so nothing persists, when the copy can never be retained
+ * here: malformed exchange or identifiers, ESSR digest mismatch, `ri` not a
+ * local individual habitat, `i == ri`, `gid` a local habitat that is not this
+ * member's group, a non-Ed25519 recipient key, or a membership or
+ * sender-authority failure against complete local state. When the failure is
+ * only missing local state (registry TEL, sender or group KEL, local group
+ * habitat, or a group rotation that commits to the recipient's key but is not
+ * yet accepted here) the copy is deferred: it is stored with a note carrying
+ * `deferred`, so an offline newcomer never needs a resend. A SAID already
+ * stored is ignored, so duplicate deliveries add no note.
+ *
+ * Stored copies persist in the Exchanger's `exns.`/`essrs.` stores with a
+ * Notifier note, so pending copies survive restart without a new ledger.
+ * Nothing is decrypted until `receive`, the explicit receiver approval, which
+ * re-runs the full authorization, checks the plaintext binding and verifies the
+ * root against a held opening or by reproducing the BUP `b` commitment before
+ * retention.
+ *
+ * TypeScript divergence: `verify` runs inside the Exchanger's synchronous LMDB
+ * writer, so it only reads stores; the note is added by `handle` after commit.
+ */
+export class RegistryRoot implements ExchangeRouteHandler {
+  static readonly Route = "/registry/root";
+  static readonly Note = "/exn/registry/root";
+  static readonly States = ["issued", "revoked"] as const;
+  readonly resource = RegistryRoot.Route;
+  readonly protocolMajor = 2;
+  readonly hby: Habery;
   readonly rgy: Regery;
-  readonly target: Hab;
-  private readonly approvals = new Map<string, ReceiveApproval>();
+  readonly notifier: Notifier | null;
 
-  /** Bind actual local signing/decryption habitats and their registry owner. */
-  constructor({ hab, rgy }: { hab: Hab; rgy: Regery }) {
-    if (!(hab instanceof Hab) || hab.db !== rgy.hby.db || rgy.hby.habs.get(hab.pre!) !== hab) {
-      throw new ValidationError("Registry transfer requires the habitat's actual local owners");
-    }
-    this.hab = hab;
+  constructor(hby: Habery, rgy: Regery, notifier: Notifier | null = null) {
+    if (rgy.hby !== hby) throw new ValidationError("registry root replication requires the Habery's registry owner");
+    this.hby = hby;
     this.rgy = rgy;
-    this.target = isLocalGroupHab(rgy.hby, hab) ? localGroupMember(rgy.hby, hab.pre!) : hab;
-    if (!(this.target instanceof Hab) || this.target.db !== hab.db) {
-      throw new ValidationError("Registry transfer requires a local signing and decryption member");
-    }
+    this.notifier = notifier;
   }
 
-  /** Approve receipt using one accepted BUP and held ordinary or bound opening, never inferred state. */
-  approve(registry: string, sender: string, { event, opening }: { event: string; opening: RegistryDisclosure }): void {
-    this.hab.mgr.requireRegistryRootAccess();
-    this.scope(registry, sender, this.hab.pre!, this.target.pre!);
-    this.event(registry, event, opening);
-    // Snapshot the exact primitive encodings rather than borrowing caller-owned arrays.
-    const fields = [
-      opening.d.qb64b.slice(),
-      opening.u.qb64b.slice(),
-      opening.td.qb64b.slice(),
-      opening.ts.qb64b.slice(),
-    ] as const;
-    const held = "bn" in opening
-      ? BoundState.fromQb64bTuple([...fields, opening.bn.qb64b.slice(), opening.bd.qb64b.slice()])
-      : BlindState.fromQb64bTuple(fields);
-    this.approvals.set(this.approvalKey(registry, sender), { event, opening: held, uuid: held.u.qb64 });
+  // policy
+
+  /** True when `member` contributed to any accepted establishment of `group`. */
+  private historical(member: string, group: string): boolean {
+    const db = this.hby.db, gkever = db.getKever(group);
+    if (!db.getKever(member) || !gkever) return false;
+    for (const [, sn, said] of db.kels.getOnItemBackIter(group, gkever.sn)) {
+      if (db.kels.getLast(group, sn) !== said) continue;
+      const event = db.getEvtSerder(group, said);
+      if (event?.estive && contribution(db, member, event.verfers)) return true;
+    }
+    return false;
   }
 
-  /** Revoke this process's receipt approval; an already retained root stays immutable. */
-  abandon(registry: string, sender: string): void {
-    this.approvals.delete(this.approvalKey(registry, sender));
+  /** True when `member`'s latest contributing key is in `group`'s current keys. */
+  private current(member: string, group: string): boolean {
+    const gkever = this.hby.db.getKever(group);
+    return !!gkever && !!this.hby.db.getKever(member) && !!contribution(this.hby.db, member, gkever.verfers);
   }
 
-  /**
-   * Return one encrypted signed reply, partial for a group. Only the elected
-   * member prepares ciphertext; contributors endorse this unchanged body.
-   */
-  prepare(
-    registry: string,
-    recipient: string,
-    target: string,
-    { coordinator }: { coordinator?: GroupCoordinator } = {},
-  ): Uint8Array {
-    this.hab.mgr.requireRegistryRootAccess();
-    const key = this.scope(registry, this.hab.pre!, recipient, target);
-    if (isLocalGroupHab(this.rgy.hby, this.hab)) {
-      const selected = coordinator && groupWitnesserSelection(this.hab.db, this.hab.pre!, coordinator);
-      const contribution = selected
-        && latestGroupContribution(this.hab.db, this.target.pre!, selected.establishment.verfers);
-      if (!selected || !contribution || contribution.index !== selected.index) {
-        throw new ValidationError("Only the existing elected group coordinator prepares a root copy");
-      }
-      if (!latestGroupContribution(this.hab.db, this.target.pre!, this.hab.kever!.verfers)) {
-        throw new ValidationError("Group coordinator is no longer a current signing member");
-      }
-    }
-    const root = this.hab.mgr.getRegistryRoot(this.hab.pre!, registry);
-    if (!root) throw new ValidationError("Authorized registry root is unavailable");
-    const cipher = new Encrypter({ verkey: key.qb64 }).encrypt({ prim: root });
-    const message = reply(RegistrySalt.Route, { registry, recipient, target, cipher: cipher.qb64 }, {
-      pre: this.hab.pre!,
-      pvrsn: Vrsn_2_0,
-      kind: Kinds.json,
-    });
-    return this.hab.endorse(message, { gvrsn: Vrsn_2_0 });
+  /** True when `group`'s latest next-key digests commit to `member`'s current key (an unaccepted rotation). */
+  private prospective(member: string, group: string): boolean {
+    const mkever = this.hby.db.getKever(member)!, gkever = this.hby.db.getKever(group)!;
+    return gkever.ndigers.some(diger => mkever.verfers.some(verfer => diger.verify(verfer.qb64b)));
   }
 
-  /**
-   * Endorse the elected member's authenticated exact ciphertext proposal.
-   * Reuse current registry/target scope and ordinary signature verification;
-   * contribution neither needs the root nor claims the group threshold is met.
-   */
-  contribute(proposal: Uint8Array, { registry, recipient, target, coordinator }: {
-    registry: string;
-    recipient: string;
-    target: string;
-    coordinator: GroupCoordinator;
-  }): Uint8Array {
-    this.hab.mgr.requireRegistryRootAccess();
-    if (!isLocalGroupHab(this.rgy.hby, this.hab)) {
-      throw new ValidationError("Root copy contribution requires a local group signer");
-    }
-    const frames = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), proposal));
-    if (frames.length !== 1) throw new ValidationError("Expected one authenticated group reply proposal");
-    const envelope = envelopeFromFrame(frames[0]), wrapper = envelope.serder;
-    this.attachments(
-      wrapper,
-      new KeriDispatchEnvelope({ ...envelope, attachmentGroups: [...envelope.attachmentGroups], nests: [] }),
-    );
-    if (
-      wrapper.pvrsn.major !== 2 || wrapper.pvrsn.minor !== 0 || !["xip", "exn"].includes(wrapper.ilk!)
-      || wrapper.route !== "/multisig/rpy" || !wrapper.verify() || envelope.nests.length !== 1
-    ) {
-      throw new ValidationError("Expected one v2 multisig reply proposal");
-    }
-    const authenticated = verifyExchangeProofs(this.hab.db, wrapper, { tsgs: envelope.tsgs, cigars: envelope.cigars });
-    if (
-      authenticated.invalid || authenticated.missing.length
-      || !(authenticated.tsgs.some(group => group.pre === wrapper.pre)
-        || authenticated.cigars.some(cigar => cigar.verfer?.qb64 === wrapper.pre))
-    ) {
-      throw new ValidationError("Root copy proposal lacks its authenticated member author");
-    }
-    const election = groupWitnesserSelection(this.hab.db, this.hab.pre!, coordinator);
-    const proposer = election && latestGroupContribution(this.hab.db, wrapper.pre!, election.establishment.verfers);
-    if (
-      !election || proposer?.index !== election.index
-      || !latestGroupContribution(this.hab.db, wrapper.pre!, this.hab.kever!.verfers)
-    ) {
-      throw new ValidationError("Root copy proposal is not from the selected current group coordinator");
-    }
-    const child = envelopeFromFrame(envelope.nests[0]), body = child.serder, attributes = wrapper.sad!.a;
-    this.attachments(body, child);
-    if (
-      body.ilk !== "rpy" || body.pvrsn.major !== 2 || body.pvrsn.minor !== 0 || body.route !== RegistrySalt.Route
-      || body.pre !== this.hab.pre || !body.verify() || !attributes || typeof attributes !== "object"
-      || Array.isArray(attributes) || Object.keys(attributes).sort().join() !== "gid,rpy"
-      || !("gid" in attributes) || !("rpy" in attributes)
-      || attributes.gid !== body.pre || attributes.rpy !== body.said || !child.tsgs.length
-      || child.sigers.length || child.cigars.length
-    ) {
-      throw new ValidationError("Root copy proposal does not bind the exact group reply");
-    }
-    const data = body.sad!.a;
-    if (
-      !data || typeof data !== "object" || Array.isArray(data)
-      || Object.keys(data).sort().join() !== "cipher,recipient,registry,target"
-      || !("registry" in data) || !("recipient" in data) || !("target" in data) || !("cipher" in data)
-      || data.registry !== registry || data.recipient !== recipient || data.target !== target
-      || typeof data.cipher !== "string"
-    ) throw new ValidationError("Root copy proposal differs from the selected scope");
-    const cipher = this.canonical(data.cipher, Cipher);
-    if (cipher.code !== MtrDex.X25519_Cipher_Salt) throw new ValidationError("Expected an encrypted Salt128 root");
-    const author = this.hab.kever!;
-    for (const group of child.tsgs) {
-      if (group.pre !== this.hab.pre || group.sn !== BigInt(author.lastEst.s) || group.said !== author.lastEst.d) {
-        throw new ValidationError("Root copy proposal requires current group establishment signatures");
-      }
-      const verified = Kever.verifyIndexedSignatures(body.raw, group.sigers, author.verfers);
-      if (!verified.sigers.length || verified.sigers.length !== group.sigers.length) {
-        throw new ValidationError("Root copy proposal has an invalid member contribution");
-      }
-    }
-    this.scope(registry, this.hab.pre!, recipient, target);
-    const local = envelopeFromFrame(parseBytes(this.hab.endorse(body, { gvrsn: Vrsn_2_0 }))[0]);
-    return messagize(body, { tsgs: [...child.tsgs, ...local.tsgs], gvrsn: Vrsn_2_0 });
-  }
-
-  /** Accept only after threshold authentication, decryption and immutable retention, including an identical root. */
-  processReply({ serder, diger, route, cigars = [], tsgs = [], attachments }: {
-    serder: SerderKERI;
-    diger: Diger;
-    route: string;
-    cigars?: Cigar[];
-    tsgs?: TransIdxSigGroup[];
-    attachments?: KeriDispatchEnvelope;
-  }): ReplyProcessDecision {
-    try {
-      if (
-        serder.ilk !== "rpy" || serder.pvrsn.major !== 2 || serder.pvrsn.minor !== 0
-        || route !== RegistrySalt.Route || serder.route !== route || !serder.verify()
-      ) {
-        throw new ValidationError("Invalid registry transfer reply");
-      }
-      this.attachments(serder, attachments);
-      const data = serder.sad?.a;
-      if (
-        !data || typeof data !== "object" || Array.isArray(data)
-        || Object.keys(data).sort().join() !== "cipher,recipient,registry,target"
-        || Object.values(data).some(value => typeof value !== "string")
-      ) {
-        throw new ValidationError("Invalid registry transfer scope");
-      }
-      const { registry, recipient, target, cipher: encrypted } = data as Record<string, string>;
-      const sender = serder.pre!, approval = this.approvals.get(this.approvalKey(registry, sender));
-      if (!approval || recipient !== this.hab.pre || target !== this.target.pre) {
-        throw new ValidationError("Registry transfer has no exact local approval");
-      }
-      this.hab.mgr.requireRegistryRootAccess();
-      const key = this.scope(registry, sender, recipient, target);
-      const event = this.event(registry, approval.event, approval.opening);
-      const cipher = this.canonical(encrypted, Cipher);
-      if (cipher.code !== MtrDex.X25519_Cipher_Salt) throw new ValidationError("Invalid encrypted Salt128 root");
-      // BADA can accept historical establishments; a new capability copy requires current author authority.
-      const author = this.hab.db.getKever(sender)!;
-      const current = tsgs.filter(group =>
-        group.pre === sender && group.sn === BigInt(author.lastEst.s)
-        && group.said === author.lastEst.d
-      );
-      const nontrans = cigars.filter(cigar => cigar.verfer?.qb64 === sender);
-      if (!current.length && !nontrans.length) {
-        throw new ValidationError("Registry transfer requires current author signatures");
-      }
-      const decision = this.hab.rvy.acceptReply({
-        serder,
-        saider: diger,
-        route,
-        aid: sender,
-        cigars: nontrans,
-        tsgs: current,
-      });
-      if (decision.kind !== "accept") return decision;
-      const plain = this.target.mgr.open(cipher.raw, key);
-      if (!plain) throw new ValidationError("Root cannot be decrypted with the current target key");
-      const root = this.canonical(new TextDecoder().decode(plain), Salter);
-      if (root.code !== MtrDex.Salt_128 || !bytesEqual(root.qb64b, plain)) {
-        throw new ValidationError("Decrypted root is not a canonical Salt128");
-      }
-      if (makeBlindUuid({ salt: root.qb64, sn: event.sn }).qb64 !== approval.uuid) {
-        throw new ValidationError("Root does not reproduce the approved accepted opening");
-      }
-      const retained = this.hab.mgr.getRegistryRoot(this.hab.pre!, registry);
-      if (retained && retained.qb64 !== root.qb64) {
-        throw new ValidationError("A different registry root is already retained");
-      }
-      this.hab.mgr.putRegistryRoot(this.hab.pre!, registry, root);
-      return decision;
-    } catch (error) {
-      if (error instanceof ValidationError) return unverifiedReplyDecision(error.message);
-      throw error;
-    }
-  }
-
-  /** Validate accepted registry authority and target contribution to current recipient keys. */
-  private scope(registry: string, sender: string, recipient: string, target: string): Verfer {
-    for (const aid of [sender, recipient, target]) this.canonical(aid, Prefixer);
+  /** Return the accepted, issuer-anchored `rip`; RootDeferred when not yet accepted locally. */
+  registry(registry: string): SerderACDC {
     const store = this.rgy.store, rip = store.seqEvent(registry, 0), head = store.headEvent(registry);
     const inception = rip && validateRip(rip);
     if (!rip || rip.said !== registry || inception?.kind !== "valid" || !head || head.ilk !== "bup") {
-      throw new ValidationError("Root transfer requires an accepted registry update");
+      throw new RootDeferred("registry is not yet accepted locally with a registry update");
     }
     const anchor = store.anchor(rip.said!);
     if (
       !verifyRegistryAnchor(inception.event, {
-        db: this.hab.db,
+        db: this.hby.db,
         issuer: rip.issuer!,
         number: anchor?.[0],
         diger: anchor?.[1],
       })
     ) {
-      throw new ValidationError("Registry inception lacks accepted anchor evidence");
+      throw new RootDeferred("registry is not yet anchored in the local issuer KEL");
     }
-    const author = this.hab.db.getKever(sender),
-      receiver = this.hab.db.getKever(recipient),
-      member = this.hab.db.getKever(target);
-    if (!author || !receiver || !member) {
-      throw new ValidationError("Registry transfer requires accepted party key state");
-    }
-    if (recipient !== target && !latestGroupContribution(this.hab.db, target, receiver.verfers)) {
-      throw new ValidationError("Encryption target is not a current group signing member");
-    }
-    if (sender !== rip.issuer && !(sender === recipient && recipient !== target)) {
-      throw new ValidationError("Only the issuer or recipient group may authorize this transfer");
-    }
-    const key = member.verfers[0];
-    if (!key || (key.code !== MtrDex.Ed25519 && key.code !== MtrDex.Ed25519N)) {
-      throw new ValidationError("Recipient encryption requires a current Ed25519 key");
-    }
-    return key;
+    return rip;
   }
 
-  /** Recheck exact accepted BUP membership, anchoring and the held primitive commitment. */
-  private event(registry: string, said: string, opening: RegistryDisclosure) {
-    const store = this.rgy.store, body = store.event(said), rip = store.seqEvent(registry, 0);
+  /** Raise ValidationError for malformed or self-addressed copy identities. */
+  private static identities(sender: unknown, recipient: unknown, gid: unknown, registry: unknown): void {
+    for (const aid of [sender, recipient, gid]) canonical(aid, Prefixer);
+    canonical(registry, Saider);
+    if (sender === recipient) throw new ValidationError("registry root sender and recipient must differ");
+  }
+
+  /**
+   * Raise ValidationError unless this KEL/TEL state authorizes the copy.
+   * RootDeferred (a RootUnverified) means only local state is missing: sender,
+   * recipient or holder key state, an unaccepted group rotation that adds the
+   * recipient, or the registry TEL.
+   */
+  authorize(sender: string, recipient: string, gid: string, registry: string): SerderACDC {
+    RegistryRoot.identities(sender, recipient, gid, registry);
+    const db = this.hby.db;
+    const missing = [sender, recipient, gid].filter((aid, index, all) => all.indexOf(aid) === index)
+      .filter(aid => !db.getKever(aid));
+    if (missing.length) throw new RootDeferred(`key state is not yet local for ${missing.join(", ")}`);
+    if (!ED25519.has(db.getKever(recipient)!.verfers[0]?.code ?? "")) {
+      throw new ValidationError("recipient encryption requires a current Ed25519 key");
+    }
+    if (recipient !== gid && !this.current(recipient, gid)) {
+      if (this.prospective(recipient, gid)) {
+        throw new RootDeferred("the holder rotation that adds the recipient is not yet accepted");
+      }
+      throw new ValidationError("recipient is not a current signing member of the holder");
+    }
+    const rip = this.registry(registry), issuer = rip.issuer!;
+    if (!(this.historical(sender, gid) || sender === issuer || this.historical(sender, issuer))) {
+      throw new ValidationError("sender is not a historical holder member or registry issuer");
+    }
+    return rip;
+  }
+
+  /**
+   * Return current signing member AIDs added by one accepted group rotation.
+   *
+   * Members, not keys, are compared: a continuing member usually rotates its
+   * own key, so it contributes to both establishments. Candidates are the AIDs
+   * with accepted key state in this Habery.
+   */
+  newcomers(ghab: Hab, rotation: string): string[] {
+    const db = this.hby.db, pre = ghab.pre;
+    if (!pre || ghab.db !== db || !isLocalGroupHab(this.hby, ghab)) {
+      throw new ValidationError("newcomers require a local group habitat");
+    }
+    const event = db.getEvtSerder(pre, rotation);
+    if (!event || !["rot", "drt"].includes(event.ilk!) || db.kels.getLast(pre, event.sn!) !== rotation) {
+      throw new ValidationError("newcomers require an accepted group rotation");
+    }
+    let prior: SerderKERI | null = null;
+    for (const [, sn, said] of db.kels.getOnItemBackIter(pre, event.sn! - 1)) {
+      if (db.kels.getLast(pre, sn) !== said) continue;
+      const candidate = db.getEvtSerder(pre, said);
+      if (candidate?.estive) {
+        prior = candidate;
+        break;
+      }
+    }
+    if (!prior) throw new ValidationError("rotation has no accepted prior establishment");
+    const found: [number, string][] = [];
+    for (const [keys] of db.states.getTopItemIter()) {
+      const aid = keys.join(".");
+      if (aid === pre || !db.getKever(aid)) continue;
+      const added = contribution(db, aid, event.verfers);
+      if (added && !contribution(db, aid, prior.verfers) && this.current(aid, pre)) found.push([added.index, aid]);
+    }
+    return found.sort((left, right) => left[0] - right[0]).map(([, aid]) => aid);
+  }
+
+  /** Return the current signing member AIDs of `gid` known to this Habery. */
+  members(gid: string): string[] {
+    const db = this.hby.db, gkever = db.getKever(gid), found: [number, string][] = [];
+    if (!gkever) return [];
+    for (const [keys] of db.states.getTopItemIter()) {
+      const aid = keys.join(".");
+      const contributed = aid === gid ? null : contribution(db, aid, gkever.verfers);
+      if (contributed) found.push([contributed.index, aid]);
+    }
+    return found.sort((left, right) => left[0] - right[0]).map(([, aid]) => aid);
+  }
+
+  /** Return the registry SAIDs with a root retained locally for `gid`. */
+  held(gid: string): string[] {
+    const found: string[] = [];
+    for (const [keys] of this.hby.mgr.ks.rroots.getTopItemIter()) {
+      if (keys[0] === gid && keys.length === 2) found.push(keys[1]);
+    }
+    return found.sort();
+  }
+
+  /** True when `ghab`'s local member is the elected sender for `rotation`. */
+  witnesser(ghab: Hab, rotation: string): boolean {
+    const db = this.hby.db, event = ghab.pre ? db.getEvtSerder(ghab.pre, rotation) : null;
+    if (!event) return false;
+    const selection = groupWitnesserSelection(db, ghab.pre!, { sn: event.sn!, said: rotation });
+    const member = db.getHab(ghab.pre!)?.mid;
+    if (!selection || !member) return false;
+    return contribution(db, member, selection.establishment.verfers)?.index === selection.index;
+  }
+
+  // sending
+
+  /**
+   * Return one authorized copy of a root held locally for `gid` or the issuer.
+   * `hab` is the local individual sender. `event` defaults to the registry's
+   * accepted BUP head.
+   */
+  prepare(
+    hab: Hab,
+    recipient: string,
+    gid: string,
+    registry: string,
+    { event, td }: { event?: string; td?: string } = {},
+  ): Uint8Array {
+    const rip = this.authorize(hab.pre!, recipient, gid, registry);
+    let root: Salter | null = null;
+    for (const holder of [gid, rip.issuer!]) {
+      if (this.hby.habs.has(holder)) {
+        root = this.hby.mgr.getRegistryRoot(holder, registry);
+        if (root) break;
+      }
+    }
+    if (!root) throw new ValidationError("no local root is held for this registry");
+    const [bup] = this.event(registry, event ?? this.rgy.store.headEvent(registry)!.said!, rip);
+    return rootExn(hab, recipient, gid, registry, root, { event: bup.said!, td });
+  }
+
+  // receiving
+
+  /** Recheck exact accepted BUP membership and issuer anchoring; return the BUP and its ordinal. */
+  private event(registry: string, said: string, rip?: SerderACDC): [SerderACDC, bigint] {
+    const store = this.rgy.store, body = store.event(said);
     const update = body && validateUpdate(body, registry);
     if (
       !body || body.said !== said || update?.kind !== "valid" || update.event.sn > BigInt(Number.MAX_SAFE_INTEGER)
-      || store.seqSaider(registry, Number(update.event.sn))?.qb64 !== said || !rip
     ) {
-      throw new ValidationError("Approval requires the exact accepted registry BUP");
+      throw new RootUnverified("root verification requires an accepted registry BUP");
     }
-    const anchor = store.anchor(said);
+    if (store.seqSaider(registry, Number(update.event.sn))?.qb64 !== said) {
+      throw new RootUnverified("root verification BUP is not accepted");
+    }
+    const inception = rip ?? store.seqEvent(registry, 0), anchor = store.anchor(said);
     if (
-      !verifyRegistryAnchor(update.event, {
-        db: this.hab.db,
-        issuer: rip.issuer!,
+      !inception || !verifyRegistryAnchor(update.event, {
+        db: this.hby.db,
+        issuer: inception.issuer!,
         number: anchor?.[0],
         diger: anchor?.[1],
       })
-      || !vetBlind(opening, body.sad!.b as string)
     ) {
-      throw new ValidationError("Approval requires an anchored BUP and its exact held opening");
+      throw new RootUnverified("root verification BUP lacks accepted issuer anchoring");
     }
-    return update.event;
+    return [body, update.event.sn];
   }
 
-  /** Parse caller/wire primitives canonically; storage and backend exceptions remain outside this boundary. */
-  private canonical<T extends Matter>(value: string, ctor: new(args: { qb64: string }) => T): T {
+  /**
+   * Check the outer exchange and authorize it; return [recipient hab, gid, rd].
+   * Raises ValidationError for a copy that can never be retained here and
+   * RootDeferred when only local KEL, TEL or group state is missing.
+   */
+  private scope(serder: SerderKERI, essr: Uint8Array): [Hab, string, string] {
+    const sad = serder.sad ?? {}, data = sad.a;
+    if (
+      serder.pvrsn.major !== 2 || serder.pvrsn.minor !== 0 || serder.ilk !== "exn" || sad.r !== RegistryRoot.Route
+      || sad.x || sad.p || (sad.q && (typeof sad.q !== "object" || Object.keys(sad.q).length))
+      || !data || typeof data !== "object" || Array.isArray(data)
+      || Object.keys(data).sort().join() !== "essr,gid,rd"
+      || Object.values(data).some(value => typeof value !== "string")
+    ) {
+      throw new ValidationError("invalid registry root exchange");
+    }
+    const { essr: commitment, gid, rd: registry } = data as Record<string, string>;
+    const recipient = sad.ri;
+    const hab = typeof recipient === "string" ? this.hby.habs.get(recipient) : undefined;
+    if (!hab || isLocalGroupHab(this.hby, hab)) {
+      throw new ValidationError("registry root recipient is not a local individual habitat");
+    }
+    const holder = this.hby.habs.get(gid);
+    if (gid !== recipient && holder && this.hby.db.getHab(gid)?.mid !== recipient) {
+      throw new ValidationError("registry root holder is not this member's local group");
+    }
+    if (!essr.length) throw new ValidationError("registry root exchange requires an ESSR payload");
+    if (!RegistryRoot.essrMatches(commitment, essr)) {
+      throw new ValidationError("ESSR payload does not match its digest");
+    }
+    if (gid !== recipient && !holder) {
+      RegistryRoot.identities(serder.pre, recipient, gid, registry);
+      throw new RootDeferred("the holder group habitat is not yet local");
+    }
+    this.authorize(serder.pre!, recipient as string, gid, registry);
+    return [hab, gid, registry];
+  }
+
+  /** True when `commitment` is the canonical Blake3-256 digest of the sealed box. */
+  static essrMatches(commitment: string, essr: Uint8Array): boolean {
+    let digest: Diger;
     try {
-      const material = new ctor({ qb64: value });
-      if (new Matter({ raw: material.raw, code: material.code }).qb64 !== value) {
-        throw new ValidationError("Noncanonical registry transfer material");
-      }
-      return material;
+      digest = canonical(commitment, Diger);
     } catch (error) {
-      if (error instanceof ParserError) {
-        throw new ValidationError("Invalid registry transfer material", { cause: error });
+      if (error instanceof ValidationError) return false;
+      throw error;
+    }
+    return digest.code === MtrDex.Blake3_256 && digest.verify(essr);
+  }
+
+  /** Return null when authorized now, else the RootDeferred reason; throw on refusal. */
+  private deferral(serder: SerderKERI, essr: Uint8Array): string | null {
+    try {
+      this.scope(serder, essr);
+    } catch (error) {
+      if (error instanceof RootDeferred) return error.message;
+      throw error;
+    }
+    return null;
+  }
+
+  /** Store authorized or deferred copies once; refuse the rest; never decrypt here. */
+  verify(args: { serder: SerderKERI; essrs?: readonly Texter[] }): boolean {
+    if (this.hby.db.exns.get([args.serder.said!])) return false;
+    try {
+      this.deferral(args.serder, essrBytes(args.essrs));
+    } catch (error) {
+      if (error instanceof ValidationError) return false;
+      throw error;
+    }
+    return true;
+  }
+
+  /** Add one Notifier note, carrying `deferred` when authorization still needs local state. */
+  handle(args: { serder: SerderKERI; essrs?: readonly Texter[] }): void {
+    if (!this.notifier) return;
+    const serder = args.serder, data = serder.sad!.a as Record<string, string>;
+    const attrs: Record<string, string> = {
+      r: RegistryRoot.Note,
+      d: serder.said!,
+      i: serder.pre!,
+      ri: serder.sad!.ri as string,
+      gid: data.gid,
+      rd: data.rd,
+    };
+    let reason: string | null = null;
+    try {
+      reason = this.deferral(serder, essrBytes(args.essrs));
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+    }
+    if (reason !== null) attrs.deferred = reason;
+    this.notifier.add(attrs);
+  }
+
+  private stored(said: string): [SerderKERI, Uint8Array] {
+    const serder = this.hby.db.exns.get([said]);
+    if (!serder || serder.route !== RegistryRoot.Route) throw new ValidationError("no stored registry root copy");
+    return [serder, essrBytes(this.hby.db.getEssrs(said))];
+  }
+
+  /** Return [gid, rd, root, plaintext] after decrypting and binding the box. */
+  private open(serder: SerderKERI, essr: Uint8Array): [string, string, Salter, RootPlaintext] {
+    const [hab, gid, registry] = this.scope(serder, essr);
+    hab.mgr.requireRegistryRootAccess();
+    let plain: unknown;
+    try {
+      const opened = hab.mgr.open(essr, hab.kever!.verfers[0]);
+      if (!opened) throw new Error("unopened");
+      plain = JSON.parse(new TextDecoder().decode(opened));
+    } catch {
+      throw new RootRefused("registry root cannot be decrypted with the current recipient key; resend needed");
+    }
+    const fields = plain && typeof plain === "object" && !Array.isArray(plain)
+      ? plain as Record<string, unknown>
+      : null;
+    if (
+      !fields || PLAIN_REQUIRED.some(key => !(key in fields))
+      || Object.keys(fields).some(key => !PLAIN_ALLOWED.has(key))
+      || Object.values(fields).some(value => typeof value !== "string")
+      || fields.i !== serder.pre || fields.ri !== hab.pre || fields.gid !== gid || fields.rd !== registry
+    ) {
+      throw new RootRefused("registry root plaintext does not match its exchange");
+    }
+    let root: Salter;
+    try {
+      root = canonical(fields.s, Salter);
+    } catch {
+      throw new RootRefused("registry root is not a canonical Salt128");
+    }
+    if (root.code !== MtrDex.Salt_128) throw new RootRefused("registry root is not a canonical Salt128");
+    return [gid, registry, root, fields as unknown as RootPlaintext];
+  }
+
+  /**
+   * Explicitly approve one stored copy; verify and retain its root.
+   *
+   * `event` overrides the sender's BUP hint; `opening` is a held opening for
+   * that BUP. Without one, a held public opening in the registry store is used,
+   * else the BUP `b` commitment is reproduced from `(uuid, td, ts)` using the
+   * sender's `td` hint. Returns true on retention. RootRefused marks a copy that
+   * can never be retained; RootUnverified leaves it pending; its RootDeferred
+   * subclass names the local KEL, TEL or group state still missing.
+   */
+  receive(said: string, { event, opening }: { event?: string; opening?: RegistryDisclosure } = {}): boolean {
+    const [serder, essr] = this.stored(said);
+    let opened: [string, string, Salter, RootPlaintext];
+    try {
+      opened = this.open(serder, essr);
+    } catch (error) {
+      if (error instanceof RootDeferred) {
+        throw new RootDeferred(
+          `registry root copy is not yet verifiable: ${error.message}; it stays pending until that state is local`,
+        );
       }
       throw error;
     }
-  }
-
-  /** Reject non-authentication evidence, including unknown raw groups and missing full-parser context. */
-  private attachments(serder: SerderKERI, envelope?: KeriDispatchEnvelope): void {
-    const allowed = ["ControllerIdxSigs", "NonTransReceiptCouples", "TransIdxSigGroups"];
-    if (
-      !envelope || !bytesEqual(envelope.serder.raw, serder.raw)
-      || [
-        envelope.wigers,
-        envelope.trqs,
-        envelope.ssgs,
-        envelope.unresolvedLast,
-        envelope.frcs,
-        envelope.sscs,
-        envelope.ssts,
-        envelope.tdcs,
-        envelope.ptds,
-        envelope.essrs ?? [],
-        envelope.nests,
-        envelope.bsqs,
-        envelope.bsss,
-        envelope.tmqs,
-      ].some(values => values.length)
-      || envelope.attachmentGroups.some(group => !allowed.includes(group.name.replace(/^Big/, "")))
-    ) {
-      throw new ValidationError("Registry transfer carries unsupported attachments");
+    const [gid, registry, root, plain] = opened;
+    const [bup, sn] = this.event(registry, event ?? plain.e);
+    const blid = bup.sad!.b as string;
+    const uuid = makeBlindUuid({ salt: root.qb64, sn });
+    const held = opening ?? this.rgy.store.publicOpening(bup.said!);
+    if (held) {
+      if (!vetBlind(held, blid)) throw new ValidationError("held opening does not match the registry commitment");
+      if (held.u.qb64 !== uuid.qb64) throw new RootUnverified("root does not reproduce the held opening");
+    } else if (!this.reproduces(blid, uuid.qb64, plain.td ?? "", gid)) {
+      throw new RootUnverified("root does not yet reproduce the registry commitment");
     }
+    const retained = this.hby.mgr.getRegistryRoot(gid, registry);
+    if (retained && retained.qb64 !== root.qb64) {
+      throw new RootRefused("a different root is already retained for this holder and registry");
+    }
+    this.hby.mgr.putRegistryRoot(gid, registry, root);
+    this.notes(said, true);
+    return true;
   }
 
-  private approvalKey(registry: string, sender: string): string {
-    return JSON.stringify([registry, sender]);
+  private reproduces(blid: string, uuid: string, td: string, gid: string): boolean {
+    const states = [...RegistryRoot.States];
+    if (unblindBlindState({ said: blid, uuid, acdc: td, states })) return true;
+    const db = this.hby.db, kever = db.getKever(gid), bounds: [number, string][] = [];
+    for (let sn = 0; kever && sn <= kever.sn; sn++) {
+      const dig = db.kels.getLast(gid, sn);
+      if (dig) bounds.push([sn, dig]);
+    }
+    return unblindBoundState({ said: blid, uuid, acdc: td, states, bounds }) !== null;
+  }
+
+  /**
+   * List stored copies to local recipients whose root is not yet retained.
+   * With an unlocked Keeper a retained identical root resolves the copy; a
+   * different retained root is reported with `error`.
+   */
+  pending(): PendingRootCopy[] {
+    const items: PendingRootCopy[] = [];
+    for (const [keys, serder] of this.hby.db.exns.getTopItemIter()) {
+      const recipient = serder.sad?.ri;
+      if (serder.route !== RegistryRoot.Route || typeof recipient !== "string" || !this.hby.habs.has(recipient)) {
+        continue;
+      }
+      const data = (serder.sad?.a ?? {}) as Record<string, string>;
+      const item: PendingRootCopy = {
+        said: keys.join("."),
+        sender: serder.pre!,
+        recipient,
+        gid: data.gid,
+        registry: data.rd,
+        dt: serder.sad?.dt as string,
+      };
+      let retained: Salter | null = null;
+      try {
+        retained = this.hby.mgr.getRegistryRoot(item.gid, item.registry);
+      } catch {
+        retained = null;
+      }
+      if (retained) {
+        try {
+          const [, , root] = this.open(...this.stored(item.said));
+          if (root.qb64 === retained.qb64) continue;
+          item.error = "a different root is already retained";
+        } catch (error) {
+          if (!(error instanceof Error)) throw error;
+          item.error = error.message;
+        }
+      }
+      items.push(item);
+    }
+    return items;
+  }
+
+  private notes(said: string, read = false): number {
+    if (!this.notifier) return 0;
+    let count = 0;
+    for (const [, note] of [...this.notifier.noter.notes.getTopItemIter()]) {
+      if (note.attrs.r !== RegistryRoot.Note || note.attrs.d !== said) continue;
+      if (read ? (!note.read && this.notifier.markRead(note.rid)) : this.notifier.remove(note.rid)) count++;
+    }
+    return count;
+  }
+
+  /** Remove this copy's Notifier note; the exchange store is unchanged. */
+  dismiss(said: string): number {
+    return this.notes(said);
   }
 }

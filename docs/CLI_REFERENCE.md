@@ -81,130 +81,130 @@ The listener does not change mailbox query authorization or group signature thre
 
 ## Tufa Commands (KERI / Application)
 
-| Command                            | Description                                                                                   |
-| ---------------------------------- | --------------------------------------------------------------------------------------------- |
-| `tufa version`                     | Show tufa version.                                                                            |
-| `tufa init`                        | Create a database and keystore.                                                               |
-| `tufa incept`                      | Initialize a prefix (create a new local identifier).                                          |
-| `tufa rotate`                      | Rotate keys for a local identifier.                                                           |
-| `tufa interact`                    | Create and publish an interaction event.                                                      |
-| `tufa agent`                       | Start the KERI agent server (long-lived host).                                                |
-| `tufa delegate confirm`            | Approve delegated events anchored to one local delegator.                                     |
-| `tufa multisig incept`             | Initialize a group multisig prefix.                                                           |
-| `tufa multisig interact`           | Create and publish a group multisig interaction event.                                        |
-| `tufa multisig join`               | Join one pending group multisig proposal.                                                     |
-| `tufa multisig rotate`             | Rotate a group multisig prefix.                                                               |
-| `tufa multisig rpy`                | Propose a group endpoint-role authorization reply.                                            |
-| `tufa sign`                        | Sign an arbitrary string.                                                                     |
-| `tufa verify`                      | Verify signature(s) on arbitrary data.                                                        |
-| `tufa query`                       | Request KEL (key event log) from a witness.                                                   |
-| `tufa export`                      | Export key events in CESR stream format.                                                      |
-| `tufa list`                        | List existing local identifiers.                                                              |
-| `tufa aid`                         | Print the AID (prefix) for a given alias.                                                     |
-| `tufa saidify`                     | Compute and print the SAID of a JSON file.                                                    |
-| `tufa annotate`                    | Annotate a CESR stream from file or stdin.                                                    |
-| `tufa challenge generate`          | Generate a cryptographically random challenge phrase.                                         |
-| `tufa challenge respond`           | Respond to challenge words by signing and sending an exchange message.                        |
-| `tufa challenge verify`            | Verify that a signer responded with the expected challenge words.                             |
-| `tufa vc schema import`            | Import one or more ACDC JSON schemas.                                                         |
-| `tufa vc registry incept`          | Create a local credential registry.                                                           |
-| `tufa vc registry list`            | List local credential registries.                                                             |
-| `tufa vc registry status`          | Show one credential registry state.                                                           |
-| `tufa vc registry root newcomers`  | Prepare existing-root files for newly accepted group signers and explicit registries.         |
-| `tufa vc registry root prepare`    | Write an encrypted existing-root reply and, for a group, its authenticated proposal.          |
-| `tufa vc registry root contribute` | Sign the selected elected-member proposal without changing its ciphertext.                    |
-| `tufa vc registry root receive`    | Approve and ingest encrypted reply files against an exact accepted BUP and held opening.      |
-| `tufa vc create`                   | Create and issue a registry-backed credential.                                                |
-| `tufa vc list`                     | List saved credentials.                                                                       |
-| `tufa vc export`                   | Export one credential stream.                                                                 |
-| `tufa vc import`                   | Import a CESR credential stream.                                                              |
-| `tufa vc revoke`                   | Revoke a local credential.                                                                    |
-| `tufa ipex apply`                  | Send an IPEX apply.                                                                           |
-| `tufa ipex offer`                  | Send an IPEX offer.                                                                           |
-| `tufa ipex agree`                  | Send an IPEX agree.                                                                           |
-| `tufa ipex grant`                  | Send or write an IPEX credential grant.                                                       |
-| `tufa ipex setup`                  | Explicit individual DH setup for one pending issuance Grant; does not Admit.                  |
-| `tufa ipex admit`                  | Send or write an IPEX admit.                                                                  |
-| `tufa ipex spurn`                  | Send an IPEX spurn.                                                                           |
-| `tufa ipex list`                   | List stored IPEX EXNs.                                                                        |
-| `tufa ipex poll`                   | Poll configured credential mailboxes once.                                                    |
-| `tufa ipex join`                   | Review or explicitly approve IPEX; accepted v2 group Admit approval records wallet admission. |
-| `tufa verifier run`                | Process verifier grants, revocations, and webhook delivery.                                   |
-| `tufa hook demo`                   | Launch a sample verifier webhook target.                                                      |
-| `tufa dws bind`                    | Bind a local AID to replacement designated-alias ACDC(s).                                     |
-| `tufa dws generate`                | Generate static `did:webs` artifacts (`did.json` + `keri.cesr`).                              |
-| `tufa dws resolve`                 | Resolve and verify a `did:webs` identifier.                                                   |
-| `tufa dws resolver`                | Run a Universal Resolver compatible DID service.                                              |
-| `tufa dkr resolve`                 | Resolve a `did:keri` identifier.                                                              |
-| `tufa ends add`                    | Authorize an endpoint role for one AID.                                                       |
-| `tufa loc add`                     | Add one local location scheme record through signed reply acceptance.                         |
-| `tufa oobi generate`               | Generate OOBI URL(s) for one local identifier.                                                |
-| `tufa oobi resolve`                | Resolve one remote OOBI URL.                                                                  |
-| `tufa oobi clean`                  | Preview or remove exact pending OOBI keys in an offline database.                             |
-| `tufa oobi request`                | Send one peer OOBI request EXN to a remote recipient.                                         |
-| `tufa exchange send`               | Send one signed EXN message to a resolved remote identifier.                                  |
-| `tufa exn send`                    | Alias for `exchange send`.                                                                    |
-| `tufa mailbox start`               | Provision and run one local mailbox host.                                                     |
-| `tufa mailbox add`                 | Authorize one remote mailbox provider for a local identifier.                                 |
-| `tufa mailbox remove`              | Revoke one remote mailbox provider for a local identifier.                                    |
-| `tufa mailbox list`                | List authorized mailboxes for one local identifier.                                           |
-| `tufa mailbox update`              | Update one local mailbox topic cursor.                                                        |
-| `tufa mailbox debug`               | Display mailbox cursor and remote mailbox topic state.                                        |
-| `tufa registrar start`             | Run authenticated registry publication with an existing service AID.                          |
-| `tufa observer start`              | Acquire and serve verified registry evidence using an existing service AID.                   |
-| `tufa witness start`               | Provision and run one combined witness+mailbox host.                                          |
-| `tufa witness submit`              | Submit the current event to witnesses and converge receipts.                                  |
-| `tufa notifications list`          | List local controller notifications.                                                          |
-| `tufa notifications mark-read`     | Mark one local notification as read.                                                          |
-| `tufa notifications remove`        | Remove one local notification.                                                                |
-| `tufa benchmark cesr`              | Benchmark CESR parser from file or stdin.                                                     |
-| `tufa db dump`                     | Dump database contents (targeted sub-database inspection).                                    |
+| Command                           | Description                                                                                   |
+| --------------------------------- | --------------------------------------------------------------------------------------------- |
+| `tufa version`                    | Show tufa version.                                                                            |
+| `tufa init`                       | Create a database and keystore.                                                               |
+| `tufa incept`                     | Initialize a prefix (create a new local identifier).                                          |
+| `tufa rotate`                     | Rotate keys for a local identifier.                                                           |
+| `tufa interact`                   | Create and publish an interaction event.                                                      |
+| `tufa agent`                      | Start the KERI agent server (long-lived host).                                                |
+| `tufa delegate confirm`           | Approve delegated events anchored to one local delegator.                                     |
+| `tufa multisig incept`            | Initialize a group multisig prefix.                                                           |
+| `tufa multisig interact`          | Create and publish a group multisig interaction event.                                        |
+| `tufa multisig join`              | Join one pending group multisig proposal.                                                     |
+| `tufa multisig rotate`            | Rotate a group multisig prefix.                                                               |
+| `tufa multisig rpy`               | Propose a group endpoint-role authorization reply.                                            |
+| `tufa sign`                       | Sign an arbitrary string.                                                                     |
+| `tufa verify`                     | Verify signature(s) on arbitrary data.                                                        |
+| `tufa query`                      | Request KEL (key event log) from a witness.                                                   |
+| `tufa export`                     | Export key events in CESR stream format.                                                      |
+| `tufa list`                       | List existing local identifiers.                                                              |
+| `tufa aid`                        | Print the AID (prefix) for a given alias.                                                     |
+| `tufa saidify`                    | Compute and print the SAID of a JSON file.                                                    |
+| `tufa annotate`                   | Annotate a CESR stream from file or stdin.                                                    |
+| `tufa challenge generate`         | Generate a cryptographically random challenge phrase.                                         |
+| `tufa challenge respond`          | Respond to challenge words by signing and sending an exchange message.                        |
+| `tufa challenge verify`           | Verify that a signer responded with the expected challenge words.                             |
+| `tufa vc schema import`           | Import one or more ACDC JSON schemas.                                                         |
+| `tufa vc registry incept`         | Create a local credential registry.                                                           |
+| `tufa vc registry list`           | List local credential registries.                                                             |
+| `tufa vc registry status`         | Show one credential registry state.                                                           |
+| `tufa vc registry root send`      | Send one held registry root to members by ESSR `exn` through their mailboxes.                 |
+| `tufa vc registry root receive`   | List, ingest and explicitly approve pending registry root copies.                             |
+| `tufa vc registry root newcomers` | Send every held group root to the members added by one accepted group rotation.               |
+| `tufa vc create`                  | Create and issue a registry-backed credential.                                                |
+| `tufa vc list`                    | List saved credentials.                                                                       |
+| `tufa vc export`                  | Export one credential stream.                                                                 |
+| `tufa vc import`                  | Import a CESR credential stream.                                                              |
+| `tufa vc revoke`                  | Revoke a local credential.                                                                    |
+| `tufa ipex apply`                 | Send an IPEX apply.                                                                           |
+| `tufa ipex offer`                 | Send an IPEX offer.                                                                           |
+| `tufa ipex agree`                 | Send an IPEX agree.                                                                           |
+| `tufa ipex grant`                 | Send or write an IPEX credential grant.                                                       |
+| `tufa ipex setup`                 | Explicit individual DH setup for one pending issuance Grant; does not Admit.                  |
+| `tufa ipex admit`                 | Send or write an IPEX admit.                                                                  |
+| `tufa ipex spurn`                 | Send an IPEX spurn.                                                                           |
+| `tufa ipex list`                  | List stored IPEX EXNs.                                                                        |
+| `tufa ipex poll`                  | Poll configured credential mailboxes once.                                                    |
+| `tufa ipex join`                  | Review or explicitly approve IPEX; accepted v2 group Admit approval records wallet admission. |
+| `tufa verifier run`               | Process verifier grants, revocations, and webhook delivery.                                   |
+| `tufa hook demo`                  | Launch a sample verifier webhook target.                                                      |
+| `tufa dws bind`                   | Bind a local AID to replacement designated-alias ACDC(s).                                     |
+| `tufa dws generate`               | Generate static `did:webs` artifacts (`did.json` + `keri.cesr`).                              |
+| `tufa dws resolve`                | Resolve and verify a `did:webs` identifier.                                                   |
+| `tufa dws resolver`               | Run a Universal Resolver compatible DID service.                                              |
+| `tufa dkr resolve`                | Resolve a `did:keri` identifier.                                                              |
+| `tufa ends add`                   | Authorize an endpoint role for one AID.                                                       |
+| `tufa loc add`                    | Add one local location scheme record through signed reply acceptance.                         |
+| `tufa oobi generate`              | Generate OOBI URL(s) for one local identifier.                                                |
+| `tufa oobi resolve`               | Resolve one remote OOBI URL.                                                                  |
+| `tufa oobi clean`                 | Preview or remove exact pending OOBI keys in an offline database.                             |
+| `tufa oobi request`               | Send one peer OOBI request EXN to a remote recipient.                                         |
+| `tufa exchange send`              | Send one signed EXN message to a resolved remote identifier.                                  |
+| `tufa exn send`                   | Alias for `exchange send`.                                                                    |
+| `tufa mailbox start`              | Provision and run one local mailbox host.                                                     |
+| `tufa mailbox add`                | Authorize one remote mailbox provider for a local identifier.                                 |
+| `tufa mailbox remove`             | Revoke one remote mailbox provider for a local identifier.                                    |
+| `tufa mailbox list`               | List authorized mailboxes for one local identifier.                                           |
+| `tufa mailbox update`             | Update one local mailbox topic cursor.                                                        |
+| `tufa mailbox debug`              | Display mailbox cursor and remote mailbox topic state.                                        |
+| `tufa registrar start`            | Run authenticated registry publication with an existing service AID.                          |
+| `tufa observer start`             | Acquire and serve verified registry evidence using an existing service AID.                   |
+| `tufa witness start`              | Provision and run one combined witness+mailbox host.                                          |
+| `tufa witness submit`             | Submit the current event to witnesses and converge receipts.                                  |
+| `tufa notifications list`         | List local controller notifications.                                                          |
+| `tufa notifications mark-read`    | Mark one local notification as read.                                                          |
+| `tufa notifications remove`       | Remove one local notification.                                                                |
+| `tufa benchmark cesr`             | Benchmark CESR parser from file or stdin.                                                     |
+| `tufa db dump`                    | Dump database contents (targeted sub-database inspection).                                    |
 
-### Encrypted registry-root files
+### Registry root replication (local profile)
 
-These ACDC v2 commands require an existing unlocked encrypted Keeper and explicit
-registry and party AIDs. They do not create an issuance root or require wallet inventory.
-The prepare, contribute and receive commands accept repeatable `--evidence` files containing public KEL/TEL or
-endpoint support; the held opening is supplied separately for receipt.
+`tufa vc registry root send|receive|newcomers` are the `kli vc registry root`
+equivalents. They replicate an existing, DH-negotiated ACDC v2 registry root so
+every current member of a holder or issuer group can use it, and require an
+existing unlocked encrypted Keeper. This is the KERIpy local profile, not a KERI
+or ACDC standard.
 
-```sh
-tufa vc registry root prepare -n sender -a issuer --registry REGISTRY \
-  --recipient RECIPIENT --target TARGET_MEMBER --output reply.cesr
-tufa vc registry root receive -n receiver -a recipient --registry REGISTRY \
-  --sender SOURCE --event ACCEPTED_BUP --opening held-opening.cesr --message reply.cesr
-```
+Each copy is one bare v2 `exn` on route `/registry/root`, signed by the sending
+member's individual AID and addressed (`ri`) to one individual member. Its `a`
+is `{essr, gid, rd}`: the Blake3-256 digest of an attached ESSR payload, the AID
+the root is held for and the registry SAID. The payload is a sealed box to the
+recipient's current first signing key holding `{i, ri, gid, rd, s, e[, td]}`.
+The recipient must be a current signing member of `gid` (or `gid` itself); the
+sender a historical signing member of `gid`, the registry issuer or a historical
+member of the issuer group.
 
-For an individual recipient, `--target` equals `--recipient`. For a group,
-`--recipient` selects the group and `--target` its receiving member. Group senders
-must select an accepted `--coordinator` event. Preparation additionally requires
-`--proposal-output proposal.cesr`; only the existing elected member can prepare
-the ciphertext. Other members run `root contribute` with the same registry,
-recipient, target and coordinator, `--proposal proposal.cesr`, and a new `--output`
-file. Receipt accepts repeated `--message` files contributing to the same exact
-reply, and succeeds only after ordinary author threshold verification, decryption
-and matching the approved opening. `--opening` contains exactly one counted BSQ
-or BSS. Output files are created exclusively and contain encrypted replies or
-signed proposals, never plaintext roots. These commands perform finite file work;
-transport remains separate.
-
-For newly accepted signing members, `root newcomers` prepares one encrypted reply
-and authenticated proposal per selected registry and newcomer:
+Delivery defaults to the recipient's mailbox (topic `credential`, normally its
+witness mailbox). `--out FILE` writes the same signed bytes instead, as a
+fallback for `receive --message FILE`. KRAM exempts `exn` route `/registry/root`
+by default, so a copy fetched long after it was sent is still accepted.
 
 ```sh
-tufa vc registry root newcomers -n sender -a group --rotation ACCEPTED_ROTATION \
-  --previous-member OLD_MEMBER_A --previous-member OLD_MEMBER_B \
-  --registry REGISTRY --output-dir existing-directory
+# A group alias sends to its other current members by default.
+tufa vc registry root send -n lead -a holder-group --registry REGISTRY --acdc ACDC
+# The registry issuer copies a root to an individual holder (gid = recipient).
+tufa vc registry root send -n issuer -a issuer --registry REGISTRY --recipient HOLDER --acdc ACDC
+# After an accepted group rotation, send every held group root to the newcomers.
+tufa vc registry root newcomers -n lead -a holder-group --rotation ROTATION
 ```
 
-`--rotation` must be the current accepted group establishment. Supply the actual
-preceding signing roster through repeated `--previous-member` options; it is not
-persisted or inferred from next-key commitments. Next-key-only members are not
-newcomers until a rotation installs them as current signers. Registry selections
-are explicit and repeatable. The existing elected member must already hold each
-root. Files use `<registry>.<member>.reply.cesr` and `.proposal.cesr` names and are
-created exclusively. A later failure may leave earlier completed files; no files
-are overwritten. Continue with ordinary `root contribute` and explicit
-`root receive` approval; preparation never reports recipient acceptance.
+A received copy is stored pending in the exchange store with a notification. A
+copy whose check fails only because local KEL, TEL or group state is missing is
+still stored, so an offline newcomer never needs a resend. Nothing is decrypted
+until explicit approval. Without `--registry`/`--said`, `receive` lists pending
+copies; with one, it approves that copy, decrypts it, checks the plaintext
+binding and verifies the root against a held opening (`--opening`) or by
+reproducing the accepted BUP commitment before retaining it:
+
+```sh
+tufa vc registry root receive -n peer -a holder-group --registry REGISTRY \
+  --sender LEAD_MEMBER --listen --timeout 120
+```
+
+A copy that cannot yet be verified stays pending. A different retained root is
+never replaced. Roots never appear in output JSON or in plaintext files.
 
 ## Tephra Commands (CESR Tools)
 

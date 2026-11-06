@@ -20,8 +20,7 @@ membership must match its accepted keys; next-key-only members are excluded.
 The caller supplies the preceding signing roster transiently and selects every
 registry explicitly. The selector neither persists rosters nor discovers roots.
 
-Tufa's `vc registry root newcomers` consumes these selections through its finite
-root-file workflow. RegistrySalt enforces elected-member authoring, existing
-root custody, ordinary group signature thresholds and explicit recipient consent.
-Missing custody is a refusal, never a request for fresh DH. This package does not
-synchronize stores or deliver files.
+Tufa's `vc registry root newcomers` instead uses `RegistryRoot.newcomers` from
+`keri-ts/runtime`, which derives the preceding roster from the accepted KEL, and
+sends ESSR `/registry/root` copies by mailbox. This selector remains for callers
+that supply the roster explicitly. It neither copies roots nor requests fresh DH.

@@ -10,15 +10,12 @@ import {
   concatBytes,
   Counter,
   Diger,
-  Encrypter,
   framePayload,
   makeBlindState,
   makeBlindUuid,
-  MtrDex,
   NumberPrimitive,
   parseBytes,
   Prefixer,
-  Salter,
   SealLast,
   type SerderACDC,
   type SerderKERI,
@@ -39,13 +36,12 @@ import {
   resumePresentationGrant,
 } from "../../../../tufa/src/cli/commands/ipex-presentation.ts";
 import { joinWalletIpex } from "../../../../tufa/src/cli/commands/ipex.ts";
-import { prepareNewcomerRoots, registryRootFile } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
-import { openRegistry, publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
+import { openRegistry, type RegistryStore } from "../../../src/acdc/registering.ts";
 import { Regery } from "../../../src/acdc/registraring.ts";
-import { RegistrySalt } from "../../../src/acdc/salting.ts";
+import { RegistryRoot } from "../../../src/acdc/salting.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
@@ -266,10 +262,6 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         gvrsn: Vrsn_2_0,
       }));
     }
-    const recipientSelection = {
-      coordinator: { sn: recipientCoordinator.sn!, said: recipientCoordinator.said! },
-      custodian: holder.member.pre,
-    };
     const preparedGrant = yield* prepareGroupDerivedIssuance(lead.runtime, lead.wallet, credential, {
       recipient: holder.hab.pre,
       message: "Exact group issuance",
@@ -513,179 +505,50 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       assertEquals(side.wallet.inventory().held, heldBeforePresentation[index]);
     }
 
-    // Explicitly copy the holder's existing root to its already rotated, rootless signing member.
+    // Replicate the custodian's existing root to its already rotated, rootless signing member by ESSR exn.
     const recipient = issuees[1];
-    const exporter = new RegistrySalt({ hab: holder.hab, rgy: new Regery(holder.hby, holder.store.baser) });
-    const importer = new RegistrySalt({ hab: recipient.hab, rgy: new Regery(recipient.hby, recipient.store.baser) });
-    recipient.protocol.rvy.rtr.addRoute(RegistrySalt.Route, importer);
+    const holderRoot = new RegistryRoot(holder.hby, holder.runtime.acdc!, holder.runtime.notifier);
+    const recipientRoot = new RegistryRoot(recipient.hby, recipient.runtime.acdc!, recipient.runtime.notifier);
+    recipient.runtime.exc.addHandler(recipientRoot);
     const retainedHistory = recipient.hby.db.enst.get(grant.said!);
-    const copy = exporter.prepare(rip.said!, holder.hab.pre, recipient.member.pre, {
-      coordinator: recipientSelection.coordinator,
+    assertEquals(holderRoot.members(holder.hab.pre), issuees.map(side => side.member.pre));
+    const copy = holderRoot.prepare(holder.member, recipient.member.pre, holder.hab.pre, rip.said!, {
+      td: credential.said!,
     });
-    const frame = parseBytes(copy)[0], selected = envelopeFromFrame(frame);
-    assertEquals(Object.keys(selected.serder.sad!.a as Record<string, unknown>).sort(), [
-      "cipher",
-      "recipient",
-      "registry",
-      "target",
-    ]);
+    const selected = envelopeFromFrame(parseBytes(copy)[0]);
+    assertEquals(Object.keys(selected.serder.sad!.a as Record<string, unknown>).sort(), ["essr", "gid", "rd"]);
+    assertEquals(selected.serder.pre, holder.member.pre, "the sending member's individual AID signs the copy");
     assertEquals(new TextDecoder().decode(copy).includes(root.qb64), false);
     assertEquals(
       new TextDecoder().decode(copy).includes(opening.d.qb64),
       false,
       "held opening remains local approval evidence",
     );
-    const unapproved = importer.processReply({
-      serder: selected.serder,
-      diger: new Diger({ qb64: selected.serder.said! }),
-      route: RegistrySalt.Route,
-      tsgs: selected.tsgs,
-      attachments: selected,
-    });
-    assertEquals(unapproved.kind, "unverified");
-    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
-    importer.approve(rip.said!, holder.hab.pre, { event: event.said!, opening });
-
-    // A complete current group signature cannot authorize a root with a different disclosure UUID.
-    const wrongRoot = new Salter({ raw: new TextEncoder().encode("wrong-test-root!"), code: MtrDex.Salt_128 });
-    const wrongCipher = new Encrypter({ verkey: recipient.member.kever!.verfers[0].qb64 }).encrypt({ prim: wrongRoot });
-    const wrong = reply(RegistrySalt.Route, {
-      registry: rip.said!,
-      recipient: holder.hab.pre,
-      target: recipient.member.pre,
-      cipher: wrongCipher.qb64,
-    }, { pre: holder.hab.pre, pvrsn: Vrsn_2_0 });
-    const refused = yield* recipient.protocol.dispatch(
-      parseBytes(messagize(wrong, { tsgs: [groupProof(wrong, issuees)], gvrsn: Vrsn_2_0 }))[0],
-    );
-    assertEquals(refused.decision?.kind, "unverified");
-    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
     yield* recipient.reactor.processBytes(copy);
     yield* recipient.reactor.processBytes(copy);
-    assertEquals(
-      recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!),
-      null,
-      "duplicate index zero cannot satisfy the group threshold",
-    );
-    const contribution = recipient.hab.endorse(selected.serder, { gvrsn: Vrsn_2_0 });
-    assertEquals(
-      parseBytes(contribution)[0].body.raw,
-      frame.body.raw,
-      "the second member signs the exact ciphertext and scope",
-    );
-    yield* recipient.reactor.processBytes(contribution);
+    const pending = recipientRoot.pending();
+    assertEquals(pending.map(item => [item.said, item.sender, item.gid]), [
+      [selected.serder.said, holder.member.pre, holder.hab.pre],
+    ]);
+    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null, "arrival retains nothing");
+    assertEquals(recipientRoot.receive(selected.serder.said!, { event: event.said!, opening }), true);
     assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!)!.qb64, root.qb64);
     const ciphertext = recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64;
-    const complete =
-      parseBytes(messagize(selected.serder, { tsgs: [groupProof(selected.serder, issuees)], gvrsn: Vrsn_2_0 }))[0];
-    const accepted = envelopeFromFrame(complete);
-    assertEquals(
-      importer.processReply({
-        serder: accepted.serder,
-        diger: new Diger({ qb64: accepted.serder.said! }),
-        route: RegistrySalt.Route,
-        tsgs: accepted.tsgs,
-        attachments: accepted,
-      }).kind,
-      "accept",
-    );
+    // A second, fresh copy is idempotent and keeps the immutable encrypted retention.
+    const again = holderRoot.prepare(holder.member, recipient.member.pre, holder.hab.pre, rip.said!, {
+      td: credential.said!,
+    });
+    yield* recipient.reactor.processBytes(again);
+    assertEquals(recipientRoot.receive(parseBytes(again)[0].body.said!), true, "commitment reproduction by hint");
     assertEquals(
       recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64,
       ciphertext,
       "identical receipt preserves immutable encrypted retention",
     );
+    assertEquals(recipientRoot.pending(), []);
     assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
     assertEquals(recipient.hby.db.exns.get(admit.said!)!.raw, admit.raw);
     assertEquals(recipient.runtime.exc.exchangeDeadline(grant), deadlines[3]);
-
-    // Exercise Tufa's maintained finite file command with fresh ciphertext and exact reviewed group scope.
-    importer.abandon(rip.said!, holder.hab.pre);
-    const directory = yield* call(() => Deno.makeTempDir({ prefix: "tufa-registry-root-" }));
-    yield* ensure(() => call(() => Deno.remove(directory, { recursive: true })));
-    const output = `${directory}/copy.cesr`, proposalOutput = `${directory}/proposal.cesr`;
-    const peerOutput = `${directory}/contribution.cesr`, refusedOutput = `${directory}/refused.cesr`;
-    const openingFile = `${directory}/opening.cesr`;
-    yield* call(() => Deno.writeFile(openingFile, publicOpeningAttachment(opening)));
-    const fileRuntime = yield* createAgentRuntime(recipient.hby, new FetchHttpClient(), systemClock, {
-      acdc: importer.rgy,
-      kram: { enabled: true },
-    });
-    yield* ensure(() => fileRuntime.close());
-    const sourceRuntime = yield* createAgentRuntime(holder.hby, new FetchHttpClient(), systemClock, {
-      acdc: exporter.rgy,
-      kram: { enabled: true },
-    });
-    yield* ensure(() => sourceRuntime.close());
-    assertEquals(
-      fileRuntime.protocol.rvy === recipient.hab.rvy,
-      false,
-      "file intake uses the command runtime's actual reply owner",
-    );
-    const sourceContext = { hab: holder.hab, rgy: exporter.rgy, protocol: sourceRuntime.protocol };
-    const targetContext = { hab: recipient.hab, rgy: importer.rgy, protocol: fileRuntime.protocol };
-    const scope = {
-      registry: rip.said!,
-      recipient: holder.hab.pre,
-      target: recipient.member.pre,
-      coordinator: recipientCoordinator.said!,
-    };
-    const prepared = yield* registryRootFile(sourceContext, { operation: "prepare", ...scope, output, proposalOutput });
-    assert(prepared.operation === "prepare");
-    assertEquals(prepared.prepared, true);
-    const preparedBytes = yield* call(() => Deno.readFile(output));
-    const preparedBody = envelopeFromFrame(parseBytes(preparedBytes)[0]).serder;
-    assertNotEquals(
-      preparedBody.said,
-      selected.serder.said,
-      "fresh file acceptance cannot reuse earlier cached receipt",
-    );
-    yield* call(() =>
-      assertRejects(
-        () =>
-          run(() =>
-            registryRootFile(targetContext, {
-              operation: "contribute",
-              ...scope,
-              recipient: lead.hab.pre,
-              proposal: proposalOutput,
-              output: refusedOutput,
-            })
-          ),
-        Error,
-        "selected scope",
-      )
-    );
-    assertThrows(
-      () => Deno.statSync(refusedOutput),
-      Deno.errors.NotFound,
-      undefined,
-      "scope refusal precedes output creation",
-    );
-    const fileContribution = yield* registryRootFile(targetContext, {
-      operation: "contribute",
-      ...scope,
-      proposal: proposalOutput,
-      output: peerOutput,
-    });
-    assert(fileContribution.operation === "contribute");
-    assertEquals(fileContribution.contributed, true);
-    assertEquals(parseBytes(yield* call(() => Deno.readFile(peerOutput)))[0].body.raw, preparedBody.raw);
-    const previousRoutes = [...fileRuntime.protocol.rvy.rtr.routes];
-    const received = yield* registryRootFile(targetContext, {
-      operation: "receive",
-      registry: rip.said!,
-      sender: holder.hab.pre,
-      event: event.said!,
-      opening: openingFile,
-      messages: [output, peerOutput],
-    });
-    assert(received.operation === "receive");
-    assertEquals(received.received, true, "only the fresh command's authenticated receipt owner reports success");
-    assertEquals(received.reply, preparedBody.said);
-    assertEquals(fileRuntime.protocol.rvy.rtr.routes.length, previousRoutes.length);
-    assertEquals(fileRuntime.protocol.rvy.rtr.routes.every((route, index) => route === previousRoutes[index]), true);
-    assertEquals(recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64, ciphertext);
-    assertEquals(recipient.hby.db.enst.get(grant.said!), retainedHistory);
 
     // A next-key participant is not eligible until a real accepted rotation makes it a signer.
     const newcomer = issuers[1], previousSigningMembers = issuees.map(side => side.member.pre);
@@ -711,7 +574,12 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(holder.hab.kever!.ndigers.length, 3);
     const nextScope = { rotation: nextOnly.said!, previousSigningMembers, registries: [rip.said!] };
     assertEquals(selectNewcomerCopies({ hby: holder.hby, group: holder.hab, ...nextScope }), []);
-    assertEquals((yield* prepareNewcomerRoots(sourceContext, { ...nextScope, outputDirectory: directory })).copies, []);
+    assertEquals(holderRoot.newcomers(holder.hab, nextOnly.said!), []);
+    assertThrows(
+      () => holderRoot.prepare(holder.member, newcomer.member.pre, holder.hab.pre, rip.said!),
+      ValidationError,
+      "current signing member",
+    );
     assertEquals(newcomer.hby.mgr.getRegistryRoot(holder.hab.pre, rip.said!), null);
 
     // Seal a later update while the issuer's old group keys remain available; publish its TEL after provisioning.
@@ -729,6 +597,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     };
     const currentScope = { rotation: current.said!, previousSigningMembers, registries: [rip.said!] };
     assertEquals(selectNewcomerCopies({ hby: holder.hby, group: holder.hab, ...currentScope }), [selectedNewcomer]);
+    assertEquals(holderRoot.newcomers(holder.hab, current.said!), [newcomer.member.pre]);
+    assertEquals(holderRoot.held(holder.hab.pre), [rip.said!]);
     const newcomerHab = newcomer.hby.joinGroupHab(
       holder.hab.pre,
       "holder-newcomer",
@@ -742,34 +612,18 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       kram: { enabled: true },
     });
     yield* ensure(() => newcomerRuntime.close());
-    const newcomerContext = { hab: newcomerHab, rgy: newcomerRgy, protocol: newcomerRuntime.protocol };
-    const preparedNewcomer = yield* prepareNewcomerRoots(sourceContext, {
-      ...currentScope,
-      outputDirectory: directory,
+    const newcomerRoot = new RegistryRoot(newcomer.hby, newcomerRgy, newcomerRuntime.notifier);
+    newcomerRuntime.exc.addHandler(newcomerRoot);
+    const catchUp = holderRoot.prepare(holder.member, newcomer.member.pre, holder.hab.pre, rip.said!, {
+      td: credential.said!,
     });
-    assertEquals(preparedNewcomer.copies.length, 1);
-    const files = preparedNewcomer.copies[0];
-    assertExists(files.proposalOutput);
-    const newcomerContribution = `${directory}/newcomer-contribution.cesr`;
-    yield* registryRootFile(targetContext, {
-      operation: "contribute",
-      ...selectedNewcomer,
-      proposal: files.proposalOutput,
-      output: newcomerContribution,
-    });
-    const provisioned = yield* registryRootFile(newcomerContext, {
-      operation: "receive",
-      registry: rip.said!,
-      sender: holder.hab.pre,
-      event: event.said!,
-      opening: openingFile,
-      messages: [files.output, newcomerContribution],
-    });
-    assert(provisioned.operation === "receive");
-    assertEquals(provisioned.received, true);
+    yield* newcomerRuntime.reactor.processBytes(catchUp);
+    const [provisioning] = newcomerRoot.pending();
+    assertEquals([provisioning.recipient, provisioning.gid], [newcomer.member.pre, holder.hab.pre]);
+    // The newcomer holds no opening; it reproduces the accepted BUP commitment from the root and ACDC hint.
+    assertEquals(newcomerRoot.receive(provisioning.said), true);
     const provisionedRoot = newcomerHab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!;
     assertEquals(provisionedRoot.qb64, root.qb64);
-
     // The provisioned member opens a later accepted event without another DH operation or history rewrite.
     yield* intakeAll(later.raw);
     assertEquals(newcomer.store.head(rip.said!)!.qb64, later.said!);
