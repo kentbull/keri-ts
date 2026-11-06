@@ -17,7 +17,17 @@
  */
 import { startServer } from "@keri-ts/hosting";
 import { type ProtocolHandler } from "@keri-ts/hosting";
-import { concatBytes, Counter, CtrDexV2, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import {
+  blake2bDigest,
+  concatBytes,
+  Counter,
+  CtrDexV2,
+  parseBytes,
+  ParserError,
+  Prefixer,
+  SerderKERI,
+  Vrsn_2_0,
+} from "cesr-ts";
 import { call, type Operation, run, sleep, spawn, type Task } from "effection";
 import {
   acceptedEventReplayMessage,
@@ -37,7 +47,6 @@ import {
   ValidationError,
 } from "keri-ts/runtime";
 import { readFileSync } from "node:fs";
-import { blake2b } from "npm:@noble/hashes@1.8.0/blake2";
 import {
   BootApiError,
   RegistryAdmin,
@@ -1631,7 +1640,7 @@ export class BootService {
       );
     }
     if (count <= 0) return [];
-    const digest = blake2b(new TextEncoder().encode(seed), { dkLen: 8 });
+    const digest = blake2bDigest(new TextEncoder().encode(seed), 8);
     const start = Number(digest.reduce((value, byte) => (value << 8n) | BigInt(byte), 0n) % BigInt(ordered.length));
     return Array.from({ length: count }, (_, index) => ordered[(start + index) % ordered.length]);
   }
