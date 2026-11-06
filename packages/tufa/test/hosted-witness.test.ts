@@ -1,5 +1,5 @@
 /** Actual private/public backend lifecycle and controller protocol use; no substituted service objects. */
-import { Encrypter, Matter, MtrDex, parseBytes, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
+import { Matter, parseBytes, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import {
@@ -15,7 +15,6 @@ import {
 import { TOTP } from "npm:otpauth@9.4.1";
 import { mailboxAddCommand } from "../src/cli/commands/mailbox.ts";
 import { rotateWithCredentialsCommand } from "../src/cli/commands/rotate.ts";
-import { HostedWitnessBaser } from "../src/roles/hosted-witness-store.ts";
 import { runHostedWitnesses } from "../src/roles/hosted-witness.ts";
 
 /** Select distinct local ports before opening the real listeners. */
@@ -174,20 +173,8 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         yield* settleRuntimeIngress(runtime, [receiptBytes]);
         assertEquals(hby.db.fullyWitnessed(controller.kever!.serder), true);
 
-        // The provider stores the seed as plaintext. A legacy record encrypted to the witness's own
-        // key migrates on reopen; the same code and witness AID must still work.
+        // Reopen the actual provider stores; the same encrypted code and witness AID must still work.
         yield* server!.halt();
-        const seedMatter = () => new Matter({ raw: new TextEncoder().encode(secret), code: MtrDex.Ed25519_Seed }).qb64b;
-        const allocations = new HostedWitnessBaser({ name: options.name, headDirPath: folder });
-        try {
-          assertEquals(yield* allocations.reopen(), true);
-          const record = allocations.witnesses.get([first.eid])!;
-          assertEquals(record.code === secret, true);
-          record.code = new Encrypter({ verkey: first.eid }).encrypt({ ser: seedMatter() }).qb64;
-          allocations.witnesses.pin([first.eid], record);
-        } finally {
-          yield* allocations.close();
-        }
         yield* start();
         const interaction = controller.interact();
         const resumed = yield* call(() => post(interaction, true));
