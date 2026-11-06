@@ -185,6 +185,11 @@ Test wallets must hold runtime-owned stores in a live task: `run()` returning cl
 default, so launchers keep one env block for both implementations (store identity:
 `--name/--head-dir/--passcode`). `test/integration/kf-boot-e2e.test.ts` runs every role
 as a subprocess and owns the `--session` recovery proof (~40s).
+Suite A (`test/contract/boot-service.contract.test.ts`) runs one assertion set against
+the TS boot service and, with `KF_BOOT_CONTRACT_PYTHON_BIN`, upstream kf-boot (quotas
+lifted via Python-only env). Keep provisioning "in flight" with accept-and-hang
+backends, never refused ports: hio's macOS TCP client crashes kf-boot on refusal.
+Shared provider/wallet helpers live in `test/contract/kf-provider.ts`.
 
 ## Packaging and release
 
