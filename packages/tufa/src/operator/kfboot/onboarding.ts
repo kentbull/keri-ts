@@ -1,5 +1,5 @@
-/** Finite KF account onboarding over borrowed protocol owners and explicit encrypted credentials. */
-import { concatBytes, Encrypter, Matter, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+/** Finite KF account onboarding over borrowed protocol owners and explicit witness credentials. */
+import { concatBytes, Matter, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, sleep } from "effection";
 import {
   acceptedEventReplayMessage,
@@ -20,12 +20,16 @@ export interface KfAllocation {
   url: string;
   oobis: string[];
 }
-/** The service-encrypted seed and its historical recipient key; never plaintext seed material. */
+/**
+ * One witness's TOTP seed, stored as plaintext base32 in a 0600 file.
+ *
+ * The seed is encrypted only in transit (the witness's registration response).
+ * Storing it under an account key would bind it to a key that rotation erases.
+ */
 interface WitnessCredential {
   eid: string;
   url: string;
-  cipher: string;
-  pubs: string[];
+  secret: string;
 }
 interface Credentials {
   account: string;
@@ -83,72 +87,78 @@ function allocation(value: unknown, account: string): KfAllocation {
   return { eid, url: endpoint, oobis };
 }
 
-/** Read only an explicitly selected artifact; ciphertext remains bound to the local account. */
-function credentials(account: Hab, path: string): Credentials {
-  if (!account.mgr.aeid || !account.mgr.seed) {
-    throw new ValidationError("Witness credentials require an unlocked encrypted Keeper.");
+const TOTP_SECRET = /^[A-Z2-7]{32}$/;
+
+/** Open one transit ciphertext (a qb64 Ed25519_Seed-coded seed) with the account key it names. */
+function decryptSeed(account: Hab, cipher: string, pubs: string[]): string {
+  const plain = account.mgr.decrypt(cipher, { pubs });
+  try {
+    const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
+    if (!TOTP_SECRET.test(secret)) throw new ValidationError("Invalid witness credential.");
+    return secret;
+  } finally {
+    plain.fill(0);
   }
+}
+
+/**
+ * One-time migration of a row written when credentials were stored encrypted to an account key.
+ *
+ * Only keys the Keeper still holds can open it; older rotated-away keys are erased.
+ */
+function migratedSecret(account: Hab, eid: string, row: Record<string, unknown>): string {
+  if (!Array.isArray(row.pubs) || row.pubs.length !== 1 || typeof row.pubs[0] !== "string") {
+    throw new ValidationError("Witness credential requires its exact recipient public key.");
+  }
+  try {
+    return decryptSeed(account, bootText(row.cipher, "ciphertext"), row.pubs);
+  } catch (error) {
+    if (error instanceof ValidationError) throw error;
+    throw new ValidationError(
+      `Encrypted witness credential for ${eid} needs an account key this Keeper no longer holds. `
+        + "Re-run `tufa infra kf onboard` with the same session to re-register and recover it.",
+    );
+  }
+}
+
+/** Read only an explicitly selected artifact, rewriting a legacy encrypted file as plaintext once. */
+function credentials(account: Hab, path: string): Credentials {
   const raw = bootObject(JSON.parse(readFileSync(path, "utf8")), "witness credential artifact");
   if (raw.account !== account.pre || !Array.isArray(raw.witnesses)) {
     throw new ValidationError("Witness credentials belong to another account.");
   }
-  return {
+  let migrated = false;
+  const saved = {
     account: account.pre,
     provider: url(raw.provider),
     server: aid(raw.server),
     witnesses: raw.witnesses.map(value => {
-      const row = bootObject(value, "encrypted witness credential");
-      if (!Array.isArray(row.pubs) || row.pubs.length !== 1 || typeof row.pubs[0] !== "string") {
-        throw new ValidationError("Witness credential requires its exact recipient public key.");
+      const row = bootObject(value, "witness credential"), eid = aid(row.eid);
+      let secret = row.secret;
+      if (secret === undefined && row.cipher !== undefined) {
+        secret = migratedSecret(account, eid, row);
+        migrated = true;
       }
-      return { eid: aid(row.eid), url: url(row.url), cipher: bootText(row.cipher, "ciphertext"), pubs: row.pubs };
+      if (typeof secret !== "string" || !TOTP_SECRET.test(secret)) {
+        throw new ValidationError("Invalid witness credential.");
+      }
+      return { eid, url: url(row.url), secret };
     }),
   };
+  if (migrated) saveCredentials(path, saved);
+  return saved;
 }
-/** Produce fresh receipt codes without exposing or persisting decrypted seeds. */
+/** Produce fresh receipt codes from the retained plaintext seeds. */
 export function loadKfWitnessAuths(account: Hab, path: string): WitnessAuthMap {
   const saved = credentials(account, path), auths: WitnessAuthMap = {};
   const timestamp = Date.now();
   for (const row of saved.witnesses) {
-    const plain = account.mgr.decrypt(row.cipher, { pubs: row.pubs });
-    try {
-      const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
-      if (!/^[A-Z2-7]{32}$/.test(secret)) throw new ValidationError("Invalid encrypted witness credential.");
-      auths[row.eid] = new TOTP({ secret }).generate({ timestamp }) + "#" + new Date(timestamp).toISOString();
-    } finally {
-      plain.fill(0);
-    }
+    auths[row.eid] = new TOTP({ secret: row.secret }).generate({ timestamp }) + "#" + new Date(timestamp).toISOString();
   }
   return auths;
 }
-/**
- * Re-encrypt retained witness credentials to the account's next signing key before a rotation.
- *
- * Ciphertext is bound to one account public key. Keeper rotation erases the
- * previous lot's private keys, so credentials left on an older key become
- * unreadable after the second rotation. Rewrapping to the pre-rotated next key
- * keeps them readable both if the rotation commits and if it does not.
- */
-export function rewrapKfWitnessCredentials(account: Hab, path: string): void {
-  const saved = credentials(account, path);
-  const next = account.mgr.ks.sits.get(account.pre)?.nxt.pubs ?? [];
-  if (!next.length) throw new ValidationError("Witness credential rotation requires a next signing key.");
-  const target = next[0];
-  if (saved.witnesses.every(row => row.pubs[0] === target)) return;
-  const encrypter = new Encrypter({ verkey: target });
-  const witnesses = saved.witnesses.map(row => {
-    if (row.pubs[0] === target) return row;
-    const plain = account.mgr.decrypt(row.cipher, { pubs: row.pubs });
-    try {
-      return { ...row, cipher: encrypter.encrypt({ ser: plain }).qb64, pubs: [target] };
-    } finally {
-      plain.fill(0);
-    }
-  });
-  saveCredentials(path, { ...saved, witnesses });
-}
 
-/** Replace only ciphertext artifacts; an interruption cannot leave half-written authorization material. */
+/** Replace the whole owner-only (0600) file; an interruption cannot leave half-written seeds. */
 function saveCredentials(path: string, saved: Credentials): void {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
   writeFileSync(temporary, JSON.stringify(saved) + "\n", { flag: "wx", mode: 0o600 });
@@ -177,7 +187,7 @@ export function* onboardKfAccount(options: KfOnboardingOptions): Operation<KfOnb
     onboard(options),
     (function*(): Operation<never> {
       yield* sleep(options.timeoutMs);
-      throw new ValidationError("KF onboarding timed out; reuse the explicit session and encrypted credentials.");
+      throw new ValidationError("KF onboarding timed out; reuse the explicit session and witness credentials.");
     })(),
   ]);
 }
@@ -247,7 +257,7 @@ function* onboard(
     saved.provider !== client.discovery.provider || saved.server !== server
     || saved.witnesses.some(row => !witnesses.some(wit => wit.eid === row.eid && wit.url === row.url))
   ) {
-    throw new ValidationError("Encrypted credentials do not match this provider allocation.");
+    throw new ValidationError("Witness credentials do not match this provider allocation.");
   }
   const ingest = function*(bytes: Uint8Array): Operation<void> {
     for (const frame of parseBytes(bytes)) yield* client.protocol.dispatch(frame, { local: false, escrows: true });
@@ -265,8 +275,8 @@ function* onboard(
   }
   for (const witness of witnesses) {
     if (saved.witnesses.some(row => row.eid === witness.eid)) continue;
-    // Save the encrypted registration response before rotation changes the current signing key.
-    if (matching) throw new ValidationError("Rotated account requires its retained encrypted witness credentials.");
+    // Save the registration seed before rotation changes the current signing key.
+    if (matching) throw new ValidationError("Rotated account requires its retained witness credentials.");
     const inception = acceptedEventReplayMessage(client.hby, account.pre, 0, Vrsn_2_0).message;
     const form = new FormData();
     form.set("kel", new Blob([new Uint8Array(inception)]), "inception.cesr");
@@ -280,17 +290,10 @@ function* onboard(
     });
     if (!registered.ok) throw new ValidationError(`Witness registration failed with HTTP ${registered.status}.`);
     const registration = bootObject(JSON.parse(new TextDecoder().decode(registered.body)), "registration");
-    const cipher = bootText(registration.totp, "encrypted TOTP");
+    // The seed is encrypted to the inception key only in transit.
     const pubs = [(parseBytes(inception)[0].body as SerderKERI).verfers[0].qb64];
-    const plain = account.mgr.decrypt(cipher, { pubs });
-    try {
-      if (!/^[A-Z2-7]{32}$/.test(new TextDecoder().decode(new Matter({ qb64b: plain }).raw))) {
-        throw new ValidationError("Invalid witness credential.");
-      }
-    } finally {
-      plain.fill(0);
-    }
-    saved.witnesses.push({ eid: witness.eid, url: witness.url, cipher, pubs });
+    const secret = decryptSeed(account, bootText(registration.totp, "encrypted TOTP"), pubs);
+    saved.witnesses.push({ eid: witness.eid, url: witness.url, secret });
     saveCredentials(credentialFile, saved);
   }
   // Retry the accepted rotation and its missing receipts without creating another rotation.

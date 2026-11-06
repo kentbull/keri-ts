@@ -275,8 +275,8 @@ tufa infra kf onboard --name wallet --passcode "$PASSCODE" \
   --profile 3-of-4 --credentials ./witness-credentials.json
 ```
 
-The command registers with the allocated witnesses, retains their encrypted
-registration credentials, rotates onto the selected pool and collects ordinary
+The command registers with the allocated witnesses, retains their registration
+TOTP seeds, rotates onto the selected pool and collects ordinary
 witness receipts. It introduces the account to the watcher, completes the
 provider account, requires actual matching watcher observations at the selected
 quorum, then activates registry-service permissions. Output contains public
@@ -285,9 +285,11 @@ Allocation alone does not establish any of these later results.
 
 Retain the returned `sessionId` and `server`. Retry with `--session ID` and
 `--server-aid AID`, the same aliases and credentials file. An already accepted
-matching witness rotation is reused. The file contains ciphertext and public
-recipient keys; it requires the original encrypted Keeper's retained keys, and
-contains no decrypted TOTP seed or separate operation ledger.
+matching witness rotation is reused. The seeds arrive encrypted to the account's
+inception key but are stored in the file as plaintext base32 (mode 0600), so the
+file survives any number of rotations; protect it like the Keeper. It holds no
+separate operation ledger. A file from the earlier encrypted format is rewritten
+as plaintext on first use while its key is still held; otherwise re-run onboarding.
 
 Use the same credentials after reopening the store:
 

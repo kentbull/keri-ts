@@ -2,7 +2,6 @@
 import type { Operation } from "effection";
 import { parseStringOption, rotateCommand } from "keri-ts/cli";
 import { ValidationError } from "keri-ts/runtime";
-import { rewrapKfWitnessCredentials } from "../../operator/kfboot/onboarding.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
 
 /** Borrow the core command's single Habery and preserve its ordinary code/prompt path. */
@@ -17,8 +16,6 @@ export function* rotateWithCredentialsCommand(args: Record<string, unknown>): Op
         if (witnesses.some(witness => !auths[witness])) {
           throw new ValidationError("Witness credentials do not cover the selected rotation witnesses.");
         }
-        // This rotation retires the current key's predecessor; keep the credentials readable.
-        rewrapKfWitnessCredentials(hab, file);
         return auths;
       },
     },
