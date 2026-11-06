@@ -181,6 +181,10 @@ Completed sessions stay readable by the ephemeral signer and the account and
 Service activation enrolls `cloneDelegation`+`clonePreIter` text KEL and fails the
 operation (409) unless the ack echoes `aid`, `[role]` and the configured service AID.
 Test wallets must hold runtime-owned stores in a live task: `run()` returning closes them.
+`tufa boot backend` flags have no commander defaults: flag > `KF_BOOT_*` > kf-boot
+default, so launchers keep one env block for both implementations (store identity:
+`--name/--head-dir/--passcode`). `test/integration/kf-boot-e2e.test.ts` runs every role
+as a subprocess and owns the `--session` recovery proof (~40s).
 
 ## Packaging and release
 
