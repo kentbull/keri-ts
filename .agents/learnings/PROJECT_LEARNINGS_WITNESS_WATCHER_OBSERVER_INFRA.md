@@ -172,9 +172,11 @@ surfaces are the contract, Python is the reference. Route handlers are synchrono
 Exchanger handlers whose outcome is keyed by the exn SAID, so concurrent surface
 requests never share a reply; the async worker re-reads the session after every
 backend call. Records keep kf-boot's snake_case fields because payloads expose them.
-Python-only by justification: per-IP limits/tiers, sweeper/cleanup CLI, capacity
-counters; expiry is on access only and closed rows are never purged, so a closed but
-uncleaned session still blocks a new start (as kf-boot with its runner disabled).
+Python-only by justification: per-IP limits/tiers, the cleanup-task queue and CLI,
+capacity counters. The worker loop runs kf-boot's session sweep (expire past-due,
+delete closed sessions' watcher+witnesses, then stamp `resources_cleaned_at`); until
+that stamp a closed session blocks a new start with 409, and a failed teardown retries
+next sweep. Rows are never purged.
 The shared host answers CORS preflight `OPTIONS` 204 (kf-boot 200): both 2xx.
 Completed sessions stay readable by the ephemeral signer and the account and
 `/onboarding/complete` is idempotent on them; `--session` recovery depends on it.

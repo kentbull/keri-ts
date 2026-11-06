@@ -16,6 +16,7 @@ import {
   FetchHttpClient,
   type Hab,
   type Habery,
+  type HttpClient,
   Receiptor,
   systemClock,
 } from "keri-ts/runtime";
@@ -48,7 +49,13 @@ export interface Provider {
 export async function startProvider(
   folder: string,
   extra: Record<string, string> = {},
-  { witnessCount = 4, registries: withRegistries = false, impl = "typescript" as "typescript" | "python" } = {},
+  { witnessCount = 4, registries: withRegistries = false, impl = "typescript" as "typescript" | "python", http }: {
+    witnessCount?: number;
+    registries?: boolean;
+    impl?: "typescript" | "python";
+    /** Backend admin HTTP owner for the TypeScript boot service (fault injection). */
+    http?: HttpClient;
+  } = {},
 ): Promise<Provider> {
   const witnesses: RunningService[] = [];
   for (let index = 0; index < witnessCount; index++) {
@@ -84,7 +91,9 @@ export async function startProvider(
   const stopBoot = impl === "typescript"
     ? (() => {
       const config = bootServiceConfig(values);
-      const task = run(() => runBootService({ name: "boot", headDirPath: folder, passcode: SERVICE_PASSCODE, config }));
+      const task = run(() =>
+        runBootService({ name: "boot", headDirPath: folder, passcode: SERVICE_PASSCODE, config, http })
+      );
       return () => task.halt();
     })()
     : await spawnPythonBoot(folder, values);

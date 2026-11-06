@@ -8,9 +8,10 @@
  * in the boot service's Habery; these tables hold only provider bookkeeping.
  *
  * TypeScript divergences, deliberately out of scope (Python-only by justification): per-IP
- * quotas, cleanup tasks and their sweeper, capacity counters. Sessions and accounts expire
- * on access only, and closed rows are never purged, so completed sessions stay readable
- * for `tufa infra kf onboard --session` recovery.
+ * quotas, the durable cleanup-task queue, capacity counters. The boot service's sweep
+ * reclaims closed sessions' resources by scanning sessions; accounts expire on access only,
+ * and rows are never purged, so completed sessions stay readable for
+ * `tufa infra kf onboard --session` recovery.
  */
 import type { Operation } from "effection";
 import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
@@ -377,6 +378,11 @@ export class BootServiceStore {
   /** Every session bound to this account, newest first. */
   listSessionsForAccount(aid: string): SessionRecord[] {
     return newest([...this.db.sessions.getTopItemIter()].map(([, r]) => r).filter(r => r.account_aid === aid));
+  }
+
+  /** Every session id, for the cleanup sweep. */
+  listSessionIds(): string[] {
+    return [...this.db.sessions.getTopItemIter()].map(([, record]) => record.session_id);
   }
 
   /** Remove one session row. */
