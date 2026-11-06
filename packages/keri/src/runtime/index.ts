@@ -384,6 +384,11 @@ export {
   type WitnessReceiptRunResult,
 } from "../app/witness/receipting.ts";
 export {
+  registerWithWitness,
+  type WitnessRegistration,
+  type WitnessRegistrationTarget,
+} from "../app/witness/registration.ts";
+export {
   BUILD_METADATA,
   DISPLAY_VERSION,
   PACKAGE_VERSION,

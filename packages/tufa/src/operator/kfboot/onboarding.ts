@@ -1,11 +1,11 @@
 /** Finite KF account onboarding over borrowed protocol owners and explicit witness credentials. */
-import { concatBytes, Matter, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
-import { call, type Operation, race, sleep } from "effection";
+import { concatBytes, parseBytes, Prefixer, Vrsn_2_0 } from "cesr-ts";
+import { type Operation, race, sleep } from "effection";
 import {
-  acceptedEventReplayMessage,
   type Hab,
   isLocalGroupHab,
   type Receiptor,
+  registerWithWitness,
   reply,
   ValidationError,
   type WitnessAuthMap,
@@ -23,8 +23,9 @@ export interface KfAllocation {
 /**
  * One witness's TOTP seed, stored as plaintext base32 in a 0600 file.
  *
- * The seed is encrypted only in transit (the witness's registration response).
- * Storing it under an account key would bind it to a key that rotation erases.
+ * The seed is encrypted only in transit (the witness's registration response, to the
+ * account's current keys), as in Locksmith. Storing it under an account key would bind
+ * it to a key that rotation erases; a lost row is recovered by re-registering.
  */
 interface WitnessCredential {
   eid: string;
@@ -88,18 +89,6 @@ function allocation(value: unknown, account: string): KfAllocation {
 }
 
 const TOTP_SECRET = /^[A-Z2-7]{32}$/;
-
-/** Open one transit ciphertext (a qb64 Ed25519_Seed-coded seed) with the account key it names. */
-function decryptSeed(account: Hab, cipher: string, pubs: string[]): string {
-  const plain = account.mgr.decrypt(cipher, { pubs });
-  try {
-    const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
-    if (!TOTP_SECRET.test(secret)) throw new ValidationError("Invalid witness credential.");
-    return secret;
-  } finally {
-    plain.fill(0);
-  }
-}
 
 /** Read only an explicitly selected artifact holding plaintext seeds. */
 function credentials(account: Hab, path: string): Credentials {
@@ -244,24 +233,8 @@ function* onboard(
   }
   for (const witness of witnesses) {
     if (saved.witnesses.some(row => row.eid === witness.eid)) continue;
-    // Save the registration seed before rotation changes the current signing key.
-    if (matching) throw new ValidationError("Rotated account requires its retained witness credentials.");
-    const inception = acceptedEventReplayMessage(client.hby, account.pre, 0, Vrsn_2_0).message;
-    const form = new FormData();
-    form.set("kel", new Blob([new Uint8Array(inception)]), "inception.cesr");
-    const encoded = new Response(form);
-    const body = new Uint8Array(yield* call(() => encoded.arrayBuffer()));
-    const registered = yield* client.http.request(new URL("/aids", witness.url).href, {
-      method: "POST",
-      redirect: "error",
-      headers: { "Content-Type": encoded.headers.get("Content-Type")!, "CESR-DESTINATION": witness.eid },
-      body,
-    });
-    if (!registered.ok) throw new ValidationError(`Witness registration failed with HTTP ${registered.status}.`);
-    const registration = bootObject(JSON.parse(new TextDecoder().decode(registered.body)), "registration");
-    // The seed is encrypted to the inception key only in transit.
-    const pubs = [(parseBytes(inception)[0].body as SerderKERI).verfers[0].qb64];
-    const secret = decryptSeed(account, bootText(registration.totp, "encrypted TOTP"), pubs);
+    // Locksmith's registration: the full KEL, so a rotated account whose file lacks this row re-registers.
+    const { secret } = yield* registerWithWitness(account, witness, client.http);
     saved.witnesses.push({ eid: witness.eid, url: witness.url, secret });
     saveCredentials(credentialFile, saved);
   }

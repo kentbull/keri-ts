@@ -9,6 +9,8 @@ import {
   envelopeFromFrame,
   FetchHttpClient,
   messagize,
+  Receiptor,
+  registerWithWitness,
   settleRuntimeIngress,
   systemClock,
 } from "keri-ts/runtime";
@@ -427,6 +429,99 @@ Deno.test("KF witness backend follows witness-hk registration and receipt outcom
         assertEquals(credentials.totp, credentials.totps[0]);
         const keys = multi.kever!.verfers;
         assertEquals(secretOf(credentials.totps[0], [keys[0]]), secretOf(credentials.totps[1], [keys[1]]));
+      } finally {
+        yield* server.halt();
+        yield* runtime.close();
+        yield* hby.close();
+      }
+    });
+  } finally {
+    client.close();
+    await Deno.remove(folder, { recursive: true });
+  }
+});
+
+Deno.test("registerWithWitness registers and re-registers a rotated controller with the hosted witness", async () => {
+  const folder = await Deno.makeTempDir({ prefix: "tufa-kf-witness-register-" });
+  const [httpPort, bootPort] = ports();
+  const publicUrl = `http://127.0.0.1:${httpPort}`, bootUrl = `http://127.0.0.1:${bootPort}`;
+  const client = Deno.createHttpClient({});
+  const passcode = "abcdefghijklmnopqrstu";
+  const fetchAt = (url: string, init?: RequestInit) => fetch(url, { ...init, client });
+  try {
+    await run(function*() {
+      const hby = yield* createHabery({
+        name: "controller",
+        headDirPath: folder,
+        bran: passcode,
+        skipConfig: true,
+        skipSignator: true,
+      });
+      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const server = yield* spawn(() =>
+        runHostedWitnesses({
+          name: "provider",
+          headDirPath: folder,
+          passcode,
+          publicUrl,
+          httpPort,
+          httpHost: "127.0.0.1",
+          bootPort,
+        })
+      );
+      try {
+        const until = Date.now() + 10_000;
+        while (true) {
+          const health = yield* call(() =>
+            fetchAt(bootUrl + "/health").then(r => r.arrayBuffer().then(() => r.ok), () => false)
+          );
+          if (health) break;
+          if (Date.now() > until) throw new Error("Backend did not start");
+          yield* sleep(25);
+        }
+        const account = hby.makeHab("account");
+        const allocated = yield* call(() =>
+          fetchAt(bootUrl + "/witnesses", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ aid: account.pre }),
+          }).then(r => r.json() as Promise<{ eid: string; oobis: string[] }>)
+        );
+        const witness = { eid: allocated.eid, url: publicUrl };
+        const evidence = yield* call(() => fetchAt(allocated.oobis[0]).then(r => r.arrayBuffer()));
+        yield* settleRuntimeIngress(runtime, [new Uint8Array(evidence)]);
+        const receiptor = new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock);
+        const witnessed = function*(secret: string) {
+          const timestamp = Date.now();
+          const auths = {
+            [witness.eid]: new TOTP({ secret }).generate({ timestamp }) + "#" + new Date(timestamp).toISOString(),
+          };
+          yield* receiptor.receipt(account.pre, { sn: account.kever!.sn, auths });
+          return hby.db.fullyWitnessed(account.kever!.serder);
+        };
+
+        // Register at inception, then rotate onto the witness and twice more with the same secret.
+        const first = yield* registerWithWitness(account, witness, runtime.http);
+        assertEquals(first.oobi, allocated.oobis[0]);
+        assertEquals(first.secret.length, 32);
+        account.rotate({ adds: [witness.eid], toad: 1 });
+        assertEquals(yield* witnessed(first.secret), true);
+        for (let count = 0; count < 2; count++) {
+          account.rotate();
+          assertEquals(yield* witnessed(first.secret), true);
+        }
+
+        // The secret is lost: re-registration with the full KEL answers to the current keys.
+        const renewed = yield* registerWithWitness(account, witness, runtime.http);
+        assertEquals(renewed.secret.length, 32);
+        account.interact();
+        assertEquals(yield* witnessed(renewed.secret), true);
+
+        // A supplied batch secret (Locksmith's batch mode) is what the witness then uses.
+        const batch = new Secret({ size: 20 }).base32;
+        assertEquals((yield* registerWithWitness(account, witness, runtime.http, { secret: batch })).secret, batch);
+        account.interact();
+        assertEquals(yield* witnessed(batch), true);
       } finally {
         yield* server.halt();
         yield* runtime.close();

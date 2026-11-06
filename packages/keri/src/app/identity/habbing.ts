@@ -776,6 +776,22 @@ export class Hab {
   }
 
   /**
+   * Decrypt `ser` (sealed-box ciphertext, qb64 or raw) with the private keys of
+   * `verfers`, defaulting to this habitat's current accepted keys.
+   *
+   * KERIpy correspondence: `BaseHab.decrypt` delegating to `Manager.decrypt`.
+   * As there, every selected key opens the ciphertext in turn, so a
+   * multi-key habitat passes the single verfer the ciphertext was sealed to.
+   */
+  decrypt(ser: string | Uint8Array, verfers?: Verfer[]): Uint8Array {
+    const kever = this.kever;
+    if (!verfers && !kever) {
+      throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    }
+    return this.mgr.decrypt(ser, { verfers: verfers ?? kever!.verfers });
+  }
+
+  /**
    * Sign with accepted current keys. Group habitats use only their designated
    * member's latest single-key contribution, located in its accepted KEL.
    * No caller-selected key/index overrides are exposed here; rotation's
