@@ -1,5 +1,6 @@
 /** Lazy OOBI output borrows its Hab/keeper/database; metadata capture begins only on iterator acquisition. */
 import { DatabaseOperationError } from "../../core/errors.ts";
+import { genusFramed } from "../../core/genus-framing.ts";
 import { Roles } from "../../core/roles.ts";
 import { dgKey } from "../../db/core/keys.ts";
 import type { KelReplayRange } from "../../db/replay/kel-replay.ts";
@@ -30,7 +31,8 @@ export function oobiReplyMessages(
       const count = eids.length;
       const selected: string[] = [];
       for (let index = 0; index < count; index++) selected.push(eids[index]);
-      return (function*() {
+      // KELs, other parties' stored replies and fresh replies may legitimately differ in genus.
+      return genusFramed((function*() {
         const parts: Part[] = [], cloned = new Set<string>();
         const clone = (pre: string) => {
           if (!pre || cloned.has(pre)) return;
@@ -107,7 +109,7 @@ export function oobiReplyMessages(
               : hab.makeEndRole(part.eid, part.role, true);
           }
         }
-      })();
+      })());
     },
   };
 }

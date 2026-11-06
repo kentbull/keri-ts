@@ -36,6 +36,7 @@ import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/ru
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import { genusFramed } from "../../../../src/core/genus-framing.ts";
 
 import type { QueryRequest } from "../../../../src/core/cues.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
@@ -1127,6 +1128,52 @@ Deno.test("a v1 identifier keeps its KEL version and refuses conflicting v2 even
       assertThrows(() => hab.interact({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
       assertThrows(() => hab.rotate({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
       assertEquals(hab.kever!.sn, 2);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("hab replies and queries follow the KEL version and mixed streams carry genus selectors", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `habery-reply-version-${crypto.randomUUID()}`, temp: true });
+    try {
+      const modern = hby.makeHab("modern", undefined, { transferable: true });
+      const legacy = hby.makeHab("legacy", undefined, { transferable: true, version: Vrsn_1_0 });
+      const url = "http://127.0.0.1:5642";
+      for (const [hab, version] of [[modern, Vrsn_2_0], [legacy, Vrsn_1_0]] as const) {
+        assertEquals(hab.kelVersion, version);
+        for (
+          const message of [
+            hab.makeLocScheme(url),
+            hab.makeEndRole(hab.pre),
+            hab.query(hab.pre, hab.pre, { route: "ksn", q: {} }),
+          ]
+        ) {
+          const [frame] = parseBytes(message);
+          assertEquals(frame.body.pvrsn, version);
+          assertEquals(frame.gvrsn, version);
+        }
+      }
+
+      const kel = (pre: string) => [...hby.db.clonePreIter(pre)];
+      const single = [...kel(modern.pre), modern.makeLocScheme(url), modern.makeEndRole(modern.pre)];
+      assertEquals([...genusFramed(single)], single);
+
+      const mixed = [...single, ...kel(legacy.pre), legacy.makeLocScheme(url), modern.makeEndRole(legacy.pre)];
+      const framed = [...genusFramed(mixed)];
+      const text = new TextDecoder();
+      assertEquals(
+        framed.map((message) => text.decode(message.subarray(0, 8))).filter((head) => head.startsWith("-_AAA")),
+        [
+          text.decode(Counter.makeGVC(Vrsn_1_0)),
+          text.decode(Counter.makeGVC(Vrsn_2_0)),
+        ],
+      );
+      const frames = parseBytes(concatBytes(...framed));
+      assertEquals(frames.map((frame) => frame.body.pvrsn.major), [2, 2, 2, 1, 1, 2]);
+      assertEquals(frames.map((frame) => frame.gvrsn?.major), [2, 2, 2, 1, 1, 2]);
+      for (const frame of frames) assertNotEquals(frame.attachments.length, 0);
     } finally {
       yield* hby.close(true);
     }

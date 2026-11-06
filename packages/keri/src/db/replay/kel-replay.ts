@@ -1,4 +1,5 @@
 /** Inspectable KEL replay metadata; event bytes and read cursors remain consumption-owned. */
+import { genusFramed } from "../../core/genus-framing.ts";
 import type { Baser } from "../basing.ts";
 
 /** Captured prefix and inclusive first-seen ordinal range, in wire replay order. */
@@ -30,6 +31,11 @@ export class CapturedKelReplay implements Iterable<Uint8Array> {
 
   /** Open no cursor until requested; each range reader joins its cursor before yielding an event. */
   *[Symbol.iterator](): Generator<Uint8Array> {
+    // A delegator's KEL may use a different KERI version than the queried log.
+    yield* genusFramed(this.#ranges());
+  }
+
+  *#ranges(): Generator<Uint8Array> {
     for (const range of this.ranges) yield* this.#db.replayRange(range);
   }
 }
