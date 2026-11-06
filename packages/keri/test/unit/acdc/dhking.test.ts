@@ -64,7 +64,7 @@ import { Roles } from "../../../src/core/roles.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
 
-const unhex = (value: string) => Uint8Array.from(value.match(/../g)!, (pair) => parseInt(pair, 16));
+const unhex = (value: string) => Uint8Array.from(value.match(/../g)!, pair => parseInt(pair, 16));
 
 Deno.test("DHKE derives the Python root and UUIDs and refuses unbound or noncontributory inputs", () => {
   const context = {
@@ -113,7 +113,7 @@ Deno.test("DHKE derives the Python root and UUIDs and refuses unbound or noncont
 });
 
 Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected members", async () => {
-  await run(function* () {
+  await run(function*() {
     const members: { hby: Habery; member: Hab }[] = [];
     for (const name of ["issuer-0", "issuer-1", "issuee-0", "issuee-1"]) {
       const hby = yield* createHabery({
@@ -125,7 +125,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       yield* ensure(() => hby.close(true));
       members.push({ hby, member: hby.makeHab(name) });
     }
-    assertEquals(new Set(members.map((side) => side.member.pre)).size, 4);
+    assertEquals(new Set(members.map(side => side.member.pre)).size, 4);
     for (const source of members) {
       for (const target of members) {
         if (source === target) continue;
@@ -135,7 +135,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       }
     }
     const creations = members.map((side, index) => {
-      const signing = members.slice(index < 2 ? 0 : 2, index < 2 ? 2 : 4).map((peer) => peer.member.pre);
+      const signing = members.slice(index < 2 ? 0 : 2, index < 2 ? 2 : 4).map(peer => peer.member.pre);
       return side.hby.makeGroupHab("group", side.member, signing, signing, undefined, { isith: "2", nsith: "2" });
     });
     // Each group accepts the two independently owned inception contributions through ordinary KEL verification.
@@ -190,18 +190,18 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       });
     }
     const issuers = actors.slice(0, 2), issuees = actors.slice(2), lead = issuers[0], holder = issuees[0];
-    const intakeAll = function* (wire: Uint8Array, local = false) {
+    const intakeAll = function*(wire: Uint8Array, local = false) {
       for (const side of actors) yield* side.reactor.processBytes(wire, { local });
     };
-    const groupInteraction = function* (peers: typeof issuers, data: unknown[] = []) {
+    const groupInteraction = function*(peers: typeof issuers, data: unknown[] = []) {
       const state = peers[0].hab.kever!;
       const body = interactEvent(peers[0].hab.pre, state.said, state.sn + 1, data, { version: Vrsn_2_0 });
-      const wire = messagize(body, { sigers: peers.flatMap((side) => side.hab.sign(body.raw, true)), gvrsn: Vrsn_2_0 });
+      const wire = messagize(body, { sigers: peers.flatMap(side => side.hab.sign(body.raw, true)), gvrsn: Vrsn_2_0 });
       yield* intakeAll(wire, true);
       for (const side of actors) assertEquals(side.hby.db.getKever(body.pre!)!.said, body.said);
       return body;
     };
-    const anchor = function* (event: SerderACDC) {
+    const anchor = function*(event: SerderACDC) {
       const regid = event.regid ?? event.said!;
       const body = yield* groupInteraction(issuers, [{ i: regid, s: event.sad!.n, d: event.said! }]);
       yield* intakeAll(event.raw);
@@ -220,7 +220,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         new Prefixer({ qb64: peers[0].hab.pre }),
         NumberPrimitive.fromNum(0n),
         new Diger({ qb64: peers[0].hab.kever!.lastEst.d }),
-        peers.flatMap((side) => side.hab.sign(body.raw, true)),
+        peers.flatMap(side => side.hab.sign(body.raw, true)),
       );
     const queries: Uint8Array[] = [], responses: Uint8Array[] = [];
     // Poster delivers to actual member endpoints; group endpoints fan out to both signing members.
@@ -229,7 +229,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         hostedPrefixes: [side.member.pre, side.hab.pre],
         serviceHab: side.member,
       });
-      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
         const incoming = request.method === "POST" ? parseBytes(await readCesrRequestBytes(request.clone())) : [];
         const response = await handler(request);
         for (const frame of incoming) {
@@ -294,7 +294,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       runAgentRuntime(issuers[1].runtime, { hab: issuers[1].member, pollMailbox: true })
     );
     while (
-      issuees.some((side) =>
+      issuees.some(side =>
         !side.exc.pendingGrant(grant.said!, {
           xid: grant.said!,
           sender: lead.hab.pre,
@@ -302,7 +302,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         })
       )
     ) yield* sleep(10);
-    const deadlines = actors.map((side) => side.runtime.exc.exchangeDeadline(grant));
+    const deadlines = actors.map(side => side.runtime.exc.exchangeDeadline(grant));
     assertEquals(responses, [], "receiving the full Grant does not approve recipient setup");
     const receiving = yield* spawn(() =>
       runGroupDerivedIssuance(holder.runtime, holder.wallet, {
@@ -330,7 +330,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     let bup: SerderKERI | undefined;
     while (!bup) {
       bup = [...issuerPeer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
-        .find((body) => body.route === "/multisig/bup");
+        .find(body => body.route === "/multisig/bup");
       if (!bup) yield* sleep(10);
     }
     const nests = loadNests(issuerPeer.hby.db, bup.said!);
@@ -381,8 +381,8 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       true,
     );
     const delivered = [...issuerPeer.hby.db.exns.getTopItemIter()].map(([, body]) => body)
-      .filter((body) => body.route === "/multisig/ipex-proof");
-    assertEquals(delivered.map((body) => body.pre), [lead.member.pre]);
+      .filter(body => body.route === "/multisig/ipex-proof");
+    assertEquals(delivered.map(body => body.pre), [lead.member.pre]);
     // The file fallback carries the same exact wrapper.
     assertEquals(parseBytes(issued.proof).at(-1)!.body.said, delivered[0].said);
     yield* peerHost.halt();
@@ -453,7 +453,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }
 
     // The same held view becomes one exact group presentation file, with ordinary sender contributions.
-    const presentationHistory = actors.map((side) => side.hby.db.enst.get(grant.said!));
+    const presentationHistory = actors.map(side => side.hby.db.enst.get(grant.said!));
     const heldBeforePresentation = actors.map((side) => side.wallet.inventory().held);
     const transferredView = yield* call(() => collectPayload(framePayload(loadNests(holder.hby.db, grant.said!)[0])));
     const viewSelection = { transferred: transferredView, presenterAuthorized: true };
@@ -511,7 +511,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const recipientRoot = new RegistryRoot(recipient.hby, recipient.runtime.acdc!, recipient.runtime.notifier);
     recipient.runtime.exc.addHandler(recipientRoot);
     const retainedHistory = recipient.hby.db.enst.get(grant.said!);
-    assertEquals(holderRoot.members(holder.hab.pre), issuees.map((side) => side.member.pre));
+    assertEquals(holderRoot.members(holder.hab.pre), issuees.map(side => side.member.pre));
     const copy = holderRoot.prepare(holder.member, recipient.member.pre, holder.hab.pre, rip.said!, {
       td: credential.said!,
     });
@@ -550,15 +550,15 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     assertEquals(recipient.runtime.exc.exchangeDeadline(grant), deadlines[3]);
 
     // A next-key participant is not eligible until a real accepted rotation makes it a signer.
-    const newcomer = issuers[1], previousSigningMembers = issuees.map((side) => side.member.pre);
+    const newcomer = issuers[1], previousSigningMembers = issuees.map(side => side.member.pre);
     const expandedMembers = [...previousSigningMembers, newcomer.member.pre];
-    const rotateHolder = function* (signing: string[], rotating: string[]) {
-      const proposals = issuees.map((side) =>
+    const rotateHolder = function*(signing: string[], rotating: string[]) {
+      const proposals = issuees.map(side =>
         side.hby.rotateGroupHab("group", signing, rotating, { isith: "2", nsith: "2" })
       );
       assertEquals(proposals[0].serder.raw, proposals[1].serder.raw);
       yield* intakeAll(
-        messagize(proposals[0].serder, { sigers: proposals.flatMap((part) => part.sigers), gvrsn: Vrsn_2_0 }),
+        messagize(proposals[0].serder, { sigers: proposals.flatMap(part => part.sigers), gvrsn: Vrsn_2_0 }),
         true,
       );
       for (const side of issuees) {
@@ -643,7 +643,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
 });
 
 Deno.test("DHKE requires explicit consent and complete peer proofs before encrypted two-party issuance", async () => {
-  await run(function* () {
+  await run(function*() {
     // Habitats stamp DH messages with wall time, so the receiver clock may only run ahead of it.
     let skew = 0;
     const issuerHby = yield* createHabery({
@@ -670,7 +670,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {
         now: () => Date.now() + skew,
         setTimeout,
-        clearTimeout: (timer) => clearTimeout(timer as number),
+        clearTimeout: timer => clearTimeout(timer as number),
       }, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
@@ -733,8 +733,8 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
         "retained Grant intake does not approve runtime DH",
       );
     }
-    const deadlines = parties.map((party) => party.runtime.exc.exchangeDeadline(grant));
-    const originalBodies = parties.map((party) => loadNests(party.hby.db, grant.said!).map((nest) => nest.body.raw));
+    const deadlines = parties.map(party => party.runtime.exc.exchangeDeadline(grant));
+    const originalBodies = parties.map(party => loadNests(party.hby.db, grant.said!).map(nest => nest.body.raw));
     skew += 11000;
     assertEquals(left.dh.approve(grant.said!), grant.said!);
     const started = left.dh.start(grant.said!);
@@ -750,7 +750,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assertEquals(right.dh.processQuery(envelopeFromFrame(parseBytes(query)[0])).kind, "drop");
     assertEquals(right.dh.outgoing.length, 0, "receipt without consent creates no DH reply");
     assertEquals(right.dh.approve(grant.said!), grant.said!);
-    const deliverPartial = function* (party: typeof left, raw: Uint8Array, index: number) {
+    const deliverPartial = function*(party: typeof left, raw: Uint8Array, index: number) {
       const frame = parseBytes(raw)[0],
         envelope = envelopeFromFrame(frame),
         proof = envelope.tsgs[0],
@@ -822,7 +822,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
       assertEquals(party.hby.db.exns.get(grant.said!)!.raw, grant.raw);
       assertEquals(party.runtime.exc.exchangeDeadline(grant), deadlines[index]);
       const finished = loadNests(party.hby.db, grant.said!);
-      assertEquals(finished.map((nest) => nest.body.raw), originalBodies[index]);
+      assertEquals(finished.map(nest => nest.body.raw), originalBodies[index]);
       assertEquals(envelopeFromFrame(finished[0]).bsqs[0].d.nonce, opening.d.nonce);
       assertEquals(party.hby.db.erpy.get(grant.said!), null, "setup/issuance creates no Admit");
       assertEquals(party.store.head(rip.said!)!.qb64, bup.said!);
@@ -859,8 +859,10 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     const observedQueries: Uint8Array[] = [];
     for (const [index, side] of finite.entries()) {
       const handler = createProtocolHandler(side.runtime, { hostedPrefixes: [side.hab.pre], serviceHab: side.hab });
-      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async (request) => {
-        const incoming = request.method === "POST" ? parseBytes(await readCesrRequestBytes(request.clone())) : [];
+      const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen() {} }, async request => {
+        const incoming = request.method === "POST"
+          ? parseBytes(await readCesrRequestBytes(request.clone()))
+          : [];
         const response = await handler(request);
         if (index === 1) {
           for (const frame of incoming) {
@@ -1017,6 +1019,6 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     yield* recipient.runtime.postman.process();
     assertEquals((yield* recipient.runtime.postman.wait(delivery)).kin, "sent");
     yield* call(() => recipient.wallet.recordAdmission(prepared.grant, consented.admit.said!, { consent: true }));
-    assertEquals(recipient.wallet.inventory().held.map((record) => record.grant), [prepared.grant]);
+    assertEquals(recipient.wallet.inventory().held.map(record => record.grant), [prepared.grant]);
   });
 });
