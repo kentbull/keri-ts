@@ -34,8 +34,7 @@
     "effection": "npm:effection@^3.6.0",
     "@keri-ts/verifier": "../verifier/mod.ts",
     "@keri-ts/hosting": "../hosting/mod.ts",
-    "@keri-ts/wallet": "../wallet/mod.ts",
-    "@keri-ts/multisync/v2": "../multisync/v2/mod.ts"
+    "@keri-ts/wallet": "../wallet/mod.ts"
   },
   "compilerOptions": {
     "lib": [
