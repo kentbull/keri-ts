@@ -1,7 +1,7 @@
-"""Real fork mailbox host and independent controller packets for KRAM interop.
+"""Real KERIpy witness-hosted mailbox and independent controller packets for KRAM interop.
 
 Fixture commands observe stores or send captured controller packets over HTTP.
-Protocol ingress always uses setupMailbox/HttpEnd and the normal parser/doers.
+Protocol ingress always uses setupWitness/HttpEnd and the normal parser/doers.
 """
 import base64
 from contextlib import ExitStack
@@ -21,11 +21,10 @@ from hio.core import http
 from keri import Kinds, Vrsn_1_0, Vrsn_2_0
 from keri.app import openCF, openHby
 from keri.app.agenting import Receiptor
-from keri.app.mailboxing import MailboxStart, setupMailbox
+from keri.app.indirecting import WitnessStart, setupWitness
 from keri.app.oobiing import Oobiery
 from keri.recording import OobiRecord
 from keri.app.storing import Mailboxer
-from keri.cli.commands.mailbox.start import _prepareMailboxHabitat
 from keri.core import Diger, Kevery, Number, Parser, Salter, messagize, query
 from keri.help import helping
 
@@ -130,6 +129,12 @@ class IngressLog:
                 detached=req.get_header("CESR-ATTACHMENT") is not None))
 
 
+class Health:
+    """Readiness probe for the harness; the witness host itself serves no /health route."""
+    def on_get(self, req, rep):
+        rep.media = dict(ok=True)
+
+
 class Control:
     """Test-only storage observations and genuine Python HTTP client actions."""
     def __init__(self, hby, host, mbx, stack, count, ingress):
@@ -158,7 +163,8 @@ class Control:
                         pending=self.hby.db.kramPMKM.get(keys=(pre, said)) is not None,
                         stamp=cache.mdt if cache else None,
                         proofs=[sig.index for sig in self.hby.db.kramPMKS.get(keys=(pre, said))]))
-                cues = list(self.host.cues) + list(self.host.queries)
+                # Kevery cues pass through receipt interception before WitnessStart routes streams.
+                cues = list(self.host.kvy.cues) + list(self.host.cues) + list(self.host.queries)
                 sender = self.host.kvy.kevers[pre] if pre in self.host.kvy.kevers else None
                 state = None if sender is None else dict(event=sender.serder.said,
                     witnesses=list(sender.wits), threshold=sender.toader.num,
@@ -204,16 +210,17 @@ def main():
         cf.put(dict(relay=dict(dt=helping.nowIso8601(), curls=[f"http://127.0.0.1:{port}/"]),
                     kram=dict(enabled=True, denials=[], caches={"~": WINDOWS})))
         hby = stack.enter_context(openHby(name="provider", temp=False, headDirPath=root, cf=cf, version=Vrsn_2_0))
-        _prepareMailboxHabitat(hby=hby, alias="relay")
         mbx = Mailboxer(name="relay", base=hby.base, temp=False, headDirPath=root)
         stack.callback(mbx.close, clear=False)
-        doers = setupMailbox(hby, alias="relay", mbx=mbx, httpPort=port)
+        # The v2 KERIpy stack hosts mailboxes on its witness; that host serves the KRAM-gated mailbox queries.
+        doers = setupWitness(hby, alias="relay", mbx=mbx, tcpPort=None, httpPort=port)
         server = next(doer.server for doer in doers if isinstance(doer, http.ServerDoer))
-        host = next(doer for doer in doers if isinstance(doer, MailboxStart))
+        host = next(doer for doer in doers if isinstance(doer, WitnessStart))
         assert server.servant.ha[1] == port, "HIO must bind the selected unprivileged port"
         ingress = IngressLog()
         server.app.add_middleware(ingress)
         server.app.add_route("/_fixture", Control(hby, host, mbx, stack, count, ingress))
+        server.app.add_route("/health", Health())
         doist = doing.Doist(tock=.005, real=True, doers=doers)
         running = True
         def stop(*_):
