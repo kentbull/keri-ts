@@ -120,20 +120,20 @@ Deno.test("KF watcher observes real witness state, acquires advances and survive
           assertEquals(hby.db.fullyWitnessed(controller.kever!.serder), true);
         };
         yield* receipt(controller.rotate({ adds: [witness.eid], toad: 1 }));
-        const postWatcher = async (message: Uint8Array) =>
+        const postWatcher = async (message: Uint8Array, method = "POST") =>
           await fetchAt(watcherUrl + "/", {
-            method: "POST",
+            method,
             headers: { "Content-Type": "application/cesr", "CESR-DESTINATION": watcher.eid },
             body: new Uint8Array(message),
           });
 
-        // Match Locksmith's introduction: public KEL plus a signed watcher-add reply and account witness OOBI.
+        // Match Locksmith's PUT introduction: public KEL plus a signed watcher-add reply and account witness OOBI.
         const observedOobi = witnessUrl + `/oobi/${controller.pre}/witness/${witness.eid}`;
         const observedResponse = yield* call(() => fetchAt(observedOobi));
         yield* call(() => observedResponse.arrayBuffer());
         assertEquals(observedResponse.status, 200);
         const introduction = concatBytes(witnessEvidence, ...hby.db.clonePreIter(controller.pre, 0, Vrsn_2_0));
-        const introduced = yield* call(() => postWatcher(introduction));
+        const introduced = yield* call(() => postWatcher(introduction, "PUT"));
         yield* call(() => introduced.arrayBuffer());
         assertEquals(introduced.status, 204);
         const watched = reply(`/watcher/${watcher.eid}/add`, {
@@ -141,7 +141,7 @@ Deno.test("KF watcher observes real witness state, acquires advances and survive
           oid: controller.pre,
           oobi: observedOobi,
         }, { pre: controller.pre, pvrsn: Vrsn_2_0, gvrsn: Vrsn_2_0 });
-        const added = yield* call(() => postWatcher(controller.endorse(watched, { gvrsn: Vrsn_2_0 })));
+        const added = yield* call(() => postWatcher(controller.endorse(watched, { gvrsn: Vrsn_2_0 }), "PUT"));
         yield* call(() => added.arrayBuffer());
         assertEquals(added.status, 204);
         const waitObserved = function*(sn: number) {
