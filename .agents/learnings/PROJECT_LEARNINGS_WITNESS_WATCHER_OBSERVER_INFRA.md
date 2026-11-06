@@ -156,6 +156,17 @@ normal routes stay mounted. Observer acquisition remains scheduled independently
 of incoming wallet queries. The shared Deno/Node host retains TLS through startup
 fallback; certificate trust and URL/name verification remain client policy.
 
+The private admin APIs kf-boot drives are one contract across implementations.
+`operator/kfboot/service-admin.ts` (`WitnessAdmin`, `WatcherAdmin`, `RegistryAdmin`)
+ports kf-boot's `HioBootClient`: JSON in/out, forwarded but uninterpreted
+`Idempotency-Key`, any status >= 400 is a typed `BootApiError`. Suite B
+(`test/contract/service-admin.contract.test.ts`, `deno task test:contract`) drives
+it against in-process TS roles and, when `WITNESS_HK_BIN`/`WATCHER_HK_BIN`/
+`KF_REGISTRAR_BIN`/`KF_OBSERVER_BIN` are set, the Python services (HOME isolated).
+Where upstream differs the contract is the status class: health any 2xx
+(witness-hk 204, watcher-hk none), an enrollment KEL that does not establish the
+account any 4xx (Python 400, TS 409). Do not change the Python services to match.
+
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
