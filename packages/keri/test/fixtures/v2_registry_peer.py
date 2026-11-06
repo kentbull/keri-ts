@@ -96,7 +96,7 @@ def service(request, observer=False):
             import kfregistrar.core.serving as selected
             rgy = Regery(hby, baser=reger)
             ctx = RegistrarContext(hby, hab, rgy, observers=request["observers"],
-                                   publishers=request["publishers"], fullEvidence=True,
+                                   publishers=request["publishers"],
                                    config=DEFAULT_KRAM_CONFIG)
             app = falcon.App()
             loadExternalEnds(app, ctx)

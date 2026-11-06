@@ -128,6 +128,9 @@ async function inceptTufaController(
         "--receipt-endpoint",
         "--wits",
         witness.pre,
+        // The resolver's embedded KERIpy witness speaks only KERI v1.
+        "--version",
+        "1.0",
       ],
       ctx.env,
       ctx.repoRoot,
