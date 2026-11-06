@@ -337,12 +337,19 @@ Deno.test("Revery.acceptReply trims stale-establishment signature groups after a
           new Diger({ qb64: kever.said }),
           hab.sign(serder.raw, true),
         );
-        const decision = replyVerifier.acceptReply({ serder, saider, route: "/loc/scheme", aid: hab.pre, tsgs: [group] });
+        const decision = replyVerifier.acceptReply({
+          serder,
+          saider,
+          route: "/loc/scheme",
+          aid: hab.pre,
+          tsgs: [group],
+        });
         assertEquals(decision.kind, "accept");
         return [kever.sner.numh, kever.said] as const;
       };
-      const groupKeys = () =>
-        [...new Set([...hby.db.ssgs.getTopItemIter([saider.qb64], { topive: true })].map(([keys]) => keys.join(".")))];
+      const groupKeys = () => [
+        ...new Set([...hby.db.ssgs.getTopItemIter([saider.qb64], { topive: true })].map(([keys]) => keys.join("."))),
+      ];
 
       const [sn0, dig0] = accept();
       hab.rotate();
