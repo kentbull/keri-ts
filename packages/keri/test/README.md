@@ -133,12 +133,13 @@ Run these scenario files with their maintained owner:
 
 The default CLI runtime is the `kentbull/keripy` `v2-spec` peer selected by
 [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `b34c1e85e3c0eb7434a252e06ff6c5fc1e44d8e3`, which includes the v2 Poster
+currently `e698534569c07d2bf7fbacd18c6a28aa0d139de0`, which includes the v2 Poster
 nested-forwarding fix that v2 group proposals need (kentbull/keripy#157, #158), the core
 `/multisig/qry` and `/multisig/ipex-proof` routes (#149), `Unblind.openings` (#156) and
 DH/Unblind `requery` (#159) and `/registry/root` ESSR root replication with its KRAM
 exemption, offline-member deferral and automatic acceptance with an untimed `rrpe`
-dependency escrow (#160, #161, #162, #165, #168, #171), and restart recovery of accepted
+dependency escrow that refuses a root conflicting with the retained one (#160, #161, #162,
+#165, #168, #171, #172), and restart recovery of accepted
 group member commits (#171). It defaults to KERI v2, matching
 Tufa's v2 KEL authoring, so KEL and KERI-message KLI calls no longer pin `--version 1.0`
 and KERIpy witness fixtures default to v2 except for v1-only release profiles. Legacy
