@@ -110,8 +110,10 @@ const OOBI_EXEMPTIONS: readonly KramExemption[] = [[[2, 0], "rpy", "/end/role"],
  * Store-and-forward routes whose copy is correct whenever it arrives, so a late
  * mailbox fetch must not fall outside a KRAM window (KERIpy
  * `StoreForwardDenials`). Their own acceptance model replaces replay protection:
- * the exchange store is keyed by SAID, the handler ignores an already stored
- * SAID, explicit receiver approval re-authorizes, and a retained root is immutable.
+ * the exchange store is keyed by SAID, the handler ignores a stored SAID that is
+ * escrowed or already retained, every copy is fully re-authorized against
+ * current KEL/TEL state and its root reproduced before automatic retention, and
+ * a retained root is immutable.
  */
 const STORE_FORWARD_EXEMPTIONS: readonly KramExemption[] = [[[2, 0], "exn", "/registry/root"]];
 

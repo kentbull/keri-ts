@@ -16,7 +16,7 @@
  * SAID. Received copies are accepted automatically, with no approval step: a
  * copy that verifies on arrival is retained at once, and one that cannot yet
  * verify because local KEL, TEL, group or opening evidence is missing waits in a
- * bounded escrow (`Baser.rrpe`) that `processEscrows` retries.
+ * dependency escrow (`Baser.rrpe`, no timeout) that `processEscrows` retries.
  */
 import {
   concatBytes,
@@ -49,7 +49,7 @@ import type { Notifier } from "../app/notifications/notifying.ts";
 import { ValidationError } from "../core/errors.ts";
 import { exchange } from "../core/protocol-eventing.ts";
 import type { Baser } from "../db/basing.ts";
-import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
+import { makeNowIso8601 } from "../time/mod.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
 import type { Regery } from "./registraring.ts";
 
@@ -62,7 +62,7 @@ export class RootUnverified extends ValidationError {}
 /** A registry-root copy whose authorization needs KEL, TEL or group state not yet local. */
 export class RootDeferred extends RootUnverified {}
 
-/** One escrowed copy awaiting automatic retention; `deadline` ends its retries. */
+/** One escrowed copy awaiting automatic retention; `escrowed` is when it last entered escrow. */
 export interface PendingRootCopy {
   said: string;
   sender: string;
@@ -70,7 +70,7 @@ export interface PendingRootCopy {
   gid: string;
   registry: string;
   dt: string;
-  deadline: string;
+  escrowed: string;
 }
 
 /** Sealed-box plaintext field map. */
@@ -198,10 +198,12 @@ export function rootExn(
  * local individual habitat, `i == ri`, `gid` a local habitat that is not this
  * member's group, a non-Ed25519 recipient key, or a membership or
  * sender-authority failure against complete local state. A SAID already
- * stored is ignored, so duplicate deliveries are idempotent.
+ * stored is ignored while its root is retained or the copy is still escrowed,
+ * so duplicate deliveries are idempotent; an identical resend of a stored copy
+ * that is neither escrows it again.
  *
  * Acceptance is automatic. `handle` escrows the stored copy (exchange store plus
- * an `rrpe` deadline) and immediately tries to retain it: full authorization,
+ * an `rrpe` entry) and immediately tries to retain it: full authorization,
  * decryption, plaintext binding and root verification against a held opening or
  * by reproducing the BUP `b` commitment. On success the root is retained and the
  * escrow entry removed; a newly retained root adds one informational Notifier
@@ -209,7 +211,9 @@ export function rootExn(
  * holder key state, local group habitat, an unaccepted rotation that adds the
  * recipient, missing opening evidence or a locked Keeper) stays escrowed and
  * `processEscrows` retries it, which the Exchanger drives from its own
- * `processEscrows`, until `TimeoutRRE` elapses. A copy refused on any attempt
+ * `processEscrows`. Like the v2 TEL dependency escrows it has no wall-clock
+ * timeout: it stays escrowed until retained or refused, so a newcomer that
+ * acquires the missing state much later still retains it. A copy refused on any attempt
  * (plaintext mismatch, undecryptable, membership lost, or a different root
  * already retained, which is never replaced) is dropped from escrow; the signed
  * exchange stays in `exns`. `receive` is a manual retry that can supply a BUP or
@@ -223,16 +227,12 @@ export function rootExn(
 export class RegistryRoot implements ExchangeRouteHandler {
   static readonly Route = "/registry/root";
   static readonly Note = "/exn/registry/root";
-  /** Seconds a stored copy is retried before it is dropped. */
-  static readonly TimeoutRRE = 3600;
   static readonly States = ["issued", "revoked"] as const;
   readonly resource = RegistryRoot.Route;
   readonly protocolMajor = 2;
   readonly hby: Habery;
   readonly rgy: Regery;
   readonly notifier: Notifier | null;
-  /** Retry window for newly escrowed copies; `TimeoutRRE` unless a test shortens it. */
-  timeoutRRE: number = RegistryRoot.TimeoutRRE;
 
   constructor(hby: Habery, rgy: Regery, notifier: Notifier | null = null) {
     if (rgy.hby !== hby) throw new ValidationError("registry root replication requires the Habery's registry owner");
@@ -495,9 +495,16 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return digest.code === MtrDex.Blake3_256 && digest.verify(essr);
   }
 
-  /** Store authorized or deferred copies once; refuse the rest; never decrypt here. */
+  /**
+   * Store authorized or deferred copies once; refuse the rest; never decrypt here.
+   *
+   * A stored SAID is ignored while it is escrowed or its holder already retains
+   * a root for that registry. Otherwise an identical resend falls through and
+   * `handle` escrows it again.
+   */
   verify(args: { serder: SerderKERI; essrs?: readonly Texter[] }): boolean {
-    if (this.hby.db.exns.get([args.serder.said!])) return false;
+    const said = args.serder.said!;
+    if (this.hby.db.exns.get([said]) && (this.hby.db.rrpe.get([said]) || this.retains(args.serder))) return false;
     try {
       this.scope(args.serder, essrBytes(args.essrs));
     } catch (error) {
@@ -508,10 +515,18 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return true;
   }
 
+  /** True when the copy's holder already retains a root for its registry; never decrypts. */
+  private retains(serder: SerderKERI): boolean {
+    const data = serder.sad?.a;
+    if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+    const { gid, rd } = data as Record<string, unknown>;
+    return typeof gid === "string" && typeof rd === "string" && !!this.hby.mgr.ks.rroots.get([gid, rd]);
+  }
+
   /** Escrow the stored copy and retain its root now when it verifies. */
   handle(args: { serder: SerderKERI; essrs?: readonly Texter[] }): void {
     const said = args.serder.said!;
-    this.hby.db.rrpe.put([said], new Dater({ dts: makeNowIso8601(new Date(Date.now() + this.timeoutRRE * 1000)) }));
+    this.hby.db.rrpe.put([said], new Dater({ dts: makeNowIso8601() }));
     this.attempt(said);
   }
 
@@ -614,15 +629,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
     try {
       this.accept(said);
     } catch (error) {
-      if (error instanceof RootUnverified) {
-        const deadline = this.hby.db.rrpe.get([said]);
-        const expiry = deadline ? timestampMicros(deadline.dts) : null;
-        if (expiry === null || BigInt(Date.now()) * 1000n > expiry) {
-          this.hby.db.rrpe.rem([said]);
-          return false;
-        }
-        return null;
-      }
+      if (error instanceof RootUnverified) return null;
       if (error instanceof ValidationError) {
         this.hby.db.rrpe.rem([said]);
         return false;
@@ -633,7 +640,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
   }
 
   /**
-   * Retry every escrowed copy; drop refused or timed-out ones. The Exchanger
+   * Retry every escrowed copy; drop refused ones. The Exchanger
    * calls this from its own `processEscrows` when this handler is registered,
    * so ordinary escrow loops drive it.
    */
@@ -676,7 +683,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
   /** List escrowed copies awaiting automatic retention, without decrypting. */
   pending(): PendingRootCopy[] {
     const items: PendingRootCopy[] = [];
-    for (const [keys, deadline] of this.hby.db.rrpe.getTopItemIter()) {
+    for (const [keys, escrowed] of this.hby.db.rrpe.getTopItemIter()) {
       const said = keys.join("."), serder = this.hby.db.exns.get([said]);
       if (!serder) continue;
       const data = (serder.sad?.a ?? {}) as Record<string, string>;
@@ -687,7 +694,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
         gid: data.gid,
         registry: data.rd,
         dt: serder.sad?.dt as string,
-        deadline: deadline.dts,
+        escrowed: escrowed.dts,
       });
     }
     return items;

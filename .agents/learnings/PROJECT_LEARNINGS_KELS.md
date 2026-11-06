@@ -88,7 +88,9 @@ Weighted kt/nt behavior uses Tholder.satisfy, never numeric shortcuts.
   gathering; membership must not wait on the acceptance it enables. Publish accepted
   prefixes/state and accepted member updates only after KEL acceptance. A third-party
   validator still requires witness proof. Pending rotations retain prior smids/rmids;
-  preserve witness signatures through pre-approval and approval replay.
+  preserve witness signatures through pre-approval and approval replay. Habery load
+  re-derives members of the latest accepted establishment from local KELs and commits
+  a stale record (`recoverAcceptedGroupMembers`, KERIpy `recoverAcceptedMembers`).
 - Rotation signatures independently index current keys and prior next commitments.
   Match current keys cryptographically to accepted ndigers; uncommitted replacements
   sign current-only. Recovery must satisfy prior rotation and new current thresholds,

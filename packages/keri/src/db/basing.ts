@@ -288,7 +288,7 @@ export class Baser {
    * a write failure. This binding does not claim legacy `.essrs` interchange.
    */
   public essrs!: CesrIoSetSuber<Texter>;
-  /** KERIpy `rrpe.`: `/registry/root` copies in `exns`/`essrs` awaiting automatic retention; SAID -> deadline. */
+  /** KERIpy `rrpe.`: `/registry/root` copies in `exns`/`essrs` awaiting automatic retention; SAID -> time it entered escrow; no timeout. */
   public rrpe!: CesrSuber<Dater>;
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.

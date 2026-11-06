@@ -138,3 +138,62 @@ export function localIpexContribution(
   }
   return null;
 }
+
+/** Members of a group's latest accepted establishment event, ordered by key index. */
+export interface AcceptedGroupMembers {
+  event: SerderKERI;
+  smids: string[];
+  rmids: string[];
+}
+
+/**
+ * Derive the members of `group`'s latest accepted establishment event from
+ * local KELs, as KERIpy `GroupHab.acceptedMembers`.
+ *
+ * Each signing key is attributed to the candidate whose latest contributing
+ * establishment event supplied it, and each next-key digest to the candidate
+ * whose establishment event committed to it. Returns null when the event is
+ * missing or any key cannot be attributed to exactly one candidate.
+ */
+export function acceptedGroupMembers(
+  db: Baser,
+  group: string,
+  candidates: Iterable<string>,
+): AcceptedGroupMembers | null {
+  const kever = db.getKever(group);
+  const event = kever ? db.getEvtSerder(group, kever.lastEst.d) : null;
+  if (!event) return null;
+  const keys = (event.verfers ?? []).map(verfer => verfer.qb64);
+  const digs = (event.ndigers ?? []).map(diger => diger.qb64);
+  const signing = new Map<number, string>(), rotating = new Map<number, string>();
+  const attribute = (found: Map<number, string>, index: number, aid: string) =>
+    (found.get(index) ?? aid) === aid && !!found.set(index, aid);
+  for (const aid of candidates) {
+    const state = aid === group ? null : db.getKever(aid);
+    if (!state) continue;
+    let signed = false;
+    for (const [, sn, said] of db.kels.getOnItemBackIter(aid, state.lastEst.s)) {
+      if (db.kels.getLast(aid, sn) !== said) continue;
+      const member = db.getEvtSerder(aid, said);
+      if (!member?.estive) continue;
+      // KERIpy fetchLatestContribTo: only the latest contributing establishment counts.
+      const index = signed
+        ? -1
+        : (member.verfers ?? []).map(verfer => keys.indexOf(verfer.qb64)).find(i => i >= 0) ?? -1;
+      if (index >= 0) {
+        signed = true;
+        if (!attribute(signing, index, aid)) return null;
+      }
+      for (const diger of member.ndigers ?? []) {
+        const next = digs.indexOf(diger.qb64);
+        if (next >= 0 && !attribute(rotating, next, aid)) return null;
+      }
+    }
+  }
+  if (signing.size !== keys.length || rotating.size !== digs.length) return null;
+  return {
+    event,
+    smids: keys.map((_, index) => signing.get(index)!),
+    rmids: digs.map((_, index) => rotating.get(index)!),
+  };
+}

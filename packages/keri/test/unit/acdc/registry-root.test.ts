@@ -1,13 +1,14 @@
 /**
  * Registry roots replicate to members as ESSR exchanges over real KELs, TELs and Keepers.
  *
- * Ports KERIpy kentbull/keripy v2-spec eaa38aa1 tests/acdc/test_registry_root.py (automatic acceptance).
+ * Ports KERIpy kentbull/keripy v2-spec b34c1e85 tests/acdc/test_registry_root.py (automatic acceptance, untimed escrow).
  * The wire vector is copied byte-for-byte from tests/acdc/fixtures/registry_root_essr.json,
  * Git blob 50dc56f4c79cbbae675e1d2f5f76a272d2db171f.
  */
 import {
   concatBytes,
   Counter,
+  Dater,
   Decrypter,
   Diger,
   Encrypter,
@@ -373,15 +374,52 @@ Deno.test("registry root: an escrowed copy is retried by a fresh handler over th
   });
 });
 
-Deno.test("registry root: an escrowed copy is dropped after its timeout", async () => {
+Deno.test("registry root: a deferred copy is retained long after it was escrowed", async () => {
   await run(function*() {
     const w = yield* world({ late: ["bob"] });
     yield* seed(w);
-    w.bob.root.timeoutRRE = -1;
     const pending = yield* copy(w, w.alice, w.bob);
+    // The copy entered escrow two hours ago, before any former timeout.
+    const old = makeNowIso8601(new Date(Date.now() - 7_200_000));
+    w.bob.hby.db.rrpe.pin([pending], new Dater({ dts: old }));
+    yield* escrows(w.bob);
+    assertEquals(stored(w.bob), [pending]);
+    assertEquals(held(w, w.bob), null);
+    assertEquals(w.bob.root.pending()[0].escrowed, old);
+    yield* catchUp(w);
+    yield* escrows(w.bob);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(stored(w.bob), []);
+    assertEquals(notes(w.bob).map(note => note.attrs.d), [pending]);
+  });
+});
+
+Deno.test("registry root: an identical resend of an unretained stored copy is escrowed again", async () => {
+  await run(function*() {
+    const w = yield* world({ late: ["bob"] });
+    yield* seed(w);
+    const wire = w.alice.root.prepare(w.alice.hab, w.bob.hab.pre!, w.gid, w.registry, { td: w.acdc });
+    const pending = said(wire);
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), [pending]);
+    // The stored copy left escrow without retention (dropped or expired).
+    w.bob.hby.db.rrpe.rem([pending]);
     assertEquals(stored(w.bob), []);
     assertExists(w.bob.hby.db.exns.get([pending]));
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), [pending]);
+    yield* catchUp(w);
+    // Still escrowed: the resend is ignored, not escrowed twice.
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), [pending]);
     assertEquals(held(w, w.bob), null);
+    yield* escrows(w.bob);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(stored(w.bob), []);
+    // Once retained, the identical resend is ignored and adds no note.
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), []);
+    assertEquals(notes(w.bob).map(note => note.attrs.d), [pending]);
   });
 });
 
