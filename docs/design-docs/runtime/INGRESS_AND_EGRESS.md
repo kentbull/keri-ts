@@ -209,8 +209,11 @@ already published to the application Deck synchronously. Background cue workers 
 protocol output or reserved replies. Interpretation, signing, routing and request
 slot consumption belong to Hab, Respondant, WitnessInquisitor and request owners.
 Poster target preparation is an owned operation that uses the shared codec before
-transport. One complete v2 body/genus becomes a signed `/fwd` body-digest envelope
-with an independent nested payload; legacy traffic retains its pathed-embed shape.
+transport. One complete message from a v2 member, or with a v2 body/genus, becomes a
+signed `/fwd` body-digest envelope with an independent nested payload (a v1 child
+keeps its own genus selector inside the nest); a v1 member's legacy traffic retains
+its pathed-embed shape. A v2 stream cannot carry v1 pathed couples after the v2
+introduction, which KERIpy's Poster also observes (kentbull/keripy#157).
 Qualified CESR selectors are parsed before body construction. Respondant publishes
 its interpreted source before consuming the cue; Poster owns target preparation
 and per-attempt forwarding construction. Other producers publish

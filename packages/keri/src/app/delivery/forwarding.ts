@@ -624,6 +624,7 @@ export class Poster {
 
 /**
  * Build a signed legacy embed or v2 nested `/fwd` envelope for one complete message.
+ * The v2 envelope serves every v2 member and any v2 child; v1 members keep the legacy embed.
  *
  * The caller is responsible for any surrounding introduction or end-role
  * material that should travel with the forwarded request.
@@ -643,7 +644,10 @@ function* buildForwardedDelivery(
   const frames = parseBytes(args.message);
   if (frames.length !== 1) throw new ValidationError("Forwarding requires one complete CESR message.");
   const child = frames[0];
-  if (child.body.pvrsn.major >= 2 || (child.gvrsn?.major ?? 1) >= 2) {
+  // A v2 member's stream is v2 after its introduction, so even a v1 child (such as a
+  // KERIpy-form `e`-embed group proposal) travels nested with its own genus selector,
+  // like KERIpy `StreamPoster.createForward`. Only v1 members keep the legacy embed.
+  if (hab.kelVersion.major >= 2 || child.body.pvrsn.major >= 2 || (child.gvrsn?.major ?? 1) >= 2) {
     const [serder] = exchange("/fwd", {
       evt: new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(child.body.raw, MtrDex.Blake3_256) }).qb64,
     }, {

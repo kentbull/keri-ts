@@ -1222,7 +1222,11 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     try {
-      const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
+      const recipient = hby.makeHab("recipient");
+      const senders = {
+        v1: hby.makeHab("sender-v1", undefined, { version: Vrsn_1_0 }),
+        v2: hby.makeHab("sender-v2", undefined, { version: Vrsn_2_0 }),
+      };
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
@@ -1235,7 +1239,14 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
         const postman = new Poster(hby, null, null, http, systemClock);
         hby.db.ends.pin([recipient.pre, EndpointRoles.mailbox, provider.pre], { allowed: true });
         hby.db.locs.pin([provider.pre, "https"], { url: "https://mailbox.test/" });
-        for (const version of [Vrsn_1_0, Vrsn_2_0]) {
+        // A v2 member nests every child after its v2 introduction; only a v1 member's v1 child keeps the embed.
+        for (
+          const [sender, version, nested] of [
+            [senders.v1, Vrsn_1_0, false],
+            [senders.v2, Vrsn_1_0, true],
+            [senders.v2, Vrsn_2_0, true],
+          ] as const
+        ) {
           const [body] = exchangeMessage("/application/message", { value: "retained" }, {
             sender: sender.pre,
             pvrsn: version,
@@ -1254,7 +1265,8 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
           if (!forwarded) throw new Error("Expected the queued forwarding POST");
           assertEquals((forwarded.body as SerderKERI).route, "/fwd");
           assertEquals(forwarded.body.ked!.q, { pre: recipient.pre, topic: "credential" });
-          if (version.major === 2) {
+          if (nested) {
+            assertEquals(forwarded.body.pvrsn, Vrsn_2_0);
             assertEquals(forwarded.nests!.length, 1);
             assertEquals(forwarded.nests![0].body.raw, body.raw);
             assertEquals(forwarded.nests![0].attachments.map((a) => a.raw), child.attachments.map((a) => a.raw));
