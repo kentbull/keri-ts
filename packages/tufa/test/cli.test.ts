@@ -132,6 +132,7 @@ const CLI_COMMAND_EXAMPLES: string[][] = [
   ],
   ["watcher", "backend", "-n", "backend", "--url", "https://watcher.example"],
   ["witness", "backend", "-n", "backend", "--url", "https://witness.example"],
+  ["boot", "backend", "-n", "boot"],
   ["ipex", "setup", "-n", "store", "-a", "holder", "--said", "Egrant"],
   [
     "vc",
@@ -439,6 +440,40 @@ Deno.test("tufa/cli - watcher backend preserves listener and polling selections"
     "2.5",
     "/tmp/watcher",
   ]);
+});
+
+Deno.test("tufa/cli - boot backend flags map onto KF_BOOT_* names without defaults", () => {
+  const defaults = parseCommandSelection(["boot", "backend"]);
+  assertEquals(defaults.name, "boot.backend");
+  assertEquals([defaults.args.port, defaults.args.witnessBackends, defaults.args.watcherBootUrl], [
+    undefined,
+    undefined,
+    undefined,
+  ]);
+  const selected = parseCommandSelection([
+    "boot",
+    "backend",
+    "-n",
+    "boot",
+    "--head-dir",
+    "/tmp/boot",
+    "--port",
+    "19723",
+    "--witness-backends",
+    "w0|http://127.0.0.1:1|http://127.0.0.1:2",
+    "--watcher-boot-url",
+    "http://127.0.0.1:3",
+    "--registrar-ca-file",
+    "ca.pem",
+  ]);
+  assertEquals([
+    selected.args.name,
+    selected.args.headDirPath,
+    selected.args.port,
+    selected.args.witnessBackends,
+    selected.args.watcherBootUrl,
+    selected.args.registrarCaFile,
+  ], ["boot", "/tmp/boot", "19723", "w0|http://127.0.0.1:1|http://127.0.0.1:2", "http://127.0.0.1:3", "ca.pem"]);
 });
 
 Deno.test("tufa/cli - witness backend separates public receipt and private provisioning ports", () => {

@@ -24,6 +24,14 @@ The private provisioning listener always binds loopback, with `--boot-port` defa
 `--poll-interval` sets a positive number of seconds between key-state polls (default `30`).
 Use `--base`, `--head-dir` and `--passcode` for explicit store placement and encryption.
 
+## Boot service backend
+
+`tufa boot backend --name boot --head-dir DIR --passcode PASS` runs a KF boot (provisioning) service,
+a port of upstream kf-boot. Every flag overrides the identically named `KF_BOOT_*` variable
+(`--port`/`KF_BOOT_PORT`, `--witness-backends`/`KF_BOOT_WITNESS_BACKENDS`, `--watcher-boot-url`/`KF_BOOT_WAT_BOOT_URL`,
+`--registrar-service-aid`/`KF_BOOT_REGISTRAR_SERVICE_AID`, ...); unset values use kf-boot's defaults.
+See `packages/tufa/README.md` "Boot service backend" for the full flag/variable table.
+
 ## Registry services
 
 `tufa registrar start -n service -a registrar --url https://registrar.example --tls-key key.pem --tls-cert cert.pem`

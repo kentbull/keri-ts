@@ -7,6 +7,7 @@
  * run-time handler keys stay aligned.
  */
 import { Command } from "npm:commander@^10.0.1";
+import { registerBootCmds } from "./command-definitions/boot.ts";
 import { registerChallengeCmds } from "./command-definitions/challenge.ts";
 import { registerDidCmds } from "./command-definitions/did.ts";
 import { registerEndpointCmds } from "./command-definitions/endpoints.ts";
@@ -45,6 +46,7 @@ export function registerCmds(
   registerMailboxCmds(program, dispatch);
   registerWitnessCmds(program, dispatch);
   registerWatcherCmds(program, dispatch);
+  registerBootCmds(program, dispatch);
   registerRegistryServiceCmds(program, dispatch);
   registerToolingCmds(program, dispatch);
   registerKfBootCmds(program, dispatch);

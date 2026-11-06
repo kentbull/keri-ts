@@ -317,6 +317,54 @@ keeps its own keys and authenticates its queries normally. This configured
 reader permission survives deletion of a dynamic provider account grant; an
 empty configured and enrolled reader set denies access.
 
+## Boot service backend
+
+`tufa boot backend` runs a KERI Foundation boot (provisioning) service, a TypeScript
+port of upstream kf-boot beside `tufa witness backend` and `tufa watcher backend`.
+It serves `GET /health`, `GET /bootstrap/config` and the CESR onboarding and account
+surfaces with kf-boot's wire behavior, and drives witness, watcher, registrar and
+observer backends of either implementation through their private admin APIs.
+
+Every setting is a flag that overrides the `KF_BOOT_*` variable kf-boot reads, so a
+launcher exports one `KF_BOOT_*` block and selects only the executable:
+
+```sh
+KF_BOOT_WITNESS_BACKENDS="w0|http://127.0.0.1:19631|http://127.0.0.1:19632,..." \
+KF_BOOT_WAT_BOOT_URL=http://127.0.0.1:19831 KF_BOOT_WAT_PUBLIC_URL=http://127.0.0.1:19832 \
+KF_BOOT_PORT=19723 \
+tufa boot backend --name localdev-boot --head-dir "$STATE/tufa" --passcode "$PASSCODE"
+```
+
+| Flag                                                                                               | Variable                                                      | Default                                                                |
+| -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `--name`                                                                                           | `KF_BOOT_KERI_NAME`                                           | `kf-boot`                                                              |
+| `--head-dir`                                                                                       | `KF_BOOT_KERI_DIR`                                            | Tufa default                                                           |
+| `--base`, `--passcode`                                                                             | —                                                             | —                                                                      |
+| `--host`                                                                                           | `KF_BOOT_HOST`                                                | `127.0.0.1`                                                            |
+| `--port`                                                                                           | `KF_BOOT_PORT`                                                | `9723`                                                                 |
+| `--boot-hab-name`                                                                                  | `KF_BOOT_BOOT_HAB_NAME`                                       | `boot-server` (transferable 1-of-1, incepted on first run)             |
+| `--onboarding-path`, `--account-path`                                                              | `KF_BOOT_ONBOARDING_PATH`, `KF_BOOT_ACCOUNT_PATH`             | `/onboarding`, `/account`                                              |
+| `--onboarding-public-url`, `--account-public-url`                                                  | `KF_BOOT_ONBOARDING_PUBLIC_URL`, `KF_BOOT_ACCOUNT_PUBLIC_URL` | `http://<host>:<port><path>`                                           |
+| `--region-id`, `--region-name`                                                                     | `KF_BOOT_REGION_ID`, `KF_BOOT_REGION_NAME`                    | `nyc`, `New York`                                                      |
+| `--witness-backends`                                                                               | `KF_BOOT_WITNESS_BACKENDS`                                    | `<id>\|<boot_url>\|<public_url>,…`                                     |
+| `--wit-boot-url`, `--wit-public-url`                                                               | `KF_BOOT_WIT_BOOT_URL`, `KF_BOOT_WIT_PUBLIC_URL`              | single backend `wit-1` when no list                                    |
+| `--watcher-boot-url`, `--watcher-public-url`                                                       | `KF_BOOT_WAT_BOOT_URL`, `KF_BOOT_WAT_PUBLIC_URL`              | required                                                               |
+| `--account-options`                                                                                | `KF_BOOT_BOOTSTRAP_ACCOUNT_OPTIONS`                           | `1-of-1,3-of-4` (only profiles the backends can satisfy)               |
+| `--watcher-required`                                                                               | `KF_BOOT_BOOTSTRAP_WATCHER_REQUIRED`                          | `true`                                                                 |
+| `--session-ttl`                                                                                    | `KF_BOOT_SESSION_TTL_SECONDS`                                 | `300`                                                                  |
+| `--account-ttl`                                                                                    | `KF_BOOT_ACCOUNT_TTL_SECONDS`                                 | `172800`                                                               |
+| `--boot-api-timeout`                                                                               | `KF_BOOT_BOOT_API_TIMEOUT_SECONDS`                            | `10`                                                                   |
+| `--operation-max-attempts`                                                                         | `KF_BOOT_OPERATION_FAILURE_MAX_ATTEMPTS`                      | `10`                                                                   |
+| `--registrar-boot-url`, `--registrar-public-url`, `--registrar-service-aid`, `--registrar-ca-file` | `KF_BOOT_REGISTRAR_*`                                         | optional; boot URL loopback HTTP, public URL HTTPS, all three together |
+| `--observer-boot-url`, `--observer-public-url`, `--observer-service-aid`, `--observer-ca-file`     | `KF_BOOT_OBSERVER_*`                                          | as registrar                                                           |
+
+Python-only by design and ignored here: per-IP limits and account tiers
+(`KF_BOOT_BOOTSTRAP_*_PER_IP`, `KF_BOOT_ACCOUNT_PROFILES`), the cleanup sweeper
+(`KF_BOOT_CLEANUP_*`) and capacity limits (`KF_BOOT_WITNESS_LIMIT`,
+`KF_BOOT_WATCHER_LIMIT`). Sessions and accounts expire when next accessed; completed
+sessions are retained, so `tufa infra kf onboard --session` can recover lost
+credentials after rotation.
+
 ## ACDC v2 registry authoring
 
 Use `vc registry incept --acdc-v2 --registry-name NAME --alias AID_ALIAS`, then
