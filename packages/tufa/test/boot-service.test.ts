@@ -5,11 +5,11 @@
  * `tests/test_onboarding_routes.py`, driven by the unchanged Tufa `KfBootClient` against
  * real in-process TypeScript witness and watcher backends.
  */
-import { Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, parseBytes, type Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
-import { acceptedEventReplayMessage, exchange, type Hab, reply } from "keri-ts/runtime";
-import { bootServiceConfig } from "../src/roles/boot-service.ts";
+import { acceptedEventReplayMessage, createHabery, exchange, type Hab, reply } from "keri-ts/runtime";
+import { bootServiceConfig, publicKelEvidence } from "../src/roles/boot-service.ts";
 import {
   framed,
   locksmithServiceSettings,
@@ -221,6 +221,39 @@ Deno.test("boot service: configuration follows kf-boot validation", () => {
     }
     assert(failed, JSON.stringify(bad));
   }
+});
+
+Deno.test("boot service: enrollment KEL evidence omits the boot's own validator receipts", async () => {
+  await run(function*() {
+    const open = () => createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
+    const wallet = yield* open(), provider = yield* open();
+    try {
+      const account = wallet.makeHab("account"), boot = provider.makeHab("boot");
+      const serder = wallet.db.getEvtSerder(account.pre, account.kever!.said)!;
+      // The boot accepts the account inception, then its runtime receipts it as a transferable validator.
+      boot.kvy.processEvent({
+        serder,
+        sigers: account.sign(serder.raw, true) as Siger[],
+        wigers: [],
+        frcs: [],
+        sscs: [],
+        ssts: [],
+        local: false,
+      });
+      boot.receipt(serder);
+      const names = (stream: Uint8Array) => parseBytes(stream).map(frame => frame.attachments.map(group => group.name));
+      const cloned = concatBytes(...provider.db.clonePreIter(account.pre, 0, Vrsn_2_0));
+      assertEquals(names(cloned), [["ControllerIdxSigs", "TransIdxSigGroups", "FirstSeenReplayCouples"]]);
+      const evidence = publicKelEvidence(cloned);
+      assertEquals(names(evidence), [["ControllerIdxSigs", "FirstSeenReplayCouples"]]);
+      const [before] = parseBytes(cloned), [after] = parseBytes(evidence);
+      assertEquals(after.body.raw, before.body.raw);
+      assertEquals(after.attachments.map(group => group.raw), [before.attachments[0].raw, before.attachments[2].raw]);
+    } finally {
+      yield* provider.close(true);
+      yield* wallet.close(true);
+    }
+  });
 });
 
 Deno.test("boot service: account create/complete, services, lists, watcher status and deletes", async () => {
