@@ -101,52 +101,29 @@ function decryptSeed(account: Hab, cipher: string, pubs: string[]): string {
   }
 }
 
-/**
- * One-time migration of a row written when credentials were stored encrypted to an account key.
- *
- * Only keys the Keeper still holds can open it; older rotated-away keys are erased.
- */
-function migratedSecret(account: Hab, eid: string, row: Record<string, unknown>): string {
-  if (!Array.isArray(row.pubs) || row.pubs.length !== 1 || typeof row.pubs[0] !== "string") {
-    throw new ValidationError("Witness credential requires its exact recipient public key.");
-  }
-  try {
-    return decryptSeed(account, bootText(row.cipher, "ciphertext"), row.pubs);
-  } catch (error) {
-    if (error instanceof ValidationError) throw error;
-    throw new ValidationError(
-      `Encrypted witness credential for ${eid} needs an account key this Keeper no longer holds. `
-        + "Re-run `tufa infra kf onboard` with the same session to re-register and recover it.",
-    );
-  }
-}
-
-/** Read only an explicitly selected artifact, rewriting a legacy encrypted file as plaintext once. */
+/** Read only an explicitly selected artifact holding plaintext seeds. */
 function credentials(account: Hab, path: string): Credentials {
   const raw = bootObject(JSON.parse(readFileSync(path, "utf8")), "witness credential artifact");
   if (raw.account !== account.pre || !Array.isArray(raw.witnesses)) {
     throw new ValidationError("Witness credentials belong to another account.");
   }
-  let migrated = false;
-  const saved = {
+  return {
     account: account.pre,
     provider: url(raw.provider),
     server: aid(raw.server),
     witnesses: raw.witnesses.map(value => {
-      const row = bootObject(value, "witness credential"), eid = aid(row.eid);
-      let secret = row.secret;
-      if (secret === undefined && row.cipher !== undefined) {
-        secret = migratedSecret(account, eid, row);
-        migrated = true;
+      const row = bootObject(value, "witness credential");
+      if (row.cipher !== undefined) {
+        throw new ValidationError(
+          "Witness credentials use the retired encrypted format; re-run `tufa infra kf onboard` with a new file.",
+        );
       }
-      if (typeof secret !== "string" || !TOTP_SECRET.test(secret)) {
+      if (typeof row.secret !== "string" || !TOTP_SECRET.test(row.secret)) {
         throw new ValidationError("Invalid witness credential.");
       }
-      return { eid, url: url(row.url), secret };
+      return { eid: aid(row.eid), url: url(row.url), secret: row.secret };
     }),
   };
-  if (migrated) saveCredentials(path, saved);
-  return saved;
 }
 /** Produce fresh receipt codes from the retained plaintext seeds. */
 export function loadKfWitnessAuths(account: Hab, path: string): WitnessAuthMap {

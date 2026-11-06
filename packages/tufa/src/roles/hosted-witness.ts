@@ -66,32 +66,6 @@ function validCode(secret: string, authorization: string | null): boolean {
     .validate({ token: parts[0], timestamp, window: 0 }) !== null;
 }
 
-const TOTP_SECRET = /^[A-Z2-7]{32}$/;
-
-/**
- * One-time migration of a registration secret stored encrypted to this witness's own key.
- *
- * Secrets are now stored as plaintext base32; only the registration response is encrypted.
- */
-function migratedCode(hby: Habery, hab: Hab, cipher: string): string {
-  let plain: Uint8Array;
-  try {
-    plain = hby.mgr.decrypt(cipher, { verfers: hab.kever!.verfers });
-  } catch {
-    throw new ValidationError(
-      `Stored registration code for witness ${hab.pre} cannot be decrypted; `
-        + "the controller must re-register (re-run onboarding or witness authenticate).",
-    );
-  }
-  try {
-    const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
-    if (!TOTP_SECRET.test(secret)) throw new ValidationError(`Invalid stored registration code for ${hab.pre}`);
-    return secret;
-  } finally {
-    plain.fill(0);
-  }
-}
-
 /** One allocation owns its controller policy, request lifetime and actual witness runtime. */
 class HostedWitness {
   private readonly stopping = new AbortController();
@@ -143,7 +117,11 @@ class HostedWitness {
     );
     const own = events.length > 0 && events.every(frame => (frame.body as SerderKERI).pre === this.record.cid);
     let authorized = false;
-    if (this.record.code) authorized = validCode(this.record.code, req.headers.get("Authorization"));
+    if (this.record.code) {
+      const plain = this.hby.mgr.decrypt(this.record.code, { verfers: this.hab.kever!.verfers });
+      const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
+      authorized = validCode(secret, req.headers.get("Authorization"));
+    }
     if (path === "/receipts" && (!own || frames.length !== 1 || !authorized)) {
       throw new RequestError(this.record.code ? 403 : 412, "Registered controller and valid witness code required");
     }
@@ -197,7 +175,7 @@ class HostedWitness {
     );
   }
 
-  /** Verify fresh inception signatures before installing a registration secret. */
+  /** Verify fresh inception signatures before installing an encrypted registration secret. */
   private async register(req: Request): Promise<Response> {
     if (!req.headers.get("Content-Type")?.startsWith("multipart/form-data")) {
       throw new RequestError(415, "Multipart controller registration required");
@@ -242,11 +220,12 @@ class HostedWitness {
       : typeof supplied === "string"
       ? supplied
       : new Secret({ size: 20 }).base32;
-    if (!TOTP_SECRET.test(secret)) throw new RequestError(400, "Expected a 32-character base32 TOTP secret");
+    if (!/^[A-Z2-7]{32}$/.test(secret)) throw new RequestError(400, "Expected a 32-character base32 TOTP secret");
     const plain = new Matter({ raw: new TextEncoder().encode(secret), code: MtrDex.Ed25519_Seed });
-    // Encrypt only in transit, to current accepted controller keys; the seed is stored as plaintext.
+    const cipher = new Encrypter({ verkey: this.hab.kever!.verfers[0].qb64 }).encrypt({ ser: plain.qb64b });
+    // A repeated registration encrypts to current accepted keys, including after rotation.
     const totps = keys.map(verfer => new Encrypter({ verkey: verfer.qb64 }).encrypt({ ser: plain.qb64b }).qb64);
-    this.record.code = secret;
+    this.record.code = cipher.qb64;
     this.db.witnesses.pin([this.hab.pre], this.record);
     return Response.json({ totp: totps[0], oobi: this.coordinates().oobis[0], ...(totps.length > 1 ? { totps } : {}) });
   }
@@ -333,7 +312,6 @@ export class HostedWitnesses {
       const hab = fresh ? hby.makeHab("witness", undefined, { transferable: false }) : hby.habByName("witness");
       if (!hab || (!fresh && hab.pre !== record.eid)) throw new ValidationError("Allocated witness identity missing");
       record.eid = hab.pre;
-      if (record.code && !TOTP_SECRET.test(record.code)) record.code = migratedCode(hby, hab, record.code);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: true,
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },

@@ -116,8 +116,7 @@ separate application gate even when the same TS backends pass client onboarding.
 `witness backend` separately owns KF witness allocations. Its private listener
 binds loopback; the public listener selects a distinct witness runtime/store by
 CESR destination or OOBI. Registration verifies current input signatures even if
-the inception is already accepted, stores the TOTP seed as plaintext and returns
-it encrypted to the controller's current keys.
+the inception is already accepted, then encrypts the TOTP seed to current keys.
 Only the allocated controller with a valid code gets witness-local ingress;
 ordinary public evidence stays remote. Stop workers and response streams, join
 requests, then close stores. Shutdown retains allocations; explicit deletion
