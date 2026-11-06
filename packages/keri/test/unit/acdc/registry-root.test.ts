@@ -1,7 +1,7 @@
 /**
  * Registry roots replicate to members as ESSR exchanges over real KELs, TELs and Keepers.
  *
- * Ports KERIpy kentbull/keripy v2-spec b34c1e85 tests/acdc/test_registry_root.py (automatic acceptance, untimed escrow).
+ * Ports KERIpy kentbull/keripy v2-spec e6985345 tests/acdc/test_registry_root.py (automatic acceptance, untimed escrow).
  * The wire vector is copied byte-for-byte from tests/acdc/fixtures/registry_root_essr.json,
  * Git blob 50dc56f4c79cbbae675e1d2f5f76a272d2db171f.
  */
@@ -593,7 +593,7 @@ for (const fault of plaintextFaults) {
       assertEquals(notes(bob), []);
       assertExists(bob.hby.db.exns.get([pending]));
       // Hard refusals leave escrow at once; a wrong root may still be an
-      // unknown commitment, so it waits for evidence until its timeout.
+      // unknown commitment, so it waits for evidence.
       assertEquals(stored(bob), fault === "wrong-root" ? [pending] : []);
       const error = assertThrows(() => bob.root.receive(pending));
       assertInstanceOf(error, fault === "wrong-root" ? RootUnverified : RootRefused);
@@ -615,6 +615,27 @@ Deno.test("registry root: a conflicting retained root is never replaced", async 
     assertEquals(notes(w.bob), []);
     assertThrows(() => w.bob.root.receive(pending, { opening: w.opening }), RootRefused);
     assertEquals(held(w, w.bob)?.qb64, other.qb64);
+  });
+});
+
+Deno.test("registry root: a copy with a root other than the retained one is refused and dropped", async () => {
+  await run(function*() {
+    const w = yield* world();
+    yield* seed(w);
+    yield* copy(w, w.alice, w.bob);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(notes(w.bob).length, 1);
+    // The wrong root never reproduces the commitment; without this refusal it
+    // would wait in escrow forever behind the immutable retained root.
+    const wrong = new Salter({ raw: encoder.encode("wrong-test-root!"), code: MtrDex.Salt_128 });
+    const wire = forge(w.alice, w.bob.hab.pre!, w.gid, w.registry, plaintext(w, w.alice, w.bob, { s: wrong.qb64 }));
+    yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), []);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(notes(w.bob).length, 1);
+    const error = assertThrows(() => w.bob.root.receive(said(wire)), RootRefused);
+    assert(error.message.includes("different root"));
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
   });
 });
 
