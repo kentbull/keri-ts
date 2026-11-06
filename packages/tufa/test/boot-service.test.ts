@@ -5,177 +5,21 @@
  * `tests/test_onboarding_routes.py`, driven by the unchanged Tufa `KfBootClient` against
  * real in-process TypeScript witness and watcher backends.
  */
-import { parseBytes, Vrsn_2_0 } from "cesr-ts";
-import { run, suspend, type Task } from "effection";
+import { Vrsn_2_0 } from "cesr-ts";
+import { run } from "effection";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
+import { acceptedEventReplayMessage, exchange, type Hab, reply } from "keri-ts/runtime";
+import { bootServiceConfig } from "../src/roles/boot-service.ts";
 import {
-  acceptedEventReplayMessage,
-  type AgentRuntime,
-  createAgentRuntime,
-  createHabery,
-  exchange,
-  FetchHttpClient,
-  type Hab,
-  type Habery,
-  Receiptor,
-  reply,
-  systemClock,
-} from "keri-ts/runtime";
-import { discoverKfBoot, KfBootClient, type KfBootClient as Client } from "../src/operator/kfboot/client.ts";
-import { onboardKfAccount } from "../src/operator/kfboot/onboarding.ts";
-import { bootServiceConfig, runBootService } from "../src/roles/boot-service.ts";
-import {
-  freePorts,
-  type RunningRegistries,
-  type RunningService,
-  SERVICE_PASSCODE,
-  startRegistries,
-  startWatcher,
-  startWitness,
-} from "./contract/services.ts";
-
-/** One boot service over four TypeScript witnesses and one watcher. */
-interface Provider {
-  url: string;
-  witnesses: RunningService[];
-  watcher: RunningService;
-  registries?: RunningRegistries;
-  boot: Task<void>;
-  stop(): Promise<void>;
-}
-
-/** Start the backends and the boot service with the launcher's `KF_BOOT_*` shape. */
-export async function startProvider(
-  folder: string,
-  extra: Record<string, string> = {},
-  { witnessCount = 4, registries: withRegistries = false } = {},
-): Promise<Provider> {
-  const witnesses: RunningService[] = [];
-  for (let index = 0; index < witnessCount; index++) {
-    witnesses.push(await startWitness("typescript", folder, `witness-${index}`));
-  }
-  const watcher = await startWatcher("typescript", folder);
-  const registries = withRegistries ? await startRegistries("typescript", folder) : undefined;
-  const services: Record<string, string> = registries
-    ? {
-      REGISTRAR_BOOT_URL: registries.registrar.boot,
-      REGISTRAR_PUBLIC_URL: registries.registrar.url,
-      REGISTRAR_SERVICE_AID: registries.registrar.aid!,
-      REGISTRAR_CA_FILE: registries.caFile,
-      OBSERVER_BOOT_URL: registries.observer.boot,
-      OBSERVER_PUBLIC_URL: registries.observer.url,
-      OBSERVER_SERVICE_AID: registries.observer.aid!,
-      OBSERVER_CA_FILE: registries.caFile,
-    }
-    : {};
-  const [port] = freePorts(1);
-  const url = `http://127.0.0.1:${port}`;
-  const config = bootServiceConfig({
-    HOST: "127.0.0.1",
-    PORT: String(port),
-    WITNESS_BACKENDS: witnesses.map((witness, index) => `w${index}|${witness.boot}|${witness.url}`).join(","),
-    WAT_BOOT_URL: watcher.boot,
-    WAT_PUBLIC_URL: watcher.url,
-    ONBOARDING_PUBLIC_URL: url + "/onboarding",
-    ACCOUNT_PUBLIC_URL: url + "/account",
-    ...services,
-    ...extra,
-  });
-  const boot = run(() => runBootService({ name: "boot", headDirPath: folder, passcode: SERVICE_PASSCODE, config }));
-  const until = Date.now() + 30_000;
-  while (true) {
-    try {
-      const response = await fetch(url + "/health");
-      await response.body?.cancel();
-      if (response.ok) break;
-    } catch { /* not listening yet */ }
-    if (Date.now() > until) throw new Error("Boot service did not become ready");
-    await new Promise(resolve => setTimeout(resolve, 50));
-  }
-  return {
-    url,
-    witnesses,
-    watcher,
-    registries,
-    boot,
-    stop: async () => {
-      await boot.halt();
-      await registries?.observer.stop();
-      await registries?.registrar.stop();
-      await watcher.stop();
-      for (const witness of witnesses) await witness.stop();
-    },
-  };
-}
-
-/** A wallet store with a KRAM-enabled protocol owner, as `tufa infra kf` composes it. */
-export interface Wallet {
-  hby: Habery;
-  runtime: AgentRuntime;
-  http: FetchHttpClient;
-  client(hab: Hab, surface?: "onboarding" | "account"): Promise<Client>;
-  close(): Promise<void>;
-}
-
-/** Open a temporary wallet store whose clients talk to `provider`. */
-export async function wallet(provider: string): Promise<Wallet> {
-  // Runtime-owned stores live in the creating scope, so one task holds them until close.
-  let ready!: (value: Wallet) => void, fail!: (error: unknown) => void;
-  const opened = new Promise<Wallet>((resolve, reject) => {
-    ready = resolve;
-    fail = reject;
-  });
-  const owner = run(function*() {
-    try {
-      const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true, skipSignator: true });
-      const http = new FetchHttpClient();
-      const runtime = yield* createAgentRuntime(hby, http, systemClock, {
-        kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },
-      });
-      try {
-        const discovery = yield* discoverKfBoot(http, provider);
-        ready({
-          hby,
-          runtime,
-          http,
-          client: (hab: Hab, surface: "onboarding" | "account" = "onboarding") =>
-            Promise.resolve(new KfBootClient(hby, hab, runtime.protocol, http, discovery, undefined, surface)),
-          close: () => owner.halt(),
-        });
-        yield* suspend();
-      } finally {
-        yield* runtime.close();
-        yield* hby.close();
-      }
-    } catch (error) {
-      fail(error);
-      throw error;
-    }
-  });
-  return await opened;
-}
-
-/** POST one complete message to a surface with explicit transport headers. */
-async function post(
-  url: string,
-  body: Uint8Array | string,
-  headers: Record<string, string>,
-): Promise<{ status: number; text: string }> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers,
-    body: typeof body === "string" ? body : new Uint8Array(body),
-  });
-  return { status: response.status, text: await response.text() };
-}
-
-/** Split an endorsed message into body and `CESR-ATTACHMENT` header, as Tufa's egress does. */
-function framed(message: Uint8Array): { body: Uint8Array; headers: Record<string, string> } {
-  const frame = parseBytes(message)[0];
-  const body = frame.body.raw;
-  const attachment = new TextDecoder().decode(message.slice(body.length));
-  return { body, headers: { "Content-Type": "application/cesr", "CESR-ATTACHMENT": attachment } };
-}
+  framed,
+  locksmithServiceSettings,
+  onboard,
+  post,
+  settled,
+  startProvider,
+  wallet,
+} from "./contract/kf-provider.ts";
+import { startRegistries } from "./contract/services.ts";
 
 Deno.test("boot service: discovery, health and the CESR transport table", async () => {
   const folder = await Deno.makeTempDir({ prefix: "tufa-boot-transport-" });
@@ -378,59 +222,6 @@ Deno.test("boot service: configuration follows kf-boot validation", () => {
     assert(failed, JSON.stringify(bad));
   }
 });
-
-/** Locksmith `localdev/services.py` `service_settings`, ported as the capability expectation. */
-function locksmithServiceSettings(payload: Record<string, unknown>, account: string): void {
-  assertEquals(payload.account_aid, account);
-  const capabilities = payload.services as Record<string, Record<string, unknown>>;
-  assertEquals(Object.keys(capabilities).sort(), ["observer", "registrar"]);
-  for (const [kind, role] of [["registrar", "publisher"], ["observer", "reader"]]) {
-    const value = capabilities[kind];
-    assertEquals(value.aid, account);
-    assertEquals(value.roles, [role]);
-    assert(typeof value.service === "string" && value.service.length === 44);
-    const url = new URL(String(value.url));
-    assert(
-      url.protocol === "https:" && url.hostname && !url.username && !url.search && ["", "/"].includes(url.pathname),
-    );
-    assert(typeof value.ca_pem === "string" && value.ca_pem.startsWith("-----BEGIN CERTIFICATE-----"));
-    assert(!String(value.ca_pem).includes("PRIVATE KEY"), "only certificates are handed to wallets");
-  }
-}
-
-/** Wait for a signed operation to leave pending/running. */
-async function settled(client: Client, id: string): Promise<Record<string, unknown>> {
-  const until = Date.now() + 30_000;
-  while (true) {
-    const operation = (await run(() => client.operation(id))).payload.operation as Record<string, unknown>;
-    if (!["pending", "running"].includes(String(operation.state))) return operation;
-    if (Date.now() > until) throw new Error("Operation did not settle: " + JSON.stringify(operation));
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-}
-
-/** Run `tufa infra kf onboard`'s flow for `account` through `signer`. */
-async function onboard(
-  store: Wallet,
-  account: Hab,
-  signer: Hab,
-  profile: string,
-  credentialFile: string,
-  sessionId?: string,
-) {
-  const client = await store.client(signer);
-  return await run(() =>
-    onboardKfAccount({
-      client,
-      account,
-      receiptor: new Receiptor(store.hby, store.runtime.protocol, store.runtime.http, store.runtime.clock),
-      profile,
-      sessionId,
-      timeoutMs: 60_000,
-      credentialFile,
-    })
-  );
-}
 
 Deno.test("boot service: account create/complete, services, lists, watcher status and deletes", async () => {
   const folder = await Deno.makeTempDir({ prefix: "tufa-boot-account-" });
