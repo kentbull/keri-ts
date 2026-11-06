@@ -881,8 +881,16 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     const originalBodies = parties.map(party => loadNests(party.hby.db, grant.said!).map(nest => nest.body.raw));
     skew += 11000;
     assertEquals(left.dh.approve(grant.said!), grant.said!);
-    const query = left.dh.start(grant.said!);
-    assertEquals(left.dh.start(grant.said!), query, "retry preserves the exact signed query");
+    const started = left.dh.start(grant.said!);
+    assertEquals(left.dh.start(grant.said!), started, "retry preserves the exact signed query");
+    // A send-time renewal (KERIpy requery) keeps the keys and scope; only time, SAID and signatures change.
+    yield* sleep(2);
+    const query = left.dh.requery(grant.said!);
+    const before = envelopeFromFrame(parseBytes(started)[0]).serder;
+    const after = envelopeFromFrame(parseBytes(query)[0]).serder;
+    assertNotEquals(after.said, before.said);
+    assertEquals(after.sad!.q, before.sad!.q);
+    assertEquals(left.dh.start(grant.said!), query, "the renewal becomes the outstanding query");
     assertEquals(right.dh.processQuery(envelopeFromFrame(parseBytes(query)[0])).kind, "drop");
     assertEquals(right.dh.outgoing.length, 0, "receipt without consent creates no DH reply");
     assertEquals(right.dh.approve(grant.said!), grant.said!);
@@ -934,6 +942,8 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     yield* deliverPartial(left, response.msg, 1);
     assertEquals(left.dh.complete(grant.said!), true);
     assertEquals(right.dh.complete(grant.said!), true);
+    assertThrows(() => left.dh.requery(grant.said!), Error, "already completed");
+    assertThrows(() => right.dh.requery(grant.said!), Error, "no started issuer query");
     const root = issuer.mgr.getRegistryRoot(issuer.pre, rip.said!)!;
     assertExists(root);
     assertEquals(issuee.mgr.getRegistryRoot(issuee.pre, rip.said!)!.qb64, root.qb64);

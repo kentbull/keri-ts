@@ -18,7 +18,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, ensure, run, sleep, spawn } from "effection";
-import { assert, assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { runPresentationUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { loadNests } from "../../../db.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
@@ -215,8 +215,17 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     const deadline = observer.exc.exchangeDeadline(pending);
     assertThrows(() => presenter.route.approve(original.said!), Error, undefined, "an admitted Grant is terminal");
     const xid = observer.route.approve(pending.said!);
-    const query = observer.route.start(pending.said!), requested = parseBytes(query)[0];
-    assertEquals(observer.route.start(pending.said!), query, "retry keeps the exact signed query");
+    const started = observer.route.start(pending.said!);
+    assertEquals(observer.route.start(pending.said!), started, "retry keeps the exact signed query");
+    // A send-time renewal (KERIpy requery) re-signs only the query's own time, SAID and signatures.
+    yield* sleep(2);
+    const query = observer.route.requery(xid), requested = parseBytes(query)[0];
+    const before = envelopeFromFrame(parseBytes(started)[0]).serder, after = envelopeFromFrame(requested).serder;
+    assertNotEquals(after.said, before.said);
+    assertEquals(after.sad!.q, before.sad!.q);
+    assertEquals(requested.nests!.map(nest => nest.body.raw), parseBytes(started)[0].nests!.map(nest => nest.body.raw));
+    assertEquals(observer.route.start(pending.said!), query, "the renewal becomes the outstanding query");
+    assertThrows(() => presenter.route.requery(xid), Error, "no local approval");
     const requestedEvents = (envelopeFromFrame(requested).serder.sad!.q as Record<string, unknown>).re;
     assertEquals(requestedEvents, { [rip.said!]: events.map(event => event.said!) });
     assertEquals(requested.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
@@ -273,6 +282,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     });
     yield* observer.reactor.processBytes(yield* call(() => collectPayload(framePayload(partialReply(0, true)))));
     assertEquals(observer.route.complete(xid), false, "one reply signature cannot release a complete result");
+    assertThrows(() => observer.route.openings(xid), Error, "not been authenticated", "partial proofs stay unreadable");
     yield* call(() => assertRejects(() => run(() => observer.route.finish(xid))));
     const completionWire = yield* call(() => collectPayload(framePayload(partialReply(1, false))));
     const completion = yield* observer.protocol.dispatch(parseBytes(completionWire)[0]);
@@ -282,6 +292,14 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       true,
       "the second signature need not repeat previously authenticated proofs",
     );
+    // KERIpy Unblind.openings: the authenticated reply's verified openings in selected order, as a copy.
+    const openings = observer.route.openings(xid);
+    assertEquals([...openings.keys()], events.map(event => event.said!));
+    assertEquals([...openings.values()].map(opening => opening.d.nonce), proofs.map(proof => proof.d.nonce));
+    openings.clear();
+    assertEquals(observer.route.openings(xid).size, events.length);
+    assertThrows(() => observer.route.openings("Eunapproved"), Error, "no local approval");
+    assertThrows(() => observer.route.requery(xid), Error, "already received");
     assertEquals((yield* observer.route.finish(xid)).kind, "accept");
     assertEquals(observer.hby.db.exns.get(pending.said!)!.raw, pending.raw);
     assertEquals(observer.exc.exchangeDeadline(pending), deadline);

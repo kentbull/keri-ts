@@ -227,6 +227,36 @@ export class Unblind implements AuxiliaryQueryProcessor {
   }
 
   /**
+   * Re-sign this disclosee's started individual query for delivery now.
+   *
+   * KERIpy `Unblind.requery` (kentbull/keripy#159): a queued query can age past
+   * the discloser's KRAM timeliness window before transport begins. The renewal
+   * keeps the approved Grant, the frozen requested events and their nested
+   * public evidence; only the query's own `dt`, SAID and signatures change, and
+   * it becomes the outstanding query. A newer registry head still needs a new
+   * operation, and the Grant's deadline is never extended. Groups cannot renew here.
+   */
+  requery(xid: string): Uint8Array {
+    const op = this.operation(xid);
+    if (this.group) throw new ValidationError("one group member cannot renew a threshold unblind query");
+    if (this.hab.pre !== op.recipient || !op.query) throw new ValidationError("unblind has no started disclosee query");
+    if (op.received) throw new ValidationError("unblind already received its authenticated reply");
+    this.current(op);
+    const { requested, children } = this.request(op);
+    if (!op.requested || !sameSelection(requested, op.requested)) {
+      throw new ValidationError("unblind request differs from the approved query");
+    }
+    const message = query(Unblind.Route, { x: op.xid, re: requested }, {
+      pre: this.hab.pre,
+      replyRoute: Unblind.Route,
+      pvrsn: Vrsn_2_0,
+      kind: Kinds.json,
+    });
+    op.query = this.signed(message, children);
+    return op.query.slice();
+  }
+
+  /**
    * Contribute to one exact group proposal under the existing local approval.
    * Validate every member signature and the public suffix/minimum openings before
    * signing. A rootless member signs the supplied proof, never derives a root.
@@ -471,6 +501,31 @@ export class Unblind implements AuxiliaryQueryProcessor {
     this.live(op);
     this.current(op);
     return this.group && this.hab.pre === op.sender ? op.reply !== null : op.received;
+  }
+
+  /**
+   * Return the verified openings an authenticated reply selected.
+   *
+   * KERIpy `Unblind.openings` (kentbull/keripy#156): a read-only accessor for a
+   * group member forwarding the completed reply, with its proofs, to the other
+   * members. It requires the same readiness as `complete` (local approval, live
+   * original Grant, an authenticated reply or frozen own group reply). Each
+   * opening was checked against its accepted event and the approved disclosure
+   * when the reply arrived. It is not a credential-state verdict and authorizes
+   * neither Admit nor retention; `finish` owns that.
+   *
+   * @returns registry event SAID to opening, in the reply's selected order; a copy.
+   */
+  openings(xid: string): Map<string, RegistryDisclosure> {
+    if (!this.complete(xid)) throw new ValidationError("unblind reply has not been authenticated and verified");
+    const op = this.operation(xid);
+    const openings = new Map<string, RegistryDisclosure>();
+    for (const said of Object.values(op.selected ?? {}).flat()) {
+      const opening = op.openings.get(said);
+      if (!opening) throw new ValidationError("unblind reply has not been authenticated and verified");
+      openings.set(said, opening);
+    }
+    return openings;
   }
 
   /** Retry this exact Grant, or atomically update only its live accepted proof view. */

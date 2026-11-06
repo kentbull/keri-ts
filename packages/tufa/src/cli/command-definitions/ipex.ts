@@ -244,14 +244,16 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
   registerDispatchedCommand(
     addHabOption(addStoreOptions(
       ipex.command("unblind")
-        .description("Acquire or release exact presentation openings, or recover an offline candidate; never Admit")
-        .option("--grant <said>", "Exact retained presentation Grant for explicit live Unblind")
-        .option("--listen <port>", "Loopback direct intake during live --grant Unblind")
+        .description(
+          "Acquire or release exact presentation openings live (default), or recover an offline candidate; never Admit",
+        )
+        .option("--grant <said>", "Exact retained presentation Grant for live Unblind (required unless --opening)")
+        .option("--listen <port>", "Loopback direct intake during live Unblind")
         .option("--timeout <seconds>", "Live operation elapsed limit (default: 60)")
         .option("--input <file>", "Ingest signed public evidence before explicit live approval")
         .option("--proposer <aid>", "Current group member who authors the exact query or reply")
-        .option("--opening <file>", "Offline counted blind/bound opening file")
-        .option("--said <said>", "Offline candidate credential SAID")
+        .option("--opening <file>", "Offline fallback: counted blind/bound opening file")
+        .option("--said <said>", "Offline fallback: candidate credential SAID")
         .option("--states <json>", "State strings: live defaults to issued, revoked and empty; offline defaults to []")
         .option("--out <file>", "Write the matching counted opening"),
     )),

@@ -240,14 +240,15 @@ proof. Ordinary verified signature indices elect actual delivery. Rootless
 members validate the supplied openings and can be elected to send; no DH
 custodian or coordinator selection applies. Public nested BUP evidence and
 ordinary/bound reply openings remain on their original messages. Timeout or
-completion abandons process-local consent, restores borrowed handlers and joins
+completion abandons process-local consent, releases its shared-route child handler and joins
 host cleanup; no persistent Unblind session or new approval stage is created.
 
+Live `--grant` Unblind is the default, as in KERIpy. As an offline fallback,
 `ipex unblind --opening FILE --said CREDENTIAL --states '["issued"]'` tests an
 explicitly possessed opening UUID against candidate states; optional `--out FILE`
 writes the matching raw opening tuple. A match does not establish accepted standing
-or permission to disclose. Offline `--opening`/`--said`/`--out` and live `--grant`
-profiles are mutually exclusive.
+or permission to disclose. Offline `--opening`/`--said`/`--out` and the live options
+are mutually exclusive.
 
 ACDC v2 IPEX attachment genus defaults to 2.0. Agree/Grant/Admit independently
 accept `--witness-gvrsn 2` for the known v2 witness profile; the witness

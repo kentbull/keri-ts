@@ -284,11 +284,13 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
     throw new ValidationError("--listen must be a port between 1 and 65535");
   }
   if (args.opening || args.said || args.out) {
-    throw new ValidationError("Live --grant and offline --opening/--said/--out profiles are exclusive");
+    throw new ValidationError("--said and --out belong to offline --opening recovery");
   }
   const grant = parseStringOption(args.grant, "grant"), timeout = parseNumberOption(args.timeout, "timeout") ?? 60;
   if (!grant || !Number.isFinite(timeout) || timeout <= 0) {
-    throw new ValidationError("Live Unblind requires --grant and a positive timeout");
+    throw new ValidationError(
+      "Live Unblind requires --grant and a positive timeout; use --opening for offline recovery",
+    );
   }
   const states = JSON.parse(parseStringOption(args.states, "states") ?? "[\"issued\",\"revoked\",\"\"]");
   if (!Array.isArray(states) || !states.every(state => typeof state === "string")) {
