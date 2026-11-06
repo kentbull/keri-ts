@@ -1,5 +1,5 @@
 /** KF witness backend: private allocation, public registration and ordinary KERI witness service. */
-import { createProtocolHandler, type ProtocolHandler, startServer } from "@keri-ts/hosting";
+import { createProtocolHandler, handleWitnessReceiptPost, type ProtocolHandler, startServer } from "@keri-ts/hosting";
 import { Encrypter, Matter, MtrDex, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, run, type Scope, spawn, suspend, type Task, useScope } from "effection";
 import {
@@ -10,11 +10,9 @@ import {
   createAgentRuntime,
   createHabery,
   EndpointRoles,
-  envelopeFromFrame,
   FetchHttpClient,
   type Hab,
   type Habery,
-  Kever,
   readRequiredCesrRequestBytes,
   reply,
   requestBytes,
@@ -55,15 +53,23 @@ function refusal(error: unknown): Response {
   throw error;
 }
 
-/** Verify the Foundation OTP/timestamp header with the same ten-minute lower bound. */
+/**
+ * Verify the Foundation OTP/timestamp header with the same ten-minute lower bound.
+ * Like witness-hk's `validCode`, an unusable stored secret (a registered non-base32
+ * `secret`) is an invalid code, not a server failure.
+ */
 function validCode(secret: string, authorization: string | null): boolean {
   if (!authorization) return false;
   const parts = authorization.split("#");
   if (parts.length !== 2 || !/^\d{6}$/.test(parts[0])) return false;
   const timestamp = Date.parse(parts[1]);
   if (!Number.isFinite(timestamp) || timestamp < Date.now() - 600_000) return false;
-  return new TOTP({ secret, algorithm: "SHA1", digits: 6, period: 30 })
-    .validate({ token: parts[0], timestamp, window: 0 }) !== null;
+  try {
+    return new TOTP({ secret, algorithm: "SHA1", digits: 6, period: 30 })
+      .validate({ token: parts[0], timestamp, window: 0 }) !== null;
+  } catch {
+    return false;
+  }
 }
 
 /** One allocation owns its controller policy, request lifetime and actual witness runtime. */
@@ -102,7 +108,12 @@ class HostedWitness {
     return pending;
   }
 
-  /** Dispatch only authorized receipt input locally; ordinary public KERI traffic stays remote. */
+  /**
+   * Dispatch only authorized controller input locally; everything else is ordinary remote input.
+   * As in witness-hk, `/receipts` refuses another controller's event (403) and an unregistered
+   * controller (412), but an invalid or missing code is not refused: the event is processed
+   * non-locally, so a new event waits in misfit escrow (202) and an accepted one is receipted.
+   */
   private async respond(req: Request): Promise<Response> {
     const path = new URL(req.url).pathname;
     if (path === "/aids" && req.method === "POST") return await this.register(req);
@@ -122,8 +133,10 @@ class HostedWitness {
       const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
       authorized = validCode(secret, req.headers.get("Authorization"));
     }
-    if (path === "/receipts" && (!own || frames.length !== 1 || !authorized)) {
-      throw new RequestError(this.record.code ? 403 : 412, "Registered controller and valid witness code required");
+    if (path === "/receipts") {
+      if (frames.length !== 1) throw new RequestError(400, "Expected one controller event");
+      if (!own) throw new RequestError(403, "Event is not from the registered controller");
+      if (!this.record.code) throw new RequestError(412, "Controller has not registered with this witness");
     }
     // The reader already appended detached attachments; forward one complete CESR body.
     const headers = new Headers(req.headers);
@@ -136,6 +149,9 @@ class HostedWitness {
       body: new Uint8Array(bytes),
       signal: req.signal,
     });
+    if (path === "/receipts" && !authorized) {
+      return await handleWitnessReceiptPost(this.runtime, complete, this.hab, { local: false });
+    }
     return await (own && authorized ? this.witness : this.remote)(complete);
   }
 
@@ -175,7 +191,14 @@ class HostedWitness {
     );
   }
 
-  /** Verify fresh inception signatures before installing an encrypted registration secret. */
+  /**
+   * Register the allocated controller as witness-hk's `POST /aids` does: the `kel` part is the
+   * controller's KEL (KERIpy and Locksmith send the whole KEL), its first event names the subject,
+   * and every frame is processed as ordinary remote input with an optional `delkel` first. The
+   * parser alone authenticates events; registration succeeds once the controller is accepted.
+   * The TOTP secret (generated, or a supplied `secret` used as given) is stored encrypted to this
+   * witness's own key and returned encrypted to the controller's current keys.
+   */
   private async register(req: Request): Promise<Response> {
     if (!req.headers.get("Content-Type")?.startsWith("multipart/form-data")) {
       throw new RequestError(415, "Multipart controller registration required");
@@ -184,43 +207,28 @@ class HostedWitness {
     const form = await new Response(body, { headers: { "Content-Type": req.headers.get("Content-Type")! } })
       .formData();
     const kel = form.get("kel"), delegator = form.get("delkel"), supplied = form.get("secret");
-    if (kel === null) throw new RequestError(400, "Signed inception kel part required");
-    // Python clients send text fields; file parts carry the same signed CESR evidence.
-    const bytes = typeof kel === "string" ? new TextEncoder().encode(kel) : new Uint8Array(await kel.arrayBuffer());
-    const frames = parseBytes(bytes);
-    const frame = frames[0], event = frame?.body;
-    if (
-      frames.length !== 1 || !(event instanceof SerderKERI) || event.pvrsn.major !== 2
-      || !["icp", "dip"].includes(event.ilk!) || event.pre !== this.record.cid || event.sn !== 0
-    ) {
-      throw new RequestError(400, "Expected the allocated controller's v2 inception");
+    if (kel === null) throw new RequestError(400, "Controller kel part required");
+    // Python clients send text fields; file parts carry the same CESR stream.
+    const part = async (value: FormDataEntryValue): Promise<Uint8Array> =>
+      typeof value === "string" ? new TextEncoder().encode(value) : new Uint8Array(await value.arrayBuffer());
+    const frames = parseBytes(await part(kel));
+    const subject = frames[0]?.body;
+    if (!(subject instanceof SerderKERI) || subject.pre !== this.record.cid) {
+      throw new RequestError(400, "KEL part is not the allocated controller's KEL");
     }
-    const verified = Kever.verifyIndexedSignatures(event.raw, envelopeFromFrame(frame).sigers, event.verfers);
-    if (!event.tholder?.satisfy(verified.indices)) throw new RequestError(403, "Controller signatures incomplete");
-    // Delegation and KEL acceptance still belong to the ordinary protocol processor.
+    const delegation = delegator === null ? null : await part(delegator);
     const runtime = this.runtime;
-    const delegation = typeof delegator === "string"
-      ? new TextEncoder().encode(delegator)
-      : delegator
-      ? new Uint8Array(await delegator.arrayBuffer())
-      : null;
     await run(function*() {
       if (delegation) yield* settleRuntimeIngress(runtime, [delegation]);
-      yield* runtime.protocol.dispatch(frame, { local: false, escrows: true });
+      for (const frame of frames) yield* runtime.protocol.dispatch(frame, { local: false, escrows: true });
     });
-    if (this.hby.db.kels.getLast(this.record.cid, 0) !== event.said) {
-      throw new RequestError(400, "Controller inception is not accepted");
-    }
-    const keys = this.hby.db.getKever(this.record.cid, { refresh: true })!.verfers;
+    const kever = this.hby.db.getKever(this.record.cid, { refresh: true });
+    if (!kever) throw new RequestError(400, "KEL part not valid inception event");
+    const keys = kever.verfers;
     if (keys.some(key => key.code !== MtrDex.Ed25519 && key.code !== MtrDex.Ed25519N)) {
       throw new RequestError(400, "Registration requires Ed25519 controller keys");
     }
-    const secret = supplied instanceof Blob
-      ? await supplied.text()
-      : typeof supplied === "string"
-      ? supplied
-      : new Secret({ size: 20 }).base32;
-    if (!/^[A-Z2-7]{32}$/.test(secret)) throw new RequestError(400, "Expected a 32-character base32 TOTP secret");
+    const secret = supplied === null ? new Secret({ size: 20 }).base32 : new TextDecoder().decode(await part(supplied));
     const plain = new Matter({ raw: new TextEncoder().encode(secret), code: MtrDex.Ed25519_Seed });
     const cipher = new Encrypter({ verkey: this.hab.kever!.verfers[0].qb64 }).encrypt({ ser: plain.qb64b });
     // A repeated registration encrypts to current accepted keys, including after rotation.
@@ -399,7 +407,9 @@ export class HostedWitnesses {
     const selected = oobi ?? destination;
     if (!selected) return new Response("CESR destination required", { status: 400 });
     const allocation = this.allocations.get(selected);
-    return allocation ? await allocation.witness.handle(req) : new Response("Unknown witness", { status: 404 });
+    if (allocation) return await allocation.witness.handle(req);
+    // witness-hk answers an unknown destination on its registration and receipt routes with 400.
+    return new Response("Unknown witness", { status: ["/aids", "/receipts"].includes(path) ? 400 : 404 });
   };
 
   /** Both listeners may request shutdown; retain allocations while joining each child exactly once. */

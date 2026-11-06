@@ -115,10 +115,16 @@ separate application gate even when the same TS backends pass client onboarding.
 
 `witness backend` separately owns KF witness allocations. Its private listener
 binds loopback; the public listener selects a distinct witness runtime/store by
-CESR destination or OOBI. Registration verifies current input signatures even if
-the inception is already accepted, then encrypts the TOTP seed to current keys.
-Only the allocated controller with a valid code gets witness-local ingress;
-ordinary public evidence stays remote. Stop workers and response streams, join
+CESR destination or OOBI. The whole TOTP workflow follows upstream witness-hk
+`main`: `/aids` takes the controller's full KEL (first event names the subject)
+and optional `delkel` as ordinary remote input, succeeds once the controller is
+accepted, uses a supplied `secret` as given, stores the seed encrypted to the
+witness's own key and returns it encrypted to current controller keys (`totps`
+per key). Only the allocated controller with a valid code gets witness-local
+ingress; on `/receipts` an invalid or missing code is processed non-locally
+(202 escrow, 200 if already accepted), not refused. Unknown destinations are 400
+on `/aids`/`/receipts`. Only deliberate deviations: 400 (not upstream's unhandled
+500) for non-Ed25519 keys, and Tufa lifecycle codes (410/503). Stop workers and response streams, join
 requests, then close stores. Shutdown retains allocations; explicit deletion
 clears only that resource. Provider storage never implies mailbox polling.
 Receipt body/genus follows the receipted event; hosted KSN and advertised endpoint
