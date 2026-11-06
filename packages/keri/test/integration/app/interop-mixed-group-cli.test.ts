@@ -18,14 +18,15 @@ function result(stdout: string): Record<string, unknown> {
   return JSON.parse(stdout.trim().split("\n").at(-1)!);
 }
 
-/** Keep the same real command topology; the optional third member goes offline after inception. */
-async function reciprocalApproval(weighted: boolean): Promise<void> {
+/**
+ * Keep the same real command topology; the optional third member goes offline after inception.
+ * The group is explicitly v1 or v2: witness, member and group KELs all use `kelVersion`.
+ * Both implementations exchange proposals in KERIpy's form, a v1 `e`-embed wrapper around
+ * the group-version child, so one proposal form serves both group versions.
+ */
+async function reciprocalApproval(weighted: boolean, kelVersion: "1.0" | "2.0"): Promise<void> {
   const ctx = await createInteropContext();
   ctx.env.PYTHONUNBUFFERED = "1";
-  // v1-only reference peers (GLEIF 1.2/1.3) need both members to author v1 KELs. Upstream
-  // WebOfTrust main cannot read v2 multisig proposals, so its group stays v1 end to end
-  // (witness, member and group KELs); the candidate profile keeps the v2 group.
-  const kelVersion = v1OnlyKeripyPeer(ctx.env) || ctx.env.KERIPY_INTEROP_PROFILE === "main" ? "1.0" : "2.0";
   const witnesses = await startKeriPyWitnessHarness(ctx, {
     aliases: ["wan"],
     protocolVersion: kelVersion === "1.0" ? 1 : 2,
@@ -254,15 +255,19 @@ async function reciprocalApproval(weighted: boolean): Promise<void> {
   }
 }
 
-// Gap: Tufa v2 nested multisig proposals vs KERIpy `e`-embed join; Tufa will follow
-// KERIpy's proposal form (follow-up). Only the v2 group path is affected.
+// Every peer runs a v1 group. GLEIF 1.2/1.3 speak only v1, and frozen upstream main's Poster
+// still forwards a v2 member's proposal in a v1 /fwd that its v2 witness cannot store, so
+// v2 groups run on the v2-spec peers (default and candidate), which nest it in a v2 /fwd.
 const v2GroupPeer = !v1OnlyKeripyPeer() && Deno.env.get("KERIPY_INTEROP_PROFILE") !== "main";
-
-Deno.test({
-  name: "selected Python and Tufa CLI members complete reciprocal witnessed group approval",
-  ignore: v2GroupPeer,
-}, () => reciprocalApproval(false));
-Deno.test({
-  name: "selected Python and Tufa weighted CLI group completes while a non-required member stays offline",
-  ignore: v2GroupPeer,
-}, () => reciprocalApproval(true));
+for (const kelVersion of ["1.0", "2.0"] as const) {
+  const ignore = kelVersion === "2.0" && !v2GroupPeer;
+  Deno.test({
+    name: `selected Python and Tufa CLI members complete reciprocal witnessed v${kelVersion} group approval`,
+    ignore,
+  }, () => reciprocalApproval(false, kelVersion));
+  Deno.test({
+    name:
+      `selected Python and Tufa weighted CLI v${kelVersion} group completes while a non-required member stays offline`,
+    ignore,
+  }, () => reciprocalApproval(true, kelVersion));
+}

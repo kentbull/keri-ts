@@ -171,8 +171,10 @@ and [replay sources](../../../packages/keri/test/unit/app/delivery/replay-source
 ### COMP-07 — Version-aware forwarding envelopes
 
 **Coexistence.** [Poster forwarding construction](../../../packages/keri/src/app/delivery/forwarding.ts)
-uses legacy pathed embeds for legacy children and a v2 `/fwd` binding one nested
-child to signed `a.evt` when the child body or genus requires v2. Preserve the
+uses legacy pathed embeds for a v1 member's legacy children and a v2 `/fwd` binding
+one nested child to signed `a.evt` when the sender's KEL, the child body or its genus
+is v2. A v2 member's v1 `e`-embed group proposal therefore travels nested with its
+own genus selector, matching KERIpy's v2 Poster (kentbull/keripy#157). Preserve the
 child's own signatures; the forwarding signature is not child authentication.
 This resembles W2's separate Poster/StreamPoster paths; it does not discover an
 old mailbox's capabilities. Evidence:

@@ -154,8 +154,9 @@ Poster.send accepts one complete CESR message; sendStream admits a finite ordere
 stream with first-role endpoint selection. Initial IPEX grant/admit/spurn use stream
 operation; join signaling/completed output use ordinary sends. This is producer
 context, not a flag or route/topic inference. Target preparation is an owned operation
-using the shared codec: v2 bodies/genera use a signed body-digest `/fwd` with one
-independently authenticated nested message; legacy messages use pathed embeds.
+using the shared codec: v2 members, bodies and genera use a signed body-digest `/fwd`
+with one independently authenticated nested message, including a v2 member's v1
+`e`-embed group proposal; only v1 members' legacy messages use pathed embeds.
 Qualified selectors must not reach the legacy body-only reaper. Poster awaits
 preparation for each admitted event. No generic output executor is needed.
 Organizer resolves aliases at the producer boundary; Poster receives destination AIDs.

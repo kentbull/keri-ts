@@ -71,7 +71,7 @@ import {
   type MultisigVdrProposal,
   prepareMultisigEventExn,
 } from "../../../../src/app/multisig/grouping.ts";
-import { signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
+import { multisigPayloadSaid, signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
 import {
   approveAcdcV2Registry,
   approvePendingMultisigProposal,
@@ -191,14 +191,19 @@ Deno.test("multisig publication records its actual local proposal before deliver
           const serder = frame.body as SerderKERI;
           assertEquals(evt.src, alice.pre);
           assertEquals(evt.dest, bob.pre);
-          // A v2 wrapper commits to its one nested child by SAID; it carries no v1 embeds.
-          assertEquals(serder.pvrsn, Vrsn_2_0);
-          assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, icp: local.serder.said });
-          assertEquals(serder.ked!.e, undefined);
-          assertEquals(frame.nests?.map(nest => nest.body.raw), [local.serder.raw]);
+          // Like KERIpy, the v2 group's proposal is a v1 wrapper whose named `e` embed is the v2 child.
+          assertEquals(serder.pvrsn, Vrsn_1_0);
+          // KERIpy's v1 wrapper binds the recipient into `a.i`.
+          assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
+          assertEquals(
+            new SerderKERI({ sad: (serder.ked!.e as Record<string, Record<string, unknown>>).icp }).raw,
+            local.serder.raw,
+          );
+          assertEquals(frame.nests, undefined);
           assertEquals(left.db.exns.get([serder.said!])?.raw, serder.raw);
           assertEquals(runtime.exc.complete(serder.said!), true);
-          assertEquals(left.db.maids.get([local.serder.said!]).map((p) => p.qb64), [alice.pre]);
+          // KERIpy's Multiplexor indexes a v1 proposal by its `e` block SAID, shared by every member's wrapper.
+          assertEquals(left.db.maids.get([multisigPayloadSaid(serder)!]).map((p) => p.qb64), [alice.pre]);
           delivered = serder;
           return { ...evt, kin: "msg" };
         };
@@ -214,7 +219,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
         assertEquals(publication.messages, [{
           recipient: bob.pre,
           exnSaid: delivered.said,
-          payloadSaid: local.serder.said,
+          payloadSaid: multisigPayloadSaid(delivered),
         }]);
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, 0);
@@ -360,14 +365,17 @@ Deno.test("multisig join selects, signs and resumes v2 group inception and reply
         runtime.postman.send = function(evt) {
           const [frame] = parseBytes(evt.msg);
           const serder = frame.body as SerderKERI;
-          // Local contributions are v2 wrappers that commit to their one nested child by SAID.
-          assertEquals(serder.pvrsn, Vrsn_2_0);
-          assertEquals(serder.ked!.e, undefined);
+          // Local contributions use KERIpy's v1 `e`-embed wrapper around the group's v2 child.
+          const embeds = serder.ked!.e as Record<string, Record<string, unknown>>;
+          assertEquals(serder.pvrsn, Vrsn_1_0);
+          assertEquals(frame.nests, undefined);
           if (serder.route === "/multisig/icp") {
-            assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, icp: local.serder.said });
+            assertEquals(serder.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, i: bob.pre });
+            assertEquals(embeds.icp.d, local.serder.said);
           }
           if (serder.route === "/multisig/rpy") {
-            assertEquals(serder.ked!.a, { gid: local.hab.pre, rpy: frame.nests?.[0].body.said });
+            assertEquals(serder.ked!.a, { gid: local.hab.pre, i: bob.pre });
+            assertEquals(new SerderKERI({ sad: embeds.rpy }).pvrsn, Vrsn_2_0);
           }
           return { ...evt, kin: "msg" };
         };
@@ -668,7 +676,10 @@ for (const remoteFirst of [false, true]) {
             : { route, attrs: { gid: local.hab.pre, smids: mids } };
           const signed = [];
           for (const [member, child, recipient] of [[alice, own, bob], [bob, peer, alice]] as const) {
-            const prepared = await run(() => prepareMultisigEventExn(member.pre, request, child.message));
+            // KERIpy's v2-registry group rotation still sends this explicit v2 nested form.
+            const prepared = await run(() =>
+              prepareMultisigEventExn(member.pre, request, child.message, { version: Vrsn_2_0 })
+            );
             const message = signGroupMessage(member, recipient.pre, prepared);
             const [frame] = parseBytes(message.message);
             assertEquals(frame.body.pvrsn, Vrsn_2_0);
@@ -2307,7 +2318,7 @@ Deno.test("v2 IPEX group wrappers preserve child proofs and require explicit mem
             yield* spawn(() => receiver.postman.deliverDo()),
             yield* spawn(() => sender.postman.deliverDo()),
           );
-          // Endpoint approval returns a v2 nested reply, including on retained-contribution retry.
+          // Endpoint approval returns KERIpy's v1 `e`-embed reply wrapper, including on retained-contribution retry.
           const role = yield* proposeGroupEndpointRole(left, receiver.protocol, receiver.postman, local.hab, {
             eid: bob.pre,
             role: "agent",
@@ -2323,7 +2334,7 @@ Deno.test("v2 IPEX group wrappers preserve child proofs and require explicit mem
           });
           assertExists(peerRole);
           const returned = peerRole.messages[0].exnSaid;
-          assertEquals(left.db.exns.get([returned])?.pvrsn, Vrsn_2_0);
+          assertEquals(left.db.exns.get([returned])?.pvrsn, Vrsn_1_0);
           const completedRole = yield* approvePendingMultisigProposal(left, receiver, { said: returned, callbacks });
           assertEquals(completedRole?.accepted, true);
           const resumedRole = yield* approvePendingMultisigProposal(right, sender, { said: returned, callbacks });

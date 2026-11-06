@@ -489,7 +489,11 @@ export function multisigChildGenusAttrs(
 }
 /**
  * Prepare finite child input, construct the parent and serialize its nested evidence.
- * KEL event proposals follow the child event version (v2 nested, v1 pathed); others default to v2. The v1 pathed path retains
+ * KEL (icp/rot/ixn) and reply proposals default to KERIpy's form for both v1 and v2
+ * groups: a v1 wrapper with a named `e` embed and pathed child attachments in the
+ * child's own genus. The group's version is the child KEL/reply version; the wrapper
+ * is only the coordination envelope. Other routes default to v2 nested wrappers, and
+ * an explicit `version`/`pvrsn` selects either form. The v1 pathed path retains
  * its established encoding; v2 delegates parsing to parseBytes
  * once and borrows the resulting child only until nestedPayload has been fully consumed.
  * Parsed child evidence consists of ordinary values; serialization observes cancellation.
@@ -504,10 +508,10 @@ export function* prepareMultisigEventExn(
   // Keep the route selection stable through parser suspension; attribute values remain immutable borrows.
   const captured = { ...proposal };
   const { route, attrs } = captured;
-  // A KEL event proposal follows its event's KEL version, so v1 and v2 KEL events never nest.
-  const kelEvent = [MULTISIG_ICP_ROUTE, MULTISIG_ROT_ROUTE, MULTISIG_IXN_ROUTE].includes(route);
-  const version = options.pvrsn ?? options.version
-    ?? (kelEvent && new SerderKERI({ raw: wire }).pvrsn.major === 1 ? Vrsn_1_0 : Vrsn_2_0);
+  // KERIpy `kli multisig incept|interact|rotate` and `ends add` send these routes as v1
+  // `e`-embed wrappers whatever the group KEL version, and `kli multisig join` reads only `e`.
+  const keripyEmbedRoute = KERIPY_EMBED_PROPOSAL_ROUTES.includes(route);
+  const version = options.pvrsn ?? options.version ?? (keripyEmbedRoute ? Vrsn_1_0 : Vrsn_2_0);
   const field = route.slice(route.lastIndexOf("/") + 1);
   if (version.major === 1) {
     const child = new SerderKERI({ raw: wire });
@@ -535,6 +539,14 @@ export function* prepareMultisigEventExn(
     return [serder, await collectPayload(nestedPayload(child, Vrsn_2_0), signal)] as const;
   });
 }
+
+/** Proposal routes KERIpy authors as v1 `e`-embed wrappers for both v1 and v2 groups. */
+const KERIPY_EMBED_PROPOSAL_ROUTES: readonly string[] = [
+  MULTISIG_ICP_ROUTE,
+  MULTISIG_ROT_ROUTE,
+  MULTISIG_IXN_ROUTE,
+  MULTISIG_RPY_ROUTE,
+];
 
 /** Route handler that forwards accepted multisig EXNs to the `Multiplexor`. */
 export class MultisigNotificationHandler implements ExchangeRouteHandler {
