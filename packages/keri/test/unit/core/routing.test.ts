@@ -318,6 +318,44 @@ Deno.test("Revery.acceptReply aggregates weighted reply signatures until the thr
   });
 });
 
+Deno.test("Revery.acceptReply trims stale-establishment signature groups after a rotation", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `revery-trim-${crypto.randomUUID()}`, temp: true });
+    try {
+      const hab = hby.makeHab("rotated", undefined, { transferable: true, toad: 0 });
+      const serder = new SerderKERI({
+        sad: { t: "rpy", dt: makeNowIso8601(), r: "/loc/scheme", a: { eid: hab.pre, scheme: "http", url: "" } },
+        makify: true,
+      });
+      const saider = new Diger({ qb64: serder.said ?? "" });
+      const replyVerifier = new Revery(hby.db);
+      const accept = () => {
+        const kever = hab.kever!;
+        const group = new TransIdxSigGroup(
+          new Prefixer({ qb64: hab.pre }),
+          kever.sner,
+          new Diger({ qb64: kever.said }),
+          hab.sign(serder.raw, true),
+        );
+        const decision = replyVerifier.acceptReply({ serder, saider, route: "/loc/scheme", aid: hab.pre, tsgs: [group] });
+        assertEquals(decision.kind, "accept");
+        return [kever.sner.numh, kever.said] as const;
+      };
+      const groupKeys = () =>
+        [...new Set([...hby.db.ssgs.getTopItemIter([saider.qb64], { topive: true })].map(([keys]) => keys.join(".")))];
+
+      const [sn0, dig0] = accept();
+      hab.rotate();
+      const [sn1, dig1] = accept();
+
+      assertEquals(groupKeys(), [[saider.qb64, hab.pre, sn1, dig1].join(".")]);
+      assertEquals(hby.db.ssgs.get([saider.qb64, hab.pre, sn0, dig0]), []);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Revery publishes ordered proof effects and preserves external escrow ownership", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `revery-cue-admission-${crypto.randomUUID()}`, temp: true });

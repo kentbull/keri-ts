@@ -692,7 +692,28 @@ export class Revery {
         ],
         args.sigers,
       );
+      this.trimStaleReplyGroups(said, args.seqner, args.diger.qb64);
     }
+  }
+
+  /**
+   * Drop signature groups from establishment events older than the accepted group.
+   *
+   * KERIpy `Revery.acceptReply` trims these after `updateReply` so the stored
+   * reply keeps only signatures from the current authoritative key state.
+   */
+  private trimStaleReplyGroups(said: string, seqner: DispatchOrdinal, digest: string): void {
+    const current = BigInt(`0x${encodeOrdinalHex(seqner)}`);
+    const stale = new Map<string, string[]>();
+    for (const [keys] of this.db.ssgs.getTopItemIter([said], { topive: true })) {
+      const [, prefix, snh, dig] = keys;
+      if (!prefix || !snh || !dig) continue;
+      const sn = BigInt(`0x${snh}`);
+      if (sn < current || (sn === current && dig !== digest)) {
+        stale.set(`${prefix}.${snh}.${dig}`, [said, prefix, snh, dig]);
+      }
+    }
+    for (const keys of stale.values()) this.db.ssgs.rem(keys);
   }
 
   /**
