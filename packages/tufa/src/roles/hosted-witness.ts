@@ -129,7 +129,7 @@ class HostedWitness {
     const own = events.length > 0 && events.every(frame => (frame.body as SerderKERI).pre === this.record.cid);
     let authorized = false;
     if (this.record.code) {
-      const plain = this.hby.mgr.decrypt(this.record.code, { verfers: this.hab.kever!.verfers });
+      const plain = this.hab.decrypt(this.record.code);
       const secret = new TextDecoder().decode(new Matter({ qb64b: plain }).raw);
       authorized = validCode(secret, req.headers.get("Authorization"));
     }

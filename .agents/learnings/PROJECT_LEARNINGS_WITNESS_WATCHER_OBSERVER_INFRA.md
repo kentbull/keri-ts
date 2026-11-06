@@ -106,7 +106,11 @@ on later invocations. Cancellation acknowledgement precedes service-owned cleanu
 introduction/actual quorum observation, account completion and signed service
 activation. Existing individual account/onboarding aliases remain separate.
 Witness TOTP seeds are encrypted only in transit; the explicit credentials file
-stores them as plaintext (0600) so rotation never strands them. No client
+stores them as plaintext (0600) so rotation never strands them. Registration is
+core `registerWithWitness` (Locksmith `register_with_witness`: full KEL and
+`delkel` text parts, `Hab.decrypt` with current keys), so a lost row is
+re-registered at any key state. `Hab.decrypt` mirrors KERIpy: every selected
+key must open the ciphertext, so multi-key callers select one verfer. No client
 operation ledger is needed. Retrying a selected
 session reuses matching accepted rotation. Account operations use an explicit
 account surface; operation status cannot infer its signing principal from a route.

@@ -285,10 +285,12 @@ Allocation alone does not establish any of these later results.
 
 Retain the returned `sessionId` and `server`. Retry with `--session ID` and
 `--server-aid AID`, the same aliases and credentials file. An already accepted
-matching witness rotation is reused. The seeds arrive encrypted to the account's
-inception key but are stored in the file as plaintext base32 (mode 0600), so the
-file survives any number of rotations; protect it like the Keeper. It holds no
-separate operation ledger.
+matching witness rotation is reused. Registration sends the account's full KEL,
+as Locksmith does; the seeds arrive encrypted to the account's current keys but
+are stored in the file as plaintext base32 (mode 0600), so the file survives any
+number of rotations; protect it like the Keeper. It holds no separate operation
+ledger. If the file loses a witness's row, re-running onboarding with the same
+session re-registers that witness at the current key state.
 
 Use the same credentials after reopening the store:
 
