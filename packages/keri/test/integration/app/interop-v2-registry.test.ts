@@ -43,9 +43,9 @@ import {
 } from "./interop-test-helpers.ts";
 import { post } from "./ipex-witness-helpers.ts";
 
-const peer = fromFileUrl(new URL("../../fixtures/native_registry_peer.py", import.meta.url));
+const peer = fromFileUrl(new URL("../../fixtures/v2_registry_peer.py", import.meta.url));
 /** Public native bodies, signed KEL replay and one intentionally disclosed opening; no shared database. */
-interface NativeEvidence {
+interface V2Evidence {
   rip: string;
   update: string;
   publicUpdate: string;
@@ -55,14 +55,14 @@ interface NativeEvidence {
   kel: string;
 }
 
-Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake and survives reopen", async () => {
+Deno.test("interop/v2-registry - Python evidence reaches ordinary TS intake and survives reopen", async () => {
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
-  const options = { name: "native-observer", headDirPath: ctx.home, skipConfig: true };
+  const options = { name: "v2-observer", headDirPath: ctx.home, skipConfig: true };
   try {
     const result = await runCmd(ctx.pythonCommand, [peer, "author"], ctx.env);
     assertEquals(result.code, 0, result.stderr);
-    const evidence: NativeEvidence = JSON.parse(result.stdout);
+    const evidence: V2Evidence = JSON.parse(result.stdout);
     const rip = new SerderACDC({ raw: b(evidence.rip) });
     const update = new SerderACDC({ raw: b(evidence.update) });
     const later = new SerderACDC({ raw: b(evidence.laterUpdate) });
@@ -120,7 +120,7 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
         );
         const state = vetBinds({ ...chain, at: update.said!, blinders: [blinder], target: acdc.said! });
         assertEquals(state.kind, "verified");
-        if (state.kind !== "verified") throw new Error("Expected verified native state");
+        if (state.kind !== "verified") throw new Error("Expected verified v2 state");
         assertEquals(state.state.acdc, acdc.said);
         assertEquals(state.state.state, "issued");
         assertEquals(state.state.binding, "mutual");
@@ -136,12 +136,12 @@ Deno.test("interop/native-registry - Python evidence reaches ordinary TS intake 
   }
 });
 
-Deno.test("interop/native-registry - Python vets TS native evidence against an independently parsed KEL", async () => {
+Deno.test("interop/v2-registry - Python vets TS v2 evidence against an independently parsed KEL", async () => {
   assertEquals(Deno.env.get("KERIPY_INTEROP_PROFILE"), "candidate");
   const ctx = await createInteropContext();
   try {
     const evidence = await run(function*() {
-      const hby = yield* createHabery({ name: "native-author", temp: true, skipConfig: true });
+      const hby = yield* createHabery({ name: "v2-author", temp: true, skipConfig: true });
       try {
         const issuer = hby.makeHab("issuer");
         const rip = regcept(issuer.pre);
@@ -164,7 +164,7 @@ Deno.test("interop/native-registry - Python vets TS native evidence against an i
         yield* hby.close(true);
       }
     });
-    const path = `${ctx.home}/native-evidence.json`;
+    const path = `${ctx.home}/v2-evidence.json`;
     await Deno.writeTextFile(path, JSON.stringify(evidence));
     const result = await runCmd(ctx.pythonCommand, [peer, "verify", path], ctx.env);
     assertEquals(result.code, 0, result.stderr);
@@ -196,7 +196,7 @@ async function serviceReady(path: string, child: SpawnedChild) {
   throw new Error("Selected Python service did not bind its TLS listener");
 }
 
-Deno.test("interop/native-registry - Python registrar publication reaches TS observer cache over TLS", async () => {
+Deno.test("interop/v2-registry - Python registrar publication reaches TS observer cache over TLS", async () => {
   const ctx = await createInteropContext();
   try {
     await run(function*() {
@@ -287,7 +287,7 @@ Deno.test("interop/native-registry - Python registrar publication reaches TS obs
   }
 });
 
-Deno.test("interop/native-registry - TS registrar feeds selected Python observer scheduled TLS cache", async () => {
+Deno.test("interop/v2-registry - TS registrar feeds selected Python observer scheduled TLS cache", async () => {
   const ctx = await createInteropContext();
   try {
     await run(function*() {

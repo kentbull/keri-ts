@@ -19,7 +19,7 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol
 import { createWalletBaser, Wallet } from "../mod.ts";
 import { RegistryCustody } from "../src/custody.ts";
 
-/** Feed real KEL replay to the ordinary receiver; never copy accepted native markers. */
+/** Feed real KEL replay to the ordinary receiver; never copy accepted v2 markers. */
 function* introduce(source: Habery, recipient: Habery, hab: Hab): Operation<void> {
   for (const wire of source.db.clonePreIter(hab.pre, 0)) {
     for (const parsed of parseBytes(wire)) {
@@ -120,7 +120,7 @@ Deno.test({
           } finally {
             yield* lost.close(true);
           }
-          // Native Keeper rotation rewraps the same root and preserves exact openings.
+          // Keeper rotation rewraps the same root and preserves exact openings.
           const replacement = new Signer({
             code: MtrDex.Ed25519_Seed,
             raw: crypto.getRandomValues(new Uint8Array(32)),

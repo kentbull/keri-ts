@@ -43,8 +43,8 @@ explicit actions on independent stores. The same owner includes one Python issue
 thresholds, and rootless elected Unblind delivery. `interop-kram` separately owns the live
 single/group mailbox-authentication cases. Disclosure includes direct witnessed
 presentation and uses the manifest's candidate pin; ESSR storage retains main. The separate
-`interop-native-registry` owner uses the candidate profile for the existing reciprocal
-native proof and reopen cases. The five disclosure files use the selected flat-`dp`
+`interop-v2-registry` owner uses the candidate profile for the existing reciprocal
+v2 proof and reopen cases. The five disclosure files use the selected flat-`dp`
 profile through the same candidate setup. The default peer and the candidate are
 both the `kentbull/keripy` `v2-spec` head, which has no standalone
 `keri.app.mailboxing` host; the KRAM Python provider runs on its witness-hosted

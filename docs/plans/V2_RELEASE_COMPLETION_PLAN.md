@@ -2,7 +2,7 @@
 
 Status: **complete, excluding publication**, 2026-10-21.
 Prepared **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
-Publication remains deferred until the separate native ACDC/registry work is
+Publication remains deferred until the separate v2 ACDC registry work is
 complete and affected qualification is repeated. Do not publish under this goal.
 
 The [final qualification report](../reports/parity/V2_PREPARATION_2026-10-21.md)
@@ -100,10 +100,10 @@ hashes or independent qualification. No hosted extended-job dispatch is authoriz
 
 ## Deferred work and later publication
 
-All remaining native-v2 rip/bup/upd-dependent authoring, CLI/wallet/disclosure,
+All remaining v2 rip/bup/upd-dependent authoring, CLI/wallet/disclosure,
 presentation and N1–N3 lifecycle work belongs to the
-[native roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md). Keep retained
-partial APIs/regressions honest; they do not establish a complete native lifecycle.
+[v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md). Keep retained
+partial APIs/regressions honest; they do not establish a complete v2 lifecycle.
 Independent KERI/CESR v2 remains supported. Pinned Python CLI URL/framing/protected-
 source limits are separately [documented](../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md).
 

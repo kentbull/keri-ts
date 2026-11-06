@@ -19,7 +19,7 @@ export interface CredentialImportResult {
   unaccepted: string[];
 }
 
-/** Native message identities needed for existing accepted-record lookups; no wire evidence is retained here. */
+/** V2 message identities needed for existing accepted-record lookups; no wire evidence is retained here. */
 type ImportTarget =
   | {
     /** Raw ACDC uses no message ilk; section messages are handled by their normal processors. */
@@ -30,7 +30,7 @@ type ImportTarget =
     savedBefore: boolean;
   }
   | {
-    /** Native event ilk selects the existing KEL or TEL accepted record. */
+    /** V2 event ilk selects the existing KEL or TEL accepted record. */
     ilk: "icp" | "dip" | "rot" | "drt" | "ixn" | "vcp" | "vrt" | "iss" | "rev" | "bis" | "brv";
     /** Event digest; a different accepted event at the same coordinate cannot satisfy it. */
     said: string;
@@ -193,7 +193,7 @@ function readImportTargets(
  *
  * @param serder One directly imported message; embedded artifacts remain under their existing workflow owners.
  * @param reger Credential store used only to record a raw credential's pre-dispatch saved marker.
- * @returns Compact native identity, or null for messages handled without an importer completion predicate.
+ * @returns Compact message identity, or null for messages handled without an importer completion predicate.
  */
 function importTarget(serder: SerderACDC | SerderKERI, reger: Reger): ImportTarget | null {
   const said = serder.said!, ilk = serder.ilk;

@@ -1,6 +1,6 @@
-"""Live native registry builders and read-only vetting against independently parsed KELs.
+"""Live v2 registry builders and read-only vetting against independently parsed KELs.
 
-The proof controls parse foreign KELs and call the candidate's read-only native
+The proof controls parse foreign KELs and call the candidate's read-only v2
 proof APIs. Service controls use the selected registrar and observer owners.
 """
 import argparse
@@ -17,7 +17,7 @@ from keri.core import Blinder, BlindState, BoundState, Codens, Counter, DigDex, 
 
 def author():
     """Author fresh evidence using a Python issuer; return only public wire and a disclosure."""
-    with openHby(name="native-author", temp=True, version=Vrsn_2_0) as hby:
+    with openHby(name="v2-author", temp=True, version=Vrsn_2_0) as hby:
         issuer = hby.makeHab(name="issuer", version=Vrsn_2_0)
         issuee = hby.makeHab(name="issuee", version=Vrsn_2_0)
         issuee.interact(gvrsn=Vrsn_2_0)
@@ -47,8 +47,8 @@ def author():
 
 
 def verify(evidence):
-    """Verify the foreign KEL normally before invoking read-only native proof APIs."""
-    with openHby(name="native-verifier", temp=True, version=Vrsn_2_0) as hby:
+    """Verify the foreign KEL normally before invoking read-only v2 proof APIs."""
+    with openHby(name="v2-verifier", temp=True, version=Vrsn_2_0) as hby:
         rip, update, credential = [SerderACDC(raw=evidence[key].encode())
                                    for key in ("rip", "update", "credential")]
         kvy = Kevery(db=hby.db, lax=False, local=False)

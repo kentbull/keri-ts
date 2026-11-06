@@ -1947,7 +1947,7 @@ Deno.test("group credential producers publish typed evidence and usable proposal
   });
 });
 
-Deno.test("native RIP and BUP group proposals retain peer evidence until exact local approval", async () => {
+Deno.test("v2 RIP and BUP group proposals retain peer evidence until exact local approval", async () => {
   await participants(async (left, right, alice, bob) => {
     const members = [alice.pre, bob.pre];
     const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "2", nsith: "2" });
@@ -2220,11 +2220,11 @@ for (const verdict of ["true", "false", "unresolved", "optional"] as const) {
   });
 }
 
-Deno.test("native IPEX group wrappers preserve child proofs and require explicit member approval", async () => {
+Deno.test("v2 IPEX group wrappers preserve child proofs and require explicit member approval", async () => {
   await participants(async (left, right, alice, bob) => {
     const mids = [alice.pre, bob.pre];
-    const local = left.makeGroupHab("native-ipex", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
-    const remote = right.makeGroupHab("native-ipex", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
+    const local = left.makeGroupHab("v2-ipex", alice, mids, mids, undefined, { isith: "2", nsith: "2" });
+    const remote = right.makeGroupHab("v2-ipex", bob, mids, mids, undefined, { isith: "2", nsith: "2" });
     await run(function*() {
       const kram = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] as const } };
       const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { kram });
@@ -2263,7 +2263,7 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
           }),
           { gvrsn: Vrsn_2_0 },
         ))[0];
-        /** Prepare the exact native child without inventing issuer evidence. */
+        /** Prepare the exact v2 child without inventing issuer evidence. */
         const wire = function*(body: SerderKERI, nests: readonly CesrFrame[] = []) {
           return yield* call(() =>
             collectPayload(
@@ -2314,7 +2314,7 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
           });
           const callbacks = {
             approveProposal: () => true,
-            chooseGroupAlias: () => "native-ipex",
+            chooseGroupAlias: () => "v2-ipex",
             chooseRegistryName: () => "unused",
           };
           const peerRole = yield* approvePendingMultisigProposal(right, sender, {
@@ -2330,7 +2330,7 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
           assertEquals(resumedRole?.accepted, true);
           assertEquals(endpointRoleAccepted(left, local.hab.pre, "agent", bob.pre), true);
           assertEquals(endpointRoleAccepted(right, remote.hab.pre, "agent", bob.pre), true);
-          /** Deliver through actual member endpoints and inspect the exact retained native child. */
+          /** Deliver through actual member endpoints and inspect the exact retained v2 child. */
           const publish = function*(runtime: typeof receiver, hby: Habery, group: Hab, raw: Uint8Array) {
             const result = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, group, raw, Vrsn_2_0);
             assertEquals(result.messages.length, 1);
@@ -2346,7 +2346,7 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             assertEquals(
               concatBytes(child.body.raw, yield* call(() => collectPayload(attachmentPayload(child)))),
               raw,
-              "native child proof bytes stay exact",
+              "v2 child proof bytes stay exact",
             );
             return { wrapper, sent };
           };
@@ -2442,12 +2442,12 @@ Deno.test("native IPEX group wrappers preserve child proofs and require explicit
             assertEquals(
               receiver.exc.complete(body.said!),
               true,
-              "approved peer wrappers complete through native replay",
+              "approved peer wrappers complete through v2 replay",
             );
           };
           const grant = ipexExnBody(local.hab.pre, "/ipex/grant", [credential], {
             recipient: alice.pre,
-            message: "retained native view",
+            message: "retained v2 view",
           });
           assertEquals(grant.ilk, "xip");
           bob.interact({ data: [{ d: grant.said! }] });
@@ -2560,9 +2560,9 @@ async function sharedRegistryAnchorConsent(order: "local-first" | "peer-first") 
   });
 }
 
-Deno.test("native registry local-first consent does not approve a different TEL under the same anchor", async () => {
+Deno.test("v2 registry local-first consent does not approve a different TEL under the same anchor", async () => {
   await sharedRegistryAnchorConsent("local-first");
 });
-Deno.test("native registry peer-first evidence is not replayed by consent to a different TEL", async () => {
+Deno.test("v2 registry peer-first evidence is not replayed by consent to a different TEL", async () => {
   await sharedRegistryAnchorConsent("peer-first");
 });

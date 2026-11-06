@@ -198,8 +198,8 @@ Deno.test("Reactor runs injected TEL and verifier escrow turns", async () => {
   });
 });
 
-Deno.test("native registry dispatch recovers foreign dependencies across reopen without a local alias", async () => {
-  const headDirPath = Deno.makeTempDirSync({ prefix: "native-registry-intake-" });
+Deno.test("v2 registry dispatch recovers foreign dependencies across reopen without a local alias", async () => {
+  const headDirPath = Deno.makeTempDirSync({ prefix: "v2-registry-intake-" });
   const options = { name: "observer", headDirPath, temp: false, skipConfig: true };
   try {
     await run(function*() {

@@ -3,7 +3,7 @@
 The selected core is `732adb4d9f390a12ff1f6ae782ce1e70e8578ee3`; application pins
 are maintained in [`keripy-reference.json`](../../../scripts/ci/keripy-reference.json).
 [Authenticated IPEX intake](../../../packages/keri/src/app/ipex/ipex-v2.ts)
-accepts supported graphs only after native authentication and chaining succeed.
+accepts supported graphs only after v2 authentication and chaining succeed.
 False graphs refuse; unresolved evidence keeps its normal pending/refusal outcome.
 The exact accepted negotiated view stays distinct from fuller cached disclosures.
 Consuming [wallet](../../../packages/wallet/src/wallet.ts) and
@@ -112,19 +112,19 @@ cases. Conversation-link/spurn controls complete the supported pairwise family
 matrix; final-source full qualification remains mandatory. Keep single-controller
 HTTP evidence distinct from witnessed/multisig mailbox and registry-cutoff evidence.
 
-## Native Python disclosure peer
+## KERIpy v2 disclosure peer
 
-The Python HTTP fixture composes Regery, native IPEX handlers, shared Kevery and
+The Python HTTP fixture composes Regery, v2 IPEX handlers, shared Kevery and
 Revery, Parser, ordinary escrows and one Pruner. It has no Python wallet or
 consent database. Witnessed issuance uses three real witnesses with quorum two,
 accepted anchored RIP/BUP events and explicit accepted-only opening retention.
 An explicit local Admit is the consent operation. Onward presentation requires
-the exact accepted Admit/Grant link, a fresh native Grant recheck and issued state
+the exact accepted Admit/Grant link, a fresh v2 Grant recheck and issued state
 for the selected registry-backed node; it reuses the exact retained child bytes
 after reopen rather than another cached disclosure. TypeScript still exercises
 its actual Wallet's consent and retained-view operations.
 
-The candidate profile pins the published native Python core in the reference
+The candidate profile pins the published KERIpy v2 core in the reference
 manifest. The maintained five-file disclosure owner selects that profile through
 the existing isolated setup. Its source-specific results do not establish that
 all other candidate suites pass.
@@ -230,7 +230,7 @@ actual stored representation, not a separately retained producer object.
 
 ## Current-source qualification boundary
 
-The maintained Python `ipex_peer.py` uses the native owners described above;
+The maintained Python `ipex_peer.py` uses the v2 owners described above;
 its witnessed scenario requires accepted registry proofs, explicit local Admit
 and current rechecking of the exact retained Grant. TypeScript uses its actual
 Wallet. Bilateral fixture qualification remains specific to the selected source

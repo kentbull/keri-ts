@@ -112,7 +112,7 @@ and accepted issuance before any anchor signature. Explicit retry reuses the
 accepted REV or original locally tracked tmse candidate and its source seal;
 unrelated remote escrow cannot select a local authoring event. Corrupt retained
 evidence fails instead of authoring a replacement anchor.
-Native WalletAuthor operations, anchored IPEX disclosures/replies/Admit and finite issuer DH commands pass transient witness
+V2 WalletAuthor operations, anchored IPEX disclosures/replies/Admit and finite issuer DH commands pass transient witness
 codes to the existing Receiptor for the exact sealing event. CLI resolution happens
 before registry/DH mutation; the receipt owner selects exact anchor witnesses. Codes and
 captured timestamps are per invocation and never become registry or custody state.
@@ -151,14 +151,14 @@ RegistryObserver intake owns per-event engine publication. Normal dispatch route
 to this owner; runtime retries snapshot both durable escrow tables before writes,
 including foreign registries with no local aliases after reopen. Supplied anchored
 prefixes cannot hide an unanchored suffix.
-RegistryStore retains deliberately published native BUP openings by event SAID in
+RegistryStore retains deliberately published v2 BUP openings by event SAID in
 the required current-schema openings table. Intake preflights zero-or-one BSQ/BSS,
 exact BLID and retained bytes before staging, then retains against the exact stored
 body after non-refusal. Pending material is not acceptance. Accepted cloneTel replay
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
-RegistryCustody binds actual Habery/Hab/registry/wallet owners and uses native
+RegistryCustody binds actual Habery/Hab/registry/wallet owners and uses v2
 Keeper `rroots.` ciphertext keyed by canonical local AID and registry SAID. New
 roots require the selected accepted issuer; an existing retained root may be
 reused without implying delegation. AEID changes atomically rewrap immutable roots
@@ -241,16 +241,16 @@ compared with a caller-supplied transient prior roster. Next-key-only members do
 not qualify. Tufa `root newcomers` consumes those selections for explicit registries
 through the same finite file owner; missing custody never starts fresh DH. The
 selector adds no roster persistence, root discovery or transport.
-WalletAuthor composes the existing native Regery, finite builders and Receiptor.
+WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries
 reuse pending BUP/opening bytes and the current branch's already signed KEL seal.
 New local anchors carry the full registry/ordinal/TEL-SAID `{i,s,d}` seal required
-by the native Python receiver; receipt retries reuse that same signed KEL event.
+by the KERIpy v2 receiver; receipt retries reuse that same signed KEL event.
 Public proof retention uses RegistryStore's decoder; private derivation retains
 nonsecret event-specific coordinates before processing and never publishes implicitly.
 Tufa owns only argument/configuration and final output
-following joined cleanup; native update means BUP state advance, never historical upd.
+following joined cleanup; v2 update means BUP state advance, never historical upd.
 Disclosed issuer/target/rd, blinded/bound state and exact historical head are separate
 checks. `vet` verifies the whole supplied chain. `vetBinds.at` selects one unique supplied
 TEL SAID and verifies its contiguous anchored prefix; omission checks the full current
@@ -285,11 +285,11 @@ later TEL updates and replay cannot refresh it. Independent-store HTTP workflows
 with real KERIpy witnesses qualify the TS path; label credential-peer and mailbox
 delivery evidence separately.
 Share parsed rip/bup validation and one registry-seal matcher across observer and
-local processing. Native ordinals use canonical lowercase hex without leading zeros
-within 128 bits; BUP authoring requires a positive ordinal. Native timestamps carry
+local processing. V2 ordinals use canonical lowercase hex without leading zeros
+within 128 bits; BUP authoring requires a positive ordinal. V2 timestamps carry
 six fractional digits and a numeric offset, with real calendar/offset validation.
 Historical `upd` bytes remain serializable and decodable; live dispatch explicitly
-refuses them. Native acceptance, discovery, source locators and author retry require
+refuses them. V2 acceptance, discovery, source locators and author retry require
 an exact `{i,s,d}` registry/ordinal/TEL-SAID seal. Public stateless `vet`/`vetBinds`
 match digest commitments, including bare SAIDs; other seal fields are nonbinding.
 Both stateless vetting and durable discovery require the
@@ -386,7 +386,7 @@ renewal requires complete prior membership, no scoped unresolved ordinals and ex
 local heads. Cache-only responses require recent observation of the current head.
 Shared hosting owns CA/name verification and joined finite requests without redirects.
 Full evidence selects CESR-v2 attachment genus independently of signed KEL body
-version. Stored native query bodies hydrate through the existing Serdery parser.
+version. Stored v2 query bodies hydrate through the existing Serdery parser.
 
 Verifier work comes from accepted grants, saved credentials and TEL state, not
 Notifier visibility. Webhook retries/acks live in a separate sidecar, not Reger.

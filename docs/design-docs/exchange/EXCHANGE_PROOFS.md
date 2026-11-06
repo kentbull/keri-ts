@@ -43,7 +43,7 @@ Retries re-read stored proofs and deadlines in the final writer. Terminal remova
 completion joins the ordinary LMDB flush. Overlapping scans skip accepted/obsolete candidates, preserving
 each scan's captured horizon without an asynchronous Exchanger admission lock.
 `epsd.` stores an absolute partial-signature deadline, normally first admission
-plus ten seconds. Native V2 Grants instead freeze an accepted TMSC `xdt + xl`
+plus ten seconds. V2 Grants instead freeze an accepted TMSC `xdt + xl`
 when available. Their original deadline survives schema/proof transitions,
 acceptance and pending-body removal; retransmission, policy change, TMSC pruning
 and reopen cannot renew it. Both original Grant validity and schema retention
@@ -52,10 +52,10 @@ from `xl` validity. Genuine V1 and other exchange routes clear PSE deadlines wit
 their pending state.
 
 `Exchanger.pendingGrant(said, {xid, sender, recipient})` reads exactly one live
-native Grant in `epse.` with its original `epsd.`. Accepted Grants and any terminal
+v2 Grant in `epse.` with its original `epsd.`. Accepted Grants and any terminal
 reply link refuse. Pending issuance authority requires `now < deadline`, although
 escrow cleanup retains equality. Stored complete sender signatures or source
-seals are reverified; a registered native V2 handler then reuses ordinary context,
+seals are reverified; a registered V2 handler then reuses ordinary context,
 schema, disclosure and node authentication. Its fresh-registry classification
 requires an accepted issuer RIP, exact Grant parties and independent authentication
 of every other disclosed node. The result contains the exact Grant and deduplicated

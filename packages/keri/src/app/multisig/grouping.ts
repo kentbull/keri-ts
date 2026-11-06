@@ -32,7 +32,7 @@ import type { RegistryStore } from "../../acdc/registering.ts";
 import {
   exchange,
   isIpexVerb,
-  isNativeRegistryRoute,
+  isV2RegistryRoute,
   nestedIpexRoute,
   nestedMultisigIlks,
 } from "../../core/exchange/protocol-exchanging.ts";
@@ -207,11 +207,11 @@ export function registryProposalEvent(tel: SerderACDC, gid: string, store: Regis
   return sn === headSn + 1n && checked.event.prior === head.said ? checked.event : null;
 }
 
-/** Exact authenticated consent may share an anchor index with unrelated native TEL proposals. */
+/** Exact authenticated consent may share an anchor index with unrelated v2 TEL proposals. */
 export function sameRegistryProposal(left: SerderKERI, right: SerderKERI): boolean {
   const a = left.sad?.a;
   const b = right.sad?.a;
-  return isNativeRegistryRoute(left.route ?? "") && left.route === right.route && isRecord(a) && isRecord(b)
+  return isV2RegistryRoute(left.route ?? "") && left.route === right.route && isRecord(a) && isRecord(b)
     && ["gid", "tel", "anc"].every(field => a[field] === b[field]);
 }
 
@@ -220,7 +220,7 @@ export function acdcV2RegistryProposal(wrapper: SerderKERI, nests: readonly Cesr
   const payload = wrapper.sad?.a;
   const route = wrapper.route ?? "";
   if (
-    !isNativeRegistryRoute(route) || !isRecord(payload) || typeof payload.gid !== "string" || nests.length !== 2
+    !isV2RegistryRoute(route) || !isRecord(payload) || typeof payload.gid !== "string" || nests.length !== 2
     || wrapper.pvrsn.major !== 2 || wrapper.pvrsn.minor !== 0
   ) {
     return null;
@@ -461,8 +461,8 @@ export function multisigExnBody(
   if (!child.said || !nestedMultisigIlks(route)?.includes(child.ilk ?? "")) {
     throw new Error("Multisig proposal requires a supported route and child kind.");
   }
-  if (route === MULTISIG_EXN_ROUTE && !nativeIpexChild(child, attrs.gid)) {
-    throw new Error("Multisig IPEX requires a native child authored by the selected group.");
+  if (route === MULTISIG_EXN_ROUTE && !v2IpexChild(child, attrs.gid)) {
+    throw new Error("Multisig IPEX requires a v2 child authored by the selected group.");
   }
   const field = route.slice(route.lastIndexOf("/") + 1);
   const payload = route === MULTISIG_ICP_ROUTE
@@ -471,8 +471,8 @@ export function multisigExnBody(
   return exchange(route, payload, { ...options, sender, pvrsn })[0];
 }
 
-/** Native IPEX proposals carry one exact group-authored child on a supported conversation route. */
-function nativeIpexChild(child: SerderKERI, group: unknown): boolean {
+/** V2 IPEX proposals carry one exact group-authored child on a supported conversation route. */
+function v2IpexChild(child: SerderKERI, group: unknown): boolean {
   return child.pvrsn.major === 2 && child.pvrsn.minor === 0 && child.pre === group
     && ["xip", "exn"].includes(child.ilk ?? "") && child.route?.startsWith("/ipex/") === true
     && isIpexVerb(child.route.slice(6));
@@ -623,8 +623,8 @@ export class Multiplexor {
     this.kvy.registerReplyRoutes(router);
     this.replay = new Exchanger(hby);
   }
-  /** Native child replay borrows the caller's configured IPEX, registry, reply and KRAM owners. */
-  private nativeIpexOwners(child: SerderKERI): boolean {
+  /** V2 child replay borrows the caller's configured IPEX, registry, reply and KRAM owners. */
+  private v2IpexOwners(child: SerderKERI): boolean {
     const kvy = this.messageKevery, rvy = kvy.rvy, exc = this.exchanger;
     const handler = exc?.handlerFor(child);
     return !!this.registry && this.registry.db === this.hby.db && exc?.hby === this.hby
@@ -645,20 +645,20 @@ export class Multiplexor {
       };
     }
     const { said, embeddedSaid, route, sender } = inspection;
-    const nativeIpex = serder.pvrsn.major === 2 && route === MULTISIG_EXN_ROUTE;
-    if (nativeIpex) {
+    const v2Ipex = serder.pvrsn.major === 2 && route === MULTISIG_EXN_ROUTE;
+    if (v2Ipex) {
       if (!this.exchanger?.verifyAccepted(said, route)) {
-        return { kind: "reject", said, reason: "Native IPEX approval requires an authenticated wrapper." };
+        return { kind: "reject", said, reason: "V2 IPEX approval requires an authenticated wrapper." };
       }
       // The authenticated local wrapper carries this member's actual verified child contribution.
       if (this.isLocalHab(sender)) yield* this.processApproved(nests);
     }
     const { existing, submitters } = this.hby.db.env!.transactionSync(() => {
       const indexed = this.hby.db.meids.get([embeddedSaid]);
-      const existing = isNativeRegistryRoute(route) || nativeIpex
+      const existing = isV2RegistryRoute(route) || v2Ipex
         ? indexed.filter(diger => {
           const retained = this.hby.db.exns.get([diger.qb64]);
-          return retained && (nativeIpex
+          return retained && (v2Ipex
             ? retained.pvrsn.major === 2 && retained.route === route
               && isRecord(retained.sad?.a) && isRecord(serder.sad?.a)
               && retained.sad.a.gid === serder.sad.a.gid && retained.sad.a.exn === embeddedSaid
@@ -666,7 +666,7 @@ export class Multiplexor {
             && this.exchanger?.verifyAccepted(diger.qb64, route);
         })
         : indexed;
-      const submitters = isNativeRegistryRoute(route) || nativeIpex
+      const submitters = isV2RegistryRoute(route) || v2Ipex
         ? existing.map(diger => new Prefixer({ qb64: this.hby.db.exns.get([diger.qb64])!.pre! }))
         : this.hby.db.maids.get([embeddedSaid]);
       // Approval is the authenticated wrapper, not completion of its asynchronous child replay.
@@ -707,15 +707,15 @@ export class Multiplexor {
   /** Process only the approved direct child; arbitrary descendants remain guarded. */
   private *processApproved(nests: readonly CesrFrame[]): Operation<void> {
     for (const child of nests) {
-      const nativeIpex = child.body instanceof SerderKERI && child.body.pvrsn.major === 2
+      const v2Ipex = child.body instanceof SerderKERI && child.body.pvrsn.major === 2
         && child.body.route?.startsWith("/ipex/");
-      if (nativeIpex && !this.nativeIpexOwners(child.body as SerderKERI)) {
-        throw new Error("Native IPEX replay owners are unavailable.");
+      if (v2Ipex && !this.v2IpexOwners(child.body as SerderKERI)) {
+        throw new Error("V2 IPEX replay owners are unavailable.");
       }
       yield* dispatchEnvelope(
         envelopeFromFrame(child, true),
-        nativeIpex ? this.messageKevery.rvy! : this.rvy,
-        nativeIpex ? this.messageKevery : this.kvy,
+        v2Ipex ? this.messageKevery.rvy! : this.rvy,
+        v2Ipex ? this.messageKevery : this.kvy,
         this.exchanger,
         undefined,
         undefined,
@@ -820,7 +820,7 @@ export class Multiplexor {
         return { ok: false, said, reason: "Invalid multisig child attachment genus." };
       }
       embeddedSaid = commitment;
-    } else if (isNativeRegistryRoute(route)) {
+    } else if (isV2RegistryRoute(route)) {
       const children = acdcV2RegistryProposal(serder, nests, this.registry?.store ?? null);
       if (!children) return { ok: false, said, reason: "Invalid ACDC v2 registry/anchor proposal." };
       if (!groupSigningMembers(this.hby, children.anchor.pre!).includes(sender)) {
@@ -853,10 +853,10 @@ export class Multiplexor {
           serder.ilk !== "exn" || serder.pvrsn.minor !== 0
           || !isRecord(attrs) || Object.keys(attrs).sort().join(",") !== "exn,gid"
           || (child.nests?.length && !nestedIpexRoute(child.body.route ?? ""))
-          || !nativeIpexChild(child.body, attrs.gid) || !this.nativeIpexOwners(child.body)
+          || !v2IpexChild(child.body, attrs.gid) || !this.v2IpexOwners(child.body)
           || !groupSigningMembers(this.hby, child.body.pre!).includes(sender)
         ) {
-          return { ok: false, said, reason: "Invalid native IPEX group, member, route or replay owners." };
+          return { ok: false, said, reason: "Invalid v2 IPEX group, member, route or replay owners." };
         }
         if (
           this.isLocalHab(sender)

@@ -3,10 +3,10 @@
 Multisig wrappers coordinate member approval of a business event. The enclosed
 KEL, TEL, reply or IPEX message retains its own signatures and processing rules.
 Legacy v1 proposals use pathed embedded evidence. V2 event proposals use
-`/multisig/icp`, `/rot`, `/ixn` and `/rpy`; native registry proposals use
+`/multisig/icp`, `/rot`, `/ixn` and `/rpy`; v2 registry proposals use
 `/multisig/rip` and `/multisig/bup` with exactly two unnested TEL/anchor children.
 
-Native registry approval binds the exact route, group, TEL and anchor. The anchor
+V2 registry approval binds the exact route, group, TEL and anchor. The anchor
 must contain the full `{i,s,d}` TEL seal and every supplied source locator must
 match it. BUP proposals require the accepted controlling RIP and exact next
 ordinal/prior, or byte-identical accepted replay. Shared-anchor indexes never
@@ -28,14 +28,14 @@ approval replay, so a peer wrapper arriving during replay sees that approval and
 processes its own child. Replay preserves child proof enclosures. Group leadership considers
 the group's own collected signature indices, excluding foreign endorsements.
 
-Native V2 `/multisig/exn` binds `{gid, exn: childSAID}` to exactly one framed V2
+V2 `/multisig/exn` binds `{gid, exn: childSAID}` to exactly one framed V2
 XIP/EXN on a supported IPEX route, authored by that group. Only Offer/Grant children
 may carry their own credential proof trees. The current group signing member
 and local participation are verified before indexing by child SAID in meids/maids.
-The caller supplies its actual native IPEX, registry, Revery and KRAM owners;
+The caller supplies its actual v2 IPEX, registry, Revery and KRAM owners;
 missing or mismatched owners refuse before indexing. A local wrapper first enters
-native child verification with this member's verified contribution. Stored peer
-wrappers replay only after that explicit approval, using the same native owners.
+v2 child verification with this member's verified contribution. Stored peer
+wrappers replay only after that explicit approval, using the same v2 owners.
 Both direct and stored-proposal approval reauthenticate the exact retained wrapper.
 Body, signatures, source seals and nested proofs remain child-owned; parent
 signatures never satisfy its threshold. Completion and external lead delivery
@@ -62,8 +62,8 @@ IPEX uses the [same responsibility split](IPEX.md).
 
 ## Scope and evidence
 
-Legacy KEL/reply/VDR command proposals retain V1 encoding. Native registry approval
-uses the explicit V2 RIP/BUP contract above. Default native EXN construction
+Legacy KEL/reply/VDR command proposals retain V1 encoding. V2 registry approval
+uses the explicit V2 RIP/BUP contract above. Default v2 EXN construction
 with empty ri/x/p does not round-trip in the frozen reference and remains unqualified.
 JSON/CBOR/MGPK acceptance/storage/replay evidence is recorded in the
 [multisig plan](../../plans/exchange/MULTISIG_PLAN.md). The
@@ -128,4 +128,4 @@ business signing and mutation. Normal store loading still occurs.
 
 Revocation and IPEX completion remain implementation work. Selected VCP/ISS
 checks do not replace the final interoperability matrix.
-Native-v2 ACDC/registry authoring remains in its deferred roadmap.
+V2 ACDC registry authoring remains in its deferred roadmap.

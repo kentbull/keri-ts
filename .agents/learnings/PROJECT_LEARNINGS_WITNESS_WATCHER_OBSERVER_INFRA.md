@@ -51,9 +51,9 @@ checkouts through `KERIPY_INTEROP_PROFILE` and explicit root/interpreter paths.
 Their CLI/version and export-genus differences are test-launch data, not runtime
 compatibility shims. Keep actual-peer lifecycle qualification separate from bootstrap smoke.
 
-The native-v2 candidate is a separate manifest profile with the six source pins and
-existing R/W/spec references. `interop-native-registry` owns its existing reciprocal
-proof/reopen file; `interop-ipex-disclosure` owns the five native disclosure files.
+The v2 candidate is a separate manifest profile with the six source pins and
+existing R/W/spec references. `interop-v2-registry` owns its existing reciprocal
+proof/reopen file; `interop-ipex-disclosure` owns the five v2 disclosure files.
 Its Python peer composes normal Regery/Exchanger/Kevery/Parser/Revery owners and
 one Pruner. Explicit local Admit supplies consent; current recheck plus the exact
 accepted Admit/Grant pair gates reuse of retained child bytes after reopen.
@@ -61,7 +61,7 @@ Do not recreate the removed Python Wallet/SectionBaser/CLI Peer facades. The mix
 group peer lends its actual live KRAM/Parser/Regery/Exchanger to Multiplexor. Its
 fixture-only onward approval explicitly selects an authenticated admitted Grant,
 checks current issued state and exact selected body/proofs, then requires ordinary
-native quorum verification before publication. A pre-sign native presentation
+v2 quorum verification before publication. A pre-sign v2 presentation
 verdict cannot supply the completed KRAM cutoff that still needs this share.
 The pinned read-only verdict gate remains for issuance and Admit. The TS side
 retains its actual Wallet assertions. Plans use the one-DAG wire wrapper;
@@ -149,7 +149,7 @@ fallback; certificate trust and URL/name verification remain client policy.
 ## Packaging and release
 
 The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
-owns the current source/artifact evidence and deliberate limits. Native lifecycle
+owns the current source/artifact evidence and deliberate limits. V2 lifecycle
 completion and publication remain deferred. Later notes must be reconciled into
 the still-unpublished major, not mechanically versioned as 3.0.0.
 
@@ -214,6 +214,6 @@ independent jobs via `qualify-reference-profiles.py --profile`; every other row
 invokes its original owner and preserves the runner's file isolation/concurrency.
 The full, extended-interop and qualification groups currently expand to 29, 20
 and 31 rows respectively. Keep peer preparation on the concrete row (main for
-ESSR storage, candidate for native registry/disclosure/KRAM, services for native
+ESSR storage, candidate for v2 registry/disclosure/KRAM, services for v2
 registry). Each job retains its 15-minute cap and separate timing artifact;
 `fail-fast: false` preserves failure evidence from all selected scopes.

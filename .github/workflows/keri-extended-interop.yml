@@ -20,7 +20,7 @@ on:
           - extended-interop
           - interop-acdc-deep
           - interop-ipex-disclosure
-          - interop-native-registry
+          - interop-v2-registry
           - interop-acdc-extended
           - interop-delegation
           - interop-mailbox
@@ -169,7 +169,7 @@ jobs:
         if: matrix.main
         uses: ./.github/actions/setup-keripy-main-peer
 
-      - name: Prepare pinned native candidate peer
+      - name: Prepare pinned v2 candidate peer
         if: matrix.candidate
         uses: ./.github/actions/setup-keripy-main-peer
         with:

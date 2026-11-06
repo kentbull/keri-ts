@@ -18,7 +18,7 @@ its operator and whether to notify a configured business endpoint.
 
 This is a package-ownership refactor. Preserve the current command and workflow
 behavior before making any separate behavior changes. Do not combine the move
-with native-v2 verifier support, a new delivery guarantee, a storage migration,
+with v2 verifier support, a new delivery guarantee, a storage migration,
 or a general CLI extraction.
 
 Apply the [ten constraints](../../../../../../../enctx/adrs/ten-constraints.md)
@@ -67,7 +67,7 @@ Findings:
    remain in keri-ts even though this application consumes them.
 6. The command explicitly requires `runtime.vdr`; its state lookup uses legacy
    `Reger.tevers.vcState`. Genus-1/genus-2 attachment tests do not establish
-   native-v2 ACDC registry/disclosure support.
+   v2 ACDC registry/disclosure support.
 7. The application is exported from `keri-ts/runtime`, while its command is
    exported from `keri-ts/cli`. Both ownership leaks must be removed.
 8. Tufa already owns command registration, the demonstration webhook target,
@@ -82,7 +82,7 @@ Findings:
 | Responsibility                                                                                                    | Owner after the move                                         | Reason                                                                            |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
 | Credential SAID/schema checks, proof and chain validation, missing-evidence escrows, accepted credential indexing | `keri-ts` protocol `Verifier`, schemas, and VDR/ACDC modules | Determines protocol validity independently of a business application              |
-| KEL/TEL processing, current credential state, native-v2 verification                                              | Existing keri-ts protocol owners                             | Shared evidence authority; do not duplicate it in Tufa                            |
+| KEL/TEL processing, current credential state, v2 verification                                                     | Existing keri-ts protocol owners                             | Shared evidence authority; do not duplicate it in Tufa                            |
 | IPEX exchange authentication, grant artifact reconstruction and ingestion                                         | Existing keri-ts IPEX/runtime helpers                        | Also used by holder/admit and other protocol workflows                            |
 | Saved/revoked/query/proof cues and generic Deck/HTTP/LMDB primitives                                              | Existing keri-ts public APIs                                 | Reusable facts and mechanisms, without webhook policy                             |
 | Scanning accepted grants to select business notifications; recovering notification work from saved revocations    | Tufa verifier agent                                          | Application scheduling and projection of protocol state                           |
@@ -209,9 +209,9 @@ grant parsing, protocol escrow progression, or runtime construction in Tufa.
   command owns the cue store and closes it before the enclosing runtime/Habery.
   Integrate the main thread's agreed close contract; do not copy the old error
   suppression or print final success before required cleanup completes.
-- Keep the workflow's present legacy-Reger profile explicit. Future native-v2
+- Keep the workflow's present legacy-Reger profile explicit. Future v2
   application support is a behavior change; do not conflate it with the release
-  plan's separate native-v2 protocol/CLI qualification.
+  plan's separate v2 protocol/CLI qualification.
 
 Potential shortcomings observed, not authorized fixes in the move: `rejected`
 does not appear to be incremented; failed/expired work may be rediscovered;
@@ -336,7 +336,7 @@ implementation/organization work are complete, using the final source state.
   regression checks pass; moved tests have an explicit maintained execution path.
 - Public API removals are recorded as v2.0.0 breaking changes. Documentation is a
   short ownership/import update, not an execution diary.
-- No native-v2 verifier application parity, exactly-once notification delivery,
+- No v2 verifier application parity, exactly-once notification delivery,
   or new Sally interoperability is claimed without separate evidence.
 
 The completion report should list moved/removed artifacts, final public imports,

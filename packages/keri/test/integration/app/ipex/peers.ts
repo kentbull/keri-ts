@@ -212,7 +212,7 @@ export async function observed<T>(label: string, read: () => T | undefined | Pro
   throw new Error(`Timed out waiting for ${label}`);
 }
 
-/** Native runtime behind a real CESR listener, with observations from its own store. */
+/** TypeScript runtime behind a real CESR listener, with observations from its own store. */
 class TypeScriptPeer implements DerivedIpexPeer {
   readonly implementation = "TypeScript";
   readonly server: Deno.HttpServer<Deno.NetAddr>;
@@ -1231,7 +1231,7 @@ export interface IpexPeers {
   plan: DisclosurePlan;
 }
 
-/** Scope the native runtime independently of the Python process and scenario. */
+/** Scope the TypeScript runtime independently of the Python process and scenario. */
 async function withTypeScriptPeer(
   graph: GraphCase | undefined,
   body: (peer: IpexPeer) => Promise<void>,

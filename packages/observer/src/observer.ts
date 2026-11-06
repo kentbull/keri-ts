@@ -1,4 +1,4 @@
-/** Configured-source freshness over ordinary native acceptance; queries never acquire evidence. */
+/** Configured-source freshness over ordinary v2 acceptance; queries never acquire evidence. */
 import { type ProtocolHandler, type SourceConfig, sourceRequest, SourceTrust } from "@keri-ts/hosting";
 import { Registrar } from "@keri-ts/registrar";
 import { concatBytes, Counter, parseBytes, ParserError, SerderKERI, Vrsn_2_0 } from "cesr-ts";

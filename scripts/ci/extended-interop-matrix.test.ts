@@ -27,9 +27,9 @@ Deno.test("concrete matrix rows preserve their pinned peer and service preparati
       assertEquals(row.main, suite === "interop-essr-storage");
       assertEquals(
         row.candidate,
-        ["interop-native-registry", "interop-ipex-disclosure", "interop-kram"].includes(suite),
+        ["interop-v2-registry", "interop-ipex-disclosure", "interop-kram"].includes(suite),
       );
-      assertEquals(row.services, suite === "interop-native-registry");
+      assertEquals(row.services, suite === "interop-v2-registry");
     }
   }
   assertThrows(() => extendedInteropMatrix("unknown"), Error, "Unknown extended interop target");

@@ -288,7 +288,7 @@ cover the TypeScript behavior:
 
 Both differences use the existing deterministic UUID derivation and supported
 digest algorithms to produce the same CESR tuple forms. Independent hash checks
-and the [Python-produced SHA-256 opening case](../../../packages/keri/test/integration/app/interop-native-registry.test.ts)
+and the [Python-produced SHA-256 opening case](../../../packages/keri/test/integration/app/interop-v2-registry.test.ts)
 exercise that wire contract.
 
 ACDC v2 reporting uses the shared upstream-aligned chaining evaluator. The

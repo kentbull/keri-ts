@@ -31,7 +31,7 @@ import {
 } from "../../acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { isNativeRegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
+import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { RegistryRecord } from "../../core/records.ts";
@@ -398,7 +398,7 @@ function* pendingMultisigProposals(
     const exn = hby.db.exns.get([said]);
     if (!exn?.ked) continue;
     const route = exn.route ?? "";
-    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && !isNativeRegistryRoute(route)) {
+    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && !isV2RegistryRoute(route)) {
       continue;
     }
     const payloadSaid = multisigPayloadSaid(exn);
@@ -446,7 +446,7 @@ export function* approvePendingMultisigProposal(
       result = yield* approveKelProposal(hby, runtime, exn, route, options);
     } else if (isVdrRoute(route)) {
       result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
-    } else if (isNativeRegistryRoute(route)) {
+    } else if (isV2RegistryRoute(route)) {
       const nests = loadNests(hby.db, exn.said!);
       const proposal = acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null);
       const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;

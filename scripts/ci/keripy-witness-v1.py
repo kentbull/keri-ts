@@ -3,7 +3,7 @@
 The current ``kli witness start`` opens Habery at the default genus and exposes
 ``--version`` only for printing the package version. Open the same CLI-created
 store through the public library API so both body and attachment expectations
-are explicit. Native positive cases may select v2. Real witness routing, receipt
+are explicit. V2 positive cases may select v2. Real witness routing, receipt
 processing, and storage stay intact.
 """
 

@@ -379,7 +379,7 @@ Deno.test("db/subing - SerderSuber hydrates KERI serders through the shared pars
       assertEquals(suber.get(["Epre", serder.said!])?.said, serder.said);
       assertEquals(suber.get(["Epre", serder.said!])?.ilk, "icp");
       const native = query("tels/bulk", {}, {
-        pre: makeSignerMaterial("native-query", true).verfer.qb64,
+        pre: makeSignerMaterial("v2-query", true).verfer.qb64,
         version: Vrsn_2_0,
         kind: Kinds.cesr,
       });

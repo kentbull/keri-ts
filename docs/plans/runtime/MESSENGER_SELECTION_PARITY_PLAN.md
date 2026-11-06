@@ -24,7 +24,7 @@ Kent explicitly requested incorporation into the active release goal. The
 next after the initial typed publication refactor and before expanding multisig
 CLI/IPEX behavior. This supplement records source analysis and required work,
 not completed implementation or qualification. Preserve existing main-task work.
-Native-v2 CLI assertions are completed with the later authoring/IPEX features;
+V2 CLI assertions are completed with the later authoring/IPEX features;
 early transport checks do not qualify features that have not been implemented.
 
 ## Source baseline and findings
@@ -40,7 +40,7 @@ KERIpy sources inspected:
 | Reference                            | Commit                                     | Purpose                                     |
 | ------------------------------------ | ------------------------------------------ | ------------------------------------------- |
 | Local frozen reference               | `7143832813cac6a394ab1faf9be83bb3372be87c` | Existing repository reconciliation baseline |
-| Release profile `main`               | `424a50c03421165c5f289e07a341bd57b8d8ab78` | Native-v2 reference behavior                |
+| Release profile `main`               | `424a50c03421165c5f289e07a341bd57b8d8ab78` | V2 reference behavior                       |
 | Release profile `1.2` / GLEIF 1.2.17 | `b8626e1d58770a4a480ea72a01acc5580278a9f2` | Accepted legacy target with stabilized TCP  |
 | Release profile `1.3` / 1.3.6        | `4ce4cc79e06653f77342be1bf604086b89b1f090` | Legacy peer behavior                        |
 
@@ -387,14 +387,14 @@ already constructs real StreamPoster. Extend those seams where appropriate.
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
 | keri-ts ordinary POST into Python; Python ordinary messenger into Tufa                       | main, GLEIF 1.2.17, 1.3.6                                                | Signed KEL accepted/persisted; method/header assertions; legacy media path genuinely exercised                                  |
 | keri-ts stream PUT into Python; Python stream messenger into Tufa                            | main, GLEIF 1.2.17, 1.3.6                                                | Multi-message stream accepted in order with expected identifiers/SAIDs; exact outbound bytes and method                         |
-| Initial IPEX grant/admit with supporting artifacts and a group notification; join completion | main for native-v2; a compatible legacy workflow under 1.2 and 1.3       | Credential/evidence and EXNs accepted, correct initial PUT versus join POST, correct recipients and no missing support messages |
+| Initial IPEX grant/admit with supporting artifacts and a group notification; join completion | main for v2; a compatible legacy workflow under 1.2 and 1.3              | Credential/evidence and EXNs accepted, correct initial PUT versus join POST, correct recipients and no missing support messages |
 | Forwarded stream plus ordinary mailbox query/SSE retrieval                                   | maintained composed mailbox environment, labeled by actual fork pin      | Provider storage contains all intended messages; recipient processes them; poll remains signed POST                             |
 | TCP stream send into real Python intake                                                      | at least GLEIF 1.2.17; retain existing main TCP coverage where available | Admitted bytes arrive and valid messages enter accepted state; no HTTP route masks TCP selection                                |
 
 Parameterize the small transport probes across three profiles. Do not multiply
 every IPEX verb, role, failure, and framing combination across every profile.
-Use existing native-v2 and legacy credential workflow coverage, adding wire
-assertions at the relevant boundary. Unsupported native-v2 features on v1 peers
+Use existing v2 and legacy credential workflow coverage, adding wire
+assertions at the relevant boundary. Unsupported v2 features on v1 peers
 are not test failures to hide with casts or monkeypatches.
 
 The pinned main/1.3 TCP stream-factory defect limits claims about Python-originated

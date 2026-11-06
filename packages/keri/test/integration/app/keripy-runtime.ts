@@ -48,7 +48,7 @@ function shellQuote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-/** Select the native candidate or a frozen release peer; absence retains the default v2-spec lane. */
+/** Select the v2 candidate or a frozen release peer; absence retains the default v2-spec lane. */
 export function selectedKeripyProfile(env: Record<string, string>): typeof reference.profiles.main | undefined {
   const name = env.KERIPY_INTEROP_PROFILE;
   if (name === undefined) return undefined;

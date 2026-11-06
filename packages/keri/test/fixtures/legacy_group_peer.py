@@ -1,10 +1,10 @@
-"""Real legacy and native group members behind ordinary Python HTTP/parser intake.
+"""Real legacy and v2 group members behind ordinary Python HTTP/parser intake.
 
 Fixture commands choose public signing/verification operations. They never seed
 accepted rows. Member and independent-wallet deliveries use the unmodified
 HttpEnd/Parser, with separate Habery/Reger environments and private keys.
 The legacy lane uses explicit v1 child framing around its pinned CLI defect.
-Native approval shares the caller's live KRAM, registry and exchange owners;
+V2 approval shares the caller's live KRAM, registry and exchange owners;
 ordinary protocol verification remains the sole acceptance boundary.
 """
 import argparse
@@ -298,7 +298,7 @@ class Control:
 
 
 class AcdcV2Role:
-    """One independent member; public intake and explicit local approval share native owners."""
+    """One independent member; public intake and explicit local approval share v2 owners."""
     def __init__(self, hby, root):
         from keri import Vrsn_1_0, Vrsn_2_0
         from keri.acdc import Regery, loadHandlers
@@ -400,7 +400,7 @@ class AcdcV2Role:
         return dict(wire=own.decode(), said=proposal.said, head=head.qb64 if head else None)
 
     def exchange(self, wire, from_grant=None, selected=None):
-        """Approve one selected child; native owners alone complete its quorum and disclosure checks."""
+        """Approve one selected child; v2 owners alone complete its quorum and disclosure checks."""
         from copy import deepcopy
         from keri.core import Number, Diger, verifySigs
         wrapper, _ = self.proposal(wire, '/multisig/exn')
@@ -447,7 +447,7 @@ class AcdcV2Role:
                 exchanging.serializeParsedSubstream(node) for node in expected.nests]
         else:
             assert selected is None
-            # Pinned read-only native gate applies before issuance/Admit shares.
+            # Pinned read-only v2 gate applies before issuance/Admit shares.
             verdict, _ = handler._verifyResult(child, nests=parsed.nests, sscs=parsed.sscs, evidence=evidence)
             assert verdict.verdict == 'valid', (verdict, child.sad)
         approved = deepcopy(parsed)
@@ -463,7 +463,7 @@ class AcdcV2Role:
         proposal, foot = grouping.multisigExn(self.group, own, version=self.version)
         self.psr.parseOneBare(ims=bytearray(proposal.raw + foot), local=True, version=self.version)
         self.receive()
-        assert self.exc.complete(child.said), 'native quorum and disclosure must verify before publication'
+        assert self.exc.complete(child.said), 'v2 quorum and disclosure must verify before publication'
         return dict(wire=(proposal.raw + foot).decode(), said=proposal.said,
             child=child.said, complete=self.exc.complete(child.said),
             accepted=exchanging.serializeMessage(self.hby, child.said).decode()

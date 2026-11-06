@@ -5,7 +5,7 @@ import { createServer } from "node:https";
 import { fileURLToPath } from "node:url";
 export const certificate = fileURLToPath(new URL("./server.pem", import.meta.url));
 export const wrongCertificate = fileURLToPath(new URL("./wrong.pem", import.meta.url));
-/** Same explicit public framing used by the existing native registry/service owner. */
+/** Same explicit public framing used by the existing v2 registry/service owner. */
 export function framed(event: SerderACDC, opening?: ReturnType<typeof makeBlindState>): Uint8Array {
   const proof = opening
     ? Counter.enclose({ code: "BlindedStateQuadruples", version: Vrsn_2_0, qb64: BlindState.qb64b(opening) })

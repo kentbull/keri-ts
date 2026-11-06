@@ -23,11 +23,11 @@ message production, delivery, completion and lifecycle behavior. The
 [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
 capabilities and the evidence required before extending that behavior.
 
-## Native-v2 ACDC/registry: separate completion before publication
+## V2 ACDC registry: separate completion before publication
 
-The [native ACDC/registry roadmap](credentials/NATIVE_V2_ACDC_REGISTRY_ROADMAP.md)
+The [v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md)
 owns remaining work dependent on KERIpy `rip`, `bup` and `upd` completion, including
-native CLI authoring, disclosure custody, group native approval, IPEX/wallet,
+v2 CLI authoring, disclosure custody, group v2 approval, IPEX/wallet,
 presentation and reciprocal peer qualification. Re-entry requires inspecting and
 pinning the completed reference implementation. Merged partial capability stays;
 legacy TEL replay and independent KERI/CESR v2 are qualified in the

@@ -43,17 +43,17 @@ Deno.test("KERIpy release profiles refuse missing environments and mismatched pi
   }
 });
 
-Deno.test("Native registry and IPEX require their candidate while ESSR keeps its main peer", () => {
+Deno.test("V2 registry and IPEX require their candidate while ESSR keeps its main peer", () => {
   const main = { KERIPY_MAIN_ROOT: "/main", KERIPY_MAIN_PYTHON: "/main/python" };
-  for (const owner of ["interop-native-registry", "interop-ipex-disclosure"]) {
+  for (const owner of ["interop-v2-registry", "interop-ipex-disclosure"]) {
     assertThrows(() => keripySuiteEnvironment(owner, main), Error, "requires a candidate");
   }
   assertThrows(
-    () => keripySuiteEnvironment("interop-native-registry", { ...main, KERIPY_CANDIDATE_ROOT: "/candidate" }),
+    () => keripySuiteEnvironment("interop-v2-registry", { ...main, KERIPY_CANDIDATE_ROOT: "/candidate" }),
     Error,
     "requires a candidate",
   );
-  const selected = keripySuiteEnvironment("interop-native-registry", {
+  const selected = keripySuiteEnvironment("interop-v2-registry", {
     ...main,
     KERIPY_INTEROP_ROOT: "/mailbox",
     KERIPY_INTEROP_EXPECTED_COMMIT: reference.commit,
@@ -65,7 +65,7 @@ Deno.test("Native registry and IPEX require their candidate while ESSR keeps its
   assertEquals(selected.KERIPY_INTEROP_PYTHON, "/candidate/python");
   assertEquals(selected.KERIPY_INTEROP_EXPECTED_COMMIT, reference.profiles.candidate.commit);
   // Explicit selection also works for a direct owner run; main setup cannot replace it.
-  for (const owner of ["interop-native-registry", "interop-ipex-disclosure", "interop-essr-storage"]) {
+  for (const owner of ["interop-v2-registry", "interop-ipex-disclosure", "interop-essr-storage"]) {
     assertEquals(keripySuiteEnvironment(owner, selected), selected);
   }
   for (const owner of ["interop-essr-storage"]) {

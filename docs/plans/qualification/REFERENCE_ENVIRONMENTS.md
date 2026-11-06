@@ -32,11 +32,11 @@ suite runs may instead supply `KERIPY_MAIN_ROOT` and
 `KERIPY_MAIN_PYTHON`. No legacy Baser qualification is implied.
 
 The same action's `profile: candidate` input prepares the ACDC v2 candidate for
-`interop-native-registry` and `interop-ipex-disclosure` in PR and extended workflows. Local owner runs require
+`interop-v2-registry` and `interop-ipex-disclosure` in PR and extended workflows. Local owner runs require
 `KERIPY_CANDIDATE_ROOT` and `KERIPY_CANDIDATE_PYTHON`, or explicit
 `KERIPY_INTEROP_PROFILE=candidate` with its root and interpreter. Main setup cannot
 replace this selection; missing candidate configuration and mismatched source/imports
-fail before protocol state. The native-registry owner covers reciprocal proof
+fail before protocol state. The v2-registry owner covers reciprocal proof
 intake with reopened TS state and reciprocal registrar/observer service boundaries.
 Its stores and service processes remain owned by the test's temporary scope.
 

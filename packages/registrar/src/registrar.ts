@@ -29,7 +29,7 @@ export interface RegistrarOptions {
   /** Include controller/delegation KEL and framed TEL/public openings instead of bare TEL. */
   fullEvidence?: boolean;
 }
-/** Request-local final native outcomes; no application pending queue or acceptance records. */
+/** Request-local final protocol outcomes; no application pending queue or acceptance records. */
 export interface PublicationResult {
   accepted: Record<string, number>;
   pending: Record<string, number>;
@@ -192,7 +192,7 @@ export class Registrar {
     return record(q) ? q : text("Query must be an object", 400);
   }
 
-  /** Ordinary native dispatch owns acceptance, durable dependencies and public opening retention. */
+  /** Ordinary v2 dispatch owns acceptance, durable dependencies and public opening retention. */
   async ingest(raw: Uint8Array, signal?: AbortSignal): Promise<PublicationResult> {
     const summary: PublicationResult = { accepted: {}, pending: {}, rejected: {}, heads: {} };
     let frames;

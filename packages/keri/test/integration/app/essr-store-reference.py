@@ -1,4 +1,4 @@
-"""Qualify pinned-main Baser binding, writer semantics and native ESSR rows."""
+"""Qualify pinned-main Baser binding, writer semantics and v2 ESSR rows."""
 import argparse
 import json
 

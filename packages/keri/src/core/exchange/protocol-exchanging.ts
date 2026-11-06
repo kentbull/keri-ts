@@ -266,8 +266,8 @@ export function serializeMessage(
   });
 }
 
-/** Native TEL proposal routes share exact registry/anchor consent, not an arbitrary anchor bucket. */
-export function isNativeRegistryRoute(route: string): route is "/multisig/rip" | "/multisig/bup" {
+/** V2 TEL proposal routes share exact registry/anchor consent, not an arbitrary anchor bucket. */
+export function isV2RegistryRoute(route: string): route is "/multisig/rip" | "/multisig/bup" {
   return route === "/multisig/rip" || route === "/multisig/bup";
 }
 

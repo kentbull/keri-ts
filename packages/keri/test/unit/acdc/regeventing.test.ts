@@ -293,7 +293,7 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
   assertEquals(validateUpdate(body("wrong-prior"), rip.said!, rip.said!), { kind: "reject", reason: "prior" });
   assertEquals(validateUpdate(body("gap"), rip.said!).kind, "valid", "sequence continuity belongs to the engine");
   assertEquals(validateUpdate(update, rip.said!, rip.said!).kind, "valid");
-  // Received bodies still reach native validation even when the public builder refuses them.
+  // Received bodies still reach v2 validation even when the public builder refuses them.
   const received = (fields: Record<string, string>, inception = false) => {
     const authored = new SerderACDC({ sad: { ...(inception ? rip.sad : update.sad), ...fields }, makify: true });
     return new SerderACDC({ raw: authored.raw });
@@ -332,7 +332,7 @@ Deno.test("registry field validation shares parsed facts without accepting a cha
     assertEquals(validateRip(received({ dt }, true)), { kind: "reject", reason: "timestamp" }, dt);
   }
 });
-Deno.test("public digest commitments remain distinct from full native registry anchors", async () => {
+Deno.test("public digest commitments remain distinct from full v2 registry anchors", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-anchor-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     const witnessHby = yield* createHabery({
@@ -365,7 +365,7 @@ Deno.test("public digest commitments remain distinct from full native registry a
           : shape === "extra"
           ? { ...seal, extra: "unsupported" }
           : seal;
-        const nativeAnchor = shape === "triple";
+        const v2Anchor = shape === "triple";
         issuer.interact({ data: [candidate] });
         const anchor = issuer.kever!.serder;
         const claim = {
@@ -384,14 +384,14 @@ Deno.test("public digest commitments remain distinct from full native registry a
           local: false,
         });
         assertEquals(db.fullyWitnessed(anchor), true);
-        // Every case carries the exact digest; public hints do not grant native authority.
+        // Every case carries the exact digest; public hints do not grant v2 authority.
         assertEquals(vet({ db, rip: candidateRip }).kind, "verified", shape);
         assertEquals(
           vet({ db, rip: candidateRip, sources: new Map([[candidateRip.said!, anchor.said!]]) }).kind,
           "verified",
           `public source hint: ${shape}`,
         );
-        assertEquals(verifyRegistryAnchor(result.event, claim), nativeAnchor, shape);
+        assertEquals(verifyRegistryAnchor(result.event, claim), v2Anchor, shape);
         assertEquals(verifyRegistryAnchor(result.event, { ...claim, diger: new Diger({ qb64: rip.said! }) }), false);
       }
       assertEquals(verifyRegistryAnchor(event, { db, issuer: issuer.pre }), false);
@@ -464,7 +464,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
       yield* baser.close(false);
       yield* baser.reopen({ reuse: true });
       engine = new RegistryEventer(hby.db, issuer.pre, store, rip.said!);
-      // Digest commitments authenticate public evidence but cannot advance native TEL state.
+      // Digest commitments authenticate public evidence but cannot advance v2 TEL state.
       issuer.interact({ data: [{ d: rip.said! }] });
       assertEquals(vet({ db: hby.db, rip }).kind, "verified");
       assertEquals(engine.processEvent(rip).kind, "escrow");
