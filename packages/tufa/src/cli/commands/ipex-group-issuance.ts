@@ -65,7 +65,10 @@ export interface GroupIssuanceResult {
   contributed: true;
   registryIssued: boolean;
   admitted: false;
-  /** Exact public proof artifact for the issuer members who left before the separate BUP join. */
+  /**
+   * Exact public proof for the issuer members who left before the separate BUP join.
+   * The custodian also sends it to them by mailbox on `multisig`; this copy is the file fallback.
+   */
   proof?: Uint8Array;
 }
 
@@ -219,6 +222,42 @@ export function* acceptGroupIssuanceProof(
     yield* runtime.exc.acceptPendingGrantProof({ ...input, nests: child.nests });
     return runtime.exc.complete(grant);
   }
+}
+
+/**
+ * Wait for the custodian's mailbox-delivered `/multisig/ipex-proof` and verify it.
+ * The caller hosts mailbox intake; the core route authenticates and indexes the
+ * wrapper. A proof is retried until this member's separate BUP join is accepted.
+ */
+export function* awaitGroupIssuanceProof(
+  runtime: AgentRuntime,
+  wallet: Wallet,
+  grant: string,
+  selection: GroupIssuanceSelection,
+  timeoutMs: number,
+): Operation<boolean> {
+  const { hab } = owners(runtime, wallet, selection);
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ValidationError("Proof timeout must be positive");
+  return yield* race([
+    call(function*() {
+      while (true) {
+        for (const [, parent] of runtime.hby.db.exns.getTopItemIter()) {
+          const attrs = parent.sad?.a as Record<string, unknown> | undefined;
+          if (
+            parent.route !== ProofRoute || parent.pre !== selection.custodian || attrs?.gid !== hab.pre
+            || attrs?.grant !== grant
+          ) continue;
+          const proof = yield* wrapperBytes(runtime, parent.said!);
+          if (yield* acceptGroupIssuanceProof(runtime, wallet, grant, selection, proof)) return true;
+        }
+        yield* wait(runtime, 50);
+      }
+    }),
+    call(function*(): Operation<never> {
+      yield* wait(runtime, timeoutMs);
+      throw new ValidationError("Final group proof did not arrive and verify before the timeout");
+    }),
+  ]);
 }
 
 /** Finite group phase options; the optional listener borrows this runtime and local member. */
@@ -588,8 +627,9 @@ function* runGroupIssuance(
                   discloser.proofSupport(raw, hab),
                   yield* wrapper(runtime, completed, ProofRoute),
                 );
-                if (request.role === "recipient") yield* broadcastEvidence(publicProof);
-                else finalProof = publicProof;
+                // KERIpy form: the elected member shares the proof with the other members by mailbox.
+                yield* broadcastEvidence(publicProof);
+                if (request.role === "issuer") finalProof = publicProof;
                 if (request.role === "issuer") {
                   yield* sendEvidence(discloser.proofSupport(raw, hab), frozenGrant.sad!.ri as string, "credential");
                 }

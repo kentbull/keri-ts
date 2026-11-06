@@ -45,6 +45,7 @@ import { openWallet, walletStoreArgs } from "../support/wallet.ts";
 import { authoringWitnessAuths } from "../support/witness-auth.ts";
 import {
   acceptGroupIssuanceProof,
+  awaitGroupIssuanceProof,
   prepareGroupDerivedIssuance,
   runGroupDerivedIssuance,
 } from "./ipex-group-issuance.ts";
@@ -286,30 +287,38 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
             yield* runtime.protocol.processEscrowsOnce();
           }
           const proofFile = parseStringOption(args.proof, "proof");
-          if (proofFile) {
+          const setupGrant = role === "recipient" ? parseStringOption(args.said, "said") : undefined;
+          // An issuer member's setup of its own group's Grant is the post-BUP proof phase.
+          const issuerProof = !!selection && !!setupGrant
+            && runtime.exc.retainedInput(setupGrant, { pending: true })?.serder.pre === hab.pre;
+          if (proofFile || issuerProof) {
             const grant = parseStringOption(args.said, "said");
             if (!selection || !grant) {
               throw new ValidationError("Final group proof requires --said and exact group selection");
             }
-            const verified = yield* acceptGroupIssuanceProof(
-              runtime,
-              wallet,
-              grant,
-              selection,
-              yield* call(() => Deno.readFile(proofFile)),
-            );
+            // Mailbox delivery on `multisig` is the default; --proof FILE is the fallback.
+            const verified = proofFile
+              ? yield* acceptGroupIssuanceProof(
+                runtime,
+                wallet,
+                grant,
+                selection,
+                yield* call(() => Deno.readFile(proofFile)),
+              )
+              : yield* scoped(function*() {
+                const host = yield* spawn(() =>
+                  runAgentRuntime(runtime, { hab: localGroupMember(hby, hab.pre), pollMailbox: true })
+                );
+                try {
+                  return yield* awaitGroupIssuanceProof(runtime, wallet, grant, selection, timeout * 1000);
+                } finally {
+                  yield* host.halt();
+                }
+              });
             if (!verified) throw new ValidationError("Final group proof requires its accepted current issued BUP");
             return { grant, registryIssued: true, admitted: false };
           }
           const proofOutput = parseStringOption(args.proofOutput, "proof-output");
-          if (
-            selection && role === "issuer" && localGroupMember(hby, hab.pre).pre === selection.custodian && !args.out
-            && !proofOutput
-          ) {
-            throw new ValidationError(
-              "Issuer custodian requires --proof-output for members' explicit post-BUP proof phase",
-            );
-          }
           const proposalFile = parseStringOption(args.proposal, "proposal");
           let proposal: Uint8Array | undefined = proposalFile
             ? yield* call(() => Deno.readFile(proposalFile))
@@ -399,8 +408,10 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
               ...selection,
             }, { timeoutMs: timeout * 1000, auths, witnessGvrsn: parseGvrsn(args.witnessGvrsn ?? "1"), listen });
             const { proof, ...facts } = completed;
-            if (proof) yield* call(() => Deno.writeFile(proofOutput!, proof, { createNew: true, mode: 0o600 }));
-            return { ...facts, ...(proof ? { proofOutput } : {}) };
+            if (proof && proofOutput) {
+              yield* call(() => Deno.writeFile(proofOutput, proof, { createNew: true, mode: 0o600 }));
+            }
+            return { ...facts, ...(proof && proofOutput ? { proofOutput } : {}) };
           }
           return yield* runDerivedIssuance(runtime, wallet, { role, grant: selected }, {
             timeoutMs: timeout * 1000,
