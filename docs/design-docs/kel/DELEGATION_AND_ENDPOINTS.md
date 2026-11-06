@@ -39,9 +39,14 @@ Public group workflows now use the CLI boundary:
 The group coordination message is not the business event. `/multisig/*`
 wrappers collect or distribute member approvals; the embedded KEL, TEL, reply,
 or IPEX event remains the behavior that must eventually be accepted.
-New ordinary KEL proposals use v2 nested wrappers, and the outer member signature
-uses the same attachment genus as that wrapper. Existing receiving and explicit
-serialization contracts are unchanged.
+Groups are explicitly v1 or v2: every member, group and child KEL event uses the
+group's KEL version. Like KERIpy `kli multisig incept|interact|rotate` and
+`ends add`, new KEL (icp/rot/ixn) and endpoint-role reply proposals use a v1
+wrapper with a named `e` embed for both group versions; the embedded child keeps
+its own version and attachment genus, and the outer member signature uses the
+wrapper's v1 genus. KERIpy `kli multisig join` reads only `e` embeds for these
+routes. V2 nested wrappers remain explicit for KERIpy's native v2 routes
+(registry RIP/BUP, provisioning replies, v2 IPEX). Receiving accepts both forms.
 
 ## Endpoint Roles
 

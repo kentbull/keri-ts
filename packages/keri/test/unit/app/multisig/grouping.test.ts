@@ -1,6 +1,6 @@
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
-import { Diger, Prefixer, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
+import { Diger, Prefixer, SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
@@ -26,7 +26,7 @@ import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange as exchangeMessage } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { reply } from "../../../../src/core/protocol-eventing.ts";
 
-Deno.test("multisig builders produce v2 KEL and reply proposals and KERIpy legacy VDR and EXN shapes", async () => {
+Deno.test("multisig builders produce KERIpy e-embed KEL and reply proposals around v2 children", async () => {
   await run(function*() {
     const hby = yield* createHabery({
       name: `multisig-builders-${crypto.randomUUID()}`,
@@ -58,12 +58,22 @@ Deno.test("multisig builders produce v2 KEL and reply proposals and KERIpy legac
       });
       const [grant] = ipexGrantExn(group, member.pre, "grant", acdc);
 
-      // Group KEL and reply proposals are v2 wrappers committing to one nested child by SAID.
+      // Like KERIpy, a v2 group's KEL and reply proposals are v1 wrappers with a named `e` embed;
+      // the group version is the embedded child's version.
       const [micp] = yield* multisigInceptExn(member, [member.pre], [member.pre], icp);
       assertEquals(micp.route, MULTISIG_ICP_ROUTE);
-      assertEquals(micp.pvrsn, Vrsn_2_0);
-      assertEquals(micp.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre], icp: icp.said });
-      assertEquals(micp.ked?.e, undefined);
+      assertEquals(micp.pvrsn, Vrsn_1_0);
+      assertEquals(micp.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre] });
+      assertEquals((micp.ked?.e as Record<string, Record<string, unknown>>).icp.d, icp.said);
+      assertEquals(
+        new SerderKERI({ sad: (micp.ked?.e as Record<string, Record<string, unknown>>).icp }).pvrsn,
+        Vrsn_2_0,
+      );
+      // An explicit v2 wrapper remains available for KERIpy's native nested proposal routes.
+      const [nested] = yield* multisigInceptExn(member, [member.pre], [member.pre], icp, null, { version: Vrsn_2_0 });
+      assertEquals(nested.pvrsn, Vrsn_2_0);
+      assertEquals(nested.ked?.a, { gid: group.pre, smids: [member.pre], rmids: [member.pre], icp: icp.said });
+      assertEquals(nested.ked?.e, undefined);
 
       const [vcpExn] = multisigRegistryInceptExn(group, member, "issue credentials", vcp, anc);
       assertEquals(vcpExn.route, MULTISIG_VCP_ROUTE);
@@ -86,9 +96,9 @@ Deno.test("multisig builders produce v2 KEL and reply proposals and KERIpy legac
 
       const [rpyExn] = yield* multisigRpyExn(group, member, rpy);
       assertEquals(rpyExn.route, MULTISIG_RPY_ROUTE);
-      assertEquals(rpyExn.pvrsn, Vrsn_2_0);
-      assertEquals(rpyExn.ked?.a, { gid: group.pre, rpy: rpy.said });
-      assertEquals(rpyExn.ked?.e, undefined);
+      assertEquals(rpyExn.pvrsn, Vrsn_1_0);
+      assertEquals(rpyExn.ked?.a, { gid: group.pre });
+      assertEquals((rpyExn.ked?.e as Record<string, Record<string, unknown>>).rpy.d, rpy.said);
 
       const [wrapped] = multisigExn(group, member, grant);
       assertEquals(wrapped.route, MULTISIG_EXN_ROUTE);

@@ -232,9 +232,11 @@ after database reopen. Replay decodes generic protocol bodies: issuance contains
 an ACDC child as well as KERI TEL/anchor children. Keep the KEL/reply approval
 reader KERI-specific and share only proof/genus resolution. Decode signed cgvrsn before parsing; explicit child genus
 wins, and a hint applies only to a child with attachments. Parent signatures never
-supply missing child proofs. New KEL/reply proposals default to v2 nested wrappers;
-outer member endorsements use the wrapper's attachment genus. Explicit legacy
-serialization and receiving remain separate from normal authoring. Shared proposal
+supply missing child proofs. Groups are explicitly v1 or v2 by KEL version. New
+KEL/reply proposals follow KERIpy for both: a v1 `e`-embed wrapper around the
+group-version child (`kli multisig join` reads only `e`); v2 nested wrappers are
+explicit for native v2 routes. Outer member endorsements use the wrapper's
+attachment genus. Receiving accepts both forms. Shared proposal
 publication registers its actual signed wire through intake before transmission,
 so later peer proofs can replay without another approval prompt. Endpoint-role
 initiation likewise records each recipient-specific wrapper before delivery and
