@@ -18,7 +18,7 @@ from urllib.request import Request, urlopen
 import falcon
 from hio.base import doing
 from hio.core import http
-from keri import Kinds, Vrsn_1_0, Vrsn_2_0
+from keri import Kinds, Vrsn_2_0
 from keri.app import openCF, openHby
 from keri.app.agenting import Receiptor
 from keri.app.indirecting import WitnessStart, setupWitness
@@ -33,34 +33,37 @@ PAYLOAD = "authenticated-mailbox-payload"
 
 
 def controller_packets(stack, count, witnesses):
-    """Independent member stores sign one controller or a real two-of-two group."""
+    """Independent member stores sign one controller or a real two-of-two group.
+
+    Controllers use the v2 stack like the KERIpy witnesses, so no KEL or stream mixes versions.
+    """
     hbys = [stack.enter_context(openHby(name=f"member-{i}", temp=True,
-            salt=Salter().qb64, version=Vrsn_1_0)) for i in range(count)]
+            salt=Salter().qb64, version=Vrsn_2_0)) for i in range(count)]
     wits = [witness["pre"] for witness in witnesses]
     witness_args = dict(wits=wits, toad=2 if wits else 0)
-    members = [hby.makeHab(name="member", version=Vrsn_1_0,
+    members = [hby.makeHab(name="member", version=Vrsn_2_0,
                **(witness_args if count == 1 else {})) for hby in hbys]
-    kel = [bytes(hab.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_1_0)) for hab in members]
+    kel = [bytes(hab.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0)) for hab in members]
     signers = members
     if count == 2:
         kvys = [Kevery(db=hby.db, lax=True, local=False) for hby in hbys]
         for i, kvy in enumerate(kvys):
-            Parser(version=Vrsn_1_0).parse(ims=bytearray(kel[1-i]), kvy=kvy, local=True)
+            Parser(version=Vrsn_2_0).parse(ims=bytearray(kel[1-i]), kvy=kvy, local=True)
         mids = [hab.pre for hab in members]
         signers = [hby.makeGroupHab(group="group", mhab=members[i], smids=mids,
                    rmids=mids, isith="2", nsith="2", **witness_args,
-                   version=Vrsn_1_0, kind=Kinds.json) for i, hby in enumerate(hbys)]
+                   version=Vrsn_2_0, kind=Kinds.json) for i, hby in enumerate(hbys)]
         partials = [hab.msgOwnInception(allowPartiallySigned=True, framed=True,
-                    gvrsn=Vrsn_1_0) for hab in signers]
+                    gvrsn=Vrsn_2_0) for hab in signers]
         for i, kvy in enumerate(kvys):
-            Parser(version=Vrsn_1_0).parse(ims=bytearray(partials[1-i]), kvy=kvy, local=True)
+            Parser(version=Vrsn_2_0).parse(ims=bytearray(partials[1-i]), kvy=kvy, local=True)
             kvy.processEscrows()
             assert signers[i].pre in kvy.kevers
-        kel.append(bytes(signers[0].msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_1_0)))
+        kel.append(bytes(signers[0].msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0)))
     sender = signers[0]
     if witnesses:
         hby = hbys[0]
-        resolver = Oobiery(hby=hby, version=Vrsn_1_0)
+        resolver = Oobiery(hby=hby, version=Vrsn_2_0)
         receiptor = Receiptor(hby=hby)
         for witness in witnesses:
             hby.db.oobis.pin(keys=(witness["url"],), val=OobiRecord(date=helping.nowIso8601()))
@@ -84,10 +87,10 @@ def controller_packets(stack, count, witnesses):
         finally:
             doist.exit()
         # Stored replay carries witness receipts; msgOwnEvent carries controller signatures only.
-        kel = [bytes(wire) for hab in members for wire in hab.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_1_0)]
+        kel = [bytes(wire) for hab in members for wire in hab.db.clonePreIter(pre=hab.pre, gvrsn=Vrsn_2_0)]
         if count == 2:
-            kel.extend(bytes(wire) for wire in sender.db.clonePreIter(pre=sender.pre, gvrsn=Vrsn_1_0))
-    outsider = hbys[0].makeHab(name="outsider", version=Vrsn_1_0)
+            kel.extend(bytes(wire) for wire in sender.db.clonePreIter(pre=sender.pre, gvrsn=Vrsn_2_0))
+    outsider = hbys[0].makeHab(name="outsider", version=Vrsn_2_0)
     return dict(pre=sender.pre, event=sender.kever.serder.said, witnesses=list(sender.kever.wits),
                 receipts=sorted(sig.index for sig in sender.db.wigs.get(keys=(sender.pre, sender.kever.serder.said))),
                 members=[hab.pre for hab in members],
