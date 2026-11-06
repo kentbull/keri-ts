@@ -382,9 +382,15 @@ for (const tsDiscloser of [true, false]) {
                         for (const field of ["i", "ri", "p", "x"] as const) {
                           assertEquals(body.sad![field], pyBody[field]);
                         }
-                        assertEquals(pyBody.p, index ? ids[index - 1] : "");
-                        const first = snapshot.messages.find((message) => message.d === ids[0])!;
-                        assertEquals(pyBody.x, first.x, "one exchange identity throughout the conversation");
+                        // A v2 conversation opens with an xip that has no prior and is its own exchange identity.
+                        if (index === 0) {
+                          assertEquals(pyBody.t, "xip");
+                          assertEquals(Object.hasOwn(pyBody, "p"), false, "an opener has no prior");
+                          assertEquals(Object.hasOwn(pyBody, "x"), false, "an opener uses its own SAID");
+                        } else {
+                          assertEquals(pyBody.p, ids[index - 1]);
+                          assertEquals(pyBody.x, ids[0], "one exchange identity throughout the conversation");
+                        }
                         const sender = index % 2 === (tsDiscloser ? 1 : 0) ? hab.pre : py.pre;
                         assertEquals(pyBody.i, sender);
                         assertEquals(pyBody.ri, sender === hab.pre ? py.pre : hab.pre);

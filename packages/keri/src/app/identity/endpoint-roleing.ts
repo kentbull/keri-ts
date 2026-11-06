@@ -89,7 +89,7 @@ export function* proposeGroupEndpointRole(
   const rpySerder = replyEvent(
     args.allow === false ? "/end/role/cut" : "/end/role/add",
     { cid: groupHab.pre, role, eid: args.eid },
-    { pre: groupHab.pre },
+    { pre: groupHab.pre, pvrsn: groupHab.kelVersion },
   );
   const localRpy = groupEndorseReply(hby, groupHab.pre, rpySerder);
   yield* input.processBytes(localRpy, { local: true });

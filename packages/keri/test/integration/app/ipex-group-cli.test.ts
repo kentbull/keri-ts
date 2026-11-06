@@ -212,6 +212,8 @@ Deno.test("IPEX group CLI settles grants and admits through independent member s
           dest: group,
           route: "/ipex/apply",
           payload: { m: "request", s: peer.pre, a: {} },
+          // This legacy pathed IPEX conversation stays on v1 exchanges.
+          pvrsn: Vrsn_1_0,
         });
         for (const runtime of runtimes) {
           for (const wire of [offer.msg, apply.msg]) yield* runtime.reactor.processBytes(wire);

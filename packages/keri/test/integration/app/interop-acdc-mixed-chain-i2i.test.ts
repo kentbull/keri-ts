@@ -1026,7 +1026,11 @@ async function alignedKliIpexMessage(
   return parsed.message;
 }
 
-Deno.test("Interop: mixed KLI/Tufa four-deep I2I chain presents to interop and Tufa verifiers", async () => {
+Deno.test({
+  name: "Interop: mixed KLI/Tufa four-deep I2I chain presents to interop and Tufa verifiers",
+  // Gap: legacy fork CLI; rewrite for kli vc registry on a GLEIF 1.x profile is a follow-up.
+  ignore: true,
+}, async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
   const ctx: InteropContext = {

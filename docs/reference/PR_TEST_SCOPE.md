@@ -47,9 +47,9 @@ presentation and uses the manifest's candidate pin; ESSR storage retains main. T
 native proof and reopen cases. The five disclosure files use the selected flat-`dp`
 profile through the same candidate setup. The default peer and the candidate are
 both the `kentbull/keripy` `v2-spec` head, which has no standalone
-`keri.app.mailboxing` host; KRAM cases whose Python provider needs that host fail
-until a mailbox-capable peer is selected. CI prepares both references without
-changing the KRAM owner's default peer.
+`keri.app.mailboxing` host; the KRAM Python provider runs on its witness-hosted
+mailbox instead. CI prepares both references without changing the KRAM owner's
+default peer.
 Direct and mailbox presentation share the same workflow and participant topology. Full mode includes all these owners.
 Empty arrays explicitly select no owners for that lane.
 The reference-profile owner expands through the same frozen-peer driver in local

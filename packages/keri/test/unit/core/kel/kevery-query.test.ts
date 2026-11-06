@@ -7,6 +7,7 @@ import {
   Prefixer,
   SerderKERI,
   type Siger,
+  Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
@@ -58,6 +59,8 @@ function makeInteraction(
       p: prior,
       a: seals,
     },
+    // Test habitats incept v2 KELs; their interactions must not mix KERI versions.
+    pvrsn: Vrsn_2_0,
     makify: true,
   });
 }

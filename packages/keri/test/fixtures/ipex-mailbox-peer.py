@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 
 import falcon
 from hio.base import doing
-from keri import Kinds, Roles, Vrsn_1_0, Vrsn_2_0
+from keri import Kinds, Roles, Vrsn_2_0
 from keri.app.agenting import Receiptor
 from keri.app.forwarding import StreamPoster
 from keri.app.indirecting import Poller
@@ -50,19 +50,17 @@ def witness(peer, config):
         time.sleep(.005)
     try:
         doist.enter()
-        # Witness OOBIs use v1; the mailbox provider uses v2 attachment groups.
-        for version, urls in [
-                (Vrsn_1_0, [item["url"] for item in config["witnesses"]]),
-                (Vrsn_2_0, [f'{provider["url"]}oobi/{provider["pre"]}/controller'])]:
-            resolver = Oobiery(hby=hby, version=version)
-            doist.extend(resolver.doers)
-            for url in urls:
-                hby.db.oobis.pin(keys=(url,), val=OobiRecord(date=helping.nowIso8601()))
-            while not all((row := hby.db.roobi.get(keys=(url,))) is not None
-                          and row.state == "resolved" for url in urls):
-                recur()
-            doist.remove(resolver.doers)
-        hab.rotate(adds=[item["pre"] for item in config["witnesses"]], toad=2, version=Vrsn_1_0)
+        # The KERIpy witnesses and the mailbox provider both run the v2 stack.
+        urls = [item["url"] for item in config["witnesses"]] + [f'{provider["url"]}oobi/{provider["pre"]}/controller']
+        resolver = Oobiery(hby=hby, version=Vrsn_2_0)
+        doist.extend(resolver.doers)
+        for url in urls:
+            hby.db.oobis.pin(keys=(url,), val=OobiRecord(date=helping.nowIso8601()))
+        while not all((row := hby.db.roobi.get(keys=(url,))) is not None
+                      and row.state == "resolved" for url in urls):
+            recur()
+        doist.remove(resolver.doers)
+        hab.rotate(adds=[item["pre"] for item in config["witnesses"]], toad=2, version=Vrsn_2_0)
         receiptor.msgs.append(dict(pre=hab.pre, sn=hab.kever.sn))
         while not receiptor.cues:
             recur()
@@ -115,7 +113,8 @@ class Health:
 def main():
     root, config_path, graph, port = sys.argv[1:]
     config = json.loads(Path(config_path).read_text())
-    with open_peer(int(port), graph, version=Vrsn_1_0) as peer:
+    # The controller KEL matches its v2 witnesses and v2 provider; one KEL never mixes versions.
+    with open_peer(int(port), graph, version=Vrsn_2_0) as peer:
         # The base HTTP fixture only needs IPEX; this composition also verifies endpoint replies.
         peer.hby.rvy.cues = peer.kvy.cues
         peer.parser.rvy = peer.hby.rvy

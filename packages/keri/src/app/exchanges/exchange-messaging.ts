@@ -1,6 +1,6 @@
 import { Organizer } from "../identity/organizing.ts";
 /** Construct signed exchanges in their producer and run standalone queued sends. */
-import { concatBytes, type SerderKERI } from "cesr-ts";
+import { concatBytes, type SerderKERI, type Versionage, Vrsn_1_0 } from "cesr-ts";
 import { call, type Operation, resource, spawn } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { exchange } from "../../core/exchange/protocol-exchanging.ts";
@@ -42,6 +42,11 @@ export interface ExchangeMessageArgs {
    * Named independently signed/framed CESR messages to embed.
    */
   embeds?: Record<string, Uint8Array>;
+  /**
+   * Explicit exchange body version for legacy v1 conversations; omission follows the
+   * habitat's KEL version, or v1 when pathed embeds are present.
+   */
+  pvrsn?: Versionage;
 }
 
 /**
@@ -56,13 +61,17 @@ export function createExchangeMessage(
   args: ExchangeMessageArgs,
 ): { serder: SerderKERI; msg: Uint8Array } {
   const embeds = args.embeds ?? {};
+  const embedded = Object.keys(embeds).length > 0;
   const [serder, attachments] = exchange(args.route, args.payload, {
+    // Like KERIpy Hab.exchange, plain exchanges follow the habitat's KEL version;
+    // pathed embeds exist only in the legacy v1 exchange body.
+    pvrsn: args.pvrsn ?? (embedded ? Vrsn_1_0 : hab.kelVersion),
     sender: hab.pre,
     recipient: args.exchangeRecipient === null ? undefined : args.exchangeRecipient ?? args.dest,
     modifiers: args.modifiers,
     stamp: args.date,
     dig: args.dig,
-    embeds: Object.keys(embeds).length > 0 ? embeds : undefined,
+    embeds: embedded ? embeds : undefined,
   });
   return { serder, msg: concatBytes(hab.endorse(serder, { pipelined: false }), attachments) };
 }

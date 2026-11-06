@@ -818,20 +818,11 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
             pre: recipient.pre,
             topic: "receipt",
           });
-          assertEquals(
-            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<
-              string,
-              unknown
-            >)["r"],
-            "logs",
-          );
-          assertEquals(
-            ((delivered.ked?.e as Record<string, unknown>)["evt"] as Record<
-              string,
-              unknown
-            >)["q"],
-            { s: "0", i: recipient.pre, src: sender.pre },
-          );
+          // The v2 sender's query travels as the one nested child of a v2 /fwd exchange.
+          const nested = frames[0].nests?.[0]?.body;
+          assert(nested instanceof SerderKERI);
+          assertEquals(nested.route, "logs");
+          assertEquals(nested.ked?.q, { s: "0", i: recipient.pre, src: sender.pre });
           const receiptKey = dgKey(sender.pre, sender.kever!.said);
           const receipt = remoteWitness.receipt(sender.kever!.serder);
           let connections = 0;
@@ -1409,8 +1400,9 @@ Deno.test("queued streams keep all source messages ordered at one randomly selec
         for (const frame of parseBytes(await readCesrRequestBytes(new Request(url, init)))) {
           const outer = frame.body;
           if (outer instanceof SerderKERI && outer.route === "/fwd") {
-            const embeds = outer.ked?.e as Record<string, Record<string, unknown>>;
-            received.push({ url, subject: (embeds.evt.q as Record<string, unknown>).s });
+            const nested = frame.nests?.[0]?.body;
+            assert(nested instanceof SerderKERI);
+            received.push({ url, subject: (nested.ked?.q as Record<string, unknown>).s });
           }
         }
         return new Response(null, { status: 204 });

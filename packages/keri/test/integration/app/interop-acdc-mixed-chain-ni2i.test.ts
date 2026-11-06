@@ -1026,7 +1026,11 @@ async function alignedKliIpexMessage(
   return parsed.message;
 }
 
-Deno.test("Interop: Tufa NI2I edge verifies when source subject is not the Tufa issuer", async () => {
+Deno.test({
+  name: "Interop: Tufa NI2I edge verifies when source subject is not the Tufa issuer",
+  // Gap: legacy fork CLI; rewrite for kli vc registry on a GLEIF 1.x profile is a follow-up.
+  ignore: true,
+}, async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-ni2i-" });
   const ctx: InteropContext = {
