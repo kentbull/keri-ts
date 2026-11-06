@@ -113,11 +113,6 @@ function credentials(account: Hab, path: string): Credentials {
     server: aid(raw.server),
     witnesses: raw.witnesses.map(value => {
       const row = bootObject(value, "witness credential");
-      if (row.cipher !== undefined) {
-        throw new ValidationError(
-          "Witness credentials use the retired encrypted format; re-run `tufa infra kf onboard` with a new file.",
-        );
-      }
       if (typeof row.secret !== "string" || !TOTP_SECRET.test(row.secret)) {
         throw new ValidationError("Invalid witness credential.");
       }
@@ -181,9 +176,6 @@ function* onboard(
     throw new ValidationError(
       "KF onboarding requires distinct individual account/onboarding habitats and shared protocol owners.",
     );
-  }
-  if (!account.mgr.aeid || !account.mgr.seed) {
-    throw new ValidationError("Witness credentials require an unlocked encrypted Keeper.");
   }
   if (
     !account.kever || !client.hab.kever

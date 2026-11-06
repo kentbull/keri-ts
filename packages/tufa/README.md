@@ -265,7 +265,7 @@ policy for the store and its host. Omitting `kram` leaves it disabled.
 
 ## KERI Foundation onboarding
 
-Use an unlocked encrypted store with two distinct existing individual identifiers:
+Use a store with two distinct existing individual identifiers:
 the permanent account and its onboarding signer. The provider must advertise the
 selected witness profile and have Registrar and/or Observer activation configured.
 
@@ -288,8 +288,7 @@ Retain the returned `sessionId` and `server`. Retry with `--session ID` and
 matching witness rotation is reused. The seeds arrive encrypted to the account's
 inception key but are stored in the file as plaintext base32 (mode 0600), so the
 file survives any number of rotations; protect it like the Keeper. It holds no
-separate operation ledger. A file in the retired encrypted format is rejected;
-re-run onboarding with a new file.
+separate operation ledger.
 
 Use the same credentials after reopening the store:
 
