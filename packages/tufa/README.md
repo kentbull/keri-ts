@@ -288,8 +288,8 @@ Retain the returned `sessionId` and `server`. Retry with `--session ID` and
 matching witness rotation is reused. The seeds arrive encrypted to the account's
 inception key but are stored in the file as plaintext base32 (mode 0600), so the
 file survives any number of rotations; protect it like the Keeper. It holds no
-separate operation ledger. A file from the earlier encrypted format is rewritten
-as plaintext on first use while its key is still held; otherwise re-run onboarding.
+separate operation ledger. A file in the retired encrypted format is rejected;
+re-run onboarding with a new file.
 
 Use the same credentials after reopening the store:
 

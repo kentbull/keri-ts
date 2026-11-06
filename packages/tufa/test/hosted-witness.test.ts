@@ -1,5 +1,5 @@
 /** Actual private/public backend lifecycle and controller protocol use; no substituted service objects. */
-import { Encrypter, Matter, MtrDex, parseBytes, SerderKERI, Siger, Signer, Vrsn_2_0 } from "cesr-ts";
+import { Encrypter, Matter, MtrDex, parseBytes, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import {
@@ -209,7 +209,6 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         assertEquals(parseBytes(logBytes).map(frame => (frame.body as SerderKERI).sn), [0, 1, 2]);
 
         // Reopened normal rotation refuses another account's artifact before advancing its KEL.
-        // The artifact starts in the legacy form, encrypted to the account's inception key.
         const credentialFile = `${folder}/witness-credentials.json`, before = controller.kever!.sn;
         const artifact = {
           account: other.pre,
@@ -218,8 +217,7 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
           witnesses: [{
             eid: first.eid,
             url: publicUrl,
-            cipher: credentials.totp,
-            pubs: [(parseBytes(inception)[0].body as SerderKERI).verfers[0].qb64],
+            secret,
           }],
         };
         yield* runtime.close();
@@ -243,27 +241,9 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
           yield* unchanged.close();
         }
         artifact.account = controller.pre;
-        // A legacy row encrypted to a key this Keeper never held names the recovery path.
-        const foreign = new Signer({
-          raw: crypto.getRandomValues(new Uint8Array(32)),
-          code: MtrDex.Ed25519_Seed,
-          transferable: true,
-        }).verfer.qb64;
-        const unreadable = {
-          ...artifact,
-          witnesses: [{
-            ...artifact.witnesses[0],
-            cipher: new Encrypter({ verkey: foreign }).encrypt({ ser: seedMatter() }).qb64,
-            pubs: [foreign],
-          }],
-        };
-        yield* call(() => Deno.writeTextFile(credentialFile, JSON.stringify(unreadable), { mode: 0o600 }));
-        yield* call(() =>
-          assertRejects(() => run(() => rotateWithCredentialsCommand(rotationArgs)), Error, "kf onboard")
-        );
         yield* call(() => Deno.writeTextFile(credentialFile, JSON.stringify(artifact), { mode: 0o600 }));
-        // The first load rewrites the legacy file as the plaintext seed; later credentialed rotations
-        // keep working although Keeper rotation erases the inception key.
+        // The plaintext seed keeps credentialed rotations working although Keeper rotation erases
+        // the inception key the registration response was encrypted to.
         for (let count = 1; count <= 3; count++) {
           yield* rotateWithCredentialsCommand(rotationArgs);
           const rotated = yield* createHabery(controllerStore);
@@ -274,8 +254,6 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
             const saved = JSON.parse(yield* call(() => Deno.readTextFile(credentialFile)));
             assertEquals(saved.witnesses.length, 1);
             assertEquals(saved.witnesses[0].secret === secret, true);
-            assertEquals("cipher" in saved.witnesses[0], false);
-            assertEquals((yield* call(() => Deno.stat(credentialFile))).mode! & 0o777, 0o600);
           } finally {
             yield* rotated.close();
           }
