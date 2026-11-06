@@ -102,7 +102,7 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
             .requiredOption("-r, --recipient <aid>", "Recipient AID or contact alias")
             .option("--said <said>", "Credential SAID")
             .option("--acdc-v2", "Grant an exact ACDC v2 wallet disclosure")
-            .option("--prepare", "Freeze an exact presentation Grant for independent issuer endorsement")
+            .option("--prepare", "Freeze an exact presentation Grant for group sender-threshold collection")
             .option("--issue", "Explicitly derive a fresh registry root with the recipient before issuing")
             .option("--listen <port>", "Loopback direct intake during a live group --issue phase")
             .option("--coordinator <said>", "Exact accepted group coordinator event")
@@ -152,27 +152,6 @@ export function registerIpexCmds(program: Command, dispatch: CommandDispatch): v
       load: () => import("../commands/ipex.ts"),
       exportName: "ipexGrantCommand",
       args: options => ({ ...dispatchArgs(options), ...witnessAuthArgs(options, true) }),
-    },
-  );
-
-  registerDispatchedCommand(
-    addHabOption(addStoreOptions(
-      ipex.command("endorse")
-        .description("Independently add issuer authentication to one exact prepared presentation Grant")
-        .requiredOption("--grant <file>", "Exact prepared Grant file")
-        .requiredOption("--said <said>", "Exact Grant SAID")
-        .requiredOption("--sender <aid>", "Declared discloser AID or contact alias")
-        .requiredOption("--recipient <aid>", "Selected verifier AID or contact alias")
-        .option("--contribution <files...>", "Exact partial issuer-group endorsement files")
-        .option("--input <file>", "Supporting accepted public KEL/TEL/schema evidence")
-        .requiredOption("--out <file>", "New exact Grant file with issuer authentication additions"),
-    )),
-    dispatch,
-    {
-      name: "ipex.endorse",
-      load: () => import("../commands/ipex-presentation.ts"),
-      exportName: "ipexEndorseCommand",
-      args: dispatchArgs,
     },
   );
 

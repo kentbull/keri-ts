@@ -461,29 +461,16 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
         exc: receiverRuntime.exc,
         db: p.wallet.db,
       });
-      const endorsingWallet = new Wallet({
-        hby: p.source,
-        registry: sourceRuntime.acdc!.store,
-        exc: sourceRuntime.exc,
-        db: sourceDb,
-      });
       const verifierWallet = new Wallet({
         hby: verifierHby,
         registry: verifierRuntime.acdc!.store,
         exc: verifierRuntime.exc,
         db: verifierDb,
       });
-      const fileIssuer = new WalletDiscloser(
-        endorsingWallet,
-        new Receiptor(p.source, sourceRuntime.protocol, sourceRuntime.http, sourceRuntime.clock),
-      );
       const preparedFile = yield* preparePresentationGrant(receiverRuntime, presenterWallet, p.holder, {
         fromGrant: grant.exn.said!,
       }, { recipient: verifier.pre, message: "Designated exact view", plan });
       const frozenFile = parseBytes(preparedFile.wire)[0];
-      const frozenNodes = yield* call(() =>
-        Promise.all(frozenFile.nests!.map(node => collectPayload(framePayload(node))))
-      );
       assertEquals(frozenFile.nests!.map(node => node.body.raw), parseBytes(before.proof).map(node => node.body.raw));
       assertEquals(receiverRuntime.exc.complete(preparedFile.grant), true);
       // A new public BUP makes this exact accepted file's current opening retryably unknown.
@@ -493,7 +480,6 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       yield* receiverRuntime.reactor.processBytes(laterAnchor);
       assertEquals(observed.processEvent(later).kind, "accept");
       assertEquals(p.registry.opening(later.said!), null, "the newer opening is deliberately withheld");
-      const selectedFile = { said: preparedFile.grant, sender: p.holder.pre, recipient: verifier.pre };
       yield* sourceRuntime.reactor.processBytes(holder.proofSupport(before.proof, p.holder));
       yield* call(() =>
         assertRejects(
@@ -504,84 +490,12 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
           ValidationError,
         )
       );
-      yield* call(() =>
-        assertRejects(
-          () =>
-            run(() =>
-              fileIssuer.endorseGrant(p.issuer.pre, preparedFile.wire, { ...selectedFile, recipient: p.issuer.pre })
-            ),
-          ValidationError,
-        )
-      );
-      const endorsedFile = yield* fileIssuer.endorseGrant(p.issuer.pre, preparedFile.wire, selectedFile);
-      assertEquals(endorsedFile.endorsed, true);
-      assertEquals(endorsedFile.exn.raw, frozenFile.body.raw);
-      assertEquals(
-        parseBytes(endorsedFile.wire)[0].nests!.map(node => node.body.raw),
-        frozenFile.nests!.map(node => node.body.raw),
-      );
-      const badFile = parseBytes(endorsedFile.wire)[0], badFactors = envelopeFromFrame(badFile);
-      badFile.attachments = messageAttachmentGroups({
-        tsgs: badFactors.tsgs.map(group =>
-          group.pre !== p.issuer.pre
-            ? group
-            : new TransIdxSigGroup(group.prefixer, group.seqner, group.diger, p.issuer.sign(credential.raw, true))
-        ),
-      }, Vrsn_2_0);
-      const invalidFile = yield* call(() => collectPayload(framePayload(badFile)));
-      const retainedFile = p.receiver.db.enst.get(preparedFile.grant);
-      yield* call(() =>
-        assertRejects(
-          () =>
-            run(() =>
-              resumePresentationGrant(receiverRuntime, presenterWallet, p.holder, preparedFile.grant, invalidFile)
-            ),
-          ValidationError,
-        )
-      );
-      assertEquals(
-        p.receiver.db.enst.get(preparedFile.grant),
-        retainedFile,
-        "invalid supplied signatures change no retained proof",
-      );
-      const resumedFile = yield* resumePresentationGrant(
-        receiverRuntime,
-        presenterWallet,
-        p.holder,
-        preparedFile.grant,
-        endorsedFile.wire,
-      );
-      assertEquals(resumedFile.deadline, preparedFile.deadline);
-      assertEquals(parseBytes(resumedFile.wire)[0].body.raw, frozenFile.body.raw);
-      assertEquals(
-        yield* call(() =>
-          Promise.all(parseBytes(resumedFile.wire)[0].nests!.map(node => collectPayload(framePayload(node))))
-        ),
-        frozenNodes,
-      );
-      yield* verifierRuntime.reactor.processBytes(issuer.proofSupport(before.proof, p.issuer));
-      yield* verifierRuntime.reactor.processBytes(holder.proofSupport(before.proof, p.holder));
-      yield* verifierRuntime.reactor.processBytes(resumedFile.wire);
-      assertEquals(
-        receiverRuntime.exc.complete(preparedFile.grant),
-        true,
-        "resuming adds consent to the original accepted preparation",
-      );
       assertEquals(
         verifierRuntime.exc.complete(preparedFile.grant),
         false,
-        "the exact file remains pending at a new verifier until current openings arrive",
+        "an unauthorized discloser file cannot complete at a verifier",
       );
-      assert(verifierHby.db.epse.get(preparedFile.grant));
-      assertEquals(
-        verifierRuntime.exc.presentationContext(preparedFile.grant, {
-          xid: preparedFile.grant,
-          sender: p.holder.pre,
-          recipient: verifier.pre,
-        })!.registries.get(rip.said!),
-        [credential.said!],
-      );
-      assertEquals(verifierWallet.inventory().held, [], "issuer endorsement and resume do not Admit");
+      assertEquals(verifierWallet.inventory().held, [], "a refused resume does not Admit");
       assertEquals(p.receiver.db.erpy.get(preparedFile.grant), null);
       assertEquals((yield* call(() => p.wallet.heldCredential(grant.exn.said!))).proof, before.proof);
       yield* p.wallet.db.close();

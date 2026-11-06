@@ -1,13 +1,11 @@
 /** Finite ACDC v2 IPEX composition over exact wallet views and explicitly supplied private capability. */
 import {
-  bytesEqual,
   type CesrFrame,
   collectPayload,
   Compactor,
   concatBytes,
   Counter,
   Diger,
-  framePayload,
   type MapperMap,
   nestedPayload,
   NumberPrimitive,
@@ -37,13 +35,10 @@ import {
   isLocalGroupHab,
   issuedNodeVerdict,
   Kever,
-  latestGroupContribution,
-  localGroupMember,
   matchesRegistrySeal,
   prepareIpexExn,
   type Receiptor,
   type RegistryDisclosure,
-  timestampMicros,
   validateAcdcSchema,
   ValidationError,
   verifyExchangeProofs,
@@ -80,16 +75,6 @@ export interface InspectedGrantFile {
   frame: CesrFrame;
   completeSigners: string[];
   partialSigners: string[];
-}
-/** Compare every named authentication factor without treating serialization grouping as new consent. */
-function grantFileFactors(frame: CesrFrame): Map<string, string> {
-  const factors = envelopeFromFrame(frame), result = new Map<string, string>();
-  for (const group of factors.tsgs) {
-    for (const sig of group.sigers) result.set(`tsg:${group.pre}:${group.sn}:${group.said}:${sig.qb64}`, group.pre);
-  }
-  for (const cigar of factors.cigars) result.set(`cigar:${cigar.verfer!.qb64}:${cigar.qb64}`, cigar.verfer!.qb64);
-  for (const seal of factors.ssts) result.set(`seal:${seal.i.qb64}:${seal.s.num}:${seal.d.qb64}`, seal.i.qb64);
-  return result;
 }
 /** Fresh origin and explicit far-node proofs; preparation grants neither DH nor inventory consent. */
 export interface IssuanceGrantOptions extends Omit<IpexV2BodyOptions, "prior"> {
@@ -562,98 +547,6 @@ export class WalletDiscloser {
       else partial.add(pre);
     }
     return { frame, completeSigners: [...complete], partialSigners: [...partial] };
-  }
-  /** Add only this local registry issuer's consent; partial group authentication remains explicitly incomplete. */
-  *endorseGrant(
-    issuer: string,
-    raw: Uint8Array,
-    selection: GrantFileSelection & { contributions?: readonly Uint8Array[] },
-  ): Operation<PreparedDisclosure & { endorsed: boolean }> {
-    const hab = this.wallet.hby.habs.get(issuer), inspected = this.inspectGrantFile(raw, selection);
-    const frame = inspected.frame, exn = frame.body as SerderKERI;
-    if (!hab?.kever || !inspected.completeSigners.includes(exn.pre!)) {
-      throw new ValidationError(
-        "Issuer endorsement requires a local signer and complete original sender authentication.",
-      );
-    }
-    if (
-      isLocalGroupHab(this.wallet.hby, hab)
-      && !latestGroupContribution(hab.db, localGroupMember(this.wallet.hby, issuer).pre, hab.kever.verfers)
-    ) {
-      throw new ValidationError("Issuer endorsement requires a current group signing member.");
-    }
-    if (
-      !selection.recipient || selection.recipient === selection.sender
-      || new Prefixer({ qb64: selection.recipient }).qb64 !== selection.recipient
-    ) {
-      throw new ValidationError("Issuer endorsement requires a distinct qualified recipient.");
-    }
-    const nodes = frame.nests!.filter(node => (node.body as SerderACDC).regid);
-    if (!nodes.length || !nodes.some(node => (node.body as SerderACDC).issuer === issuer)) {
-      throw new ValidationError("Selected signer is not an issuer of this disclosed registry scope.");
-    }
-    for (const node of nodes.filter(node => (node.body as SerderACDC).issuer === issuer)) {
-      const credential = node.body as SerderACDC;
-      if (this.wallet.registry.seqEvent(credential.regid!, 0)?.issuer !== issuer) {
-        throw new ValidationError("Selected credential registry does not belong to this issuer.");
-      }
-    }
-    const nested = yield* call(() => Promise.all(frame.nests!.map(node => collectPayload(framePayload(node)))));
-    const originals = grantFileFactors(frame);
-    for (const raw of selection.contributions ?? []) {
-      const candidate = this.inspectGrantFile(raw, selection).frame;
-      const candidateNodes = yield* call(() =>
-        Promise.all(candidate.nests!.map(node => collectPayload(framePayload(node))))
-      );
-      if (
-        !bytesEqual(candidate.body.raw, exn.raw) || nested.length !== candidateNodes.length
-        || nested.some((node, index) => !bytesEqual(node, candidateNodes[index]))
-      ) {
-        throw new ValidationError("Issuer contribution changed the exact Grant or nested evidence.");
-      }
-      const additions = grantFileFactors(candidate);
-      if (
-        [...originals.keys()].some(key => !additions.has(key))
-        || [...additions].some(([key, signer]) => !originals.has(key) && (signer !== issuer || !key.startsWith("tsg:")))
-      ) {
-        throw new ValidationError("Contribution adds authentication outside the selected issuer.");
-      }
-      frame.attachments.push(...candidate.attachments);
-    }
-    const all = envelopeFromFrame(frame);
-    for (const group of all.tsgs.filter(group => group.pre === issuer)) {
-      if (group.sn !== BigInt(hab.kever.lastEst.s) || group.said !== hab.kever.lastEst.d) {
-        throw new ValidationError("Issuer contributions name another establishment event.");
-      }
-    }
-    // Offline file endorsement may precede local KRAM intake; it grants no live auxiliary authority.
-    const checkDeadline = () => {
-      const deadline = this.wallet.exc.exchangeDeadline(exn);
-      const expiry = deadline ? timestampMicros(deadline) : null;
-      if (
-        this.wallet.hby.db.erpy.get([exn.said!]) || deadline
-          && (expiry === null || BigInt(this.receiptor.clock.now()) * 1000n >= expiry)
-      ) {
-        throw new ValidationError("Prepared Grant is terminated or past its original deadline.");
-      }
-    };
-    checkDeadline();
-    this.requireGraph(
-      (frame.nests![0].body as SerderACDC).said!,
-      concatBytes(Counter.makeGVC(Vrsn_2_0), ...nested),
-      true,
-    );
-    // Selection and supplied proof validation precede any local signature work.
-    frame.attachments.push(...parseBytes(hab.endorse(exn, { gvrsn: Vrsn_2_0 }))[0].attachments);
-    const wire = yield* call(() => collectPayload(framePayload(frame)));
-    checkDeadline();
-    const final = this.inspectGrantFile(wire, selection);
-    return {
-      exn,
-      wire,
-      support: this.proofSupport(concatBytes(Counter.makeGVC(Vrsn_2_0), ...nested), hab),
-      endorsed: final.completeSigners.includes(issuer) && !final.partialSigners.includes(issuer),
-    };
   }
 
   /** Prepare one fresh issuer origin with explicit authenticated far nodes, without changing disclosure authority. */
