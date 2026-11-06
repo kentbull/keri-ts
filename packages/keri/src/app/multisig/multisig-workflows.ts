@@ -604,6 +604,12 @@ function* approveKelProposal(
     }
     localMessage = concatBytes(serder.raw, approval.attachment);
   } else {
+    // A proposal already accepted locally that names no local signing member (for example
+    // an earlier rotation that only committed to this member's next key) has nothing to
+    // approve. Skip it so a later proposal for the same group can be selected.
+    if (eventAccepted(hby, serder) && !smids.some(mid => hby.habs.has(mid))) {
+      return null;
+    }
     if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
       return null;
     }
