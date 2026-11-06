@@ -54,45 +54,61 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
   );
 
   const registry = vc.command("registry").description("Credential registry operations");
-  const root = registry.command("root").description("Explicit encrypted copies of existing ACDC v2 registry roots");
-  registerDispatchedCommand(
-    addHabOption(addStoreOptions(root.command("newcomers")))
-      .description("Prepare encrypted existing-root files for newly accepted signing members")
-      .requiredOption("--rotation <said>", "Exact accepted current group rotation SAID")
-      .requiredOption("--previous-member <aid>", "Previous signing member AID (repeatable)", collectOption, [])
-      .requiredOption("--registry <said>", "Explicit registry to copy (repeatable)", collectOption, [])
-      .requiredOption("--output-dir <directory>", "Existing directory for new reply and proposal files"),
-    dispatch,
-    {
-      name: "vc.registry.root.newcomers",
-      load: () => import("../commands/registry-root.ts"),
-      exportName: "registryRootNewcomersCommand",
-      args: dispatchArgs,
-    },
+  const root = registry.command("root").description(
+    "Replicate existing ACDC v2 registry roots to members by ESSR exn (local profile)",
   );
-  for (const operation of ["prepare", "contribute", "receive"] as const) {
-    const command = addHabOption(addStoreOptions(root.command(operation)))
-      .requiredOption("--registry <said>", "Accepted registry SAID")
-      .option("--evidence <file>", "Public KEL/TEL or endpoint evidence file (repeatable)", collectOption, []);
-    if (operation === "receive") {
-      command.requiredOption("--sender <aid>", "Explicitly authorized source AID")
-        .requiredOption("--event <said>", "Exact accepted BUP whose opening verifies the copied root")
-        .requiredOption("--opening <file>", "Held counted BSQ or BSS file")
-        .requiredOption("--message <file>", "Encrypted reply contribution file (repeatable)", collectOption, []);
+  const verbs = [
+    ["send", "Send one held registry root to members by ESSR exn through their mailboxes", "registryRootSendCommand"],
+    [
+      "receive",
+      "List, ingest and explicitly approve pending registry root copies",
+      "registryRootReceiveCommand",
+    ],
+    [
+      "newcomers",
+      "Send every held group root to the members added by one accepted group rotation",
+      "registryRootNewcomersCommand",
+    ],
+  ] as const;
+  for (const [verb, description, exportName] of verbs) {
+    const command = addHabOption(addStoreOptions(root.command(verb))).description(description)
+      .option("--timeout <seconds>", "Finite whole-operation wait (default: 60)");
+    if (verb === "send") {
+      command.requiredOption("--registry <said>", "Accepted registry SAID whose root is held locally")
+        .option(
+          "--recipient <aid>",
+          "Individual member AID or alias (repeatable); a group alias defaults to its other current members",
+          collectOption,
+          [],
+        )
+        .option("--holder <aid>", "AID the root is held for (defaults to the group alias, else the recipient)")
+        .option("--event <said>", "Accepted BUP SAID hint (defaults to the registry head)")
+        .option("--acdc <said>", "ACDC SAID hint for commitment reproduction by a recipient without an opening")
+        .option("--out <file>", "Exclusive-create file for the signed exn instead of mailbox delivery");
+    } else if (verb === "newcomers") {
+      command.requiredOption("--rotation <said>", "Accepted group rotation SAID that added members")
+        .option(
+          "--registry <said>",
+          "Limit to these registry SAIDs (repeatable; default: every held root)",
+          collectOption,
+          [],
+        )
+        .option("--acdc <said>", "ACDC SAID hint for commitment reproduction")
+        .option("--out <file>", "Exclusive-create file for the signed exns instead of mailbox delivery");
     } else {
-      command.requiredOption("--recipient <aid>", "Recipient individual or group AID")
-        .requiredOption("--target <aid>", "Individual encryption target; select the receiving member for a group")
-        .requiredOption("--output <file>", "New encrypted reply file")
-        .option("--coordinator <said>", "Exact accepted source-group coordinator event SAID");
-      if (operation === "prepare") {
-        command.option("--proposal-output <file>", "New authenticated group proposal file (required for groups)");
-      } else command.requiredOption("--proposal <file>", "Authenticated elected-member proposal to contribute to");
+      command.option("--registry <said>", "Approve the pending copy for this registry SAID")
+        .option("--said <said>", "Approve this exact pending exn SAID")
+        .option("--sender <aid>", "Require this sender AID or alias")
+        .option("--event <said>", "Accepted BUP SAID overriding the sender hint")
+        .option("--opening <file>", "Held CESR state opening file for --event")
+        .option("--listen", "Wait for the copy on the credential mailbox topic")
+        .option("--message <file>", "Fallback: signed exn file (repeatable)", collectOption, []);
     }
     registerDispatchedCommand(command, dispatch, {
-      name: `vc.registry.root.${operation}`,
+      name: `vc.registry.root.${verb}`,
       load: () => import("../commands/registry-root.ts"),
-      exportName: "registryRootCommand",
-      args: options => ({ ...dispatchArgs(options), operation }),
+      exportName,
+      args: dispatchArgs,
     });
   }
   registerDispatchedCommand(

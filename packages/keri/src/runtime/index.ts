@@ -120,7 +120,14 @@ export {
   type DhkeOutgoing,
   generateKeyPair,
 } from "../acdc/dhking.ts";
-export { RegistrySalt } from "../acdc/salting.ts";
+export {
+  type PendingRootCopy,
+  RegistryRoot,
+  RootDeferred,
+  rootExn,
+  RootRefused,
+  RootUnverified,
+} from "../acdc/salting.ts";
 export { Unblind, type UnblindOutgoing } from "../acdc/unblinding.ts";
 export {
   Oobiery,

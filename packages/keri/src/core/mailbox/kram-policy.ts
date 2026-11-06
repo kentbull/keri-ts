@@ -103,6 +103,18 @@ function policyState(stored: string, db: Baser): PolicyState {
   }
 }
 
+/** OOBI endpoint replies rely on BADA acceptance rather than KRAM replay protection (KERIpy `OobiDenials`). */
+const OOBI_EXEMPTIONS: readonly KramExemption[] = [[[2, 0], "rpy", "/end/role"], [[2, 0], "rpy", "/loc/scheme"]];
+
+/**
+ * Store-and-forward routes whose copy is correct whenever it arrives, so a late
+ * mailbox fetch must not fall outside a KRAM window (KERIpy
+ * `StoreForwardDenials`). Their own acceptance model replaces replay protection:
+ * the exchange store is keyed by SAID, the handler ignores an already stored
+ * SAID, explicit receiver approval re-authorizes, and a retained root is immutable.
+ */
+const STORE_FORWARD_EXEMPTIONS: readonly KramExemption[] = [[[2, 0], "exn", "/registry/root"]];
+
 /**
  * Own finite cache configuration and exemption policy, reusing Baser.ctyp.
  * Persist staged acceptance expansions so restart cannot reopen an old window.
@@ -122,9 +134,7 @@ export class KramPolicy {
     this.enabled = config.enabled ?? false;
     const denials: readonly KramExemption[] = [
       ...(config.denials ?? []),
-      ...(this.enabled
-        ? [[[2, 0], "rpy", "/end/role"], [[2, 0], "rpy", "/loc/scheme"]] as KramExemption[]
-        : []),
+      ...(this.enabled ? [...OOBI_EXEMPTIONS, ...STORE_FORWARD_EXEMPTIONS] : []),
     ];
     this.exemptions = denials.map(([version, type, route]) => {
       if (
