@@ -17,6 +17,7 @@ import {
   CtrDexV1,
   CtrDexV2,
   Diger,
+  Encrypter,
   parseBytes,
   parseCounterFromText,
   SerderKERI,
@@ -137,6 +138,30 @@ Deno.test("Hab.rotate reuses one Habery for success and rollback coverage", asyn
       assertEquals(after?.new.pubs, before?.new.pubs);
       assertEquals(after?.nxt.pubs, before?.nxt.pubs);
       assertEquals(rollbackHab.kever?.sn, 0);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Hab.decrypt opens ciphertext sealed to current keys by default, after rotation and per key", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `habery-decrypt-${crypto.randomUUID()}`, temp: true });
+    try {
+      const plain = new TextEncoder().encode("sealed for the current key");
+      const seal = (verfer: Verfer) => new Encrypter({ verkey: verfer.qb64 }).encrypt({ ser: plain }).qb64;
+      const hab = hby.makeHab("alice", undefined, { icount: 1, isith: "1", ncount: 1, nsith: "1" });
+      assertEquals(hab.decrypt(seal(hab.kever!.verfers[0])), plain);
+
+      // The default follows rotation to the new current key.
+      hab.rotate();
+      assertEquals(hab.decrypt(seal(hab.kever!.verfers[0])), plain);
+
+      // Every selected key must open the ciphertext, so a multi-key caller selects one verfer.
+      const multi = hby.makeHab("multi", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
+      const [first, second] = multi.kever!.verfers;
+      assertEquals(multi.decrypt(seal(second), [second]), plain);
+      assertThrows(() => multi.decrypt(seal(first)));
     } finally {
       yield* hby.close(true);
     }
