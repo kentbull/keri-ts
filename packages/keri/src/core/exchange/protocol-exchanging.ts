@@ -287,14 +287,23 @@ export function nestedMultisigIlks(route: string): readonly string[] | null {
     case "/multisig/rpy":
       return ["rpy"];
     case "/multisig/qry":
-      return ["qry"]; // Finite auxiliary coordinators own authentication, consent and child dispatch.
+      return ["qry"]; // Local v2 coordination profile; not an upstream KERI or #1740 route.
     case "/multisig/ipex-proof":
-      return ["xip", "exn"]; // Selected group members verify the original issuer Grant and added proof.
+      return ["xip", "exn"]; // Local v2 coordination profile; the child is one complete Grant stream.
     case "/multisig/exn":
       return ["xip", "exn"];
     default:
       return null;
   }
+}
+
+/**
+ * Payload field carrying a v2 wrapper's signed child SAID: the route's last
+ * segment, except `/multisig/ipex-proof`, which commits its Grant as `grant`
+ * (KERIpy `Multiplexor.V2Fields`).
+ */
+export function multisigChildField(route: string): string {
+  return route === "/multisig/ipex-proof" ? "grant" : route.slice(route.lastIndexOf("/") + 1);
 }
 
 /** V2 routes whose handlers own direct disclosed ACDC children. */

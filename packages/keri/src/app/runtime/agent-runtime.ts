@@ -39,7 +39,7 @@ import { MailboxDirector } from "../mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../mailbox/mailbox-poller.ts";
 import { mailboxerOptionsForHabery } from "../mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../mailbox/topic-routing.ts";
-import { loadMultisigHandlers } from "../multisig/grouping.ts";
+import { loadMultisigHandlers, type Multiplexor } from "../multisig/grouping.ts";
 import { noterOptionsForHabery, Notifier } from "../notifications/notifying.ts";
 import { Signaler } from "../notifications/signaling.ts";
 import { ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -100,6 +100,8 @@ export interface AgentRuntime {
   replies: QueryReplies;
   /** Configured application exchange processor; workflows observe its durable completion. */
   exc: Exchanger;
+  /** Group proposal coordinator behind the registered `/multisig/*` routes; owners share routes by child route. */
+  mux: Multiplexor;
   /** Selected process-local IPEX operation owner, released on explicit close or scope exit. */
   readonly ipexAuxiliary: IpexAuxiliary | null;
   /** Durable OOBI job owner, independent of outgoing delivery. */
@@ -342,7 +344,7 @@ export function* createAgentRuntime(
   loadChallengeHandlers(hby.db, exc);
   loadDelegationHandlers(hby, exc, notifier);
   loadOobiHandlers(hby, exc, notifier);
-  loadMultisigHandlers(hby, exc, { notifier, registry: protocol.registry, messageKevery: protocol.kvy });
+  const mux = loadMultisigHandlers(hby, exc, { notifier, registry: protocol.registry, messageKevery: protocol.kvy });
   loadIpexHandlers(hby, exc, {
     notifier,
     registry: acdc?.store ?? null,
@@ -419,6 +421,7 @@ export function* createAgentRuntime(
     protocol,
     replies,
     exc,
+    mux,
     ipexAuxiliary,
     oobiery,
     authenticator,

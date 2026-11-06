@@ -223,6 +223,12 @@ Publication exposes recipient wrapper SAIDs and the shared Multiplexor index key
 v1 embedded-bundle SAID or v2 signed-child SAID. Extraction is not authentication;
 Multiplexor owns commitment validation and accepted proposal/submitter indexes.
 
+`/multisig/qry` (`a={gid,qry}`, group-authored v2 query) and `/multisig/ipex-proof`
+(`a={gid,grant}`, v2 Grant for the group) are core routes as in KERIpy #149: the
+Multiplexor validates, indexes and notifies them but never replays their children.
+Finite owners share any `/multisig/*` route through `runtime.mux.addChildHandler(route, childRoute, handler)` and release it with `removeChildHandler`; never replace
+`Exchanger.routes` entries.
+
 V2 multisig supports icp/rot/ixn/rpy commitments and local membership. Child-SAID
 approval precedes ordinary KEL/reply processing. Local-first approval borrows parsed
 frames; remote-first approval reopens evidence. Commit proposal/submitter indexes

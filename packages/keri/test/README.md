@@ -133,8 +133,10 @@ Run these scenario files with their maintained owner:
 
 The default CLI runtime is the `kentbull/keripy` `v2-spec` peer selected by
 [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `e16ae719f41698b21810a5af9c692c16acddb6d5`, which includes the v2 Poster
-nested-forwarding fix that v2 group proposals need (kentbull/keripy#157, #158). It defaults to KERI v2, matching
+currently `f05d200cf8aca36b8a9b7f4f631dac8ca780dac6`, which includes the v2 Poster
+nested-forwarding fix that v2 group proposals need (kentbull/keripy#157, #158), the core
+`/multisig/qry` and `/multisig/ipex-proof` routes (#149), `Unblind.openings` (#156) and
+DH/Unblind `requery` (#159). It defaults to KERI v2, matching
 Tufa's v2 KEL authoring, so KEL and KERI-message KLI calls no longer pin `--version 1.0`
 and KERIpy witness fixtures default to v2 except for v1-only release profiles. Legacy
 pathed IPEX/VDR credential scenarios still select v1 explicitly. `v2-spec` has no

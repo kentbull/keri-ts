@@ -8,7 +8,6 @@ import {
   consoleLogger,
   createAgentRuntime,
   envelopeFromFrame,
-  exchange,
   type ExchangeRouteHandler,
   FetchHttpClient,
   groupSigningMembers,
@@ -25,7 +24,7 @@ import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { walletStoreArgs } from "../support/wallet.ts";
 
-const QueryRoute = "/multisig/qry", ReplyRoute = "/multisig/rpy";
+const QueryRoute = "/multisig/qry" as const, ReplyRoute = "/multisig/rpy" as const;
 /** One explicit invocation; the proposer authors bytes and ordinary verified indices elect delivery. */
 export interface PresentationUnblindOptions {
   timeoutMs: number;
@@ -111,7 +110,7 @@ function* runUnblind(
   const result: PresentationUnblindResult = { grant, xid, role, completed: true, admitted: false };
   const deadline = runtime.exc.exchangeDeadline(input.serder), expiry = deadline ? timestampMicros(deadline) : null;
   const route = requester ? QueryRoute : ReplyRoute, field = requester ? "qry" : "rpy";
-  const previous = protocol.group ? runtime.exc.routes.get(route) : undefined;
+  let delegate: ExchangeRouteHandler | undefined;
   let installed = false, frozen: Uint8Array | undefined, contributed = false, finished = false;
   let query: Uint8Array | undefined, nextQuery = 0;
   const pending = new Map<string, { parent: SerderKERI; child: CesrFrame }>(), seen = new Set<string>();
@@ -156,23 +155,16 @@ function* runUnblind(
       if (current === true || typeof current === "object" && current.kind === "accept") return result;
     }
     if (protocol.group) {
-      const handler: ExchangeRouteHandler = {
+      // Unblind children share the core /multisig/qry or /multisig/rpy route (KERIpy Multiplexor.addChildHandler).
+      delegate = {
         resource: route,
         acceptsNests: true,
-        verify(args) {
-          if (matches(args.serder, args.nests)) return !args.attachments.length && !args.essrs?.length;
-          return previous?.verify ? previous.verify(args) : false;
-        },
-        *handle(args) {
-          if (matches(args.serder, args.nests)) {
-            pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
-          } else if (previous) {
-            const handled = previous.handle(args);
-            if (handled) yield* handled;
-          }
+        verify: args => matches(args.serder, args.nests) && !args.attachments.length && !args.essrs?.length,
+        handle(args) {
+          pending.set(args.serder.said!, { parent: args.serder, child: args.nests![0] });
         },
       };
-      runtime.exc.routes.set(route, handler);
+      runtime.mux.addChildHandler(route, Unblind.Route, delegate);
       installed = true;
     }
     return yield* race([
@@ -193,15 +185,9 @@ function* runUnblind(
             frozen = child.body.raw;
             contributed = true;
             yield* runtime.protocol.dispatch(child, { local: true });
-            const body = requester
-              ? exchange(QueryRoute, { gid: hab.pre, qry: child.body.said }, {
-                sender: member.pre,
-                version: Vrsn_2_0,
-                gvrsn: Vrsn_2_0,
-              })[0]
-              : multisigExnBody(member.pre, { route: ReplyRoute, attrs: { gid: hab.pre } }, child.body, {
-                version: Vrsn_2_0,
-              });
+            const body = multisigExnBody(member.pre, { route, attrs: { gid: hab.pre } }, child.body, {
+              version: Vrsn_2_0,
+            });
             const parent = parseBytes(member.endorse(body, { gvrsn: Vrsn_2_0 }))[0];
             parent.nests = [child];
             const proposal = yield* wire(parent);
@@ -287,10 +273,7 @@ function* runUnblind(
     ]);
   } finally {
     protocol.abandon(xid);
-    if (installed) {
-      if (previous) runtime.exc.routes.set(route, previous);
-      else runtime.exc.routes.delete(route);
-    }
+    if (installed) runtime.mux.removeChildHandler(route, Unblind.Route, delegate!);
   }
 }
 
