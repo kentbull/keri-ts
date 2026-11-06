@@ -1,6 +1,7 @@
 import { action, type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { EndpointRoles } from "../../../src/core/roles.ts";
+import { Schemer } from "../../../src/core/scheming.ts";
 import {
   createScenarioContext,
   extractLastNonEmptyLine,
@@ -26,7 +27,7 @@ type SpawnedChild = Deno.ChildProcess;
  */
 async function waitForHealth(
   port: number,
-  attempts = 40,
+  attempts = 300, // A cold agent compile and LMDB open can take over 10 s under load.
 ): Promise<void> {
   const url = `http://127.0.0.1:${port}/health`;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -688,4 +689,107 @@ async function runOobiBootstrapParity(
 
 Deno.test("interop/endpoint roles and OOBI bootstrap match KERIpy", async () => {
   await runOobiBootstrapParity(await createScenarioContext());
+});
+
+/**
+ * Schema fetch by data OOBI: KERIpy `kli oobi resolve` and Tufa `oobi resolve`
+ * fetch the same `application/schema+json` body from a Tufa-hosted schema OOBI
+ * and each pins it under its SAID, as KERIpy's Oobiery does.
+ */
+async function runSchemaOobiParity(ctx: ScenarioContext): Promise<void> {
+  const base = `schema-oobi-${crypto.randomUUID().slice(0, 8)}`;
+  const passcode = "MyPasscodeARealSecret";
+  const salt = "0AAwMTIzNDU2Nzg5YWJjZGVm";
+  const port = 8916;
+  const schemer = new Schemer({
+    sed: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      title: "Schema OOBI interop",
+      type: "object",
+      properties: { name: { type: "string" } },
+    },
+  });
+  const schemaDir = await Deno.makeTempDir({ prefix: "tufa-schema-oobi-" });
+  const schemaPath = `${schemaDir}/schema.json`;
+  await Deno.writeFile(schemaPath, schemer.raw);
+  const url = `http://127.0.0.1:${port}/oobi/${schemer.said}`;
+  const [host, kliName, tufaName] = ["host", "kli", "tufa"].map(prefix =>
+    `${prefix}-schema-${crypto.randomUUID().slice(0, 8)}`
+  );
+  const checked = (label: string, result: { code: number; stdout: string; stderr: string }) => {
+    if (result.code !== 0) throw new Error(`${label} failed: ${result.stderr}\n${result.stdout}`);
+    return result;
+  };
+  const store = ["--base", base, "--passcode", passcode];
+  checked(
+    "tufa host init",
+    await runTufa(["init", "--name", host, ...store, "--salt", salt], ctx.env, ctx.packageRoot),
+  );
+  checked(
+    "tufa host incept",
+    await runTufa(
+      ["incept", "--name", host, ...store, "--alias", "host", "--transferable", "--toad", "0"],
+      ctx.env,
+      ctx.packageRoot,
+    ),
+  );
+  await writeTufaAgentControllerConfig(schemaDir, "schema-agent", "host", port);
+  checked("kli init", await runCmd(ctx.kliCommand, ["init", "--name", kliName, ...store, "--salt", salt], ctx.env));
+  checked("tufa init", await runTufa(["init", "--name", tufaName, ...store, "--salt", salt], ctx.env, ctx.packageRoot));
+  try {
+    await run(() =>
+      withTufaAgent(
+        ctx,
+        [
+          "agent",
+          "--name",
+          host,
+          ...store,
+          "--port",
+          String(port),
+          "--config-dir",
+          schemaDir,
+          "--config-file",
+          "schema-agent",
+          "--schema",
+          schemaPath,
+        ],
+        port,
+        function*() {
+          const kli = checked(
+            "kli oobi resolve",
+            yield* promiseOp(() =>
+              runCmd(ctx.kliCommand, ["oobi", "resolve", "--name", kliName, ...store, "--oobi", url], ctx.env)
+            ),
+          );
+          assertEquals(extractLastNonEmptyLine(kli.stdout), `${url} resolved`);
+          const tufa = checked(
+            "tufa oobi resolve",
+            yield* promiseOp(() =>
+              runTufa(["oobi", "resolve", "--name", tufaName, ...store, "--url", url], ctx.env, ctx.packageRoot)
+            ),
+          );
+          assertEquals(extractLastNonEmptyLine(tufa.stdout), url);
+        },
+      )
+    );
+    for (const [name, compat] of [[kliName, true], [tufaName, false]] as const) {
+      await run(() =>
+        inspectHabery(
+          ctx,
+          { name, base, compat, readonly: true, skipConfig: true, skipSignator: true, bran: passcode },
+          (hby) => {
+            assertEquals(hby.db.schema.get(schemer.said)?.raw, schemer.raw);
+            assertEquals(hby.db.roobi.get(url)?.state, "resolved");
+          },
+        )
+      );
+    }
+  } finally {
+    await Deno.remove(schemaDir, { recursive: true });
+  }
+}
+
+Deno.test("interop/schema data OOBI fetch matches KERIpy", async () => {
+  await runSchemaOobiParity(await createScenarioContext());
 });
