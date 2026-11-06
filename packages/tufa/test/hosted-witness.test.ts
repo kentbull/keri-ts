@@ -230,14 +230,20 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         }
         artifact.account = controller.pre;
         yield* call(() => Deno.writeTextFile(credentialFile, JSON.stringify(artifact), { mode: 0o600 }));
-        yield* rotateWithCredentialsCommand(rotationArgs);
-        const rotated = yield* createHabery(controllerStore);
-        try {
-          const account = rotated.habByName("controller")!;
-          assertEquals(account.kever!.sn, before + 1);
-          assertEquals(rotated.db.fullyWitnessed(account.kever!.serder), true);
-        } finally {
-          yield* rotated.close();
+        // Keeper rotation erases the previous lot's private keys; the retained credentials must
+        // follow the account key so later credentialed rotations can still authenticate.
+        for (let count = 1; count <= 3; count++) {
+          yield* rotateWithCredentialsCommand(rotationArgs);
+          const rotated = yield* createHabery(controllerStore);
+          try {
+            const account = rotated.habByName("controller")!;
+            assertEquals(account.kever!.sn, before + count);
+            assertEquals(rotated.db.fullyWitnessed(account.kever!.serder), true);
+            const saved = JSON.parse(yield* call(() => Deno.readTextFile(credentialFile)));
+            assertEquals(saved.witnesses[0].pubs, [account.kever!.verfers[0].qb64]);
+          } finally {
+            yield* rotated.close();
+          }
         }
 
         // Deleting one allocation removes its routes without closing the other tenant's store.

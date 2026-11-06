@@ -1,5 +1,5 @@
 /** Finite KF account onboarding over borrowed protocol owners and explicit encrypted credentials. */
-import { concatBytes, Matter, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Encrypter, Matter, parseBytes, Prefixer, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, sleep } from "effection";
 import {
   acceptedEventReplayMessage,
@@ -121,6 +121,33 @@ export function loadKfWitnessAuths(account: Hab, path: string): WitnessAuthMap {
   }
   return auths;
 }
+/**
+ * Re-encrypt retained witness credentials to the account's next signing key before a rotation.
+ *
+ * Ciphertext is bound to one account public key. Keeper rotation erases the
+ * previous lot's private keys, so credentials left on an older key become
+ * unreadable after the second rotation. Rewrapping to the pre-rotated next key
+ * keeps them readable both if the rotation commits and if it does not.
+ */
+export function rewrapKfWitnessCredentials(account: Hab, path: string): void {
+  const saved = credentials(account, path);
+  const next = account.mgr.ks.sits.get(account.pre)?.nxt.pubs ?? [];
+  if (!next.length) throw new ValidationError("Witness credential rotation requires a next signing key.");
+  const target = next[0];
+  if (saved.witnesses.every(row => row.pubs[0] === target)) return;
+  const encrypter = new Encrypter({ verkey: target });
+  const witnesses = saved.witnesses.map(row => {
+    if (row.pubs[0] === target) return row;
+    const plain = account.mgr.decrypt(row.cipher, { pubs: row.pubs });
+    try {
+      return { ...row, cipher: encrypter.encrypt({ ser: plain }).qb64, pubs: [target] };
+    } finally {
+      plain.fill(0);
+    }
+  });
+  saveCredentials(path, { ...saved, witnesses });
+}
+
 /** Replace only ciphertext artifacts; an interruption cannot leave half-written authorization material. */
 function saveCredentials(path: string, saved: Credentials): void {
   const temporary = `${path}.${crypto.randomUUID()}.tmp`;
