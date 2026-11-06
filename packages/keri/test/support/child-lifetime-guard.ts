@@ -8,7 +8,10 @@
  * a runtime panic that skips every cleanup hook, the kernel closes that pipe and
  * the guard reads EOF. The guard then stops its child (SIGTERM, then SIGKILL
  * after a grace period). SIGTERM/SIGINT/SIGHUP sent to the guard are forwarded
- * the same way, and the guard exits with the child's exit code as soon as the
+ * the same way. SIGKILL cannot be caught or forwarded, so the owner requests an
+ * immediate child SIGKILL with SIGUSR2 instead; killing the guard itself would
+ * orphan a child that still holds the owner's stdout/stderr pipes and ports.
+ * The guard exits with the child's exit code as soon as the
  * child is gone, so normal test cleanup through `kill()` and `status` behaves as
  * it did without the guard. A child killed by a signal surfaces as code
  * `128 + signo` with no `signal`, because the guard itself exits normally.
@@ -51,6 +54,14 @@ function stopChild(): void {
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
   Deno.addSignalListener(signal, stopChild);
 }
+Deno.addSignalListener("SIGUSR2", () => {
+  stopping = true;
+  try {
+    child.kill("SIGKILL");
+  } catch {
+    // Already exited.
+  }
+});
 
 (async () => {
   try {

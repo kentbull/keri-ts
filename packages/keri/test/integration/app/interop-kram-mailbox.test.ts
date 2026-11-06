@@ -394,7 +394,8 @@ async function restartProvider(ctx: InteropContext, count: number, pythonClient?
       const state = await body();
       if (crash) {
         child.kill("SIGKILL");
-        assertEquals((await child.status).signal, "SIGKILL");
+        // The lifetime guard reports the provider's SIGKILL as exit code 128 + 9.
+        assertEquals((await child.status).code, 137);
       }
       return state;
     });

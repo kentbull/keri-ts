@@ -22,7 +22,9 @@ export type GuardedChild = Pick<Deno.ChildProcess, "pid" | "status" | "stdout" |
  * Spawn `command` under the lifetime guard.
  *
  * The returned handle's `kill()` signals the guard, which forwards SIGTERM,
- * SIGINT, and SIGHUP to the real child. The guard's stdin pipe is closed once
+ * SIGINT, and SIGHUP to the real child. `kill("SIGKILL")` asks the guard to
+ * SIGKILL the real child, which then exits with code 137 (no `signal`); a
+ * SIGKILL on the guard alone would orphan the child. The guard's stdin pipe is closed once
  * the child exits so test resource sanitizers see no leaked handle.
  */
 export function spawnGuardedChild(
@@ -48,6 +50,7 @@ export function spawnGuardedChild(
     get stderr() {
       return child.stderr;
     },
-    kill: (signal?: Deno.Signal) => child.kill(signal),
+    // SIGKILL cannot be forwarded; the guard maps SIGUSR2 to a child SIGKILL.
+    kill: (signal?: Deno.Signal) => child.kill(signal === "SIGKILL" ? "SIGUSR2" : signal),
   };
 }
