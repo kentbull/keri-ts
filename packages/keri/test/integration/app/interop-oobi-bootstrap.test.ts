@@ -2,6 +2,7 @@ import { action, type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { EndpointRoles } from "../../../src/core/roles.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
+import { type GuardedChild, spawnGuardedChild } from "../../support/child-lifetime.ts";
 import {
   createScenarioContext,
   extractLastNonEmptyLine,
@@ -14,7 +15,7 @@ import {
 } from "./interop-keystore-helpers.ts";
 
 /** One subprocess owned by the OOBI bootstrap scenario. */
-type SpawnedChild = Deno.ChildProcess;
+type SpawnedChild = GuardedChild;
 
 /**
  * Poll a spawned agent's `/health` endpoint until it is reachable.
@@ -57,7 +58,7 @@ function spawnTufaProcess(
   args: string[],
   ctx: ScenarioContext,
 ): SpawnedChild {
-  return new Deno.Command(Deno.execPath(), {
+  return spawnGuardedChild(Deno.execPath(), {
     args: [
       "run",
       "--allow-all",
@@ -69,7 +70,7 @@ function spawnTufaProcess(
     cwd: ctx.packageRoot,
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
+  });
 }
 
 /** Write the hosted controller URL consumed by the real agent command. */

@@ -1,6 +1,7 @@
 import { type RuntimeHttpHostOptions, startServer } from "@keri-ts/hosting";
 import { action, type Operation, spawn, type Task } from "effection";
 import type { AgentRuntime } from "keri-ts/runtime";
+import { type GuardedChild, spawnGuardedChild } from "../../keri/test/support/child-lifetime.ts";
 
 export interface CmdResult {
   code: number;
@@ -8,7 +9,7 @@ export interface CmdResult {
   stderr: string;
 }
 
-export type SpawnedChild = Deno.ChildProcess;
+export type SpawnedChild = GuardedChild;
 
 export interface TestListenAddress {
   hostname: string;
@@ -52,12 +53,12 @@ export async function runTufa(args: string[]): Promise<CmdResult> {
 }
 
 export function spawnTufa(args: string[]): SpawnedChild {
-  return new Deno.Command(Deno.execPath(), {
+  return spawnGuardedChild(Deno.execPath(), {
     args: ["run", "--allow-all", "--unstable-ffi", "mod.ts", ...args],
     cwd: packageRoot(),
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
+  });
 }
 
 function assertTcpAddress(

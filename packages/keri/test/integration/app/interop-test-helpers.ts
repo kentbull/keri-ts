@@ -8,6 +8,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import keripyReference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import { t } from "../../../../cesr/mod.ts";
 import { createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
+import { spawnGuardedChild } from "../../support/child-lifetime.ts";
 import {
   keripyProtocolVersionArgs,
   type KeripyRuntime,
@@ -854,6 +855,9 @@ async function waitForKeriPyWitnessReady(
 
 /**
  * Spawn one subprocess with piped stdout/stderr and tee'd live streams.
+ *
+ * The subprocess runs under the child-lifetime guard, so it is stopped even
+ * when this test process crashes or is SIGKILLed before cleanup runs.
  */
 export function spawnChild(
   command: string,
@@ -861,13 +865,13 @@ export function spawnChild(
   env: Record<string, string>,
   cwd?: string,
 ): SpawnedChild {
-  const child = new Deno.Command(command, {
+  const child = spawnGuardedChild(command, {
     args,
     env,
     cwd,
     stdout: "piped",
     stderr: "piped",
-  }).spawn();
+  });
 
   const [liveStdout, stdout] = child.stdout ? child.stdout.tee() : [undefined, undefined];
   const [liveStderr, stderr] = child.stderr ? child.stderr.tee() : [undefined, undefined];
