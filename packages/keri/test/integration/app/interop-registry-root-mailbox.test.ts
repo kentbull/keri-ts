@@ -5,9 +5,11 @@
  * send`, and a Tufa issuer sends one to a KERIpy holder with `tufa vc registry
  * root send`. Each receiver starts `receive --listen` only after its whole KRAM
  * short-lag window has passed, so the late mailbox fetch relies on the built-in
- * `/registry/root` KRAM exemption. Store setup (registry authoring and public
- * TEL acceptance) uses each implementation's library on the same store; delivery,
- * listening and approval use the installed CLIs only.
+ * `/registry/root` KRAM exemption. Each receive is a drain: the handler retains
+ * the verifiable root automatically, with no approval step, and the command
+ * reports it retained. Store setup (registry authoring and public TEL acceptance)
+ * uses each implementation's library on the same store; delivery and listening
+ * use the installed CLIs only.
  */
 import { makeBlindState, MtrDex, Salter, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -200,15 +202,19 @@ Deno.test("Interop registry root: KERIpy and Tufa replicate roots to each other 
         runTufaWithTimeout(
           [
             ...["vc", "registry", "root", "receive", ...tufaStore, "--alias", "tufa"],
-            ...["--registry", registryA, "--sender", kliPre, "--listen", "--timeout", "60"],
+            ...["--registry", registryA, "--listen", "--timeout", "60"],
           ],
           ctx.env,
           ctx.repoRoot,
           90_000,
         ),
       )).stdout,
-    ).at(-1)!;
-    assertEquals([receivedA.received, receivedA.said], [true, sentA[0].exchange]);
+    );
+    assertEquals(receivedA, [{ registry: registryA, phase: "listening" }, {
+      gid: tufaPre,
+      registry: registryA,
+      retained: true,
+    }]);
     await withTufaStore(tufa, headDirPath, function*(hby) {
       assertEquals(hby.mgr.getRegistryRoot(tufaPre, registryA)?.qb64, authored.root);
     });
@@ -274,14 +280,14 @@ Deno.test("Interop registry root: KERIpy and Tufa replicate roots to each other 
           ctx.kliCommand,
           [
             ...["vc", "registry", "root", "receive", ...kliStore, "--alias", "kli", "--version", "2.0"],
-            ...["--registry", authoredB.registry, "--sender", tufaPre, "--listen", "--timeout", "60"],
+            ...["--registry", authoredB.registry, "--listen", "--timeout", "60"],
           ],
           ctx.env,
           90_000,
         ),
       )).stdout,
     ).at(-1)!;
-    assertEquals([receivedB.received, receivedB.said], [true, sentB[0].exchange]);
+    assertEquals(receivedB, { gid: kliPre, registry: authoredB.registry, retained: true });
     const retained = await peer(ctx, [
       "root",
       "--name",

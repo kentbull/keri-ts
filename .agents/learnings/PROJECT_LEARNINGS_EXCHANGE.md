@@ -125,8 +125,9 @@ establishment state; a valid factor suffices but missing claimed coordinates
 refuse. KRAM admission alone supplies no consent.
 `RegistryRoot` (`/registry/root`) checks the v2 map `a.essr` ESSR digest in its
 handler, since the Exchanger checks only a v1 string `a`. Its `verify` is the
-read-only admission decision (stored SAID → false); the Notifier note is added by
-`handle` after commit. Group authority comes from the KEL, never a group signature:
+read-only admission decision (stored SAID → false); `handle` escrows and attempts
+retention after commit. Route handlers that define `processEscrows()` opt into the
+Exchanger's escrow pass, as KERIpy `Exchanger.processEscrow` does. Group authority comes from the KEL, never a group signature:
 KERIpy partial-signature escrow does not keep `essrs`.
 `Unblind` separately approves one live presentation and freezes its
 exact bodies, registry scope and original deadline. The disclosee's signed query

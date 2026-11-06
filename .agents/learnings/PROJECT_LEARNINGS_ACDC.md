@@ -228,12 +228,13 @@ as one bare v2 ESSR `exn` per (recipient, registry), signed by the sending membe
 individual AID, `a={essr,gid,rd}`, sealed to the recipient's current first key.
 Authorization is KEL/TEL only: current signing member recipient, historical
 member/issuer/issuer-group sender. `verify` (inside the Exchanger writer, read-only)
-hard-refuses what can never be retained, stores copies that only lack local state
-with a `deferred` note, and ignores stored SAIDs; KRAM exempts the route by default.
-`receive(said)` re-authorizes, binds the plaintext and verifies the root by held
-opening or BUP commitment reproduction before immutable retention. `newcomers`
-derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli: mailbox topic `credential`, `--out`/`--message`
-fallback, `receive --listen`. `@keri-ts/multisync/v2` remains a separate explicit-
+hard-refuses what can never be retained, stores copies that only lack local state,
+and ignores stored SAIDs; KRAM exempts the route by default. Acceptance is
+automatic (KERIpy #168): `handle` escrows in `rrpe` (SAID -> now+3600 s) and
+attempts at once; `processEscrows`, driven by `Exchanger.processEscrows`, retries.
+RootUnverified/RootDeferred/locked Keeper keep until the deadline; other
+ValidationErrors drop; one note only on new retention; `receive` is manual retry.
+`newcomers` derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is a drain (`--message`, `--listen --registry`, one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
 roster selector; missing custody never starts fresh DH.
 WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
