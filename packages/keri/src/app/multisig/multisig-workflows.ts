@@ -353,6 +353,27 @@ function* publishVdrProposal(
 }
 
 /** True when a KEL event is accepted locally. */
+/**
+ * Commit the members of a locally accepted group establishment event.
+ *
+ * Only the current latest establishment event commits; replaying an older
+ * approval must not restore historical group membership. Returns whether the
+ * members were committed.
+ */
+export function commitAcceptedGroupMembers(
+  hby: Habery,
+  serder: SerderKERI,
+  smids: readonly string[],
+  rmids: readonly string[],
+): boolean {
+  const pre = serder.pre;
+  if (!pre || !eventAccepted(hby, serder) || hby.db.getKever(pre)?.lastEst.d !== serder.said) {
+    return false;
+  }
+  hby.commitGroupHabMembers(pre, smids, rmids.length > 0 ? rmids : smids);
+  return true;
+}
+
 export function eventAccepted(hby: Habery, serder: SerderKERI): boolean {
   const pre = serder.pre;
   const said = serder.said;
@@ -642,10 +663,8 @@ function* approveKelProposal(
     approval.genus,
   );
   const accepted = eventAccepted(hby, serder);
-  // Replaying an older approval must not restore historical group membership.
-  if (accepted && proposal.route !== MULTISIG_IXN_ROUTE && hby.db.getKever(groupPre)?.lastEst.d === serder.said) {
-    const rmids = proposal.attrs.rmids;
-    hby.commitGroupHabMembers(groupPre, smids, rmids.length > 0 ? rmids : smids);
+  if (proposal.route !== MULTISIG_IXN_ROUTE) {
+    commitAcceptedGroupMembers(hby, serder, smids, proposal.attrs.rmids);
   }
 
   return { route, said: wrapperSaid, embedded: embeddedSaid ?? "", group: groupPre, accepted, ...publication };

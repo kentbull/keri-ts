@@ -34,6 +34,7 @@ import {
   type ApprovalPromptContext,
   type ApprovalResult,
   approvePendingMultisigProposal,
+  commitAcceptedGroupMembers,
   eventAccepted,
   type MultisigApprovalCallbacks,
   type MultisigApprovalOptions,
@@ -477,6 +478,8 @@ export function* multisigRotateCommand(
     );
     let delegationPhase: string | null = null;
     if (accepted) {
+      // The proposer's own acceptance must commit the rotated membership as a joiner's does.
+      commitAcceptedGroupMembers(hby, rotated.serder, smids, rmids);
       yield* receiptAcceptedEvent(hby, rotated.hab.pre, commandArgs, runtime);
       delegationPhase = yield* completeDelegationIfNeeded(
         hby,

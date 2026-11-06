@@ -75,6 +75,7 @@ import { multisigPayloadSaid, signGroupMessage } from "../../../../src/app/multi
 import {
   approveAcdcV2Registry,
   approvePendingMultisigProposal,
+  commitAcceptedGroupMembers,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
@@ -541,6 +542,47 @@ Deno.test("multisig join skips an accepted rotation that only names the local me
         }
       } finally {
         yield* noter.close(true);
+        yield* third.close(true);
+      }
+    });
+  });
+});
+
+Deno.test("a proposer commits accepted rotation members that add a newcomer", async () => {
+  await participants(async (left, right, alice, bob) => {
+    await run(function*() {
+      const third = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+      try {
+        const carol = third.makeHab("carol");
+        yield* call(() => learn(left, carol));
+        yield* call(() => learn(right, carol));
+        const mids = [alice.pre, bob.pre], next = [...mids, carol.pre];
+        const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+        const icp = parseBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }))[0];
+        for (const target of [left, right]) {
+          yield* dispatchEnvelope(envelopeFromFrame(icp, true), target.rvy, target.kevery);
+        }
+        alice.rotate();
+        bob.rotate();
+        yield* call(() => learn(left, bob));
+        yield* call(() => learn(right, alice));
+        const own = left.rotateGroupHab("group", mids, next, { isith: "2", nsith: "3" });
+        const peer = right.rotateGroupHab("group", mids, next, { isith: "2", nsith: "3" });
+        // Acceptance arrives with the peer contribution after the proposer's own rotation.
+        assertEquals(left.db.getHab(local.hab.pre)?.rmids, mids);
+        const rot = parseBytes(messagize(own.serder, { sigers: [...own.sigers, ...peer.sigers] }))[0];
+        yield* dispatchEnvelope(envelopeFromFrame(rot, true), left.rvy, left.kevery);
+        assertEquals(left.db.getKever(local.hab.pre)?.said, own.serder.said);
+        assertEquals(left.db.getHab(local.hab.pre)?.rmids, mids);
+        assertEquals(commitAcceptedGroupMembers(left, own.serder, mids, next), true);
+        assertEquals(left.db.getHab(local.hab.pre)?.smids, mids);
+        assertEquals(left.db.getHab(local.hab.pre)?.rmids, next);
+        assertEquals(left.ks.getRmids(local.hab.pre).map(tuple => tuple[0].qb64), next);
+        // An earlier establishment event never restores historical membership.
+        assertEquals(commitAcceptedGroupMembers(left, local.serder, mids, mids), false);
+        assertEquals(left.db.getHab(local.hab.pre)?.rmids, next);
+      } finally {
         yield* third.close(true);
       }
     });
