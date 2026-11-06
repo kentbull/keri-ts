@@ -595,6 +595,12 @@ export class RegistryRoot implements ExchangeRouteHandler {
       throw error;
     }
     const [gid, registry, root, plain] = opened;
+    // A retained root is immutable, so a copy carrying a different root can
+    // never be retained here: refuse it before awaiting verification evidence.
+    const retained = this.hby.mgr.getRegistryRoot(gid, registry);
+    if (retained && retained.qb64 !== root.qb64) {
+      throw new RootRefused("a different root is already retained for this holder and registry");
+    }
     const [bup, sn] = this.event(registry, event ?? plain.e);
     const blid = bup.sad!.b as string;
     const uuid = makeBlindUuid({ salt: root.qb64, sn });
@@ -604,10 +610,6 @@ export class RegistryRoot implements ExchangeRouteHandler {
       if (held.u.qb64 !== uuid.qb64) throw new RootUnverified("root does not reproduce the held opening");
     } else if (!this.reproduces(blid, uuid.qb64, plain.td ?? "", gid)) {
       throw new RootUnverified("root does not yet reproduce the registry commitment");
-    }
-    const retained = this.hby.mgr.getRegistryRoot(gid, registry);
-    if (retained && retained.qb64 !== root.qb64) {
-      throw new RootRefused("a different root is already retained for this holder and registry");
     }
     const added = this.hby.mgr.putRegistryRoot(gid, registry, root);
     this.hby.db.rrpe.rem([said]);
