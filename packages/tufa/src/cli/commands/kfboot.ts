@@ -106,9 +106,6 @@ export function* kfBootOnboardCommand(args: Record<string, unknown>): Operation<
   const result = yield* authenticated({ ...args, alias: onboardingAlias }, function*(client, hby, runtime) {
     const account = hby.habByName(alias);
     if (!account) throw new ValidationError(`Account alias ${alias} is invalid.`);
-    if (!hby.mgr.aeid || !hby.mgr.seed) {
-      throw new ValidationError("Account onboarding requires an unlocked encrypted Keeper.");
-    }
     return yield* onboardKfAccount({
       client,
       account,

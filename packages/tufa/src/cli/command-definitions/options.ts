@@ -42,7 +42,9 @@ export function addGvrsnOption(cmd: Command): Command {
 }
 
 export function addWitnessAuthOptions(cmd: Command, credentials = false): Command {
-  if (credentials) cmd.option("--witness-credentials <file>", "Encrypted KF witness credentials file");
+  if (credentials) {
+    cmd.option("--witness-credentials <file>", "KF witness credentials file (plaintext TOTP seeds, mode 0600)");
+  }
   return cmd
     .option(
       "--receipt-endpoint",
