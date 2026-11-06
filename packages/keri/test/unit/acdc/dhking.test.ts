@@ -524,15 +524,14 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       false,
       "held opening remains local approval evidence",
     );
+    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null);
     yield* recipient.reactor.processBytes(copy);
     yield* recipient.reactor.processBytes(copy);
-    const pending = recipientRoot.pending();
-    assertEquals(pending.map(item => [item.said, item.sender, item.gid]), [
-      [selected.serder.said, holder.member.pre, holder.hab.pre],
-    ]);
-    assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!), null, "arrival retains nothing");
-    assertEquals(recipientRoot.receive(selected.serder.said!, { event: event.said!, opening }), true);
+    // The copy verifies by its commitment hint, so arrival retains it without an approval step.
+    assertEquals(recipientRoot.pending(), []);
     assertEquals(recipient.hab.mgr.getRegistryRoot(recipient.hab.pre, rip.said!)!.qb64, root.qb64);
+    // A manual retry with the held opening stays idempotent.
+    assertEquals(recipientRoot.receive(selected.serder.said!, { event: event.said!, opening }), true);
     const ciphertext = recipient.hab.mgr.ks.rroots.get([recipient.hab.pre, rip.said!])!.qb64;
     // A second, fresh copy is idempotent and keeps the immutable encrypted retention.
     const again = holderRoot.prepare(holder.member, recipient.member.pre, holder.hab.pre, rip.said!, {
@@ -617,11 +616,14 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     const catchUp = holderRoot.prepare(holder.member, newcomer.member.pre, holder.hab.pre, rip.said!, {
       td: credential.said!,
     });
+    const catchUpSerder = envelopeFromFrame(parseBytes(catchUp)[0]).serder;
+    assertEquals([catchUpSerder.sad!.ri, (catchUpSerder.sad!.a as Record<string, string>).gid], [
+      newcomer.member.pre,
+      holder.hab.pre,
+    ]);
     yield* newcomerRuntime.reactor.processBytes(catchUp);
-    const [provisioning] = newcomerRoot.pending();
-    assertEquals([provisioning.recipient, provisioning.gid], [newcomer.member.pre, holder.hab.pre]);
-    // The newcomer holds no opening; it reproduces the accepted BUP commitment from the root and ACDC hint.
-    assertEquals(newcomerRoot.receive(provisioning.said), true);
+    // The newcomer holds no opening; arrival reproduces the accepted BUP commitment from the root and ACDC hint.
+    assertEquals(newcomerRoot.pending(), []);
     const provisionedRoot = newcomerHab.mgr.getRegistryRoot(holder.hab.pre, rip.said!)!;
     assertEquals(provisionedRoot.qb64, root.qb64);
     // The provisioned member opens a later accepted event without another DH operation or history rewrite.
