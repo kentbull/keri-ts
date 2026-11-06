@@ -22,7 +22,8 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
       const second = hab.kever!.said;
       // Signed conflicting-sequence storage fixtures exercise duplicate selection, not acceptance.
       const storeFork = (label: string): string => {
-        const event = interact(hab.pre, initial, 1, [{ label }]);
+        // Forks stay in the habitat's KEL version; one KEL never mixes KERI versions.
+        const event = interact(hab.pre, initial, 1, [{ label }], { pvrsn: hab.kelVersion });
         const said = event.said!;
         hby.db.putEvtSerder(hab.pre, said, event.raw);
         hby.db.putSigs(hab.pre, said, hab.sign(event.raw, true));
