@@ -111,7 +111,7 @@ The listener does not change mailbox query authorization or group signature thre
 | `tufa vc registry list`           | List local credential registries.                                                             |
 | `tufa vc registry status`         | Show one credential registry state.                                                           |
 | `tufa vc registry root send`      | Send one held registry root to members by ESSR `exn` through their mailboxes.                 |
-| `tufa vc registry root receive`   | List, ingest and explicitly approve pending registry root copies.                             |
+| `tufa vc registry root receive`   | Ingest registry root copies; verifiable roots are retained automatically.                     |
 | `tufa vc registry root newcomers` | Send every held group root to the members added by one accepted group rotation.               |
 | `tufa vc create`                  | Create and issue a registry-backed credential.                                                |
 | `tufa vc list`                    | List saved credentials.                                                                       |
@@ -190,21 +190,29 @@ tufa vc registry root send -n issuer -a issuer --registry REGISTRY --recipient H
 tufa vc registry root newcomers -n lead -a holder-group --rotation ROTATION
 ```
 
-A received copy is stored pending in the exchange store with a notification. A
-copy whose check fails only because local KEL, TEL or group state is missing is
-still stored, so an offline newcomer never needs a resend. Nothing is decrypted
-until explicit approval. Without `--registry`/`--said`, `receive` lists pending
-copies; with one, it approves that copy, decrypts it, checks the plaintext
-binding and verifies the root against a held opening (`--opening`) or by
-reproducing the accepted BUP commitment before retaining it:
+Received copies are accepted automatically; there is no approval step. A copy
+that verifies on arrival (authorization, decryption, plaintext binding, and the
+root checked against a held opening or the accepted BUP commitment with the `td`
+hint) is retained at once with one informational notification. A copy that
+cannot verify yet because local KEL, TEL, group or opening evidence is missing is
+escrowed and retried by the ordinary escrow loop for up to an hour, so an offline
+newcomer never needs a resend; a copy refused on any attempt is dropped.
+
+`receive` is a drain. `--listen` processes the `credential` mailbox until the
+root for `--registry` is retained; `--message FILE` ingests a file copy through
+the same path. Each run then retries escrowed copies once, prints copies still
+pending (`retained: false`) and, with `--registry`, prints `retained: true` or
+fails when that root is not retained:
 
 ```sh
 tufa vc registry root receive -n peer -a holder-group --registry REGISTRY \
-  --sender LEAD_MEMBER --listen --timeout 120
+  --listen --timeout 120
 ```
 
-A copy that cannot yet be verified stays pending. A different retained root is
-never replaced. Roots never appear in output JSON or in plaintext files.
+`--said SAID` with `--event` and `--opening` manually retries one stored copy
+with evidence it lacks, such as a held opening when no `td` hint was sent. A
+different retained root is never replaced. Roots never appear in output JSON or
+in plaintext files.
 
 ## Tephra Commands (CESR Tools)
 

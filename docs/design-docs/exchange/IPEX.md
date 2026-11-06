@@ -235,18 +235,27 @@ nothing, a copy that can never be retained (shape, identifiers, ESSR digest,
 non-local or group recipient, `i == ri`, foreign local holder, non-Ed25519 key,
 or membership/sender failure against complete state). Missing local state
 (registry TEL, a KEL, the local group Hab, or a holder rotation whose next keys
-commit to the recipient but is not accepted here) defers: the copy is stored and
-`handle` adds a note carrying `deferred`. An already stored SAID is ignored, so
-duplicates add no note. KRAM exempts the route by default; the SAID-keyed store,
-explicit approval and immutable retention replace replay protection.
+commit to the recipient but is not accepted here) defers: the copy is stored. An
+already stored SAID is ignored, so duplicates are idempotent. KRAM exempts the
+route by default; the SAID-keyed store and immutable retention replace replay
+protection.
 
-`receive(said, {event, opening})` is explicit approval. It re-runs the full
-authorization (`RootDeferred`, a `RootUnverified`, keeps the copy pending; removal
-of the recipient is a hard refusal), decrypts, requires the inner `i/ri/gid/rd`
-to equal the outer exchange, and verifies the Salt128 root against a held opening
-or by reproducing the accepted BUP `b` commitment from the `td` hint before
-retain-once encrypted Keeper storage. A different retained root is never
-replaced. `newcomers(groupHab, rotation)` selects members contributing to an
+Acceptance is automatic (KERIpy kentbull/keripy#168). After commit `handle`
+escrows the copy in `Baser.rrpe` (exn SAID to a deadline `TimeoutRRE` = 3600 s
+ahead) and attempts it at once: full re-authorization, decryption, the inner
+`i/ri/gid/rd` equal to the outer exchange, and the Salt128 root verified against
+a held opening or by reproducing the accepted BUP `b` commitment from the `td`
+hint before retain-once encrypted Keeper storage. Success removes the escrow
+entry; a newly retained root adds one informational `/exn/registry/root` note
+(`d, i, ri, gid, rd`). `RootUnverified` (including `RootDeferred` and a locked
+Keeper) keeps the entry until its deadline; `RootRefused` or any other
+`ValidationError` (membership lost, plaintext mismatch, undecryptable, a
+different retained root) drops it, leaving the signed exchange in `exns`.
+`Exchanger.processEscrows` calls `processEscrows()` on any registered route
+handler that defines it, so ordinary runtime escrow loops retry `rrpe` with no
+extra wiring. `pending()` lists escrow entries without decrypting;
+`receive(said, {event, opening})` is only a manual retry supplying evidence a copy
+lacks. A different retained root is never replaced. `newcomers(groupHab, rotation)` selects members contributing to an
 accepted rotation and not to the prior establishment; accepted public rotation
 alone never copies a root.
 
