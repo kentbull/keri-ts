@@ -10,10 +10,16 @@
  * registrar and observer backends only through their private admin APIs
  * (`operator/kfboot/service-admin.ts`), so Python and TypeScript backends mix freely.
  *
+ * Session cleanup follows kf-boot's sweeper (`expiring.py`, `sweeping.py`): sessions expire
+ * on access and on a periodic sweep, and every expired, failed or cancelled session has its
+ * witnesses and watcher deleted on the backends before `resources_cleaned_at` releases the
+ * account AID for a new start. A failed teardown keeps the session pending and is retried on
+ * the next sweep.
+ *
  * Python-only by justification (no local, Locksmith or Tufa consumer): per-IP admission
- * and quotas, account tiers beyond the default trial/org mapping, the cleanup sweeper and
- * its CLI, capacity counters. Their `KF_BOOT_*` variables are accepted and ignored.
- * Sessions and accounts expire on access only.
+ * and quotas, account tiers beyond the default trial/org mapping, the durable cleanup-task
+ * queue (backoff, quarantine, row retention/deletion) and its CLI, account expiry sweeps,
+ * capacity counters. Their `KF_BOOT_*` variables are accepted and ignored.
  */
 import { startServer } from "@keri-ts/hosting";
 import { type ProtocolHandler } from "@keri-ts/hosting";
@@ -136,6 +142,10 @@ export interface BootServiceConfig {
   accountTtlSeconds: number;
   bootApiTimeoutSeconds: number;
   operationFailureMaxAttempts: number;
+  /** Run the periodic session cleanup sweep (`cleanup_runner_enabled`). */
+  cleanupRunnerEnabled: boolean;
+  /** Seconds between sweeps; 0 disables the sweep (`cleanup_interval_seconds`). */
+  cleanupIntervalSeconds: number;
   registrar: RegistryBackend | null;
   observer: RegistryBackend | null;
 }
@@ -302,6 +312,8 @@ export function bootServiceConfig(values: Readonly<Record<string, string | undef
       "OPERATION_FAILURE_MAX_ATTEMPTS",
       get("OPERATION_FAILURE_MAX_ATTEMPTS", "10"),
     ),
+    cleanupRunnerEnabled: parseBool(get("CLEANUP_RUNNER_ENABLED", "true"), true),
+    cleanupIntervalSeconds: parseNumber("CLEANUP_INTERVAL_SECONDS", get("CLEANUP_INTERVAL_SECONDS", "60")),
     registrar: registryFromEnv("REGISTRAR", get),
     observer: registryFromEnv("OBSERVER", get),
   };
@@ -314,6 +326,9 @@ export function bootServiceConfig(values: Readonly<Record<string, string | undef
   }
   if (config.operationFailureMaxAttempts <= 0) {
     throw new ValidationError("operation_failure_max_attempts must be greater than 0.");
+  }
+  if (config.cleanupIntervalSeconds < 0) {
+    throw new ValidationError("cleanup_interval_seconds must be greater than or equal to 0.");
   }
   if (!Number.isSafeInteger(port) || port < 0 || port > 65535) throw new ValidationError("Invalid KF_BOOT_PORT.");
   return config;
@@ -396,6 +411,13 @@ type RouteHandler = (sender: string, payload: Record<string, unknown>) => void;
 
 /** Reply or refusal recorded by a route for the surface request that delivered its exn. */
 type RouteOutcome = { reply: Uint8Array } | { error: BootRefusal };
+
+/** Closed session states whose hosted resources the cleanup sweep reclaims. */
+const CLEANUP_SESSION_STATES: ReadonlySet<string> = new Set([
+  SessionStates.expired,
+  SessionStates.failed,
+  SessionStates.cancelled,
+]);
 
 /** Signals a retryable or terminal backend failure to the operation worker. */
 function bootError(message: string, status: number | null): BootApiError {
@@ -489,8 +511,20 @@ export class BootService {
     const path = new URL(req.url).pathname;
     try {
       if (path === "/health" && req.method === "GET") {
-        // kf-boot reports its cleanup runner; this service has none (expiry is on access only).
-        return Response.json({ status: "ok", cleanup: { configured: false, expected_running: false, running: false } });
+        // kf-boot's runner flags; its backlog and sweep timestamps are not reported here.
+        const expected = this.cleanupExpected;
+        const cleanup = {
+          configured: this.config.cleanupRunnerEnabled,
+          expected_running: expected,
+          running: this.cleanupRunning,
+        };
+        if (expected && !this.cleanupRunning) {
+          return Response.json({
+            status: "degraded",
+            cleanup: { ...cleanup, reason: "runner_not_running", reasons: ["runner_not_running"] },
+          }, { status: 503 });
+        }
+        return Response.json({ status: "ok", cleanup });
       }
       if (path === "/bootstrap/config" && req.method === "GET") return Response.json(this.discovery());
       const surface = path === this.config.onboardingPath
@@ -1305,13 +1339,132 @@ export class BootService {
 
   // Operation worker (`operating.py`)
 
-  /** Drive due operations until halted; claimed work from a previous process is requeued first. */
+  /** The periodic cleanup sweep is configured to run (`CleanupState.expected_running`). */
+  get cleanupExpected(): boolean {
+    return this.config.cleanupRunnerEnabled && this.config.cleanupIntervalSeconds > 0;
+  }
+
+  /** The worker loop is running the periodic cleanup sweep (`CleanupState.is_running`). */
+  private cleanupRunning = false;
+
+  /**
+   * Drive due operations and the periodic session cleanup sweep until halted; claimed work
+   * from a previous process is requeued first.
+   *
+   * Operations and sweeps share this one loop, so a teardown never interleaves with a
+   * provisioning allocation for the same session.
+   */
   *work(intervalMs = 50): Operation<void> {
     this.store.requeueClaimedOperations();
-    while (true) {
-      let operation: BootOperationRecord | null;
-      while ((operation = this.store.claimDueOperation())) yield* this.process(operation);
-      yield* sleep(intervalMs);
+    let nextSweep = 0;
+    this.cleanupRunning = this.cleanupExpected;
+    try {
+      while (true) {
+        let operation: BootOperationRecord | null;
+        while ((operation = this.store.claimDueOperation())) yield* this.process(operation);
+        if (this.cleanupExpected && Date.now() >= nextSweep) {
+          try {
+            yield* this.sweepSessions();
+          } catch (error) {
+            console.error("Periodic cleanup sweep failed unexpectedly", error);
+          }
+          nextSweep = Date.now() + this.config.cleanupIntervalSeconds * 1000;
+        }
+        yield* sleep(intervalMs);
+      }
+    } finally {
+      this.cleanupRunning = false;
+    }
+  }
+
+  /**
+   * One cleanup sweep (`Expirer.sweepDo` session phases): expire open sessions past their
+   * lease, then tear down every closed session whose resources are not yet reclaimed.
+   * A teardown failure is recorded on the session and retried on the next sweep.
+   *
+   * @returns Counts of sessions expired and cleaned in this sweep.
+   */
+  *sweepSessions(): Operation<{ sessions_expired: number; sessions_cleaned: number }> {
+    const results = { sessions_expired: 0, sessions_cleaned: 0 };
+    for (const id of this.store.listSessionIds()) {
+      const session = this.store.getSession(id);
+      if (!session) continue;
+      if (!TERMINAL_SESSION_STATES.has(session.state) && pastDue(session.expires_at)) {
+        this.markSessionExpired(session);
+        results.sessions_expired++;
+      }
+      if (!CLEANUP_SESSION_STATES.has(session.state) || session.resources_cleaned_at) continue;
+      try {
+        yield* this.cleanupSession(session);
+        results.sessions_cleaned++;
+      } catch (error) {
+        if (!(error instanceof BootApiError)) throw error;
+        const current = this.store.getSession(id) ?? session;
+        current.failure_reason = `Cleanup failed after expiry: ${error.message}`;
+        current.updated_at = nowIso();
+        this.store.saveSession(current);
+        console.warn(`Session cleanup failed for session ${id}: ${error.message}`);
+      }
+    }
+    return results;
+  }
+
+  /**
+   * `_processSessionCleanupDo` + `teardownSessionResourcesDo`: delete the session's watcher
+   * then witnesses on their backends (404 tolerated), then stamp `resources_cleaned_at`.
+   * An account still pending onboarding becomes failed and is released from the session.
+   *
+   * Divergence: kf-boot also collects the account's resource ids when that account is
+   * onboarded or bound to a later session; here those stay with the account and are
+   * reclaimed by account deletion or that session's own cleanup.
+   */
+  private *cleanupSession(session: SessionRecord): Operation<void> {
+    const aid = session.account_aid;
+    const account = aid ? this.store.getAccount(aid) : null;
+    // Only an unonboarded account still bound to this session (or to none) is released here.
+    const pending = account && account.status !== AccountStates.onboarded
+        && [session.session_id, ""].includes(account.session_id)
+      ? account
+      : null;
+    const operations: [string, string][] = [];
+    if (aid && !(account?.status === AccountStates.onboarded)) {
+      // Old terminal sessions do not own a live account's service permissions.
+      this.stopServiceActivation(aid);
+      for (const kind of ["registrar", "observer"] as const) {
+        for (const row of this.store.listResourcesForAccount(kind, aid)) operations.push([kind, row.eid]);
+      }
+    }
+    for (const kind of ["watcher", "witness"] as const) {
+      const candidates = kind === "witness"
+        ? [...session.witness_eids, ...(pending?.witness_eids ?? [])]
+        : [session.watcher_eid, pending?.watcher_eid ?? ""];
+      candidates.push(...this.store.listResourcesForSession(kind, session.session_id).map(row => row.eid));
+      for (const eid of new Set(candidates.filter(Boolean))) operations.push([kind, eid]);
+    }
+    const errors: BootApiError[] = [];
+    for (const [kind, eid] of operations) {
+      try {
+        yield* this.deleteHostedResource(kind, eid, { session, account: pending });
+      } catch (error) {
+        if (!(error instanceof BootApiError)) throw error;
+        errors.push(error);
+      }
+    }
+    if (errors.length) throw bootError(errors.map(error => error.message).join("; "), errors[0].status);
+    // Requests may have touched the session while backend calls were in flight.
+    const current = this.store.getSession(session.session_id) ?? session;
+    const now = nowIso();
+    current.resources_cleaned_at = now;
+    current.updated_at = now;
+    this.store.saveSession(current);
+    if (pending) {
+      const latest = this.store.getAccount(pending.account_aid) ?? pending;
+      if (latest.status !== AccountStates.onboarded) {
+        latest.status = AccountStates.failed;
+        latest.resources_cleaned_at = now;
+        latest.session_id = "";
+        this.store.saveAccount(latest);
+      }
     }
   }
 

@@ -355,15 +355,22 @@ tufa boot backend --name localdev-boot --head-dir "$STATE/tufa" --passcode "$PAS
 | `--account-ttl`                                                                                    | `KF_BOOT_ACCOUNT_TTL_SECONDS`                                 | `172800`                                                               |
 | `--boot-api-timeout`                                                                               | `KF_BOOT_BOOT_API_TIMEOUT_SECONDS`                            | `10`                                                                   |
 | `--operation-max-attempts`                                                                         | `KF_BOOT_OPERATION_FAILURE_MAX_ATTEMPTS`                      | `10`                                                                   |
+| `--cleanup-interval`                                                                               | `KF_BOOT_CLEANUP_INTERVAL_SECONDS`                            | `60`; `0` disables the closed-session sweep                            |
 | `--registrar-boot-url`, `--registrar-public-url`, `--registrar-service-aid`, `--registrar-ca-file` | `KF_BOOT_REGISTRAR_*`                                         | optional; boot URL loopback HTTP, public URL HTTPS, all three together |
 | `--observer-boot-url`, `--observer-public-url`, `--observer-service-aid`, `--observer-ca-file`     | `KF_BOOT_OBSERVER_*`                                          | as registrar                                                           |
 
+Sessions expire when next accessed and on a periodic sweep
+(`KF_BOOT_CLEANUP_RUNNER_ENABLED`, `KF_BOOT_CLEANUP_INTERVAL_SECONDS`). The sweep
+deletes the witnesses and watcher of every expired, failed or cancelled session on
+their backends, then releases the account AID for a new start; a failed teardown is
+retried on the next sweep. Completed sessions are retained, so
+`tufa infra kf onboard --session` can recover lost credentials after rotation.
+
 Python-only by design and ignored here: per-IP limits and account tiers
-(`KF_BOOT_BOOTSTRAP_*_PER_IP`, `KF_BOOT_ACCOUNT_PROFILES`), the cleanup sweeper
-(`KF_BOOT_CLEANUP_*`) and capacity limits (`KF_BOOT_WITNESS_LIMIT`,
-`KF_BOOT_WATCHER_LIMIT`). Sessions and accounts expire when next accessed; completed
-sessions are retained, so `tufa infra kf onboard --session` can recover lost
-credentials after rotation.
+(`KF_BOOT_BOOTSTRAP_*_PER_IP`, `KF_BOOT_ACCOUNT_PROFILES`), the cleanup-task queue
+tuning and CLI (`KF_BOOT_CLEANUP_BATCH_SIZE`, `KF_BOOT_CLEANUP_TIME_BUDGET_SECONDS`),
+account expiry sweeps and capacity limits (`KF_BOOT_WITNESS_LIMIT`,
+`KF_BOOT_WATCHER_LIMIT`).
 
 ## ACDC v2 registry authoring
 

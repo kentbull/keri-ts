@@ -32,6 +32,11 @@ export const BOOT_BACKEND_FLAGS: readonly (readonly [flag: string, variable: str
   ["--account-ttl <seconds>", "ACCOUNT_TTL_SECONDS", "Onboarded account idle lease (default 172800)"],
   ["--boot-api-timeout <seconds>", "BOOT_API_TIMEOUT_SECONDS", "Backend admin request deadline (default 10)"],
   ["--operation-max-attempts <n>", "OPERATION_FAILURE_MAX_ATTEMPTS", "Attempts before an operation fails (default 10)"],
+  [
+    "--cleanup-interval <seconds>",
+    "CLEANUP_INTERVAL_SECONDS",
+    "Closed-session cleanup sweep period; 0 disables (default 60)",
+  ],
   ["--registrar-boot-url <url>", "REGISTRAR_BOOT_URL", "Registrar loopback admin URL"],
   ["--registrar-public-url <url>", "REGISTRAR_PUBLIC_URL", "Registrar public HTTPS origin"],
   ["--registrar-service-aid <aid>", "REGISTRAR_SERVICE_AID", "Registrar service AID"],
