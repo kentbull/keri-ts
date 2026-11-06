@@ -16,9 +16,9 @@ from keri.app import Counselor, Multiplexor, Notifier, multisigBupExn, multisigR
 from keri.app.grouping import MultisigNotificationHandler
 from keri.app.httping import CESR_ATTACHMENT_HEADER, CESR_CONTENT_TYPE, CESR_DESTINATION_HEADER, CESR_GENUS_HEADER
 from keri.cli.common.groupissuing import GroupIssuance
-from keri.cli.common.issuing import NativeIssuance
+from keri.cli.common.issuing import IpexV2Issuance
 from keri.cli.common.sending import messageParts
-from keri.cli.common.nativeanchoring import groupAnchor
+from keri.cli.common.registryanchoring import groupAnchor
 from keri.core import Diger, Number, Parser, Prefixer, SealSource, SerderKERI, messagize
 from keri.help import nowUTC
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, serializeParsedSubstream
@@ -29,17 +29,17 @@ from ipex_peer import IpexPeer
 
 class _Owner:
     """Borrow the fixture's live stores and scheduler for one production generator."""
-    evidence = NativeIssuance.evidence
-    public = NativeIssuance.public
+    evidence = IpexV2Issuance.evidence
+    public = IpexV2Issuance.public
 
     def __init__(self, peer, args):
         self.peer, self.args = peer, args
         self.hby, self.hab, self.rgy = peer.hby, peer.hab, peer.rgy
         self.exc, self.dh, self.psr = peer.exc, peer.dh, peer.parser
-        self.tock, self.deadline, self.nativeDeadline = .005, time.monotonic() + 180, None
+        self.tock, self.deadline, self.grantDeadline = .005, time.monotonic() + 180, None
 
     def check(self):
-        if time.monotonic() >= self.deadline or self.nativeDeadline and nowUTC() >= self.nativeDeadline:
+        if time.monotonic() >= self.deadline or self.grantDeadline and nowUTC() >= self.grantDeadline:
             raise TimeoutError('selected group fixture operation expired')
 
     def extend(self, doers):
@@ -49,7 +49,7 @@ class _Owner:
         pass  # Public proposal files and normal stores already retain the selected evidence.
 
     def finish(self, xid, grant):
-        NativeIssuance.finish(self, xid, grant)
+        IpexV2Issuance.finish(self, xid, grant)
         self.peer.finished = grant
         self.peer.operation = None
 
@@ -273,7 +273,7 @@ class GroupIpexPeer(IpexPeer):
 
     def _issuance(self, body, *, consentLifetime, proposal=None):
         assert self.issuance is None and math.isfinite(consentLifetime) and consentLifetime > 0
-        # NativeIssuance.run requires this explicit policy before GroupIssuance's
+        # IpexV2Issuance.run requires this explicit policy before GroupIssuance's
         # protected first partial intake. Exchanger freezes epsd with put-only semantics.
         self.exc.TimeoutPSE = consentLifetime
         directory = Path(self.hby.db.path).parent

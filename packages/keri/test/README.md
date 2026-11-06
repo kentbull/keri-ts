@@ -133,7 +133,7 @@ Run these scenario files with their maintained owner:
 
 The default CLI runtime is the published `kentbull/keripy` `v2-spec` head
 selected by [`scripts/ci/keripy-reference.json`](../../../scripts/ci/keripy-reference.json),
-currently `9079671ba3aed81545259f5b5c88933baebe0f95`. It defaults to KERI v2, matching
+currently `7c12050cbf517a2bad0f95695d9c0f33d7025887`. It defaults to KERI v2, matching
 Tufa's v2 KEL authoring, so KEL and KERI-message KLI calls no longer pin `--version 1.0`
 and KERIpy witness fixtures default to v2 except for v1-only release profiles. Legacy
 pathed IPEX/VDR credential scenarios still select v1 explicitly. `v2-spec` has no
