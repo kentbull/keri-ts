@@ -8,6 +8,7 @@ import {
   Prefixer,
   Seqner,
   SerderKERI,
+  Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { endsAddCommand } from "../../../../../tufa/src/cli/commands/endpoints.ts";
@@ -162,6 +163,8 @@ Deno.test("OOBI local state - transferable controller OOBI reply seal attachment
         ncount: 1,
         nsith: "1",
         toad: 0,
+        // Replies follow the KEL version; this case pins the v1 714 counter shapes.
+        version: Vrsn_1_0,
       });
       const pre = hab.pre;
 
@@ -268,7 +271,8 @@ Deno.test("OOBI local state - non-transferable mailbox OOBI replies use reply ci
       );
 
       assertStringIncludes(stream, "\"r\":\"/loc/scheme\"");
-      assertStringIncludes(stream, "-CAB");
+      // v2 NonTransReceiptCouples carry the reply cigar for a v2 habitat.
+      assertStringIncludes(stream, `-MAh${pre}`);
       const said = hby.db.eans.get([pre, EndpointRoles.mailbox, pre])!.qb64;
       const expected = endRole;
       assertEquals(hab.loadEndRole(pre, pre, EndpointRoles.mailbox), expected);

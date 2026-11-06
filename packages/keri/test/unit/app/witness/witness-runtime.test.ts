@@ -882,7 +882,8 @@ Deno.test("TCP TEL replay refuses an incompatible cue without bytes and continue
       const frames = parseBytes(bytes);
       assertEquals(frames.length, 1);
       assertEquals(frames[0].body.said, regk);
-      assertEquals(frames[0].gvrsn, Vrsn_1_0);
+      // The v2 service's query selects v2 attachment framing for the replayed TEL event.
+      assertEquals(frames[0].gvrsn, Vrsn_2_0);
       assertEquals(refusals, ["unsupported-replay"]);
     } finally {
       reger.cloneTvt = clone;

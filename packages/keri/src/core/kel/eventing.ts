@@ -424,7 +424,12 @@ export class Kevery {
         return acceptQuery([{
           kin: "reply",
           querySaid: envelope.serder.said ?? undefined,
-          serder: replyEvent(`/ksn/${src}`, kever.state().asDict()),
+          // KERIpy answers in the query's own protocol version and serialization kind.
+          serder: replyEvent(`/ksn/${src}`, kever.state().asDict(), {
+            pre,
+            pvrsn: envelope.serder.pvrsn,
+            kind: envelope.serder.kind,
+          }),
           src,
           dest,
         }]);

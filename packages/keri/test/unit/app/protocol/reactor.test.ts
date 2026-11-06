@@ -38,7 +38,8 @@ Deno.test("app/reactor - query parsing normalizes transferable last-establishmen
       const reactor = new Reactor(protocolFixture(hby));
       let seen: QueryEnvelope | null = null;
 
-      reactor.kvy.processQuery = ((envelope) => {
+      // v1 queries use the input Kevery; v2 queries use the shared protocol's KRAM-policy Kevery.
+      reactor.kvy.processQuery = reactor.protocol.kvy.processQuery = ((envelope) => {
         seen = envelope;
       }) as typeof reactor.kvy.processQuery;
 
@@ -322,7 +323,8 @@ Deno.test("app/reactor - query parsing keeps non-transferable endorsements as ru
       const reactor = new Reactor(protocolFixture(hby));
       let seen: QueryEnvelope | null = null;
 
-      reactor.kvy.processQuery = ((envelope) => {
+      // v1 queries use the input Kevery; v2 queries use the shared protocol's KRAM-policy Kevery.
+      reactor.kvy.processQuery = reactor.protocol.kvy.processQuery = ((envelope) => {
         seen = envelope;
       }) as typeof reactor.kvy.processQuery;
 

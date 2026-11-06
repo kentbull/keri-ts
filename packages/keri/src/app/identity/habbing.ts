@@ -416,6 +416,19 @@ export class Hab {
   }
 
   /**
+   * KERI version of this habitat's accepted KEL.
+   *
+   * Replies and queries this habitat authors use the same version, so a stream
+   * that carries the KEL followed by its endpoint replies never mixes protocol
+   * or attachment genera.
+   */
+  get kelVersion(): Versionage {
+    const kever = this.kever;
+    if (!kever) throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
+    return acceptedKelVersion(kever);
+  }
+
+  /**
    * Accept one locally generated event through the same `Kevery`/`Kever` path
    * used by remote processing.
    *
@@ -451,7 +464,7 @@ export class Hab {
 
   /** Sign one local bootstrap reply and submit it to normal signature and BADA validation. */
   private acceptReply(route: string, data: Record<string, unknown>, stamp: string): void {
-    const serder = replyEvent(route, data, { pre: this.pre, stamp });
+    const serder = replyEvent(route, data, { pre: this.pre, stamp, pvrsn: this.kelVersion });
     const kever = this.kever;
     if (!kever) throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     if (!kever.transferable) {
@@ -884,7 +897,7 @@ export class Hab {
     if (!this.pre) {
       throw new Error("Cannot build a reply before habitat inception.");
     }
-    return this.endorse(replyEvent(route, data, { pre: this.pre, stamp }));
+    return this.endorse(replyEvent(route, data, { pre: this.pre, stamp, pvrsn: this.kelVersion }));
   }
 
   /**
@@ -909,6 +922,7 @@ export class Hab {
       }, {
         pre: this.pre,
         stamp,
+        pvrsn: this.kelVersion,
       }),
     );
   }
