@@ -63,3 +63,16 @@ Deno.test("guarded child forwards SIGTERM and propagates exit codes", async () =
   const exiting = spawnGuardedChild("sh", { args: ["-c", "exit 7"], stdout: "null" });
   assertEquals((await exiting.status).code, 7);
 });
+
+Deno.test("guarded child SIGKILL reaches the real child", async () => {
+  // Killing only the guard would orphan the child with the owner's stdout pipe open.
+  const sleeper = spawnGuardedChild("sh", { args: SLEEPER, stdout: "piped" });
+  const pid = Number(await readFirstLine(sleeper.stdout));
+  try {
+    sleeper.kill("SIGKILL");
+    assertEquals((await sleeper.status).code, 128 + 9);
+    assert(await waitForExit(pid, 1_000), `guarded child ${pid} survived SIGKILL`);
+  } finally {
+    if (await isAlive(pid)) Deno.kill(pid, "SIGKILL");
+  }
+});
