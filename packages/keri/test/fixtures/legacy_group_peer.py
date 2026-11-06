@@ -298,14 +298,18 @@ class Control:
 
 
 class AcdcV2Role:
-    """One independent member; public intake and explicit local approval share v2 owners."""
+    """One independent v2 group member; public intake and explicit local approval share v2 owners.
+
+    The member and group KELs are v2 like the TypeScript member's: KERIpy's v2 registry
+    proposals require v2 KEL anchors, and one group KEL never mixes versions.
+    """
     def __init__(self, hby, root):
-        from keri import Vrsn_1_0, Vrsn_2_0
+        from keri import Vrsn_2_0
         from keri.acdc import Regery, loadHandlers
         from keri.acdc.regbasing import RegBaser
         from keri.core import Kevery, Parser
         self.hby, self.version = hby, Vrsn_2_0
-        self.member = hby.makeHab('member', version=Vrsn_1_0)
+        self.member = hby.makeHab('member', version=self.version)
         self.rgy = Regery(hby, baser=RegBaser(name=hby.name, headDirPath=root, temp=False))
         self.notifier = notifying.Notifier(hby)
         self.exc = exchanging.Exchanger(hby, handlers=[])
@@ -333,10 +337,9 @@ class AcdcV2Role:
         return Counter.makeGVC(self.version) + b''.join(self.hby.db.clonePreIter(pre=hab.pre, gvrsn=self.version))
 
     def join(self, member):
-        from keri import Vrsn_1_0
         self.group = self.hby.makeGroupHab(group='group', mhab=self.member,
             smids=[member, self.member.pre], rmids=[member, self.member.pre],
-            isith='2', nsith='2', version=Vrsn_1_0)
+            isith='2', nsith='2', version=self.version)
         self.receive()
         assert self.group.accepted
         return dict(group=self.group.pre, kel=self.replay(self.group).decode())

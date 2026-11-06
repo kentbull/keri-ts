@@ -2,6 +2,7 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, run, scoped, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import reference from "../../../../../scripts/ci/keripy-reference.json" with { type: "json" };
 import {
   BlindState,
   bytesEqual,
@@ -341,8 +342,7 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
 
 Deno.test({
   name: "selected Python and TypeScript explicitly approve ACDC v2 issuer and holder group lifecycles",
-  // Gap: group TEL fixture mixes v1 Python and v2 TS KELs; redesign with the proposal-form follow-up.
-  ignore: true,
+  ignore: selectedKeripyProfile(Deno.env.toObject())?.commit !== reference.profiles.candidate.commit,
 }, async () => {
   const ctx = await createInteropContext(), port = randomPort(), origin = `http://127.0.0.1:${port}`;
   const child = spawnChild(
@@ -382,10 +382,11 @@ Deno.test({
         }[] = [];
         for (const name of ["issuer", "holder", "verifier"]) {
           const hby = yield* createHabery({ name: `acdc-v2-${name}`, headDirPath: ctx.home });
+          // Every member and group KEL in this v2 group lifecycle is v2, matching the Python members.
           const kram = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
           hby.cf!.put({ kram });
           const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { kram }),
-            member = hby.makeHab("member");
+            member = hby.makeHab("member", undefined, { version: Vrsn_2_0 });
           const server = Deno.serve(
             { hostname: "127.0.0.1", port: 0, onListen() {} },
             createProtocolHandler(runtime, { serviceHab: member, hostedPrefixes: [member.pre] }),
@@ -440,7 +441,6 @@ Deno.test({
             const own = concatBytes(
               Counter.makeGVC(Vrsn_2_0),
               ...role.hby.db.clonePreIter(role.member.pre, 0, Vrsn_2_0),
-              Counter.makeGVC(Vrsn_1_0),
               role.member.makeEndRole(role.member.pre, "controller", true),
               role.member.makeLocScheme(role.url, role.member.pre, "http"),
             );
@@ -450,9 +450,10 @@ Deno.test({
             const made = role.hby.makeGroupHab("group", role.member, mids, mids, undefined, {
               isith: "2",
               nsith: "2",
+              version: Vrsn_2_0,
             });
             yield* post(
-              concatBytes(Counter.makeGVC(Vrsn_1_0), made.message),
+              concatBytes(Counter.makeGVC(Vrsn_2_0), made.message),
               index ? `${origin}/holder` : `${origin}/`,
             );
             const joined = yield* call(() => control(label, "join", { member: role.member.pre }));
@@ -467,7 +468,7 @@ Deno.test({
               cid: groups[index].pre,
               role: "controller",
               eid: peers[label].member,
-            }, { pre: groups[index].pre });
+            }, { pre: groups[index].pre, pvrsn: Vrsn_2_0 });
             const own = concatBytes(
               Counter.makeGVC(Vrsn_2_0),
               groupEndorseReply(roles[index].hby, groups[index].pre, event, Vrsn_2_0),
