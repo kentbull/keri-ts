@@ -17,7 +17,7 @@
  */
 import { startServer } from "@keri-ts/hosting";
 import { type ProtocolHandler } from "@keri-ts/hosting";
-import { concatBytes, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Counter, CtrDexV2, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run, sleep, spawn, type Task } from "effection";
 import {
   acceptedEventReplayMessage,
@@ -1399,10 +1399,10 @@ export class BootService {
     let account = this.serviceAccount(aid);
     const kever = this.hby.db.getKever(aid, { refresh: true });
     if (!kever) throw bootError("Accepted account KEL is unavailable", 409);
-    const kel = new TextDecoder().decode(concatBytes(
+    const kel = new TextDecoder().decode(publicKelEvidence(concatBytes(
       ...this.hby.db.cloneDelegation(kever, Vrsn_2_0),
       ...this.hby.db.clonePreIter(aid, 0, Vrsn_2_0),
-    ));
+    )));
     const capabilities: Record<string, unknown> = {};
     for (const kind of services as ("registrar" | "observer")[]) {
       account = this.serviceAccount(aid);
@@ -1766,6 +1766,32 @@ export interface BootServiceOptions {
 
 /** KRAM windows of kf-boot's `DEFAULT_KRAM_CONFIG` for all messages and for `exn`. */
 const KRAM_WINDOWS = [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] as const;
+
+/**
+ * Enrollment evidence for a registry service: each replayed event with its controller
+ * and witness signatures, delegation seals and first-seen couple, without
+ * transferable validator receipts.
+ *
+ * The boot service's agent runtime receipts accepted account events with its own
+ * transferable identifier, so its clone carries `TransIdxSigGroups` from a validator the
+ * registry services have never seen. KERIpy's `Regery.ingest` refuses that stream
+ * ("Unverified receipt ... transferable validator receipt quadruple") and stops at the
+ * inception, so a Python Registrar or Observer answers 409 "account KEL is refused or
+ * incomplete". The Python kf-boot never receipts accounts; validator receipts are not
+ * KEL evidence.
+ */
+export function publicKelEvidence(stream: Uint8Array): Uint8Array {
+  const messages: Uint8Array[] = [];
+  for (const frame of parseBytes(stream)) {
+    const groups = frame.attachments.filter(group => group.name !== "TransIdxSigGroups").map(group => group.raw);
+    const size = groups.reduce((total, raw) => total + raw.length, 0);
+    const count = size / 4;
+    const code = count > 4095 ? CtrDexV2.BigAttachmentGroup : CtrDexV2.AttachmentGroup;
+    const header = new Counter({ code, count, version: Vrsn_2_0 }).qb64b;
+    messages.push(frame.body.raw, ...(groups.length ? [header, ...groups] : []));
+  }
+  return concatBytes(...messages);
+}
 
 /**
  * Open (or incept) the boot-server habitat, then serve until halted.
