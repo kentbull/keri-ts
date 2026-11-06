@@ -123,17 +123,11 @@ Shared `verifyQueryAttachments` prefers named
 sender TSGs, otherwise resolves raw/last signatures against accepted current
 establishment state; a valid factor suffices but missing claimed coordinates
 refuse. KRAM admission alone supplies no consent.
-`RegistrySalt` additionally requires current author establishment signatures for
-capability copies; ordinary BADA's historical acceptance alone is insufficient.
-Its typed accept follows decryption, approved accepted-opening UUID reproduction
-and immutable encrypted root retention. Group reply preparation/contribution and
-receiver approval are explicit; neither native `/multisig/rpy` intake nor public
-rotation grants them. Route intake requires full parsed attachment context and
-rejects non-authentication evidence rather than silently discarding it.
-`RegistrySalt.contribute` authenticates the elected member's `/multisig/rpy`
-wrapper, exact ciphertext scope and current group-establishment partial before
-local endorsement. It reuses the receipt owner's scope validation and requires
-an unlocked encrypted Keeper, but no local root. It creates no transfer record.
+`RegistryRoot` (`/registry/root`) checks the v2 map `a.essr` ESSR digest in its
+handler, since the Exchanger checks only a v1 string `a`. Its `verify` is the
+read-only admission decision (stored SAID → false); the Notifier note is added by
+`handle` after commit. Group authority comes from the KEL, never a group signature:
+KERIpy partial-signature escrow does not keep `essrs`.
 `Unblind` separately approves one live presentation and freezes its
 exact bodies, registry scope and original deadline. The disclosee's signed query
 carries a contiguous accepted public BUP suffix; the sender authenticates its full

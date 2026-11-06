@@ -223,24 +223,18 @@ Group Unblind contributors verify the supplied minimum openings without root
 custody. Public query suffixes remain exact on every member contribution, and
 ordinary group signature thresholds gate peer delivery. Delivery election uses
 the completed auxiliary message's accepted signing keys, independently of any DH
-custodian. `RegistrySalt` copies existing roots using current author thresholds,
-current target signing membership and the existing sealed-box primitives. Explicit
-process-local receive approval snapshots an exact accepted BUP and held ordinary
-or bound opening; decryption must reproduce its UUID before immutable Keeper
-retention. Group preparation uses the accepted coordinator's elected current
-member; contributors endorse the same ciphertext. Public TEL and wallet custody
-creation remain unchanged. Tufa's finite `vc registry root` prepare/contribute/
-receive commands use this owner without opening inventory. Receiver consent
-selects an exact BUP and counted held BSQ/BSS; same-body files enter ordinary
-KRAM/Revery processing. The invocation installs its receipt handler on the actual
-ProtocolProcessor Revery, restores prior routing and abandons approval on every
-exit. Only that handler's successful decryption/retention reports receipt; a
-cached replay or existing root alone does not. `@keri-ts/multisync/v2` selects
-newcomers from current signing membership at an explicit accepted current rotation,
-compared with a caller-supplied transient prior roster. Next-key-only members do
-not qualify. Tufa `root newcomers` consumes those selections for explicit registries
-through the same finite file owner; missing custody never starts fresh DH. The
-selector adds no roster persistence, root discovery or transport.
+custodian. `RegistryRoot` (KERIpy local profile `/registry/root`) replicates existing roots
+as one bare v2 ESSR `exn` per (recipient, registry), signed by the sending member's
+individual AID, `a={essr,gid,rd}`, sealed to the recipient's current first key.
+Authorization is KEL/TEL only: current signing member recipient, historical
+member/issuer/issuer-group sender. `verify` (inside the Exchanger writer, read-only)
+hard-refuses what can never be retained, stores copies that only lack local state
+with a `deferred` note, and ignores stored SAIDs; KRAM exempts the route by default.
+`receive(said)` re-authorizes, binds the plaintext and verifies the root by held
+opening or BUP commitment reproduction before immutable retention. `newcomers`
+derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli: mailbox topic `credential`, `--out`/`--message`
+fallback, `receive --listen`. `@keri-ts/multisync/v2` remains a separate explicit-
+roster selector; missing custody never starts fresh DH.
 WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

@@ -218,31 +218,37 @@ Admit. Normal remote refusals are typed decisions; corrupt storage and unexpecte
 crypto/storage failures remain exceptions. A root retained before a later
 storage failure does not imply completion or distributed atomicity.
 
-`RegistrySalt` separately copies an existing root through the current Python
-`/registry/salt` reply profile. It neither starts DH nor creates custody. The
-caller binds a local Hab and its actual Regery, explicitly approves receipt with
-`approve(registry, sender, {event, opening})`, and registers the owner on that
-Hab's Revery Router. Approval snapshots one held ordinary or bound opening of an
-exact accepted, anchored BUP. No opening or transfer record is added to public
-TEL storage; approvals disappear on restart or `abandon`.
+`RegistryRoot` separately replicates an existing root to individual members as
+the KERIpy local-profile `/registry/root` ESSR `exn`
+(`packages/keri/src/acdc/salting.ts`). It neither starts DH nor creates custody.
+The sending member's individual Hab signs one bare v2 `exn` per (recipient,
+registry) with `a={essr, gid, rd}`; the attached ESSR payload is a sealed box to
+the recipient's current first Ed25519 key holding `{i, ri, gid, rd, s, e[, td]}`.
+Register the owner on the Habery's Exchanger. Authorization reads accepted
+KEL/TEL state only: the recipient is a local individual Hab that is a current
+signing member of `gid` (next-key-only participation is insufficient), the
+sender a historical member of `gid`, the registry issuer or a historical issuer
+group member, and the registry an accepted, issuer-anchored TEL with a BUP head.
 
-`prepare(registry, recipient, target, {coordinator})` encrypts the retained root
-to the target's current Ed25519 key using the existing sealed-box primitive.
-Only the registry issuer or the recipient group itself may authorize the copy.
-A group target must currently contribute to the recipient group's signing keys;
-being listed only among next-key participants is insufficient. Group preparation
-requires the selected accepted coordinator's elected member, still currently
-authorized. Other members explicitly endorse that exact ciphertext reply body.
+`verify` runs inside the Exchanger writer and only reads. It refuses, persisting
+nothing, a copy that can never be retained (shape, identifiers, ESSR digest,
+non-local or group recipient, `i == ri`, foreign local holder, non-Ed25519 key,
+or membership/sender failure against complete state). Missing local state
+(registry TEL, a KEL, the local group Hab, or a holder rotation whose next keys
+commit to the recipient but is not accepted here) defers: the copy is stored and
+`handle` adds a note carrying `deferred`. An already stored SAID is ignored, so
+duplicates add no note. KRAM exempts the route by default; the SAID-keyed store,
+explicit approval and immutable retention replace replay protection.
 
-Receive intake requires the author's current accepted signature threshold, not
-merely an older establishment permitted by ordinary BADA. Revery owns aggregation;
-unsupported attachments, absent approval and wrong party/target scope refuse.
-After decryption, the root must reproduce the approved opening's UUID at its
-exact BUP ordinal before retain-once encrypted Keeper storage. An identical root
-is idempotent; a different retained root is never replaced. Reply acceptance here
-means successful retention, not just signature acceptance. Finite provisioning
-workflows and application newcomer selection remain separate callers of this
-core owner; accepted public rotation alone never copies a root.
+`receive(said, {event, opening})` is explicit approval. It re-runs the full
+authorization (`RootDeferred`, a `RootUnverified`, keeps the copy pending; removal
+of the recipient is a hard refusal), decrypts, requires the inner `i/ri/gid/rd`
+to equal the outer exchange, and verifies the Salt128 root against a held opening
+or by reproducing the accepted BUP `b` commitment from the `td` hint before
+retain-once encrypted Keeper storage. A different retained root is never
+replaced. `newcomers(groupHab, rotation)` selects members contributing to an
+accepted rotation and not to the prior establishment; accepted public rotation
+alone never copies a root.
 
 Disclosure plans select every disclosed node in exactly the graph's BFS order.
 The DAG path is `/` for the origin or a rooted literal SAD path ending in `_/`.

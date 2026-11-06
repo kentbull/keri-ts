@@ -125,7 +125,7 @@ needs no private capability.
 Roots are immutable encrypted `rroots.` values keyed by canonical local AID and
 registry SAID. Keeper AEID replacement atomically rewraps them; encryption cannot
 be disabled while roots remain. Root possession confers no presentation authority.
-DHKE, explicit RegistrySalt transfer and network Unblind remain separate work.
+DHKE, `RegistryRoot` member replication and network Unblind remain separate owners.
 
 `derive` returns an event-opening candidate. `retainDerivedUpdate(event, opening)`
 records only exact event SAID, target, state and optional bound KEL coordinates in
