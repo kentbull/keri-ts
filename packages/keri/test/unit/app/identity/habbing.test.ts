@@ -2299,6 +2299,49 @@ Deno.test("Habery rotateGroupHab maps prior commitments independently of signing
   });
 });
 
+Deno.test("Habery reopen commits members of an accepted rotation whose live commit was interrupted", async () => {
+  const name = `group-member-recovery-${crypto.randomUUID()}`;
+  const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
+  let pre = "";
+  let mids: string[] = [];
+
+  await run(function*() {
+    const hby = yield* createHabery({ name, headDirPath });
+    try {
+      const alice = hby.makeHab("alice");
+      const bob = hby.makeHab("bob");
+      const fresh = hby.makeHab("fresh");
+      const before = [alice.pre, bob.pre];
+      const group = hby.makeGroupHab("team", alice, before, before, undefined, { isith: "2", nsith: "2", toad: 0 });
+      pre = group.hab.pre;
+      alice.rotate();
+      bob.rotate();
+      mids = [alice.pre, bob.pre, fresh.pre];
+      hby.rotateGroupHab("team", mids, mids, { isith: ["0", "0", "1"], nsith: "2", toad: 0 });
+      assertEquals(group.hab.kever?.sn, 1);
+      // The process stopped after acceptance but before the member commit.
+      hby.commitGroupHabMembers(pre, before, before);
+      assertEquals(hby.db.getHab(pre)?.smids, before);
+    } finally {
+      yield* hby.close();
+    }
+  });
+
+  for (let reopen = 0; reopen < 2; reopen++) {
+    await run(function*() {
+      const hby = yield* createHabery({ name, headDirPath });
+      try {
+        assertEquals(hby.db.getHab(pre)?.smids, mids);
+        assertEquals(hby.db.getHab(pre)?.rmids, mids);
+        assertEquals(hby.ks.getSmids(pre).map(([prefixer]) => prefixer.qb64), mids);
+        assertEquals(hby.recoverAcceptedGroupMembers(pre), false, "recovery is idempotent");
+      } finally {
+        yield* hby.close(reopen === 1);
+      }
+    });
+  }
+});
+
 Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with two service members", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `group-recovery-${crypto.randomUUID()}`, temp: true });

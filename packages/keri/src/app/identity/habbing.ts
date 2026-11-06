@@ -59,7 +59,7 @@ import { createKeeper, Keeper, PreSit } from "../../db/keeping.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
-import { latestGroupContribution } from "../multisig/group-members.ts";
+import { acceptedGroupMembers, latestGroupContribution } from "../multisig/group-members.ts";
 import { Configer, createConfiger } from "./configing.ts";
 import {
   Algos,
@@ -1527,6 +1527,40 @@ export class Habery {
     for (const hab of this.habs.values()) {
       hab.reconfigure();
     }
+    // Restart recovery: commit members of an accepted establishment event
+    // whose live commit was interrupted. Read-only openings never write.
+    for (const pre of this.readonly ? [] : this.habs.keys()) {
+      this.recoverAcceptedGroupMembers(pre);
+    }
+  }
+
+  /**
+   * Commit the members of a local group's latest accepted establishment event
+   * when the stored record is stale (KERIpy `GroupHab.recoverAcceptedMembers`).
+   *
+   * A process that stopped after a rotation was accepted but before its live
+   * `commitAcceptedGroupMembers` leaves `smids`/`rmids` stale. Members are
+   * derived from local KELs, trying the stored members first and every AID
+   * with local key state only when they do not account for every key. They
+   * are committed only when they differ from the stored record and the local
+   * member contributes to that event; a record that does not yet include the
+   * local member is a pending join, not a stale commit. Only the latest
+   * accepted event is committed, so this never rolls members back, and
+   * repeating it changes nothing. Returns whether stale members were committed.
+   */
+  recoverAcceptedGroupMembers(pre: string): boolean {
+    const record = this.db.getHab(pre);
+    if (!record?.mid || record.sid || !this.habs.has(record.mid)) return false;
+    const smids = [...(record.smids ?? [])], rmids = [...(record.rmids ?? [])];
+    const accepted = acceptedGroupMembers(this.db, pre, new Set([...smids, ...rmids]))
+      ?? acceptedGroupMembers(this.db, pre, [...this.db.states.getTopItemIter()].map(([keys]) => keys.join(".")));
+    if (!accepted) return false;
+    const same = (left: readonly string[], right: readonly string[]) =>
+      left.length === right.length && left.every((aid, index) => aid === right[index]);
+    if (same(accepted.smids, smids) && same(accepted.rmids, rmids)) return false;
+    if (!accepted.smids.includes(record.mid) && !accepted.rmids.includes(record.mid)) return false;
+    this.commitGroupHabMembers(pre, accepted.smids, accepted.rmids);
+    return true;
   }
 
   /** Local AID prefixes currently managed by this habery. */
