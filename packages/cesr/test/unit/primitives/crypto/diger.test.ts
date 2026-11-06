@@ -1,6 +1,6 @@
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { UnknownCodeError } from "../../../../src/core/errors.ts";
-import { Diger, parseDiger } from "../../../../src/primitives/crypto/diger.ts";
+import { blake2bDigest, Diger, parseDiger } from "../../../../src/primitives/crypto/diger.ts";
 import { KERIPY_MATTER_VECTORS } from "../../../fixtures/keripy-primitive-vectors.ts";
 import { assertTxtBnyQb64Parity, txt } from "../../../fixtures/primitive-test-helpers.ts";
 
@@ -56,4 +56,12 @@ Deno.test("diger: asynchronous source failure cannot become successful verificat
   }
   // Digest state must finalize only after clean EOF, even for an empty expected payload.
   await assertRejects(() => expected.verifyStream(failing()), Error, "source failed");
+});
+
+Deno.test("blake2bDigest: matches Python blake2b digest_size and rejects invalid sizes", () => {
+  // hashlib.blake2b(b"abc", digest_size=8).hexdigest()
+  const digest = blake2bDigest(new TextEncoder().encode("abc"), 8);
+  assertEquals(Array.from(digest, byte => byte.toString(16).padStart(2, "0")).join(""), "d8bb14d833d59559");
+  assertThrows(() => blake2bDigest(new Uint8Array(), 0), RangeError);
+  assertThrows(() => blake2bDigest(new Uint8Array(), 65), RangeError);
 });

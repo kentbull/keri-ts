@@ -132,6 +132,20 @@ export class Diger extends Matter {
   }
 }
 
+/**
+ * Raw BLAKE2b digest of `ser` with a caller-chosen output size in bytes (1-64).
+ *
+ * Matches Python `hashlib.blake2b(ser, digest_size=size)`. Use it for non-CESR
+ * digests such as stable selection offsets; CESR digest material belongs to
+ * `Diger` and its `DigDex` codes.
+ */
+export function blake2bDigest(ser: Uint8Array, size: number): Uint8Array {
+  if (!Number.isInteger(size) || size < 1 || size > 64) {
+    throw new RangeError(`BLAKE2b digest size must be an integer from 1 to 64, got ${size}`);
+  }
+  return blake2b(ser, { dkLen: size });
+}
+
 /** Parse and hydrate `Diger` from txt/qb2 bytes. */
 export function parseDiger(
   input: Uint8Array,
