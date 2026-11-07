@@ -1,6 +1,26 @@
 # Versioning and release process
 
-Package manifests own versions independently for cesr-ts, keri-ts and @keri-ts/tufa.
+## Version numbers
+
+Package versions follow semantic versioning: a major release may break callers, a
+minor release adds behavior, a patch release fixes it. The major version also tracks
+the KERIpy release line whose feature set the packages port; KERIpy's number is a
+guideline, so a break on only one side still follows semver here. Package versions
+never select KERI/ACDC/CESR wire versions; the specification column records which
+ToIP KSWG specification revision a release line implements.
+
+| keri-ts packages | KERIpy parity | ToIP KERI/ACDC/CESR specifications |
+| ---------------- | ------------- | ---------------------------------- |
+| 1.0.x            | 1.x           | v1.0                               |
+| 2.0.x            | 2.x           | v1.1                               |
+
+The coordinated 2.0.0 release covers cesr-ts, keri-ts, @keri-ts/tufa,
+@keri-ts/verifier, @keri-ts/hosting, @keri-ts/wallet, @keri-ts/registrar and
+@keri-ts/observer. @keri-ts/multisync remains unpublished at 0.1.0.
+
+## Manifests and Changesets
+
+Package manifests own versions independently for each published package.
 `manifest:sync` updates Deno mirrors and npm workspace-lock versions;
 `manifest:check` rejects drift. `release:version` applies Changesets, synchronizes
 manifests and generates runtime version modules. Ordinary generation is deterministic;
@@ -21,11 +41,20 @@ release builds explicitly add `build.<run>.<sha>` metadata.
    after runtime checks so they cannot mask missing runtime dependencies.
 5. Commit only explicit release paths, with an explanatory body, and merge after
    exact-head checks pass. Never stage unrelated work or publish from a dirty tree.
-6. With publication authorization, create annotated `cesr-v<VERSION>`,
-   `keri-v<VERSION>` and/or `tufa-v<VERSION>` tags at the verified release commit.
-   Push each selected tag explicitly in dependency order CESR → KERI → Tufa,
-   waiting for dependencies to become available. Do not use an unqualified
-   `--follow-tags` command or rewrite a published tag.
+6. With publication authorization, create annotated `<package>-v<VERSION>` tags
+   (`cesr`, `keri`, `hosting`, `registrar`, `wallet`, `verifier`, `observer`,
+   `tufa`) at the verified release commit. Push each selected tag explicitly in
+   dependency order CESR → KERI → hosting → registrar → wallet → verifier →
+   observer → Tufa, waiting for each package to become available on npm. Do not
+   use an unqualified `--follow-tags` command or rewrite a published tag.
+7. npm trusted publishing can only be configured for a package that already
+   exists, so a package's first publication is maintainer-run. Dispatch that
+   package's release workflow at the release commit with `publish=false`,
+   download its uploaded tarball, `npm publish` exactly those bytes, then add the
+   package workflow as the trusted publisher. When the tag is pushed, the shared
+   workflow skips the existing npm version but attaches its own rebuilt tarball,
+   whose CI build metadata differs; replace that GitHub release asset with
+   `npm pack <name>@<version>` registry bytes so all copies match.
 
 ## Workflow and artifact ownership
 

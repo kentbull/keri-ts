@@ -9,6 +9,15 @@
   staging/ownership adapters. Shared buffered parsing and real transport sources
   remain. See the [migration guide](../../docs/reference/compatibility/MIGRATING_TO_2_0.md).
 
+### Features and fixes
+
+- Add `blake2bDigest(ser, size)`, a raw BLAKE2b digest with a caller-chosen output size matching Python `hashlib.blake2b(..., digest_size=size)`.
+- Serialize a nested node without evidence as its body alone and drop zero-count semantic groups on hydration, so legacy `-KAA` and `-C(-KAA)` placeholder nodes re-serialize to KERIpy's canonical bytes. Every v2 attachment path now writes sequence and first-seen ordinals as compact Numbers, matching KERIpy `messagize`; v1 keeps the fixed Seqner.
+- Count distinct verified signer indices when satisfying numeric thresholds so duplicate signatures from one key cannot supply multiple votes.
+- Verify v2 registry openings against their declared digest and exact carried primitive bytes. Preserve primitive encodings when committing disclosure records, and require deterministic material while selecting the target digest for recovery.
+- Verify exposed ACDC v2 section and aggregate commitments independently of the enclosing credential SAID, and author nested sections with the same compact-form commitments while preserving disclosure exposure.
+- Add individual IPEX DHKE for explicitly approved pending issuance Grants. Reuse encrypted registry roots, original Grant deadlines and ordinary signature thresholds, then finish with verified issued openings without issuing Admit. Port the existing Python local X25519/HKDF profile through shared CESR X25519 primitives; group coordination remains unsupported.
+
 ### Maintenance
 
 - Group primitive implementation and tests by encoding, crypto, values and

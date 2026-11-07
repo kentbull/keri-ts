@@ -10,6 +10,12 @@ compiled
 packages/cesr/npm
 packages/keri/npm
 packages/tufa/npm
+packages/verifier/npm
+packages/hosting/npm
+packages/wallet/npm
+packages/registrar/npm
+packages/observer/npm
+packages/multisync/npm
 /npm
 .awcache
 .rpt2_cache
