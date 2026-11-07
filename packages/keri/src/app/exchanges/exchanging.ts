@@ -245,6 +245,39 @@ interface ExchangeAttempt {
 }
 
 /**
+ * Refuse every exchange on one route so nothing about it is persisted.
+ *
+ * Ports KERIpy `exchanging.RouteRefuser`. A role that must never accept a
+ * route (a service or verifier offered `/registry/root`) registers this
+ * instead of leaving the route unhandled: an unhandled route is still
+ * authenticated, stored in `exns`/`essrs` and never revisited, while `verify`
+ * returning false here makes the Exchanger reject it before any write. It is
+ * unversioned, so it refuses every protocol major of the route. Sender
+ * authentication and its partial-signature escrow still run first, as for any
+ * route.
+ */
+export class RouteRefuser implements ExchangeRouteHandler {
+  readonly resource: string;
+
+  constructor(resource: string) {
+    this.resource = resource;
+  }
+
+  /** Log the refusal and reject the exchange. */
+  verify(args: { serder: SerderKERI }): boolean {
+    consoleLogger.info("Exchange route refused by local policy", {
+      route: this.resource,
+      said: args.serder.said,
+      sender: args.serder.pre,
+    });
+    return false;
+  }
+
+  /** Unreachable: a refused exchange is never dispatched. */
+  handle(): void {}
+}
+
+/**
  * Peer-to-peer XIP/EXN processor for one `Habery`.
  *
  * Responsibilities:

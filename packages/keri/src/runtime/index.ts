@@ -183,6 +183,7 @@ export {
   Exchanger,
   type ExchangeRouteHandler,
   type ExchangeRouteVerification,
+  RouteRefuser,
 } from "../app/exchanges/exchanging.ts";
 export {
   type ChallengeResponsePayload,
