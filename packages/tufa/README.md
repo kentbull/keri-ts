@@ -392,8 +392,10 @@ Issuee event. IPEX `--derive` requires the selected sender's custody and retaine
 exact event coordinates. Missing coordinates refuse disclosure even if the Keeper
 root survives wallet loss. Fresh individual DH issuance uses the `grant --issue`
 and `setup` flow above; replicating an existing root to other members uses
-`vc registry root send|receive|newcomers` (see `docs/CLI_REFERENCE.md`); received
-roots are accepted automatically and `receive` drains the escrow. Live Unblind uses the exact-Grant command above; group DH uses the finite member
+`vc registry root send|receive|newcomers` (see `docs/CLI_REFERENCE.md`); every
+runtime that polls the credential mailbox (for example `tufa agent`) retains
+received roots automatically, `receive` is an optional drain, and service roles
+refuse copies (`registryRoots: "refuse"`). Live Unblind uses the exact-Grant command above; group DH uses the finite member
 phases above, and ordinary group authoring retains its explicit approval workflow.
 
 ACDC v2 success JSON follows exact anchored acceptance and joined store cleanup.
