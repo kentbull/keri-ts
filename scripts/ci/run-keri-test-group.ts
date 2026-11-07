@@ -161,44 +161,23 @@ function timingPath(target: string): string {
   return join(directory, `${job}-${target}.json`);
 }
 
-/** Source identity: the commit plus every tracked or untracked local modification. */
-interface SourceState {
-  head: string;
-  dirty: string;
-  /** `git` when read from the checkout; `image-build` when recorded from it before a container build. */
-  origin: "git" | "image-build";
-}
-
 /**
  * Record immutable source identity and expose every tracked or untracked local modification.
  *
- * Container images copy source without `.git`. Their build records the host
- * checkout's `HEAD` and `git status --porcelain` in the file named by
- * `KERI_TEST_SOURCE_PROVENANCE`, which is read only when no checkout exists.
+ * Returns null outside a Git checkout, such as a container image whose build
+ * context excludes `.git`; only qualification requires a recorded source.
  */
-async function sourceState(): Promise<SourceState> {
+async function sourceState(): Promise<{ head: string; dirty: string } | null> {
   const [head, status] = await Promise.all([
     new Deno.Command("git", { args: ["rev-parse", "HEAD"], cwd: repoDir, stdout: "piped", stderr: "piped" }).output(),
     new Deno.Command("git", { args: ["status", "--porcelain"], cwd: repoDir, stdout: "piped", stderr: "piped" })
       .output(),
   ]);
-  if (head.success && status.success) {
-    return {
-      head: new TextDecoder().decode(head.stdout).trim(),
-      dirty: new TextDecoder().decode(status.stdout).trim(),
-      origin: "git",
-    };
-  }
-  const recorded = Deno.env.get("KERI_TEST_SOURCE_PROVENANCE");
-  if (!recorded) throw new Error("Cannot determine test source Git provenance.");
-  const value: unknown = JSON.parse(await Deno.readTextFile(recorded));
-  if (
-    typeof value !== "object" || value === null || !("head" in value) || !("dirty" in value)
-    || typeof value.head !== "string" || !/^[0-9a-f]{40}$/.test(value.head) || typeof value.dirty !== "string"
-  ) {
-    throw new Error(`Recorded source provenance ${recorded} needs a 40-hex head and a dirty status string.`);
-  }
-  return { head: value.head, dirty: value.dirty.trim(), origin: "image-build" };
+  if (!head.success || !status.success) return null;
+  return {
+    head: new TextDecoder().decode(head.stdout).trim(),
+    dirty: new TextDecoder().decode(status.stdout).trim(),
+  };
 }
 
 /** Observe the native loader and written data format without rebuilding dependencies. */
@@ -231,7 +210,10 @@ async function main(): Promise<void> {
     return;
   }
   const source = await sourceState();
-  if (target === "qualification" && source.dirty) {
+  if (target === "qualification" && !source) {
+    throw new Error("Qualification requires a Git checkout to record its source; none was found.");
+  }
+  if (target === "qualification" && source?.dirty) {
     throw new Error("Qualification requires a clean committed source tree; commit or isolate pending work first.");
   }
   const lmdb = await lmdbRuntime();

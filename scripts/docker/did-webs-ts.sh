@@ -9,18 +9,12 @@ TAG="${DID_WEBS_TS_TAG:-$(git rev-parse --short HEAD)}"
 DOCKERFILE="${DID_WEBS_TS_DOCKERFILE:-docker/did-webs-ts/Dockerfile}"
 NODE_IMAGE_TAG="${DID_WEBS_TS_NODE_IMAGE_TAG:-25.9.0-bookworm-slim}"
 
-# The image copies source without .git; record the checkout it was built from.
-SOURCE_HEAD="$(git rev-parse HEAD)"
-SOURCE_DIRTY="$(git status --porcelain)"
-
 build_image() {
   local target="$1"
   local image="$2"
   docker build \
     --file "${DOCKERFILE}" \
     --build-arg "NODE_IMAGE_TAG=${NODE_IMAGE_TAG}" \
-    --build-arg "SOURCE_HEAD=${SOURCE_HEAD}" \
-    --build-arg "SOURCE_DIRTY=${SOURCE_DIRTY}" \
     --target "${target}" \
     --tag "${image}:${TAG}" \
     --tag "${image}:latest" \

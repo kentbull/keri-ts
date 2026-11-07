@@ -33,14 +33,6 @@ WORKDIR /app
 COPY package.json package-lock.json deno.json deno.lock dprint.json ./
 COPY packages ./packages
 COPY scripts ./scripts
-# The build context excludes .git, so scripts/docker/did-webs-ts.sh passes the
-# host checkout's HEAD and `git status --porcelain`; test runs record them.
-ARG SOURCE_HEAD
-ARG SOURCE_DIRTY=""
-RUN printf '%s' "${SOURCE_HEAD}" | grep -Eq '^[0-9a-f]{40}$' \
-    || { echo "SOURCE_HEAD build arg must be the 40-hex source commit" >&2; exit 1; } \
-  && node -e 'require("fs").writeFileSync("/app/.source-provenance.json", JSON.stringify({ head: process.env.SOURCE_HEAD, dirty: process.env.SOURCE_DIRTY }) + "\n")'
-ENV KERI_TEST_SOURCE_PROVENANCE=/app/.source-provenance.json
 COPY docker/did-webs-ts/run-interop.sh /usr/local/bin/did-webs-ts-interop
 
 RUN chmod +x /usr/local/bin/did-webs-ts-interop
