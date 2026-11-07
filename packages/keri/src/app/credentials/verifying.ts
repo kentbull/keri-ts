@@ -127,6 +127,15 @@ export class Verifier {
   }): VerifierDecision {
     const creder = args.creder;
     const said = credentialSaid(creder);
+    // Parser hydration does not verify bodies; KERIpy's Serder does at parse time.
+    if (!creder.verify()) {
+      return {
+        kind: "reject",
+        reason: "invalidCredential",
+        said,
+        detail: "Credential body does not match its SAID.",
+      };
+    }
     const regk = creder.regid;
     const issuer = creder.issuer;
     const schema = creder.schema;
