@@ -273,7 +273,7 @@ function* reconcileMailboxIdentity(
   hab: Hab,
   startup: MailboxStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { registryRoots: "refuse" });
   try {
     yield* settleRuntimeIngress(runtime, [
       hab.makeLocScheme(startup.url, hab.pre, schemeForUrl(startup.url), startup.datetime),

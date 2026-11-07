@@ -3,11 +3,12 @@
  *
  * A KERIpy issuer sends its held root to a Tufa holder with `kli vc registry root
  * send`, and a Tufa issuer sends one to a KERIpy holder with `tufa vc registry
- * root send`. Each receiver starts `receive --listen` only after its whole KRAM
- * short-lag window has passed, so the late mailbox fetch relies on the built-in
- * `/registry/root` KRAM exemption. Each receive is a drain: the handler retains
- * the verifiable root automatically, with no approval step, and the command
- * reports it retained. Store setup (registry authoring and public TEL acceptance)
+ * root send`. Each receiver starts only after its whole KRAM short-lag window
+ * has passed, so the late mailbox fetch relies on the built-in `/registry/root`
+ * KRAM exemption. The Tufa holder runs no registry root command at all: a plain
+ * `tufa agent` drains its credential mailbox and the runtime's registered
+ * handler retains the root, which a later `receive` (no `--listen`) reports.
+ * The KERIpy holder uses `receive --listen`, the optional convenience drain. Store setup (registry authoring and public TEL acceptance)
  * uses each implementation's library on the same store; delivery and listening
  * use the installed CLIs only.
  */
@@ -27,10 +28,16 @@ import {
   extractPrefix,
   type InteropContext,
   type KeriPyWitnessNode,
+  randomPort,
   requireSuccess,
   runCmdWithTimeout,
   runTufaWithTimeout,
+  spawnChild,
   startKeriPyWitnessHarness,
+  stopChild,
+  waitForHealth,
+  workspaceRoot,
+  writeAgentConfig,
 } from "./interop-test-helpers.ts";
 import { PASSCODE, queryKliPrefix, resolveWitnessesForKli, SALT } from "./interop-witness-helpers.ts";
 
@@ -196,25 +203,38 @@ Deno.test("Interop registry root: KERIpy and Tufa replicate roots to each other 
     assertEquals(sentA.map(item => [item.recipient, item.gid, item.transmitted]), [[tufaPre, tufaPre, true]]);
     // The Tufa holder is offline past its whole KRAM short-lag window.
     await new Promise(resolve => setTimeout(resolve, KRAM_WINDOW_MS + 2_000));
-    const receivedA = results(
-      (await requireSuccess(
-        "tufa root receive --listen",
-        runTufaWithTimeout(
-          [
-            ...["vc", "registry", "root", "receive", ...tufaStore, "--alias", "tufa"],
-            ...["--registry", registryA, "--listen", "--timeout", "60"],
-          ],
+    // No receive command: an ordinary agent host polls the mailbox and retains the root.
+    const agentPort = randomPort();
+    await writeAgentConfig(headDirPath, "tufa-agent", "tufa", agentPort);
+    const agent = spawnChild(
+      Deno.execPath(),
+      [
+        ...["run", "--allow-all", "--unstable-ffi", "packages/tufa/mod.ts", "agent", ...tufaStore],
+        ...["--port", String(agentPort), "--config-dir", headDirPath, "--config-file", "tufa-agent"],
+      ],
+      ctx.env,
+      workspaceRoot(),
+    );
+    let receivedA: Record<string, unknown>[] = [];
+    try {
+      await waitForHealth(agentPort);
+      const deadline = Date.now() + 60_000;
+      while (true) {
+        const drained = await runTufaWithTimeout(
+          ["vc", "registry", "root", "receive", ...tufaStore, "--alias", "tufa", "--registry", registryA],
           ctx.env,
           ctx.repoRoot,
-          90_000,
-        ),
-      )).stdout,
-    );
-    assertEquals(receivedA, [{ registry: registryA, phase: "listening" }, {
-      gid: tufaPre,
-      registry: registryA,
-      retained: true,
-    }]);
+          30_000,
+        );
+        receivedA = results(drained.stdout);
+        if (drained.code === 0 || Date.now() > deadline) break;
+        await new Promise(resolve => setTimeout(resolve, 1_000));
+      }
+    } finally {
+      const output = await stopChild(agent);
+      if (!receivedA.length) console.error(output);
+    }
+    assertEquals(receivedA, [{ gid: tufaPre, registry: registryA, retained: true }]);
     await withTufaStore(tufa, headDirPath, function*(hby) {
       assertEquals(hby.mgr.getRegistryRoot(tufaPre, registryA)?.qb64, authored.root);
     });

@@ -322,6 +322,7 @@ export class HostedWitnesses {
       record.eid = hab.pre;
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: true,
+        registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },
       });
       hosted = new HostedWitness(record, hby, hab, runtime, this.db, this.options.publicUrl);

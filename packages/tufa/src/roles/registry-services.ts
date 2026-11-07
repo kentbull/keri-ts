@@ -262,6 +262,7 @@ function* runService(selection: Selection): Operation<void> {
     if (!hab) throw new ValidationError("Initialize the selected service identity before starting it");
     runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: false,
+      registryRoots: "refuse",
       kram: { enabled: true, denials: [], caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
     });
     if (!(yield* access.reopen())) throw new ValidationError("Service access store could not open");

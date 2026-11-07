@@ -1986,6 +1986,7 @@ export function* runBootService(options: BootServiceOptions): Operation<void> {
       });
     runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
       enableMailboxStore: false,
+      registryRoots: "refuse",
       kram: { enabled: true, denials: [], caches: { "~": [...KRAM_WINDOWS], exn: [...KRAM_WINDOWS] } },
     });
     if (!(yield* db.reopen())) throw new ValidationError("Boot service store could not open");
