@@ -62,6 +62,9 @@ tracks historical readers, safe conversion boundaries and the linked Python port
 - Annotation validates once then renders original admitted wire, one entry per
   independently owned root. Walking a flattened child list loses enclosure scope.
   Opaque fallback must preserve text-domain raw for deannotation, including qb2.
+- A nested node without evidence is `-B(body)`; never emit a placeholder group.
+  Hydration drops zero-count semantic groups so legacy `-KAA`/`-C(-KAA)` rows
+  converge on KERIpy's canonical bytes (tufa `sameNodes` compares those bytes).
 
 ## Primitive and Serder rules
 
@@ -73,7 +76,9 @@ tracks historical readers, safe conversion boundaries and the linked Python port
   escape grammar. Cap byte-to-text/base64 spreads.
 - `Matter`/`Indexer` are infrastructure bases; use semantic primitives when known.
   Variable-family promotion belongs in Matter. `NumberPrimitive.fromNum` owns
-  compact numeric choices; v2 ordinals must not be forced into Seqner.
+  compact numeric choices; v2 ordinals must not be forced into Seqner. Attachment
+  writers go through `attachmentOrdinal`, which re-encodes stored Huge/Seqner
+  ordinals as compact v2 Numbers so fresh and replayed messages share bytes.
 - Extend the shared `serder/native.ts` protocol/version/ilk matrix. Top-level
   native KERI uses fixed bodies; native map-shaped messages belong to ACDC/mapping.
   Route bytes use Pather. Reject unknown/reordered native seals instead of silently

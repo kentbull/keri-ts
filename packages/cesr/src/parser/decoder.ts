@@ -124,10 +124,12 @@ function attachments(
     }
     const parsed = at(bytes, offset, (tail) => parseAttachmentGroup(tail, gvrsn, domain));
     offset += parsed.consumed;
+    // A zero-count semantic group carries no evidence (KERIpy reads it as none), so legacy
+    // placeholder nodes such as -KAA re-serialize in the canonical body-only form.
     if (counter.name === "ESSRPayloadGroup" || counter.name === "BigESSRPayloadGroup") {
       const texters = frame.essrs ??= [];
       for (const item of parsed.group.items) texters.push(item as Texter);
-    } else frame.attachments.push(parsed.group);
+    } else if (parsed.group.items.length) frame.attachments.push(parsed.group);
   }
 }
 

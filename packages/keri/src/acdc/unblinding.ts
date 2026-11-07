@@ -643,7 +643,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
           Counter.enclose({
             code: "SealSourceCouples",
             version: Vrsn_2_0,
-            qb64: SealSource.qb64b({ s: anchor[0], d: anchor[1] }),
+            qb64: SealSource.qb64b({ s: NumberPrimitive.fromNum(anchor[0].num), d: anchor[1] }),
           }),
           { nested: true, gvrsn: Vrsn_2_0 },
         ));

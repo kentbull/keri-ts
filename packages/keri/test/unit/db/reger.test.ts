@@ -270,10 +270,11 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
           wiger.qb64b,
           new Counter({
             code: CtrDexV2.SealSourceCouples,
-            count: (sealNumber.qb64b.length + sealDiger.qb64b.length) / 4,
+            count: (NumberPrimitive.fromNum(3n).qb64b.length + sealDiger.qb64b.length) / 4,
             version: Vrsn_2_0,
           }).qb64b,
-          sealNumber.qb64b,
+          // KERIpy 2b19fa87 writes the stored Huge ordinal as the compact v2 Number.
+          NumberPrimitive.fromNum(3n).qb64b,
           sealDiger.qb64b,
         );
         const v2Expected = concatBytes(

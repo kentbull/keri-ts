@@ -4,7 +4,7 @@ import { b, concatBytes, decodeB64, t } from "../../../src/core/bytes.ts";
 import { collectPayload } from "../../../src/core/payload.ts";
 import type { CesrFrame } from "../../../src/core/types.ts";
 import { parseBytes } from "../../../src/parser/complete.ts";
-import { attachmentPayload, framePayload } from "../../../src/parser/serialize.ts";
+import { attachmentPayload, framePayload, nestedPayload } from "../../../src/parser/serialize.ts";
 import { Counter } from "../../../src/primitives/base/counter.ts";
 import { Siger } from "../../../src/primitives/crypto/siger.ts";
 import { Verfer } from "../../../src/primitives/crypto/verfer.ts";
@@ -94,13 +94,15 @@ Deno.test("an explicit serialization genus normalizes every compatible descendan
   }
 });
 
-Deno.test("nested children without evidence retain an explicit empty attachment counter", async () => {
+Deno.test("nested children without evidence serialize as their body alone", async () => {
   const [frame] = await parseBytes(b(vectors.rows[0].qb64));
   frame.nests![0].attachments = [];
+  const child = await collectPayload(nestedPayload(frame.nests![0], { major: 2, minor: 0 }));
+  // The enclosing counter covers exactly the body: no placeholder signature group follows it.
+  assertEquals(child.length, 4 + frame.nests![0].body.raw.length);
   const [roundtrip] = await parseBytes(await collectPayload(framePayload(frame)));
   assertEquals(roundtrip.nests![0].body.raw, frame.nests![0].body.raw);
-  assertEquals(roundtrip.nests![0].attachments.length, 1);
-  assertEquals(roundtrip.nests![0].attachments[0].items.length, 0);
+  assertEquals(roundtrip.nests![0].attachments, []);
   assertEquals(summary(roundtrip.nests![1]), summary(frame.nests![1]));
 });
 Deno.test("nested ESSR serialization preserves ordered duplicates across repeated reads and both domains", async () => {

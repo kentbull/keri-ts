@@ -6,6 +6,7 @@ import {
   b,
   type CesrFrame,
   collectPayload,
+  Counter,
   Dater,
   Diger,
   framePayload,
@@ -14,12 +15,13 @@ import {
   parseBytes,
   Prefixer,
   type SerderKERI,
+  t,
   Texter,
   Vrsn_1_0,
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, run } from "effection";
-import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import depthVector from "../../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
@@ -34,6 +36,7 @@ import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../../../src/core/protocol-serialization.ts";
 import { loadNests, prepareNests, publishNests } from "../../../../src/db/exchange/exchange-nests.ts";
+import keripy from "../../../../test/fixtures/keripy-ipex-current-state-vectors.json" with { type: "json" };
 
 import { encodeDateTimeToDater } from "../../../../src/time/mod.ts";
 
@@ -276,6 +279,30 @@ Deno.test("imported nested rows retain Python insertion order and dedup", async 
     await assertTree(loaded[0], first);
     await assertTree(loaded[1], second);
   });
+});
+
+Deno.test("stored placeholder nodes converge on KERIpy's canonical nested node bytes", async () => {
+  // KERIpy 2b19fa87 Grant with a signed, a proof-bearing and a proofless node.
+  const row = keripy.cases.find((row) => row.name === "fresh issuance refuses unauthenticated other node")!;
+  const [grant] = parseBytes(b(row.wire));
+  const node = (inner: Uint8Array) =>
+    Counter.enclose({ qb64: inner, code: "BodyWithAttachmentGroup", version: Vrsn_2_0 });
+  for (const nest of grant.nests!) {
+    const [canonical] = await prepareNests([nest]);
+    assert(row.wire.includes(t(canonical)), "keri-ts re-serializes KERIpy's exact node bytes");
+    const [bodyOnly] = await prepareNests([{ ...nest, attachments: [] }]);
+    const body = bodyOnly.subarray(4), groups = canonical.subarray(bodyOnly.length);
+    // E5 legacy forms: KERIpy's wire placeholder -C(-KAA ...) and keri-ts's retained bare -KAA.
+    for (
+      const legacy of [
+        concatBytes(body, Counter.enclose({ qb64: concatBytes(b("-KAA"), groups), version: Vrsn_2_0 })),
+        concatBytes(body, b("-KAA"), groups),
+      ]
+    ) {
+      const [stored] = parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), node(legacy)));
+      assertEquals(t((await prepareNests([stored]))[0]), t(canonical));
+    }
+  }
 });
 
 Deno.test("nested replacement rolls back publication failure and preserves earlier escrow/accepted evidence", async () => {

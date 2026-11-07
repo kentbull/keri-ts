@@ -35,7 +35,7 @@ Deno.test("accepted IPEX observations survive refresh and reopen without replaci
     const views = new Map<string, { nests: string[]; paths: string[] }>();
     let through = 0;
     try {
-      assertEquals(vectors.reference, "917694081b509f9bc4e875af939f2423fd856d0c");
+      assertEquals(vectors.reference, "2b19fa875d8c803c613087102db51b9e07124588");
       for (const row of vectors.cases) {
         while (through < row.through) {
           const item = vectors.support[through++];

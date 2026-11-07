@@ -17,10 +17,8 @@ import {
   Dater,
   Diger,
   NumberPrimitive,
-  NumDex,
   Prefixer,
   Saider,
-  Seqner,
   SerderACDC,
   SerderKERI,
   Siger,
@@ -33,6 +31,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import {
   attachmentCounterPayloadQb64b,
   attachmentCounterQb64b,
+  attachmentOrdinal,
   resolveAttachmentGvrsn,
 } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
@@ -81,21 +80,6 @@ function digestText(value: string | Uint8Array | Diger | Saider): string {
     return value.qb64;
   }
   return keyText(value);
-}
-
-function fixedOrdinalRaw(num: bigint, size = 16): Uint8Array {
-  const raw = new Uint8Array(size);
-  let value = num;
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return raw;
-}
-
-/** Widen the ordinal value to the fixed v1 seal encoding. */
-function seqnerFromNumber(number: NumberPrimitive): Seqner {
-  return new Seqner({ code: NumDex.Huge, raw: fixedOrdinalRaw(number.num) });
 }
 
 function saiderFromDigest(diger: Diger): Saider {
@@ -417,7 +401,7 @@ export class Reger extends LMDBer {
     if (couple !== null) {
       const [number, diger] = couple;
       const sealPayload = [
-        gvrsn.major === 1 ? seqnerFromNumber(number).qb64b : number.qb64b,
+        attachmentOrdinal(number, gvrsn).qb64b,
         saiderFromDigest(diger).qb64b,
       ];
       attachments.push(
@@ -473,7 +457,7 @@ export class Reger extends LMDBer {
       const selected = resolveAttachmentGvrsn(sourceCreder, gvrsn);
       const sealPayload = [
         prefixer.qb64b,
-        selected.major === 1 ? seqnerFromNumber(number).qb64b : number.qb64b,
+        attachmentOrdinal(number, selected).qb64b,
         saiderFromDigest(diger).qb64b,
       ];
       const atc = concatBytes(
