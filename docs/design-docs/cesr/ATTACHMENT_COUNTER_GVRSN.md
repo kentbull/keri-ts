@@ -7,7 +7,9 @@ and protocol-appropriate output. Body pvrsn and attachment gvrsn remain distinct
 Live builders may select an output genus. Replay preserves the stored body bytes
 and derives its minimum attachment genus from the body protocol/genus; replay is
 not universally v1. Reger clone helpers accept a genus floor for support streams.
-V1 ordinals widen to Seqner, while v2 retains qualified Number values.
+Ordinals follow KERIpy `messagize`: v1 writes the fixed `0A` Seqner and v2 the
+compact Number (`MAAB` for 1), whatever primitive or stored width the caller holds
+(`attachmentOrdinal`).
 
 Nested serialization uses a body-with-attachments enclosure per child, preserving
 parent proof separation and local genus scope. Parser support for v1 enclosure

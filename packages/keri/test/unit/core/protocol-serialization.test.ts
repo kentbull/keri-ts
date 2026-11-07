@@ -144,21 +144,25 @@ Deno.test("messagize aggregates ordered stored reply groups with actual 714 coun
   );
   for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
     const wire = messagize(serder, { tsgs: groups, pipelined: true, gvrsn });
-    // Independent 714 Hab.loadEndRole/fetchTsgs/messagize observation, two one-signature groups.
+    // Independent 714 Hab.loadEndRole/fetchTsgs/messagize observation, two one-signature groups;
+    // 2b19fa87 writes v2 ordinals as compact Numbers.
     assertEquals(
       new TextDecoder().decode(wire.slice(serder.raw.length, serder.raw.length + 8)),
-      gvrsn.major === 1 ? "-VBn-FAC" : "-CBn-XBm",
+      gvrsn.major === 1 ? "-VBn-FAC" : "-CBd-XBc",
     );
     const [frame] = await parseBytes(concatBytes(Counter.makeGVC(gvrsn), wire));
     const seals = frame.attachments[0].items as readonly (readonly { qb64: string }[])[];
-    assertEquals(seals.map((seal) => seal[1].qb64), ["0AAAAAAAAAAAAAAAAAAAAAAA", "0AAAAAAAAAAAAAAAAAAAAAAB"]);
+    assertEquals(
+      seals.map((seal) => seal[1].qb64),
+      gvrsn.major === 1 ? ["0AAAAAAAAAAAAAAAAAAAAAAA", "0AAAAAAAAAAAAAAAAAAAAAAB"] : ["MAAA", "MAAB"],
+    );
   }
   assertThrows(() => messagize(serder, { tsgs: [] }), ValidationError, "Missing attached signatures");
 });
 
-Deno.test("exchange signature groups preserve supplied v2 ordinals and widen only v1 Numbers", async () => {
+Deno.test("exchange signature groups write compact v2 Numbers and fixed v1 Seqners", async () => {
   const { serder, sigers } = signerMessage();
-  // Frozen Python 927c0cb8 Number(num=1) and Seqner(sn=1) produce these distinct qualified bytes.
+  // Python 2b19fa87 messagize writes either ordinal as MAAB in v2 and 0A...B in v1.
   const compact = NumberPrimitive.fromNum(1n);
   const fixed = new Seqner({ qb64: "0AAAAAAAAAAAAAAAAAAAAAAB" });
   assertEquals(compact.qb64, "MAAB");
@@ -171,12 +175,11 @@ Deno.test("exchange signature groups preserve supplied v2 ordinals and widen onl
     );
     for (const gvrsn of [Vrsn_1_0, Vrsn_2_0]) {
       const groups = messageAttachmentGroups({ tsgs: [tsg] }, gvrsn);
-      const expected = gvrsn.major === 1 ? "0AAAAAAAAAAAAAAAAAAAAAAB" : ordinal.qb64;
+      const expected = gvrsn.major === 1 ? "0AAAAAAAAAAAAAAAAAAAAAAB" : "MAAB";
       // Inspect both the actual wire span and parser readback, without relying only on a same-codec round trip.
       assertEquals(new TextDecoder().decode(groups[0].raw.slice(48, 48 + expected.length)), expected);
       const [frame] = await parseBytes(serializeMessage(serder, { tsgs: [tsg], gvrsn, genusify: true }));
       assertEquals((frame.attachments[0].items[0] as readonly { qb64: string }[])[1].qb64, expected);
-      if (gvrsn.major === 2) assertEquals((groups[0].items[0] as readonly unknown[])[1], ordinal);
       const [live] = await parseBytes(messagize(serder, { tsgs: [tsg], gvrsn, pipelined: true, genusify: true }));
       assertEquals((live.attachments[0].items[0] as readonly { qb64: string }[])[1].qb64, expected);
     }

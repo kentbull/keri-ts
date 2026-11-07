@@ -12,7 +12,7 @@ import {
   OpaqueSpan,
   Prefixer,
   type SealEvent,
-  Seqner,
+  type Seqner,
   type SerderACDC,
   type SerderKERI,
   type Siger,
@@ -26,6 +26,7 @@ import { dgKey } from "../db/core/keys.ts";
 import {
   attachmentCounterPayloadQb64b,
   attachmentCounterQb64b,
+  attachmentOrdinal,
   pathedMaterialCounterQb64b,
   resolveAttachmentGvrsn,
 } from "./attachment-countering.ts";
@@ -38,33 +39,6 @@ type SealEventLike = Readonly<{
   d: Diger;
 }>;
 type SealLastLike = Readonly<{ i: Prefixer }>;
-
-function hexToFixedBytes(hex: string, size: number): Uint8Array {
-  const normalized = hex.length % 2 === 0 ? hex : `0${hex}`;
-  if (!/^[0-9a-f]+$/i.test(normalized)) {
-    throw new ValidationError(`Invalid hex ordinal ${hex}`);
-  }
-  if (normalized.length > size * 2) {
-    throw new ValidationError(`Hex ordinal ${hex} exceeds ${size} bytes.`);
-  }
-
-  const raw = new Uint8Array(size);
-  const padded = normalized.padStart(size * 2, "0");
-  for (let i = 0; i < size; i++) {
-    raw[i] = Number.parseInt(padded.slice(i * 2, (i * 2) + 2), 16);
-  }
-  return raw;
-}
-
-function encodeSealSeqnerQb64b(
-  seq: NumberPrimitive | Seqner | string,
-): Uint8Array {
-  if (seq instanceof Seqner) {
-    return seq.qb64b;
-  }
-  const snh = typeof seq === "string" ? seq : seq.numh;
-  return new Seqner({ code: "0A", raw: hexToFixedBytes(snh, 16) }).qb64b;
-}
 
 function concatMessageWithAttachmentGroup(
   serder: SerderKERI | SerderACDC,
@@ -223,7 +197,7 @@ export function messagize(
     if (seal && "s" in seal && "d" in seal) {
       const transPayload = [
         seal.i.qb64b,
-        encodeSealSeqnerQb64b(seal.s),
+        attachmentOrdinal(seal.s, gvrsn).qb64b,
         seal.d.qb64b,
         ...sigerGroup,
       ];
@@ -256,13 +230,12 @@ export function messagize(
   }
 
   if (tsgs.length > 0) {
-    // Frozen 714 emits one aggregate group in supplied order; v2 preserves qualified ordinals.
+    // Frozen 714 emits one aggregate group in supplied order with genus-canonical ordinals.
     const payload = tsgs.flatMap((group) => {
       const signatures = group.sigers.map((siger) => siger.qb64b);
-      const ordinal = gvrsn.major >= 2 ? group.seqner.qb64b : encodeSealSeqnerQb64b(group.seqner);
       return [
         group.prefixer.qb64b,
-        ordinal,
+        attachmentOrdinal(group.seqner, gvrsn).qb64b,
         group.diger.qb64b,
         attachmentCounterPayloadQb64b("ControllerIdxSigs", group.sigers.length, signatures, gvrsn),
         ...signatures,
@@ -341,7 +314,7 @@ export function buildProof(
   ];
   const transPayload = [
     prefixer.qb64b,
-    seqner.qb64b,
+    attachmentOrdinal(seqner, gvrsn).qb64b,
     diger.qb64b,
     ...sigerGroup,
   ];
@@ -416,10 +389,8 @@ export function messageAttachmentGroups(
   for (const tsg of tsgs) {
     const sigers = tsg.sigers.map((siger) => siger.qb64b);
     const inner = attachmentCounterPayloadQb64b("ControllerIdxSigs", tsg.sigers.length, sigers, gvrsn);
-    // Frozen KERIpy v2 preserves the supplied qualified Number; only v1 widens it to Seqner.
-    const ordinal = gvrsn.major >= 2 || tsg.seqner instanceof Seqner
-      ? tsg.seqner
-      : new Seqner({ code: "0A", raw: hexToFixedBytes(tsg.snh, 16) });
+    // KERIpy writes the compact v2 Number or the fixed v1 Seqner, whichever ordinal it holds.
+    const ordinal = attachmentOrdinal(tsg.seqner, gvrsn);
     const payload = [tsg.prefixer.qb64b, ordinal.qb64b, tsg.diger.qb64b, inner, ...sigers];
     const header = attachmentCounterPayloadQb64b("TransIdxSigGroups", 1, payload, gvrsn);
     groups.push(
@@ -443,7 +414,7 @@ export function messageAttachmentGroups(
     const triples = sourceSeals.map((seal) =>
       [
         seal.i,
-        gvrsn.major >= 2 ? seal.s : new Seqner({ code: "0A", raw: hexToFixedBytes(seal.s.numh, 16) }),
+        attachmentOrdinal(seal.s, gvrsn),
         seal.d,
       ] as const
     );

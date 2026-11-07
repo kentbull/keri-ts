@@ -31,7 +31,11 @@ import {
 import { resolveCachedSchema } from "../app/credentials/schema-resolving.ts";
 import { Verifier, type VerifierDecision } from "../app/credentials/verifying.ts";
 import type { Hab, Habery } from "../app/identity/habbing.ts";
-import { attachmentCounterPayloadQb64b, resolveAttachmentGvrsn } from "../core/attachment-countering.ts";
+import {
+  attachmentCounterPayloadQb64b,
+  attachmentOrdinal,
+  resolveAttachmentGvrsn,
+} from "../core/attachment-countering.ts";
 import type { AgentCue } from "../core/cues.ts";
 import { Deck } from "../core/deck.ts";
 import { DatabaseOperationError, ValidationError } from "../core/errors.ts";
@@ -114,17 +118,6 @@ function ordinal(num: number | bigint): NumberPrimitive {
     value >>= 8n;
   }
   return new NumberPrimitive({ code: NumDex.Huge, raw });
-}
-
-/** Encode an ordinal value as the fixed-width v1 seal primitive. */
-function seqner(num: number | bigint): Seqner {
-  const raw = new Uint8Array(16);
-  let value = BigInt(num);
-  for (let i = raw.length - 1; i >= 0; i--) {
-    raw[i] = Number(value & 0xffn);
-    value >>= 8n;
-  }
-  return new Seqner({ code: NumDex.Huge, raw });
 }
 
 function said(serder: { said: string | null }): string {
@@ -278,11 +271,10 @@ export function serializeCredential(
   gvrsn: Versionage = Vrsn_1_0,
 ): Uint8Array {
   gvrsn = resolveAttachmentGvrsn(creder, gvrsn);
-  // V1 requires a fixed-width Seqner; v2 accepts the stored qualified Number unchanged.
-  const ordinal = gvrsn.major === 1 && !(number instanceof Seqner) ? seqner(number.num) : number;
+  // V1 requires a fixed-width Seqner; v2 writes the compact Number.
   const sealPayload = [
     prefixer.qb64b,
-    ordinal.qb64b,
+    attachmentOrdinal(number, gvrsn).qb64b,
     saider.qb64b,
   ];
   return concatBytes(

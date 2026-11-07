@@ -1,4 +1,4 @@
-import { Counter, CtrDexV1, CtrDexV2, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
+import { Counter, CtrDexV1, CtrDexV2, NumberPrimitive, Seqner, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { ValidationError } from "./errors.ts";
 
 /**
@@ -50,6 +50,36 @@ export function resolveAttachmentGvrsn(
     resolved = serderGvrsn;
   }
   return resolved;
+}
+
+/**
+ * Qualify a sequence or first-seen ordinal for an attachment of genus `gvrsn`.
+ *
+ * KERIpy `messagize` (`_v1seqner`/`_v2number`): v1 attachments carry the fixed-width
+ * `0A` Seqner, v2 attachments the smallest automatic Number code (`MAAB` for 1),
+ * whatever primitive the caller holds, so a freshly signed message and one rebuilt
+ * from storage serialize to the same bytes. Hex strings are KERI `snh` ordinals.
+ */
+export function attachmentOrdinal(
+  ordinal: NumberPrimitive | Seqner | string,
+  gvrsn: Versionage,
+): NumberPrimitive | Seqner {
+  if (gvrsn.major === 1 && ordinal instanceof Seqner) return ordinal;
+  const value = ordinal instanceof Seqner
+    ? ordinal.sn
+    : ordinal instanceof NumberPrimitive
+    ? ordinal.num
+    : hexOrdinal(ordinal);
+  if (gvrsn.major >= 2) return NumberPrimitive.fromNum(value);
+  if (value >= 1n << 128n) throw new ValidationError(`Ordinal ${value} exceeds the 16-byte v1 Seqner.`);
+  const raw = new Uint8Array(16);
+  for (let at = raw.length - 1, rest = value; at >= 0; at--, rest >>= 8n) raw[at] = Number(rest & 0xffn);
+  return new Seqner({ code: "0A", raw });
+}
+
+function hexOrdinal(hex: string): bigint {
+  if (!/^[0-9a-f]+$/i.test(hex)) throw new ValidationError(`Invalid hex ordinal ${hex}`);
+  return BigInt(`0x${hex}`);
 }
 
 /** Build one bare attachment counter using the code family for `gvrsn`. */

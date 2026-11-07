@@ -14,7 +14,6 @@ import {
   Prefixer,
   Saider,
   SealEvent,
-  Seqner,
   SerderKERI,
   Siger,
   t,
@@ -30,6 +29,7 @@ import {
   type AttachmentCounterName,
   attachmentCounterPayloadQb64b,
   attachmentCounterQb64b,
+  attachmentOrdinal,
   resolveAttachmentGvrsn,
 } from "../core/attachment-countering.ts";
 import type { DispatchOrdinal } from "../core/dispatch.ts";
@@ -163,10 +163,6 @@ function hugeOrdinalRaw(num: number | bigint): Uint8Array {
     value >>= 8n;
   }
   return raw;
-}
-
-function seqnerFromNumber(number: NumberPrimitive): Seqner {
-  return new Seqner({ code: NumDex.Huge, raw: hugeOrdinalRaw(number.num) });
 }
 
 /** Options for opening a `Baser` LMDB environment and its named subdb surface. */
@@ -1497,11 +1493,8 @@ export class Baser {
       for (const siger of entries) parts.push(siger.qb64b);
       return parts;
     };
-    /** Legacy v1 seals require Seqner; v2 preserves the stored qualified Number. */
-    const ordinal = (value: NumberPrimitive): Uint8Array =>
-      gvrsn.major === 1
-        ? seqnerFromNumber(value).qb64b
-        : value.qb64b;
+    /** V1 seals require the fixed Seqner; v2 writes the compact Number whatever width was stored. */
+    const ordinal = (value: NumberPrimitive): Uint8Array => attachmentOrdinal(value, gvrsn).qb64b;
     const sigers = signatures(this.sigs.getIter(dgkey));
     if (sigers.length === 0) throw new DatabaseOperationError(`Missing indexed signatures for ${pre}:${said}`);
     group("ControllerIdxSigs", sigers.length, sigers);
