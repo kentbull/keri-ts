@@ -83,12 +83,16 @@ verify package/manifests/build inputs rather than relabeling the tag.
 [`docker/tufa/Dockerfile`](../../docker/tufa/Dockerfile) packages an
 already-published `@keri-ts/tufa` version from npm, never repository source, so
 the image carries the released bytes. Every deployable service is a `tufa`
-subcommand chosen by the container command; keystores live on the
-`/usr/local/var/keri` volume and the process runs as the unprivileged `node` user.
-After the npm release, dispatch the Tufa Docker workflow with that version. It
-builds linux/amd64 and linux/arm64, smokes each with init, incept, rotate and a
-reopened list on native LMDB, then pushes `<version>`, `<major>.<minor>` and
-optionally `latest`. A new GHCR package starts private; make it public once.
+subcommand, so each `keri-ts-<role>` image is a Dockerfile target over that one
+installation whose entrypoint is the service command: `tufa` (full CLI), `agent`,
+`witness` (`witness start`), `hosted-witness` (`witness backend`), `watcher`,
+`mailbox`, `registrar`, `observer`, `verifier`, `boot` and `dws-resolver`.
+Keystores live on the `/usr/local/var/keri` volume and the process runs as the
+unprivileged `node` user. After the npm release, dispatch the Tufa Docker workflow
+with that version. It builds linux/amd64 and linux/arm64, smokes the CLI image with
+init, incept, rotate and a reopened list on native LMDB, checks each role's command,
+then pushes `<version>`, `<major>.<minor>` and optionally `latest` for every image.
+A new GHCR package starts private; make each one public once.
 
 ## Recorded baseline
 
