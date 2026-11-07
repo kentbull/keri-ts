@@ -1,5 +1,11 @@
 # keri-ts
 
+## 2.0.1
+
+### Patch Changes
+
+- 0ca9a3b: Reject credentials whose body does not match their SAID in `Verifier.processCredential`. Parsed ACDCs are hydrated without verification, so an altered body under its original SAID was previously saved and indexed.
+
 ## 2.0.0
 
 ### Breaking changes
