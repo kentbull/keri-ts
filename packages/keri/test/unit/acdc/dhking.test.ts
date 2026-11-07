@@ -508,8 +508,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     // Replicate the custodian's existing root to its already rotated, rootless signing member by ESSR exn.
     const recipient = issuees[1];
     const holderRoot = new RegistryRoot(holder.hby, holder.runtime.acdc!, holder.runtime.notifier);
-    const recipientRoot = new RegistryRoot(recipient.hby, recipient.runtime.acdc!, recipient.runtime.notifier);
-    recipient.runtime.exc.addHandler(recipientRoot);
+    const recipientRoot = recipient.runtime.registryRoot!;
     const retainedHistory = recipient.hby.db.enst.get(grant.said!);
     assertEquals(holderRoot.members(holder.hab.pre), issuees.map(side => side.member.pre));
     const copy = holderRoot.prepare(holder.member, recipient.member.pre, holder.hab.pre, rip.said!, {
@@ -611,8 +610,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       kram: { enabled: true },
     });
     yield* ensure(() => newcomerRuntime.close());
-    const newcomerRoot = new RegistryRoot(newcomer.hby, newcomerRgy, newcomerRuntime.notifier);
-    newcomerRuntime.exc.addHandler(newcomerRoot);
+    const newcomerRoot = newcomerRuntime.registryRoot!;
     const catchUp = holderRoot.prepare(holder.member, newcomer.member.pre, holder.hab.pre, rip.said!, {
       td: credential.said!,
     });

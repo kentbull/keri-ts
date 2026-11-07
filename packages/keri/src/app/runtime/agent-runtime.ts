@@ -3,6 +3,7 @@ import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3
 import { Dhke } from "../../acdc/dhking.ts";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
+import { RegistryRoot } from "../../acdc/salting.ts";
 import { Unblind } from "../../acdc/unblinding.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
@@ -29,7 +30,7 @@ import { publishPendingTel } from "../credentials/tel-publishing.ts";
 import { Poster } from "../delivery/forwarding.ts";
 import { ReplyStreams } from "../delivery/reply-streams.ts";
 import { Respondant } from "../delivery/respondant.ts";
-import { Exchanger } from "../exchanges/exchanging.ts";
+import { Exchanger, RouteRefuser } from "../exchanges/exchanging.ts";
 import { loadChallengeHandlers } from "../identity/challenging.ts";
 import { Anchorer, loadDelegationHandlers } from "../identity/delegating.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -130,6 +131,11 @@ export interface AgentRuntime {
   readonly vdr: VdrRegery | null;
   /** V2 registry services, separately owned from the legacy VDR environment. */
   readonly acdc: AcdcRegery | null;
+  /**
+   * Registered `/registry/root` owner; null without a v2 registry or when the
+   * composition refuses root copies.
+   */
+  readonly registryRoot: RegistryRoot | null;
   /** Borrowed HTTP implementation selected by the application root. */
   readonly http: HttpClient;
   /** Borrowed clock selected by the same application root. */
@@ -173,6 +179,13 @@ export interface AgentRuntimeOptions {
   kram?: KramConfig;
   /** Select one local owner; requires an available v2 registry and explicitly enabled KRAM. */
   ipexAuxiliary?: IpexAuxiliarySelection;
+  /**
+   * `/registry/root` policy. `"accept"` (default) registers `RegistryRoot` when
+   * a v2 registry is available, so copies are retained or escrowed on arrival.
+   * `"refuse"` registers a `RouteRefuser` so a copy is rejected and nothing is
+   * persisted; service roles that hold no registries use it.
+   */
+  registryRoots?: "accept" | "refuse";
 }
 
 /** Summary of pending runtime-backed durable work for bounded command hosts. */
@@ -349,6 +362,9 @@ export function* createAgentRuntime(
     notifier,
     registry: acdc?.store ?? null,
   });
+  // Construction adopts stored copies an earlier handler-less Exchanger left unescrowed.
+  const registryRoot = options.registryRoots !== "refuse" && acdc ? new RegistryRoot(hby, acdc, notifier) : null;
+  if (registryRoot) exc.addHandler(registryRoot);
   const mailboxDirector = yield* resource<MailboxDirector>(function*(provide) {
     const director = new MailboxDirector(hby, {
       ...(mailboxer ? { mailboxer } : {}),
@@ -380,6 +396,8 @@ export function* createAgentRuntime(
       mailboxDirector.registerTopic(topic);
     }
   }
+  // Copies ride the credential topic; the refuser adds no mailbox topic of its own.
+  if (options.registryRoots === "refuse") exc.addHandler(new RouteRefuser(RegistryRoot.Route));
   const mailboxPoller = new MailboxPoller(
     hby,
     mailboxDirector,
@@ -434,6 +452,7 @@ export function* createAgentRuntime(
     replyStreams,
     vdr,
     acdc,
+    registryRoot,
     http,
     clock,
     /**

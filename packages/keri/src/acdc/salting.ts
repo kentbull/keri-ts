@@ -180,9 +180,11 @@ export function rootExn(
 /**
  * Replicate held registry roots to individual members by ESSR `exn`.
  *
- * Local profile route `/registry/root`; see `rootExn` for the wire. Register on
- * the Habery's Exchanger with `exc.addHandler`. Authorization uses the accepted
- * KEL and TEL only:
+ * Local profile route `/registry/root`; see `rootExn` for the wire.
+ * `createAgentRuntime` registers one instance on its Exchanger whenever a v2
+ * registry is available (`runtime.registryRoot`), so every runtime that polls
+ * the `credential` mailbox retains copies with no extra command. Authorization
+ * uses the accepted KEL and TEL only:
  *
  * - recipient `ri`: a local individual habitat that is a current signing member
  *   of `gid` (or is `gid`, an individual holder) with a local group habitat for
@@ -217,7 +219,8 @@ export function rootExn(
  * (plaintext mismatch, undecryptable, membership lost, or a different root
  * already retained, which is never replaced) is dropped from escrow; the signed
  * exchange stays in `exns`. `receive` is a manual retry that can supply a BUP or
- * opening.
+ * opening. `reconcile`, run on construction, adopts copies an Exchanger without
+ * this handler stored earlier.
  *
  * TypeScript divergences: `verify` runs inside the Exchanger's synchronous LMDB
  * writer, so it only reads stores; `handle` escrows and attempts after commit.
@@ -239,6 +242,7 @@ export class RegistryRoot implements ExchangeRouteHandler {
     this.hby = hby;
     this.rgy = rgy;
     this.notifier = notifier;
+    if (!hby.readonly) this.reconcile();
   }
 
   // policy
@@ -648,6 +652,34 @@ export class RegistryRoot implements ExchangeRouteHandler {
    */
   processEscrows(): void {
     for (const [keys] of [...this.hby.db.rrpe.getTopItemIter()]) this.attempt(keys.join("."));
+  }
+
+  /**
+   * Adopt stored copies that never reached this handler's escrow.
+   *
+   * An Exchanger without this route registered still authenticates and stores
+   * a `/registry/root` copy in `exns` and `essrs`, but nothing escrows or
+   * retries it. Scan the ESSR-bearing exchanges for stored copies addressed to
+   * a local individual habitat that are neither escrowed nor already retained
+   * for their `(gid, rd)`, escrow each and attempt it like a fresh arrival.
+   * Every attempt re-runs full authorization against current local state; a
+   * locked or unencrypted Keeper leaves the copy escrowed. Returns the SAIDs
+   * newly escrowed.
+   */
+  reconcile(): string[] {
+    const db = this.hby.db, adopted: string[] = [];
+    const saids = new Set([...db.essrs.getTopItemIter()].map(([keys]) => keys.join(".")));
+    for (const said of saids) {
+      const serder = db.exns.get([said]);
+      if (serder?.route !== RegistryRoot.Route || db.rrpe.get([said]) || this.retains(serder)) continue;
+      const recipient = serder.sad?.ri;
+      const hab = typeof recipient === "string" ? this.hby.habs.get(recipient) : undefined;
+      if (!hab || isLocalGroupHab(this.hby, hab)) continue;
+      db.rrpe.put([said], new Dater({ dts: makeNowIso8601() }));
+      adopted.push(said);
+      this.attempt(said);
+    }
+    return adopted;
   }
 
   /**

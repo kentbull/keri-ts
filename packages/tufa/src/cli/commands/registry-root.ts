@@ -32,7 +32,7 @@ import {
   localGroupMember,
   Organizer,
   type RegistryDisclosure,
-  RegistryRoot,
+  type RegistryRoot,
   RootUnverified,
   runAgentRuntime,
   type RuntimeClock,
@@ -197,7 +197,6 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
     throw new ValidationError("--event and --opening retry one stored copy; add --said");
   }
   const proof = options.opening ? heldOpening(yield* call(() => Deno.readFile(options.opening!))) : undefined;
-  runtime.exc.addHandler(root);
   if (options.messages.length) {
     for (const path of options.messages) yield* runtime.reactor.processBytes(yield* call(() => Deno.readFile(path)));
   } else if (options.listen) {
@@ -250,7 +249,8 @@ export function* registryRoot(
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
   }
-  if (!runtime.acdc) throw new ValidationError("ACDC v2 registry processing is unavailable");
+  const root = runtime.registryRoot;
+  if (!root) throw new ValidationError("ACDC v2 registry processing is unavailable");
   const group = isLocalGroupHab(runtime.hby, hab);
   const member = group ? localGroupMember(runtime.hby, hab.pre!) : hab;
   if (!hab.kever || !member.kever) {
@@ -262,7 +262,7 @@ export function* registryRoot(
     hab,
     member,
     group,
-    root: new RegistryRoot(runtime.hby, runtime.acdc, runtime.notifier),
+    root,
     deadline: runtime.clock.now() + options.timeoutMs,
   };
   if (options.verb === "receive") yield* receive(context, options);
