@@ -224,7 +224,13 @@ the KERIpy local-profile `/registry/root` ESSR `exn`
 The sending member's individual Hab signs one bare v2 `exn` per (recipient,
 registry) with `a={essr, gid, rd}`; the attached ESSR payload is a sealed box to
 the recipient's current first Ed25519 key holding `{i, ri, gid, rd, s, e[, td]}`.
-Register the owner on the Habery's Exchanger. Authorization reads accepted
+`createAgentRuntime` registers one owner on its Exchanger whenever a v2 registry
+is available (`runtime.registryRoot`), so every runtime that polls the
+`credential` mailbox retains copies; `registryRoots: "refuse"` registers the
+generic `RouteRefuser` instead (verify false, nothing persisted) for service
+roles. Construction runs `reconcile()`, which escrows and attempts stored copies
+in `exns`/`essrs` that an Exchanger without the handler accepted but never
+escrowed. Authorization reads accepted
 KEL/TEL state only: the recipient is a local individual Hab that is a current
 signing member of `gid` (next-key-only participation is insufficient), the
 sender a historical member of `gid`, the registry issuer or a historical issuer

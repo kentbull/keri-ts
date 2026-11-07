@@ -127,7 +127,9 @@ refuse. KRAM admission alone supplies no consent.
 handler, since the Exchanger checks only a v1 string `a`. Its `verify` is the
 read-only admission decision (stored SAID → false); `handle` escrows and attempts
 retention after commit. Route handlers that define `processEscrows()` opt into the
-Exchanger's escrow pass, as KERIpy `Exchanger.processEscrow` does. Group authority comes from the KEL, never a group signature:
+Exchanger's escrow pass, as KERIpy `Exchanger.processEscrow` does. An unhandled
+route is still authenticated and stored, never revisited; a role that must never
+accept a route registers `RouteRefuser(route)` (verify false, nothing persisted). Group authority comes from the KEL, never a group signature:
 KERIpy partial-signature escrow does not keep `essrs`.
 `Unblind` separately approves one live presentation and freezes its
 exact bodies, registry scope and original deadline. The disclosee's signed query

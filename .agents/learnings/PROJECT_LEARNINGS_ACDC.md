@@ -234,7 +234,10 @@ automatic (KERIpy #168): `handle` escrows in `rrpe` (SAID -> escrow time, no tim
 attempts at once; `processEscrows`, driven by `Exchanger.processEscrows`, retries.
 RootUnverified/RootDeferred/locked Keeper keep until retained or refused;
 other ValidationErrors drop (including a root conflicting with the retained one); one note only on new retention; `receive` is manual retry.
-`newcomers` derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is a drain (`--message`, `--listen --registry`, one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
+`createAgentRuntime` registers it (`runtime.registryRoot`) whenever a v2 registry exists, so every mailbox-polling
+runtime retains copies with no command; construction `reconcile()`s stored-but-unescrowed copies. Service roles
+pass `registryRoots: "refuse"` (`RouteRefuser`, nothing persisted). Never register a second instance on a runtime.
+`newcomers` derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is an optional drain (`--message`, `--listen --registry`, reconcile plus one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
 roster selector; missing custody never starts fresh DH.
 WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact

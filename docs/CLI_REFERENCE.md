@@ -119,7 +119,7 @@ The listener does not change mailbox query authorization or group signature thre
 | `tufa vc registry list`           | List local credential registries.                                                             |
 | `tufa vc registry status`         | Show one credential registry state.                                                           |
 | `tufa vc registry root send`      | Send one held registry root to members by ESSR `exn` through their mailboxes.                 |
-| `tufa vc registry root receive`   | Ingest registry root copies; verifiable roots are retained automatically.                     |
+| `tufa vc registry root receive`   | Optional drain; any runtime polling the credential mailbox already retains root copies.       |
 | `tufa vc registry root newcomers` | Send every held group root to the members added by one accepted group rotation.               |
 | `tufa vc create`                  | Create and issue a registry-backed credential.                                                |
 | `tufa vc list`                    | List saved credentials.                                                                       |
@@ -198,7 +198,14 @@ tufa vc registry root send -n issuer -a issuer --registry REGISTRY --recipient H
 tufa vc registry root newcomers -n lead -a holder-group --rotation ROTATION
 ```
 
-Received copies are accepted automatically; there is no approval step. A copy
+Received copies are accepted automatically; there is no approval step and no
+command to run first. Every agent runtime registers the `/registry/root` handler
+when it has an ACDC v2 registry, so any Tufa command or host that polls the
+`credential` mailbox (`tufa agent`, IPEX commands, embedding applications)
+retains copies on arrival, and a runtime opened later adopts copies an earlier
+handler-less process stored but never escrowed. Service roles (hosted witness and
+watcher, boot, registrar, observer) refuse copies instead: nothing is persisted.
+Embedding applications choose the policy with `createAgentRuntime(..., { registryRoots: "accept" | "refuse" })`; `"accept"` is the default. A copy
 that verifies on arrival (authorization, decryption, plaintext binding, and the
 root checked against a held opening or the accepted BUP commitment with the `td`
 hint) is retained at once with one informational notification. A copy that
@@ -207,9 +214,10 @@ escrowed and retried by the ordinary escrow loop until it is retained or refused
 with no timeout, so an offline newcomer never needs a resend. A copy refused on
 any attempt, including one that conflicts with the retained root, is dropped.
 
-`receive` is a drain. `--listen` processes the `credential` mailbox until the
-root for `--registry` is retained; `--message FILE` ingests a file copy through
-the same path. Each run then retries escrowed copies once, prints copies still
+`receive` is an optional convenience drain for scripts and manual retries.
+`--listen` processes the `credential` mailbox until the root for `--registry` is
+retained; `--message FILE` ingests a file copy through the same path. Each run
+then adopts stored copies no handler escrowed, retries escrowed copies once, prints copies still
 pending (`retained: false`) and, with `--registry`, prints `retained: true` or
 fails when that root is not retained:
 
