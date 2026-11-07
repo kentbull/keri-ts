@@ -321,7 +321,7 @@ function* reconcileWitnessIdentity(
   hab: Hab,
   startup: WitnessStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { registryRoots: "refuse" });
   try {
     yield* settleRuntimeIngress(runtime, [
       hab.makeLocScheme(startup.httpUrl, hab.pre, schemeForUrl(startup.httpUrl), startup.datetime),

@@ -1,5 +1,5 @@
 /** Actual private/public backend lifecycle and controller protocol use; no substituted service objects. */
-import { Matter, parseBytes, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
+import { Diger, Matter, MtrDex, parseBytes, Salter, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import {
@@ -11,6 +11,7 @@ import {
   messagize,
   Receiptor,
   registerWithWitness,
+  rootExn,
   settleRuntimeIngress,
   systemClock,
 } from "keri-ts/runtime";
@@ -18,6 +19,21 @@ import { Secret, TOTP } from "npm:otpauth@9.4.1";
 import { mailboxAddCommand } from "../src/cli/commands/mailbox.ts";
 import { rotateWithCredentialsCommand } from "../src/cli/commands/rotate.ts";
 import { runHostedWitnesses } from "../src/roles/hosted-witness.ts";
+
+/** Return every witness allocation directory under the provider's head directory. */
+async function allocationDirectories(root: string): Promise<string[]> {
+  const found: string[] = [];
+  for await (const entry of Deno.readDir(root)) {
+    if (!entry.isDirectory) continue;
+    const path = `${root}/${entry.name}`;
+    if (entry.name === "allocations") {
+      for await (const allocation of Deno.readDir(path)) {
+        if (allocation.isDirectory) found.push(`${path}/${allocation.name}`);
+      }
+    } else found.push(...await allocationDirectories(path));
+  }
+  return found;
+}
 
 /** Select distinct local ports before opening the real listeners. */
 function ports(): [number, number] {
@@ -164,8 +180,34 @@ Deno.test("KF witness backend registers, receipts, reopens and deletes isolated 
         yield* settleRuntimeIngress(runtime, [receiptBytes]);
         assertEquals(hby.db.fullyWitnessed(controller.kever!.serder), true);
 
+        // A witness holds no registries: it refuses a registry root copy addressed to it.
+        const registry =
+          new Diger({ code: MtrDex.Blake3_256, raw: Diger.digest(new TextEncoder().encode("rd"), MtrDex.Blake3_256) })
+            .qb64;
+        const root = new Salter({ raw: new TextEncoder().encode("witness-test-rt!"), code: MtrDex.Salt_128 });
+        const copy = rootExn(controller, first.eid, first.eid, registry, root, { event: registry });
+        const offered = yield* call(() => post(copy, false, "/"));
+        yield* call(() => offered.arrayBuffer());
+        const copySaid = (parseBytes(copy)[0].body as SerderKERI).said!;
+
         // Reopen the actual provider stores; the same encrypted code and witness AID must still work.
         yield* server!.halt();
+        for (const directory of yield* call(() => allocationDirectories(folder))) {
+          const witness = yield* createHabery({
+            name: "witness",
+            headDirPath: directory,
+            bran: options.passcode,
+            skipConfig: true,
+            skipSignator: true,
+          });
+          try {
+            assertEquals(witness.db.exns.get([copySaid]), null);
+            assertEquals(witness.db.essrs.get([copySaid]), []);
+            assertEquals(witness.db.rrpe.get([copySaid]), null);
+          } finally {
+            yield* witness.close();
+          }
+        }
         yield* start();
         const interaction = controller.interact();
         const resumed = yield* call(() => post(interaction, true));

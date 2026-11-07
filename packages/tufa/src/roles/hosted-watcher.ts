@@ -398,6 +398,7 @@ export class HostedWatchers {
       record.eid = hab.pre;
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         enableMailboxStore: false,
+        registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },
       });
       hosted = new HostedWatcher(

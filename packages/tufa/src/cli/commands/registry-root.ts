@@ -8,8 +8,11 @@
  * to a file instead. `receive` ingests copies from the `credential` mailbox
  * (`--listen`) or `--message` files through the ordinary Reactor, KRAM and
  * Exchanger path; the handler retains each verifiable root automatically and
- * escrows the rest for retry. `receive` then drains that escrow once and reports
- * what is retained or still pending, as KERIpy `kli vc registry root receive`.
+ * escrows the rest for retry. `receive` then adopts stored copies that never
+ * reached a handler, drains that escrow once and reports what is retained or
+ * still pending, as KERIpy `kli vc registry root receive`. It is an optional
+ * convenience: every agent runtime registers the handler, so any command or
+ * host that polls the `credential` mailbox already retains copies.
  */
 import {
   BlindState,
@@ -211,7 +214,8 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
       yield* host.halt();
     }
   }
-  // Drain: retry every stored copy whose local state may now be present.
+  // Drain: adopt stored copies no handler escrowed, then retry every escrowed copy.
+  root.reconcile();
   root.processEscrows();
   if (options.said) {
     try {

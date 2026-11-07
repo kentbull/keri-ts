@@ -61,7 +61,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
     ["send", "Send one held registry root to members by ESSR exn through their mailboxes", "registryRootSendCommand"],
     [
       "receive",
-      "Ingest registry root copies; verifiable roots are retained automatically",
+      "Optional drain: any runtime that polls the credential mailbox already retains root copies",
       "registryRootReceiveCommand",
     ],
     [
@@ -100,7 +100,7 @@ export function registerVcCmds(program: Command, dispatch: CommandDispatch): voi
         .option("--said <said>", "Manually retry this stored exn SAID (with --event/--opening)")
         .option("--event <said>", "Accepted BUP SAID overriding the sender hint for --said")
         .option("--opening <file>", "Held CESR state opening file for --said")
-        .option("--listen", "Process the credential mailbox until --registry is retained")
+        .option("--listen", "Optional: process the credential mailbox until --registry is retained")
         .option("--message <file>", "Fallback: signed exn file (repeatable)", collectOption, []);
     }
     registerDispatchedCommand(command, dispatch, {
