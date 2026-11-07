@@ -78,6 +78,21 @@ publish helper; preserve artifact identity and original tag provenance. If a
 workflow-only repair runs at another commit, record both source identities and
 verify package/manifests/build inputs rather than relabeling the tag.
 
+## Container images
+
+[`docker/tufa/Dockerfile`](../../docker/tufa/Dockerfile) packages an
+already-published `@keri-ts/tufa` version from npm, never repository source, so
+the image carries the released bytes. It is published once as `keri-ts-tufa`
+with `ENTRYPOINT ["tufa"]`; every deployable service is the container command:
+`agent`, `witness start`, `witness backend` (hosted witness), `watcher backend`,
+`mailbox start`, `registrar start`, `observer start`, `verifier run`,
+`boot backend` and `dws resolver`. Keystores live on the `/usr/local/var/keri`
+volume and the process runs as the unprivileged `node` user. After the npm
+release, dispatch the Tufa Docker workflow with that version. It builds
+linux/amd64 and linux/arm64, smokes each with init, incept, rotate and a reopened
+list on native LMDB, then pushes `<version>`, `<major>.<minor>` and optionally
+`latest`. A new GHCR package starts private; make it public once.
+
 ## Recorded baseline
 
 The [1.0.0 qualification report](../reports/parity/CLEANUP_RELEASE_2026-10-16.md)

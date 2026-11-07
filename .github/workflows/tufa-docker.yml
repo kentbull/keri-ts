@@ -1,0 +1,91 @@
+name: Tufa Docker
+
+# Publish the production keri-ts-tufa image from an already-published npm
+# version. The image installs @keri-ts/tufa from the registry, so it carries the
+# exact released bytes; it is never built from repository source. Every service
+# is a tufa subcommand chosen by the container command.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published @keri-ts/tufa version to package (for example 2.0.0)
+        required: true
+        type: string
+      latest:
+        description: Also tag the image as latest
+        required: true
+        default: true
+        type: boolean
+      push:
+        description: Push to GHCR after the smoke checks pass
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE: ghcr.io/kentbull/keri-ts-tufa
+  NODE_IMAGE_TAG: 25.9.0-bookworm-slim
+  BINFMT_IMAGE: tonistiigi/binfmt@sha256:8f58e6214f4cc9dc83ce8f5acad1ece508eb6b20e696a8c1e9f274481982c541
+  PLATFORMS: linux/amd64,linux/arm64
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: require a published npm version
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Expected an exact x.y.z version" >&2; exit 1; }
+          test "$(npm view "@keri-ts/tufa@${VERSION}" version)" = "$VERSION"
+
+      - name: prepare multi-platform builder
+        run: |
+          docker run --privileged --rm "$BINFMT_IMAGE" --install arm64
+          docker buildx create --name tufa --driver docker-container --use
+
+      - name: build and smoke each platform
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          for platform in ${PLATFORMS//,/ }; do
+            arch="${platform##*/}"
+            tag="local/keri-ts-tufa:${VERSION}-${arch}"
+            docker buildx build --platform "$platform" --load \
+              --build-arg "NODE_IMAGE_TAG=${NODE_IMAGE_TAG}" \
+              --build-arg "TUFA_VERSION=${VERSION}" \
+              --tag "$tag" docker/tufa
+            docker run --rm --platform "$platform" "$tag" version | grep -F "tufa ${VERSION}"
+            store="tufa-smoke-${arch}"
+            docker volume create "$store"
+            run() { docker run --rm --platform "$platform" -v "$store:/usr/local/var/keri" "$tag" "$@"; }
+            run init --name smoke --nopasscode --salt 0AAwMTIzNDU2Nzg5YWJjZGVm
+            run incept --name smoke --alias one --transferable --icount 1 --isith 1 --ncount 1 --nsith 1 --toad 0
+            run rotate --name smoke --alias one
+            run list --name smoke | grep -F "one ("
+          done
+
+      - name: log in to GHCR
+        if: ${{ inputs.push }}
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: push multi-platform image
+        if: ${{ inputs.push }}
+        env:
+          VERSION: ${{ inputs.version }}
+          LATEST: ${{ inputs.latest }}
+        run: |
+          tags=(--tag "${IMAGE}:${VERSION}" --tag "${IMAGE}:${VERSION%.*}")
+          if [[ "$LATEST" == true ]]; then tags+=(--tag "${IMAGE}:latest"); fi
+          docker buildx build --platform "$PLATFORMS" --push \
+            --build-arg "NODE_IMAGE_TAG=${NODE_IMAGE_TAG}" \
+            --build-arg "TUFA_VERSION=${VERSION}" \
+            "${tags[@]}" docker/tufa
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
