@@ -2,24 +2,40 @@
 
 This guide compares the supported npm exports and declarations of published
 **cesr-ts 1.0.0, keri-ts 1.0.0 and @keri-ts/tufa 1.0.0** with the coordinated
-2.0.0 preparation. Publication is deferred. Upgrade all three packages together.
-No aliases, migration readers or compatibility with old keri-ts private storage
-formats are provided. KERI/ACDC/CESR protocol interoperability is a separate
-requirement; a package major version does not select a wire version.
+2.0.0 release. Upgrade all packages together; every 2.0.0 package pins its
+internal dependencies to 2.0.0. No aliases, migration readers or compatibility
+with old keri-ts private storage formats are provided. KERI/ACDC/CESR protocol
+interoperability is a separate requirement; a package major version does not
+select a wire version.
 
 ## Package entrypoints
 
-| Package       | Supported npm imports                                                                                        |
-| ------------- | ------------------------------------------------------------------------------------------------------------ |
-| cesr-ts       | `cesr-ts`                                                                                                    |
-| keri-ts       | `keri-ts`, `keri-ts/runtime`, `keri-ts/db`, `keri-ts/cli`                                                    |
-| @keri-ts/tufa | `@keri-ts/tufa`, `@keri-ts/tufa/runtime`, `@keri-ts/tufa/host/kernel`, `@keri-ts/tufa/http/protocol-handler` |
+| Package            | Supported npm imports                                     |
+| ------------------ | --------------------------------------------------------- |
+| cesr-ts            | `cesr-ts`                                                 |
+| keri-ts            | `keri-ts`, `keri-ts/runtime`, `keri-ts/db`, `keri-ts/cli` |
+| @keri-ts/hosting   | `@keri-ts/hosting` (new)                                  |
+| @keri-ts/registrar | `@keri-ts/registrar` (new)                                |
+| @keri-ts/wallet    | `@keri-ts/wallet` (new)                                   |
+| @keri-ts/verifier  | `@keri-ts/verifier` (new)                                 |
+| @keri-ts/observer  | `@keri-ts/observer` (new)                                 |
+| @keri-ts/tufa      | `@keri-ts/tufa`                                           |
 
-These entrypoint names remain available. Internal source directories have been
-reorganized by responsibility; update checkout-local imports to their new owners
-or use supported package imports. Do not deep-import generated npm implementation
-paths. Install on Node **20.3 or newer**. The runtime graph is Tufa → KERI → CESR;
-strict NodeNext consumers do not need `skipLibCheck`.
+Tufa's `@keri-ts/tufa/runtime`, `@keri-ts/tufa/host/kernel` and
+`@keri-ts/tufa/http/protocol-handler` entrypoints are removed:
+
+| 1.0.0 import                                                                                                                                                                                   | 2.0.0 import                    |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------- |
+| `runHostKernel`, `HostKernelSpec`, `HostKernelHttpSpec`, `HostTaskFactory`, `HttpListenAddress`                                                                                                | `@keri-ts/hosting`              |
+| `createProtocolHandler`, `ProtocolHandler`                                                                                                                                                     | `@keri-ts/hosting`              |
+| `CesrIngressRoute`, `OobiRouteRequest`, `ProtocolRequestContext`, `ProtocolRoute`, `buildProtocolRequestContext`, `classifyCesrIngressRoute`, `classifyProtocolRoute`, `parseOobiRouteRequest` | Removed; use the hosted handler |
+
+Internal source directories have been reorganized by responsibility; update
+checkout-local imports to their new owners or use supported package imports. Do
+not deep-import generated npm implementation paths. Install on Node **20.3 or
+newer**. Tufa depends on the five scoped application packages; registrar and
+observer use hosting, verifier and observer use registrar, and every package uses
+KERI and CESR. Strict NodeNext consumers do not need `skipLibCheck`.
 
 ## cesr-ts: ordinary ESSR bytes
 
@@ -226,14 +242,15 @@ options. Tever validates state; Tevery owns input policy, cues and reply routes.
 ## Tufa and operator behavior
 
 Import `VerifierAgent`, its options/result/business-validator types and
-`createVerifierCueBaser`/`VerifierCueBaser` from `@keri-ts/tufa/runtime`, replacing
+`createVerifierCueBaser`/`VerifierCueBaser` from `@keri-ts/verifier`, replacing
 the keri-ts runtime application exports. `verifierRunCommand` is removed from
 `keri-ts/cli`. Protocol Verifier, IPEX and accepted evidence remain in KERI.
 The application owns webhook policy and workflow storage; `verifier run --once`
 reports success after cue-store/runtime/Habery closure. Business refusal counts
 reflect policy decisions, not protocol invalidity. Local ack/rack records mean
 successful HTTP delivery after cleanup, not protocol acks or exactly-once receipts.
-Tufa's existing root/runtime/host-kernel/protocol-handler imports remain available.
+Tufa keeps its root import; its host and protocol-handler imports move to
+`@keri-ts/hosting` as listed under package entrypoints.
 
 CLI option/configuration validation is stricter **before storage effects**:
 
@@ -278,11 +295,14 @@ refusal. Whole-cue responders send nothing from an incompatible cue; TCP records
 `unsupported-replay` locally and closes that connection. Signed bodies are not
 rewritten and no remote refusal protocol is added.
 
-V2 rip/bup/upd CLI, wallet and lifecycle completion is
-[deferred](../../plans/credentials/V2_ACDC_REGISTRY_ROADMAP.md).
-Retained partial library/v2 validation tests do not establish a complete
-v2 credential workflow. The Tufa verifier application uses legacy Reger.
-Independent KERI/CESR v2 remains supported; main and legacy peer capabilities differ.
+ACDC v2 registries, blinded and bound disclosure (BUP/Unblind), IPEX DH/Unblind
+consent, wallet negotiation and exact-view presentation are implemented against
+the pinned KERIpy v2-spec candidate in `scripts/ci/keripy-reference.json`.
+`@keri-ts/verifier` checks retained ACDC v2 Grant views against authenticated
+observer evidence; `@keri-ts/registrar` and `@keri-ts/observer` provide the
+publication and observation services. Deliberate divergences remain in the
+[parity roadmap](../../plans/PARITY_ROADMAP.md). Main, candidate and legacy peer
+capabilities differ.
 The current peer matrix and separately blocked Python CLI lanes are documented in
 [protocol compatibility](KERI_V1_V2_COMPATIBILITY.md) and the
 [CLI limitation report](../../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md).
