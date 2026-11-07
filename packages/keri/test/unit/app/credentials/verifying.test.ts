@@ -15,6 +15,7 @@ import {
   NumberPrimitive,
   NumDex,
   Prefixer,
+  reapSerder,
   SerderACDC,
   Signer,
 } from "../../../../../cesr/mod.ts";
@@ -613,6 +614,40 @@ Deno.test("Verifier replay retains original escrow on storage failure and advanc
       }]);
     } finally {
       consoleLogger.warn = warn;
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("Verifier rejects a parsed credential whose body no longer matches its SAID", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `verifier-said-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+    });
+    const reger = yield* createReger({
+      name: `verifier-said-${crypto.randomUUID()}`,
+      temp: true,
+    });
+    try {
+      const issuer = makePrefixer();
+      const registry = digestFor("registry-said").qb64;
+      const schemer = new Schemer({ sed: schemaSed({ requiredRole: true }) });
+      hby.db.schema.pin(schemer.said, schemer);
+      const honest = makeCredential({ issuer: issuer.qb64, registry, schema: schemer.said });
+      setState(reger, registry, honest.said!);
+      // Same-length edit keeps the version-string size and the claimed SAID; parsing hydrates it as-is.
+      const raw = textEncoder.encode(new TextDecoder().decode(honest.raw).replace("holder", "helder"));
+      const tampered = reapSerder(raw).serder as SerderACDC;
+      assertEquals(tampered.said, honest.said);
+
+      const verifier = new Verifier(hby, { reger });
+      assertDecision(verifier.processCredential(anchorArgs(tampered, issuer)), "reject", "invalidCredential");
+      assertEquals(reger.saved.get([honest.said!]), null);
+      assertEquals(reger.creds.get([honest.said!]), null);
+    } finally {
       yield* reger.close(true);
       yield* hby.close(true);
     }
