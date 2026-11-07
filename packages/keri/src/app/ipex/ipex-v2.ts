@@ -599,6 +599,11 @@ export class IpexV2Handler implements ExchangeRouteHandler {
         unresolved = true;
         continue;
       }
+      // An accepted source still awaiting its witness quorum is retryable, not a bad binding.
+      if (!this.hby.db.fullyWitnessed(anchor)) {
+        unresolved = true;
+        continue;
+      }
       // Inception can arrive before the update named by this source. A retry
       // between those messages must not turn missing TEL evidence into a bad binding.
       for (const tuple of anchor.seals) {
