@@ -62,6 +62,9 @@ tracks historical readers, safe conversion boundaries and the linked Python port
 - Annotation validates once then renders original admitted wire, one entry per
   independently owned root. Walking a flattened child list loses enclosure scope.
   Opaque fallback must preserve text-domain raw for deannotation, including qb2.
+- A nested node without evidence is `-B(body)`; never emit a placeholder group.
+  Hydration drops zero-count semantic groups so legacy `-KAA`/`-C(-KAA)` rows
+  converge on KERIpy's canonical bytes (tufa `sameNodes` compares those bytes).
 
 ## Primitive and Serder rules
 

@@ -10,7 +10,11 @@ Each child is emitted as a BodyWithAttachmentGroup; non-native child bodies use
 qualified Texters inside NonNativeBodyGroup. The wrapper uses its parent's genus
 with any child selector scoped inside it. Default output preserves each node's
 resolved genus; an explicit genus normalizes compatible descendants. Native
-bodies reject genus changes that require rebuilding their Serder.
+bodies reject genus changes that require rebuilding their Serder. The enclosure
+bounds the child, so a node without evidence is the body alone, matching KERIpy
+`v2-spec` 2b19fa87; no placeholder group is emitted. Hydration drops zero-count
+semantic groups (KERIpy reads them as no evidence), so legacy `-KAA`, `-C(-KAA)`
+and `-CAA` nodes re-serialize to that canonical form.
 
 Serialization preserves child, leaf and ESSR item order and duplicates. It
 normalizes categories to ordinary leaves, children, then ESSR; the parsed model

@@ -169,20 +169,8 @@ export function nestedPayload(frame: CesrFrame, enclosing: Versionage, options: 
   const body = bodyBytes(frame, gvrsn, domain, true);
   // A selector inside the child wrapper cannot alter the following sibling's counter interpretation.
   const selector = sameVersion(enclosing, gvrsn) ? new Uint8Array() : qualify(Counter.makeGVC(gvrsn), "txt", domain);
-  // Python's nested extractor expects at least one counter after the body, even without authenticators.
-  const empty = !frame.attachments.length && !frame.nests?.length && !frame.essrs
-    ? counter("ControllerIdxSigs", 0, gvrsn, domain)
-    : undefined;
-  const attachments: Payload = empty
-    ? {
-      size: empty.length,
-      /** This reader owns cancellation even when its content is one finite counter. */
-      async *open(signal) {
-        signal?.throwIfAborted();
-        yield empty;
-      },
-    }
-    : attachmentContent(frame, options);
+  // The enclosing counter bounds the child, so a node without evidence is just its body.
+  const attachments = attachmentContent(frame, options);
   // All child bytes are qualified, so enclosing counts are quadlets in text and triplets in binary.
   const header = counter(
     "BodyWithAttachmentGroup",

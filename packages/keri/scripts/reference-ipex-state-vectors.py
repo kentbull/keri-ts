@@ -17,7 +17,7 @@ from keri.kering import ValidationError
 from keri.peer import Exchanger
 from keri.peer.exchanging import serializeParsedSubstream
 
-REFERENCE = "917694081b509f9bc4e875af939f2423fd856d0c"
+REFERENCE = "2b19fa875d8c803c613087102db51b9e07124588"
 root = pathlib.Path(ipexing.__file__).resolve().parents[3]
 
 
@@ -102,7 +102,7 @@ with (openHby(name="state-source", temp=True, salt=salt) as source,
 
         def node_verdict(nest):
             try:
-                return exc.routes["/ipex/grant"]._verifyIssuerAuthNode(nest.serder, nest).verdict
+                return exc.routes["/ipex/grant"].verifyIssuerAuthNode(nest.serder, nest).verdict
             except ValidationError:
                 return "invalid"
 
