@@ -533,7 +533,7 @@ Deno.test({
               [
                 "run",
                 "-A",
-                "--no-lock",
+                "--frozen",
                 "packages/tufa/mod.ts",
                 "ipex",
                 "grant",
@@ -670,7 +670,7 @@ Deno.test({
               [
                 "run",
                 "-A",
-                "--no-lock",
+                "--frozen",
                 "packages/tufa/mod.ts",
                 "ipex",
                 "admit",
@@ -796,7 +796,7 @@ Deno.test({
         [
           "run",
           "-A",
-          "--no-lock",
+          "--frozen",
           "packages/tufa/mod.ts",
           "vc",
           "revoke",
@@ -828,7 +828,7 @@ Deno.test({
         [
           "run",
           "-A",
-          "--no-lock",
+          "--frozen",
           "packages/tufa/mod.ts",
           "ipex",
           "grant",
