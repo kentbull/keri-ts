@@ -1,7 +1,6 @@
 /** Public ACDC registry database layout and joined LMDB lifecycle. */
 import { b, Diger, NumberPrimitive, Saider, SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
-import { DatabaseNotOpenError } from "../core/errors.ts";
 import { LMDBer, type LMDBerOptions } from "../db/core/lmdber.ts";
 import { B64OnIoSetSuber, BytesSuber, CatCesrSuber, CesrOnSuber, CesrSuber, SerderSuber } from "../db/subing.ts";
 
@@ -32,15 +31,6 @@ export class RegBaser extends LMDBer {
   maes!: B64OnIoSetSuber<[string]>;
   /** Insertion-ordered out-of-order event-SAID tuples by registry and ordinal. */
   ooes!: B64OnIoSetSuber<[string]>;
-
-  /** Named databases are root entries; testing presence opens no additional handles. */
-  hasTable(name: string): boolean {
-    if (!this.env) throw new DatabaseNotOpenError("Registry environment is closed.");
-    // Native lmdb-js exposes its C-string terminator in root metadata keys;
-    // the Deno backend also supports the unterminated representation.
-    return this.env.getBinary(b(name)) !== undefined
-      || this.env.getBinary(b(`${name}\0`)) !== undefined;
-  }
 
   constructor(options: RegBaserOptions = {}) {
     super(options, {

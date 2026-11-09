@@ -563,6 +563,37 @@ export class LMDBer extends BaseDBer {
     }
   }
 
+  /** Yield caller-owned key copies; native dupsort iteration already yields each key once. */
+  *scanKeys(table: Table, options: ScanOptions = {}): Generator<Uint8Array> {
+    for (const key of lmdbTable(table).getKeys(options)) {
+      yield copyDbBytes(key);
+    }
+  }
+
+  /** Named tables are root entries; native lmdb-js may keep its C-string terminator in the key. */
+  hasTable(name: string): boolean {
+    const root = this.requireEnv();
+    return root.getBinary(b(name)) !== undefined
+      || root.getBinary(b(`${name}\0`)) !== undefined;
+  }
+
+  /** Copy one duplicate through the pinned binary seek branch, closing its cursor before return. */
+  seekVal(table: Table, key: Uint8Array, start?: Uint8Array): Uint8Array | null {
+    const db = lmdbTable(table) as LmdbTable & { encoding: string; encoder?: object };
+    if (db.encoding !== "binary") throw new DatabaseOperationError("Duplicate seek requires binary rows");
+    // Pinned lmdb-js 3.5.3 dereferences encoder.writeKey before its binary-value seek branch.
+    // This private read facade supplies that missing object without mutating the table.
+    const seek = Object.create(db) as typeof db;
+    seek.encoder = db.encoder ?? {};
+    const rows = seek.getValues(key, { start, limit: 1 })[Symbol.iterator]();
+    try {
+      const row = rows.next();
+      return row.done ? null : copyDbBytes(row.value);
+    } finally {
+      rows.return?.();
+    }
+  }
+
   protected assertOpen(): void {
     this.requireEnv();
   }

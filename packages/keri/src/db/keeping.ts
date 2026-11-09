@@ -420,12 +420,11 @@ export class Keeper {
     decrypter: Decrypter | null;
   }): void {
     if (this.readonly) throw new DatabaseOperationError("Cannot change encryption in a read-only keeper");
-    const env = this.lmdber.env;
-    if (!env) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (!this.lmdber.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
     if (this.lmdber.inWriteTransaction) {
       throw new DatabaseOperationError("Keeper encryption change must own its write transaction");
     }
-    env.transactionSync(() => {
+    this.lmdber.transaction(() => {
       const storedAeid = this.getGbls("aeid");
       if ((storedAeid ?? "") !== currentAeid) {
         throw new DatabaseOperationError("Keeper AEID changed before encryption migration; reopen the manager");
@@ -471,12 +470,11 @@ export class Keeper {
     decrypter: Decrypter,
   ): boolean {
     if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
-    const env = this.lmdber.env;
-    if (!env) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (!this.lmdber.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
     if (this.lmdber.inWriteTransaction) {
       throw new DatabaseOperationError("Registry root retention must own its write transaction");
     }
-    return env.transactionSync(() => {
+    return this.lmdber.transaction(() => {
       if (this.getGbls("aeid") !== currentAeid) {
         throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
       }

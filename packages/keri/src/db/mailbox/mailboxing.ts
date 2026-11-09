@@ -144,14 +144,13 @@ export class Mailboxer extends LMDBer {
    * one transaction; false publication is an invariant failure, not a duplicate.
    */
   storeMsg(topic: MailboxKeys, msg: Uint8Array | string): boolean {
-    const env = this.env;
-    if (!env) throw new DatabaseNotOpenError("Mailbox environment is not open");
+    if (!this.opened) throw new DatabaseNotOpenError("Mailbox environment is not open");
     const raw = typeof msg === "string" ? new TextEncoder().encode(msg) : msg;
     const dig = new Diger({
       raw: Diger.digest(raw, MtrDex.Blake3_256),
       code: MtrDex.Blake3_256,
     });
-    return env.transactionSync(() => {
+    return this.transaction(() => {
       const on = this.appendToTopic(topic, dig);
       if (!Number.isSafeInteger(on) || on < 0) throw new Error("Mailbox topic publication failed");
       if (!this.msgs.pin(dig.qb64, raw)) throw new Error("Mailbox body publication failed");

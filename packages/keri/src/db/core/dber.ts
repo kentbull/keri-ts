@@ -134,6 +134,13 @@ export abstract class BaseDBer {
   abstract transaction<T>(fn: () => T): T;
   /** Yield rows in order under `options`. Close the scan before suspending. */
   abstract scan(table: Table, options?: ScanOptions): Iterable<TableEntry>;
+  /**
+   * Yield keys in order under `options`. A dupsort table yields each key once:
+   * `limit` counts distinct keys and `exclusiveStart` skips every duplicate.
+   */
+  abstract scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array>;
+  /** Report whether a named table exists, without creating it. */
+  abstract hasTable(name: string): boolean;
 
   /** Read the `__version__` marker, or `null` when absent or malformed. */
   abstract getVer(): string | null;
@@ -157,6 +164,8 @@ export abstract class BaseDBer {
   abstract getValsIter(table: Table, key: Uint8Array): Generator<Uint8Array>;
   abstract cntVals(table: Table, key: Uint8Array): number;
   abstract delVals(table: Table, key: Uint8Array): boolean;
+  /** Return the first duplicate at `key` not below `start`, or `null`. */
+  abstract seekVal(table: Table, key: Uint8Array, start?: Uint8Array): Uint8Array | null;
 
   /** Throw the backend's not-open error when the store is closed. */
   protected abstract assertOpen(): void;
