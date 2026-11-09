@@ -15,6 +15,7 @@ Dupsort `scanKeys` yields each key once, unlike entry `scan`; use `seekVal` to s
 within one key's duplicates. Native table-name spellings stay inside `hasTable`.
 Domain code commits through `transaction`, waits through `flushed` and compares
 `writeVersion`; a rebound `Table` handle, not `env`, detects that a store reopened.
+`StoreIdentity` names a store on every backend; paths and map size are `LmdbLocation`.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

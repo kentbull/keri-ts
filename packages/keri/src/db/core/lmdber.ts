@@ -9,7 +9,7 @@ import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
-import { BaseDBer, type ScanOptions, type Table, type TableEntry } from "./dber.ts";
+import { BaseDBer, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 /** Binary LMDB key type used by the low-level wrapper surface. */
@@ -57,10 +57,9 @@ function branchScanOptions(
  * LMDBer can be configured with read only, dupsort for storing values in keyspace,
  * and a logger.
  */
-export interface LMDBerOptions extends PathManagerOptions {
-  readonly?: boolean;
+/** Where an LMDB store's files live and how they are mapped; meaningless on other backends. */
+export interface LmdbLocation extends Omit<PathManagerOptions, keyof StoreIdentity> {
   dupsort?: boolean;
-  logger?: Logger;
   /**
    * Requested LMDB map size in bytes.
    *
@@ -71,6 +70,9 @@ export interface LMDBerOptions extends PathManagerOptions {
    */
   mapSize?: number;
 }
+
+/** A store's backend-neutral identity plus its LMDB location. */
+export interface LMDBerOptions extends StoreIdentity, LmdbLocation {}
 
 /** Defaultable LMDB/path settings shared by all `LMDBer` instances. */
 export interface LMDBerDefaults extends PathManagerDefaults {
