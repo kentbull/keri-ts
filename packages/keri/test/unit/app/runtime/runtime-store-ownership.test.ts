@@ -25,16 +25,16 @@ function assertReleased(store: RegBaser | Reger | Noter | Mailboxer): void {
   assertEquals(store.opened, false);
   assertEquals(store.env, null);
   // close clears store.path; check the real temp directory rather than stat(null).
-  const ctor = store instanceof Noter
-    ? Noter
+  const tempPrefix = store instanceof Noter
+    ? "keri_not_"
     : store instanceof Mailboxer
-    ? Mailboxer
+    ? "keri_mbx_"
     : store instanceof Reger
-    ? Reger
-    : RegBaser;
+    ? Reger.TempPrefix
+    : "keri_acdc_reg_";
   const directory = `${
     Deno.env.get("TMPDIR") ?? Deno.env.get("TMP") ?? Deno.env.get("TEMP") ?? "/tmp"
-  }/${ctor.TempPrefix}${store.name}${LMDBer.TempSuffix}`;
+  }/${tempPrefix}${store.name}${LMDBer.TempSuffix}`;
   assertThrows(() => Deno.statSync(directory), Deno.errors.NotFound);
 }
 

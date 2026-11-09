@@ -18,6 +18,8 @@ import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from ".
 import { messagize } from "../core/protocol-serialization.ts";
 import { RawRecord } from "../core/records.ts";
 import type { Table } from "../db/core/dber.ts";
+import { lmdbDefaultsFor } from "../db/core/lmdb-opener.ts";
+import { LMDBer } from "../db/core/lmdber.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
 import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
@@ -68,10 +70,10 @@ export interface OpenRegistryOptions extends RegBaserOptions {
 
 /** Acquire one backing owner; failures/cancellation join cleanup before ownership transfers. */
 export function* openRegistry(
-  { web = false, reopen = true, ...options }: OpenRegistryOptions = {},
+  { web = false, reopen = true, compat, ...options }: OpenRegistryOptions = {},
 ): Operation<RegBaser> {
   if (web) throw new ValidationError("web registry backend is not yet supported by V2 Regery");
-  const baser = new RegBaser(options);
+  const baser = new RegBaser(new LMDBer(options, lmdbDefaultsFor(RegBaser.Family, compat)));
   let delivered = false;
   try {
     if (reopen && !(yield* baser.reopen())) throw new DatabaseNotOpenError("Registry backing store could not open.");
@@ -108,7 +110,7 @@ export class RegistryStore {
     if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
     if (this.aliasTable !== this.baser.evts.sdb) {
       this.aliases = this.baser.hasTable("regs.")
-        ? new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord })
+        ? new Komer(this.baser.store, { subkey: "regs.", recordClass: RegistryRecord })
         : null;
       this.aliasTable = this.baser.evts.sdb;
     }
@@ -125,7 +127,7 @@ export class RegistryStore {
     let records = this.records;
     if (!records) {
       if (this.baser.readonly) throw new DatabaseOperationError("Cannot create readonly registry aliases.");
-      records = this.aliases = new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord });
+      records = this.aliases = new Komer(this.baser.store, { subkey: "regs.", recordClass: RegistryRecord });
     }
     return records;
   }
