@@ -108,6 +108,8 @@ export async function inceptTufaAlias(
     transferable?: boolean;
     wits?: string[];
     toad?: number;
+    /** KEL protocol version; v1 KERIpy peers cannot accept Tufa's default v2 KELs. */
+    version?: "1.0";
   },
 ): Promise<string> {
   const result = await requireSuccess(
@@ -115,6 +117,7 @@ export async function inceptTufaAlias(
     runTufa(
       [
         "incept",
+        ...(args.version ? ["--version", args.version] : []),
         "--name",
         args.name,
         "--base",
@@ -778,6 +781,8 @@ export async function setupTufaMailboxProvider(
     salt: string;
     alias?: string;
     port: number;
+    /** KEL protocol version; v1 KERIpy peers cannot accept Tufa's default v2 KELs. */
+    version?: "1.0";
   },
 ): Promise<TufaMailboxProviderFixture> {
   const alias = args.alias ?? "relay";
@@ -795,6 +800,7 @@ export async function setupTufaMailboxProvider(
     passcode: args.passcode,
     alias,
     transferable: false,
+    version: args.version,
   });
   const origin = `http://127.0.0.1:${args.port}`;
   await addTufaHostedRoute(ctx, {

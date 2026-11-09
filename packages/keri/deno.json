@@ -27,8 +27,6 @@
     "test:qualification": "deno run -A ../../scripts/ci/run-keri-test-group.ts qualification",
     "test:quality:app-fast-parallel": "deno run -A ../../scripts/ci/run-keri-test-group.ts app-fast-parallel",
     "test:quality:interop-parity": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-parity",
-    "test:quality:interop-acdc-deep": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-acdc-deep",
-    "test:quality:interop-acdc-extended": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-acdc-extended",
     "test:quality:interop-delegation": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-delegation",
     "test:quality:interop-did-webs": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-did-webs",
     "test:quality:interop-witness-main": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-witness-main",

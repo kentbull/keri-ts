@@ -13,6 +13,7 @@ import {
   withStartedChild,
   workspaceRoot,
 } from "./interop-test-helpers.ts";
+import { v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -103,8 +104,6 @@ async function assertKliCredentialListed(
       [
         "vc",
         "list",
-        "--version",
-        "1.0",
         ...kliStoreArgs(name, passcode),
         "--alias",
         "holder",
@@ -148,6 +147,8 @@ async function initAndInceptTufa(
       [
         "incept",
         ...tufaStoreArgs(name, headDirPath, passcode),
+        "--version",
+        "1.0",
         "--alias",
         alias,
         "--transferable",
@@ -178,14 +179,12 @@ async function initAndInceptKli(
 ): Promise<string> {
   await requireSuccess(
     `kli ${alias} init`,
-    runCmd(kliCommand, ["init", "--version", "1.0", ...kliStoreArgs(name, passcode)], env),
+    runCmd(kliCommand, ["init", ...kliStoreArgs(name, passcode)], env),
   );
   const incept = await requireSuccess(
     `kli ${alias} incept`,
     runCmd(kliCommand, [
       "incept",
-      "--version",
-      "1.0",
       ...kliStoreArgs(name, passcode),
       "--alias",
       alias,
@@ -207,8 +206,8 @@ async function initAndInceptKli(
 
 Deno.test({
   name: "Interop: Tufa issuer credential presents through KLI holder and Tufa verifier",
-  // Gap: legacy fork CLI; rewrite for kli vc registry on a GLEIF 1.x profile is a follow-up.
-  ignore: true,
+  // Credential exports and presentation use the v1 CLI of the GLEIF 1.x reference peers.
+  ignore: !v1OnlyKeripyPeer(),
 }, async () => {
   const ctx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "tufa-kli-holder-acdc-" });
@@ -378,7 +377,7 @@ Deno.test({
         runCmd(kliCommand, [
           "vc",
           "schema",
-          "import_",
+          "import",
           ...kliStoreArgs(holderName, passcode),
           "--schema",
           schemaPath,
@@ -392,27 +391,29 @@ Deno.test({
         "provider",
         providerAgentPort,
       );
-      const providerAgentChild = spawnChild(
-        Deno.execPath(),
-        [
-          "run",
-          "--allow-all",
-          "--unstable-ffi",
-          "packages/tufa/mod.ts",
-          "agent",
-          ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
-          "--port",
-          String(providerAgentPort),
-          "--config-dir",
-          tufaHeadDir,
-          "--config-file",
-          providerAgentConfig,
-        ],
-        env,
-        workspaceRoot(),
-      );
+      // KLI commands poll the holder's mailbox, so the provider must outlive each KLI step.
+      const startProviderAgent = () =>
+        spawnChild(
+          Deno.execPath(),
+          [
+            "run",
+            "--allow-all",
+            "--unstable-ffi",
+            "packages/tufa/mod.ts",
+            "agent",
+            ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
+            "--port",
+            String(providerAgentPort),
+            "--config-dir",
+            tufaHeadDir,
+            "--config-file",
+            providerAgentConfig,
+          ],
+          env,
+          workspaceRoot(),
+        );
 
-      await withStartedChild(providerAgentChild, providerAgentPort, async () => {
+      await withStartedChild(startProviderAgent(), providerAgentPort, async () => {
         const providerMailboxOobi = `${providerOrigin}/oobi/${providerPre}/mailbox/${providerPre}`;
         await requireSuccess(
           "kli resolve tufa provider mailbox",
@@ -421,8 +422,6 @@ Deno.test({
             [
               "oobi",
               "resolve",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               providerMailboxOobi,
@@ -441,8 +440,6 @@ Deno.test({
             [
               "mailbox",
               "add",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -555,8 +552,6 @@ Deno.test({
             [
               "oobi",
               "resolve",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--oobi",
               issuerMailboxUrl,
@@ -598,8 +593,6 @@ Deno.test({
             [
               "ipex",
               "list",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -621,8 +614,6 @@ Deno.test({
             [
               "ipex",
               "admit",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",
@@ -665,49 +656,50 @@ Deno.test({
         workspaceRoot(),
       );
 
-      await withStartedChild(agentChild, agentPort, async () => {
-        const verifierOobi = `http://127.0.0.1:${agentPort}/oobi/${verifierPre}/controller`;
-        const resolved = await requireSuccess(
-          "kli resolve tufa verifier",
-          runCmd(kliCommand, [
-            "oobi",
-            "resolve",
-            "--version",
-            "1.0",
-            ...kliStoreArgs(holderName, passcode),
-            "--oobi",
-            verifierOobi,
-            "--oobi-alias",
-            "verifier",
-          ], env),
-        );
-        assertStringIncludes(resolved.stdout, "resolved");
+      await withStartedChild(
+        startProviderAgent(),
+        providerAgentPort,
+        () =>
+          withStartedChild(agentChild, agentPort, async () => {
+            const verifierOobi = `http://127.0.0.1:${agentPort}/oobi/${verifierPre}/controller`;
+            const resolved = await requireSuccess(
+              "kli resolve tufa verifier",
+              runCmd(kliCommand, [
+                "oobi",
+                "resolve",
+                ...kliStoreArgs(holderName, passcode),
+                "--oobi",
+                verifierOobi,
+                "--oobi-alias",
+                "verifier",
+              ], env),
+            );
+            assertStringIncludes(resolved.stdout, "resolved");
 
-        const grant = await requireSuccess(
-          "kli holder ipex grant",
-          runCmdWithTimeout(
-            kliCommand,
-            [
-              "ipex",
-              "grant",
-              "--version",
-              "1.0",
-              ...kliStoreArgs(holderName, passcode),
-              "--alias",
-              "holder",
-              "--recipient",
-              "verifier",
-              "--said",
-              credentialSaid,
-              "--message",
-              "presentation ok",
-            ],
-            env,
-            30_000,
-          ),
-        );
-        assertStringIncludes(grant.stdout, "grant message sent");
-      });
+            const grant = await requireSuccess(
+              "kli holder ipex grant",
+              runCmdWithTimeout(
+                kliCommand,
+                [
+                  "ipex",
+                  "grant",
+                  ...kliStoreArgs(holderName, passcode),
+                  "--alias",
+                  "holder",
+                  "--recipient",
+                  "verifier",
+                  "--said",
+                  credentialSaid,
+                  "--message",
+                  "presentation ok",
+                ],
+                env,
+                30_000,
+              ),
+            );
+            assertStringIncludes(grant.stdout, "grant message sent");
+          }),
+      );
 
       const verifierRun = await requireSuccess(
         "tufa verifier issuance run",
@@ -745,27 +737,8 @@ Deno.test({
         "provider",
         providerAgentPort,
       );
-      const revocationProviderAgentChild = spawnChild(
-        Deno.execPath(),
-        [
-          "run",
-          "--allow-all",
-          "--unstable-ffi",
-          "packages/tufa/mod.ts",
-          "agent",
-          ...tufaStoreArgs(providerName, tufaHeadDir, passcode),
-          "--port",
-          String(providerAgentPort),
-          "--config-dir",
-          tufaHeadDir,
-          "--config-file",
-          providerAgentConfig,
-        ],
-        env,
-        workspaceRoot(),
-      );
 
-      await withStartedChild(revocationProviderAgentChild, providerAgentPort, async () => {
+      await withStartedChild(startProviderAgent(), providerAgentPort, async () => {
         const revoked = await requireSuccess(
           "tufa issuer revoke send to KLI holder",
           runTufaWithTimeout(
@@ -795,8 +768,6 @@ Deno.test({
             [
               "vc",
               "list",
-              "--version",
-              "1.0",
               ...kliStoreArgs(holderName, passcode),
               "--alias",
               "holder",

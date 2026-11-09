@@ -12,6 +12,7 @@ import {
   withStartedChild,
   workspaceRoot,
 } from "./interop-test-helpers.ts";
+import { v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 function schemaSed(): Record<string, unknown> {
   return {
@@ -104,6 +105,8 @@ async function initAndInceptTufa(
       [
         "incept",
         ...tufaStoreArgs(name, headDirPath, passcode),
+        "--version",
+        "1.0",
         "--alias",
         alias,
         "--transferable",
@@ -133,14 +136,12 @@ async function initAndInceptKli(
 ): Promise<string> {
   await requireSuccess(
     "kli issuer init",
-    runCmd(kliCommand, ["init", "--version", "1.0", ...kliStoreArgs(name, passcode)], env),
+    runCmd(kliCommand, ["init", ...kliStoreArgs(name, passcode)], env),
   );
   const incept = await requireSuccess(
     "kli issuer incept",
     runCmd(kliCommand, [
       "incept",
-      "--version",
-      "1.0",
       ...kliStoreArgs(name, passcode),
       "--alias",
       "issuer",
@@ -162,8 +163,8 @@ async function initAndInceptKli(
 
 Deno.test({
   name: "Interop: KLI issuer credential presents through Tufa holder and verifier",
-  // Gap: legacy fork CLI; rewrite for kli vc registry on a GLEIF 1.x profile is a follow-up.
-  ignore: true,
+  // Credential exports and presentation use the v1 CLI of the GLEIF 1.x reference peers.
+  ignore: !v1OnlyKeripyPeer(),
 }, async () => {
   const ctx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "kli-tufa-acdc-" });
@@ -274,8 +275,6 @@ Deno.test({
             runCmd(ctx.kliCommand, [
               "oobi",
               "resolve",
-              "--version",
-              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--oobi",
               holderOobi,
@@ -290,7 +289,7 @@ Deno.test({
             runCmd(ctx.kliCommand, [
               "vc",
               "schema",
-              "import_",
+              "import",
               ...kliStoreArgs(kliName, passcode),
               "--schema",
               schemaPath,
@@ -304,8 +303,6 @@ Deno.test({
               "vc",
               "registry",
               "incept",
-              "--version",
-              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",
@@ -321,8 +318,6 @@ Deno.test({
             runCmd(ctx.kliCommand, [
               "vc",
               "create",
-              "--version",
-              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",
@@ -359,8 +354,6 @@ Deno.test({
               "vc",
               "export",
               // This v1 fixture selects the replay genus independently of its body version.
-              "--version",
-              "1.0",
               ...kliStoreArgs(kliName, passcode),
               "--alias",
               "issuer",
@@ -482,8 +475,6 @@ Deno.test({
               [
                 "oobi",
                 "resolve",
-                "--version",
-                "1.0",
                 ...kliStoreArgs(kliName, passcode),
                 "--oobi",
                 verifierOobi,
@@ -503,8 +494,6 @@ Deno.test({
               [
                 "vc",
                 "revoke",
-                "--version",
-                "1.0",
                 ...kliStoreArgs(kliName, passcode),
                 "--alias",
                 "issuer",

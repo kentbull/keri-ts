@@ -34,8 +34,8 @@ required owners), `tufa`, `verifier` (the verifier package tests), `hosting` (th
 `extended-interop`. No new inventory, arbitrary command or test-name filtering is
 introduced. Existing suite isolation and participant topology remain in force.
 `interop-ipex-disclosure` owns the maintained bidirectional v2 conversation and
-graph cases separately from the legacy `interop-acdc-deep` workflows, so disclosure
-changes can select that file alone. Its reciprocal derived-issuance stories swap
+graph cases separately from the reference-profile credential workflows, so disclosure
+changes can select those files alone. Its reciprocal derived-issuance stories swap
 Python and TypeScript roles, retain three witnesses, and use a separate rootless
 verifier for exact holder presentation and Unblind. DH, Unblind and Admit remain
 explicit actions on independent stores. The same owner includes one Python issuer-group
@@ -56,8 +56,8 @@ The reference-profile owner expands through the same frozen-peer driver in local
 aggregate runs and CI. An explicit `KERIPY_INTEROP_PROFILE` selects one child run.
 
 The manually dispatched extended workflow expands the existing KERI group exports
-into independent 15-minute jobs: `extended-interop` has 20 rows, `full` has 29,
-and `qualification` has 31. Each includes four isolated reference-profile rows;
+into independent 15-minute jobs: `extended-interop` has 18 rows, `full` has 27,
+and `qualification` has 29. Each includes four isolated reference-profile rows;
 all other rows invoke their original concrete suite. The suite runner retains
 file ordering, isolation and measured concurrency caps. Jobs do not cancel their
 siblings after a failure, and each uploads its own timings. These are the KERI

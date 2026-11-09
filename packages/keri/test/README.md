@@ -59,8 +59,6 @@ endurance cases.
 | `interop-keystore-storage` | Compatibility-open and encrypted-store behavior.            |
 | `interop-oobi-bootstrap`   | Endpoint/OOBI bootstrap parity.                             |
 | `interop-acdc-verifier`    | Credential verification workflow.                           |
-| `interop-acdc-extended`    | Tufa issuer to KLI holder.                                  |
-| `interop-acdc-deep`        | Both existing deep mixed-credential chains.                 |
 | `interop-ipex-disclosure`  | Bidirectional IPEX v2 conversations and partial graphs.     |
 | `interop-delegation`       | Existing single/group cross-language delegation.            |
 | `interop-witness-main`     | Existing live witness matrix.                               |
