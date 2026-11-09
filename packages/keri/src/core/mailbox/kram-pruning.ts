@@ -1,6 +1,7 @@
 /** Internal finite cache maintenance; each batch releases read cursors before writes. */
 import { b } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
+import { lmdbTable } from "../../db/core/lmdber.ts";
 import { removeKramFactors } from "../../db/mailbox/kram-factors.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import { TxnMsgCacheRecord } from "../records.ts";
@@ -44,11 +45,13 @@ export class KramPruner {
   private next(family: number, scan: Scan): Uint8Array | undefined {
     const table = [this.db.msgc, this.db.tmsc, this.db.xdt][family];
     if (!scan.initialized) {
-      for (const key of table.sdb.getKeys({ reverse: true, limit: 1 })) scan.end = this.after(key);
+      for (const key of lmdbTable(table.sdb).getKeys({ reverse: true, limit: 1 })) scan.end = this.after(key);
       scan.initialized = true;
     }
     if (scan.end) {
-      for (const key of table.sdb.getKeys({ start: scan.start, end: scan.end, limit: 1 })) return key.slice();
+      for (const key of lmdbTable(table.sdb).getKeys({ start: scan.start, end: scan.end, limit: 1 })) {
+        return key.slice();
+      }
     }
   }
 

@@ -24,7 +24,6 @@ import {
   Vrsn_1_0,
 } from "cesr-ts";
 import { action, type Operation } from "npm:effection@^3.6.0";
-import type { Database } from "npm:lmdb@3.5.3";
 import {
   type AttachmentCounterName,
   attachmentCounterPayloadQb64b,
@@ -78,8 +77,9 @@ import {
 } from "../core/records.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { baserDefaults } from "./baser-defaults.ts";
+import type { Table } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { BinKey, BinVal, LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import { LMDBer, LMDBerOptions, lmdbTable } from "./core/lmdber.ts";
 import { ExchangeRecord, ExchangeRegistryStateRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
@@ -194,7 +194,7 @@ export interface BaserOptions extends LMDBerOptions {
 export class Baser {
   private lmdber: LMDBer;
   private readonly logger: Logger;
-  private evtsRaw!: Database<BinVal, BinKey>;
+  private evtsRaw!: Table;
   readonly kevers = new Map<string, Kever>();
   readonly prefixes = new Set<string>();
   /** Locally prepared/membered group identities; membership does not itself prove KEL acceptance. */
@@ -360,7 +360,9 @@ export class Baser {
   /** Test a schema dependency ownership marker without hydrating its stored exchange. */
   hasSchemaEscrow(said: string): boolean {
     if (this.emse) {
-      for (const key of this.emse.sdb.getKeys({ start: b(`${said}.`), limit: 1 })) return t(key).startsWith(`${said}.`);
+      for (const key of lmdbTable(this.emse.sdb).getKeys({ start: b(`${said}.`), limit: 1 })) {
+        return t(key).startsWith(`${said}.`);
+      }
     }
     return false;
   }
@@ -386,7 +388,7 @@ export class Baser {
   }
 
   /** Read an owned binary row through the backing database's normal copy path. */
-  getVal(table: Database<BinVal, BinKey>, key: Uint8Array): Uint8Array | null {
+  getVal(table: Table, key: Uint8Array): Uint8Array | null {
     return this.lmdber.getVal(table, key);
   }
 
@@ -1658,7 +1660,7 @@ export class Baser {
     if (!Number.isSafeInteger(felEnd)) throw new RangeError("Unsupported witness replay horizon");
     if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]]);
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of this.kels.sdb.getRange({ start, reverse: true, limit: 1 })) {
+    for (const entry of lmdbTable(this.kels.sdb).getRange({ start, reverse: true, limit: 1 })) {
       const [prefix, end] = splitOnKey(entry.key);
       if (t(prefix) !== pre) return null;
       if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
@@ -1706,7 +1708,7 @@ export class Baser {
   private replayEnd(pre: string): number | null {
     // Fixed-width CESR ordinal keys sort lexically, so the maximal suffix bounds this prefix's tail.
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of this.fels.sdb.getRange({ start, reverse: true, limit: 1 })) {
+    for (const entry of lmdbTable(this.fels.sdb).getRange({ start, reverse: true, limit: 1 })) {
       const [prefix, ordinal] = splitOnKey(entry.key);
       return t(prefix) === pre ? ordinal : null;
     }

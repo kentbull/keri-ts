@@ -38,6 +38,7 @@ import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/pro
 import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
+import { lmdbTable } from "../../db/core/lmdber.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
 import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
@@ -647,7 +648,7 @@ export class Exchanger {
     const table = schema ? this.hby.db.emse! : this.hby.db.epse;
     let end: Uint8Array | undefined;
     // Capture a finite key horizon without retaining bodies or holding a cursor across mutations.
-    for (const key of table.sdb.getKeys({ reverse: true, limit: 1 })) {
+    for (const key of lmdbTable(table.sdb).getKeys({ reverse: true, limit: 1 })) {
       end = b(`${textDecoder.decode(key)}\0`);
     }
     if (!end) {
@@ -656,7 +657,7 @@ export class Exchanger {
     let start: Uint8Array | undefined;
     for (;;) {
       let physical: string | undefined;
-      for (const key of table.sdb.getKeys({ start, end, limit: 1 })) {
+      for (const key of lmdbTable(table.sdb).getKeys({ start, end, limit: 1 })) {
         physical = textDecoder.decode(key);
       }
       if (!physical) break;

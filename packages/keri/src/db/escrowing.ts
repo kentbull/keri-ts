@@ -5,7 +5,7 @@ import { dropEscrow, type EscrowProcessDecision } from "../core/kel/kever-decisi
 import { consoleLogger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
-import { LMDBer } from "./core/lmdber.ts";
+import { LMDBer, lmdbTable } from "./core/lmdber.ts";
 import { CatCesrIoSetSuber, CesrIoSetSuber, CesrSuber, SerderSuber } from "./subing.ts";
 
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
@@ -143,7 +143,9 @@ export class Broker {
       if (!scan) {
         const start = encode(`${typ}.`), ceiling = encode(`${typ}/`);
         let tail: Uint8Array | undefined;
-        for (const key of this.escrowdb.sdb.getKeys({ start: ceiling, end: start, reverse: true, limit: 1 })) {
+        for (
+          const key of lmdbTable(this.escrowdb.sdb).getKeys({ start: ceiling, end: start, reverse: true, limit: 1 })
+        ) {
           tail = key.slice();
         }
         if (!tail) return { processed: 0, done: true };
@@ -151,7 +153,7 @@ export class Broker {
         this.retryScans.set(typ, scan);
       }
       const rows: Uint8Array[] = [];
-      for (const key of this.escrowdb.sdb.getKeys({ start: scan.start, end: scan.end, limit: maxRows })) {
+      for (const key of lmdbTable(this.escrowdb.sdb).getKeys({ start: scan.start, end: scan.end, limit: maxRows })) {
         rows.push(key.slice());
       }
       for (const key of rows) {

@@ -3,6 +3,7 @@ import { b, bytesEqual, t } from "cesr-ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
 import type { Baser } from "../basing.ts";
 import { onKey, splitOnKey } from "../core/keys.ts";
+import { type LmdbTable, lmdbTable } from "../core/lmdber.ts";
 
 /** Captured KEL/FEL horizons; duplicate order and current proofs are read only during consumption. */
 export class CapturedWitnessReplay implements Iterable<Uint8Array> {
@@ -31,7 +32,7 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
 
   /** Copy one duplicate through the pinned binary seek branch; the facade never leaves this synchronous read. */
   private readDuplicate(key: Uint8Array, start?: Uint8Array): Uint8Array | undefined {
-    const db = this.#db.kels.sdb as Baser["kels"]["sdb"] & { encoding: string; encoder?: object };
+    const db = lmdbTable(this.#db.kels.sdb) as LmdbTable & { encoding: string; encoder?: object };
     if (db.encoding !== "binary") throw new DatabaseOperationError("Witness replay requires binary KEL rows");
     // Pinned lmdb-js 3.5.3 dereferences encoder.writeKey before its binary-value seek branch.
     // This private read facade supplies that missing object without mutating the borrowed DB.
@@ -54,7 +55,8 @@ export class CapturedWitnessReplay implements Iterable<Uint8Array> {
       const key = onKey(prefix, next);
       const value = bucketDone ? undefined : this.readDuplicate(key, start);
       if (!value) {
-        const keys = this.#db.kels.sdb.getKeys({ start: key, exclusiveStart: true, limit: 1 })[Symbol.iterator]();
+        const keys = lmdbTable(this.#db.kels.sdb).getKeys({ start: key, exclusiveStart: true, limit: 1 })
+          [Symbol.iterator]();
         let following: Uint8Array | undefined;
         try {
           const row = keys.next();

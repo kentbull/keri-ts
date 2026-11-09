@@ -12,6 +12,7 @@ import {
 } from "cesr-ts";
 import type { Baser } from "../basing.ts";
 import { suffix, unsuffix } from "../core/keys.ts";
+import { lmdbTable } from "../core/lmdber.ts";
 import type { IoSetSuber } from "../subing.ts";
 
 /** Read one physical row and close the LMDB key cursor before any caller suspension. */
@@ -21,7 +22,7 @@ function nextRow(
   said: string,
   ordinal: number,
 ): { wire: Uint8Array; next: number } | null {
-  for (const key of table.sdb.getKeys({ start: suffix(b(said), ordinal) })) {
+  for (const key of lmdbTable(table.sdb).getKeys({ start: suffix(b(said), ordinal) })) {
     const [owner, index] = unsuffix(key);
     if (t(owner) !== said) return null;
     const wire = db.getVal(table.sdb, key);
@@ -33,7 +34,9 @@ function nextRow(
 
 /** Test row presence without hydrating a potentially large wire value. */
 export function hasNests(db: Baser, said: string, ordinal = 0): boolean {
-  for (const key of db.enst.sdb.getKeys({ start: suffix(b(said), ordinal) })) return t(unsuffix(key)[0]) === said;
+  for (const key of lmdbTable(db.enst.sdb).getKeys({ start: suffix(b(said), ordinal) })) {
+    return t(unsuffix(key)[0]) === said;
+  }
   return false;
 }
 
