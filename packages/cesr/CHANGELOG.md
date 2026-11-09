@@ -1,5 +1,15 @@
 # cesr-ts
 
+## 2.1.0
+
+### Minor Changes
+
+- e8e7c1f: Remove libsodium from the published packages. Argon2id `Salter` stretching now runs on `@keri-ts/hash-wasm`, a fork of `hash-wasm` with empty-password support and a synchronous API, and stays byte-identical to KERIpy on every tier. The crypto layer's browser payload falls from about 188 KB gzipped to about 31 KB.
+
+### Patch Changes
+
+- c29203c: Build X25519 sealed boxes, Ed25519-to-X25519 key conversion and raw X25519 agreement from `@noble/curves`, `@noble/ciphers` and `@noble/hashes` instead of libsodium, verified byte-for-byte against pysodium vectors in both directions. `Decrypter.open` still returns null only for authentication failure.
+
 ## 2.0.0
 
 ### Breaking changes

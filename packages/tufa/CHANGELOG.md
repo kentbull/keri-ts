@@ -1,5 +1,11 @@
 # @keri-ts/tufa
 
+## 2.1.0
+
+### Minor Changes
+
+- d80ccc5: Move to `cesr-ts` and `keri-ts` 2.1.0 so this package and its dependents no longer install libsodium.
+
 ## 2.0.1
 
 ### Patch Changes
