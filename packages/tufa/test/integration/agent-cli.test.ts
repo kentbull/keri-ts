@@ -34,7 +34,7 @@ async function writeAgentControllerConfig(
     kram?: KramConfig;
   },
 ): Promise<void> {
-  const configDir = `${headDirPath}/keri/cf/${AGENT_CONFIG_FILE}`;
+  const configDir = `${headDirPath}/keri/cf`;
   await Deno.mkdir(configDir, { recursive: true });
   await Deno.writeTextFile(
     `${configDir}/${AGENT_CONFIG_FILE}.json`,

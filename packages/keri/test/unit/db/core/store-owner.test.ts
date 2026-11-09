@@ -6,7 +6,7 @@ import { openOwner, type StoreFamily, StoreOwner } from "../../../../src/db/core
 
 /** The established layouts every family must keep, so moving an owner cannot move its data. */
 const layouts: [StoreFamily, string, number | undefined][] = [
-  [{ tail: "db", maxTables: 128 }, "keri_db_", 128],
+  [{ tail: "db", maxTables: 128 }, "keri_lmdb_", 128],
   [{ tail: "ks", maxTables: 24 }, "keri_ks_", 24],
   [{ tail: "reg", maxTables: 96 }, "keri_reg_", 96],
   [{ tail: "not", maxTables: 8 }, "keri_not_", 8],
