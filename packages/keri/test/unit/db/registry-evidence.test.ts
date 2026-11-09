@@ -381,7 +381,7 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
       assertEquals(store.putAnchor(issued.said!, late, first), false);
       assertEquals(store.anchor(issued.said!)!.map((item) => item.qb64), [late.qb64, first.qb64]);
       assertEquals(
-        baser.getVal(baser.ancs!.sdb, b(issued.said!)),
+        baser.store.getVal(baser.ancs!.sdb, b(issued.said!)),
         b(`${late.qb64}${first.qb64}`),
       );
       assertEquals(store.putRecord("public", { registryKey: rip.said! }), true);

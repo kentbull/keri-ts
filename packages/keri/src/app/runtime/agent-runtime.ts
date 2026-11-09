@@ -19,8 +19,8 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../../core/mailbox/mailbox-topics.ts";
 import { Revery } from "../../core/routing.ts";
-import { Mailboxer } from "../../db/mailbox/mailboxing.ts";
-import { Noter } from "../../db/noting.ts";
+import { lmdbMailboxer, type Mailboxer } from "../../db/mailbox/mailboxing.ts";
+import { lmdbNoter, type Noter } from "../../db/noting.ts";
 import { createReger, Reger } from "../../db/reger.ts";
 import { Regery as VdrRegery } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
@@ -520,7 +520,7 @@ export function* createAgentRuntime(
 function* openRuntimeNoter(hby: Habery): Operation<Noter> {
   return yield* resource<Noter>(function*(provide) {
     const options = noterOptionsForHabery(hby);
-    const store = new Noter(options);
+    const store = lmdbNoter(options);
     try {
       if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Noter");
       yield* provide(store);
@@ -539,7 +539,7 @@ function* openRuntimeNoter(hby: Habery): Operation<Noter> {
 function* openRuntimeMailboxer(hby: Habery): Operation<Mailboxer> {
   return yield* resource<Mailboxer>(function*(provide) {
     const options = mailboxerOptionsForHabery(hby);
-    const store = new Mailboxer(options);
+    const store = lmdbMailboxer(options);
     try {
       if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Mailboxer");
       yield* provide(store);

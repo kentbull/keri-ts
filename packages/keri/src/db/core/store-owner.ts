@@ -9,6 +9,7 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
 import type { DBer, StoreIdentity } from "./dber.ts";
+import type { LMDBer } from "./lmdber.ts";
 
 /** Names one kind of store so an opener can place it, without saying how. */
 export interface StoreFamily {
@@ -61,6 +62,16 @@ export abstract class StoreOwner {
     return this.store.inWriteTransaction;
   }
 
+  /** Filesystem path on an LMDB-backed store; `null` elsewhere. */
+  get path(): string | null {
+    return (this.store as Partial<LMDBer>).path ?? null;
+  }
+
+  /** Native LMDB environment for low-level tests only; `null` on other backends. */
+  get env(): LMDBer["env"] {
+    return (this.store as Partial<LMDBer>).env ?? null;
+  }
+
   get writeVersion(): number {
     return this.store.writeVersion;
   }
@@ -98,11 +109,15 @@ export abstract class StoreOwner {
  * Open a ready owner for its caller, closing an unreturned acquisition on
  * failure or cancellation without masking the original error.
  */
-export function* openOwner<T extends StoreOwner>(owner: T, label: string): Operation<T> {
+export function* openOwner<T extends StoreOwner>(
+  owner: T,
+  label: string,
+  options?: StoreIdentity,
+): Operation<T> {
   let delivered = false;
   let failure: { error: unknown } | undefined;
   try {
-    if (!(yield* owner.reopen())) throw new DatabaseNotOpenError(`Failed to open ${label}`);
+    if (!(yield* owner.reopen(options))) throw new DatabaseNotOpenError(`Failed to open ${label}`);
     delivered = true;
     return owner;
   } catch (error) {

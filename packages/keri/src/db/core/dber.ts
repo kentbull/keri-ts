@@ -36,6 +36,8 @@ export interface StoreIdentity {
   readonly?: boolean;
   /** Delete the store's contents on close. */
   clear?: boolean;
+  /** Keep an existing store's contents when reopening it. */
+  reuse?: boolean;
   /** Open on construction where the backend supports it. */
   reopen?: boolean;
   logger?: Logger;
