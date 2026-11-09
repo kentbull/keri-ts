@@ -211,7 +211,7 @@ async function writeAgentControllerConfig(
   alias: string,
   port: number,
 ): Promise<void> {
-  const configDir = `${headDirPath}/keri/cf/${configFile}`;
+  const configDir = `${headDirPath}/keri/cf`;
   await Deno.mkdir(configDir, { recursive: true });
   await Deno.writeTextFile(
     `${configDir}/${configFile}.json`,

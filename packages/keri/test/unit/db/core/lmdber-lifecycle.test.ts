@@ -279,3 +279,23 @@ Deno.test("db/core lmdber lifecycle - existing-only opening refuses missing stor
     await Deno.remove(headDirPath, { recursive: true });
   }
 });
+
+Deno.test("db/core lmdber - new environment files take KERIpy's owner-only mode", async () => {
+  const headDirPath = await Deno.makeTempDir({ prefix: "lmdber-mode-" });
+  const mode = (path: string) => Deno.statSync(path).mode! & 0o7777;
+  try {
+    await run(function*() {
+      const lmdber = new LMDBer({ name: "mode", headDirPath });
+      assertEquals(yield* lmdber.reopen(), true);
+      try {
+        assertEquals(mode(lmdber.path!), 0o1700);
+        assertEquals(mode(`${lmdber.path}/data.mdb`), 0o1600);
+        assertEquals(mode(`${lmdber.path}/lock.mdb`), 0o1600);
+      } finally {
+        yield* lmdber.close();
+      }
+    });
+  } finally {
+    await Deno.remove(headDirPath, { recursive: true });
+  }
+});

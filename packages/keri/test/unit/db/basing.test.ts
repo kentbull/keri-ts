@@ -150,7 +150,6 @@ Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on
 
     yield* doer.exit();
     assertEquals(baser.opened, false);
-    assertEquals(baser.path, null);
   });
 
   await assertRejects(() => Deno.stat(tempPath!));

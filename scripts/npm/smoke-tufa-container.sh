@@ -56,8 +56,8 @@ ALIAS=smoke-agent
 PORT=8711
 PASSCODE=MyPasscodeARealSecret
 STARTUP_URL="http://127.0.0.1:${PORT}"
-mkdir -p "${CONFIG_DIR}/keri/cf/${CONFIG_FILE}"
-cat >"${CONFIG_DIR}/keri/cf/${CONFIG_FILE}/${CONFIG_FILE}.json" <<EOF
+mkdir -p "${CONFIG_DIR}/keri/cf"
+cat >"${CONFIG_DIR}/keri/cf/${CONFIG_FILE}.json" <<EOF
 {
   "${ALIAS}": {
     "dt": "2026-01-01T00:00:00.000Z",

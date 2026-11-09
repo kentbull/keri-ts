@@ -910,6 +910,7 @@ Deno.test("agent command uses explicit config-file controller curls and does not
 
   await run(function*() {
     const cf = yield* createConfiger({
+      base: "",
       name: configFile,
       headDirPath: configDir,
       temp: false,

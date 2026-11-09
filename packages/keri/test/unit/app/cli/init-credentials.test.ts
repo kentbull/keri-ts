@@ -195,7 +195,7 @@ Deno.test("init credentials - persistent path failure never retries in temporary
       "--head-dir",
       parent,
       "--nopasscode",
-    ], { TMPDIR: head });
+    ], { TMPDIR: head, HOME: parent });
     assertEquals(result.code, 1);
     assertEquals(result.stdout.includes("temporary"), false);
     assertEquals(await Deno.readTextFile(parent), "retain me");

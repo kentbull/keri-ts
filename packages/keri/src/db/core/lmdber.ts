@@ -125,13 +125,12 @@ export const LMDBER_DEFAULTS: LMDBerDefaults = {
   altHeadDirPath: "~",
   altTailDirPath: ".tufa/db",
   altCleanTailDirPath: ".tufa/clean/db",
-  tempHeadDir: "/tmp",
   tempPrefix: "keri_lmdb_",
   tempSuffix: "_test",
   perm: 0o1700,
   mode: "r+",
   fext: "text",
-  maxNamedDBs: 96,
+  maxNamedDBs: 128,
   // 10 GiB default so common KERIpy deployments (e.g. KERI_BASER_MAP_SIZE=10GiB)
   // open without an explicit CLI/env override. Existing environments still
   // auto-raise to at least the map size stamped in `data.mdb` when larger.
@@ -303,7 +302,6 @@ export class LMDBer extends BaseDBer {
       altHeadDirPath: this.defaults.altHeadDirPath,
       altTailDirPath: this.defaults.altTailDirPath,
       altCleanTailDirPath: this.defaults.altCleanTailDirPath,
-      tempHeadDir: this.defaults.tempHeadDir,
       tempPrefix: this.defaults.tempPrefix,
       tempSuffix: this.defaults.tempSuffix,
       perm: this.defaults.perm,
@@ -497,6 +495,11 @@ export class LMDBer extends BaseDBer {
         `Failed to open LMDB environment: ${message}`,
         { cause: error },
       );
+    }
+
+    // KERIpy passes its directory permissions to `lmdb.open`, which strips execute bits.
+    if (!dbExists && Deno.build.os !== "windows") {
+      for (const file of ["data.mdb", "lock.mdb"]) Deno.chmodSync(`${dbPath}/${file}`, this.pathManager.perm & ~0o111);
     }
   }
 

@@ -2274,6 +2274,7 @@ export function* openHabery(args: HaberyArgs): Operation<Habery> {
         base,
         temp,
         headDirPath,
+        compat,
         reopen: true,
         clear: false,
       })));

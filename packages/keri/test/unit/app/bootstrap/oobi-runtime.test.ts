@@ -672,6 +672,7 @@ Deno.test("config preload bootstrap URLs resolve through shared runtime queues",
 
   await run(function*() {
     const cf = yield* createConfiger({
+      base: "",
       name: targetName,
       headDirPath: targetHeadDirPath,
       reopen: true,
@@ -812,6 +813,7 @@ Deno.test("init command waits for configured well-known auth before exit", async
 
     await run(function*() {
       const cf = yield* createConfiger({
+        base: "",
         name: targetName,
         headDirPath: targetHeadDirPath,
         reopen: true,
@@ -941,6 +943,7 @@ Deno.test("incept command waits for configured well-known auth before inception"
 
     await run(function*() {
       const cf = yield* createConfiger({
+        base: "",
         name: targetName,
         headDirPath: targetHeadDirPath,
         reopen: true,

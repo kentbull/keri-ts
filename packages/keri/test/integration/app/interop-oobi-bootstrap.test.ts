@@ -80,7 +80,7 @@ async function writeTufaAgentControllerConfig(
   alias: string,
   port: number,
 ): Promise<void> {
-  const configDir = `${configRoot}/keri/cf/${configFile}`;
+  const configDir = `${configRoot}/keri/cf`;
   await Deno.mkdir(configDir, { recursive: true });
   await Deno.writeTextFile(
     `${configDir}/${configFile}.json`,

@@ -5,7 +5,8 @@
  * Uses composition pattern instead of inheritance.
  */
 
-import { isAbsolute, join } from "jsr:@std/path";
+import { dirname, extname, isAbsolute, join, resolve } from "jsr:@std/path";
+import { accessSync, constants } from "node:fs";
 import { action, type Operation } from "npm:effection@^3.6.0";
 import { InvalidPathNameError, PathError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
@@ -23,9 +24,27 @@ function isNotFoundLike(error: unknown): boolean {
     || hasErrorCode(error, ["ENOENT"]);
 }
 
-function isPermissionDeniedLike(error: unknown): boolean {
-  return error instanceof Deno.errors.PermissionDenied
-    || hasErrorCode(error, ["EACCES", "EPERM"]);
+/** The temp root hio uses: `/tmp` on macOS, otherwise Python's `tempfile.gettempdir` order. */
+function tempHeadDir(): string {
+  if (Deno.build.os === "darwin") return "/tmp";
+  return Deno.env.get("TMPDIR") || Deno.env.get("TEMP") || Deno.env.get("TMP") || "/tmp";
+}
+
+/** True when this process may read and write `path`, like `os.access(path, F_OK | R_OK | W_OK)`. */
+function isAccessible(path: string): boolean {
+  try {
+    accessSync(path, constants.F_OK | constants.R_OK | constants.W_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Refuse an absolute name or base, which would escape the head directory. */
+function assertRelative(value: string, label: string): void {
+  if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value)) {
+    throw new InvalidPathNameError(`Not relative ${label}=${value} path.`);
+  }
 }
 
 /**
@@ -77,7 +96,6 @@ export interface PathManagerDefaults {
   altCleanTailDirPath: string; //  after altHead: /{altHead}/{altTail}/clean/{base}/{name}
   tempPrefix: string; //       start of temp dir: /{tempPrefix}
   tempSuffix: string; //        after tempPrefix: /{tempPrefix}{tempSuffix}
-  tempHeadDir: string; //       after tempSuffix: /{tempPrefix}{tempSuffix}{tempHead}
   perm: number; // numeric os dir permissions for database directory and database files
   mode: string; // file open mode if filed
   fext: string; // file extension if filed
@@ -91,7 +109,6 @@ export const PATH_DEFAULTS: PathManagerDefaults = {
   altHeadDirPath: "~",
   altTailDirPath: ".tufa/db",
   altCleanTailDirPath: ".tufa/clean/db",
-  tempHeadDir: "/tmp",
   tempPrefix: "keri_lmdb_",
   tempSuffix: "_test",
   perm: 0o1700, // sticky + owner rwx
@@ -110,10 +127,11 @@ export const PATH_DEFAULTS: PathManagerDefaults = {
  * - centralize path naming constraints so higher-level DB/config wrappers do
  *   not each reimplement filesystem policy
  *
- * Current `keri-ts` difference:
- * - this is a local abstraction, not a direct KERIpy class port; it encodes
- *   the same path-layout intent while handling Deno/Node runtime differences in
- *   one place
+ * Current `keri-ts` differences from hio `Filer`, which it otherwise follows:
+ * - composition rather than inheritance, so stores own one instance
+ * - a temp store uses one stable directory per name instead of a fresh
+ *   `mkdtemp` per open, so its data survives a close and reopen; temp stores are
+ *   never shared with KERIpy
  */
 export class PathManager {
   // head directory path
@@ -142,6 +160,8 @@ export class PathManager {
   private defaults: PathManagerDefaults;
   // logger instance for logging
   private readonly logger: Logger;
+  // the temporary directory holding `path`, when temp
+  private tempRoot: string | null = null;
 
   constructor(
     options: PathManagerOptions = {},
@@ -149,10 +169,12 @@ export class PathManager {
   ) {
     this.defaults = { ...PATH_DEFAULTS, ...defaults };
 
-    this._name = options.name || "main";
-    this.base = options.base || "";
+    this._name = options.name ?? "main";
+    this.base = options.base ?? "";
+    assertRelative(this._name, "name");
+    assertRelative(this.base, "base");
     this.temp = options.temp || false;
-    this.headDirPath = options.headDirPath || this.defaults.headDirPath;
+    this.headDirPath = options.headDirPath ?? this.defaults.headDirPath;
     this.perm = options.perm ?? this.defaults.perm;
     this.path = null;
     this.filed = options.filed || false;
@@ -171,18 +193,8 @@ export class PathManager {
   }
 
   set name(value: string) {
-    // Check if path is absolute
-    if (isAbsolute(value) || /^[a-zA-Z]:[\\/]/.test(value)) {
-      throw new InvalidPathNameError(`Not relative name=${value} path.`);
-    }
+    assertRelative(value, "name");
     this._name = value;
-  }
-
-  _getTempPath(): string {
-    const tempDir = Deno.env.get("TMPDIR") || Deno.env.get("TMP")
-      || Deno.env.get("TEMP") || "/tmp";
-    const tempName = `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`;
-    return join(tempDir, tempName);
   }
 
   /** Resolve user home directory with a Windows-aware fallback chain. */
@@ -215,107 +227,22 @@ export class PathManager {
     return path;
   }
 
-  _getPrimaryPath(headDirPath: string, clean: boolean): string {
-    // head / tail / base / name
-    // Expand ~ to HOME directory
-    let head = headDirPath;
-    head = this._pathExpandTilde(head);
-
-    let tail: string;
-
-    if (clean) {
-      tail = this.defaults.cleanTailDirPath;
-    } else {
-      tail = this.defaults.tailDirPath;
-    }
-
-    return this.base
-      ? join(head, tail, this.base, this.name)
-      : join(head, tail, this.name);
-  }
-
-  _getAltPath(clean: boolean): string {
-    // HOME or ~ / tail / base / name
-    let head = Deno.env.get("HOME") || "~";
-    head = this._pathExpandTilde(head);
-    let tail: string;
-
-    if (clean) {
-      tail = this.defaults.altCleanTailDirPath;
-    } else {
-      tail = this.defaults.altTailDirPath;
-    }
-
-    return this.base
-      ? join(head, tail, this.base, this.name)
-      : join(head, tail, this.name);
-  }
-
-  /*
-   * Creates a file path based on head, tail, base, and name. Ensure path is created and optionally reuse it.
-   * @param options path creation options
-   * @returns File path to a persistent file or directory
-   */
-  _getPersistentPaths(
-    options: Partial<PathManagerOptions> = {},
-  ): [string, string] {
-    const headDirPath = options.headDirPath ?? this.headDirPath;
-    const clean = options.clean || false;
-
-    const primary = this._getPrimaryPath(headDirPath, clean);
-    const alt = this._getAltPath(clean);
-    return [primary, alt];
-  }
-
-  _getPaths(
-    options: Partial<PathManagerOptions> = {},
-  ): [string, string, string] {
-    const [primary, alt] = this._getPersistentPaths(options);
-    const tempPath = this._getTempPath();
-    return [primary, alt, tempPath];
-  }
-
   /**
    * Helper: Convert Promise-based file system operations to Effection operations
    * This ensures proper structured concurrency and cancellation support
    */
+  /** True when `path` exists; any failure to stat means absent, like `os.path.exists`. */
   *statOp(path: string): Operation<boolean> {
-    return yield* action((resolve, reject) => {
-      Deno.stat(path)
-        .then(() => resolve(true))
-        .catch((error) => {
-          if (isNotFoundLike(error)) {
-            resolve(false);
-          } else {
-            reject(error);
-          }
-        });
+    return yield* action((resolve) => {
+      Deno.stat(path).then(() => resolve(true)).catch(() => resolve(false));
       return () => {};
     });
   }
 
-  *accessOp(path: string): Operation<boolean> {
-    return yield* action((resolve, reject) => {
-      // In Deno, we check access by stating or trying to read/write.
-      // Simplified to checking existence and relying on OS permissions for now
-      Deno.stat(path)
-        .then(() => resolve(true))
-        .catch(() => resolve(false));
-      return () => {};
-    });
-  }
-
-  *mkdirOp(path: string, perm: number): Operation<boolean> {
-    return yield* action((resolve, reject) => {
-      Deno.mkdir(path, { recursive: true, mode: perm })
-        .then(() => resolve(true))
-        .catch((error) => {
-          if (isPermissionDeniedLike(error)) {
-            resolve(false);
-          } else {
-            reject(error);
-          }
-        });
+  /** Create a directory and its parents with default permissions, like `os.makedirs`. */
+  *mkdirOp(path: string): Operation<void> {
+    yield* action<void>((resolve, reject) => {
+      Deno.mkdir(path, { recursive: true }).then(() => resolve()).catch(reject);
       return () => {};
     });
   }
@@ -361,198 +288,95 @@ export class PathManager {
   }
 
   /**
-   * Reopen/create the directory or file path.
-   * Replicates KERIpy/HIO Filer.remake logic:
-   * - Tries primary path (/usr/local/var/keri/*) first
-   * - Falls back to alt path (~/.tufa/*) on OS errors or access issues
-   *
-   * Returns Effection Operation with true if path is created and accessible, false otherwise.
+   * Close, then open the path, mirroring hio `Filer.reopen`. An existing path
+   * is kept only when `reuse` is set; otherwise the path is made again.
    */
   *reopen(options: Partial<PathManagerOptions> = {}): Operation<boolean> {
-    this._applyOptions(options);
-
-    const headDirPath = options.headDirPath ?? this.headDirPath;
-    const clean = options.clean || false;
-    const reuse = options.reuse || false;
-    const clear = options.clear || false;
-
-    const [primary, alt, tempPath] = this._getPaths({
-      ...options,
-      headDirPath,
-      clean,
-    });
-
-    const resolved = yield* this._resolvePath({
-      primary,
-      alt,
-      tempPath,
-      headDirPath,
-      reuse,
-    });
-    this.headDirPath = resolved.headDirPath;
-
-    if (clear) {
-      yield* this._clearPath(resolved.path);
-    }
-
-    if (!this.filed) {
-      yield* this._ensureDirectoryExists(resolved.path);
-    }
-
-    this.path = resolved.path;
-    this.opened = true;
-    return this.opened;
-  }
-
-  /** Update instance fields from caller-provided options. */
-  private _applyOptions(options: Partial<PathManagerOptions>): void {
+    yield* this.close(options.clear ?? false);
     this.temp = options.temp ?? this.temp;
+    this.headDirPath = options.headDirPath ?? this.headDirPath;
     this.perm = options.perm ?? this.perm;
     this.mode = options.mode ?? this.mode;
     this.fext = options.fext ?? this.fext;
+
+    if (!this.path || !options.reuse || !(yield* this.statOp(this.path))) {
+      this.path = yield* this.remake(options.clean ?? false);
+    }
+    this.opened = true;
+    return true;
   }
 
   /**
-   * Select which concrete path to use: temp, primary with alt fallback,
-   * reuse with alt fallback, or primary directly (custom headDirPath).
+   * Choose and create the path, mirroring hio `Filer.remake`. `headDirPath` is
+   * left alone on fallback, so each open retries the primary location first.
    */
-  private *_resolvePath(params: {
-    primary: string;
-    alt: string;
-    tempPath: string;
-    headDirPath: string;
-    reuse: boolean;
-  }): Operation<{ path: string; headDirPath: string }> {
+  private *remake(clean: boolean): Operation<string> {
+    const tail = clean ? this.defaults.cleanTailDirPath : this.defaults.tailDirPath;
+    const name = this.fileName();
+
     if (this.temp) {
-      return { path: params.tempPath, headDirPath: params.headDirPath };
+      this.tempRoot = join(tempHeadDir(), `${this.defaults.tempPrefix}${this.name}${this.defaults.tempSuffix}`);
+      const path = this.filed || this.extensioned ? join(this.tempRoot, name) : this.tempRoot;
+      yield* this.makePath(path);
+      return path;
     }
 
-    if (params.reuse) {
-      return yield* this._reuseOrFallback(
-        params.primary,
-        params.alt,
-        params.headDirPath,
-      );
-    }
+    let path = resolve(this._pathExpandTilde(join(this.headDirPath, tail, this.base, name)));
+    if (clean && (yield* this.statOp(path))) yield* this.rmOp(path);
 
-    return yield* this._createOrFallback(
-      params.primary,
-      params.alt,
-      params.headDirPath,
-    );
-  }
-
-  /**
-   * Try to use or create the primary path. If creation fails (e.g. EACCES),
-   * fall back to the alt path. Throws if alt path also fails.
-   */
-  private *_createOrFallback(
-    primary: string,
-    alt: string,
-    headDirPath: string,
-  ): Operation<{ path: string; headDirPath: string }> {
-    const exists = yield* this.statOp(primary);
-    if (exists) {
-      return { path: primary, headDirPath };
-    }
-
-    this.logger.debug(`Creating directory at ${primary}`);
-    const created = yield* this.mkdirOp(primary, this.perm);
-    if (created) {
-      return { path: primary, headDirPath };
-    }
-
-    this.logger.debug(
-      `Failed to create primary path, falling back to alt path`,
-    );
-    const altReady = yield* this._ensurePathAccessible(alt);
-    if (!altReady) {
-      this.logger.error(`Alt path not available at ${alt}`);
-      throw new PathError(`Alt path not available at ${alt}`);
-    }
-    return { path: alt, headDirPath: this.defaults.altHeadDirPath };
-  }
-
-  /**
-   * Verify the primary path exists and is accessible for reuse.
-   * If not accessible and using the default head dir, fall back to alt.
-   */
-  private *_reuseOrFallback(
-    primary: string,
-    alt: string,
-    headDirPath: string,
-  ): Operation<{ path: string; headDirPath: string }> {
-    const exists = yield* this.statOp(primary);
-    const accessible = exists ? yield* this.accessOp(primary) : false;
-
-    if (exists && accessible) {
-      return { path: primary, headDirPath };
-    }
-
-    this.logger.debug(
-      `Reuse path unavailable, attempting to (re)create primary path`,
-    );
-    const primaryReady = yield* this._ensurePathAccessible(primary);
-    if (primaryReady) {
-      return { path: primary, headDirPath };
-    }
-
-    this.logger.debug(`Primary path unavailable, trying alt path`);
-    const altReady = yield* this._ensurePathAccessible(alt);
-    if (!altReady) {
-      this.logger.debug(`Alt path not available: ${alt}`);
-    }
-    return { path: alt, headDirPath: this.defaults.altHeadDirPath };
-  }
-
-  /**
-   * Ensure a path exists and is accessible, creating it if necessary.
-   * Returns true if the path is ready for use.
-   */
-  private *_ensurePathAccessible(path: string): Operation<boolean> {
-    const exists = yield* this.statOp(path);
-    if (!exists) {
-      this.logger.debug(`Creating directory at ${path}`);
-      return yield* this.mkdirOp(path, this.perm);
-    }
-    return yield* this.accessOp(path);
-  }
-
-  /** Remove existing file or directory at path. */
-  private *_clearPath(path: string): Operation<void> {
-    const stat = yield* this.statFileOp(path);
-    if (stat.isDirectory || stat.isFile) {
-      yield* this.rmOp(path);
-    }
-  }
-
-  /** Ensure the directory at path exists and is accessible, creating it if needed. */
-  private *_ensureDirectoryExists(path: string): Operation<void> {
-    const exists = yield* this.statOp(path);
-    if (!exists) {
-      this.logger.debug(`Creating directory at ${path}`);
-      const created = yield* this.mkdirOp(path, this.perm);
-      if (!created) {
-        this.logger.debug(`Failed to create directory at ${path}`);
+    if (!(yield* this.statOp(path))) {
+      try {
+        yield* this.makePath(path);
+      } catch (cause) {
+        this.logger.debug(`Failed to create ${path}, falling back to alt path`);
+        path = yield* this.makeAltPath(clean, name, cause);
       }
-    } else {
-      const accessible = yield* this.accessOp(path);
-      if (!accessible) {
-        this.logger.debug(`Path exists but is not accessible: ${path}`);
-      }
+    } else if (!isAccessible(path)) {
+      path = yield* this.makeAltPath(clean, name);
     }
+
+    if (!this.extensioned && Deno.build.os !== "windows") Deno.chmodSync(path, this.perm);
+    return path;
+  }
+
+  /** Name the path uses, with `fext` added to an extensionless file name. */
+  private fileName(): string {
+    return (this.filed || this.extensioned) && !extname(this.name) ? `${this.name}.${this.fext}` : this.name;
+  }
+
+  /** Create a directory path, or a file path's parents and the file when `filed`. */
+  private *makePath(path: string): Operation<void> {
+    if (!this.filed && !this.extensioned) {
+      yield* this.mkdirOp(path);
+      return;
+    }
+    yield* this.mkdirOp(dirname(path));
+    if (this.filed) Deno.openSync(path, { read: true, write: true, create: true, mode: this.perm }).close();
+  }
+
+  /** Make the home-directory alternate, failing when it is unavailable too. */
+  private *makeAltPath(clean: boolean, name: string, cause?: unknown): Operation<string> {
+    const tail = clean ? this.defaults.altCleanTailDirPath : this.defaults.altTailDirPath;
+    const path = resolve(this._pathExpandTilde(this.defaults.altHeadDirPath), tail, this.base, name);
+    try {
+      if (!(yield* this.statOp(path))) yield* this.makePath(path);
+    } catch (error) {
+      this.logger.error(`Alt path not available at ${path}`);
+      throw new PathError(`Alt path not available at ${path}`, { cause: cause ?? error });
+    }
+    return path;
   }
 
   /**
-   * Close the path manager
-   * If clear is true, removes the directory/file
-   * Uses Effection for structured concurrency
+   * Mark closed, removing the path when `clear` is set. The path is retained so
+   * a later `reopen({ reuse: true })` finds it, as hio does.
    */
   *close(clear = false): Operation<boolean> {
     if (clear && this.path) {
       yield* this.rmOp(this.path);
+      if (this.tempRoot) yield* this.rmOp(this.tempRoot);
+      this.tempRoot = null;
     }
-    this.path = null;
     this.opened = false;
     return true;
   }

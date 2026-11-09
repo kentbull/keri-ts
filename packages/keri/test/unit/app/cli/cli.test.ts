@@ -385,7 +385,7 @@ Deno.test("CLI - init command with all options", async () => {
   await run(() =>
     initCommand({
       name: `fulltest-${crypto.randomUUID()}`,
-      base: "/custom/base",
+      base: "custom/base",
       temp: true,
       salt: "0AAwMTIzNDU2Nzg5YWJjZGVm",
       configDir,
