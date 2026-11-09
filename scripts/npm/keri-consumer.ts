@@ -1,5 +1,6 @@
 /** Compile-only installed consumer of public manager, host, ingress and storage contracts. */
-import { createBaser, type Keeper } from "keri-ts/db";
+import type { Keeper } from "keri-ts/db";
+import { createBaser } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   type AgentCue,
