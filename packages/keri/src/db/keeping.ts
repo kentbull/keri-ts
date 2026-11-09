@@ -16,9 +16,8 @@ import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts"
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
 import type { DBer, StoreIdentity } from "./core/dber.ts";
-import { lmdbDefaultsFor } from "./core/lmdb-opener.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { openOwner, type StoreFamily, StoreOwner } from "./core/store-owner.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { Komer } from "./koming.ts";
 import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
@@ -589,14 +588,4 @@ export class Keeper extends StoreOwner {
   getRmids(pre: string): GroupMemberTuple[] {
     return this.rmids.get(pre);
   }
-}
-
-/** Construct a closed LMDB-backed `Keeper` at its established paths. */
-export function lmdbKeeper({ compat, ...options }: KeeperOptions = {}): Keeper {
-  return new Keeper(new LMDBer(options, lmdbDefaultsFor(Keeper.Family, compat)), options.logger);
-}
-
-/** Constructor-safe async factory for a fully reopened `Keeper`. */
-export function* createKeeper(options: KeeperOptions = {}): Operation<Keeper> {
-  return yield* openOwner(lmdbKeeper(options), "Keeper", options);
 }

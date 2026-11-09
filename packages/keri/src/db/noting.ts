@@ -14,9 +14,8 @@ import { Cigar, MtrDex, Salter } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../core/errors.ts";
 import type { StoreIdentity } from "./core/dber.ts";
-import { lmdbDefaultsFor } from "./core/lmdb-opener.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { openOwner, type StoreFamily, StoreOwner } from "./core/store-owner.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { CesrSuber, Suber } from "./subing.ts";
 
 const textEncoder = new TextEncoder();
@@ -268,14 +267,4 @@ export class Noter extends StoreOwner {
 
     return pairs;
   }
-}
-
-/** Construct a closed LMDB-backed `Noter` at its established paths. */
-export function lmdbNoter({ compat, ...options }: NoterOptions = {}): Noter {
-  return new Noter(new LMDBer(options, lmdbDefaultsFor(Noter.Family, compat)));
-}
-
-/** Open a notification sidecar and return the ready-to-use databaser. */
-export function* createNoter(options: NoterOptions = {}): Operation<Noter> {
-  return yield* openOwner(lmdbNoter(options), "Noter", options);
 }

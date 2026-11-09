@@ -5,7 +5,7 @@ import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/identity/keeping.ts";
 import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
-import { createKeeper } from "../../../src/db/keeping.ts";
+import { createKeeper } from "../../../src/db/lmdb-stores.ts";
 
 function keeperPubsKey(pre: string, ridx: number): string {
   return `${pre}.${ridx.toString(16).padStart(32, "0")}`;

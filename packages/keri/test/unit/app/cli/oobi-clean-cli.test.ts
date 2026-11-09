@@ -4,9 +4,10 @@ import { t } from "../../../../../cesr/mod.ts";
 import { oobiCleanCommand } from "../../../../src/cli/endpoints/oobi-clean.ts";
 import { DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { HabitatRecord, OobiRecord } from "../../../../src/core/records.ts";
-import { Baser, createBaser } from "../../../../src/db/basing.ts";
+import { Baser } from "../../../../src/db/basing.ts";
 import { LMDBer } from "../../../../src/db/core/lmdber.ts";
 import { Komer } from "../../../../src/db/koming.ts";
+import { createBaser } from "../../../../src/db/lmdb-stores.ts";
 import { CLITestHarness } from "../../../utils.ts";
 
 const first = "https://example.test/oobi/A%2fb";

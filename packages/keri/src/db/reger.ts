@@ -38,9 +38,8 @@ import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from ".
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
 import type { StoreIdentity } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { lmdbDefaultsFor } from "./core/lmdb-opener.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { openOwner, type StoreFamily, StoreOwner } from "./core/store-owner.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
 import {
@@ -467,10 +466,4 @@ export class Reger extends StoreOwner {
 
     return sources;
   }
-}
-
-/** Transfer a ready `Reger` to its caller, closing unreturned acquisitions on failure or cancellation. */
-export function* createReger({ compat, ...options }: RegerOptions = {}): Operation<Reger> {
-  const store = new LMDBer(options, lmdbDefaultsFor(Reger.Family, compat));
-  return yield* openOwner(new Reger(store), "Reger", options);
 }
