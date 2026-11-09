@@ -44,6 +44,16 @@ commits already in the mirror stay readable, later transactions throw, and recov
 new composition loading the durable prefix. An unwritten table rides the next batch, or
 a table-only batch at `flushed` or `close`, so its dupsort flag persists.
 
+`IndexedDbPersistence` keeps all logical tables in one `rows` object store (keys
+`[table, key, valueOrEmpty]`, `ArrayBuffer` parts) plus a `meta` store, so a new table never needs
+a schema upgrade that another tab's open connection could block. A write is one strict
+`readwrite` transaction settled on `complete`; a request's `success` fires before the
+commit is final. `versionchange` closes the connection and the adapter then refuses
+`load` and `write` until a new `meta`, because writing on after another context deleted the
+database would break prefix durability. A blocked `deleteDatabase` stays pending in the
+browser, so `clear` rejects rather than hanging. `fake-indexeddb` honors all of this, but
+real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.
