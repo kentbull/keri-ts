@@ -23,20 +23,28 @@ Diger owns the shared incremental algorithm registry. Hash ordered concatenated
 decoded Texter bytes, not qualified text. EXN `a` may be a string digest even
 though `.seals` is array-only; verify it after signatures and before acceptance.
 
-## Sodium ownership
+## Sealed boxes, X25519 and the remaining sodium backend
 
-Salter and sealed boxes share one initialized sodium backend. Wrapper and raw
-distribution identity both matter for the private wasm32 ABI. The frozen Deno lock
-and generated npm vendor hashes bind the exact distribution; do not rely on an
-upstream semver range or instantiate a second heap as an identity check.
-The npm loader supplies native Web Crypto only when its global is absent,
-before evaluating either pinned distribution. Existing globals and browser randomness
-remain authoritative. Record the loader hash separately; wrapper/raw cryptographic bytes stay pinned.
-Raw X25519 public derivation/agreement uses that same initialized backend. Only
-the pinned `weak public key` failure maps to null; argument/backend failures
-propagate. The IPEX DHKE owner supplies fresh independent keys and Python's local
-`/v1` HKDF-SHA256 context; carrying it in v2 messages does not standardize the KDF.
-Owned ephemeral/shared arrays are cleared best effort, without an erasure claim.
+Sealed boxes, Ed25519-to-X25519 conversion and raw X25519 agreement are pure `@noble/*`
+(`sealed-box.ts`, `x25519.ts`): HSalsa20 `beforenm`, BLAKE2b-192 nonce, XSalsa20-Poly1305 with
+the tag first. Only noble's `invalid private or public key received` (low-order peer) and
+`invalid tag` map to null; short ciphertext and wrong-length keys throw. Do not reintroduce
+sodium calls there. `sodium-parity-vectors.json` holds pysodium vectors for every former
+libsodium call, including fixed-ephemeral constructions that must match byte for byte;
+regenerate with `scripts/reference-sodium-parity-vectors.py` when KERIpy or the seam changes.
+The IPEX DHKE owner supplies fresh independent keys and Python's local `/v1` HKDF-SHA256
+context; carrying it in v2 messages does not standardize the KDF. Owned ephemeral/shared
+arrays are cleared best effort, without an erasure claim.
+
+`pwhash.ts` is now the only consumer of the initialized sodium backend, so the libsodium blob
+(about 188 KB gzipped bundled) is still shipped until Argon2id moves. Wrapper and raw
+distribution identity both matter for its private wasm32 ABI. The frozen Deno lock and
+generated npm vendor hashes bind the exact distribution; do not rely on an upstream semver
+range or instantiate a second heap as an identity check. The npm loader supplies native Web
+Crypto only when its global is absent, before evaluating either pinned distribution. Measured
+alternatives are byte-identical but trade differently: `@noble/hashes/argon2` is about 13x
+slower, `hash-wasm` matches libsodium speed but rejects the empty password KERIpy's default
+path produces. See the [replacement report](../../docs/reports/crypto/SODIUM_REPLACEMENT_2026-11-08.md).
 
 `pwhash.ts` owns password/salt/output allocations and reloads HEAPU8 after growth.
 Zero-before-free applies only to owned ranges. Native temporaries and JS copies

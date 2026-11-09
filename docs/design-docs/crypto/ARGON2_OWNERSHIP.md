@@ -1,5 +1,9 @@
 # Owned Argon2id buffers
 
+`pwhash.ts` is the only consumer of `sodium.ts`: sealed boxes, key conversion and raw X25519 agreement use
+`@noble/*` and are covered by `test/fixtures/sodium-parity-vectors.json` (see the
+[replacement report](../../reports/crypto/SODIUM_REPLACEMENT_2026-11-08.md)).
+
 `pwhash.ts` is a narrow internal allocation owner for the exact `libsodium-wrappers-sumo@0.8.4` / `libsodium-sumo@0.8.4`
 backend. The standard wrapper frees its temporary password, salt, and output allocations without wiping them. This
 helper zeroes those three owned WASM ranges before freeing, including native failure and partial allocation. The
