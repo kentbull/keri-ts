@@ -3,7 +3,8 @@ import { Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { type Operation, run, spawn } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertThrows } from "jsr:@std/assert";
 import { PeerVersionError, Poster } from "../../../../src/app/delivery/forwarding.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   type AgentRuntime,
   createAgentRuntime,
