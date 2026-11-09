@@ -252,7 +252,10 @@ function registerRotateCmd(program: Command, dispatch: CommandDispatch): void {
           "Anchor data, '@' allowed",
           collectOption,
         )
-        .option("--version <version>", "KERI protocol version for the rotation event; matches the accepted KEL by default, or 2.0 to upgrade a 1.0 KEL"),
+        .option(
+          "--version <version>",
+          "KERI protocol version for the rotation event; matches the accepted KEL by default, or 2.0 to upgrade a 1.0 KEL",
+        ),
       true,
     ),
     dispatch,
