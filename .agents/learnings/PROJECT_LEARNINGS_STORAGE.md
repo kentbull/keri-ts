@@ -11,6 +11,8 @@ to their mirrors synchronously and share one prefix-durable queue per compositio
 the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
 `BaseDBer` owns the ordinal, IoSet and IoDup families over backend row primitives.
 Wrappers hold opaque `Table` handles; only LMDB-specific code may call `lmdbTable()`.
+Dupsort `scanKeys` yields each key once, unlike entry `scan`; use `seekVal` to seek
+within one key's duplicates. Native table-name spellings stay inside `hasTable`.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

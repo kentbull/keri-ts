@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert";
 import { b, t } from "../../../../../cesr/mod.ts";
+import type { ScanOptions } from "../../../../src/db/core/dber.ts";
 import { onItemsAsText, pairsAsText, valuesAsText, withTempLMDBer } from "./lmdber-test-utils.ts";
 
 Deno.test("db/core lmdber dup - putVals returns false on mixed existing input but still stores new values in lexical order", async () => {
@@ -221,5 +222,22 @@ Deno.test("db/core lmdber oniodup - delete, count, and full-scan helpers work ac
       "blue",
       "side",
     ]);
+  });
+});
+
+Deno.test("LMDBer keys-only scans and duplicate seeks follow the store contract", async () => {
+  await withTempLMDBer("dup-contract", (lmdber) => {
+    const dups = lmdber.openDB("dups.", true);
+    for (const [key, val] of [["a", "1"], ["a", "2"], ["b", "1"], ["b", "2"], ["c", "1"]]) {
+      lmdber.addVal(dups, b(key), b(val));
+    }
+    const keys = (options: ScanOptions) => [...lmdber.scanKeys(dups, options)].map(t);
+    assertEquals(keys({}), ["a", "b", "c"]);
+    assertEquals(keys({ limit: 2 }), ["a", "b"]);
+    assertEquals(keys({ start: b("a"), exclusiveStart: true }), ["b", "c"]);
+    assertEquals(t(lmdber.seekVal(dups, b("a"), b("15"))!), "2");
+    assertEquals(lmdber.seekVal(dups, b("a"), b("3")), null);
+    assertEquals(lmdber.hasTable("dups."), true);
+    assertEquals(lmdber.hasTable("absent."), false);
   });
 });

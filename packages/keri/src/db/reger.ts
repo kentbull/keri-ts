@@ -37,7 +37,7 @@ import {
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { LMDBer, type LMDBerOptions, lmdbTable } from "./core/lmdber.ts";
+import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
 import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
 import {
@@ -308,7 +308,7 @@ export class Reger extends LMDBer {
   ): CapturedTelReplay | null {
     let end: number | null = null;
     for (
-      const entry of lmdbTable(this.tels.sdb).getRange({
+      const entry of this.scan(this.tels.sdb, {
         start: b(`${pre}.${"f".repeat(32)}`),
         reverse: true,
         limit: 1,

@@ -77,9 +77,9 @@ import {
 } from "../core/records.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import { baserDefaults } from "./baser-defaults.ts";
-import type { Table } from "./core/dber.ts";
+import type { ScanOptions, Table } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { LMDBer, LMDBerOptions, lmdbTable } from "./core/lmdber.ts";
+import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
 import { ExchangeRecord, ExchangeRegistryStateRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
@@ -360,7 +360,7 @@ export class Baser {
   /** Test a schema dependency ownership marker without hydrating its stored exchange. */
   hasSchemaEscrow(said: string): boolean {
     if (this.emse) {
-      for (const key of lmdbTable(this.emse.sdb).getKeys({ start: b(`${said}.`), limit: 1 })) {
+      for (const key of this.lmdber.scanKeys(this.emse.sdb, { start: b(`${said}.`), limit: 1 })) {
         return t(key).startsWith(`${said}.`);
       }
     }
@@ -390,6 +390,16 @@ export class Baser {
   /** Read an owned binary row through the backing database's normal copy path. */
   getVal(table: Table, key: Uint8Array): Uint8Array | null {
     return this.lmdber.getVal(table, key);
+  }
+
+  /** Scan owned keys through the backing database. */
+  scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array> {
+    return this.lmdber.scanKeys(table, options);
+  }
+
+  /** Seek within one key's duplicates through the backing database. */
+  seekVal(table: Table, key: Uint8Array, start?: Uint8Array): Uint8Array | null {
+    return this.lmdber.seekVal(table, key, start);
   }
 
   /**
@@ -672,10 +682,10 @@ export class Baser {
         subkey: "epsd.",
         ctor: Dater,
       });
-      this.emse = !this.lmdber.readonly || this.env!.getBinary(b("emse.")) !== undefined
+      this.emse = !this.lmdber.readonly || this.lmdber.hasTable("emse.")
         ? new SerderSuber(this.lmdber, { subkey: "emse." })
         : null;
-      this.emsd = !this.lmdber.readonly || this.env!.getBinary(b("emsd.")) !== undefined
+      this.emsd = !this.lmdber.readonly || this.lmdber.hasTable("emsd.")
         ? new CesrSuber(this.lmdber, { subkey: "emsd.", ctor: Dater })
         : null;
 
@@ -1660,7 +1670,7 @@ export class Baser {
     if (!Number.isSafeInteger(felEnd)) throw new RangeError("Unsupported witness replay horizon");
     if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]]);
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of lmdbTable(this.kels.sdb).getRange({ start, reverse: true, limit: 1 })) {
+    for (const entry of this.lmdber.scan(this.kels.sdb, { start, reverse: true, limit: 1 })) {
       const [prefix, end] = splitOnKey(entry.key);
       if (t(prefix) !== pre) return null;
       if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
@@ -1708,7 +1718,7 @@ export class Baser {
   private replayEnd(pre: string): number | null {
     // Fixed-width CESR ordinal keys sort lexically, so the maximal suffix bounds this prefix's tail.
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of lmdbTable(this.fels.sdb).getRange({ start, reverse: true, limit: 1 })) {
+    for (const entry of this.lmdber.scan(this.fels.sdb, { start, reverse: true, limit: 1 })) {
       const [prefix, ordinal] = splitOnKey(entry.key);
       return t(prefix) === pre ? ordinal : null;
     }
