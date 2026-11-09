@@ -1,5 +1,11 @@
 # @keri-ts/verifier
 
+## 2.0.1
+
+### Patch Changes
+
+- 1f23273: Depend on keri-ts 2.0.1, which rejects credentials whose body does not match their SAID. These packages pin keri-ts to an exact version, so they must be republished for the fix to reach their installs.
+
 ## 2.0.0
 
 First npm release, coordinated with cesr-ts and keri-ts 2.0.0.
