@@ -81,11 +81,10 @@ export class Regery {
     if (!hab) throw new ValidationError(`Unknown local registry issuer: ${prefix}`);
     const rip = regcept(hab.pre, options);
     if (this.regs.has(rip.said!)) throw new ValidationError(`Registry already exists: ${rip.said}`);
-    const env = this.baser.env;
-    if (!env) throw new DatabaseNotOpenError("Registry backing store is closed.");
+    if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
     const records = this.store.initializeRecords();
     const registry = new Registry(hab, this.store, name);
-    env.transactionSync(() => {
+    this.baser.transaction(() => {
       if (records.get(name)) throw new ValidationError(`Registry alias already exists: ${name}`);
       const result = registry.processEvent(rip);
       if (result.kind === "reject") throw new ValidationError(`Registry inception rejected: ${result.reason}`);

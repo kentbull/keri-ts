@@ -239,10 +239,9 @@ export class RegistryEventer {
     if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
     const previous = this.acceptedEvent(event);
     if (previous) return previous;
-    const env = this.store.baser.env;
-    if (!env) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
+    if (!this.store.baser.opened) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
     if (this.store.baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
-    return env.transactionSync((): RegistryEventDecision => {
+    return this.store.baser.transaction((): RegistryEventDecision => {
       const prior = this.acceptedAt(event.regid, Number(event.sn) - 1);
       if (prior && prior.said !== event.prior) return { kind: "reject", reason: "prior" };
       const previous = this.acceptedEvent(event);
@@ -279,10 +278,9 @@ export class RegistryEventer {
       if (previous.kind === "duplicate") this.regk = event.regid;
       return previous;
     }
-    const env = this.store.baser.env;
-    if (!env) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
+    if (!this.store.baser.opened) throw new DatabaseNotOpenError("Registry acceptance requires an open backing store.");
     if (this.store.baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
-    const decision = env.transactionSync((): RegistryEventDecision => {
+    const decision = this.store.baser.transaction((): RegistryEventDecision => {
       const previous = this.acceptedEvent(event);
       if (previous) return previous;
       if (this.store.head(event.regid)) throw new Error("Registry head exists without its accepted inception.");

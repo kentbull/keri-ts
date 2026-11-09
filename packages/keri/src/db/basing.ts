@@ -392,6 +392,26 @@ export class Baser {
     return this.lmdber.getVal(table, key);
   }
 
+  /** Run one atomic transaction on the backing database. */
+  transaction<T>(fn: () => T): T {
+    return this.lmdber.transaction(fn);
+  }
+
+  /** Report the backing database's committed write version. */
+  get writeVersion(): number {
+    return this.lmdber.writeVersion;
+  }
+
+  /** Complete when earlier commits to the backing database are durable. */
+  flushed(): Operation<void> {
+    return this.lmdber.flushed();
+  }
+
+  /** Discard the backing database's retained read view. */
+  refreshRead(): void {
+    this.lmdber.refreshRead();
+  }
+
   /** Scan owned keys through the backing database. */
   scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array> {
     return this.lmdber.scanKeys(table, options);

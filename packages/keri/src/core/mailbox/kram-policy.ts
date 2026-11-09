@@ -289,10 +289,9 @@ export class KramPolicy {
 
   /** Publish policy rows and their restart-safe transition metadata atomically. */
   private commit(mutate: () => void): void {
-    const env = this.db.env;
-    if (!env) throw new Error("KRAM policy database is closed");
+    if (!this.db.opened) throw new Error("KRAM policy database is closed");
     const next = JSON.stringify(this.state);
-    env.transactionSync(() => {
+    this.db.transaction(() => {
       if (this.db.hbys.get(policyKey) !== this.storedState) throw new Error("KRAM policy changed during transition");
       mutate();
       this.db.hbys.pin(policyKey, next);

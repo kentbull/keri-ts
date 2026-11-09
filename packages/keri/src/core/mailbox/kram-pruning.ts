@@ -1,7 +1,7 @@
 /** Internal finite cache maintenance; each batch releases read cursors before writes. */
 import { b } from "cesr-ts";
 import type { Baser } from "../../db/basing.ts";
-import { lmdbTable } from "../../db/core/lmdber.ts";
+import type { Table } from "../../db/core/dber.ts";
 import { removeKramFactors } from "../../db/mailbox/kram-factors.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import { TxnMsgCacheRecord } from "../records.ts";
@@ -25,7 +25,7 @@ interface Scan {
 
 /** Prune stored windows, then prove orphan XIDs with restartable finite existence scans. */
 export class KramPruner {
-  private env: Baser["env"] = null;
+  private bound: Table | null = null;
   private phase = 0;
   private scans: Scan[] = [{}, {}, {}];
   private orphan?: { xid: string; physical: Uint8Array; scan: Scan; version: number };
@@ -34,22 +34,15 @@ export class KramPruner {
     if (policy.db !== db) throw new Error("KRAM pruning policy must use its backing store");
   }
 
-  /** Use committed environment state, never assume transaction IDs increment by one. */
-  private version(): number {
-    const version = (this.db.env!.getStats() as { lastTxnId?: number }).lastTxnId;
-    if (!Number.isSafeInteger(version) || version! < 0) throw new Error("Invalid KRAM pruning transaction ID");
-    return version!;
-  }
-
   /** Capture a finite horizon and release each tail/next iterator before returning. */
   private next(family: number, scan: Scan): Uint8Array | undefined {
     const table = [this.db.msgc, this.db.tmsc, this.db.xdt][family];
     if (!scan.initialized) {
-      for (const key of lmdbTable(table.sdb).getKeys({ reverse: true, limit: 1 })) scan.end = this.after(key);
+      for (const key of this.db.scanKeys(table.sdb, { reverse: true, limit: 1 })) scan.end = this.after(key);
       scan.initialized = true;
     }
     if (scan.end) {
-      for (const key of lmdbTable(table.sdb).getKeys({ start: scan.start, end: scan.end, limit: 1 })) {
+      for (const key of this.db.scanKeys(table.sdb, { start: scan.start, end: scan.end, limit: 1 })) {
         return key.slice();
       }
     }
@@ -92,16 +85,15 @@ export class KramPruner {
     if (when === null) throw new Error("Invalid KRAM pruning receiver clock");
     if (!Number.isSafeInteger(maxRows) || maxRows < 1) throw new RangeError("Invalid KRAM pruning batch");
     const result: KramPruneResult = { kind: "pruned", visited: 0, removed: 0, openers: 0, passComplete: false };
-    const env = this.db.env;
-    if (!env) throw new Error("KRAM pruning database is closed");
-    if (this.env !== env) {
-      this.env = env;
+    if (!this.db.opened) throw new Error("KRAM pruning database is closed");
+    if (this.bound !== this.db.msgc.sdb) {
+      this.bound = this.db.msgc.sdb;
       this.phase = 0;
       this.scans = [{}, {}, {}];
       this.orphan = undefined;
     }
     this.policy.reconcile();
-    env.resetReadTxn();
+    this.db.refreshRead();
     while (result.visited < maxRows) {
       if (this.phase < 2) {
         const scan = this.scans[this.phase], physical = this.next(this.phase, scan);
@@ -110,7 +102,7 @@ export class KramPruner {
           continue;
         }
         const keys = this.keys(physical, this.phase + 2), table = this.phase ? this.db.tmsc : this.db.msgc;
-        env.transactionSync(() => {
+        this.db.transaction(() => {
           const record = table.get(keys);
           if (!record || !this.expired(record, when)) return;
           table.rem(keys);
@@ -132,17 +124,17 @@ export class KramPruner {
         }
         const [xid] = this.keys(physical, 1);
         this.db.xdt.get(xid); // Deserialization failures remain corruption, not an absent opener.
-        this.orphan = { xid, physical, scan: {}, version: this.version() };
+        this.orphan = { xid, physical, scan: {}, version: this.db.writeVersion };
         result.visited++;
         continue;
       }
-      const candidate = this.orphan, version = this.version();
+      const candidate = this.orphan, version = this.db.writeVersion;
       if (candidate.version !== version) {
         candidate.scan = {};
         candidate.version = version;
       }
       // Capture committed version before opening a fresh read snapshot, including other-process writes.
-      env.resetReadTxn();
+      this.db.refreshRead();
       const physical = this.next(1, candidate.scan);
       if (physical) {
         const keys = this.keys(physical, 3);
@@ -151,14 +143,14 @@ export class KramPruner {
         if (keys[1] !== candidate.xid) continue;
       } else {
         result.visited++;
-        const removed = env.transactionSync(() => {
-          if (candidate.version !== this.version()) return false;
+        const removed = this.db.transaction(() => {
+          if (candidate.version !== this.db.writeVersion) return false;
           if (this.db.xdt.rem(candidate.xid)) result.openers++;
           return true;
         });
         if (!removed) {
           candidate.scan = {};
-          candidate.version = this.version();
+          candidate.version = this.db.writeVersion;
           continue;
         }
       }

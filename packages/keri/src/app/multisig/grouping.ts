@@ -791,7 +791,7 @@ export class Multiplexor {
       // The authenticated local wrapper carries this member's actual verified child contribution.
       if (this.isLocalHab(sender)) yield* this.processApproved(nests);
     }
-    const { existing, submitters } = this.hby.db.env!.transactionSync(() => {
+    const { existing, submitters } = this.hby.db.transaction(() => {
       const indexed = this.hby.db.meids.get([embeddedSaid]);
       const existing = isV2RegistryRoute(route) || v2Ipex
         ? indexed.filter(diger => {

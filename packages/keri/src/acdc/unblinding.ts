@@ -577,7 +577,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
     // Serialization may suspend; repeat all authority and snapshot checks inside
     // the single writer. This does not rewrite another Grant or any Admit.
     const wires = yield* abortable((signal) => prepareNests(nests, signal));
-    const result = db.env!.transactionSync((): ExchangeDecision => {
+    const result = db.transaction((): ExchangeDecision => {
       this.live(op);
       this.current(op);
       const retained = db.enst.get([op.grant]);
@@ -592,9 +592,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
       for (const [node, record] of verified.registryStates) db.exrs.pin([op.grant, node], record);
       return { kind: "accept", said: op.grant };
     });
-    yield* abortable(async () => {
-      await db.env!.flushed;
-    });
+    yield* db.flushed();
     return result;
   }
 

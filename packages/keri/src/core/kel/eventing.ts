@@ -277,7 +277,6 @@ export class Kevery {
     input: KeverEventEnvelope | (() => KeverEventEnvelope | null),
     escrow?: EventEscrowEntry,
   ): KeverDecision | null {
-    const env = this.db.env!;
     if (this.db.inWriteTransaction) {
       throw new Error("Kevery must own the KEL transaction; process events outside caller-owned writers");
     }
@@ -301,7 +300,7 @@ export class Kevery {
       if (escrow) this.removeEscrow(escrow.kind, escrow.pre, escrow.on, escrow.said);
       return decision;
     };
-    const decision = env.transactionSync(write);
+    const decision = this.db.transaction(write);
     this.publishEventState(metadata?.accepted);
     if (metadata?.cues.length) this.cues.extend(metadata.cues);
     return decision;
