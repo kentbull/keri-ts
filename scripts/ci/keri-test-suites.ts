@@ -153,6 +153,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/tufa-delegation-group.test.ts",
       "test/unit/app/identity/challenge/challenge-direct-runtime.test.ts",
       "test/unit/app/delivery/forwarding.test.ts",
+      "test/unit/app/delivery/peer-version-selection.test.ts",
       "test/unit/app/mailbox/mailbox-director-lifecycle.test.ts",
       "test/unit/app/mailbox/mailbox-poller-runtime.test.ts",
       "test/unit/app/mailbox/mailbox-runtime.test.ts",

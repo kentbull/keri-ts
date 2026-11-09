@@ -32,7 +32,7 @@ import {
   updateMailboxRemoteCursor,
 } from "../../../../src/app/mailbox/mailboxing.ts";
 import { mailboxTopicForRoute } from "../../../../src/app/mailbox/topic-routing.ts";
-import type { Reactor } from "../../../../src/app/protocol/reactor.ts";
+import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import {
   createAgentRuntime,
   settleRuntimeIngress,
@@ -49,6 +49,7 @@ import { CREDENTIAL_MAILBOX_TOPIC, DELEGATE_MAILBOX_TOPIC } from "../../../../sr
 import { EndpointRoles } from "../../../../src/core/roles.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
 import type { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
+import { protocolFixture } from "../../../protocol-fixture.ts";
 
 /** Run the real queue worker for a finite send-only forwarding fixture. */
 function* deliverMessage(postman: Poster, hab: Hab, args: {
@@ -1230,6 +1231,9 @@ Deno.test("Poster prepares qualified legacy and v2 messages with their actual fo
       const remote = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       try {
         const provider = remote.makeHab("provider", undefined, { transferable: false });
+        // A v2 envelope needs a provider known to read v2, which only its own KEL can show.
+        const intake = new Reactor(protocolFixture(hby));
+        for (const message of remote.db.clonePreIter(provider.pre)) yield* intake.processBytes(message);
         const forwardedFrames: ReturnType<typeof parseBytes> = [];
         const http = httpClient(async (url, init) => {
           const [frame] = parseBytes(await readCesrRequestBytes(new Request(url, init)));

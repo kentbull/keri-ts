@@ -166,13 +166,19 @@ const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 /**
  * Select the KERI version for a new event on an existing identifier.
  *
- * An identifier keeps the KERI version of its accepted KEL, so rotation and
- * interaction never mix versions within one KEL. An explicit selection that
- * conflicts with the accepted KEL is refused rather than silently ignored.
+ * An identifier follows the KERI version of its latest accepted event. An explicit
+ * selection that conflicts with it is refused rather than silently ignored, except
+ * for a deliberate upgrade rotation, which is how a v1 identifier moves up to v2.
+ * Stricter than KERIpy, whose per-event default can mix versions without being asked.
  */
-function acceptedKelVersion(kever: Kever, requested?: Versionage): Versionage {
+function acceptedKelVersion(
+  kever: Kever,
+  requested?: Versionage,
+  { allowUpgrade = false }: { allowUpgrade?: boolean } = {},
+): Versionage {
   const accepted = kever.serder.pvrsn.major === 1 ? Vrsn_1_0 : Vrsn_2_0;
   if (requested && (requested.major !== accepted.major || requested.minor !== accepted.minor)) {
+    if (allowUpgrade && requested.major > accepted.major) return requested;
     throw new ValidationError(
       `KEL of ${kever.prefixer.qb64} is KERI ${accepted.major}.${accepted.minor}; `
         + `refusing a KERI ${requested.major}.${requested.minor} event.`,
@@ -650,7 +656,7 @@ export class Hab {
     cuts?: string[];
     adds?: string[];
     data?: unknown[];
-    /** Must match the accepted KEL version when given. */
+    /** Must match the accepted KEL version, or be higher for a deliberate upgrade. */
     version?: Versionage;
   } = {}): Uint8Array {
     if (!this.pre) {
@@ -660,7 +666,7 @@ export class Hab {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
-    const version = acceptedKelVersion(kever, args.version);
+    const version = acceptedKelVersion(kever, args.version, { allowUpgrade: true });
 
     const priorSit = this.ks.getSits(this.pre);
     if (!priorSit) {
