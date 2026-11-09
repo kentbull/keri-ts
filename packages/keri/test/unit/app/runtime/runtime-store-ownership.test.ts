@@ -30,7 +30,7 @@ function assertReleased(store: RegBaser | Reger | Noter | Mailboxer): void {
     : store instanceof Mailboxer
     ? "keri_mbx_"
     : store instanceof Reger
-    ? Reger.TempPrefix
+    ? "keri_reg_"
     : "keri_acdc_reg_";
   const directory = `${
     Deno.env.get("TMPDIR") ?? Deno.env.get("TMP") ?? Deno.env.get("TEMP") ?? "/tmp"
