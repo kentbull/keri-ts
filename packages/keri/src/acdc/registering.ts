@@ -20,6 +20,7 @@ import { RawRecord } from "../core/records.ts";
 import type { Table } from "../db/core/dber.ts";
 import { lmdbDefaultsFor } from "../db/core/lmdb-opener.ts";
 import { LMDBer } from "../db/core/lmdber.ts";
+import type { StoreOpener } from "../db/core/store-owner.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
 import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
@@ -66,14 +67,18 @@ export class RegistryRecord extends RawRecord<RegistryRecordShape> implements Re
 export interface OpenRegistryOptions extends RegBaserOptions {
   web?: boolean;
   reopen?: boolean;
+  /** Creates the registry store. Defaults to LMDB. */
+  opener?: StoreOpener;
 }
 
 /** Acquire one backing owner; failures/cancellation join cleanup before ownership transfers. */
 export function* openRegistry(
-  { web = false, reopen = true, compat, ...options }: OpenRegistryOptions = {},
+  { web = false, reopen = true, compat, opener, ...options }: OpenRegistryOptions = {},
 ): Operation<RegBaser> {
   if (web) throw new ValidationError("web registry backend is not yet supported by V2 Regery");
-  const baser = new RegBaser(new LMDBer(options, lmdbDefaultsFor(RegBaser.Family, compat)));
+  const baser = new RegBaser(
+    opener?.create(RegBaser.Family, options) ?? new LMDBer(options, lmdbDefaultsFor(RegBaser.Family, compat)),
+  );
   let delivered = false;
   try {
     if (reopen && !(yield* baser.reopen())) throw new DatabaseNotOpenError("Registry backing store could not open.");

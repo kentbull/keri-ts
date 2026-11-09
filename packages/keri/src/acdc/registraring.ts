@@ -41,12 +41,8 @@ export function* createRegery({ hby, baser, ...options }: RegeryOptions): Operat
   try {
     if (!baser) {
       baser = yield* openRegistry({
-        name: hby.name,
-        base: hby.base,
-        temp: hby.temp,
-        headDirPath: hby.headDirPath,
-        compat: hby.compat,
-        readonly: hby.readonly,
+        ...hby.storeIdentity(),
+        opener: hby.opener,
         ...options,
       });
     }
