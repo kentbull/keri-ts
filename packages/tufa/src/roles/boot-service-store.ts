@@ -14,7 +14,8 @@
  * `tufa infra kf onboard --session` recovery.
  */
 import type { Operation } from "effection";
-import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
+import { Komer } from "keri-ts/db";
+import { LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { RawRecord } from "keri-ts/runtime";
 
 /** Session lifecycle states (`basing.py`). */

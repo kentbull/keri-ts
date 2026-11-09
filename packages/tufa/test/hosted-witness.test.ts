@@ -2,10 +2,10 @@
 import { Diger, Matter, MtrDex, parseBytes, Salter, SerderKERI, Siger, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acceptedEventReplayMessage,
   createAgentRuntime,
-  createHabery,
   envelopeFromFrame,
   FetchHttpClient,
   messagize,

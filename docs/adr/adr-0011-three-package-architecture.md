@@ -56,6 +56,8 @@ Package ownership is:
 - non-browser-safe concerns must live only behind explicit subpaths:
   - `./runtime`
   - `./db`
+- `./db` is backend-neutral per ADR-0015; the native LMDB surface lives behind
+  `./db/lmdb`
 - must not own Hono, listener startup, or runnable CLI entrypoints
 
 ### `@keri-ts/verifier`
@@ -91,6 +93,7 @@ The supported package entrypoints are:
 - `packages/keri/mod.ts`
 - `packages/keri/runtime.ts`
 - `packages/keri/db.ts`
+- `packages/keri/db-lmdb.ts`
 - `packages/keri/cli.ts` (separate command-helper boundary consumed by Tufa)
 - `packages/tufa/mod.ts`
 - `packages/hosting/mod.ts` (HTTP host/app/protocol operations and data)

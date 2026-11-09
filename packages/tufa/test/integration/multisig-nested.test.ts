@@ -1,3 +1,4 @@
+import { createHabery } from "keri-ts/db/lmdb";
 import { multisigPayloadSaid } from "../../../keri/src/app/multisig/multisig-messaging.ts";
 import { systemClock } from "../../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../keri/src/app/transport/http-client.ts";
@@ -9,7 +10,6 @@ import { action, type Operation, run, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import {
   createAgentRuntime,
-  createHabery,
   EndpointRoles,
   generateDidWebsArtifacts,
   runAgentRuntime,

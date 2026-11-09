@@ -18,6 +18,7 @@ import {
   type HttpStreamResponse,
 } from "../../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../../src/app/witness/receipting.ts";
+import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 
 import {
   type CesrFrame,
@@ -44,7 +45,6 @@ import { runGroupDerivedIssuance } from "../../../../../tufa/src/cli/commands/ip
 import { prepareDerivedIssuance } from "../../../../../tufa/src/cli/commands/ipex-issuance.ts";
 import { runPresentationUnblind } from "../../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { acdcmap } from "../../../../src/acdc/messaging.ts";
-import { openRegistry } from "../../../../src/acdc/registering.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
@@ -1319,7 +1319,7 @@ async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promis
         : { icount: 2, isith: "2", ncount: 2, nsith: "2" },
     );
     const http = group ? new GroupHttpClient() : new FetchHttpClient();
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     yield* ensure(() => baser.close(true));
     const rgy = new Regery(hby, baser), scope = yield* useScope();
     let phase: Task<void> | undefined;

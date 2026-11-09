@@ -35,13 +35,13 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation, run, sleep, spawn, type Task } from "effection";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acceptedEventReplayMessage,
   type AgentRuntime,
   collectBytes,
   consoleLogger,
   createAgentRuntime,
-  createHabery,
   exchange,
   FetchHttpClient,
   type Hab,

@@ -1,16 +1,7 @@
 /** Application inventory records, separate from public KEL/TEL/exchange evidence. */
 import type { Operation } from "effection";
-import {
-  Komer,
-  lmdbDefaultsFor,
-  LMDBer,
-  type LMDBerOptions,
-  openOwner,
-  type StoreFamily,
-  type StoreIdentity,
-  StoreOwner,
-  Suber,
-} from "keri-ts/db";
+import { Komer, openOwner, type StoreFamily, type StoreIdentity, StoreOwner, Suber } from "keri-ts/db";
+import { lmdbDefaultsFor, LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { RawRecord } from "keri-ts/runtime";
 
 /** Exact issued view and its accepted registry reference; no derivation secret. */

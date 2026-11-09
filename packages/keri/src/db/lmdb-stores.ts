@@ -7,6 +7,9 @@
  */
 
 import type { Operation } from "npm:effection@^3.6.0";
+import { RegBaser } from "../acdc/regbasing.ts";
+import { adoptRegistry, type OpenRegistryOptions } from "../acdc/registering.ts";
+import { ValidationError } from "../core/errors.ts";
 import { Baser, type BaserOptions } from "./basing.ts";
 import { lmdbDefaultsFor } from "./core/lmdb-opener.ts";
 import { LMDBer } from "./core/lmdber.ts";
@@ -67,4 +70,12 @@ export function* createMailboxer(options: MailboxerOptions = {}): Operation<Mail
 export function* createReger({ compat, ...options }: RegerOptions = {}): Operation<Reger> {
   const store = new LMDBer(options, lmdbDefaultsFor(Reger.Family, compat));
   return yield* openOwner(new Reger(store), "Reger", options);
+}
+
+/** Open a registry store on LMDB at its established paths; the reference web backend remains unsupported. */
+export function* openLmdbRegistry(
+  { web = false, reopen = true, compat, opener: _opener, ...options }: OpenRegistryOptions & { web?: boolean } = {},
+): Operation<RegBaser> {
+  if (web) throw new ValidationError("web registry backend is not yet supported by V2 Regery");
+  return yield* adoptRegistry(new RegBaser(new LMDBer(options, lmdbDefaultsFor(RegBaser.Family, compat))), reopen);
 }

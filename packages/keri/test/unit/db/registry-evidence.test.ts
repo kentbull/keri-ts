@@ -19,7 +19,7 @@ import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../src/acdc/observing.ts";
 import { RegBaser } from "../../../src/acdc/regbasing.ts";
 import { type RegistryDisclosure, vetBinds } from "../../../src/acdc/regeventing.ts";
-import { openRegistry, publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
+import { publicOpeningAttachment, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery, Regery } from "../../../src/acdc/registraring.ts";
 import { acceptedEventReplayMessage } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
@@ -27,12 +27,13 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/p
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
+import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
 Deno.test("named v2 registries reopen by stored issuer and retain explicit store ownership", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     try {
       const first = hby.makeHab("first"), second = hby.makeHab("second");
       let rgy = yield* createRegery({ hby, baser });
@@ -137,7 +138,7 @@ Deno.test("public registry intake preserves accepted prefixes across missing anc
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     const store = new RegistryStore(baser);
     const observer = new RegistryObserver(hby.db, store);
     const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
@@ -280,7 +281,7 @@ Deno.test("current registry store reopens readonly without changing evidence", a
   const issued = new SerderACDC({ raw: b(fixture.bodies.issued) });
   try {
     await run(function*() {
-      const writer = yield* openRegistry(options);
+      const writer = yield* openLmdbRegistry(options);
       const path = writer.path!;
       try {
         const store = new RegistryStore(writer);
@@ -292,7 +293,7 @@ Deno.test("current registry store reopens readonly without changing evidence", a
         yield* writer.close();
       }
       const before = Deno.readFileSync(`${path}/data.mdb`);
-      const reader = yield* openRegistry({ ...options, readonly: true });
+      const reader = yield* openLmdbRegistry({ ...options, readonly: true });
       try {
         const store = new RegistryStore(reader);
         assertEquals(store.seqEvent(rip.said!, 0)!.raw, rip.raw);
@@ -322,7 +323,7 @@ Deno.test("current registry store reopens readonly without changing evidence", a
 
 Deno.test("registry storage facade preserves aliases, first anchors, accepted cloning and escrow order", async () => {
   await run(function*() {
-    const baser = yield* openRegistry({ name: `registry-facade-${crypto.randomUUID()}`, temp: true });
+    const baser = yield* openLmdbRegistry({ name: `registry-facade-${crypto.randomUUID()}`, temp: true });
     const store = new RegistryStore(baser);
     const rip = new SerderACDC({ raw: b(fixture.bodies.rip) });
     const issued = new SerderACDC({ raw: b(fixture.bodies.issued) });
@@ -419,7 +420,7 @@ Deno.test("registry storage facade preserves aliases, first anchors, accepted cl
 Deno.test("v2 Registry stages presentation and vacuous bindings across reopen", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     try {
       const issuer = hby.makeHab("issuer"), presenter = hby.makeHab("presenter");
       let rgy = yield* createRegery({ hby, baser });

@@ -2,11 +2,12 @@
 import { BoundState, makeBlindState, MtrDex, parseBytes, Signer } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
-import { openRegistry, RegistryStore } from "keri-ts/db";
+import { RegistryStore } from "keri-ts/db";
+import { openLmdbRegistry } from "keri-ts/db/lmdb";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   blindate,
-  createHabery,
   Exchanger,
   type Hab,
   type Habery,
@@ -46,7 +47,7 @@ Deno.test({
           skipConfig: true,
           bran: "AnotherPasscodeSecretX",
         });
-        const baser = yield* openRegistry({ name: "custody-registry", headDirPath: root });
+        const baser = yield* openLmdbRegistry({ name: "custody-registry", headDirPath: root });
         const sourceDb = yield* createWalletBaser({ name: "custody-issuer", headDirPath: root });
         const registry = new RegistryStore(baser),
           issuer = source.makeHab("issuer"),
@@ -147,7 +148,7 @@ Deno.test({
 Deno.test("ordinary inventory needs no private capability; lost opaque custody is never regenerated", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
     try {
       const registry = new RegistryStore(baser), hab = hby.makeHab("issuer");

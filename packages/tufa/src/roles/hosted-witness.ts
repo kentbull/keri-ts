@@ -2,13 +2,13 @@
 import { createProtocolHandler, handleWitnessReceiptPost, type ProtocolHandler, startServer } from "@keri-ts/hosting";
 import { Encrypter, Matter, MtrDex, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, run, type Scope, spawn, suspend, type Task, useScope } from "effection";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   CESR_DESTINATION_HEADER,
   collectBytes,
   consoleLogger,
   createAgentRuntime,
-  createHabery,
   EndpointRoles,
   FetchHttpClient,
   type Hab,

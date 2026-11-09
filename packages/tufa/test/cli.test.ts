@@ -1,3 +1,4 @@
+import { createHabery } from "keri-ts/db/lmdb";
 import { agentCommand } from "../src/cli/commands/agent.ts";
 import { dwsResolverCommand } from "../src/cli/commands/dws.ts";
 import { hookDemoCommand } from "../src/cli/commands/hook.ts";
@@ -25,7 +26,6 @@ import { assertEquals, assertRejects, assertStringIncludes, assertThrows } from 
 import {
   acdcmap,
   createAgentRuntime,
-  createHabery,
   DISPLAY_VERSION as KERI_DISPLAY_VERSION,
   FetchHttpClient,
   Hab,

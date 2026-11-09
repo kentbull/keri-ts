@@ -1,6 +1,7 @@
 /** Service-owned witness allocations; protocol facts remain in each witness's own Habery. */
 import type { Operation } from "effection";
-import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
+import { Komer } from "keri-ts/db";
+import { LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { RawRecord } from "keri-ts/runtime";
 
 /** One allocated witness and its encrypted registration secret. */

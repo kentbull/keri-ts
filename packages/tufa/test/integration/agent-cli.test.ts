@@ -1,6 +1,7 @@
 import { run } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createHabery, type KramConfig } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { type KramConfig } from "keri-ts/runtime";
 import {
   packageRoot,
   reserveTcpPort,

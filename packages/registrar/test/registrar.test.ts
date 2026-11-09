@@ -14,13 +14,13 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   blindate,
   buildCesrRequest,
   buildCesrStreamRequest,
   createAgentRuntime,
-  createHabery,
   FetchHttpClient,
   type Hab,
   query,
