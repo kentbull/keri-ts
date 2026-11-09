@@ -43,7 +43,8 @@ import { openRegistry, type RegistryStore } from "../../../src/acdc/registering.
 import { Regery } from "../../../src/acdc/registraring.ts";
 import { RegistryRoot } from "../../../src/acdc/salting.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";

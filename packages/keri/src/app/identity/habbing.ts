@@ -56,7 +56,6 @@ import { type Scheme, Schemes } from "../../core/schemes.ts";
 import { Baser } from "../../db/basing.ts";
 import type { StoreIdentity } from "../../db/core/dber.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import { LmdbStoreOpener } from "../../db/core/lmdb-opener.ts";
 import { openOwner, type StoreOpener } from "../../db/core/store-owner.ts";
 import { Keeper, PreSit } from "../../db/keeping.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
@@ -88,7 +87,7 @@ export interface HaberyArgs {
   cf?: Configer;
   skipConfig?: boolean;
   skipSignator?: boolean;
-  /** Creates this Habery's stores and sidecars. Defaults to LMDB at `headDirPath`. */
+  /** Creates this Habery's stores and sidecars. Required unless `stores` is given. */
   opener?: StoreOpener;
   /** Already-open stores to borrow. The Habery never closes borrowed stores. */
   stores?: { db: Baser; ks: Keeper };
@@ -1425,8 +1424,7 @@ export class Habery {
   readonly headDirPath?: string;
   readonly compat: boolean;
   readonly readonly: boolean;
-  /** Creates this Habery's sidecar stores. */
-  readonly opener: StoreOpener;
+  private readonly storeOpener?: StoreOpener;
   /** True when `db` and `ks` were borrowed; their owner closes them. */
   private readonly borrowsStores: boolean;
   readonly db: Baser;
@@ -1453,10 +1451,10 @@ export class Habery {
     mgr: Manager,
     cf?: Configer,
     skipSignator = false,
-    opener: StoreOpener = new LmdbStoreOpener({ headDirPath, compat }),
+    opener?: StoreOpener,
     borrowsStores = false,
   ) {
-    this.opener = opener;
+    this.storeOpener = opener;
     this.borrowsStores = borrowsStores;
     this.name = name;
     this.base = base;
@@ -2180,6 +2178,12 @@ export class Habery {
     return hab;
   }
 
+  /** Creates this Habery's sidecar stores. */
+  get opener(): StoreOpener {
+    if (!this.storeOpener) throw new ValidationError("This Habery was given stores without an opener for sidecars.");
+    return this.storeOpener;
+  }
+
   /** Identity shared by this Habery's stores and sidecars. */
   storeIdentity(): StoreIdentity {
     return { name: this.name, base: this.base, temp: this.temp, reopen: true, readonly: this.readonly };
@@ -2221,7 +2225,7 @@ export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
  * The returned `Habery` immediately reconstructs its local habitat cache from
  * durable DB state rather than depending on process-local creation history.
  */
-export function* createHabery(args: HaberyArgs): Operation<Habery> {
+export function* openHabery(args: HaberyArgs): Operation<Habery> {
   const {
     name,
     base = "",
@@ -2232,7 +2236,7 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     cf: providedCf,
     skipConfig = false,
     skipSignator = false,
-    opener = new LmdbStoreOpener({ headDirPath, compat }),
+    opener,
     stores,
     bran,
     seed,
@@ -2247,9 +2251,10 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
   let delivered = false;
   let failure: { error: unknown } | undefined;
   try {
+    if (!opener && !stores) throw new ValidationError("A Habery needs a store opener or borrowed stores.");
     const identity: StoreIdentity = { name, base, temp, reopen: true, readonly };
-    db = stores?.db ?? (yield* openOwner(new Baser(opener.create(Baser.Family, identity)), "Baser", identity));
-    ks = stores?.ks ?? (yield* openOwner(new Keeper(opener.create(Keeper.Family, identity)), "Keeper", identity));
+    db = stores?.db ?? (yield* openOwner(new Baser(opener!.create(Baser.Family, identity)), "Baser", identity));
+    ks = stores?.ks ?? (yield* openOwner(new Keeper(opener!.create(Keeper.Family, identity)), "Keeper", identity));
 
     cf = providedCf
       ?? (skipConfig ? undefined : (yield* createConfiger({

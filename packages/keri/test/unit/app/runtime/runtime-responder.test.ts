@@ -1,6 +1,7 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,

@@ -9,7 +9,7 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifications/notifying.ts";
 import { dumpDatabase } from "../../../src/cli/tools/db-dump.ts";
 import { PrePrm } from "../../../src/db/keeping.ts";

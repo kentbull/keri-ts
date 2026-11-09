@@ -1,7 +1,8 @@
 import { parseBytes, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { createHabery, type Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import type { AgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import {

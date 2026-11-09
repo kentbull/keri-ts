@@ -3,7 +3,8 @@ import { type CesrFrame, Diger, Kinds, parseBytes, Prefixer, type SerderKERI, Vr
 import { call, ensure, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { type ExchangeInput, Exchanger, type ExchangeRouteHandler } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   loadMultisigHandlers,
   MULTISIG_IPEX_PROOF_ROUTE,

@@ -1,6 +1,7 @@
 import { parseBytes } from "cesr-ts";
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 
@@ -11,7 +12,6 @@ import {
   settleRuntimeIngress,
 } from "../../../../src/app/runtime/agent-runtime.ts";
 
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { readMailboxSseBody } from "../../../../src/app/mailbox/mailbox-sse.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 

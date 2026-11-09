@@ -3,7 +3,8 @@ import { concatBytes, Diger, essrChunks, parseBytes, Texter, Vrsn_1_0 } from "ce
 import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { encodeBase64 } from "jsr:@std/encoding/base64";
-import { acceptedEventReplayMessage, createHabery, type Hab } from "../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";

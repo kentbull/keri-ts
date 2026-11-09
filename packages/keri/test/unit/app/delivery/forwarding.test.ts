@@ -1,3 +1,4 @@
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { httpClient } from "../../../support/http-client.ts";
 /**
  * Exercise queued ordinary/stream delivery, forwarding wire and provider storage.
@@ -21,7 +22,7 @@ import { Poster } from "../../../../src/app/delivery/forwarding.ts";
 import { introduce, introductionMessages } from "../../../../src/app/delivery/introducing.ts";
 import { createExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
-import { createHabery, type Hab } from "../../../../src/app/identity/habbing.ts";
+import { type Hab } from "../../../../src/app/identity/habbing.ts";
 import { Organizer, persistResolvedContact } from "../../../../src/app/identity/organizing.ts";
 import { ForwardHandler } from "../../../../src/app/mailbox/forward-handler.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";

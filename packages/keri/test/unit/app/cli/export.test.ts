@@ -1,7 +1,7 @@
 import { run } from "effection";
 import { assertRejects, assertStringIncludes } from "jsr:@std/assert";
 import { Diger } from "../../../../../cesr/mod.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { exportCommand } from "../../../../src/cli/identity/export.ts";
 import { inceptCommand } from "../../../../src/cli/identity/incept.ts";
 import { initCommand } from "../../../../src/cli/identity/init.ts";

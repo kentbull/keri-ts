@@ -1,4 +1,5 @@
 import { oobiTerminalState } from "../../../src/app/bootstrap/oobiery.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** KRAM admission through real mailbox hosts; controller keys never cross implementations. */
@@ -8,7 +9,7 @@ import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { decodeBase64, encodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
 import {
   type AgentRuntime,

@@ -11,7 +11,8 @@ import { run } from "effection";
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { concatBytes, Counter, CtrDexV2, Diger, SerderKERI, Siger } from "../../../../cesr/mod.ts";
 import { DELEGATE_REQUEST_ROUTE } from "../../../src/app/identity/delegating.ts";
-import { createHabery, eventPayloadMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { eventPayloadMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import {
   createAgentRuntime,
   settleRuntimeIngress,

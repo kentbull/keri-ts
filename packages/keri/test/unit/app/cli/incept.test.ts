@@ -7,7 +7,8 @@ import {
   assertStrictEquals,
   assertStringIncludes,
 } from "jsr:@std/assert";
-import { createHabery, Habery } from "../../../../src/app/identity/habbing.ts";
+import { Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { inceptCommand } from "../../../../src/cli/identity/incept.ts";
 import { initCommand } from "../../../../src/cli/identity/init.ts";
 import { rotateCommand } from "../../../../src/cli/identity/rotate.ts";

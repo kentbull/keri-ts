@@ -1,6 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Configer } from "../../app/identity/configing.ts";
-import { createHabery, Habery } from "../../app/identity/habbing.ts";
+import { Habery } from "../../app/identity/habbing.ts";
+import { createHabery } from "../../app/identity/lmdb-habery.ts";
 import { createKeeper, lmdbKeeper } from "../../db/lmdb-stores.ts";
 import { readPasscode } from "./passcode.ts";
 

@@ -1,3 +1,4 @@
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
@@ -5,7 +6,6 @@ import { protocolFixture } from "../../../protocol-fixture.ts";
 import { b, Diger, parseBytes, Prefixer, SerderKERI, Texter, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";

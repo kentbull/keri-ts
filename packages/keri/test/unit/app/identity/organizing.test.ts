@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Organizer, persistResolvedContact, signedContactJson } from "../../../../src/app/identity/organizing.ts";
 
 Deno.test("Organizer borrows explicit store and signer while preserving unsigned reads", async () => {

@@ -11,7 +11,8 @@ import {
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { Oobiery } from "../../../../src/app/bootstrap/oobiery.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { abortable } from "../../../../src/app/runtime/abortable.ts";

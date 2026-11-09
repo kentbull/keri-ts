@@ -30,7 +30,8 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import structingVectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import {
   KeriDispatchEnvelope,
   PathedMaterialGroup,

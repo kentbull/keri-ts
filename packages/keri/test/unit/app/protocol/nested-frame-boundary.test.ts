@@ -2,7 +2,7 @@ import { run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { b, parseBytes, Texter } from "../../../../../cesr/mod.ts";
 import vectors from "../../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { inspectCesrStream } from "../../../../src/app/transport/cesr-http.ts";

@@ -1,7 +1,7 @@
 /** Real Tufa mailbox provider in its own process; commands only seed payloads or inspect state. */
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { call, ensure, run } from "effection";
-import { createHabery } from "../../src/app/identity/habbing.ts";
+import { createHabery } from "../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../src/app/transport/http-client.ts";

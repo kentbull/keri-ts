@@ -1,7 +1,8 @@
 import { run } from "effection";
 import { assert, assertEquals, assertRejects, assertStrictEquals, assertStringIncludes } from "jsr:@std/assert";
 import { b, t, Verfer } from "../../../../../cesr/mod.ts";
-import { branToSeedAeid, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { branToSeedAeid } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { initCommand } from "../../../../src/cli/identity/init.ts";
 import { PathError, ValidationError } from "../../../../src/core/errors.ts";
 import { PathManager } from "../../../../src/db/core/path-manager.ts";

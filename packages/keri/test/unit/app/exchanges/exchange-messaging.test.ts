@@ -2,7 +2,7 @@ import { SerderKERI } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
 import { sendExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";

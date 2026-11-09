@@ -1,7 +1,7 @@
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { Baser } from "../../../../src/db/basing.ts";
 import { LmdbStoreOpener } from "../../../../src/db/core/lmdb-opener.ts";

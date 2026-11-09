@@ -1,6 +1,6 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createHabery } from "../../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../../src/app/identity/lmdb-habery.ts";
 import {
   createAgentRuntime,
   runAgentRuntime,

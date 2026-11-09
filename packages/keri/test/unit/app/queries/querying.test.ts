@@ -2,12 +2,8 @@ import { call, run, spawn, type Task } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { parseBytes, ParserError, SerderKERI } from "../../../../../cesr/mod.ts";
 import { queryCommand } from "../../../../../tufa/src/cli/commands/query.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../../src/app/protocol/parsering.ts";
 import { AnchorQuerier, KeyStateNoticer, SeqNoQuerier } from "../../../../src/app/queries/querying.ts";
 import { WitnessInquisitor } from "../../../../src/app/queries/witness-inquisitor.ts";

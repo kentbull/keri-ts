@@ -1,4 +1,5 @@
 import { oobiTerminalState } from "../../../src/app/bootstrap/oobiery.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent TS issuer/holder/receiver stores with live KERIpy witness evidence. */
@@ -22,7 +23,7 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { publicOpeningAttachment } from "keri-ts/db";
 import { acdcmap, acmSchemaDefault } from "../../../src/acdc/messaging.ts";
-import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
 import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";

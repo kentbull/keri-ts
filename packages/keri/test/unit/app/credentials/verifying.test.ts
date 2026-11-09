@@ -20,7 +20,7 @@ import {
   Signer,
 } from "../../../../../cesr/mod.ts";
 import { Verifier, type VerifierCue, type VerifierDecision } from "../../../../src/app/credentials/verifying.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";

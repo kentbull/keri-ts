@@ -211,7 +211,6 @@ export {
 } from "../app/identity/endpoint-roleing.ts";
 export {
   acceptedEventReplayMessage,
-  createHabery,
   type GroupHabCreation,
   type GroupHabInteraction,
   type GroupHabRotation,
@@ -220,6 +219,7 @@ export {
   type HaberyArgs,
   type MakeGroupHabArgs,
   type MakeHabArgs,
+  openHabery,
 } from "../app/identity/habbing.ts";
 export {
   Algos,
@@ -233,6 +233,7 @@ export {
   type ManagerSignArgs,
   type SigningPath,
 } from "../app/identity/keeping.ts";
+export { createHabery } from "../app/identity/lmdb-habery.ts";
 export {
   type ContactRecord,
   Organizer,

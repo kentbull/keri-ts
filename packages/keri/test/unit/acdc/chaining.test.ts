@@ -4,7 +4,7 @@ import { ensure, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { type ChainVerdict, evaluateChain } from "../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { walkIpexGraph } from "../../../src/app/ipex/ipex-graph.ts";
 import { authenticatedNodeVerdict, issuedNodeVerdict } from "../../../src/app/ipex/ipex-node-authentication.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
