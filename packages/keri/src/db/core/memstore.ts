@@ -27,9 +27,33 @@ interface Row {
   readonly value: Uint8Array;
 }
 
-/** One logged inverse. `rowEffect` separates row writes from table creation for `writeVersion`. */
+/**
+ * One row or version write of a committed transaction, in order, for a backend
+ * that must persist what the commit changed. Byte arrays are the immutable
+ * stored ones, so a recipient keeping them past the call copies them first.
+ */
+export type StoreChange =
+  | { readonly kind: "version"; readonly before: string | null; readonly after: string }
+  | {
+    readonly kind: "row";
+    readonly table: string;
+    readonly dupsort: boolean;
+    readonly key: Uint8Array;
+    /** The value before and after this write; `null` means the row is absent. */
+    readonly before: Uint8Array | null;
+    readonly after: Uint8Array | null;
+  };
+
+/** A persisted table handed to `loadContents`. */
+export interface LoadedTable {
+  readonly name: string;
+  readonly dupsort: boolean;
+  readonly rows: readonly TableEntry[];
+}
+
+/** One logged inverse. A `change` marks a row write; table creation has none, so `writeVersion` ignores it. */
 interface UndoEntry {
-  readonly rowEffect: boolean;
+  readonly change?: StoreChange;
   revert(): void;
 }
 
@@ -225,7 +249,7 @@ export class MemStore extends BaseDBer {
     const table = new MemTable(name, options.dupsort ?? false);
     this.#tables.set(name, table);
     if (this.#depth > 0) {
-      this.#undo.push({ rowEffect: false, revert: () => this.#tables.delete(name) });
+      this.#undo.push({ revert: () => this.#tables.delete(name) });
     }
     return table as unknown as Table;
   }
@@ -250,8 +274,10 @@ export class MemStore extends BaseDBer {
       const result = fn();
       if (isThenable(result)) throw new DatabaseOperationError("Transaction callback must be synchronous");
       if (this.#depth === 1) {
-        if (this.#undo.some((entry) => entry.rowEffect)) {
+        const changes = this.#undo.flatMap((entry) => entry.change ? [entry.change] : []);
+        if (changes.length > 0) {
           this.#writeVersion += 1;
+          this.committed(changes);
         }
         this.#undo.length = 0;
       }
@@ -265,6 +291,33 @@ export class MemStore extends BaseDBer {
       this.#depth -= 1;
     }
   }
+
+  /** Told each outermost commit that wrote rows, in order. Nothing rolled back ever reaches it. */
+  protected committed(_changes: readonly StoreChange[]): void {}
+
+  /**
+   * Replace the contents with a persisted snapshot, for a backend that loads
+   * before `reopen`. Rows are copied and sorted here, so a backend's own order
+   * cannot break the sorted-row invariant; a repeated row identity is corrupt.
+   */
+  protected loadContents(tables: readonly LoadedTable[], version: string | null): void {
+    this.#tables = new Map(tables.map(({ name, dupsort, rows }) => {
+      const table = new MemTable(
+        name,
+        dupsort,
+        rows.map((row) => ({ key: copyBytes(row.key), value: copyBytes(row.value) })),
+      );
+      const order = (a: Row, c: Row) => compareBytes(a.key, c.key) || (dupsort ? compareBytes(a.value, c.value) : 0);
+      table.rows.sort(order);
+      if (table.rows.some((row, index) => index > 0 && order(table.rows[index - 1], row) === 0)) {
+        throw new DatabaseOperationError(`Persisted table "${name}" repeats a row`);
+      }
+      return [name, table];
+    }));
+    this.#version = version;
+    this.#created = version !== null || tables.length > 0;
+  }
+
   *flushed(): Operation<void> {
     this.assertOpen();
   }
@@ -283,7 +336,10 @@ export class MemStore extends BaseDBer {
     this.transaction(() => {
       const prior = this.#version;
       this.#version = t(b(val));
-      this.#undo.push({ rowEffect: true, revert: () => this.#version = prior });
+      this.#undo.push({
+        change: { kind: "version", before: prior, after: this.#version },
+        revert: () => this.#version = prior,
+      });
     });
   }
 
@@ -342,6 +398,15 @@ export class MemStore extends BaseDBer {
     return mem;
   }
 
+  #logRow(mem: MemTable, before: Row | null, after: Row | null, revert: () => void): void {
+    const key = (before ?? after)!.key;
+    const [was, now] = [before?.value ?? null, after?.value ?? null];
+    this.#undo.push({
+      change: { kind: "row", table: mem.name, dupsort: mem.dupsort, key, before: was, after: now },
+      revert,
+    });
+  }
+
   /** Validate and store one row inside the active transaction. An identical dupsort pair is a no-op. */
   #insert(mem: MemTable, key: Uint8Array, val: Uint8Array): void {
     assertWritableKey(key);
@@ -352,17 +417,17 @@ export class MemStore extends BaseDBer {
     const row: Row = { key: copyBytes(key), value: copyBytes(val) };
     if (!mem.matches(index, key, val)) {
       mem.rows.splice(index, 0, row);
-      this.#undo.push({ rowEffect: true, revert: () => mem.rows.splice(index, 1) });
+      this.#logRow(mem, null, row, () => mem.rows.splice(index, 1));
     } else if (!mem.dupsort) {
       const prior = mem.rows[index];
       mem.rows[index] = row;
-      this.#undo.push({ rowEffect: true, revert: () => mem.rows[index] = prior });
+      this.#logRow(mem, prior, row, () => mem.rows[index] = prior);
     }
   }
 
   #removeAt(mem: MemTable, index: number): void {
     const [row] = mem.rows.splice(index, 1);
-    this.#undo.push({ rowEffect: true, revert: () => mem.rows.splice(index, 0, row) });
+    this.#logRow(mem, row, null, () => mem.rows.splice(index, 0, row));
   }
 
   /** Remove `[low, high)` from the tail, which also makes a whole-table delete linear. */

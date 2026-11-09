@@ -138,7 +138,8 @@ adapter never reserializes a whole table.
 Open bulk-loads every persisted table before returning, so reads never suspend.
 `openTable` needs no prior declaration: on a writable store an absent table
 starts as an empty mirror and is physically created by the batch that first
-carries it. IndexedDB can create an object store only during a version change,
+carries it, or by a batch of its own at `flushed()` or `close` when no commit has
+carried it. IndexedDB can create an object store only during a version change,
 which other open connections block, so that adapter must either handle
 `versionchange` or keep logical tables inside one object store.
 
@@ -160,9 +161,10 @@ synchronous instead of becoming operations at every call site.
    batch committed. `IndexedDbPersistence` requests strict durability on every
    batch. That is a browser hint, so power loss on a browser that ignores it is
    outside this contract.
-3. **Failure latches.** The first failed write puts the store in a failed state,
-   because a later batch would create a gap. Further transactions throw, reads
-   continue, and `flushed()` and `close` report the original failure. There is no
+3. **Failure latches.** The first failed write puts the queue, and so every store
+   of the composition, in a failed state, because a later batch would create a
+   gap. Further transactions throw, reads continue, and `flushed()` and `close`
+   report the original failure. There is no
    retry, skip or storage-quota policy; exhausted storage is an ordinary failure
    under ADR-0013.
 4. **Close joins.** `close` drains and joins the queue, including when cancelled,
