@@ -40,7 +40,7 @@ export class RegistryCustody {
     const { db } = this.options;
     if (!db.opened) throw new ValidationError("Wallet inventory is closed");
     if (this.bound !== db.credentials.sdb) {
-      this.derivations = new Komer(db, { subkey: "derived-updates.", recordClass: DerivedRecord });
+      this.derivations = new Komer(db.store, { subkey: "derived-updates.", recordClass: DerivedRecord });
       this.bound = db.credentials.sdb;
     }
     return { derivations: this.derivations! };
