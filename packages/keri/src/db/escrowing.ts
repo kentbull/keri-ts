@@ -5,7 +5,7 @@ import { dropEscrow, type EscrowProcessDecision } from "../core/kel/kever-decisi
 import { consoleLogger } from "../core/logger.ts";
 import type { VerferCigarCouple } from "../core/records.ts";
 import { makeNowIso8601, timestampMicros } from "../time/mod.ts";
-import { LMDBer } from "./core/lmdber.ts";
+import type { DBer } from "./core/dber.ts";
 import { CatCesrIoSetSuber, CesrIoSetSuber, CesrSuber, SerderSuber } from "./subing.ts";
 
 function hexToFixedBytes(hex: string, size: number): Uint8Array {
@@ -64,7 +64,7 @@ export interface BrokerOptions {
  * - storage/corruption failures propagate without discarding retryable evidence
  */
 export class Broker {
-  readonly db: LMDBer;
+  readonly db: DBer;
   readonly timeout: number;
   readonly daterdb: CesrSuber<Dater>;
   readonly serderdb: SerderSuber<SerderKERI>;
@@ -75,7 +75,7 @@ export class Broker {
   private readonly retryScans = new Map<string, { start: Uint8Array; end: Uint8Array }>();
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     subkey: string,
     { timeout = 3600 }: BrokerOptions = {},
   ) {
