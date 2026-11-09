@@ -2,7 +2,7 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";

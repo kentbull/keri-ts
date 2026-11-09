@@ -6,12 +6,8 @@ import { credentialStreamBytes } from "../../../../src/app/credentials/credentia
 import { Verifier } from "../../../../src/app/credentials/verifying.ts";
 import { createExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
 import type { ExchangeRouteVerification } from "../../../../src/app/exchanges/exchanging.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   credentialSupportMessages,
   ipexCredentialGrant,

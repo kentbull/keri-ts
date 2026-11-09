@@ -1,4 +1,5 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 /** Real encrypted owners repair exact presentations through the maintained finite HTTP workflow. */
 import {
   type CesrFrame,
@@ -26,7 +27,7 @@ import { openRegistry, publicOpeningAttachment, type RegistryStore } from "../..
 import { Regery } from "../../../src/acdc/registraring.ts";
 import { Unblind } from "../../../src/acdc/unblinding.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";

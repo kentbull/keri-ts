@@ -1,7 +1,8 @@
 /** Live witness receipting matrix with unchanged participant topologies. */
 import { assertEquals, assertExists, assertStringIncludes } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
-import { createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";

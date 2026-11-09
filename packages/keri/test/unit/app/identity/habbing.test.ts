@@ -32,7 +32,8 @@ import { type Poster, type PosterEvent, type PosterMsg } from "../../../../src/a
 import { introduce } from "../../../../src/app/delivery/introducing.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
-import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";
+import { eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";

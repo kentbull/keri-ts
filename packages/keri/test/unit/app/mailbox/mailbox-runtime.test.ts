@@ -9,6 +9,7 @@
  * - agent controller bootstrap config behavior
  * - multi-AID host filtering for the selected mailbox alias
  */
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { HttpRequestInit, HttpStreamResponse } from "../../../../src/app/transport/http-client.ts";
@@ -29,7 +30,7 @@ import {
 import { spawnTufa, stopChild } from "../../../../../tufa/test/test-helpers.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { fetchEndpointUrls, mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";

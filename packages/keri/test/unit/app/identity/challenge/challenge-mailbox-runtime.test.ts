@@ -1,7 +1,7 @@
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertStringIncludes } from "jsr:@std/assert";
 import { mailboxAddCommand } from "../../../../../../tufa/src/cli/commands/mailbox.ts";
-import { createHabery } from "../../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../../src/app/identity/lmdb-habery.ts";
 import { mailboxTopicKey } from "../../../../../src/app/mailbox/mailboxing.ts";
 import {
   createAgentRuntime,

@@ -10,6 +10,7 @@ import {
   parseBytes,
   SerderKERI,
 } from "../../../../../cesr/mod.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   createAgentRuntime,
   settleMailboxPollBatch,
@@ -20,10 +21,7 @@ import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
 import { introduce } from "../../../../src/app/delivery/introducing.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";

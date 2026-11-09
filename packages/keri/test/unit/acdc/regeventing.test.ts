@@ -37,7 +37,8 @@ import {
 import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery } from "../../../src/acdc/registraring.ts";
 import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
-import { acceptedEventReplayMessage, createHabery, type Habery } from "../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-countering.ts";
 import { consoleLogger } from "../../../src/core/logger.ts";

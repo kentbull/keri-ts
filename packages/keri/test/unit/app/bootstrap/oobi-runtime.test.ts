@@ -5,6 +5,7 @@ import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertSt
 import { concatBytes, Diger, Prefixer, SerderKERI } from "../../../../../cesr/mod.ts";
 import { resolveBootstrap } from "../../../../src/app/bootstrap/bootstrapping.ts";
 import { oobiTerminalState } from "../../../../src/app/bootstrap/oobiery.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import {
@@ -27,7 +28,7 @@ import { initCommand } from "../../../../src/cli/identity/init.ts";
 
 import { Authenticator, hasWellKnownAuth } from "../../../../src/app/bootstrap/authenticating.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { oobiGenerateCommand, oobiResolveCommand } from "../../../../src/cli/endpoints/oobi.ts";
 
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";

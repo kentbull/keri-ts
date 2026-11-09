@@ -9,7 +9,7 @@ import {
   type Siger,
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";

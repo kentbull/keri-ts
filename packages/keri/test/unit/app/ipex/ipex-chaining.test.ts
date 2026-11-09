@@ -3,7 +3,7 @@ import { b, collectPayload, framePayload, parseBytes, SerderACDC } from "cesr-ts
 import { call, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";

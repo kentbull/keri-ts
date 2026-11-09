@@ -14,7 +14,7 @@ import {
 } from "../../../../../cesr/mod.ts";
 import { credentialSaidFromGrant, IPEX_GRANT_ROUTE, storedGrantArtifacts } from "../../../../runtime.ts";
 import { Verifier } from "../../../../src/app/credentials/verifying.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   credentialGrantReady,
   credentialPresentationArtifacts,

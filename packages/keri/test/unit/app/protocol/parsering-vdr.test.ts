@@ -13,8 +13,9 @@ import {
   Vrsn_2_0,
 } from "../../../../../cesr/mod.ts";
 import { blindate, regcept, update as historicalUpdate } from "../../../../src/acdc/messaging.ts";
-import { acceptedEventReplayMessage, createHabery } from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { encodeHugeNumber } from "../../../../src/app/identity/keeping.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   type AcdcDispatchArgs,
   dispatchEnvelope,

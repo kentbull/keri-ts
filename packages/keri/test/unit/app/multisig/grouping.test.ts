@@ -2,7 +2,7 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
 import { Diger, Prefixer, SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { IPEX_GRANT_ROUTE, ipexGrantExn, loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
 import {
   embeddedBusinessExnSAD,

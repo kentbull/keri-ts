@@ -15,7 +15,8 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { type ExchangeInput, Exchanger } from "../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab } from "../src/app/identity/habbing.ts";
+import { type Hab } from "../src/app/identity/habbing.ts";
+import { createHabery } from "../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame } from "../src/app/protocol/parsering.ts";
 import { TransIdxSigGroup } from "../src/core/dispatch.ts";
 import { exchange } from "../src/core/exchange/protocol-exchanging.ts";

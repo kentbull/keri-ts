@@ -42,7 +42,8 @@ import {
   groupEndorseReply,
   proposeGroupEndpointRole,
 } from "../../../../src/app/identity/endpoint-roleing.ts";
-import { createHabery, eventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { eventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import { credentialStreamMessages, ipexCredentialGrant } from "../../../../src/app/ipex/ipex-credentialing.ts";
 import {

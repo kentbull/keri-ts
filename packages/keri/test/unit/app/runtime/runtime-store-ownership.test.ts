@@ -3,7 +3,7 @@ import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertTh
 import { RegBaser } from "../../../../src/acdc/regbasing.ts";
 import { openRegistry } from "../../../../src/acdc/registering.ts";
 import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../../src/acdc/registraring.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { Signaler } from "../../../../src/app/notifications/signaling.ts";

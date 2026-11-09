@@ -16,7 +16,7 @@ import {
 import { tufa } from "../../../../../tufa/src/cli/cli.ts";
 import { multisigJoinCommand } from "../../../../../tufa/src/cli/commands/multisig.ts";
 import { parseGvrsn } from "../../../../cli.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { ipexGrantExn } from "../../../../src/app/ipex/ipexing.ts";
 import { CesrHttpRefusal } from "../../../../src/app/transport/cesr-egress.ts";
 import { inspectCesrStream, readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";

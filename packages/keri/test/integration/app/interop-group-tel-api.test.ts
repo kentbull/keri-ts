@@ -23,7 +23,8 @@ import type { RegistryDisclosure } from "../../../src/acdc/regeventing.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
 import { groupEndorseReply } from "../../../src/app/identity/endpoint-roleing.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { credentialPresentationArtifacts, ipexCredentialGrant } from "../../../src/app/ipex/ipex-credentialing.ts";
 import {
   approveMultisigIpex,

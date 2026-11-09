@@ -7,7 +7,7 @@ import {
   assertStrictEquals,
 } from "jsr:@std/assert";
 import { Cigar, concatBytes, Diger, parseBytes, Signer } from "../../../../../cesr/mod.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { dispatchEnvelope, envelopesFromFrames } from "../../../../src/app/protocol/parsering.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { KeriDispatchEnvelope, TransIdxSigGroup, TransReceiptQuadruple } from "../../../../src/core/dispatch.ts";

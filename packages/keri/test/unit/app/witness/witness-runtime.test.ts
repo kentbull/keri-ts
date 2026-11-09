@@ -13,12 +13,8 @@ import {
   WireParseError,
 } from "../../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../../tufa/src/host/witness-tcp.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopesFromFrames } from "../../../../src/app/protocol/parsering.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import {

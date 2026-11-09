@@ -2,7 +2,7 @@ import { b, Dater, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { ReplyStreams } from "../../../../src/app/delivery/reply-streams.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { witnessQueryGet } from "../../../../src/app/witness/http-endpoints.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";

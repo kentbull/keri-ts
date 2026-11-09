@@ -17,7 +17,7 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../tufa/src/host/witness-tcp.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { createProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import { Reactor } from "../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";

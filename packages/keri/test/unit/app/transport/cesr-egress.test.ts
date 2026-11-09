@@ -13,7 +13,7 @@ import { createServer, type Socket } from "node:net";
 import { call, run, suspend } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";

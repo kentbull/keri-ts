@@ -1,6 +1,6 @@
 import { run } from "effection";
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { aidCommand } from "../../../../src/cli/identity/aid.ts";
 import { listCommand } from "../../../../src/cli/identity/list.ts";
 import { CLITestHarness, ensureCompatLmdbBuild } from "../../../utils.ts";

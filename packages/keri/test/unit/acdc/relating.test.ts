@@ -3,7 +3,7 @@ import { Diger, SealSource } from "cesr-ts";
 import { ensure, run } from "effection";
 import { assertEquals, assertExists, assertNotEquals, assertThrows } from "jsr:@std/assert";
 import { delegationRelation } from "../../../src/acdc/relating.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 
