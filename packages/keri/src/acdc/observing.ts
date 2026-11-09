@@ -73,7 +73,7 @@ export class RegistryObserver {
     // Issuer/anchor discovery is impossible until RIP arrives; the existing anchor escrow owns this body.
     const baser = this.store.baser;
     if (baser.readonly) throw new DatabaseOperationError("Cannot write readonly registry storage.");
-    return baser.env!.transactionSync(() => {
+    return baser.transaction(() => {
       this.store.putEvent(serder);
       this.store.escrowMissingAnchor(event.regid, Number(event.sn), event.said);
       if (opening) this.store.retainOpening(serder, opening);
@@ -102,7 +102,7 @@ export class RegistryObserver {
 
   /** Stored inception is durable issuer identity, including while its anchor is still absent. */
   private engine(regid: string): RegistryEventer | { kind: "reject"; reason: "registry" } | null {
-    if (!this.store.baser.env) throw new DatabaseNotOpenError("Registry observer store is closed.");
+    if (!this.store.baser.opened) throw new DatabaseNotOpenError("Registry observer store is closed.");
     const rip = this.store.event(regid);
     if (!rip) {
       if (this.store.head(regid) || this.store.seqSaider(regid, 0)) {

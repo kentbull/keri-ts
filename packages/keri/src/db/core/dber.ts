@@ -139,6 +139,15 @@ export abstract class BaseDBer {
    * `limit` counts distinct keys and `exclusiveStart` skips every duplicate.
    */
   abstract scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array>;
+  /**
+   * Increases on every outermost commit that wrote rows. Comparable only within
+   * one open handle; increments need not be one.
+   */
+  abstract get writeVersion(): number;
+  /** Complete when every earlier commit is durable, or fail with the recorded persistence failure. */
+  abstract flushed(): Operation<void>;
+  /** Discard any retained read view so later reads observe the latest commit. */
+  abstract refreshRead(): void;
   /** Report whether a named table exists, without creating it. */
   abstract hasTable(name: string): boolean;
 

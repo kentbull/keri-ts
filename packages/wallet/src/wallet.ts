@@ -255,7 +255,7 @@ export class Wallet {
       throw new ValidationError("Current authenticated graph acceptance is required for new admission.");
     }
     const record: AdmittedCredential = { credential: origin, grant, admit, holder, admitted: new Date().toISOString() };
-    this.db.env!.transactionSync(() => {
+    this.db.transaction(() => {
       this.db.admitted.put([grant], record);
       this.db.credentials.put([origin, grant], grant);
     });

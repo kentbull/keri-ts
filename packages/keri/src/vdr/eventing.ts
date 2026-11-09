@@ -948,7 +948,7 @@ export class Tevery {
     let publicationFailure: { error: unknown } | undefined;
     let decision: TelProcessDecision;
     try {
-      decision = this.reger.env!.transactionSync((): TelProcessDecision => {
+      decision = this.reger.transaction((): TelProcessDecision => {
         const serder = args.serder;
         const ilk = telIlk(serder);
         const pre = okPre(serder);

@@ -563,6 +563,30 @@ export class LMDBer extends BaseDBer {
     }
   }
 
+  /** LMDB's committed transaction ID, which also counts other processes' commits. */
+  get writeVersion(): number {
+    const version = (this.requireEnv().getStats() as { lastTxnId?: number }).lastTxnId;
+    if (!Number.isSafeInteger(version) || version! < 0) {
+      throw new DatabaseOperationError("Invalid LMDB transaction ID");
+    }
+    return version!;
+  }
+
+  /** Join native flush completion, including when the waiter is halted. */
+  *flushed(): Operation<void> {
+    const root = this.requireEnv();
+    const pending = Promise.resolve(root.flushed);
+    yield* call(function*() {
+      yield* ensure(() => call(() => pending));
+      yield* call(() => pending);
+    });
+  }
+
+  /** Release the shared read transaction so later reads see other commits. */
+  refreshRead(): void {
+    this.requireEnv().resetReadTxn();
+  }
+
   /** Yield caller-owned key copies; native dupsort iteration already yields each key once. */
   *scanKeys(table: Table, options: ScanOptions = {}): Generator<Uint8Array> {
     for (const key of lmdbTable(table).getKeys(options)) {

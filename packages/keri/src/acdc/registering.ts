@@ -17,6 +17,7 @@ import type { Operation } from "effection";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RawRecord } from "../core/records.ts";
+import type { Table } from "../db/core/dber.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
 import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
@@ -98,18 +99,18 @@ function registryOrdinal(sn: number): number {
  */
 export class RegistryStore {
   private aliases: Komer<RegistryRecord> | null = null;
-  private aliasEnv: RegBaser["env"] = null;
+  private aliasTable: Table | null = null;
 
   constructor(readonly baser: RegBaser) {}
 
   /** Local alias mapper is optional; refresh it after the owner's reopen. */
   get records(): Komer<RegistryRecord> | null {
-    if (!this.baser.env) throw new DatabaseNotOpenError("Registry backing store is closed.");
-    if (this.aliasEnv !== this.baser.env) {
+    if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
+    if (this.aliasTable !== this.baser.evts.sdb) {
       this.aliases = this.baser.hasTable("regs.")
         ? new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord })
         : null;
-      this.aliasEnv = this.baser.env;
+      this.aliasTable = this.baser.evts.sdb;
     }
     return this.aliases;
   }

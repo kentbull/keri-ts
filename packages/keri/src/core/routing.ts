@@ -977,7 +977,7 @@ export class BasicReplyRouteHandler {
 
     let queryCues: readonly QueryCue[] = [];
 
-    const decision = this.rvy.db.env!.transactionSync(() => {
+    const decision = this.rvy.db.transaction(() => {
       let osaider = this.rvy.db.eans.get(keys);
       if (osaider?.qb64 === args.diger.qb64) osaider = null;
       const plan = this.rvy.decideReply({
@@ -1052,7 +1052,7 @@ export class BasicReplyRouteHandler {
 
     let queryCues: readonly QueryCue[] = [];
 
-    const decision = this.rvy.db.env!.transactionSync(() => {
+    const decision = this.rvy.db.transaction(() => {
       let osaider = this.rvy.db.lans.get(keys);
       if (osaider?.qb64 === args.diger.qb64) osaider = null;
       const plan = this.rvy.decideReply({
