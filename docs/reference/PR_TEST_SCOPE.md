@@ -56,8 +56,8 @@ The reference-profile owner expands through the same frozen-peer driver in local
 aggregate runs and CI. An explicit `KERIPY_INTEROP_PROFILE` selects one child run.
 
 The manually dispatched extended workflow expands the existing KERI group exports
-into independent 15-minute jobs: `extended-interop` has 20 rows, `full` has 29,
-and `qualification` has 31. Each includes four isolated reference-profile rows;
+into independent 15-minute jobs: `extended-interop` has 20 rows, `full` has 30,
+and `qualification` has 32. Each includes four isolated reference-profile rows;
 all other rows invoke their original concrete suite. The suite runner retains
 file ordering, isolation and measured concurrency caps. Jobs do not cancel their
 siblings after a failure, and each uploads its own timings. These are the KERI

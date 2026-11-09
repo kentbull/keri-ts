@@ -78,6 +78,7 @@
     "test:quality:keri:app-fast-isolated": "deno run -A scripts/ci/run-keri-test-group.ts app-fast-isolated",
     "test:quality:keri:core-fast-b": "deno run -A scripts/ci/run-keri-test-group.ts core-fast-b",
     "test:quality:keri:db-fast": "deno run -A scripts/ci/run-keri-test-group.ts db-fast",
+    "test:quality:keri:db-web": "deno run -A scripts/ci/run-keri-test-group.ts db-web",
     "test:quality:keri:interop-keystore-parity": "deno run -A scripts/ci/run-keri-test-group.ts interop-keystore-parity",
     "test:quality:keri:interop-keystore-storage": "deno run -A scripts/ci/run-keri-test-group.ts interop-keystore-storage",
     "test:quality:keri:interop-oobi-bootstrap": "deno run -A scripts/ci/run-keri-test-group.ts interop-oobi-bootstrap",
