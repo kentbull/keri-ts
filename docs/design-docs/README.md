@@ -27,7 +27,7 @@ acceptance live in [plans](../plans/README.md); dated evidence lives in [reports
   [query/reply](runtime/QUERY_REPLY.md), [witness HTTP](runtime/WITNESS_HTTP.md).
 - [Mailbox](mailbox/MAILBOX.md) and [read authorization](mailbox/READ_AUTHORIZATION.md).
 - [DB invariants](db/db-architecture.md), [payload storage](db/PAYLOAD_STORAGE.md),
-  [deferred provider proposal](db/PROVIDER_PROPOSAL.md).
+  [store contract](../adr/adr-0015-pluggable-store-contract.md).
 
 ## CLI and release
 

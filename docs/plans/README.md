@@ -28,7 +28,7 @@ gates change, rather than recording each commit, test run or PR transition.
 - [Storage/recovery](db/STORAGE_RECOVERY_PLAN.md) and [transport](runtime/TRANSPORT_PLAN.md).
 - [Full qualification](qualification/QUALIFICATION_PLAN.md) and
   [reference environments](qualification/REFERENCE_ENVIRONMENTS.md).
-- [Broader DB parity](db/DB_PARITY_PLAN.md): row-level closure; provider work remains deferred.
+- [Broader DB parity](db/DB_PARITY_PLAN.md): row-level closure; store backends follow [ADR-0015](../adr/adr-0015-pluggable-store-contract.md).
 
 Delivered parser migration, package/CLI extraction, release automation and test
 reorganization are not fresh task lists. See [delivery evidence](../reports/parity/DELIVERED_THROUGH_168.md),

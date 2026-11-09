@@ -47,7 +47,8 @@ In scope:
 
 Out of scope:
 
-1. Provider abstraction implementation details (post LMDB parity phase).
+1. The pluggable store contract and backend differences, owned by
+   [ADR-0015](../../adr/adr-0015-pluggable-store-contract.md).
 2. Full per-symbol backlog status (tracked in DB parity plans/matrices).
 
 ## Reference Priority
@@ -313,8 +314,8 @@ actual environment ownership and joined closure remain the contract.
 
 ## Implementation Policy for `keri-ts`
 
-1. Parity-first: complete LMDB parity behavior before provider abstraction
-   implementation.
+1. LMDB is the parity reference. Alternate backends under ADR-0015 must meet
+   invariants A–E, and passing them makes no KERIpy parity claim.
 2. Abstraction correctness over convenience: do not collapse distinct families
    (`IoDup` vs `IoSet`) if semantics differ.
 3. Backend API translation: when using `lmdb-js` range APIs, preserve KERIpy
