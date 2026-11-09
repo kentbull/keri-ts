@@ -58,6 +58,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/acdc/unblinding.test.ts",
       "test/unit/app/protocol/nested-frame-boundary.test.ts",
       "test/unit/app/protocol/message-admission.test.ts",
+      "test/unit/app/protocol/stream-message-isolation.test.ts",
       "test/unit/app/cli/notifications-cli.test.ts",
       "test/unit/app/cli/init-terminal.test.ts",
       "test/unit/app/cli/oobi-clean-cli.test.ts",

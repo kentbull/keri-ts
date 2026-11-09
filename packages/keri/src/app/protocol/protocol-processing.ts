@@ -4,7 +4,9 @@ import { call, type Operation } from "npm:effection@^3.6.0";
 import type { RegistryObserver } from "../../acdc/observing.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
+import { ValidationError } from "../../core/errors.ts";
 import { Kevery } from "../../core/kel/eventing.ts";
+import { consoleLogger } from "../../core/logger.ts";
 import { BasicReplyRouteHandler, Revery } from "../../core/routing.ts";
 import type { Tevery } from "../../vdr/eventing.ts";
 import type { Verifier } from "../credentials/verifying.ts";
@@ -34,6 +36,18 @@ export interface DispatchOptions {
 export interface ProtocolDispatchResult extends DispatchResult {
   /** Current request authorization, never inferred solely from a matching reply SAID. */
   mailboxQueryAuthorized: boolean;
+}
+
+/**
+ * Identify a refusal of one already-extracted message, which must not end its stream.
+ *
+ * KERIpy's parser resumes after any non-extraction exception. This is deliberately narrower:
+ * infrastructure failures, programmer errors and cancellation must still reach the input owner.
+ * A dispatch-side ParserError also propagates, because it indicates corrupt local state and
+ * skipping would advance a mailbox cursor past a message that was never processed.
+ */
+function isInvalidMessageError(error: unknown): error is ValidationError {
+  return error instanceof ValidationError;
 }
 
 /**
@@ -116,6 +130,8 @@ export class ProtocolProcessor {
    * @param options Local intake policy, hosted mailbox provenance and whether to advance escrows.
    * @param kvy Input-specific Kevery in this domain; defaults to the shared owner.
    * @returns Exact dispatch result and current mailbox authorization at its synchronous query decision.
+   *   A message refused by validation after extraction is an `invalidMessage` drop, so the caller
+   *   continues with the next frame as KERIpy's parser does.
    * @throws Domain mismatch, infrastructure/handler or cleanup errors propagate; publication still runs in the dispatch finalizer.
    */
   dispatch(
@@ -131,19 +147,34 @@ export class ProtocolProcessor {
     const self = this;
     return call(function*() {
       try {
-        const result = yield* dispatchEnvelope(
-          envelopeFromFrame(frame, local),
-          self.rvy,
-          kvy,
-          self.exc,
-          self.tvy ?? undefined,
-          self.vry ?? undefined,
-          mailboxAid,
-          self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
-          self.registry ?? undefined,
-          self.qvy,
-        );
-        const mailboxQueryAuthorized = result.envelope.serder.route === "mbx"
+        const envelope = envelopeFromFrame(frame, local);
+        let result: DispatchResult;
+        let invalid = false;
+        try {
+          result = yield* dispatchEnvelope(
+            envelope,
+            self.rvy,
+            kvy,
+            self.exc,
+            self.tvy ?? undefined,
+            self.vry ?? undefined,
+            mailboxAid,
+            self.kvy, // One authoritative v2 sender policy and KRAM intake across all inputs.
+            self.registry ?? undefined,
+            self.qvy,
+          );
+        } catch (error) {
+          if (!isInvalidMessageError(error)) throw error;
+          invalid = true;
+          consoleLogger.warn("Skipping invalid message", {
+            said: envelope.serder.said,
+            ilk: envelope.serder.ilk,
+            route: envelope.serder.route,
+            detail: error.message,
+          });
+          result = { envelope, decision: { kind: "drop", reason: "invalidMessage", detail: error.message } };
+        }
+        const mailboxQueryAuthorized = !invalid && result.envelope.serder.route === "mbx"
           && kvy.isMailboxQueryAuthorized(queryEnvelopeFromDispatch(result.envelope));
         // Capture this request's facts before optional escrows can suspend or change key state.
         self.publishCues();
