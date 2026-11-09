@@ -1,8 +1,6 @@
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import {
-  type Configer,
-  createConfiger,
   EndpointRoles,
   type Hab,
   type Habery,
@@ -11,6 +9,7 @@ import {
   Schemes,
   ValidationError,
 } from "keri-ts/runtime";
+import { type Configer, createConfiger } from "keri-ts/runtime/node";
 import { runIndirectHost } from "../../host/indirect-host.ts";
 import { setupHby } from "../support/existing.ts";
 

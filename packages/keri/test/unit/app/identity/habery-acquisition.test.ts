@@ -1,8 +1,10 @@
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
+import { openHabery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
+import { ValidationError } from "../../../../src/core/errors.ts";
 import { Baser } from "../../../../src/db/basing.ts";
 import { LmdbStoreOpener } from "../../../../src/db/core/lmdb-opener.ts";
 import type { StoreOpener } from "../../../../src/db/core/store-owner.ts";
@@ -213,4 +215,12 @@ Deno.test("Habery creates stores and sidecars through its injected opener", asyn
       yield* hby.close(true);
     }
   });
+});
+
+Deno.test("backend-neutral openHabery refuses to guess how to create a config file", async () => {
+  await assertRejects(
+    () => run(() => openHabery({ name: "unconfigured", opener: {} as StoreOpener })),
+    ValidationError,
+    "A Habery needs a Configer, a Configer factory or skipConfig.",
+  );
 });

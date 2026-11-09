@@ -172,11 +172,6 @@ export {
   parseChallengeWords,
 } from "../app/identity/challenging.ts";
 export {
-  Configer,
-  type ConfigerOptions,
-  createConfiger,
-} from "../app/identity/configing.ts";
-export {
   Anchorer,
   type DelegationPhase,
   type DelegationWorkflowResult,

@@ -54,8 +54,8 @@ interface SurfaceCheck {
   label: string;
   entrypoint: URL;
   forbidden: string[];
-  /** Forbid the `Deno.` global in reachable sources, except these package-relative paths. */
-  denoGlobalAllowed?: string[];
+  /** Forbid the `Deno.` global in reachable package sources. */
+  forbidDenoGlobal?: boolean;
 }
 
 /** App and host-process dependencies that no library surface may load. */
@@ -71,17 +71,6 @@ const APP_FORBIDDEN = [
 /** Host modules that only `keri-ts/runtime/node` may load. */
 const HOST_FORBIDDEN = ["npm:lmdb", "npm:/lmdb@", "node:"];
 
-/**
- * Sources still using the `Deno` global on the neutral surfaces. PR 8c moves
- * `Configer`, `PathManager` and the LMDB opener behind host entrypoints and
- * removes this allowance.
- */
-const DENO_GLOBAL_PENDING_8C = [
-  "src/app/identity/configing.ts",
-  "src/db/core/path-manager.ts",
-  "src/db/core/lmdber.ts",
-];
-
 const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts root surface",
@@ -92,7 +81,7 @@ const SURFACES: SurfaceCheck[] = [
     label: "keri-ts runtime surface",
     entrypoint: new URL("../runtime.ts", import.meta.url),
     forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
-    denoGlobalAllowed: DENO_GLOBAL_PENDING_8C,
+    forbidDenoGlobal: true,
   },
   {
     label: "keri-ts runtime/node surface",
@@ -103,7 +92,7 @@ const SURFACES: SurfaceCheck[] = [
     label: "keri-ts db surface",
     entrypoint: new URL("../db.ts", import.meta.url),
     forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
-    denoGlobalAllowed: DENO_GLOBAL_PENDING_8C,
+    forbidDenoGlobal: true,
   },
 ];
 
@@ -147,7 +136,7 @@ function runtimeReach(info: DenoInfoOutput): string[] {
 
 /** Assert that a public source surface does not import forbidden app/runtime modules. */
 async function assertSurfaceBoundary(
-  { label, entrypoint, forbidden, denoGlobalAllowed }: SurfaceCheck,
+  { label, entrypoint, forbidden, forbidDenoGlobal }: SurfaceCheck,
 ): Promise<void> {
   const info = await loadInfo(entrypoint);
   const specifiers = runtimeReach(info);
@@ -160,7 +149,7 @@ async function assertSurfaceBoundary(
     throw new Error(`${label} reaches forbidden modules:\n${details}`);
   }
 
-  if (denoGlobalAllowed) assertNoDenoGlobal(label, specifiers, denoGlobalAllowed);
+  if (forbidDenoGlobal) assertNoDenoGlobal(label, specifiers);
 }
 
 /**
@@ -168,13 +157,12 @@ async function assertSurfaceBoundary(
  * browser bundle has no `Deno`, and the npm shim only papers over the gap in
  * the entrypoints that declare themselves host-only.
  */
-function assertNoDenoGlobal(label: string, specifiers: string[], allowed: string[]): void {
-  const allowedPaths = new Set(allowed.map((path) => new URL(path, PACKAGE_DIR).pathname));
+function assertNoDenoGlobal(label: string, specifiers: string[]): void {
   const hits: string[] = [];
   for (const specifier of specifiers) {
     if (!specifier.startsWith("file://")) continue;
     const path = new URL(specifier).pathname;
-    if (!path.startsWith(PACKAGE_DIR.pathname) || allowedPaths.has(path)) continue;
+    if (!path.startsWith(PACKAGE_DIR.pathname)) continue;
     if (/\bDeno\./.test(Deno.readTextFileSync(path))) hits.push(specifier);
   }
   if (hits.length > 0) {
