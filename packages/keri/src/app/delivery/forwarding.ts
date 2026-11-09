@@ -137,9 +137,15 @@ type PreparedCesrTarget =
  */
 export class PeerVersionError extends ValidationError {}
 
-/** An AID reads v2 once its own latest accepted event is v2; any other AID is treated as v1. */
-function peerReadsV2(hby: Habery, aid: string): boolean {
-  return (hby.db.getKever(aid)?.serder.pvrsn.major ?? 1) >= 2;
+/**
+ * Whether an AID's own accepted KEL ends in a v1 event, which is the only evidence of a v1 reader.
+ *
+ * An AID with no accepted KEL is not refused. A delegate awaiting approval has only an escrowed
+ * inception, and refusing its approval traffic would stop the delegation from ever completing.
+ */
+function knownV1Peer(hby: Habery, aid: string): boolean {
+  const kever = hby.db.getKever(aid);
+  return kever !== null && kever !== undefined && kever.serder.pvrsn.major < 2;
 }
 
 /** Whether any frame of this complete signed wire needs a v2 reader. */
@@ -579,7 +585,7 @@ export class Poster {
    * @param endpoint One selected endpoint AID and URL from the route.
    * @param evt Original signed source and concrete ordinary/stream operation.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
-   * @throws PeerVersionError when the wire needs a v2 reader that this peer is not known to be.
+   * @throws PeerVersionError when the wire needs a v2 reader that this peer is known not to be.
    */
   private *prepareBytesTarget(
     hab: Hab,
@@ -587,15 +593,15 @@ export class Poster {
     endpoint: { eid: string; url: string; urls: MessengerUrls },
     evt: PosterEvent,
   ): Operation<PreparedCesrTarget> {
-    if (wireNeedsV2(evt.msg) && !peerReadsV2(this.hby, evt.dest)) {
-      throw new PeerVersionError(`Refusing a v2 message for ${evt.dest}, whose latest accepted event is not v2.`);
+    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, evt.dest)) {
+      throw new PeerVersionError(`Refusing a v2 message for ${evt.dest}, whose latest accepted event is v1.`);
     }
     if (route.kind !== "direct") {
       return yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
     }
-    if (wireNeedsV2(evt.msg) && !peerReadsV2(this.hby, endpoint.eid)) {
+    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, endpoint.eid)) {
       throw new PeerVersionError(
-        `Refusing a v2 message for endpoint ${endpoint.eid}, whose latest accepted event is not v2.`,
+        `Refusing a v2 message for endpoint ${endpoint.eid}, whose latest accepted event is v1.`,
       );
     }
     return remoteCesrTarget(endpoint, evt.msg);
@@ -636,9 +642,9 @@ export class Poster {
       msgs.push(evt.msg);
     }
     // The provider reads the envelope, so it must read v2 whenever the envelope or child is v2.
-    if ((hab.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && !peerReadsV2(this.hby, endpoint.eid)) {
+    if ((hab.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && knownV1Peer(this.hby, endpoint.eid)) {
       throw new PeerVersionError(
-        `Refusing a v2 envelope for provider ${endpoint.eid}, whose latest accepted event is not v2.`,
+        `Refusing a v2 envelope for provider ${endpoint.eid}, whose latest accepted event is v1.`,
       );
     }
     const forwarded: Uint8Array[] = [];

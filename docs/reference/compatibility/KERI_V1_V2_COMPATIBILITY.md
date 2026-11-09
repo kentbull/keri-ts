@@ -233,7 +233,7 @@ and [mailbox interop](../../../packages/keri/test/integration/app/interop-kram-m
 **Coexistence and guard.** A peer is treated as v1 until its own latest accepted event is
 v2, per the [selection design](../../design-docs/runtime/PEER_PROTOCOL_VERSION_SELECTION.md).
 [Poster](../../../packages/keri/src/app/delivery/forwarding.ts) refuses v2 output to a
-recipient, endpoint or mailbox provider that can only be treated as v1, with a typed
+recipient, endpoint or mailbox provider whose accepted KEL ends in v1, with a typed
 `PeerVersionError`, because a v1 parser discards the rest of a stream on a v2 version
 string. Each AID is judged by its own KEL. A deliberate `--version 2.0` rotation moves a
 v1 identifier up; other authoring refuses a version change, which is stricter than

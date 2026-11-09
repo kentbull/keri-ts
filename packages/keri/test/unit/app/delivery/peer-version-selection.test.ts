@@ -107,6 +107,18 @@ Deno.test("a v2 message to a v1 recipient is refused before reaching the network
   });
 });
 
+Deno.test("a peer with no accepted KEL is not refused, so delegated inception can complete", async () => {
+  await scenario(function*(fixture) {
+    const sender = fixture.hby.makeHab("sender", undefined, { ...TRANSFERABLE, version: Vrsn_2_0 });
+    const recipient = fixture.remote.makeHab("escrowed", undefined, { ...TRANSFERABLE, version: Vrsn_2_0 });
+    // Location and role replies alone give an endpoint without any accepted KEL for the recipient.
+    const provider = yield* remoteHab(fixture, "provider", Vrsn_2_0);
+    fixture.hby.db.ends.pin([recipient.pre, Roles.mailbox, provider.pre], { allowed: true });
+    fixture.hby.db.locs.pin([provider.pre, "http"], { url: fixture.url });
+    assertEquals((yield* send(fixture, sender, recipient)).kin, "sent");
+  });
+});
+
 Deno.test("a v2 message reaches a recipient whose latest event is v2", async () => {
   await scenario(function*(fixture) {
     const sender = fixture.hby.makeHab("sender", undefined, { ...TRANSFERABLE, version: Vrsn_2_0 });

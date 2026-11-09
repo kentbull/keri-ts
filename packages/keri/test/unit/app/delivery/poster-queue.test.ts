@@ -1,4 +1,3 @@
-import { Vrsn_1_0 } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { createServer } from "node:http";
@@ -17,9 +16,7 @@ import { httpClient } from "../../../support/http-client.ts";
 Deno.test("Poster completion belongs to a concrete admission and does not determine idle", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const sender = hby.makeHab("sender", undefined, { version: Vrsn_1_0 }),
-      first = hby.makeHab("first"),
-      second = hby.makeHab("second");
+    const sender = hby.makeHab("sender"), first = hby.makeHab("first"), second = hby.makeHab("second");
     const posted: string[] = [];
     const runtime = yield* createAgentRuntime(
       hby,
@@ -125,9 +122,7 @@ Deno.test("Poster contains native connection and response-body failures while la
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
-        const sender = hby.makeHab("sender", undefined, { version: Vrsn_1_0 }),
-          recipient = hby.makeHab("recipient"),
-          later = hby.makeHab("later");
+        const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient"), later = hby.makeHab("later");
         const postman = runtime.postman;
         for (const [index, target] of [refusedUrl, `${url}/truncated`, `${url}/good`].entries()) {
           const eid = `endpoint-${index}`;
@@ -187,7 +182,7 @@ Deno.test("Poster retains prior refusal and success when later target preparatio
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
       try {
-        const sender = hby.makeHab("sender", undefined, { version: Vrsn_1_0 }), recipient = hby.makeHab("recipient");
+        const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         const postman = runtime.postman;
         for (const [index, target] of [`${url}/refused`, `${url}/good`, "invalid endpoint URL"].entries()) {
           const eid = `endpoint-${index}`;

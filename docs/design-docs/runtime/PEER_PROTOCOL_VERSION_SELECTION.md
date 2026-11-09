@@ -25,6 +25,11 @@ with a v2 tail is the upgrade case the rule exists to honor.
 Each AID is judged by its own KEL. A controller's KEL says nothing about its witnesses,
 mailboxes or agents.
 
+Refusal needs evidence. Poster refuses v2 output only when an AID's accepted KEL ends in a v1
+event. An AID with no accepted KEL is not refused, because a delegate awaiting approval has only
+an escrowed inception, and refusing its approval traffic would stop the delegation from ever
+completing. A v2 identifier has no v1 form to fall back to in that case anyway.
+
 ## Consequences
 
 | Case                                        | Result                                                   |
@@ -33,6 +38,7 @@ mailboxes or agents.
 | Local copy of a peer's KEL lags its upgrade | Sends v1, which a v2 peer can still read.                |
 | Software rolled back to v1 under a v2 tail  | Sends v2 and fails. Accepted, see below.                 |
 | Local AID has a v2 KEL, peer is v1          | Nothing readable can be sent. Refuse with a typed error. |
+| Local AID has a v2 KEL, peer has no KEL     | Sends v2, as delegated inception requires.               |
 
 The rolled-back host cannot serve or verify its own v2 tail, so it is already broken
 independent of this rule.
