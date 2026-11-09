@@ -58,8 +58,8 @@ Package ownership is:
   - `./db`
 - `./db` is backend-neutral per ADR-0015; the native LMDB surface lives behind
   `./db/lmdb`
-- `./runtime` carries no sockets or files; TCP transport, `NodeHttpClient` and
-  `fileBytes` live behind `./runtime/node`
+- `./runtime` carries no sockets or files; TCP transport, `NodeHttpClient`,
+  `fileBytes` and `Configer` live behind `./runtime/node`
 - must not own Hono, listener startup, or runnable CLI entrypoints
 
 ### `@keri-ts/verifier`

@@ -1,10 +1,11 @@
 /**
- * Host transport surface for Node and Deno: TCP sockets and local files.
+ * Host surface for Node and Deno: TCP sockets, local files and config files.
  *
  * `keri-ts/runtime` stays free of `node:` modules and the `Deno` global so it
  * can be bundled for a browser. Hosts with sockets import the TCP messengers,
  * the dialer-equipped HTTP client and the file reader from here.
  */
+export { Configer, type ConfigerOptions, createConfiger } from "../app/identity/configing.ts";
 export { fileBytes } from "../app/transport/file-bytes.ts";
 export { NodeHttpClient, nodeTcpDialer } from "../app/transport/node-http-client.ts";
 export {
