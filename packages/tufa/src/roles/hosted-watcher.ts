@@ -10,9 +10,9 @@ import {
   createAgentRuntime,
   EndpointRoles,
   envelopeFromFrame,
-  FetchHttpClient,
   type Hab,
   type Habery,
+  NodeHttpClient,
   queryEnvelopeFromDispatch,
   readRequiredCesrRequestBytes,
   reply,
@@ -396,7 +396,7 @@ export class HostedWatchers {
       const hab = fresh ? hby.makeHab("watcher", undefined, { transferable: false }) : hby.habByName("watcher");
       if (!hab || (!fresh && hab.pre !== record.eid)) throw new ValidationError("Allocated watcher identity missing");
       record.eid = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: false,
         registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },

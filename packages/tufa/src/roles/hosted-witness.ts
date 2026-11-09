@@ -10,9 +10,9 @@ import {
   consoleLogger,
   createAgentRuntime,
   EndpointRoles,
-  FetchHttpClient,
   type Hab,
   type Habery,
+  NodeHttpClient,
   readRequiredCesrRequestBytes,
   reply,
   requestBytes,
@@ -320,7 +320,7 @@ export class HostedWitnesses {
       const hab = fresh ? hby.makeHab("witness", undefined, { transferable: false }) : hby.habByName("witness");
       if (!hab || (!fresh && hab.pre !== record.eid)) throw new ValidationError("Allocated witness identity missing");
       record.eid = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
         registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },

@@ -40,7 +40,7 @@ import {
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 
 import { TCPMessenger } from "../../../../src/app/transport/tcp-messenger.ts";
 import { Deck } from "../../../../src/core/deck.ts";
@@ -239,7 +239,7 @@ Deno.test("Indirect runtime owns one shared Mailboxer and persists remote mailbo
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
@@ -299,7 +299,7 @@ Deno.test("Local runtime defaults to no provider mailbox store", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
       assertEquals(runtime.mailboxer, null);
       assertEquals(runtime.mailboxDirector.mailboxer, null);
       assertEquals(runtime.postman.mbx, null);
@@ -320,7 +320,7 @@ Deno.test("Runtime composes concrete registry processors and registers /credenti
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
       assertEquals(runtime.protocol.tvy, runtime.vdr!.tvy);
       assertEquals(runtime.protocol.vry, runtime.vdr!.vry);
       assertEquals(runtime.vdr!.cues, runtime.cues);
@@ -345,7 +345,7 @@ Deno.test("Indirect runtime closes the mailboxer it opened", async () => {
     });
 
     try {
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       const mailboxer = runtime.mailboxer;
@@ -373,7 +373,7 @@ Deno.test("Runtime close leaves injected mailboxers open", async () => {
     let mailboxer: Mailboxer | undefined;
     try {
       mailboxer = yield* openMailboxerForHabery(hby);
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
         mailboxer,
       });
@@ -417,7 +417,7 @@ Deno.test("Queued exchanges carries embedded CESR attachments for delegation-sty
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       try {
@@ -521,7 +521,7 @@ Deno.test("Queued exchanges defaults IPEX delivery to /credential", async () => 
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       try {
@@ -591,7 +591,7 @@ Deno.test("ForwardHandler stores forwarded ACDC support payloads", async () => {
       mailboxer = yield* openMailboxerForHabery(hby);
       const director = new MailboxDirector(hby, { mailboxer });
       const handler = new ForwardHandler(director);
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         mailboxer,
       });
       try {
@@ -665,7 +665,7 @@ Deno.test("Queued exchanges falls back to local witness mailbox storage", async 
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       try {
@@ -771,7 +771,7 @@ Deno.test("Queued CESR falls back to a remote witness with introduce plus forwar
           toad: 1,
         });
 
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -951,7 +951,7 @@ Deno.test("introduce includes mailbox and witness end-role replies when both are
         toad: 0,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
       try {
         yield* settleRuntimeIngress(runtime, [
           sender.makeEndRole(mailbox.pre, EndpointRoles.mailbox, true),
@@ -1070,7 +1070,7 @@ Deno.test("ForwardHandler accepts mailbox, witness, and agent hosts but rejects 
         toad: 1,
       });
 
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
       });
       try {
@@ -1140,7 +1140,7 @@ Deno.test("Poster direct sends report partial failure and complete only after ev
     await run(function*() {
       const hby = yield* createHabery({ name: `send-result-${crypto.randomUUID()}`, temp: true, skipConfig: true });
       const peer = yield* createHabery({ name: `send-peer-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
       try {
         const sender = hby.makeHab("sender"), recipient = hby.makeHab("recipient");
         for (const name of ["good", "bad"]) {

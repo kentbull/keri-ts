@@ -236,7 +236,7 @@ try {
   // Cross the factory writer's 64 KiB chunk boundary without adding a transport knob.
   const wire = Buffer.concat([Buffer.alloc(128 * 1024, 0xa5), signature.qb64b]);
   const [, bytes] = await Promise.all([
-    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.FetchHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
+    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.NodeHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
     received,
   ]);
   assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");

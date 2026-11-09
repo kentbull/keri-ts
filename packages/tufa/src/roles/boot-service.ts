@@ -43,10 +43,10 @@ import {
   consoleLogger,
   createAgentRuntime,
   exchange,
-  FetchHttpClient,
   type Hab,
   type Habery,
   type HttpClient,
+  NodeHttpClient,
   requestBytes,
   runAgentRuntime,
   systemClock,
@@ -1984,13 +1984,13 @@ export function* runBootService(options: BootServiceOptions): Operation<void> {
         nsith: "1",
         ncount: 1,
       });
-    runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+    runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       enableMailboxStore: false,
       registryRoots: "refuse",
       kram: { enabled: true, denials: [], caches: { "~": [...KRAM_WINDOWS], exn: [...KRAM_WINDOWS] } },
     });
     if (!(yield* db.reopen())) throw new ValidationError("Boot service store could not open");
-    const service = new BootService(config, hby, hab, runtime, db, options.http ?? new FetchHttpClient());
+    const service = new BootService(config, hby, hab, runtime, db, options.http ?? new NodeHttpClient());
     const active = runtime;
     worker = yield* spawn(() => runAgentRuntime(active, { hab, pollMailbox: false }));
     operations = yield* spawn(() => service.work());

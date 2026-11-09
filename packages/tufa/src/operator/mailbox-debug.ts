@@ -1,4 +1,4 @@
-import { FetchHttpClient } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime";
 import { systemClock } from "keri-ts/runtime";
 /**
  * Mailbox operator debug report collection.
@@ -125,7 +125,7 @@ function* fetchMailboxDebug(
     destination,
   });
   const controller = new AbortController();
-  const response = yield* new FetchHttpClient().open(url, {
+  const response = yield* new NodeHttpClient().open(url, {
     method: "POST",
     headers: request.headers,
     body: request.body,

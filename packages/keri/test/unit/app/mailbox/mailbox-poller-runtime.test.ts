@@ -14,7 +14,7 @@ import {
   settleRuntimeIngress,
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
@@ -366,7 +366,7 @@ Deno.test("mailbox polling normalizes positive fractional timeouts without produ
         const poller = new MailboxPoller(
           hby,
           new MailboxDirector(hby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           new ManualRuntimeClock(),
           { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
         );

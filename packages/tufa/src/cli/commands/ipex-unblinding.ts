@@ -9,11 +9,11 @@ import {
   createAgentRuntime,
   envelopeFromFrame,
   type ExchangeRouteHandler,
-  FetchHttpClient,
   groupSigningMembers,
   type KramConfig,
   localGroupMember,
   multisigExnBody,
+  NodeHttpClient,
   runAgentRuntime,
   systemClock,
   timestampMicros,
@@ -299,7 +299,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
   const completed = yield* withExistingHab(walletStoreArgs(args), parseStringOption(args.alias, "alias"), {
     skipConfig: false,
   }, function*({ hby, hab }) {
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+    const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
       ipexAuxiliary: { kind: "unblind", hab, states },
     });

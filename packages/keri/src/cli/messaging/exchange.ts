@@ -2,7 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 
 import { withExistingHab } from "../common/context.ts";
@@ -82,7 +82,7 @@ export function* exchangeSendCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         {
           dest: recipient,

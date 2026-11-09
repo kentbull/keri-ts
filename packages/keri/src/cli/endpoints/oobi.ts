@@ -4,7 +4,7 @@ import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../../ap
 import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
 import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
@@ -280,7 +280,7 @@ export function* oobiRequestCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         {
           dest: recipient,

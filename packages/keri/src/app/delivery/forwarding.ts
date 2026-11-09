@@ -25,7 +25,7 @@ import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
-import { TCPMessenger } from "../transport/tcp-messenger.ts";
+import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 import { introduce } from "./introducing.ts";
 
@@ -504,7 +504,7 @@ export class Poster {
   ): Operation<CesrHttpRefusal | undefined> {
     if (target.kind === "tcp" && evt.replies) {
       // Explicit duplex work retains its receive owner; send-only factories need none.
-      yield* new TCPMessenger(target.url, this.clock, this.protocol).send(target.message, {
+      yield* requireTcpDialer(this.http).messenger(target.url, this.clock, this.protocol).send(target.message, {
         signal,
         replies: true,
       });

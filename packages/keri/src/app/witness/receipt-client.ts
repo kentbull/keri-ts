@@ -11,7 +11,7 @@ import { collectBytes } from "../transport/byte-source.ts";
 import { buildCesrRequest, CESR_CONTENT_TYPE, KERIPY_CESR_JSON_CONTENT_TYPE } from "../transport/cesr-http.ts";
 import type { HttpClient, HttpStreamResponse } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
-import { TCPMessenger } from "../transport/tcp-messenger.ts";
+import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { inspectReceiptMessage } from "./receipt-messages.ts";
 
 const WitnessReceiptPollAttempts = 20;
@@ -121,7 +121,7 @@ export function* sendWitnessMessage(
 
   const parsed = new URL(url);
   if (parsed.protocol === "tcp:") {
-    yield* new TCPMessenger(url, clock, protocol).send(bytes, {
+    yield* requireTcpDialer(http).messenger(url, clock, protocol).send(bytes, {
       replies: Boolean(protocol),
       local: true,
     });

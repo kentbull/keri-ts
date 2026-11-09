@@ -8,7 +8,7 @@
  */
 import type { Operation } from "effection";
 import { systemClock } from "keri-ts/runtime";
-import { FetchHttpClient } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime";
 import {
   createAgentRuntime,
   EndpointRoles,
@@ -273,7 +273,7 @@ function* reconcileMailboxIdentity(
   hab: Hab,
   startup: MailboxStartupMaterial,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, { registryRoots: "refuse" });
+  const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, { registryRoots: "refuse" });
   try {
     yield* settleRuntimeIngress(runtime, [
       hab.makeLocScheme(startup.url, hab.pre, schemeForUrl(startup.url), startup.datetime),
