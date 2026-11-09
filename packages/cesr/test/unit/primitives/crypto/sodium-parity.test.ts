@@ -14,6 +14,7 @@ import {
   boxPublicKeyFromPrivateKey,
   openSealedBox,
   sealBox,
+  sealBoxWithEphemeral,
 } from "../../../../src/primitives/crypto/sealed-box.ts";
 import { Signer } from "../../../../src/primitives/crypto/signer.ts";
 import { x25519PublicKey, x25519SharedSecret } from "../../../../src/primitives/crypto/x25519.ts";
@@ -59,6 +60,19 @@ Deno.test("sodium parity: opens pysodium sealed boxes and rejects tampering", ()
     const tampered = ciphertext.slice();
     tampered[tampered.length - 1] ^= 1;
     assertEquals(openSealedBox(tampered, hex(key.x25519_pk), hex(key.x25519_sk)), null, v.name);
+  }
+});
+
+Deno.test("sodium parity: fixed-ephemeral sealed-box construction is byte-identical to libsodium", () => {
+  const keys = new Map(vectors.ed25519_to_x25519.map((v) => [v.seed, v]));
+  for (const v of vectors.deterministic_sealed_boxes) {
+    const key = keys.get(v.recipient_seed)!;
+    assertEquals(x25519PublicKey(hex(v.ephemeral_sk)), hex(v.ephemeral_pk));
+    assertEquals(
+      sealBoxWithEphemeral(hex(v.plaintext), hex(key.x25519_pk), hex(v.ephemeral_sk)),
+      hex(v.ciphertext),
+      v.name,
+    );
   }
 });
 

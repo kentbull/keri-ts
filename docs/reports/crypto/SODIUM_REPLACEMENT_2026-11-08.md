@@ -4,10 +4,6 @@ Dated observations for replacing `libsodium-wrappers-sumo` in `cesr-ts` while ke
 byte-identical KERIpy/pysodium behavior. This report records what was measured; the
 [crypto learnings](../../../.agents/learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md) own the resulting rules.
 
-At this report's first commit `cesr-ts` still runs on libsodium. The `@noble/*` rows in the payload table and the
-`hash-wasm` backend measurements describe candidates whose adoption lands in later pull requests, as does the check
-that keri-ts reproduces the fixed-ephemeral constructions byte for byte; today those boxes are only opened.
-
 ## Sources
 
 | Item                  | Identity                                                                                                         |
@@ -44,6 +40,21 @@ checks those in isolation together with the older `salter-pwhash-vectors.ts`.
 
 All sections exact, including isolated medium/high tiers. Argon2id timings on this machine:
 low ~80 ms, med ~540 ms, high ~3.1 s for 32-byte output.
+
+## Sealed box, key conversion and X25519 on noble
+
+`sealed-box.ts` and `x25519.ts` were rewritten over `@noble/curves` (X25519, Ed25519 to Montgomery),
+`@noble/ciphers` (HSalsa20, XSalsa20-Poly1305) and `@noble/hashes` (BLAKE2b nonce). Results:
+
+- All parity sections exact, including the 14 fixed-ephemeral constructions (byte-identical ciphertext).
+- Reverse direction: 42 boxes sealed by the noble code (14 plaintexts x 3 fresh ephemeral keys) all
+  opened by `pysodium.crypto_box_seal_open`; all 42 last-byte tamper cases raised.
+- Low-order peers: noble throws `invalid private or public key received` exactly where libsodium
+  returned -1; the seam maps that and `invalid tag` to null, and throws for short ciphertext or
+  wrong-length keys, preserving the existing `Decrypter.open` contract.
+- cesr crypto unit tests: 100 passed. `dhking.test.ts` and `essr.test.ts`: 8 passed.
+- Generated npm package builds (dnt) with `@noble/ciphers@1.3.0` added automatically; Node 25.9.0
+  encrypt/decrypt round trip and vendored-libsodium `Salter.stretch` both run.
 
 ## Argon2id backends
 
@@ -83,12 +94,15 @@ Marginal cost of the noble sealed box over what keri-ts already ships is about 2
 
 ## Conclusions
 
-1. The browser payload only drops once `pwhash.ts` stops importing libsodium, because sealed boxes and Argon2id share
-   one blob.
-2. Argon2id options, all byte-identical where they run:
+1. Sealed boxes, Ed25519 to X25519 conversion and raw X25519 agreement do not need libsodium.
+   The noble implementation is byte-identical in both directions and is adopted in this change.
+2. The browser payload only drops once `pwhash.ts` stops importing libsodium, because the blob is
+   shared. After this change libsodium is loaded for Argon2id alone.
+3. Argon2id options, all byte-identical where they run:
    - keep libsodium: 188 KB gzipped, fastest, current zeroization ownership;
    - `@noble/hashes/argon2`: 5 KB gzipped, about 13x slower (35 s at the high tier);
    - `hash-wasm`: 11 KB gzipped, libsodium speed, blocked by its empty-password check.
+     The choice is a policy decision (derivation latency versus payload) and is left open here.
 
 ## Limits
 

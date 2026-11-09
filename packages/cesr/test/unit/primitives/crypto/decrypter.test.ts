@@ -6,8 +6,8 @@ import { Cipher } from "../../../../src/primitives/crypto/cipher.ts";
 import { Decrypter } from "../../../../src/primitives/crypto/decrypter.ts";
 import { Encrypter } from "../../../../src/primitives/crypto/encrypter.ts";
 import { Salter } from "../../../../src/primitives/crypto/salter.ts";
+import { boxPublicKeyFromPrivateKey, openSealedBox } from "../../../../src/primitives/crypto/sealed-box.ts";
 import { Signer } from "../../../../src/primitives/crypto/signer.ts";
-import sodium from "../../../../src/primitives/crypto/sodium.ts";
 import { Texter } from "../../../../src/primitives/values/texter.ts";
 import { KERIPY_MATTER_VECTORS } from "../../../fixtures/keripy-primitive-vectors.ts";
 
@@ -149,15 +149,10 @@ Deno.test("decrypter: opens raw ESSR ciphertext from pinned KERIpy without quali
 });
 
 Deno.test("decrypter: unexpected backend failures propagate without authentication classification", () => {
+  // Argument-contract failures inside the sealed-box seam surface as errors, never as a null (authentication) result.
   const decrypter = new Decrypter({ seed: "AAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4f" });
-  const failure = new Error("fixture backend failure");
-  const open = sodium.crypto_box_seal_open;
-  sodium.crypto_box_seal_open = () => {
-    throw failure;
-  };
-  try {
-    assertEquals(assertThrows(() => decrypter.open(new Uint8Array(48))), failure);
-  } finally {
-    sodium.crypto_box_seal_open = open;
-  }
+  assertThrows(() =>
+    openSealedBox(new Uint8Array(48), boxPublicKeyFromPrivateKey(decrypter.raw), decrypter.raw.subarray(0, 31))
+  );
+  assertThrows(() => openSealedBox(new Uint8Array(48), new Uint8Array(31), decrypter.raw), RangeError);
 });
