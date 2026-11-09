@@ -5,8 +5,8 @@ accounting/durability removal and the prohibition on restoring it. Preserve
 protocol evidence, transactions and actual resource cleanup.
 
 [ADR-0015](../../docs/adr/adr-0015-pluggable-store-contract.md) owns the pluggable
-`DBer` contract and browser durability; LMDB is still the only implemented backend
-and the parity reference. Nested transactions are savepoints. Browser stores commit
+`DBer` contract and browser durability; `LMDBer` and `MemStore` implement it and
+LMDB remains the parity reference. Nested transactions are savepoints. Browser stores commit
 to their mirrors synchronously and share one prefix-durable queue per composition;
 the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
 `BaseDBer` owns the ordinal, IoSet and IoDup families over backend row primitives.
@@ -17,6 +17,14 @@ Domain code commits through `transaction`, waits through `flushed` and compares
 `writeVersion`; a rebound `Table` handle, not `env`, detects that a store reopened.
 `StoreIdentity` names a store on every backend; paths and map size are `LmdbLocation`.
 Domain stores become `StoreOwner`s over an injected `DBer`; a `StoreOpener` places each `StoreFamily`, and `lmdbDefaultsFor` reproduces the established LMDB paths exactly. Domain stores compose this way; the `lmdb*` factories build each default. `openHabery` takes an opener or borrowed `stores`, which it never closes; `createHabery` is its LMDB default. `keri-ts/db` and `keri-ts/runtime` must not reach the addon; LMDB lives behind `keri-ts/db/lmdb`, and the boundary check walks value imports only.
+
+`MemStore` is one sorted row array per table with an undo log whose savepoints are
+indexes, so scans must re-seek from their last row rather than hold an index. Probing
+`LMDBer` in Linux found behavior the ADR does not state: exclusive start on a dupsort
+entry scan skips every duplicate at that key; empty scan bounds count as absent;
+negative `limit` yields nothing; and a plain table's `delVal(key, val)` ignores `val`.
+LMDB silently loses an empty dupsort value when a second duplicate lands on it, and
+`MemStore` deliberately does not, per "empty values are valid".
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
