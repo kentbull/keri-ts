@@ -8,7 +8,8 @@
 import { concatBytes, parseBytes, type Siger, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert";
-import { acceptedEventReplayMessage, createHabery, exchange, type Hab, reply } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { acceptedEventReplayMessage, exchange, type Hab, reply } from "keri-ts/runtime";
 import { bootServiceConfig, publicKelEvidence } from "../src/roles/boot-service.ts";
 import {
   framed,

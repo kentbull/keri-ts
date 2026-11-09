@@ -2,12 +2,12 @@
 import { BlindState, parseBytes } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   AcdcV2Regery,
   blindate,
   createAgentRuntime,
-  createHabery,
   envelopeFromFrame,
   FetchHttpClient,
   Receiptor,

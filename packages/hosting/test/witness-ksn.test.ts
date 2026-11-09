@@ -1,12 +1,8 @@
 import { attachmentPayload, collectPayload, CtrDexV2, parseBytes, parseCounterFromText, SerderKERI } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  createHabery,
-  settleRuntimeIngress,
-  witnessReceiptPost,
-} from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { createAgentRuntime, settleRuntimeIngress, witnessReceiptPost } from "keri-ts/runtime";
 import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../keri/src/app/transport/http-client.ts";
 import { createProtocolHandler } from "../src/http/protocol-handler.ts";

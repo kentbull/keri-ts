@@ -233,7 +233,6 @@ export {
   type ManagerSignArgs,
   type SigningPath,
 } from "../app/identity/keeping.ts";
-export { createHabery } from "../app/identity/lmdb-habery.ts";
 export {
   type ContactRecord,
   Organizer,

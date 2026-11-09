@@ -3,13 +3,8 @@ import { Registrar } from "@keri-ts/registrar";
 import { b, parseBytes, SerderACDC } from "cesr-ts";
 import { call, run } from "effection";
 import { assert, assertEquals, assertObjectMatch, assertRejects } from "jsr:@std/assert";
-import {
-  createAgentRuntime,
-  createHabery,
-  FetchHttpClient,
-  RegistryObserver,
-  systemClock,
-} from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { createAgentRuntime, FetchHttpClient, RegistryObserver, systemClock } from "keri-ts/runtime";
 import { authenticatedNodeVerdict, authenticateIpexNode } from "../../keri/src/app/ipex/ipex-node-authentication.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../keri/src/app/protocol/parsering.ts";
 import vectors from "../../keri/test/fixtures/keripy-ipex-current-state-vectors.json" with { type: "json" };

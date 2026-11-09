@@ -1,7 +1,6 @@
 import { action, call, run } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { RegBaser } from "../../../../src/acdc/regbasing.ts";
-import { openRegistry } from "../../../../src/acdc/registering.ts";
 import { createRegery as createAcdcRegery, Regery as AcdcRegery } from "../../../../src/acdc/registraring.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";
@@ -13,6 +12,7 @@ import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { LMDBer } from "../../../../src/db/core/lmdber.ts";
 import { PathManager } from "../../../../src/db/core/path-manager.ts";
+import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import { createReger } from "../../../../src/db/lmdb-stores.ts";
 import { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
 import { Noter } from "../../../../src/db/noting.ts";
@@ -501,7 +501,7 @@ Deno.test("registry opener - failed and cancelled acquisition joins backing-stor
       baser = this;
       throw failure;
     };
-    assertEquals(await assertRejects(() => run(() => openRegistry({ temp: true }))), failure);
+    assertEquals(await assertRejects(() => run(() => openLmdbRegistry({ temp: true }))), failure);
     assertReleased(baser);
     RegBaser.prototype.reopen = function*(options) {
       const opened = yield* original.call(this, options);
@@ -510,7 +510,7 @@ Deno.test("registry opener - failed and cancelled acquisition joins backing-stor
       yield* action<void>(() => () => {});
       return opened;
     };
-    const task = run(() => openRegistry({ temp: true }));
+    const task = run(() => openLmdbRegistry({ temp: true }));
     try {
       await ready;
       await task.halt();
@@ -521,10 +521,10 @@ Deno.test("registry opener - failed and cancelled acquisition joins backing-stor
   } finally {
     RegBaser.prototype.reopen = original;
   }
-  const closed = await run(() => openRegistry({ reopen: false, temp: true }));
+  const closed = await run(() => openLmdbRegistry({ reopen: false, temp: true }));
   assertEquals(closed.opened, false);
   await run(() => closed.close(true));
-  await assertRejects(() => run(() => openRegistry({ web: true })), Error, "web registry backend");
+  await assertRejects(() => run(() => openLmdbRegistry({ web: true })), Error, "web registry backend");
 });
 
 Deno.test("runtime notification injection rejects conflicting concrete dependencies before acquisition", async () => {

@@ -2,7 +2,8 @@
 import { VerifierAgent, VerifierCueBaser } from "@keri-ts/verifier";
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals } from "jsr:@std/assert";
-import { createHabery, ValidationError } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { ValidationError } from "keri-ts/runtime";
 import { verifierRunCommand } from "../../src/cli/commands/verifier.ts";
 
 Deno.test({

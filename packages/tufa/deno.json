@@ -31,6 +31,7 @@
     "keri-ts/cli": "../keri/cli.ts",
     "keri-ts/runtime": "../keri/runtime.ts",
     "keri-ts/db": "../keri/db.ts",
+    "keri-ts/db/lmdb": "../keri/db-lmdb.ts",
     "effection": "npm:effection@^3.6.0",
     "@keri-ts/verifier": "../verifier/mod.ts",
     "@keri-ts/hosting": "../hosting/mod.ts",

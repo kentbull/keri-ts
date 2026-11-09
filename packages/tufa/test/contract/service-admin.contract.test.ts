@@ -18,7 +18,8 @@
 import { concatBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { run } from "effection";
 import { assert, assertEquals, assertInstanceOf, assertRejects } from "jsr:@std/assert";
-import { createHabery, FetchHttpClient } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { FetchHttpClient } from "keri-ts/runtime";
 import {
   BootApiError,
   RegistryAdmin,

@@ -2,10 +2,10 @@ import { startServer } from "@keri-ts/hosting";
 import { createProtocolHandler } from "@keri-ts/hosting";
 import { action, call, type Operation, run, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   bindDesignatedAliases,
   createAgentRuntime,
-  createHabery,
   DESIGNATED_ALIASES_SCHEMA_SAID,
   generateDidWebsArtifacts,
   resolveDidWebs,

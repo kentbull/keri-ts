@@ -18,8 +18,6 @@ import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from ".
 import { messagize } from "../core/protocol-serialization.ts";
 import { RawRecord } from "../core/records.ts";
 import type { Table } from "../db/core/dber.ts";
-import { lmdbDefaultsFor } from "../db/core/lmdb-opener.ts";
-import { LMDBer } from "../db/core/lmdber.ts";
 import type { StoreOpener } from "../db/core/store-owner.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
@@ -63,22 +61,23 @@ export interface RegistryRecordShape {
 export class RegistryRecord extends RawRecord<RegistryRecordShape> implements RegistryRecordShape {
   declare registryKey: string;
 }
-/** Constructor-safe LMDB opening; the reference web backend remains unsupported. */
+/** Options for opening a registry store through a `StoreOpener`. */
 export interface OpenRegistryOptions extends RegBaserOptions {
-  web?: boolean;
   reopen?: boolean;
-  /** Creates the registry store. Defaults to LMDB. */
+  /** Creates the registry store. */
   opener?: StoreOpener;
 }
 
 /** Acquire one backing owner; failures/cancellation join cleanup before ownership transfers. */
 export function* openRegistry(
-  { web = false, reopen = true, compat, opener, ...options }: OpenRegistryOptions = {},
+  { reopen = true, opener, ...options }: OpenRegistryOptions = {},
 ): Operation<RegBaser> {
-  if (web) throw new ValidationError("web registry backend is not yet supported by V2 Regery");
-  const baser = new RegBaser(
-    opener?.create(RegBaser.Family, options) ?? new LMDBer(options, lmdbDefaultsFor(RegBaser.Family, compat)),
-  );
+  if (!opener) throw new ValidationError("A registry store needs a store opener.");
+  return yield* adoptRegistry(new RegBaser(opener.create(RegBaser.Family, options)), reopen);
+}
+
+/** Take ownership of a constructed registry owner, reopening it unless told otherwise. */
+export function* adoptRegistry(baser: RegBaser, reopen = true): Operation<RegBaser> {
   let delivered = false;
   try {
     if (reopen && !(yield* baser.reopen())) throw new DatabaseNotOpenError("Registry backing store could not open.");

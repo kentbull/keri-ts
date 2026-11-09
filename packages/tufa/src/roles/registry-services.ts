@@ -4,12 +4,12 @@ import { createObservationBaser, type ObservationBaser, Observer } from "@keri-t
 import { Registrar } from "@keri-ts/registrar";
 import { b, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, spawn, type Task } from "effection";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   collectBytes,
   consoleLogger,
   createAgentRuntime,
-  createHabery,
   EndpointRoles,
   FetchHttpClient,
   type Hab,

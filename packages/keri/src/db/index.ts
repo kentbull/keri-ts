@@ -18,7 +18,6 @@ export { loadNests } from "./exchange/exchange-nests.ts";
 export { ExchangeRegistryStateRecord, type ExchangeRegistryStateShape } from "./exchange/exchange-records.ts";
 export * from "./keeping.ts";
 export * from "./koming.ts";
-export * from "./lmdb-stores.ts";
 export * from "./mailbox/mailboxing.ts";
 export * from "./noting.ts";
 export * from "./reger.ts";

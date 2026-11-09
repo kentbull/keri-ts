@@ -25,7 +25,7 @@ import { loadNests, publicOpeningAttachment } from "../../../../db.ts";
 import { type AcdcGraph, type ChainVerdict, evaluateChain } from "../../../../src/acdc/chaining.ts";
 import { acdcagg, acdcatt, acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { RegistryObserver } from "../../../../src/acdc/observing.ts";
-import { openRegistry, RegistryStore } from "../../../../src/acdc/registering.ts";
+import { RegistryStore } from "../../../../src/acdc/registering.ts";
 import { validateSchema } from "../../../../src/acdc/scheming.ts";
 import { type ExchangeDecision, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import { acceptedEventReplayMessage, type Habery } from "../../../../src/app/identity/habbing.ts";
@@ -44,6 +44,7 @@ import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exincept } from "../../../../src/core/exchange/protocol-exchanging.ts";
 import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
+import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 import fixture from "../../../fixtures/keripy-ipex-vectors.json" with { type: "json" };
 /** These relation fixtures are unregistered; signed grants exercise authentication separately. */
@@ -1341,7 +1342,7 @@ Deno.test("IPEX presentation proofs bind the grant at an exact Issuee-sealed TEL
 Deno.test("registry-backed IPEX retries only after public observer intake accepts foreign anchored evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const store = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const store = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const issuer = source.makeHab("issuer"), rip = regcept(issuer.pre);
     const sender = hby.makeHab("sender");

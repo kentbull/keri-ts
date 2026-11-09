@@ -34,7 +34,7 @@ import {
   vet,
   vetBinds,
 } from "../../../src/acdc/regeventing.ts";
-import { openRegistry, RegistryStore } from "../../../src/acdc/registering.ts";
+import { RegistryStore } from "../../../src/acdc/registering.ts";
 import { createRegery } from "../../../src/acdc/registraring.ts";
 import { FailedSchemaValidationError, MissingSchemaError } from "../../../src/acdc/scheming.ts";
 import { acceptedEventReplayMessage, type Habery } from "../../../src/app/identity/habbing.ts";
@@ -44,6 +44,7 @@ import { attachmentCounterPayloadQb64b } from "../../../src/core/attachment-coun
 import { consoleLogger } from "../../../src/core/logger.ts";
 import { interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
 import { messagize } from "../../../src/core/protocol-serialization.ts";
+import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import { makeNowIso8601, timestampMicros } from "../../../src/time/mod.ts";
 import fixture from "../../fixtures/keripy-registry-vectors.json" with { type: "json" };
 
@@ -447,7 +448,7 @@ Deno.test("public digest commitments remain distinct from full v2 registry ancho
 Deno.test("registry inception atomically accepts or escrows without overwriting an accepted slot", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-engine-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: `registry-engine-${crypto.randomUUID()}`, temp: true });
+    const baser = yield* openLmdbRegistry({ name: `registry-engine-${crypto.randomUUID()}`, temp: true });
     try {
       const store = new RegistryStore(baser), issuer = hby.makeHab("issuer");
       const rip = regcept(issuer.pre);
@@ -540,7 +541,7 @@ Deno.test("registry inception atomically accepts or escrows without overwriting 
 Deno.test("registry updates require accepted predecessors and preserve decided slots and heads", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-order-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: `registry-order-${crypto.randomUUID()}`, temp: true });
+    const baser = yield* openLmdbRegistry({ name: `registry-order-${crypto.randomUUID()}`, temp: true });
     try {
       const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
       const engine = new RegistryEventer(hby.db, issuer.pre, store);
@@ -624,7 +625,7 @@ Deno.test("registry updates require accepted predecessors and preserve decided s
 Deno.test("registry anchor retry selects verified siblings independently of arrival order", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-retry-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: `registry-retry-${crypto.randomUUID()}`, temp: true });
+    const baser = yield* openLmdbRegistry({ name: `registry-retry-${crypto.randomUUID()}`, temp: true });
     const warnings: Parameters<typeof consoleLogger.warn>[] = [];
     const warn = consoleLogger.warn;
     consoleLogger.warn = (...args) => warnings.push(args);
@@ -718,7 +719,7 @@ Deno.test("registry anchor retry selects verified siblings independently of arri
 Deno.test("registry queued replay retains first anchors and advances a contiguous chain", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `registry-queued-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: `registry-queued-${crypto.randomUUID()}`, temp: true });
+    const baser = yield* openLmdbRegistry({ name: `registry-queued-${crypto.randomUUID()}`, temp: true });
     try {
       const store = new RegistryStore(baser), issuer = hby.makeHab("issuer"), rip = regcept(issuer.pre);
       const engine = new RegistryEventer(hby.db, issuer.pre, store);
@@ -821,7 +822,7 @@ for (const sealingOrdinal of [3, 4]) {
     await run(function*() {
       const root = Deno.makeTempDirSync({ prefix: "registry-recovery-" });
       const options = { name: "registry-recovery", headDirPath: root, skipConfig: true };
-      let hby = yield* createHabery(options), baser = yield* openRegistry(options);
+      let hby = yield* createHabery(options), baser = yield* openLmdbRegistry(options);
       let store = new RegistryStore(baser), issuer = hby.makeHab("issuer");
       const rip = regcept(issuer.pre), regid = rip.said!, pre = issuer.pre;
       let engine = new RegistryEventer(hby.db, pre, store);
@@ -830,7 +831,7 @@ for (const sealingOrdinal of [3, 4]) {
         yield* baser.close(false);
         yield* hby.close(false);
         hby = yield* createHabery(options);
-        baser = yield* openRegistry(options);
+        baser = yield* openLmdbRegistry(options);
         store = new RegistryStore(baser);
         issuer = hby.habByName("issuer")!;
         engine = new RegistryEventer(hby.db, pre, store, regid);
@@ -944,7 +945,7 @@ for (const sealingOrdinal of [3, 4]) {
 Deno.test("registry blind updates extend one staged frontier across reopen and refuse forks", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     try {
       let rgy = yield* createRegery({ hby, baser });
       const issuer = hby.makeHab("issuer"), other = hby.makeHab("other");
@@ -1055,7 +1056,7 @@ Deno.test("public registry intake retries pre-inception updates from foreign pub
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     try {
       const store = new RegistryStore(baser), witness = source.makeHab("witness", undefined, { transferable: false });
       const issuer = source.makeHab("issuer", undefined, { wits: [witness.pre], toad: 1 }), rip = regcept(issuer.pre);

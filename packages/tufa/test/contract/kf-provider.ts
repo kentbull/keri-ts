@@ -9,10 +9,10 @@
 import { parseBytes } from "cesr-ts";
 import { run, suspend } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   createAgentRuntime,
-  createHabery,
   FetchHttpClient,
   type Hab,
   type Habery,

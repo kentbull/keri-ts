@@ -27,6 +27,7 @@ await build({
   mappings: {
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
     "../keri/db.ts": { name: "keri-ts", version: keriVersion, subPath: "db" },
+    "../keri/db-lmdb.ts": { name: "keri-ts", version: keriVersion, subPath: "db/lmdb" },
     "../registrar/mod.ts": { name: "@keri-ts/registrar", version: registrarVersion },
     "../hosting/mod.ts": { name: "@keri-ts/hosting", version: hostingVersion },
     "../cesr/mod.ts": { name: "cesr-ts", version: cesrVersion },

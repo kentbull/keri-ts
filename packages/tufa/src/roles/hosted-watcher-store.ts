@@ -1,6 +1,7 @@
 /** Allocated watcher identities and their latest verified observation attempts. */
 import type { Operation } from "effection";
-import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
+import { Komer } from "keri-ts/db";
+import { LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { RawRecord } from "keri-ts/runtime";
 
 /** Public resource coordinates; private keys remain in the allocation's Habery. */

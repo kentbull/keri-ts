@@ -1,6 +1,7 @@
 /** Completed configured-source observations; protocol acceptance remains in v2 stores. */
 import type { Operation } from "effection";
-import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
+import { Komer } from "keri-ts/db";
+import { LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { DatabaseNotOpenError, RawRecord } from "keri-ts/runtime";
 
 /** Local completed-pull time and exact returned accepted heads for one configured URL. */
