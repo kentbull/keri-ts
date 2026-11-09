@@ -242,6 +242,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/core/lmdber-map-size.test.ts",
       "test/unit/db/core/lmdber-on.test.ts",
       "test/unit/db/core/lmdber-plain.test.ts",
+      "test/unit/db/core/memstore.test.ts",
       "test/unit/db/core/path-manager.test.ts",
       "test/unit/db/escrowing.test.ts",
       "test/unit/db/keeping.test.ts",
