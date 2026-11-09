@@ -41,7 +41,7 @@ import {
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { incept, interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
-import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
+import { Baser, BaserDoer, createBaser, lmdbBaser } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
 import {
@@ -134,7 +134,7 @@ Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on
   let tempPath: string | null = null;
 
   await run(function*() {
-    const baser = new Baser({
+    const baser = lmdbBaser({
       name: `baser-doer-${crypto.randomUUID()}`,
       temp: true,
     });

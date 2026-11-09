@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Configer } from "../../app/identity/configing.ts";
 import { createHabery, Habery } from "../../app/identity/habbing.ts";
-import { createKeeper, Keeper } from "../../db/keeping.ts";
+import { createKeeper, lmdbKeeper } from "../../db/keeping.ts";
 import { readPasscode } from "./passcode.ts";
 
 /** Low-level habery-open knobs shared by CLI startup helpers. */
@@ -33,7 +33,7 @@ function* keeperExists(
   headDirPath?: string,
   compat = false,
 ): Operation<boolean> {
-  const keeper = new Keeper({
+  const keeper = lmdbKeeper({
     name,
     base,
     temp,
@@ -45,8 +45,6 @@ function* keeperExists(
       name,
       base,
       temp,
-      headDirPath,
-      compat,
       reopen: true,
       readonly: true,
     });
