@@ -21,7 +21,7 @@ export interface IngressOptions extends DispatchOptions {
  * @param protocol Borrowed dispatcher over synchronous domain commits and correlated cue publication.
  * @param kvy Input-owned KEL processor bound to the same store, reply verifier and cue flow.
  * @param options Dispatch policy and optional upstream cancellation; defaults follow the shared processor.
- * @throws Parsing, dispatch and cleanup failures propagate after the pending pull and iterator cleanup join.
+ * @throws Parsing, infrastructure dispatch and cleanup failures propagate after the pending pull and iterator cleanup join; one invalid message does not.
  */
 export function* processMessages(
   source: (signal: AbortSignal) => AsyncIterable<Uint8Array>,

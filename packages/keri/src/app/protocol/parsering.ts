@@ -121,7 +121,10 @@ export interface MessageDropDecision {
     | "unsupportedRoute"
     | "invalidQuery"
     | "missingProcessor"
-    | "referenceStub";
+    | "referenceStub"
+    | "invalidMessage";
+  /** Why validation refused an already-extracted message; present only for `invalidMessage`. */
+  detail?: string;
 }
 
 /** Route-specific results remain distinct from pre-dispatch refusal and unreported outcomes. */
