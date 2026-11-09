@@ -158,6 +158,7 @@ export function* agentCommand(args: Record<string, unknown>): Operation<void> {
       base: "",
       temp: false,
       headDirPath: agentArgs.configDir,
+      compat: agentArgs.compat,
       reopen: true,
       clear: false,
     }))

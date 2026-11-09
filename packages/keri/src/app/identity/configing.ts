@@ -25,6 +25,8 @@ const CONFIGER_DEFAULTS: ConfigerDefaults = {
 export interface ConfigerOptions extends PathManagerOptions {
   /** File extension for the config file */
   fext?: string;
+  /** Use the `.keri` home fallback, like the stores of a compat Habery. */
+  compat?: boolean;
 }
 
 /**
@@ -65,8 +67,8 @@ export class Configer {
       {
         tailDirPath: CONFIGER_DEFAULTS.tailDirPath,
         cleanTailDirPath: CONFIGER_DEFAULTS.cleanTailDirPath,
-        altTailDirPath: CONFIGER_DEFAULTS.altTailDirPath,
-        altCleanTailDirPath: CONFIGER_DEFAULTS.altCleanTailDirPath,
+        altTailDirPath: options.compat ? ".keri/cf" : CONFIGER_DEFAULTS.altTailDirPath,
+        altCleanTailDirPath: options.compat ? ".keri/clean/cf" : CONFIGER_DEFAULTS.altCleanTailDirPath,
         tempPrefix: CONFIGER_DEFAULTS.tempPrefix,
       },
     );

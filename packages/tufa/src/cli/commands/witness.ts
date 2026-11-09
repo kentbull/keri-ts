@@ -217,6 +217,7 @@ function* loadWitnessStartConfig(
       base: "",
       temp: false,
       headDirPath: args.configDir,
+      compat: args.compat,
       reopen: true,
       clear: false,
     });
@@ -233,6 +234,7 @@ function* loadWitnessStartConfig(
           name: candidate,
           base: "",
           temp: false,
+          compat: args.compat,
           reopen: true,
           clear: false,
         });

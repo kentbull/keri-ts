@@ -137,6 +137,18 @@ Deno.test("db/core path-manager - a temp store keeps one directory per name acro
     assertThrows(() => Deno.statSync(path), Deno.errors.NotFound);
   }));
 
+Deno.test("configing - compat config files fall back under .keri like compat stores", () =>
+  withHome(async (home) => {
+    Deno.writeTextFileSync(`${home}/afile`, "");
+    const headDirPath = `${home}/afile/x`;
+    const compat = await run(() => createConfiger({ name: "wil", base: "", headDirPath, compat: true }));
+    assertEquals(compat.path, `${home}/.keri/cf/wil.json`);
+    await run(() => compat.close(true));
+    const native = await run(() => createConfiger({ name: "wil", base: "", headDirPath }));
+    assertEquals(native.path, `${home}/.tufa/cf/wil.json`);
+    await run(() => native.close(true));
+  }));
+
 Deno.test("configing - the config file sits directly under its base, as in KERIpy", () =>
   withHome(async (home) => {
     const named = await run(() => createConfiger({ name: "wil", base: "", headDirPath: `${home}/h` }));
