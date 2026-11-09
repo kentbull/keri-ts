@@ -1,6 +1,6 @@
 import { type Operation, spawn, type Task } from "effection";
 import { systemClock } from "keri-ts/runtime";
-import { FetchHttpClient } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime";
 import {
   type AgentRuntime,
   consoleLogger,
@@ -54,7 +54,7 @@ export function* runHostKernel(
   hby: Habery,
   spec: HostKernelSpec,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+  const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
     enableMailboxStore: spec.enableMailboxStore,
     kram: spec.kram,
   });

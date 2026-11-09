@@ -1,7 +1,7 @@
 import type { Versionage } from "cesr-ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 
 /**
  * `tufa interact` command implementation.
@@ -57,7 +57,7 @@ export function* interactCommand(
   args: Record<string, unknown>,
 ): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
-  const http = new FetchHttpClient();
+  const http = new NodeHttpClient();
   const interactArgs: InteractArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),

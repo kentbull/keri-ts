@@ -9,7 +9,7 @@
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
-import { FetchHttpClient } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime";
 import {
   type Configer,
   createConfiger,
@@ -146,7 +146,7 @@ export function* witnessSubmitCommand(
         const receiptor = new Receiptor(
           hby,
           createProtocolProcessor(hby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         );
         yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
@@ -154,7 +154,7 @@ export function* witnessSubmitCommand(
         const witDoer = new WitnessReceiptor(
           hby,
           createProtocolProcessor(hby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
           {
             force: commandArgs.force ?? false,

@@ -11,8 +11,9 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { HttpClient } from "./http-client.ts";
 import { HTTPMessenger } from "./http-messenger.ts";
 import { HTTPStreamMessenger } from "./http-stream-messenger.ts";
-import { TCPMessenger } from "./tcp-messenger.ts";
-import { TCPStreamMessenger } from "./tcp-stream-messenger.ts";
+import { requireTcpDialer } from "./tcp-dialer.ts";
+import type { TCPMessenger } from "./tcp-messenger.ts";
+import type { TCPStreamMessenger } from "./tcp-stream-messenger.ts";
 
 /** Resolved transport URLs; identity/role discovery belongs to the caller. */
 export interface MessengerUrls {
@@ -58,7 +59,7 @@ export function messengerFrom(
   headers?: HeadersInit,
 ): HTTPMessenger | TCPMessenger {
   const endpoint = endpointFrom(urls);
-  if (endpoint.protocol === "tcp:") return new TCPMessenger(endpoint.href, clock);
+  if (endpoint.protocol === "tcp:") return requireTcpDialer(http).messenger(endpoint.href, clock);
   return new HTTPMessenger(endpoint.href, http, { destination, headers });
 }
 
@@ -85,6 +86,6 @@ export function streamMessengerFrom(
   headers?: HeadersInit,
 ): HTTPStreamMessenger | TCPStreamMessenger {
   const endpoint = endpointFrom(urls);
-  if (endpoint.protocol === "tcp:") return new TCPStreamMessenger(endpoint.href, clock, payload);
+  if (endpoint.protocol === "tcp:") return requireTcpDialer(http).streamMessenger(endpoint.href, clock, payload);
   return new HTTPStreamMessenger(endpoint.href, http, payload, { destination, headers });
 }

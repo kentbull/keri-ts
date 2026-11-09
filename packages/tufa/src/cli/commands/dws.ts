@@ -3,7 +3,7 @@ import { startServer } from "@keri-ts/hosting";
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
-import { FetchHttpClient } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime";
 import {
   consoleLogger,
   createAgentRuntime,
@@ -69,7 +69,7 @@ export function* dwsResolverCommand(args: Record<string, unknown>): Operation<vo
       skipSignator: false,
     },
   );
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+  const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
   try {
     yield* startServer(port, consoleLogger, runtime, {
       hostname: commandArgs.listenHost ?? "127.0.0.1",

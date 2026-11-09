@@ -7,7 +7,7 @@ import {
   runAgentRuntimeUntil,
 } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { assertBootstrapComplete } from "../common/bootstrap.ts";
 
@@ -85,7 +85,7 @@ function mergeWithFile(args: InceptArgs): InceptFileOptions {
  */
 export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
-  const http = new FetchHttpClient();
+  const http = new NodeHttpClient();
   const inceptArgs: InceptArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),

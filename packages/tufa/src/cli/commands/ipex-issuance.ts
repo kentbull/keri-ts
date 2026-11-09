@@ -25,11 +25,11 @@ import {
   type AgentRuntime,
   createAgentRuntime,
   CREDENTIAL_MAILBOX_TOPIC,
-  FetchHttpClient,
   isLocalGroupHab,
   type KramConfig,
   localGroupMember,
   messagize,
+  NodeHttpClient,
   Organizer,
   Receiptor,
   runAgentRuntime,
@@ -274,7 +274,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
         throw new ValidationError("Group selection/proof options require a group habitat");
       }
       const selection = group ? { coordinator: coordinator!, custodian: custodian! } : undefined;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
         ipexAuxiliary: { kind: "dhke", hab },
       });

@@ -7,10 +7,10 @@ import { acceptedEventReplayMessage, type Hab } from "../../../src/app/identity/
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleMailboxPollBatch } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { HTTPMessenger } from "../../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../../src/app/transport/http-stream-messenger.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../src/app/transport/messengering.ts";
+import { NodeHttpClient } from "../../../src/app/transport/node-http-client.ts";
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { waitForTaskHalt } from "../../effection-http.ts";
@@ -54,7 +54,7 @@ Deno.test("messenger factories exchange ordered POSTs and whole PUTs through act
       };
       await run(function*() {
         const hby = yield* createHabery({ name: `messengers-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-        const http = new FetchHttpClient();
+        const http = new NodeHttpClient();
         const runtime = yield* createAgentRuntime(hby, http, systemClock);
         // These reference media profiles exercise v1 KEL evidence across every profile.
         const receiver = hby.makeHab("receiver", undefined, { version: Vrsn_1_0 });
@@ -229,7 +229,7 @@ Deno.test("signed mailbox queries retrieve and accept Python replies across refe
       };
       await run(function*() {
         const hby = yield* createHabery({ name: `mailbox-media-${crypto.randomUUID()}`, temp: true, skipConfig: true });
-        const http = new FetchHttpClient();
+        const http = new NodeHttpClient();
         const runtime = yield* createAgentRuntime(hby, http, systemClock);
         const recipient = hby.makeHab("recipient", undefined, { version: Vrsn_1_0 });
         try {

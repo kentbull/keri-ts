@@ -323,6 +323,11 @@ verified indexed proof, never raw peer fields or unrelated receipts. Receipt own
 receive ProtocolProcessor and I/O dependencies explicitly; standalone entrypoints
 compose minimal processing over the existing Habery.
 
+TCP egress reaches domain code only through `HttpClient.tcp`. `FetchHttpClient` is pure
+fetch; hosts with sockets construct `NodeHttpClient`. Reaching a `tcp:` endpoint without a
+dialer throws `ValidationError`, so every CLI or test that can dial TCP must use the Node
+client. A test that awaits a socket event can hang on that throw instead of failing.
+
 ## OOBI, DID, mailbox and notices
 
 OOBI keeps its durable job row until terminal intake and joined cleanup. Failure

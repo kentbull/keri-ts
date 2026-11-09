@@ -11,7 +11,7 @@ import { abortable } from "../../../../src/app/runtime/abortable.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 
 import { socketBytes } from "../../../../src/app/transport/socket-source.ts";
 import {
@@ -56,7 +56,7 @@ Deno.test("witness delivery preserves authorization and retries the media type f
       try {
         const { witness, controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
         controller.interact();
-        const http = new FetchHttpClient(), clock = systemClock;
+        const http = new NodeHttpClient(), clock = systemClock;
         const wire = concatBytes(...hby.db.clonePreIter(controller.pre));
         // One request completes before the next complete event is sent.
         yield* sendWitnessMessage(controller, witness.pre, wire, http, clock, null, "Bearer fixture");
@@ -97,7 +97,7 @@ Deno.test("TCP witness sender owns its socket through cancellation and permits a
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Expected TCP test address");
-  const http = new FetchHttpClient(), clock = systemClock;
+  const http = new NodeHttpClient(), clock = systemClock;
   try {
     await run(function*() {
       const hby = yield* createHabery({
@@ -169,7 +169,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         const { witness, controller } = fixture(hby, "http://unused.test");
         hby.db.locs.rem([witness.pre, "http"]);
         hby.db.locs.pin([witness.pre, "tcp"], { url });
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
         const submitter = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
         yield* call(() =>
           assertRejects(
@@ -223,7 +223,7 @@ Deno.test("TCP-only witness submission requires a verified persisted receipt, no
         yield* new WitnessReceiptor(
           hby,
           createProtocolProcessor(hby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         ).submit(controller.pre);
         assertEquals(hby.db.wigs.get([controller.pre, next.said!]).length, 1);
@@ -262,13 +262,13 @@ Deno.test("HTTP receipt success requires the requested event's verified witness 
         const submitter = new WitnessReceiptor(
             source,
             createProtocolProcessor(source),
-            new FetchHttpClient(),
+            new NodeHttpClient(),
             systemClock,
           ),
           getter = new Receiptor(
             source,
             createProtocolProcessor(source),
-            new FetchHttpClient(),
+            new NodeHttpClient(),
             systemClock,
           );
         const forged = new Cigar({ qb64: outsider.sign(current.raw, false)[0]!.qb64 }, witness.kever!.verfers[0]);
@@ -349,7 +349,7 @@ Deno.test("HTTP three-witness fanout contains only verified complementary witnes
         yield* new Receiptor(
           source,
           createProtocolProcessor(source),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         ).receipt(controller.pre);
         assertEquals(source.db.wigs.get([controller.pre, serder.said!]).map((siger) => siger.index).sort(), [0, 1, 2]);
@@ -398,7 +398,7 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
         const receiptor = new Receiptor(
           source,
           createProtocolProcessor(source),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         );
         assertEquals(yield* receiptor.get(controller.pre, { sn: 0 }), true);
@@ -407,7 +407,7 @@ Deno.test("HTTP receipt selection and cached completion use the requested event'
           yield* new WitnessReceiptor(
             source,
             createProtocolProcessor(source),
-            new FetchHttpClient(),
+            new NodeHttpClient(),
             systemClock,
           ).submit(
             controller.pre,
@@ -454,7 +454,7 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
           yield* new WitnessReceiptor(
             hby,
             createProtocolProcessor(hby),
-            new FetchHttpClient(),
+            new NodeHttpClient(),
             systemClock,
           ).submit(
             controller.pre,
@@ -466,7 +466,7 @@ Deno.test("a zero-witness historical rotation and interaction never contact late
           yield* new Receiptor(
             hby,
             createProtocolProcessor(hby),
-            new FetchHttpClient(),
+            new NodeHttpClient(),
             systemClock,
           ).receipt(controller.pre, {
             sn: event.sn!,
@@ -492,7 +492,7 @@ Deno.test("receipt POST authorizes the accepted historical event and leaves miss
       controller.interact();
       const historical = acceptedEventReplayMessage(source, controller.pre, 1);
       controller.rotate({ cuts: [before.pre], adds: [after.pre], toad: 1 });
-      const runtime = yield* createAgentRuntime(provider, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(provider, new NodeHttpClient(), systemClock);
       try {
         for (const [sn, message] of [...source.db.clonePreIter(controller.pre)].entries()) {
           const result = yield* witnessReceiptPost(runtime, sn < 2 ? before : after, message);
@@ -538,7 +538,7 @@ Deno.test("halting a receipt read closes the peer body without continuing its ca
     const hby = yield* createHabery({ name: `receipt-cancel-${crypto.randomUUID()}`, temp: true, skipConfig: true });
     try {
       const { controller } = fixture(hby, `http://127.0.0.1:${server.addr.port}`);
-      yield* new Receiptor(hby, createProtocolProcessor(hby), new FetchHttpClient(), systemClock)
+      yield* new Receiptor(hby, createProtocolProcessor(hby), new NodeHttpClient(), systemClock)
         .get(controller.pre);
       continued = true;
     } finally {
@@ -678,7 +678,7 @@ Deno.test("TCP messenger owns concurrent signed replies, directional failure and
     const timers: number[] = [];
     const runtime = yield* createAgentRuntime(
       receiving,
-      new FetchHttpClient(),
+      new NodeHttpClient(),
       {
         ...systemClock,
         setTimeout(callback, ms) {
@@ -856,7 +856,7 @@ Deno.test("TCP streamed output stops pulling under socket pressure and joins sou
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const http = new FetchHttpClient(), clock = systemClock;
+  const http = new NodeHttpClient(), clock = systemClock;
   let pulls = 0, opened = 0, continued = false;
   const source = async function*(signal: AbortSignal) {
     opened++;
@@ -926,7 +926,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
-  const http = new FetchHttpClient(), clock = systemClock;
+  const http = new NodeHttpClient(), clock = systemClock;
   try {
     await run(() =>
       streamCesrTcp(
@@ -1120,7 +1120,7 @@ Deno.test("TCP output freezes its drain deadline and preserves source and cleanu
 });
 
 Deno.test("TCP application composes raw duplex siblings over a real borrowed connection", async () => {
-  const http = new FetchHttpClient(), clock = systemClock;
+  const http = new NodeHttpClient(), clock = systemClock;
   const reply = Uint8Array.of(3, 4, 5);
   let closed = false;
   const incoming: number[] = [], outgoing: number[] = [];

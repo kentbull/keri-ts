@@ -2,7 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { KramConfig } from "../../core/mailbox/kraming.ts";
 import { setupHby } from "./existing.ts";
@@ -131,7 +131,7 @@ export function* withAgentRuntime<TResult>(
   return yield* withExistingHabery(args, options, function*({ hby }) {
     const runtime = yield* (options.dependencies?.createAgentRuntime ?? createAgentRuntime)(
       hby,
-      new FetchHttpClient(),
+      new NodeHttpClient(),
       systemClock,
       { kram: hby.cf?.get<{ kram?: KramConfig }>().kram },
     );

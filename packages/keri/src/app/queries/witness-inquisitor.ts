@@ -24,7 +24,7 @@ import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { HTTPMessenger } from "../transport/http-messenger.ts";
-import { TCPMessenger } from "../transport/tcp-messenger.ts";
+import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 
 /** First eligible role used by KERIpy WitnessInquisitor before random endpoint selection. */
@@ -297,7 +297,7 @@ export class WitnessInquisitor {
     // Only this attempt owns signed bytes; failed attempts are never automatically resubmitted.
     const http = this.http, clock = this.clock;
     if (new URL(delivery.url).protocol === "tcp:") {
-      yield* new TCPMessenger(delivery.url, clock, this.protocol).send(delivery.body, {
+      yield* requireTcpDialer(http).messenger(delivery.url, clock, this.protocol).send(delivery.body, {
         signal: controller.signal,
         replies: true,
         local: true,

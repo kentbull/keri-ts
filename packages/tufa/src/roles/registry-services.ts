@@ -11,9 +11,9 @@ import {
   consoleLogger,
   createAgentRuntime,
   EndpointRoles,
-  FetchHttpClient,
   type Hab,
   type Habery,
+  NodeHttpClient,
   reply,
   requestBytes,
   runAgentRuntime,
@@ -260,7 +260,7 @@ function* runService(selection: Selection): Operation<void> {
     });
     const hab = hby.habByName(options.alias);
     if (!hab) throw new ValidationError("Initialize the selected service identity before starting it");
-    runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+    runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       enableMailboxStore: false,
       registryRoots: "refuse",
       kram: { enabled: true, denials: [], caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
