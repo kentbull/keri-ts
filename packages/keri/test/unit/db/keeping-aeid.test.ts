@@ -5,7 +5,8 @@ import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Manager } from "../../../src/app/identity/keeping.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
-import { createKeeper, type Keeper } from "../../../src/db/keeping.ts";
+import { type Keeper } from "../../../src/db/keeping.ts";
+import { createKeeper } from "../../../src/db/lmdb-stores.ts";
 
 const first = branToSeedAeid("MyPasscodeARealSecret");
 const second = branToSeedAeid("AnotherPasscodeSecretX");

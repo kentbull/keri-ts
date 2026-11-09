@@ -3,10 +3,11 @@ import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { createHabery } from "../../../../src/app/identity/habbing.ts";
 import { openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
-import { Baser, createBaser } from "../../../../src/db/basing.ts";
+import { Baser } from "../../../../src/db/basing.ts";
 import { LmdbStoreOpener } from "../../../../src/db/core/lmdb-opener.ts";
 import type { StoreOpener } from "../../../../src/db/core/store-owner.ts";
-import { createKeeper, Keeper } from "../../../../src/db/keeping.ts";
+import { Keeper } from "../../../../src/db/keeping.ts";
+import { createBaser, createKeeper } from "../../../../src/db/lmdb-stores.ts";
 
 Deno.test("failed encrypted Habery acquisition closes actual Baser and Keeper before returning", async () => {
   const directory = Deno.makeTempDirSync({ prefix: "habery-acquisition-" });

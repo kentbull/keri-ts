@@ -41,9 +41,10 @@ import {
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { incept, interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
-import { Baser, BaserDoer, createBaser, lmdbBaser } from "../../../src/db/basing.ts";
+import { Baser, BaserDoer } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
+import { createBaser, lmdbBaser } from "../../../src/db/lmdb-stores.ts";
 import {
   rehydrateKramFactors,
   removeKramFactors,

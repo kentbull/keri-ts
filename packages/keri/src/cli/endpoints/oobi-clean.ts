@@ -2,9 +2,9 @@
 import { call, type Operation } from "effection";
 import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { Baser } from "../../db/basing.ts";
-import { createBaser } from "../../db/basing.ts";
 import { lmdbDefaultsFor } from "../../db/core/lmdb-opener.ts";
 import { PathManager } from "../../db/core/path-manager.ts";
+import { createBaser } from "../../db/lmdb-stores.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
 import { writeJsonLine } from "../common/rendering.ts";
 

@@ -28,7 +28,7 @@ import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { attachmentCounterPayloadQb64b } from "../../../../src/core/attachment-countering.ts";
 import { Revery } from "../../../../src/core/routing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
-import { createReger } from "../../../../src/db/reger.ts";
+import { createReger } from "../../../../src/db/lmdb-stores.ts";
 import { Credentialer, CredentialWallet, Regery } from "../../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../../src/vdr/eventing.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";

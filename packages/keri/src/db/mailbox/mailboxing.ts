@@ -17,9 +17,8 @@ import { Diger, MtrDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
 import type { StoreIdentity } from "../core/dber.ts";
-import { lmdbDefaultsFor } from "../core/lmdb-opener.ts";
-import { LMDBer, type LMDBerOptions } from "../core/lmdber.ts";
-import { openOwner, type StoreFamily, StoreOwner } from "../core/store-owner.ts";
+import type { LMDBerOptions } from "../core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "../core/store-owner.ts";
 import { CesrOnSuber, Suber } from "../subing.ts";
 
 /** Accepted topic key shapes for the mailbox ordering store. */
@@ -157,21 +156,4 @@ export class Mailboxer extends StoreOwner {
       yield [on, keys[0] ?? "", msg];
     }
   }
-}
-
-/** Construct a closed LMDB-backed `Mailboxer` at its established paths. */
-export function lmdbMailboxer({ compat, ...options }: MailboxerOptions = {}): Mailboxer {
-  return new Mailboxer(new LMDBer(options, lmdbDefaultsFor(Mailboxer.Family, compat)));
-}
-
-/**
- * Open a mailbox environment and return the ready-to-use databaser.
- *
- * Compatibility rule:
- * - explicit mailbox opens stay strict
- * - missing additive sidecars are tolerated only by higher-level habery open
- *   flows that are inspecting compat stores readonly
- */
-export function* createMailboxer(options: MailboxerOptions = {}): Operation<Mailboxer> {
-  return yield* openOwner(lmdbMailboxer(options), "Mailboxer", options);
 }

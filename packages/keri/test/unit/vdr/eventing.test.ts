@@ -39,7 +39,8 @@ import {
 } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery, Router } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { createReger, type Reger } from "../../../src/db/reger.ts";
+import { createReger } from "../../../src/db/lmdb-stores.ts";
+import { type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";

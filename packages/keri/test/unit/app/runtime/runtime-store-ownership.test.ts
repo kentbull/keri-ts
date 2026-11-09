@@ -13,9 +13,10 @@ import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { LMDBer } from "../../../../src/db/core/lmdber.ts";
 import { PathManager } from "../../../../src/db/core/path-manager.ts";
+import { createReger } from "../../../../src/db/lmdb-stores.ts";
 import { Mailboxer } from "../../../../src/db/mailbox/mailboxing.ts";
 import { Noter } from "../../../../src/db/noting.ts";
-import { createReger, Reger } from "../../../../src/db/reger.ts";
+import { Reger } from "../../../../src/db/reger.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
 const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true, skipSignator: true };

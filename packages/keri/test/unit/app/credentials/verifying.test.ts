@@ -25,7 +25,8 @@ import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";
 import { consoleLogger } from "../../../../src/core/logger.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
-import { createReger, type Reger } from "../../../../src/db/reger.ts";
+import { createReger } from "../../../../src/db/lmdb-stores.ts";
+import { type Reger } from "../../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../../src/time/mod.ts";
 
 const textEncoder = new TextEncoder();

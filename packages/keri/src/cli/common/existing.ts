@@ -1,7 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
 import type { Configer } from "../../app/identity/configing.ts";
 import { createHabery, Habery } from "../../app/identity/habbing.ts";
-import { createKeeper, lmdbKeeper } from "../../db/keeping.ts";
+import { createKeeper, lmdbKeeper } from "../../db/lmdb-stores.ts";
 import { readPasscode } from "./passcode.ts";
 
 /** Low-level habery-open knobs shared by CLI startup helpers. */

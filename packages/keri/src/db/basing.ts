@@ -78,9 +78,8 @@ import {
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
 import type { DBer, ScanOptions, StoreIdentity, Table } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { lmdbDefaultsFor } from "./core/lmdb-opener.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
-import { openOwner, type StoreFamily, StoreOwner } from "./core/store-owner.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { ExchangeRecord, ExchangeRegistryStateRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
@@ -1826,14 +1825,4 @@ export class BaserDoer {
       yield* this.exit();
     }
   }
-}
-
-/** Construct a closed LMDB-backed `Baser` at its established paths. */
-export function lmdbBaser({ compat, ...options }: BaserOptions = {}): Baser {
-  return new Baser(new LMDBer(options, lmdbDefaultsFor(Baser.Family, compat)), options.logger);
-}
-
-/** Constructor-safe async factory for a fully reopened `Baser`. */
-export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
-  return yield* openOwner(lmdbBaser(options), "Baser", options);
 }
