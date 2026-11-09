@@ -13,13 +13,13 @@ import {
   type KramConfig,
   localGroupMember,
   multisigExnBody,
-  NodeHttpClient,
   runAgentRuntime,
   systemClock,
   timestampMicros,
   Unblind,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { walletStoreArgs } from "../support/wallet.ts";

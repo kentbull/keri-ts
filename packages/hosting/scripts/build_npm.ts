@@ -24,6 +24,7 @@ await build({
   configFile: new URL("../deno.json", import.meta.url).href,
   mappings: {
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
+    "../keri/runtime-node.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime/node" },
     "../cesr/mod.ts": { name: "cesr-ts", version: cesrVersion },
   },
   typeCheck: false,

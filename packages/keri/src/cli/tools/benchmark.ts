@@ -5,7 +5,8 @@ import {
 } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../../app/runtime/abortable.ts";
-import { collectBytes, fileBytes, streamBytes } from "../../app/transport/byte-source.ts";
+import { collectBytes, streamBytes } from "../../app/transport/byte-source.ts";
+import { fileBytes } from "../../app/transport/file-bytes.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { parseBooleanOption, parseCountOption, parseStringOption } from "../common/parsing.ts";
 import { writeStdout } from "../output.ts";

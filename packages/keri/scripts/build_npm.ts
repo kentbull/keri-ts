@@ -19,6 +19,7 @@ import {
 const ENTRYPOINT = "./src/npm/index.ts";
 const CLI_ENTRYPOINT = "./src/npm/cli.ts";
 const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
+const RUNTIME_NODE_ENTRYPOINT = "./src/npm/runtime-node.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
 const DB_LMDB_ENTRYPOINT = "./src/npm/db-lmdb.ts";
 const OUT_DIR = "./npm";
@@ -29,6 +30,8 @@ const NPM_CLI_PATH = "./esm/keri/npm/src/keri/src/npm/cli.js";
 const NPM_CLI_TYPES_PATH = "./types/keri/src/npm/cli.d.ts";
 const NPM_RUNTIME_PATH = "./esm/keri/npm/src/keri/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
+const NPM_RUNTIME_NODE_PATH = "./esm/keri/npm/src/keri/src/npm/runtime-node.js";
+const NPM_RUNTIME_NODE_TYPES_PATH = "./types/keri/src/npm/runtime-node.d.ts";
 const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 const NPM_DB_LMDB_PATH = "./esm/keri/npm/src/keri/src/npm/db-lmdb.js";
@@ -53,6 +56,7 @@ interface NpmExportTargets {
   root: NpmExportTarget;
   cli: NpmExportTarget;
   runtime: NpmExportTarget;
+  runtimeNode: NpmExportTarget;
   db: NpmExportTarget;
   dbLmdb: NpmExportTarget;
 }
@@ -63,6 +67,7 @@ const ENTRYPOINT_MARKERS = {
   root: "npm package root entrypoint.",
   cli: "npm subpath entrypoint for `keri-ts/cli`.",
   runtime: "npm subpath entrypoint for `keri-ts/runtime`.",
+  runtimeNode: "npm subpath entrypoint for `keri-ts/runtime/node`.",
   db: "npm subpath entrypoint for `keri-ts/db`.",
   dbLmdb: "npm subpath entrypoint for `keri-ts/db/lmdb`.",
 } as const;
@@ -150,6 +155,24 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "runtime.d.ts", marker: ENTRYPOINT_MARKERS.runtime },
       ),
     },
+    runtimeNode: {
+      import: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/esm`,
+          outDir: OUT_DIR,
+          fileName: "runtime-node.js",
+          marker: ENTRYPOINT_MARKERS.runtimeNode,
+        },
+      ),
+      types: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/types`,
+          outDir: OUT_DIR,
+          fileName: "runtime-node.d.ts",
+          marker: ENTRYPOINT_MARKERS.runtimeNode,
+        },
+      ),
+    },
     db: {
       import: findGeneratedEntrypoint(
         { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "db.js", marker: ENTRYPOINT_MARKERS.db },
@@ -185,8 +208,9 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
  *
  * - `main` and `module` to the discovered root ESM entrypoint
  * - `types` to the discovered root declaration entrypoint
- * - `exports["."]`, `exports["./cli"]`, `exports["./runtime"]`, and
- *   `exports["./db"]` to their discovered import/types pairs
+ * - `exports["."]`, `exports["./cli"]`, `exports["./runtime"]`,
+ *   `exports["./runtime/node"]`, `exports["./db"]` and `exports["./db/lmdb"]`
+ *   to their discovered import/types pairs
  *
  * These fields are the public npm package surface. Normalizing them here keeps
  * release behavior stable even when source layout changes alter DNT output
@@ -212,6 +236,10 @@ function normalizeBuiltManifest(): void {
     "./runtime": {
       import: targets.runtime.import,
       types: targets.runtime.types,
+    },
+    "./runtime/node": {
+      import: targets.runtimeNode.import,
+      types: targets.runtimeNode.types,
     },
     "./db": {
       import: targets.db.import,
@@ -267,6 +295,7 @@ try {
       ENTRYPOINT,
       CLI_ENTRYPOINT,
       RUNTIME_ENTRYPOINT,
+      RUNTIME_NODE_ENTRYPOINT,
       DB_ENTRYPOINT,
       DB_LMDB_ENTRYPOINT,
     ],
@@ -312,6 +341,10 @@ try {
         "./runtime": {
           import: NPM_RUNTIME_PATH,
           types: NPM_RUNTIME_TYPES_PATH,
+        },
+        "./runtime/node": {
+          import: NPM_RUNTIME_NODE_PATH,
+          types: NPM_RUNTIME_NODE_TYPES_PATH,
         },
         "./db": {
           import: NPM_DB_PATH,

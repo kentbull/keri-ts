@@ -13,7 +13,6 @@ import {
   EndpointRoles,
   type Hab,
   type Habery,
-  NodeHttpClient,
   reply,
   requestBytes,
   runAgentRuntime,
@@ -21,6 +20,7 @@ import {
   systemClock,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { RegistryServiceAccessBaser, type RegistryServiceRole } from "./registry-service-access.ts";
 
 /** Select an existing service habitat; public TLS and private loopback listeners have separate ports. */

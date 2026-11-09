@@ -12,6 +12,7 @@ import * as db from "keri-ts/db";
 import * as dbLmdb from "keri-ts/db/lmdb";
 import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
+import * as runtimeNode from "keri-ts/runtime/node";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { createServer as createHttpServer } from "node:http";
@@ -51,6 +52,9 @@ assert(typeof runtime.createAgentRuntime === "function", "keri-ts/runtime missin
 assert(typeof runtime.Kevery === "function", "keri-ts/runtime missing Kevery");
 assert(typeof runtime.messagize === "function", "keri-ts/runtime missing messagize");
 assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing inceptRegistry");
+assert(typeof runtime.FetchHttpClient === "function", "keri-ts/runtime missing FetchHttpClient");
+assert(typeof runtimeNode.NodeHttpClient === "function", "keri-ts/runtime/node missing NodeHttpClient");
+assert(typeof runtimeNode.TCPMessenger === "function", "keri-ts/runtime/node missing TCPMessenger");
 assert(typeof dbLmdb.createBaser === "function", "keri-ts/db/lmdb missing createBaser");
 assert(typeof dbLmdb.LMDBer === "function", "keri-ts/db/lmdb missing LMDBer");
 assert(typeof dbLmdb.createHabery === "function", "keri-ts/db/lmdb missing createHabery");
@@ -236,7 +240,7 @@ try {
   // Cross the factory writer's 64 KiB chunk boundary without adding a transport knob.
   const wire = Buffer.concat([Buffer.alloc(128 * 1024, 0xa5), signature.qb64b]);
   const [, bytes] = await Promise.all([
-    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.NodeHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
+    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtimeNode.NodeHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
     received,
   ]);
   assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");

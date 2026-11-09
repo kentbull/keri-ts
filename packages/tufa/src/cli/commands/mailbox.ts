@@ -1,4 +1,5 @@
 import { parseBooleanOption, parseIntegerOption, parseStringOption } from "keri-ts/cli";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
 /**
  * Mailbox operator commands.
@@ -10,7 +11,6 @@ import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
  */
 import { concatBytes } from "cesr-ts";
 import { call, type Operation, spawn } from "effection";
-import { NodeHttpClient } from "keri-ts/runtime";
 import {
   abortable,
   type AgentRuntime,

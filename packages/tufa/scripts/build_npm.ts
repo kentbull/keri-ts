@@ -93,6 +93,7 @@ function dntPackageMappings(
     "../verifier/mod.ts": { name: "@keri-ts/verifier", version: verifierVersion },
     "../keri/cli.ts": { name: "keri-ts", version: keriVersion, subPath: "cli" },
     "../keri/runtime.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime" },
+    "../keri/runtime-node.ts": { name: "keri-ts", version: keriVersion, subPath: "runtime/node" },
     "../keri/db.ts": { name: "keri-ts", version: keriVersion, subPath: "db" },
     "../keri/db-lmdb.ts": { name: "keri-ts", version: keriVersion, subPath: "db/lmdb" },
     "../cesr/mod.ts": { name: "cesr-ts", version: cesrVersion },

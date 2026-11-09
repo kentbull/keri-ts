@@ -327,6 +327,9 @@ TCP egress reaches domain code only through `HttpClient.tcp`. `FetchHttpClient` 
 fetch; hosts with sockets construct `NodeHttpClient`. Reaching a `tcp:` endpoint without a
 dialer throws `ValidationError`, so every CLI or test that can dial TCP must use the Node
 client. A test that awaits a socket event can hang on that throw instead of failing.
+`keri-ts/runtime` must not reach `node:` modules or the `Deno` global; TCP transport,
+`NodeHttpClient` and `fileBytes` live in `keri-ts/runtime/node`, enforced by the library
+boundary script.
 
 ## OOBI, DID, mailbox and notices
 

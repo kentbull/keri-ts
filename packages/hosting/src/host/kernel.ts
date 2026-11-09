@@ -1,6 +1,5 @@
 import { type Operation, spawn, type Task } from "effection";
 import { systemClock } from "keri-ts/runtime";
-import { NodeHttpClient } from "keri-ts/runtime";
 import {
   type AgentRuntime,
   consoleLogger,
@@ -11,6 +10,7 @@ import {
   type ProtocolHostPolicy,
   runAgentRuntime,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { startServer } from "./http-server.ts";
 
 /** Resolved listen callback address for one HTTP host. */

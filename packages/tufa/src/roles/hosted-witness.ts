@@ -12,7 +12,6 @@ import {
   EndpointRoles,
   type Hab,
   type Habery,
-  NodeHttpClient,
   readRequiredCesrRequestBytes,
   reply,
   requestBytes,
@@ -21,6 +20,7 @@ import {
   systemClock,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { join } from "node:path";
 import { Secret, TOTP } from "npm:otpauth@9.4.1";
 import { HostedWitnessBaser, WitnessAllocationRecord } from "./hosted-witness-store.ts";
