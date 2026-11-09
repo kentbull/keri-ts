@@ -28,9 +28,24 @@ import {
   walkIpexGraph,
   type WitnessAuthMap,
 } from "keri-ts/runtime";
-import { Buffer } from "node:buffer";
 import { anchorExchange, exchangeWire, WalletDiscloser } from "./disclosing.ts";
 import { type AdmittedCredential, type IssuedCredential, WalletBaser } from "./storing.ts";
+
+/** Standard padded base64; stored `raw` values and their round-trip check depend on this alphabet. */
+function toBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
+/** Decode stored `raw`; malformed input yields bytes that fail the caller's round-trip check. */
+function fromBase64(encoded: string): Uint8Array {
+  try {
+    return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
+  } catch {
+    return new Uint8Array(0);
+  }
+}
 
 /** Borrowed protocol owners and the application's separately owned inventory environment. */
 export interface WalletOptions {
@@ -84,7 +99,7 @@ export class Wallet {
     const index = chain.updates.findIndex((item) => item.said === update);
     if (index < 0) throw new ValidationError("Issuance update is still pending.");
     const old = this.db.issued.get([acdc.said!]);
-    const raw = Buffer.from(acdc.raw).toString("base64");
+    const raw = toBase64(acdc.raw);
     if (old && !blinder) {
       const expected: IssuedCredential = {
         credential: acdc.said!,
@@ -124,9 +139,9 @@ export class Wallet {
   issuedCredential(said: string): SerderACDC {
     const record = this.db.issued.get([said]);
     if (!record || record.encoding !== "base64") throw new ValidationError("Issued credential is required.");
-    const raw = new Uint8Array(Buffer.from(record.raw, "base64"));
+    const raw = fromBase64(record.raw);
     const acdc = new SerderACDC({ raw });
-    if (Buffer.from(raw).toString("base64") !== record.raw || acdc.said !== said || !bytesEqual(acdc.raw, raw)) {
+    if (toBase64(raw) !== record.raw || acdc.said !== said || !bytesEqual(acdc.raw, raw)) {
       throw new ValidationError("Retained issuance bytes do not match their identifier.");
     }
     return acdc;
