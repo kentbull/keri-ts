@@ -1,8 +1,7 @@
 import { decode as decodeMsgpack, encode as encodeMsgpack } from "@msgpack/msgpack";
 import { b, decodeKeriCbor, encodeKeriCbor, type Kind, Kinds, t } from "cesr-ts";
-import type { Database } from "npm:lmdb@3.5.3";
 import { RawRecord, type RawRecordClass, type RecordInputOf, type RecordShapeOf } from "../core/records.ts";
-import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
+import type { DBer, Table } from "./core/dber.ts";
 
 type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
@@ -82,8 +81,8 @@ function asIterable<T>(value: T | Iterable<T> | null | undefined): T[] {
 export class KomerBase<TRecord extends RawRecord<any>> {
   static readonly Sep = ".";
 
-  readonly db: LMDBer;
-  readonly sdb: Database<BinVal, BinKey>;
+  readonly db: DBer;
+  readonly sdb: Table;
   readonly sep: string;
   readonly kind: KomerKind;
   readonly recordClass: RawRecordClass<TRecord>;
@@ -91,7 +90,7 @@ export class KomerBase<TRecord extends RawRecord<any>> {
   protected readonly _des: (val: Uint8Array | null) => TRecord | null;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = KomerBase.Sep,
@@ -101,7 +100,7 @@ export class KomerBase<TRecord extends RawRecord<any>> {
     }: KomerBaseOptions<TRecord>,
   ) {
     this.db = db;
-    this.sdb = this.db.openDB(subkey, dupsort);
+    this.sdb = this.db.openTable(subkey, { dupsort });
     this.sep = sep;
     this.kind = assertKomerKind(kind);
     this.recordClass = recordClass;
@@ -290,7 +289,7 @@ export class KomerBase<TRecord extends RawRecord<any>> {
  */
 export class Komer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: false, ...options });
@@ -349,7 +348,7 @@ export class Komer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
  */
 export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: false, ...options });
@@ -499,7 +498,7 @@ export class IoSetKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecor
  */
 export class DupKomer<TRecord extends RawRecord<any>> extends KomerBase<TRecord> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     { subkey, sep = KomerBase.Sep, kind = Kinds.json, ...options }: KomerOptions<TRecord>,
   ) {
     super(db, { subkey, sep, kind, dupsort: true, ...options });

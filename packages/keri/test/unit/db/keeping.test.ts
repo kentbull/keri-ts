@@ -4,6 +4,7 @@ import { b, Cigar, Diger, MtrDex, NumberPrimitive, Prefixer, Salter, Siger, Verf
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Algos, Creatory, encodeHugeNumber, Manager, saltySigner } from "../../../src/app/identity/keeping.ts";
 import { encryptSaltQb64, makeDecrypterFromSeed, makeEncrypterFromAeid } from "../../../src/core/keeper-crypto.ts";
+import { lmdbTable } from "../../../src/db/core/lmdber.ts";
 import { createKeeper } from "../../../src/db/keeping.ts";
 
 function keeperPubsKey(pre: string, ridx: number): string {
@@ -79,7 +80,7 @@ Deno.test("app/keeping - registry roots are canonical, encrypted and immutable",
       );
       assertEquals(keeper.rroots.get([aeid, registry])!.qb64, cipher);
       assertThrows(
-        () => keeper.gbls.sdb.transactionSync(() => manager.putRegistryRoot(aeid, registry, root)),
+        () => lmdbTable(keeper.gbls.sdb).transactionSync(() => manager.putRegistryRoot(aeid, registry, root)),
         Error,
         "own its write transaction",
       );

@@ -4,6 +4,7 @@ import { b, Diger, Salter, t, Verfer } from "../../../../cesr/mod.ts";
 import { branToSeedAeid } from "../../../src/app/identity/habbing.ts";
 import { Manager } from "../../../src/app/identity/keeping.ts";
 import { DatabaseOperationError } from "../../../src/core/errors.ts";
+import { lmdbTable } from "../../../src/db/core/lmdber.ts";
 import { createKeeper, type Keeper } from "../../../src/db/keeping.ts";
 
 const first = branToSeedAeid("MyPasscodeARealSecret");
@@ -14,7 +15,7 @@ const registry = new Diger({ code: "E", raw: Diger.digest(b("registry root"), "E
 /** Copy the actual affected v2 rows, including opaque encrypted signer bytes. */
 function snapshot(keeper: Keeper) {
   return [keeper.gbls.sdb, keeper.prms.sdb, keeper.pris.sdb, keeper.rroots.sdb].map((table) =>
-    Array.from(table.getRange(), ({ key, value }) => [t(key), Array.from(value)])
+    Array.from(lmdbTable(table).getRange(), ({ key, value }) => [t(key), Array.from(value)])
   );
 }
 
@@ -216,7 +217,7 @@ Deno.test("AEID migration - refuse a borrowed writer before publishing manager s
       const pubs = populate(manager);
       const before = snapshot(keeper);
       assertThrows(
-        () => keeper.gbls.sdb.transactionSync(() => manager.updateAeid(second.aeid, second.seed)),
+        () => lmdbTable(keeper.gbls.sdb).transactionSync(() => manager.updateAeid(second.aeid, second.seed)),
         DatabaseOperationError,
         "own its write transaction",
       );

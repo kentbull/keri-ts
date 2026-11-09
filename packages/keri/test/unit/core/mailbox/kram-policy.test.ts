@@ -12,6 +12,7 @@ import {
 import { reply } from "../../../../src/core/protocol-eventing.ts";
 import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../../src/core/records.ts";
 import { createBaser } from "../../../../src/db/basing.ts";
+import { lmdbTable } from "../../../../src/db/core/lmdber.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
 import sourceReference from "../../../fixtures/kram-source-auth-927.json" with { type: "json" };
 import timeReference from "../../../fixtures/kram-time-927.json" with { type: "json" };
@@ -336,7 +337,7 @@ Deno.test("KRAM orphan scan restarts for insertion behind its checkpoint", async
 Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without skipping rows", async () => {
   await run(function*() {
     const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
-    const getKeys = db.msgc.sdb.getKeys, transaction = db.env!.transactionSync, remove = db.pmkm.rem;
+    const getKeys = lmdbTable(db.msgc.sdb).getKeys, transaction = db.env!.transactionSync, remove = db.pmkm.rem;
     let cursors = 0;
     try {
       const policy = new KramPolicy(db, { caches: { "~": initial } });
@@ -346,7 +347,7 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
         new MsgCacheRecord({ mdt: body.stamp!, d: 1000, ml: 60000, pml: 60000, xl: 300000, pxl: 300000 }),
       );
       db.pmkm.pin(key, body);
-      db.msgc.sdb.getKeys = function(options) {
+      lmdbTable(db.msgc.sdb).getKeys = function(options) {
         const iterable = getKeys.call(this, options);
         return new Proxy(iterable, {
           get(target, property, receiver) {
@@ -384,7 +385,7 @@ Deno.test("KRAM pruning releases cursors and retries rolled-back cleanup without
       ]);
       assertEquals(cursors, 0);
     } finally {
-      db.msgc.sdb.getKeys = getKeys;
+      lmdbTable(db.msgc.sdb).getKeys = getKeys;
       db.env!.transactionSync = transaction;
       db.pmkm.rem = remove;
       yield* db.close(true);

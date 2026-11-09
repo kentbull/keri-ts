@@ -9,6 +9,7 @@ import { Deck } from "../../../../src/core/deck.ts";
 import { DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { interact } from "../../../../src/core/protocol-eventing.ts";
 import { dgKey, onKey } from "../../../../src/db/core/keys.ts";
+import { lmdbTable } from "../../../../src/db/core/lmdber.ts";
 import { CapturedKelReplay } from "../../../../src/db/replay/kel-replay.ts";
 
 Deno.test("witness GET captures target FEL or KEL duplicate order without retaining cursors", async () => {
@@ -51,9 +52,9 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
       }
       storeFork("late");
       hab.interact();
-      const table = hby.db.kels, nativeRows = table.sdb.getValues;
+      const table = hby.db.kels, nativeRows = lmdbTable(table.sdb).getValues;
       let cursors = 0, visited = 0;
-      table.sdb.getValues = function(...args) {
+      lmdbTable(table.sdb).getValues = function(...args) {
         const rows = nativeRows.apply(this, args);
         return {
           *[Symbol.iterator]() {
@@ -98,14 +99,14 @@ Deno.test("witness GET captures target FEL or KEL duplicate order without retain
         assertEquals(changing.next().done, true);
         assertEquals(cursors, 0);
         const key = onKey(hab.pre, 1), malformed = b("!malformed-proem");
-        hby.db.kels.sdb.putSync(key, malformed);
+        lmdbTable(hby.db.kels.sdb).putSync(key, malformed);
         try {
           assertThrows(() => [...ordered!], DatabaseOperationError, "insertion proem");
         } finally {
-          hby.db.kels.sdb.removeSync(key, malformed);
+          lmdbTable(hby.db.kels.sdb).removeSync(key, malformed);
         }
       } finally {
-        table.sdb.getValues = nativeRows;
+        lmdbTable(table.sdb).getValues = nativeRows;
         replies.close();
       }
     } finally {

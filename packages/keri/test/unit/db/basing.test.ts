@@ -43,6 +43,7 @@ import { incept, interact, receipt, rotate } from "../../../src/core/protocol-ev
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
 import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
+import { lmdbTable } from "../../../src/db/core/lmdber.ts";
 import {
   rehydrateKramFactors,
   removeKramFactors,
@@ -422,7 +423,7 @@ Deno.test("db/basing - factor union deduplicates exact members and propagates co
         }),
       );
       assertEquals(union.ptds.map((item) => item.raw), [...rows, new Uint8Array([3])]);
-      db.cigs.sdb.putSync(b(`${key.join(".")}.${"0".repeat(32)}`), b("!"));
+      lmdbTable(db.cigs.sdb).putSync(b(`${key.join(".")}.${"0".repeat(32)}`), b("!"));
       assertThrows(() => rehydrateKramFactors(db, key, empty));
     } finally {
       yield* db.close(true);
@@ -456,8 +457,8 @@ Deno.test("readonly legacy Baser opening leaves absent schema escrow tables abse
   await run(function*() {
     const db = yield* createBaser({ name: crypto.randomUUID(), temp: true });
     try {
-      db.emse!.sdb.dropSync();
-      db.emsd!.sdb.dropSync();
+      lmdbTable(db.emse!.sdb).dropSync();
+      lmdbTable(db.emsd!.sdb).dropSync();
       yield* db.close();
       yield* db.reopen({ reuse: true, readonly: true });
       assertEquals(db.emse, null);

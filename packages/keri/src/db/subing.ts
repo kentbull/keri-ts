@@ -15,9 +15,8 @@ import {
   t,
   Verfer,
 } from "cesr-ts";
-import type { Database } from "npm:lmdb@3.5.3";
 import { Schemer } from "../core/scheming.ts";
-import { BinKey, BinVal, LMDBer } from "./core/lmdber.ts";
+import type { DBer, Table } from "./core/dber.ts";
 
 type KeyPart = string | Uint8Array;
 type Keys = KeyPart | Iterable<KeyPart>;
@@ -116,13 +115,13 @@ function signerFromStored(
 export class SuberBase<T = string> {
   static readonly Sep = ".";
 
-  protected readonly db: LMDBer;
-  readonly sdb: Database<BinVal, BinKey>;
+  protected readonly db: DBer;
+  readonly sdb: Table;
   readonly sep: string;
   readonly verify: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       dupsort = false,
@@ -136,7 +135,7 @@ export class SuberBase<T = string> {
     },
   ) {
     this.db = db;
-    this.sdb = this.db.openDB(subkey, dupsort);
+    this.sdb = this.db.openTable(subkey, { dupsort });
     this.sep = sep;
     this.verify = verify;
   }
@@ -244,7 +243,7 @@ export class SuberBase<T = string> {
  */
 export class Suber<T = string> extends SuberBase<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -501,7 +500,7 @@ export class BytesSuber extends Suber<Uint8Array> {
  */
 export class B64SuberBase<T extends string[] = string[]> extends Suber<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -571,7 +570,7 @@ export class CesrSuberBase<T extends CesrValue = CesrValue> extends Suber<T> {
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -618,7 +617,7 @@ export class CesrOnSuber<T extends CesrValue = CesrValue> extends OnSuberBase<T>
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -660,7 +659,7 @@ export class CatCesrSuberBase<
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -723,7 +722,7 @@ export class CatCesrSuber<
  */
 export class IoSetSuber<T = string> extends SuberBase<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -933,7 +932,7 @@ export class IoSetSuber<T = string> extends SuberBase<T> {
  */
 export class B64IoSetSuber<T extends string[] = string[]> extends IoSetSuber<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -990,7 +989,7 @@ export class CesrIoSetSuber<T extends CesrValue = CesrValue> extends IoSetSuber<
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1036,7 +1035,7 @@ export class CatCesrIoSetSuber<
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1104,7 +1103,7 @@ export class CatCesrIoSetSuber<
  */
 export class SignerSuber extends CesrSuberBase<Signer> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1285,7 +1284,7 @@ export class SerderSuberBase<T extends Serder = SerderKERI> extends Suber<T> {
   protected readonly ctor: SerderCtor<T>;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1345,7 +1344,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
   protected readonly ctor: SerderCtor<T>;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1390,7 +1389,7 @@ export class SerderIoSetSuber<T extends Serder = SerderKERI> extends IoSetSuber<
  */
 export class DupSuber<T = string> extends SuberBase<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1474,7 +1473,7 @@ export class CesrDupSuber<T extends CesrValue = CesrValue> extends DupSuber<T> {
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1514,7 +1513,7 @@ export class CatCesrDupSuber<
   protected readonly strict: boolean;
 
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1650,7 +1649,7 @@ export class IoDupSuber<T = string> extends DupSuber<T> {
 /** Base64 tuple family over insertion-ordered native duplicates. */
 export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1698,7 +1697,7 @@ export class B64IoDupSuber<T extends string[] = string[]> extends IoDupSuber<T> 
  */
 export class OnIoDupSuber<T = string> extends SuberBase<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -1966,7 +1965,7 @@ export class OnIoDupSuber<T = string> extends SuberBase<T> {
 /** Base64 tuple family over exposed-ordinal insertion-ordered duplicates. */
 export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -2011,7 +2010,7 @@ export class B64OnIoDupSuber<T extends string[] = string[]> extends OnIoDupSuber
  */
 export class OnIoSetSuber<T = string> extends SuberBase<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
@@ -2405,7 +2404,7 @@ export class OnIoSetSuber<T = string> extends SuberBase<T> {
 /** Base64 tuple family over exposed-ordinal synthetic insertion-ordered sets. */
 export class B64OnIoSetSuber<T extends string[] = string[]> extends OnIoSetSuber<T> {
   constructor(
-    db: LMDBer,
+    db: DBer,
     {
       subkey,
       sep = SuberBase.Sep,
