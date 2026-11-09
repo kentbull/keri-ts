@@ -172,10 +172,10 @@ Deno.test("MemStore refuses and absorbs out-of-range keys and values as the cont
   assertEquals(store.putVal(plain, b("e"), empty), true);
   assertEquals(store.getVal(plain, b("e")), empty);
   assertEquals(store.putVal(plain, b("e"), b("x")), false);
-  assertEquals(store.addVal(dups, b("e"), null), true);
+  assertThrows(() => store.addVal(dups, b("e"), empty), DatabaseKeyError);
+  assertThrows(() => store.setVal(dups, b("e"), empty), DatabaseKeyError);
   assertEquals(store.addVal(dups, b("e"), b("a")), true);
-  assertEquals(keys(store.getVals(dups, b("e"))), ["", "a"]);
-  assertEquals(store.delVal(dups, b("e"), empty), true);
+  assertEquals(store.delVal(dups, b("e"), empty), false, "an empty duplicate is always absent");
   assertEquals(keys(store.getVals(dups, b("e"))), ["a"]);
 });
 

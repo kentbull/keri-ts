@@ -1,3 +1,12 @@
+/** Unsigned bytewise order, shorter first on a shared prefix, as LMDB orders keys. */
+export function compareBytes(left: Uint8Array, right: Uint8Array): number {
+  const shared = Math.min(left.length, right.length);
+  for (let i = 0; i < shared; i++) {
+    if (left[i] !== right[i]) return left[i] - right[i];
+  }
+  return left.length - right.length;
+}
+
 /**
  * Check if keyBytes starts with prefixBytes
  */

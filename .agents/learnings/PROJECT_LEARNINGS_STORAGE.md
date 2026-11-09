@@ -23,8 +23,16 @@ indexes, so scans must re-seek from their last row rather than hold an index. Pr
 `LMDBer` in Linux found behavior the ADR does not state: exclusive start on a dupsort
 entry scan skips every duplicate at that key; empty scan bounds count as absent;
 negative `limit` yields nothing; and a plain table's `delVal(key, val)` ignores `val`.
-LMDB silently loses an empty dupsort value when a second duplicate lands on it, and
-`MemStore` deliberately does not, per "empty values are valid".
+LMDB cannot hold an empty dupsort value beside others (it silently dropped one when a
+second arrived, and refused to add one with `MDB_BAD_VALSIZE`), so ADR-0015 rejects an
+empty dupsort value with `DatabaseKeyError` on every backend and `delVal` of one is
+absent; empty values stay valid on plain tables. `addVal` takes a non-null value.
+`test/unit/db/store-contract.ts` runs one set of assertions over `LMDBer` and `MemStore`; new `DBer` behavior
+lands there first. It found three LMDB-only faults, now fixed: lmdb-js writes into the
+options it is given (`getKeys` sets `values: false`), so a reused `ScanOptions` made a
+later `scan` yield empty rows; an empty key read as the table's first key for duplicate
+reads; and over-long `end` or `seekVal` bounds threw. `writeVersion` is only promised to
+grow on row writes: LMDB also advances for table creation and identical dupsort pairs.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

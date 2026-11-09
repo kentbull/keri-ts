@@ -13,13 +13,11 @@
 
 import { b, bytesHex, t } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
-import { startsWith } from "../../core/bytes.ts";
+import { compareBytes, startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
-import { BaseDBer, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
+import { BaseDBer, MAX_KEY_BYTES, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
 import type { StoreFamily, StoreOpener } from "./store-owner.ts";
 
-/** The pinned lmdb-js limit on keys and dupsort values, shared by every backend. */
-const MAX_KEY_BYTES = 1978;
 const DEFAULT_DB_VERSION = "1.0.0";
 const EMPTY = new Uint8Array(0);
 
@@ -40,15 +38,6 @@ function copyBytes(bytes: Uint8Array): Uint8Array {
   return new Uint8Array(bytes);
 }
 
-/** Unsigned bytewise order, shorter first on a shared prefix, matching LMDB. */
-function compareBytes(left: Uint8Array, right: Uint8Array): number {
-  const shared = Math.min(left.length, right.length);
-  for (let i = 0; i < shared; i++) {
-    if (left[i] !== right[i]) return left[i] - right[i];
-  }
-  return left.length - right.length;
-}
-
 function assertWritableKey(key: Uint8Array): void {
   if (key.length === 0 || key.length > MAX_KEY_BYTES) {
     throw new DatabaseKeyError(`Key is empty, too big, or wrong size: ${key.length} bytes`);
@@ -56,8 +45,8 @@ function assertWritableKey(key: Uint8Array): void {
 }
 
 function assertDupValueSize(val: Uint8Array): void {
-  if (val.length > MAX_KEY_BYTES) {
-    throw new DatabaseKeyError(`Duplicate value is larger than ${MAX_KEY_BYTES} bytes: ${val.length} bytes`);
+  if (val.length === 0 || val.length > MAX_KEY_BYTES) {
+    throw new DatabaseKeyError(`Duplicate value is empty or larger than ${MAX_KEY_BYTES} bytes: ${val.length} bytes`);
   }
 }
 
@@ -395,6 +384,7 @@ export class MemStore extends BaseDBer {
     return this.transaction(() => {
       if (!isStorableKey(key)) return false;
       if (val === undefined || !mem.dupsort) return this.#removeRange(mem, mem.lowerBound(key), mem.upperBound(key));
+      if (val.length === 0) return false; // an empty duplicate can never be stored
       assertDupValueSize(val);
       const index = mem.lowerBound(key, val);
       if (!mem.matches(index, key, val)) return false;
@@ -476,8 +466,8 @@ export class MemStore extends BaseDBer {
     return result;
   }
 
-  addVal(table: Table, key: Uint8Array, val: Uint8Array | null): boolean {
-    return this.putVals(table, key, [val ?? EMPTY]);
+  addVal(table: Table, key: Uint8Array, val: Uint8Array): boolean {
+    return this.putVals(table, key, [val]);
   }
 
   /** Duplicate reads treat an empty or over-long key as simply absent, as `LMDBer` does. */
