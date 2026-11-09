@@ -179,7 +179,7 @@ const KERIPY_INTEROP_INSTALL = `git+${KERIPY_INTEROP_REPO}@${KERIPY_INTEROP_COMM
 const KERIPY_INTEROP_RAW_BASE = `https://raw.githubusercontent.com/kentbull/keripy/${KERIPY_INTEROP_COMMIT}`;
 
 /** Pinned interop verifier fixture used by mixed KERIpy/Tufa ACDC tests. */
-export const INTEROP_VERIFIER_COMMIT = "14658341afd47beb0cd8f4dd9f4f636239bb1bbd";
+export const INTEROP_VERIFIER_COMMIT = "0cb31993ba57dab7ddedd2e58c6a4ca934c39724";
 
 const INTEROP_VERIFIER_RAW_BASE =
   `https://raw.githubusercontent.com/kentbull/interop-verifier/${INTEROP_VERIFIER_COMMIT}`;

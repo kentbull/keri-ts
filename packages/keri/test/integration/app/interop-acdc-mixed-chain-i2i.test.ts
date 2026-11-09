@@ -32,6 +32,7 @@ import {
   withStartedChild,
   workspaceRoot,
 } from "./interop-test-helpers.ts";
+import { v1OnlyKeripyPeer } from "./keripy-runtime.ts";
 
 interface TufaStore {
   name: string;
@@ -1017,9 +1018,7 @@ async function alignedKliIpexMessage(
 
 Deno.test({
   name: "Interop: mixed KLI/Tufa four-deep I2I chain presents to interop and Tufa verifiers",
-  // Blocked: the pinned interop_verifier serves its OOBI as application/cesr, which KERIpy 1.x rejects.
-  // Passes on GLEIF 1.2 and 1.3 once that response is application/json+cesr.
-  ignore: true,
+  ignore: !v1OnlyKeripyPeer(),
 }, async () => {
   const baseCtx = await createInteropContext();
   const workDir = await Deno.makeTempDir({ prefix: "mixed-chain-i2i-" });
