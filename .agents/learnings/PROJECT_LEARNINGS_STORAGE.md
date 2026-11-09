@@ -5,7 +5,7 @@ accounting/durability removal and the prohibition on restoring it. Preserve
 protocol evidence, transactions and actual resource cleanup.
 
 [ADR-0015](../../docs/adr/adr-0015-pluggable-store-contract.md) owns the pluggable
-`DBer` contract and browser durability; `LMDBer` and `MemStore` implement it and
+`DBer` contract and browser durability; `LMDBer`, `MemStore` and `WebDBer` implement it and
 LMDB remains the parity reference. Nested transactions are savepoints. Browser stores commit
 to their mirrors synchronously and share one prefix-durable queue per composition;
 the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
@@ -33,6 +33,16 @@ options it is given (`getKeys` sets `values: false`), so a reused `ScanOptions` 
 later `scan` yield empty rows; an empty key read as the table's first key for duplicate
 reads; and over-long `end` or `seekVal` bounds threw. `writeVersion` is only promised to
 grow on row writes: LMDB also advances for table creation and identical dupsort pairs.
+
+`WebDBer` extends `MemStore` through two protected hooks: `committed` receives each
+outermost commit's changes, and `loadContents` installs a snapshot. A batch holds each
+row identity's first prior state against its latest, so a savepoint rollback, which pops
+the undo log, can never leak into one; a commit ending where it began writes nothing.
+One `PersistenceQueue` per composition is a promise chain outside Effection, so halting
+a waiter cannot cancel a write. The first failure latches every store on that queue:
+commits already in the mirror stay readable, later transactions throw, and recovery is a
+new composition loading the durable prefix. An unwritten table rides the next batch, or
+a table-only batch at `flushed` or `close`, so its dupsort flag persists.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

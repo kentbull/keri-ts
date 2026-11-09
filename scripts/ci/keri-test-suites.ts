@@ -256,6 +256,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/vdr/credentialing.test.ts",
       "test/unit/vdr/eventing.test.ts",
       "test/unit/db/core/store-owner.test.ts",
+      "test/unit/db/core/webdber.test.ts",
     ],
   },
   "interop-keystore-parity": {
