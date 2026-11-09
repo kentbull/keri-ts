@@ -59,8 +59,6 @@ const BUNDLED_WORKSPACE_SOURCE_PATTERNS = [
   "/observer/src/",
 ];
 const FORBIDDEN_DIRECT_DEPENDENCIES = [
-  "libsodium-wrappers",
-  "libsodium-wrappers-sumo",
   "lmdb",
   "@noble/curves",
   "@noble/hashes",

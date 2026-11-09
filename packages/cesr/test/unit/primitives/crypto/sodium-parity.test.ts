@@ -1,4 +1,4 @@
-/** pysodium/KERIpy byte-parity for every libsodium-backed primitive seam in cesr.
+/** pysodium/KERIpy byte-parity for every primitive seam in cesr that libsodium once backed.
  *
  * Vectors come from `packages/cesr/scripts/reference-sodium-parity-vectors.py`.
  * Medium/high-memory Argon2id vectors run in `scripts/qualify-salter-derivation.ts`.

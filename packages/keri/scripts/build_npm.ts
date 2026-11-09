@@ -305,7 +305,6 @@ try {
         "@msgpack/msgpack": "3.1.3",
         "cbor-x": "1.6.0",
         "cesr-ts": resolveCesrDependencyRange(),
-        "libsodium-wrappers-sumo": "0.8.4",
       },
       engines: {
         node: ">=20.3",
