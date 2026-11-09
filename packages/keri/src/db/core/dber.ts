@@ -62,6 +62,9 @@ export interface ScanOptions {
   limit?: number;
 }
 
+/** The pinned lmdb-js limit on keys and dupsort values, shared by every backend (ADR-0015). */
+export const MAX_KEY_BYTES = 1978;
+
 /** Default separator used by ordinal/suffix key helpers (`onKey`, `suffix`). */
 const DOT_SEP = b(".");
 /**
@@ -190,7 +193,7 @@ export abstract class BaseDBer {
   abstract getTopItemIter(table: Table, top?: Uint8Array): Generator<[Uint8Array, Uint8Array]>;
 
   abstract putVals(table: Table, key: Uint8Array, vals: Iterable<Uint8Array>): boolean;
-  abstract addVal(table: Table, key: Uint8Array, val: Uint8Array | null): boolean;
+  abstract addVal(table: Table, key: Uint8Array, val: Uint8Array): boolean;
   abstract getVals(table: Table, key: Uint8Array): Uint8Array[];
   abstract getValLast(table: Table, key: Uint8Array): Uint8Array | null;
   abstract getValsIter(table: Table, key: Uint8Array): Generator<Uint8Array>;

@@ -6,10 +6,10 @@ import { b, bytesHex, t, toBytes } from "cesr-ts";
 import { action, call, ensure, type Operation } from "npm:effection@^3.6.0";
 import { open } from "npm:lmdb@3.5.3";
 import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
-import { startsWith } from "../../core/bytes.ts";
+import { compareBytes, startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
-import { BaseDBer, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
+import { BaseDBer, MAX_KEY_BYTES, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 /** Binary LMDB key type used by the low-level wrapper surface. */
@@ -33,6 +33,43 @@ export function lmdbTable(table: Table): LmdbTable {
 /** Clone native LMDB bytes so callers never retain addon-owned buffer views. */
 function copyDbBytes(value: unknown): Uint8Array {
   return new Uint8Array(toBytes(value));
+}
+
+/** Reject a row ADR-0015 forbids with `DatabaseKeyError`, as every backend does, rather than a raw native error. */
+function assertRowFits(table: Table, key: Uint8Array, val: Uint8Array): void {
+  if (key.length === 0 || key.length > MAX_KEY_BYTES) {
+    throw new DatabaseKeyError(`Key is empty, too big, or wrong size: ${key.length} bytes`);
+  }
+  if ((lmdbTable(table) as { dupSort?: boolean }).dupSort && (val.length === 0 || val.length > MAX_KEY_BYTES)) {
+    throw new DatabaseKeyError(`Duplicate value is empty or larger than ${MAX_KEY_BYTES} bytes: ${val.length} bytes`);
+  }
+}
+
+/**
+ * A key no row can have. lmdb-js reads an empty one as the table's first key, and a
+ * rejected over-long one can leave a read transaction open, so duplicate reads skip both.
+ */
+function isAbsentKey(key: Uint8Array): boolean {
+  return key.length === 0 || key.length > MAX_KEY_BYTES;
+}
+
+/**
+ * Build the lmdb-js range for a scan. lmdb-js writes into the options it is given
+ * (`getKeys` sets `values: false`), so the caller's object must never be passed:
+ * reusing it for a later `scan` would yield rows with no key or value. It also
+ * refuses an `end` over the key limit, which is applied by comparison instead.
+ */
+function nativeRange(options: ScanOptions): { range: ScanOptions; end?: Uint8Array; long: boolean } {
+  const range = { ...options };
+  const long = range.end !== undefined && range.end.length > MAX_KEY_BYTES;
+  if (long) delete range.end;
+  return { range, end: options.end, long };
+}
+
+/** True once `key` reaches the exclusive `end` bound in scan direction. */
+function pastEnd(key: Uint8Array, end: Uint8Array, reverse = false): boolean {
+  const order = compareBytes(key, end);
+  return reverse ? order <= 0 : order >= 0;
 }
 
 /**
@@ -558,10 +595,18 @@ export class LMDBer extends BaseDBer {
     return this.requireEnv().transactionSync(fn);
   }
 
-  /** Yield caller-owned copies of native rows; closing the iterator closes the cursor. */
+  /**
+   * Yield caller-owned copies of native rows; closing the iterator closes the cursor.
+   *
+   * Scan bounds are unvalidated (ADR-0015), including an `end` over the key limit.
+   */
   *scan(table: Table, options: ScanOptions = {}): Generator<TableEntry> {
-    for (const entry of lmdbTable(table).getRange(options)) {
-      yield { key: copyDbBytes(entry.key), value: copyDbBytes(entry.value) };
+    this.requireEnv();
+    const { range, end, long } = nativeRange(options);
+    for (const entry of lmdbTable(table).getRange(range)) {
+      const key = copyDbBytes(entry.key);
+      if (long && pastEnd(key, end!, options.reverse)) return;
+      yield { key, value: copyDbBytes(entry.value) };
     }
   }
 
@@ -591,8 +636,12 @@ export class LMDBer extends BaseDBer {
 
   /** Yield caller-owned key copies; native dupsort iteration already yields each key once. */
   *scanKeys(table: Table, options: ScanOptions = {}): Generator<Uint8Array> {
-    for (const key of lmdbTable(table).getKeys(options)) {
-      yield copyDbBytes(key);
+    this.requireEnv();
+    const { range, end, long } = nativeRange(options);
+    for (const native of lmdbTable(table).getKeys(range)) {
+      const key = copyDbBytes(native);
+      if (long && pastEnd(key, end!, options.reverse)) return;
+      yield key;
     }
   }
 
@@ -605,8 +654,17 @@ export class LMDBer extends BaseDBer {
 
   /** Copy one duplicate through the pinned binary seek branch, closing its cursor before return. */
   seekVal(table: Table, key: Uint8Array, start?: Uint8Array): Uint8Array | null {
+    this.requireEnv();
     const db = lmdbTable(table) as LmdbTable & { encoding: string; encoder?: object };
     if (db.encoding !== "binary") throw new DatabaseOperationError("Duplicate seek requires binary rows");
+    if (isAbsentKey(key)) return null;
+    // lmdb-js refuses a start over the key limit; no stored value can reach one by seeking, so compare.
+    if (start && start.length > MAX_KEY_BYTES) {
+      for (const val of db.getValues(key)) {
+        if (compareBytes(copyDbBytes(val), start) >= 0) return copyDbBytes(val);
+      }
+      return null;
+    }
     // Pinned lmdb-js 3.5.3 dereferences encoder.writeKey before its binary-value seek branch.
     // This private read facade supplies that missing object without mutating the table.
     const seek = Object.create(db) as typeof db;
@@ -625,6 +683,7 @@ export class LMDBer extends BaseDBer {
   }
 
   protected putRow(table: Table, key: Uint8Array, val: Uint8Array): void {
+    assertRowFits(table, key, val);
     lmdbTable(table).putSync(key, val);
   }
 
@@ -660,6 +719,7 @@ export class LMDBer extends BaseDBer {
         if (existing !== null && existing !== undefined) {
           return false;
         }
+        assertRowFits(db, key, val);
         db.put(key, val);
         return true;
       });
@@ -685,6 +745,7 @@ export class LMDBer extends BaseDBer {
 
     try {
       env.transactionSync(() => {
+        assertRowFits(db, key, val);
         db.put(key, val);
       });
       return true;
@@ -732,6 +793,10 @@ export class LMDBer extends BaseDBer {
     try {
       const result = env.transactionSync(() => {
         if (val !== undefined) {
+          // An empty key must still fail, but an over-long one can only be absent.
+          if (key.length > MAX_KEY_BYTES) return false;
+          // An empty duplicate can never be stored, so it is always absent.
+          if (val.length === 0 && (db as { dupSort?: boolean }).dupSort) return false;
           return db.removeSync(key, val);
         }
 
@@ -937,6 +1002,7 @@ export class LMDBer extends BaseDBer {
           result = false;
           continue;
         }
+        assertRowFits(db, key, val);
         db.putSync(key, val);
         existing.add(vh);
       }
@@ -953,11 +1019,10 @@ export class LMDBer extends BaseDBer {
   addVal(
     table: Table,
     key: Uint8Array,
-    val: Uint8Array | null,
+    val: Uint8Array,
   ): boolean {
     const db = lmdbTable(table);
-    const single = val === null ? [new Uint8Array(0)] : [val];
-    return this.putVals(db, key, single);
+    return this.putVals(db, key, [val]);
   }
 
   /**
@@ -968,6 +1033,7 @@ export class LMDBer extends BaseDBer {
   getVals(table: Table, key: Uint8Array): Uint8Array[] {
     const db = lmdbTable(table);
     this.requireEnv();
+    if (isAbsentKey(key)) return [];
     return [...db.getValues(key)].map((val) => copyDbBytes(val));
   }
 
@@ -994,6 +1060,7 @@ export class LMDBer extends BaseDBer {
   ): Generator<Uint8Array> {
     const db = lmdbTable(table);
     this.requireEnv();
+    if (isAbsentKey(key)) return;
     for (const val of db.getValues(key)) {
       yield copyDbBytes(val);
     }
@@ -1003,14 +1070,12 @@ export class LMDBer extends BaseDBer {
   cntVals(table: Table, key: Uint8Array): number {
     const db = lmdbTable(table);
     this.requireEnv();
-    return db.getValuesCount(key);
+    return isAbsentKey(key) ? 0 : db.getValuesCount(key);
   }
 
   /** Delete all duplicate values at `key`. Mirrors KERIpy `delVals(key)`. */
   delVals(table: Table, key: Uint8Array): boolean {
-    const db = lmdbTable(table);
-    this.requireEnv();
-    return db.removeSync(key);
+    return this.delVal(table, key);
   }
 }
 
