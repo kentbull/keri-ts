@@ -4,10 +4,10 @@ import { Registrar } from "@keri-ts/registrar";
 import { b, concatBytes, makeBlindState } from "cesr-ts";
 import { call, run, spawn } from "effection";
 import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   blindate,
   createAgentRuntime,
-  createHabery,
   FetchHttpClient,
   systemClock,
   TransportError,

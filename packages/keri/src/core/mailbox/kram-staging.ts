@@ -150,8 +150,8 @@ export function stageKram(
   incoming: KeriDispatchEnvelope,
   receiverTime: string,
 ): KramStageResult {
-  if (!db.env) throw new Error("KRAM staging database is closed");
-  return db.env.transactionSync(() => {
+  if (!db.opened) throw new Error("KRAM staging database is closed");
+  return db.transaction(() => {
     const fresh = candidate(db, policy, incoming, receiverTime);
     if (fresh.kind === "rotated") {
       removeKramFactors(db, fresh.key);

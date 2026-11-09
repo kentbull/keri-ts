@@ -1,6 +1,6 @@
 /** Optional encrypted derivation capability; ordinary wallet inventory never constructs or reads it. */
 import { bytesEqual, makeBlindState, makeBoundState, MtrDex, Salter, type SerderACDC } from "cesr-ts";
-import { Komer, type RegistryStore } from "keri-ts/db";
+import { Komer, type RegistryStore, type Table } from "keri-ts/db";
 import { type Hab, type Habery, RawRecord, type RegistryDisclosure, ValidationError, vetBlind } from "keri-ts/runtime";
 import type { WalletBaser } from "./storing.ts";
 
@@ -19,7 +19,7 @@ class DerivedRecord extends RawRecord<DerivedUpdate> implements DerivedUpdate {
 
 /** Explicit capability over an existing wallet environment and accepted public registry evidence. */
 export class RegistryCustody {
-  private env: WalletBaser["env"] = null;
+  private bound: Table | null = null;
   private derivations?: Komer<DerivedRecord>;
 
   /** Borrow owners only; construction opens no table and loads no encrypted row. */
@@ -38,10 +38,10 @@ export class RegistryCustody {
   /** Rebind optional tables after the caller reopens the same wallet owner. */
   private tables() {
     const { db } = this.options;
-    if (!db.opened || !db.env) throw new ValidationError("Wallet inventory is closed");
-    if (this.env !== db.env) {
-      this.derivations = new Komer(db, { subkey: "derived-updates.", recordClass: DerivedRecord });
-      this.env = db.env;
+    if (!db.opened) throw new ValidationError("Wallet inventory is closed");
+    if (this.bound !== db.credentials.sdb) {
+      this.derivations = new Komer(db.store, { subkey: "derived-updates.", recordClass: DerivedRecord });
+      this.bound = db.credentials.sdb;
     }
     return { derivations: this.derivations! };
   }

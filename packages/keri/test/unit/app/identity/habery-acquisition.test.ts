@@ -1,9 +1,13 @@
 import { action, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
+import { openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { Baser } from "../../../../src/db/basing.ts";
+import { LmdbStoreOpener } from "../../../../src/db/core/lmdb-opener.ts";
+import type { StoreOpener } from "../../../../src/db/core/store-owner.ts";
 import { Keeper } from "../../../../src/db/keeping.ts";
+import { createBaser, createKeeper } from "../../../../src/db/lmdb-stores.ts";
 
 Deno.test("failed encrypted Habery acquisition closes actual Baser and Keeper before returning", async () => {
   const directory = Deno.makeTempDirSync({ prefix: "habery-acquisition-" });
@@ -131,4 +135,82 @@ Deno.test("cancelled Habery Baser acquisition closes the Baser that has not retu
     if (captured?.opened) await run(() => captured!.close());
     Deno.removeSync(directory, { recursive: true });
   }
+});
+
+/** Open borrowed stores that outlive the Habery under test. */
+function* borrowedStores(name: string) {
+  const db = yield* createBaser({ name, temp: true });
+  const ks = yield* createKeeper({ name, temp: true });
+  return { db, ks };
+}
+
+Deno.test("Habery leaves borrowed stores open when it closes, even when clearing", async () => {
+  await run(function*() {
+    const stores = yield* borrowedStores(`borrowed-${crypto.randomUUID()}`);
+    try {
+      const hby = yield* createHabery({ name: "borrowed", temp: true, skipConfig: true, skipSignator: true, stores });
+      yield* hby.close(true);
+      assertEquals(stores.db.opened, true);
+      assertEquals(stores.ks.opened, true);
+    } finally {
+      yield* stores.ks.close(true);
+      yield* stores.db.close(true);
+    }
+  });
+});
+
+Deno.test("failed Habery acquisition leaves borrowed stores open for their owner", async () => {
+  const directory = Deno.makeTempDirSync({ prefix: "habery-borrowed-" });
+  try {
+    await run(function*() {
+      const encrypted = { name: "encrypted", headDirPath: directory, skipConfig: true, skipSignator: true };
+      const seeded = yield* createHabery({ ...encrypted, bran: "0123456789abcdefghijk" });
+      yield* seeded.close();
+      const db = yield* createBaser({ name: "encrypted", headDirPath: directory });
+      const ks = yield* createKeeper({ name: "encrypted", headDirPath: directory });
+      try {
+        let failed = false;
+        try {
+          yield* createHabery({ ...encrypted, bran: "bad0123456789abcdefgh", stores: { db, ks } });
+        } catch {
+          failed = true;
+        }
+        assertEquals(failed, true);
+        assertEquals(db.opened, true);
+        assertEquals(ks.opened, true);
+      } finally {
+        yield* ks.close();
+        yield* db.close();
+      }
+    });
+  } finally {
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Habery creates stores and sidecars through its injected opener", async () => {
+  const families: string[] = [];
+  const lmdb = new LmdbStoreOpener();
+  const opener: StoreOpener = {
+    create(family, identity) {
+      families.push(family.tail);
+      return lmdb.create(family, identity);
+    },
+  };
+  await run(function*() {
+    const hby = yield* createHabery({
+      name: `opener-${crypto.randomUUID()}`,
+      temp: true,
+      skipConfig: true,
+      skipSignator: true,
+      opener,
+    });
+    try {
+      const noter = yield* openNoterForHabery(hby);
+      yield* noter.close(true);
+      assertEquals(families, ["db", "ks", "not"]);
+    } finally {
+      yield* hby.close(true);
+    }
+  });
 });

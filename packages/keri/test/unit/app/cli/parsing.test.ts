@@ -7,7 +7,7 @@ import {
   assertStringIncludes,
   assertThrows,
 } from "jsr:@std/assert";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   loadInceptFileOptions,
   loadRotateFileOptions,

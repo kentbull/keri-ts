@@ -1,11 +1,9 @@
 import { Diger, MtrDex } from "cesr-ts";
 import { run } from "effection";
 import { assertEquals, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { DatabaseNotOpenError } from "../../../src/core/errors.ts";
-import { createBaser } from "../../../src/db/basing.ts";
-import { createKeeper } from "../../../src/db/keeping.ts";
-import { createMailboxer, Mailboxer } from "../../../src/db/mailbox/mailboxing.ts";
+import { createBaser, createKeeper, createMailboxer, lmdbMailboxer } from "../../../src/db/lmdb-stores.ts";
 
 Deno.test("db/mailboxing - body and ordered topic publication commit together across failure and reopen", async () => {
   await run(function*() {
@@ -125,7 +123,7 @@ Deno.test("db/mailboxing - compat readonly habery open succeeds without creating
       yield* baser.close();
       yield* keeper.close();
 
-      const mailboxer = new Mailboxer({
+      const mailboxer = lmdbMailboxer({
         name,
         headDirPath,
         compat: true,

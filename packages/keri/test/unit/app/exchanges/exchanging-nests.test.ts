@@ -1,4 +1,5 @@
 import { concatBytes } from "cesr-ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 /** Real forwarding admission, durable child evidence, and ownership at failure/replay boundaries. */
@@ -24,7 +25,7 @@ import { call, run } from "effection";
 import { assert, assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import depthVector from "../../../../../cesr/test/fixtures/nested-depth.json" with { type: "json" };
 import { type ExchangeInput, Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
 import { ForwardHandler } from "../../../../src/app/mailbox/forward-handler.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { openMailboxerForHabery } from "../../../../src/app/mailbox/mailboxing.ts";

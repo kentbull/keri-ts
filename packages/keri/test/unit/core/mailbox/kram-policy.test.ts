@@ -11,8 +11,8 @@ import {
 } from "../../../../src/core/mailbox/kram-time.ts";
 import { reply } from "../../../../src/core/protocol-eventing.ts";
 import { MsgCacheRecord, TxnMsgCacheRecord } from "../../../../src/core/records.ts";
-import { createBaser } from "../../../../src/db/basing.ts";
 import { lmdbTable } from "../../../../src/db/core/lmdber.ts";
+import { createBaser } from "../../../../src/db/lmdb-stores.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
 import sourceReference from "../../../fixtures/kram-source-auth-927.json" with { type: "json" };
 import timeReference from "../../../fixtures/kram-time-927.json" with { type: "json" };

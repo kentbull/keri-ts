@@ -10,11 +10,18 @@
  * discovered by the build script rather than hard-coded here.
  */
 
+interface DenoInfoDependency {
+  code?: { specifier?: string };
+}
+
 interface DenoInfoModule {
   specifier?: string;
+  dependencies?: DenoInfoDependency[];
 }
 
 interface DenoInfoOutput {
+  roots?: string[];
+  redirects?: Record<string, string>;
   modules?: DenoInfoModule[];
 }
 
@@ -39,6 +46,7 @@ const EXPECTED_EXPORT_KEYS = [
   "./cli",
   "./runtime",
   "./db",
+  "./db/lmdb",
 ];
 
 interface SurfaceCheck {
@@ -71,6 +79,8 @@ const SURFACES: SurfaceCheck[] = [
       "npm:/commander@",
       "npm:hono",
       "npm:/hono@",
+      "npm:lmdb",
+      "npm:/lmdb@",
     ],
   },
   {
@@ -83,6 +93,8 @@ const SURFACES: SurfaceCheck[] = [
       "npm:/commander@",
       "npm:hono",
       "npm:/hono@",
+      "npm:lmdb",
+      "npm:/lmdb@",
     ],
   },
 ];
@@ -105,14 +117,32 @@ async function loadInfo(entrypoint: URL): Promise<DenoInfoOutput> {
   return JSON.parse(new TextDecoder().decode(output.stdout)) as DenoInfoOutput;
 }
 
+/**
+ * Walk only value imports. `import type` edges are erased at runtime and may
+ * legitimately name backend types without loading the backend.
+ */
+function runtimeReach(info: DenoInfoOutput): string[] {
+  const modules = new Map((info.modules ?? []).map((module) => [module.specifier, module]));
+  const seen = new Set<string>();
+  const pending = [...(info.roots ?? [])];
+  while (pending.length > 0) {
+    const raw = pending.pop()!;
+    const specifier = info.redirects?.[raw] ?? raw;
+    if (seen.has(specifier)) continue;
+    seen.add(specifier);
+    for (const dependency of modules.get(specifier)?.dependencies ?? []) {
+      if (dependency.code?.specifier) pending.push(dependency.code.specifier);
+    }
+  }
+  return [...seen];
+}
+
 /** Assert that a public source surface does not import forbidden app/runtime modules. */
 async function assertSurfaceBoundary(
   { label, entrypoint, forbidden }: SurfaceCheck,
 ): Promise<void> {
   const info = await loadInfo(entrypoint);
-  const specifiers = (info.modules ?? [])
-    .map((module) => module.specifier)
-    .filter((specifier): specifier is string => Boolean(specifier));
+  const specifiers = runtimeReach(info);
 
   const hits = specifiers.filter((specifier) => forbidden.some((pattern) => specifier.includes(pattern)));
   if (hits.length > 0) {

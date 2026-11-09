@@ -19,9 +19,10 @@ import {
   REPLY_MAILBOX_TOPIC,
 } from "../../core/mailbox/mailbox-topics.ts";
 import { Revery } from "../../core/routing.ts";
+import { openOwner } from "../../db/core/store-owner.ts";
 import { Mailboxer } from "../../db/mailbox/mailboxing.ts";
 import { Noter } from "../../db/noting.ts";
-import { createReger, Reger } from "../../db/reger.ts";
+import { Reger } from "../../db/reger.ts";
 import { Regery as VdrRegery } from "../../vdr/credentialing.ts";
 import { Tevery } from "../../vdr/eventing.ts";
 import { Authenticator } from "../bootstrap/authenticating.ts";
@@ -520,7 +521,7 @@ export function* createAgentRuntime(
 function* openRuntimeNoter(hby: Habery): Operation<Noter> {
   return yield* resource<Noter>(function*(provide) {
     const options = noterOptionsForHabery(hby);
-    const store = new Noter(options);
+    const store = new Noter(hby.opener.create(Noter.Family, options));
     try {
       if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Noter");
       yield* provide(store);
@@ -539,7 +540,7 @@ function* openRuntimeNoter(hby: Habery): Operation<Noter> {
 function* openRuntimeMailboxer(hby: Habery): Operation<Mailboxer> {
   return yield* resource<Mailboxer>(function*(provide) {
     const options = mailboxerOptionsForHabery(hby);
-    const store = new Mailboxer(options);
+    const store = new Mailboxer(hby.opener.create(Mailboxer.Family, options));
     try {
       if (!(yield* store.reopen(options))) throw new DatabaseNotOpenError("Failed to open runtime Mailboxer");
       yield* provide(store);
@@ -574,15 +575,8 @@ function* openAcdcRegeryForHabery(hby: Habery): Operation<AcdcRegery> {
  */
 function* openRegerForHabery(hby: Habery): Operation<Reger> {
   return yield* resource<Reger>(function*(provide) {
-    const store = yield* call(() =>
-      createReger({
-        name: hby.name,
-        base: hby.base,
-        temp: hby.temp,
-        headDirPath: hby.headDirPath,
-        compat: hby.compat,
-      })
-    );
+    const identity = { name: hby.name, base: hby.base, temp: hby.temp };
+    const store = yield* openOwner(new Reger(hby.opener.create(Reger.Family, identity)), "Reger", identity);
     try {
       yield* provide(store);
     } finally {

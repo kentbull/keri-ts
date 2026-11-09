@@ -10,7 +10,7 @@ import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "j
 import { concatBytes } from "../../../../../cesr/mod.ts";
 import { KERIPY_V1_JSON_ICP_BODY } from "../../../../../cesr/test/fixtures/external-vectors.ts";
 import { acdcatt } from "../../../../src/acdc/messaging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   buildCesrRequest,
   buildCesrStreamRequest,

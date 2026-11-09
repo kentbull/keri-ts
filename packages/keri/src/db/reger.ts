@@ -36,8 +36,10 @@ import {
 } from "../core/attachment-countering.ts";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { RegistryRecord, RegStateRecord, type VerferCigarCouple } from "../core/records.ts";
+import type { StoreIdentity } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { Broker } from "./escrowing.ts";
 import { Komer } from "./koming.ts";
 import {
@@ -96,7 +98,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Protocol evidence uses literal KERIpy `Reger` subkeys; observer receipt
  * evidence remains separate from local issuer publication state.
  */
-export class Reger extends LMDBer {
+export class Reger extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "reg", maxTables: 96 };
+
   public readonly registries = new Set<string>();
   public readonly tevers = new Map<string, unknown>();
 
@@ -131,120 +136,100 @@ export class Reger extends LMDBer {
   public cmse!: SerderSuber<SerderACDC>; // Credential missing-signature escrow.
   public ccrd!: SerderSuber<SerderACDC>; // Completed credentials.
 
-  static override readonly TailDirPath = "keri/reg";
-  static override readonly AltTailDirPath = ".tufa/reg";
-  static readonly CompatAltTailDirPath = ".keri/reg";
-  static override readonly TempPrefix = "keri_reg_";
-  static override readonly MaxNamedDBs = 96;
-
-  constructor(options: RegerOptions = {}) {
-    const compat = options.compat ?? false;
-    super(options, {
-      tailDirPath: Reger.TailDirPath,
-      cleanTailDirPath: "keri/clean/reg",
-      altTailDirPath: compat ? Reger.CompatAltTailDirPath : Reger.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/reg" : ".tufa/clean/reg",
-      tempPrefix: Reger.TempPrefix,
-      maxNamedDBs: Reger.MaxNamedDBs,
-    });
-  }
-
   /** Open the root LMDB environment and bind the KERIpy `Reger` subdb surface. */
-  override *reopen(
-    options: Partial<RegerOptions> = {},
-  ): Operation<boolean> {
-    const opened = yield* super.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) {
       return false;
     }
 
     try {
-      this.tvts = new BytesSuber(this, { subkey: "tvts." });
-      this.tels = new CesrOnSuber<Diger>(this, {
+      this.tvts = new BytesSuber(this.store, { subkey: "tvts." });
+      this.tels = new CesrOnSuber<Diger>(this.store, {
         subkey: "tels.",
         ctor: Diger,
       });
-      this.ancs = new CatCesrSuber<TelAnchorTuple>(this, {
+      this.ancs = new CatCesrSuber<TelAnchorTuple>(this.store, {
         subkey: "ancs.",
         ctor: [NumberPrimitive, Diger],
       });
-      this.baks = new IoDupSuber<string>(this, { subkey: "baks." });
-      this.tibs = new CesrDupSuber<Siger>(this, {
+      this.baks = new IoDupSuber<string>(this.store, { subkey: "baks." });
+      this.tibs = new CesrDupSuber<Siger>(this.store, {
         subkey: "tibs.",
         ctor: Siger,
       });
-      this.oots = new OnIoDupSuber<string>(this, { subkey: "oots" });
-      this.twes = new OnIoDupSuber<string>(this, { subkey: "twes" });
-      this.taes = new OnIoDupSuber<string>(this, { subkey: "taes" });
-      this.tets = new CesrSuber<Dater>(this, {
+      this.oots = new OnIoDupSuber<string>(this.store, { subkey: "oots" });
+      this.twes = new OnIoDupSuber<string>(this.store, { subkey: "twes" });
+      this.taes = new OnIoDupSuber<string>(this.store, { subkey: "taes" });
+      this.tets = new CesrSuber<Dater>(this.store, {
         subkey: "tets.",
         ctor: Dater,
       });
-      this.states = new Komer<RegStateRecord>(this, {
+      this.states = new Komer<RegStateRecord>(this.store, {
         subkey: "stts.",
         recordClass: RegStateRecord,
       });
-      this.creds = new SerderSuber<SerderACDC>(this, {
+      this.creds = new SerderSuber<SerderACDC>(this.store, {
         subkey: "creds.",
         ctor: SerderACDC,
       });
-      this.cancs = new CatCesrSuber<CredentialAnchorTuple>(this, {
+      this.cancs = new CatCesrSuber<CredentialAnchorTuple>(this.store, {
         subkey: "cancs.",
         ctor: [Prefixer, NumberPrimitive, Diger],
       });
-      this.spsgs = new CesrIoSetSuber<Siger>(this, {
+      this.spsgs = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "ssgs.",
         ctor: Siger,
       });
-      this.spcgs = new CatCesrIoSetSuber<VerferCigarCouple>(this, {
+      this.spcgs = new CatCesrIoSetSuber<VerferCigarCouple>(this.store, {
         subkey: "scgs.",
         ctor: [Verfer, Cigar],
       });
-      this.saved = new CesrSuber<Saider>(this, {
+      this.saved = new CesrSuber<Saider>(this.store, {
         subkey: "saved.",
         ctor: Saider,
       });
-      this.issus = new CesrDupSuber<Saider>(this, {
+      this.issus = new CesrDupSuber<Saider>(this.store, {
         subkey: "issus.",
         ctor: Saider,
       });
-      this.subjs = new CesrDupSuber<Saider>(this, {
+      this.subjs = new CesrDupSuber<Saider>(this.store, {
         subkey: "subjs.",
         ctor: Saider,
       });
-      this.schms = new CesrDupSuber<Saider>(this, {
+      this.schms = new CesrDupSuber<Saider>(this.store, {
         subkey: "schms.",
         ctor: Saider,
       });
-      this.mre = new CesrSuber<Dater>(this, { subkey: "mre.", ctor: Dater });
-      this.mce = new CesrSuber<Dater>(this, { subkey: "mce.", ctor: Dater });
-      this.mse = new CesrSuber<Dater>(this, { subkey: "mse.", ctor: Dater });
-      this.txnsb = new Broker(this, "txn.");
-      this.regs = new Komer<RegistryRecord>(this, {
+      this.mre = new CesrSuber<Dater>(this.store, { subkey: "mre.", ctor: Dater });
+      this.mce = new CesrSuber<Dater>(this.store, { subkey: "mce.", ctor: Dater });
+      this.mse = new CesrSuber<Dater>(this.store, { subkey: "mse.", ctor: Dater });
+      this.txnsb = new Broker(this.store, "txn.");
+      this.regs = new Komer<RegistryRecord>(this.store, {
         subkey: "regs.",
         recordClass: RegistryRecord,
       });
-      this.tpwe = new CatCesrIoSetSuber<TelSealTuple>(this, {
+      this.tpwe = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
         subkey: "tpwe.",
         ctor: [Prefixer, NumberPrimitive, Diger],
       });
-      this.tmse = new CatCesrIoSetSuber<TelSealTuple>(this, {
+      this.tmse = new CatCesrIoSetSuber<TelSealTuple>(this.store, {
         subkey: "tmse.",
         ctor: [Prefixer, NumberPrimitive, Diger],
       });
-      this.tede = new CatCesrIoSetSuber<TelCompletionTuple>(this, {
+      this.tede = new CatCesrIoSetSuber<TelCompletionTuple>(this.store, {
         subkey: "tede.",
         ctor: [Prefixer, NumberPrimitive, Saider],
       });
-      this.ctel = new CesrSuber<Saider>(this, {
+      this.ctel = new CesrSuber<Saider>(this.store, {
         subkey: "ctel.",
         ctor: Saider,
       });
-      this.cmse = new SerderSuber<SerderACDC>(this, {
+      this.cmse = new SerderSuber<SerderACDC>(this.store, {
         subkey: "cmse.",
         ctor: SerderACDC,
       });
-      this.ccrd = new SerderSuber<SerderACDC>(this, {
+      this.ccrd = new SerderSuber<SerderACDC>(this.store, {
         subkey: "ccrd.",
         ctor: SerderACDC,
       });
@@ -308,7 +293,7 @@ export class Reger extends LMDBer {
   ): CapturedTelReplay | null {
     let end: number | null = null;
     for (
-      const entry of this.scan(this.tels.sdb, {
+      const entry of this.store.scan(this.tels.sdb, {
         start: b(`${pre}.${"f".repeat(32)}`),
         reverse: true,
         limit: 1,
@@ -480,38 +465,5 @@ export class Reger extends LMDBer {
     }
 
     return sources;
-  }
-}
-
-/** Transfer a ready `Reger` to its caller, closing unreturned acquisitions on failure or cancellation. */
-export function* createReger(options: RegerOptions = {}): Operation<Reger> {
-  const reger = new Reger(options);
-  let delivered = false;
-  let failure: { error: unknown } | undefined;
-  try {
-    const opened = yield* reger.reopen(options);
-    if (!opened) {
-      throw new DatabaseNotOpenError("Failed to open Reger");
-    }
-    delivered = true;
-    return reger;
-  } catch (error) {
-    failure = { error };
-    throw error;
-  } finally {
-    if (!delivered) {
-      try {
-        yield* reger.close();
-      } catch (error) {
-        if (failure) {
-          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
-          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
-            cause: failure.error,
-          });
-        }
-        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
-        throw error;
-      }
-    }
   }
 }

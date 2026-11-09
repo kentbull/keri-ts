@@ -22,14 +22,15 @@ import {
 } from "cesr-ts";
 import { call, ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
-import { loadNests, openRegistry, RegistryStore } from "keri-ts/db";
+import { loadNests, RegistryStore } from "keri-ts/db";
+import { openLmdbRegistry } from "keri-ts/db/lmdb";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   AcdcV2Regery,
   blindate,
   type ChainVerdict,
   createAgentRuntime,
-  createHabery,
   evaluateChain,
   Exchanger,
   FetchHttpClient,
@@ -85,7 +86,7 @@ async function withPeers(
   await run(function*() {
     const source = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const receiver = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     const db = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
     const registry = new RegistryStore(baser), issuer = source.makeHab("issuer"), holder = receiver.makeHab("holder");
     const sending = new Exchanger(source), receiving = new Exchanger(receiver);
@@ -446,7 +447,7 @@ Deno.test("wallet negotiates source obligations, admits, and presents only its e
       const verifierHby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
       yield* ensure(() => verifierHby.close(true));
       const verifier = verifierHby.makeHab("independent verifier");
-      const verifierRegistry = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      const verifierRegistry = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => verifierRegistry.close(true));
       const verifierDb = yield* createWalletBaser({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => verifierDb.close(true));

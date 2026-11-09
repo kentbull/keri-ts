@@ -15,7 +15,7 @@
  */
 import { concatBytes, Vrsn_2_0 } from "cesr-ts";
 import { run, type Task } from "effection";
-import { createHabery } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type GuardedChild, spawnGuardedChild } from "../../../keri/test/support/child-lifetime.ts";

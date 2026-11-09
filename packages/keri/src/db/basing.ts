@@ -76,10 +76,10 @@ import {
   type WellKnownAuthNShape,
 } from "../core/records.ts";
 import { encodeDateTimeToDater, makeNowIso8601 } from "../time/mod.ts";
-import { baserDefaults } from "./baser-defaults.ts";
-import type { ScanOptions, Table } from "./core/dber.ts";
+import type { DBer, ScanOptions, StoreIdentity, Table } from "./core/dber.ts";
 import { dgKey, splitOnKey } from "./core/keys.ts";
-import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { ExchangeRecord, ExchangeRegistryStateRecord } from "./exchange/exchange-records.ts";
 import { IoSetKomer, Komer } from "./koming.ts";
 import { CapturedKelReplay, type KelReplayRange } from "./replay/kel-replay.ts";
@@ -191,8 +191,10 @@ export interface BaserOptions extends LMDBerOptions {
  * - the full store surface is now bound, but only the local habitat/runtime
  *   subset is actively driven by `Habery`/CLI in this arc
  */
-export class Baser {
-  private lmdber: LMDBer;
+export class Baser extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "db", maxTables: 128 };
+
   private readonly logger: Logger;
   private evtsRaw!: Table;
   readonly kevers = new Map<string, Kever>();
@@ -337,69 +339,34 @@ export class Baser {
   public bsss!: CatCesrIoSetSuber<BoundStateSextuple>; // Bound state sextuples.
   public tmqs!: CatCesrIoSetSuber<TypedMediaQuadrupleTuple>; // Type-media quadruples.
 
-  constructor(options: BaserOptions = {}) {
-    this.logger = options.logger ?? consoleLogger;
-    this.lmdber = new LMDBer(options, baserDefaults(options.compat));
-  }
-
-  /** Expose the resolved logical database name delegated from the root LMDBer. */
-  get name(): string {
-    return this.lmdber.name;
-  }
-
-  /** Expose the resolved database base prefix delegated from the root LMDBer. */
-  get base(): string {
-    return this.lmdber.base;
-  }
-
-  /** Report whether the root LMDB environment and typed subdb bindings are open. */
-  get opened(): boolean {
-    return this.lmdber.opened;
+  constructor(store: DBer, logger: Logger = consoleLogger) {
+    super(store);
+    this.logger = logger;
   }
 
   /** Test a schema dependency ownership marker without hydrating its stored exchange. */
   hasSchemaEscrow(said: string): boolean {
     if (this.emse) {
-      for (const key of this.lmdber.scanKeys(this.emse.sdb, { start: b(`${said}.`), limit: 1 })) {
+      for (const key of this.store.scanKeys(this.emse.sdb, { start: b(`${said}.`), limit: 1 })) {
         return t(key).startsWith(`${said}.`);
       }
     }
     return false;
   }
 
-  /** Report whether this `Baser` uses a temporary backing directory. */
-  get temp(): boolean {
-    return this.lmdber.temp;
-  }
-
-  /** Expose the resolved filesystem path of the active backing environment. */
-  get path(): string | null {
-    return this.lmdber.path;
-  }
-
-  /** Expose the raw LMDB environment for low-level tests and debugging only. */
-  get env(): LMDBer["env"] {
-    return this.lmdber.env;
-  }
-
-  /** Report an active caller writer without exposing native transaction internals. */
-  get inWriteTransaction(): boolean {
-    return this.lmdber.inWriteTransaction;
-  }
-
   /** Read an owned binary row through the backing database's normal copy path. */
   getVal(table: Table, key: Uint8Array): Uint8Array | null {
-    return this.lmdber.getVal(table, key);
+    return this.store.getVal(table, key);
   }
 
   /** Scan owned keys through the backing database. */
   scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array> {
-    return this.lmdber.scanKeys(table, options);
+    return this.store.scanKeys(table, options);
   }
 
   /** Seek within one key's duplicates through the backing database. */
   seekVal(table: Table, key: Uint8Array, start?: Uint8Array): Uint8Array | null {
-    return this.lmdber.seekVal(table, key, start);
+    return this.store.seekVal(table, key, start);
   }
 
   /**
@@ -410,64 +377,64 @@ export class Baser {
    * higher-layer runtime code interacts through those typed wrappers rather
    * than hand-rolled raw LMDB handles.
    */
-  *reopen(options: Partial<BaserOptions> = {}): Operation<boolean> {
-    const opened = yield* this.lmdber.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) {
       return false;
     }
 
     try {
       // Serialized KEL events keyed by `(pre, said)` digest keys.
-      this.evts = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "evts." });
+      this.evts = new SerderSuber<SerderKERI>(this.store, { subkey: "evts." });
       this.evtsRaw = this.evts.sdb;
 
       // First-seen event logs map `(pre, fn)` ordinals to event digests.
-      this.fels = new OnSuber(this.lmdber, { subkey: "fels." });
+      this.fels = new OnSuber(this.store, { subkey: "fels." });
 
       // Key-event logs map `(pre, sn)` sequence numbers to event digests.
-      this.kels = new OnIoDupSuber(this.lmdber, { subkey: "kels." });
+      this.kels = new OnIoDupSuber(this.store, { subkey: "kels." });
 
       // Event timestamps keyed by digest, used when escrowing and timeout logic
       // needs the first-seen datetime.
-      this.dtss = new CesrSuber<Dater>(this.lmdber, {
+      this.dtss = new CesrSuber<Dater>(this.store, {
         subkey: "dtss.",
         ctor: Dater,
       });
 
       // Authorizing event source seal couples keyed by event digest.
-      this.aess = new CatCesrSuber<EventSealTuple>(this.lmdber, {
+      this.aess = new CatCesrSuber<EventSealTuple>(this.store, {
         subkey: "aess.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Fully qualified indexed controller signatures for one event digest.
-      this.sigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+      this.sigs = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "sigs.",
         ctor: Siger,
       });
 
       // Indexed witness signatures for one event digest.
-      this.wigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+      this.wigs = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "wigs.",
         ctor: Siger,
       });
 
       // Event receipt couples from non-transferable signers that are not
       // witnesses, such as watchers or jurors.
-      this.rcts = new CatCesrIoSetSuber<ReceiptCouple>(this.lmdber, {
+      this.rcts = new CatCesrIoSetSuber<ReceiptCouple>(this.store, {
         subkey: "rcts.",
         ctor: [Prefixer, Cigar],
       });
 
       // Unverified event receipt escrow triples from non-transferable signers.
-      this.ures = new CatCesrIoSetSuber<UnverifiedReceiptTriple>(this.lmdber, {
+      this.ures = new CatCesrIoSetSuber<UnverifiedReceiptTriple>(this.store, {
         subkey: "ures.",
         ctor: [Diger, Prefixer, Cigar],
       });
 
       // Event validator receipt quadruples from transferable signers.
       this.vrcs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "vrcs.",
           ctor: [Prefixer, NumberPrimitive, Diger, Siger],
@@ -477,7 +444,7 @@ export class Baser {
       // Unverified event validator receipt escrow tuples from transferable
       // signers.
       this.vres = new CatCesrIoSetSuber<EscrowedValidatorReceiptQuintuple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "vres.",
           ctor: [Diger, Prefixer, NumberPrimitive, Diger, Siger],
@@ -485,59 +452,59 @@ export class Baser {
       );
 
       // Partially signed key-event escrows mapping `(pre, sn)` to event digests.
-      this.pses = new OnIoDupSuber(this.lmdber, { subkey: "pses." });
+      this.pses = new OnIoDupSuber(this.store, { subkey: "pses." });
 
       // Partially witnessed key-event escrows mapping `(pre, sn)` to event
       // digests.
-      this.pwes = new OnIoDupSuber(this.lmdber, { subkey: "pwes." });
+      this.pwes = new OnIoDupSuber(this.store, { subkey: "pwes." });
 
       // Partially delegated key-event escrows mapping `(pre, sn)` to event
       // digests.
-      this.pdes = new OnIoDupSuber(this.lmdber, { subkey: "pdes." });
+      this.pdes = new OnIoDupSuber(this.store, { subkey: "pdes." });
 
       // Unverified delegation seal source couples keyed by delegated event
       // digest.
-      this.udes = new CatCesrSuber<EventSealTuple>(this.lmdber, {
+      this.udes = new CatCesrSuber<EventSealTuple>(this.store, {
         subkey: "udes.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Unverified witness escrow couples from witness signers.
-      this.uwes = new B64OnIoDupSuber(this.lmdber, { subkey: "uwes." });
+      this.uwes = new B64OnIoDupSuber(this.store, { subkey: "uwes." });
 
       // Out-of-order escrowed event tables mapping `(pre, sn)` to event digests.
-      this.ooes = new OnIoDupSuber(this.lmdber, { subkey: "ooes." });
+      this.ooes = new OnIoDupSuber(this.store, { subkey: "ooes." });
 
       // Duplicitous event log tables mapping `(pre, sn)` to conflicting digests.
-      this.dels = new OnIoDupSuber(this.lmdber, { subkey: "dels." });
+      this.dels = new OnIoDupSuber(this.store, { subkey: "dels." });
 
       // Likely-duplicitous escrowed event tables keyed by `(pre, sn)`.
-      this.ldes = new OnIoDupSuber(this.lmdber, { subkey: "ldes." });
+      this.ldes = new OnIoDupSuber(this.store, { subkey: "ldes." });
 
       // Query-not-found escrows keyed by queried event digest.
-      this.qnfs = new IoSetSuber<string>(this.lmdber, { subkey: "qnfs." });
+      this.qnfs = new IoSetSuber<string>(this.store, { subkey: "qnfs." });
 
       // First-seen ordinal numbers for events, used in superseding and recovery
       // rotation logic.
-      this.fons = new CesrSuber<NumberPrimitive>(this.lmdber, {
+      this.fons = new CesrSuber<NumberPrimitive>(this.store, {
         subkey: "fons.",
         ctor: NumberPrimitive,
       });
 
       // Database migration datetimes keyed by migration name.
-      this.migs = new CesrSuber<Dater>(this.lmdber, {
+      this.migs = new CesrSuber<Dater>(this.store, {
         subkey: "migs.",
         ctor: Dater,
       });
 
       // Database version table retained for parity even though it is currently
       // unused.
-      this.vers = new Suber(this.lmdber, { subkey: "vers." });
+      this.vers = new Suber(this.store, { subkey: "vers." });
 
       // Event source records describing whether an event is local/protected or
       // remote/not protected.
       this.esrs = new Komer<EventSourceRecord>(
-        this.lmdber,
+        this.store,
         {
           subkey: "esrs.",
           recordClass: EventSourceRecord,
@@ -546,52 +513,52 @@ export class Baser {
 
       // Misfit escrows for remote events that should be dropped unless they
       // become authenticated.
-      this.misfits = new IoSetSuber<string>(this.lmdber, { subkey: "mfes." });
+      this.misfits = new IoSetSuber<string>(this.store, { subkey: "mfes." });
 
       // Delegable event escrows for KEL events whose local delegator still
       // needs to approve them.
-      this.delegables = new IoSetSuber<string>(this.lmdber, {
+      this.delegables = new IoSetSuber<string>(this.store, {
         subkey: "dees.",
       });
 
       // Latest key-state record for each identifier prefix.
       this.states = new Komer<KeyStateRecord>(
-        this.lmdber,
+        this.store,
         {
           subkey: "stts.",
           recordClass: KeyStateRecord,
         },
       );
       // Witness lists for a given event digest.
-      this.wits = new CesrIoSetSuber<Prefixer>(this.lmdber, {
+      this.wits = new CesrIoSetSuber<Prefixer>(this.store, {
         subkey: "wits.",
         ctor: Prefixer,
       });
 
       // Habitat application records keyed by habitat name and namespace.
-      this.habs = new Komer<HabitatRecord>(this.lmdber, {
+      this.habs = new Komer<HabitatRecord>(this.store, {
         subkey: "habs.",
         recordClass: HabitatRecord,
       });
 
       // Habitat name database mapping `(domain, name)` to identifier prefixes.
-      this.names = new Suber(this.lmdber, { subkey: "names.", sep: "^" });
+      this.names = new Suber(this.store, { subkey: "names.", sep: "^" });
 
       // SAD datetime stamps keyed by SAID.
-      this.sdts = new CesrSuber<Dater>(this.lmdber, {
+      this.sdts = new CesrSuber<Dater>(this.store, {
         subkey: "sdts.",
         ctor: Dater,
       });
 
       // SAD indexed signatures keyed by the reply/event quadkey.
-      this.ssgs = new CesrIoSetSuber<Siger>(this.lmdber, {
+      this.ssgs = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "ssgs.",
         ctor: Siger,
       });
 
       // SAD non-indexed signature couples keyed by SAD SAID.
       this.scgs = new CatCesrIoSetSuber<VerferCigarCouple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "scgs.",
           ctor: [Verfer, Cigar],
@@ -601,115 +568,115 @@ export class Baser {
       // Reply messages keyed by reply SAID.
       // Datetimes and signatures live in the companion `sdts.`, `ssgs.`, and
       // `scgs.` stores.
-      this.rpys = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "rpys." });
+      this.rpys = new SerderSuber<SerderKERI>(this.store, { subkey: "rpys." });
 
       // Reply escrow indices of partially signed reply messages, mapping reply
       // routes such as `/end/role` or `/loc/schema` to reply SAIDs.
-      this.rpes = new CesrIoSetSuber<Diger>(this.lmdber, {
+      this.rpes = new CesrIoSetSuber<Diger>(this.store, {
         subkey: "rpes.",
         ctor: Diger,
       });
 
       // AuthN/AuthZ by local controller at `cid` of endpoint provider at `eid`.
       // Maps `cid.role.eid` to the SAID of the relevant `/end/role` reply.
-      this.eans = new CesrSuber<Diger>(this.lmdber, {
+      this.eans = new CesrSuber<Diger>(this.store, {
         subkey: "eans.",
         ctor: Diger,
       });
 
       // AuthN/AuthZ by endpoint provider at `eid` of a location at URL scheme.
       // Maps `cid.role.eid` to the SAID of the relevant `/loc` reply.
-      this.lans = new CesrSuber<Diger>(this.lmdber, {
+      this.lans = new CesrSuber<Diger>(this.store, {
         subkey: "lans.",
         ctor: Diger,
       });
 
       // Service endpoint identifier auth records extracted from `/end/role`
       // replies.
-      this.ends = new Komer<EndpointRecord>(this.lmdber, {
+      this.ends = new Komer<EndpointRecord>(this.store, {
         subkey: "ends.",
         recordClass: EndpointRecord,
       });
 
       // Service endpoint locations keyed by endpoint identifier and URL scheme.
-      this.locs = new Komer<LocationRecord>(this.lmdber, {
+      this.locs = new Komer<LocationRecord>(this.store, {
         subkey: "locs.",
         recordClass: LocationRecord,
       });
 
       // Observed identifier records keyed by controller, watcher, and observed
       // identifier.
-      this.obvs = new Komer<ObservedRecord>(this.lmdber, {
+      this.obvs = new Komer<ObservedRecord>(this.store, {
         subkey: "obvs.",
         recordClass: ObservedRecord,
       });
 
       // Index of the last retrieved message from a witness mailbox.
-      this.tops = new Komer<TopicsRecord>(this.lmdber, {
+      this.tops = new Komer<TopicsRecord>(this.store, {
         subkey: "witm.",
         recordClass: TopicsRecord,
       });
 
       // Group partial signature escrow entries.
-      this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+      this.gpse = new CatCesrIoSetSuber<EventSealTuple>(this.store, {
         subkey: "gpse.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Group delegate escrow entries.
-      this.gdee = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+      this.gdee = new CatCesrIoSetSuber<EventSealTuple>(this.store, {
         subkey: "gdee.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Group partial witness escrow entries.
-      this.gpwe = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+      this.gpwe = new CatCesrIoSetSuber<EventSealTuple>(this.store, {
         subkey: "gdwe.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Completed group multisig references.
-      this.cgms = new CesrSuber<Diger>(this.lmdber, {
+      this.cgms = new CesrSuber<Diger>(this.store, {
         subkey: "cgms.",
         ctor: Diger,
       });
 
       // Exchange-message partial signature escrow messages.
-      this.epse = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "epse." });
+      this.epse = new SerderSuber<SerderKERI>(this.store, { subkey: "epse." });
 
       // Exchange-message partial signature escrow datetimes.
-      this.epsd = new CesrSuber<Dater>(this.lmdber, {
+      this.epsd = new CesrSuber<Dater>(this.store, {
         subkey: "epsd.",
         ctor: Dater,
       });
-      this.emse = !this.lmdber.readonly || this.lmdber.hasTable("emse.")
-        ? new SerderSuber(this.lmdber, { subkey: "emse." })
+      this.emse = !this.store.readonly || this.store.hasTable("emse.")
+        ? new SerderSuber(this.store, { subkey: "emse." })
         : null;
-      this.emsd = !this.lmdber.readonly || this.lmdber.hasTable("emsd.")
-        ? new CesrSuber(this.lmdber, { subkey: "emsd.", ctor: Dater })
+      this.emsd = !this.store.readonly || this.store.hasTable("emsd.")
+        ? new CesrSuber(this.store, { subkey: "emsd.", ctor: Dater })
         : null;
 
       // Exchange messages keyed by digest.
-      this.exns = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "exns." });
+      this.exns = new SerderSuber<SerderKERI>(this.store, { subkey: "exns." });
       // Bind metadata during store opening, never lazily inside an admission that may abort.
-      this.exchangeMeta = new Komer(this.lmdber, { subkey: "exchange.meta.", recordClass: ExchangeRecord });
-      this.exrs = new Komer(this.lmdber, { subkey: "exrs.", recordClass: ExchangeRegistryStateRecord });
+      this.exchangeMeta = new Komer(this.store, { subkey: "exchange.meta.", recordClass: ExchangeRecord });
+      this.exrs = new Komer(this.store, { subkey: "exrs.", recordClass: ExchangeRegistryStateRecord });
 
       // Forward pointers to provided reply messages.
-      this.erpy = new CesrSuber<Saider>(this.lmdber, {
+      this.erpy = new CesrSuber<Saider>(this.store, {
         subkey: "erpy.",
         ctor: Saider,
       });
 
       // Exchange-message indexed signatures.
-      this.esigs = new CesrIoSetSuber<Siger>(this.lmdber, {
+      this.esigs = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "esigs.",
         ctor: Siger,
       });
 
       // Exchange-message non-indexed signature couples.
       this.ecigs = new CatCesrIoSetSuber<VerferCigarCouple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "ecigs.",
           ctor: [Verfer, Cigar],
@@ -717,98 +684,98 @@ export class Baser {
       );
 
       // Historical source coordinates remain interoperable CESR couples, never private pointers.
-      this.ests = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+      this.ests = new CatCesrIoSetSuber<EventSealTuple>(this.store, {
         subkey: "ests.",
         ctor: [NumberPrimitive, Diger],
       });
-      this.eidx = new CesrIoSetSuber<Diger>(this.lmdber, { subkey: "eidx.", ctor: Diger });
+      this.eidx = new CesrIoSetSuber<Diger>(this.store, { subkey: "eidx.", ctor: Diger });
 
       // Exchange-message pathed attachments.
-      this.epath = new IoSetSuber<string>(this.lmdber, { subkey: ".epath" });
+      this.epath = new IoSetSuber<string>(this.store, { subkey: ".epath" });
 
-      this.enst = new IoSetSuber<string>(this.lmdber, { subkey: "enst." });
+      this.enst = new IoSetSuber<string>(this.store, { subkey: "enst." });
 
       // Encrypt-Sender-Sign-Receiver payloads keyed by exchange digest.
-      this.essrs = new CesrIoSetSuber<Texter>(this.lmdber, {
+      this.essrs = new CesrIoSetSuber<Texter>(this.store, {
         subkey: "essrs.",
         ctor: Texter,
       });
 
       // Registry root copies awaiting automatic retention, keyed by exchange SAID.
-      this.rrpe = new CesrSuber<Dater>(this.lmdber, { subkey: "rrpe.", ctor: Dater });
+      this.rrpe = new CesrSuber<Dater>(this.store, { subkey: "rrpe.", ctor: Dater });
 
       // Accepted signed challenge-response exchange-message SAIDs keyed by the
       // signer prefix.
-      this.chas = new CesrIoSetSuber<Diger>(this.lmdber, {
+      this.chas = new CesrIoSetSuber<Diger>(this.store, {
         subkey: "chas.",
         ctor: Diger,
       });
 
       // Successful signed challenge-response exchange-message SAIDs keyed by
       // the signer prefix.
-      this.reps = new CesrIoSetSuber<Diger>(this.lmdber, {
+      this.reps = new CesrIoSetSuber<Diger>(this.store, {
         subkey: "reps.",
         ctor: Diger,
       });
 
       // Authorized well-known OOBI records.
       this.wkas = new IoSetKomer<WellKnownAuthN>(
-        this.lmdber,
+        this.store,
         {
           subkey: "wkas.",
           recordClass: WellKnownAuthN,
         },
       );
       // Key-state notice datetime stamps keyed by key-state SAID.
-      this.kdts = new CesrSuber<Dater>(this.lmdber, {
+      this.kdts = new CesrSuber<Dater>(this.store, {
         subkey: "kdts.",
         ctor: Dater,
       });
 
       // Key-state messages keyed by key-state SAID.
       // Datetimes and signatures are held in the companion key-state stores.
-      this.ksns = new Komer<KeyStateRecord>(this.lmdber, {
+      this.ksns = new Komer<KeyStateRecord>(this.store, {
         subkey: "ksns.",
         recordClass: KeyStateRecord,
       });
 
       // Successful key-state notice SAID index mapping `(controller, aid)` to
       // saved key-state SAIDs.
-      this.knas = new CesrSuber<Diger>(this.lmdber, {
+      this.knas = new CesrSuber<Diger>(this.store, {
         subkey: "knas.",
         ctor: Diger,
       });
 
       // Watcher watched-SAID index mapping `(cid, aid, oid)` to the saved reply
       // message SAID for a watched identifier.
-      this.wwas = new CesrSuber<Diger>(this.lmdber, {
+      this.wwas = new CesrSuber<Diger>(this.store, {
         subkey: "wwas.",
         ctor: Diger,
       });
 
       // Config-loaded OOBIs to be processed asynchronously.
-      this.oobis = new Komer<OobiRecord>(this.lmdber, {
+      this.oobis = new Komer<OobiRecord>(this.store, {
         subkey: "oobis.",
         sep: ">",
         recordClass: OobiRecord,
       });
 
       // Retriable OOBIs that failed to load.
-      this.eoobi = new Komer<OobiRecord>(this.lmdber, {
+      this.eoobi = new Komer<OobiRecord>(this.store, {
         subkey: "eoobi.",
         sep: ">",
         recordClass: OobiRecord,
       });
 
       // OOBIs with outstanding client requests.
-      this.coobi = new Komer<OobiRecord>(this.lmdber, {
+      this.coobi = new Komer<OobiRecord>(this.store, {
         subkey: "coobi.",
         sep: ">",
         recordClass: OobiRecord,
       });
 
       // Successfully resolved OOBIs.
-      this.roobi = new Komer<OobiRecord>(this.lmdber, {
+      this.roobi = new Komer<OobiRecord>(this.store, {
         subkey: "roobi.",
         sep: ">",
         recordClass: OobiRecord,
@@ -816,14 +783,14 @@ export class Baser {
 
       // Well-known OOBIs used for multifactor authentication against resolved
       // OOBIs.
-      this.woobi = new Komer<OobiRecord>(this.lmdber, {
+      this.woobi = new Komer<OobiRecord>(this.store, {
         subkey: "woobi.",
         sep: ">",
         recordClass: OobiRecord,
       });
 
       // Multi-OOBI associations where one AID is tied to multiple OOBIs.
-      this.moobi = new Komer<OobiRecord>(this.lmdber, {
+      this.moobi = new Komer<OobiRecord>(this.store, {
         subkey: "moobi.",
         sep: ">",
         recordClass: OobiRecord,
@@ -831,7 +798,7 @@ export class Baser {
 
       // Multifactor well-known OOBI auth records awaiting processing, keyed by
       // controller URL.
-      this.mfa = new Komer<OobiRecord>(this.lmdber, {
+      this.mfa = new Komer<OobiRecord>(this.store, {
         subkey: "mfa.",
         sep: ">",
         recordClass: OobiRecord,
@@ -839,87 +806,87 @@ export class Baser {
 
       // Resolved multifactor well-known OOBI auth records keyed by controller
       // URL.
-      this.rmfa = new Komer<OobiRecord>(this.lmdber, {
+      this.rmfa = new Komer<OobiRecord>(this.store, {
         subkey: "rmfa.",
         sep: ">",
         recordClass: OobiRecord,
       });
 
       // JSON Schema SADs keyed by schema SAID.
-      this.schema = new SchemerSuber(this.lmdber, {
+      this.schema = new SchemerSuber(this.store, {
         subkey: "schema.",
       });
 
       // Field values for contact information for remote identifiers.
-      this.cfld = new Suber(this.lmdber, { subkey: "cfld." });
+      this.cfld = new Suber(this.store, { subkey: "cfld." });
 
       // Global settings for the Habery environment.
-      this.hbys = new Suber(this.lmdber, { subkey: "hbys." });
+      this.hbys = new Suber(this.store, { subkey: "hbys." });
 
       // Signed contact data keyed by identifier prefix.
-      this.cons = new Suber(this.lmdber, { subkey: "cons." });
+      this.cons = new Suber(this.store, { subkey: "cons." });
 
       // Signature cigars for signed contact data.
-      this.ccigs = new CesrSuber<Cigar>(this.lmdber, {
+      this.ccigs = new CesrSuber<Cigar>(this.store, {
         subkey: "ccigs.",
         ctor: Cigar,
       });
 
       // Blinded media tuples for remote contact information.
-      this.imgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
+      this.imgs = new CatCesrSuber<BlindedImageTuple>(this.store, {
         subkey: "imgs.",
         ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       // Field values for local identifier information.
-      this.ifld = new Suber(this.lmdber, { subkey: "ifld." });
+      this.ifld = new Suber(this.store, { subkey: "ifld." });
 
       // Signed local identifier data keyed by prefix.
-      this.sids = new Suber(this.lmdber, { subkey: "sids." });
+      this.sids = new Suber(this.store, { subkey: "sids." });
 
       // Signature cigars for signed local identifier data.
-      this.icigs = new CesrSuber<Cigar>(this.lmdber, {
+      this.icigs = new CesrSuber<Cigar>(this.store, {
         subkey: "icigs.",
         ctor: Cigar,
       });
 
       // Blinded media tuples for local identifier information.
-      this.iimgs = new CatCesrSuber<BlindedImageTuple>(this.lmdber, {
+      this.iimgs = new CatCesrSuber<BlindedImageTuple>(this.store, {
         subkey: "iimgs.",
         ctor: [Noncer, Noncer, Labeler, Texter],
       });
 
       // Delegated partial-witness escrow messages.
-      this.dpwe = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpwe." });
+      this.dpwe = new SerderSuber<SerderKERI>(this.store, { subkey: "dpwe." });
 
       // Delegated unanchored escrow messages.
-      this.dune = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dune." });
+      this.dune = new SerderSuber<SerderKERI>(this.store, { subkey: "dune." });
 
       // Delegate publication escrow messages for sending delegator information
       // to local witnesses.
-      this.dpub = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "dpub." });
+      this.dpub = new SerderSuber<SerderKERI>(this.store, { subkey: "dpub." });
 
       // Completed group delegated AIDs keyed by ordinal.
-      this.cdel = new CesrOnSuber<Diger>(this.lmdber, {
+      this.cdel = new CesrOnSuber<Diger>(this.store, {
         subkey: "cdel.",
         ctor: Diger,
       });
 
       // Multisig embed payload SAIDs mapped to containing exchange-message
       // SAIDs across group multisig participants.
-      this.meids = new CesrIoSetSuber<Saider>(this.lmdber, {
+      this.meids = new CesrIoSetSuber<Saider>(this.store, {
         subkey: "meids.",
         ctor: Saider,
       });
 
       // Multisig embed payload SAIDs mapped to group multisig participant AIDs.
-      this.maids = new CesrIoSetSuber<Prefixer>(this.lmdber, {
+      this.maids = new CesrIoSetSuber<Prefixer>(this.store, {
         subkey: "maids.",
         ctor: Prefixer,
       });
       // KRAM cache-type records keyed by expression string.
       this.ctyp = new Komer<CacheTypeRecord>(
-        this.lmdber,
+        this.store,
         {
           subkey: "ctyp.",
           recordClass: CacheTypeRecord,
@@ -927,43 +894,43 @@ export class Baser {
       );
 
       // KRAM message-cache records keyed by `(AID, MID)`.
-      this.msgc = new Komer<MsgCacheRecord>(this.lmdber, {
+      this.msgc = new Komer<MsgCacheRecord>(this.store, {
         subkey: "msgc.",
         recordClass: MsgCacheRecord,
       });
-      this.xdt = new CesrSuber<Dater>(this.lmdber, { subkey: "xdt.", ctor: Dater });
+      this.xdt = new CesrSuber<Dater>(this.store, { subkey: "xdt.", ctor: Dater });
 
       // KRAM transactioned message-cache records keyed by `(AID, XID, MID)`.
       this.tmsc = new Komer<TxnMsgCacheRecord>(
-        this.lmdber,
+        this.store,
         {
           subkey: "tmsc.",
           recordClass: TxnMsgCacheRecord,
         },
       );
 
-      this.ulgs = new CesrIoSetSuber<Prefixer>(this.lmdber, { subkey: "ulgs.", ctor: Prefixer });
-      this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.lmdber, { subkey: "cigs.", ctor: [Verfer, Cigar] });
+      this.ulgs = new CesrIoSetSuber<Prefixer>(this.store, { subkey: "ulgs.", ctor: Prefixer });
+      this.cigs = new CatCesrIoSetSuber<VerferCigarCouple>(this.store, { subkey: "cigs.", ctor: [Verfer, Cigar] });
 
       // KRAM partially signed multi-key messages keyed by `(AID, MID)`.
-      this.pmkm = new SerderSuber<SerderKERI>(this.lmdber, { subkey: "pmkm." });
+      this.pmkm = new SerderSuber<SerderKERI>(this.store, { subkey: "pmkm." });
 
       // KRAM partially signed multi-key signatures keyed by `(AID, MID)`.
-      this.pmks = new CesrIoSetSuber<Siger>(this.lmdber, {
+      this.pmks = new CesrIoSetSuber<Siger>(this.store, {
         subkey: "pmks.",
         ctor: Siger,
       });
 
       // KRAM partially signed multi-key sender key-state seals keyed by
       // `(AID, MID)`.
-      this.pmsk = new CatCesrSuber<EventSealTuple>(this.lmdber, {
+      this.pmsk = new CatCesrSuber<EventSealTuple>(this.store, {
         subkey: "pmsk.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Transferable receipt quadruples used by the KRAM attachment path.
       this.trqs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "trqs.",
           ctor: [Prefixer, NumberPrimitive, Diger, Siger],
@@ -972,7 +939,7 @@ export class Baser {
 
       // Transferable last-signature groups used by the KRAM attachment path.
       this.tsgs = new CatCesrIoSetSuber<ValidatorReceiptQuadruple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "tsgs.",
           ctor: [Prefixer, NumberPrimitive, Diger, Siger],
@@ -980,35 +947,35 @@ export class Baser {
       );
 
       // First-seen seal couples for issuing or delegating events.
-      this.sscs = new CatCesrIoSetSuber<EventSealTuple>(this.lmdber, {
+      this.sscs = new CatCesrIoSetSuber<EventSealTuple>(this.store, {
         subkey: "sscs.",
         ctor: [NumberPrimitive, Diger],
       });
 
       // Source seal triples for issued or delegated events.
-      this.ssts = new CatCesrIoSetSuber<SourceSealTriple>(this.lmdber, {
+      this.ssts = new CatCesrIoSetSuber<SourceSealTriple>(this.store, {
         subkey: "ssts.",
         ctor: [Prefixer, NumberPrimitive, Diger],
       });
 
       // First-seen replay couples storing ordinal and datetime pairs.
-      this.frcs = new CatCesrIoSetSuber<FirstSeenReplayCouple>(this.lmdber, {
+      this.frcs = new CatCesrIoSetSuber<FirstSeenReplayCouple>(this.store, {
         subkey: "frcs.",
         ctor: [NumberPrimitive, Dater],
       });
 
       // Typed digest seal couples.
-      this.tdcs = new CatCesrIoSetSuber<TypedDigestSealCouple>(this.lmdber, {
+      this.tdcs = new CatCesrIoSetSuber<TypedDigestSealCouple>(this.store, {
         subkey: "tdcs.",
         ctor: [Verser, Noncer],
       });
 
       // Pathed streams stored as raw bytes.
-      this.ptds = new BytesIoSetSuber(this.lmdber, { subkey: "ptds." });
+      this.ptds = new BytesIoSetSuber(this.store, { subkey: "ptds." });
 
       // Blind state quadruples.
       this.bsqs = new CatCesrIoSetSuber<BlindedStateQuadrupleTuple>(
-        this.lmdber,
+        this.store,
         {
           subkey: "bsqs.",
           ctor: [Noncer, Noncer, Noncer, Labeler],
@@ -1016,13 +983,13 @@ export class Baser {
       );
 
       // Bound state sextuples.
-      this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.lmdber, {
+      this.bsss = new CatCesrIoSetSuber<BoundStateSextuple>(this.store, {
         subkey: "bsss.",
         ctor: [Noncer, Noncer, Noncer, Labeler, NumberPrimitive, Noncer],
       });
 
       // Type-media quadruples.
-      this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.lmdber, {
+      this.tmqs = new CatCesrIoSetSuber<TypedMediaQuadrupleTuple>(this.store, {
         subkey: "tmqs.",
         ctor: [Noncer, Noncer, Labeler, Texter],
       });
@@ -1039,53 +1006,53 @@ export class Baser {
   }
 
   /** Close the underlying LMDB resources. */
-  *close(clear = false): Operation<boolean> {
+  override *close(clear = false): Operation<boolean> {
     this.kevers.clear();
     this.prefixes.clear();
     this.groups.clear();
-    return yield* this.lmdber.close(clear);
+    return yield* this.store.close(clear);
   }
 
   /** Read the root LMDB version marker through the shared lifecycle owner. */
-  getVer(): string | null {
-    return this.lmdber.getVer();
+  override getVer(): string | null {
+    return this.store.getVer();
   }
 
   /** Write the root LMDB version marker through the shared lifecycle owner. */
-  setVer(val: string): void {
-    this.lmdber.setVer(val);
+  override setVer(val: string): void {
+    this.store.setVer(val);
   }
 
   /** Count raw physical entries in `evts.` for test/debug visibility. */
   cntEvts(): number {
-    return this.lmdber.cnt(this.evtsRaw);
+    return this.store.cnt(this.evtsRaw);
   }
 
   /** Raw insert helper kept for tests/debug tooling. */
   putEvt(key: Uint8Array, val: Uint8Array): boolean {
-    return this.lmdber.putVal(this.evtsRaw, key, val);
+    return this.store.putVal(this.evtsRaw, key, val);
   }
 
   /** Raw upsert helper kept for tests/debug tooling. */
   setEvt(key: Uint8Array, val: Uint8Array): boolean {
-    return this.lmdber.setVal(this.evtsRaw, key, val);
+    return this.store.setVal(this.evtsRaw, key, val);
   }
 
   /** Raw fetch helper kept for tests/debug tooling. */
   getEvt(key: Uint8Array): Uint8Array | null {
-    return this.lmdber.getVal(this.evtsRaw, key);
+    return this.store.getVal(this.evtsRaw, key);
   }
 
   /** Raw delete helper kept for tests/debug tooling. */
   delEvt(key: Uint8Array): boolean {
-    return this.lmdber.delVal(this.evtsRaw, key);
+    return this.store.delVal(this.evtsRaw, key);
   }
 
   /** Iterate `evts.` entries with optional byte-prefix filter. */
   *getAllEvtsIter(
     top: Uint8Array = new Uint8Array(0),
   ): Generator<[Uint8Array, Uint8Array]> {
-    yield* this.lmdber.getTopItemIter(this.evtsRaw, top);
+    yield* this.store.getTopItemIter(this.evtsRaw, top);
   }
 
   /**
@@ -1670,7 +1637,7 @@ export class Baser {
     if (!Number.isSafeInteger(felEnd)) throw new RangeError("Unsupported witness replay horizon");
     if (sn === null) return new CapturedKelReplay(this, [[pre, 0, felEnd]]);
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of this.lmdber.scan(this.kels.sdb, { start, reverse: true, limit: 1 })) {
+    for (const entry of this.store.scan(this.kels.sdb, { start, reverse: true, limit: 1 })) {
       const [prefix, end] = splitOnKey(entry.key);
       if (t(prefix) !== pre) return null;
       if (!Number.isFinite(end) || end < 0) throw new DatabaseOperationError("Corrupt witness KEL horizon");
@@ -1718,7 +1685,7 @@ export class Baser {
   private replayEnd(pre: string): number | null {
     // Fixed-width CESR ordinal keys sort lexically, so the maximal suffix bounds this prefix's tail.
     const start = b(`${pre}.${"f".repeat(32)}`);
-    for (const entry of this.lmdber.scan(this.fels.sdb, { start, reverse: true, limit: 1 })) {
+    for (const entry of this.store.scan(this.fels.sdb, { start, reverse: true, limit: 1 })) {
       const [prefix, ordinal] = splitOnKey(entry.key);
       return t(prefix) === pre ? ordinal : null;
     }
@@ -1856,39 +1823,6 @@ export class BaserDoer {
       }
     } finally {
       yield* this.exit();
-    }
-  }
-}
-
-/** Constructor-safe async factory for a fully reopened `Baser`. */
-export function* createBaser(options: BaserOptions = {}): Operation<Baser> {
-  const baser = new Baser(options);
-  let delivered = false;
-  let failure: { error: unknown } | undefined;
-  try {
-    const opened = yield* baser.reopen(options);
-    if (!opened) {
-      throw new DatabaseNotOpenError("Failed to open Baser");
-    }
-    delivered = true;
-    return baser;
-  } catch (error) {
-    failure = { error };
-    throw error;
-  } finally {
-    if (!delivered) {
-      try {
-        yield* baser.close();
-      } catch (error) {
-        if (failure) {
-          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
-          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
-            cause: failure.error,
-          });
-        }
-        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
-        throw error;
-      }
     }
   }
 }

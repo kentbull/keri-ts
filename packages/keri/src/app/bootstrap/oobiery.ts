@@ -303,7 +303,7 @@ export class Oobiery {
     };
     // A new or resumed attempt supersedes old terminal facts, but keeps its
     // queued row until intake succeeds. Cancellation can therefore retry it.
-    this.hby.db.env!.transactionSync(() => {
+    this.hby.db.transaction(() => {
       this.pinQueueStore(kind, url, queuedRecord);
       this.hby.db.eoobi.rem(url);
       this.hby.db.roobi.rem(url);

@@ -7,7 +7,8 @@
  * so protocol assertions stay separate from subprocess plumbing.
  */
 import { type Operation, race, run, sleep } from "npm:effection@^3.6.0";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";

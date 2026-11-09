@@ -8,6 +8,7 @@
 
 import { b, bytesEqual, bytesHex, t } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
+import type { Logger } from "../../core/logger.ts";
 import { onKey, splitOnKey, suffix, unsuffix } from "./keys.ts";
 
 declare const tableBrand: unique symbol;
@@ -20,6 +21,26 @@ declare const tableBrand: unique symbol;
  */
 export interface Table {
   readonly [tableBrand]: "Table";
+}
+
+/**
+ * Backend-neutral identity of one store.
+ *
+ * `name` and `base` name the store on every backend; where its bytes live is
+ * each backend's own concern.
+ */
+export interface StoreIdentity {
+  name?: string;
+  base?: string;
+  temp?: boolean;
+  readonly?: boolean;
+  /** Delete the store's contents on close. */
+  clear?: boolean;
+  /** Keep an existing store's contents when reopening it. */
+  reuse?: boolean;
+  /** Open on construction where the backend supports it. */
+  reopen?: boolean;
+  logger?: Logger;
 }
 
 /** One physical row. Both arrays are caller-owned copies. */
@@ -123,6 +144,8 @@ export abstract class BaseDBer {
   /** True while a writer is active, so a caller can tell it is borrowing one. */
   abstract get inWriteTransaction(): boolean;
 
+  /** Open or reopen the store, reporting whether it is now usable. */
+  abstract reopen(options?: StoreIdentity): Operation<boolean>;
   /** Close the store, optionally deleting its contents. */
   abstract close(clear?: boolean): Operation<boolean>;
   /** Bind a named table; `dupsort` is fixed when the table is created. */
@@ -139,6 +162,15 @@ export abstract class BaseDBer {
    * `limit` counts distinct keys and `exclusiveStart` skips every duplicate.
    */
   abstract scanKeys(table: Table, options?: ScanOptions): Iterable<Uint8Array>;
+  /**
+   * Increases on every outermost commit that wrote rows. Comparable only within
+   * one open handle; increments need not be one.
+   */
+  abstract get writeVersion(): number;
+  /** Complete when every earlier commit is durable, or fail with the recorded persistence failure. */
+  abstract flushed(): Operation<void>;
+  /** Discard any retained read view so later reads observe the latest commit. */
+  abstract refreshRead(): void;
   /** Report whether a named table exists, without creating it. */
   abstract hasTable(name: string): boolean;
 

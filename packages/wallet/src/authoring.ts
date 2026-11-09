@@ -178,7 +178,7 @@ export class WalletAuthor {
     const opening = derive(sn + 1),
       event = blindate(reg.regk!, head.said!, opening.d.nonce, { sn: sn + 1, stamp: options.stamp });
     if (!options.public) this.custody!.retainDerivedUpdate(event, opening);
-    reg.store.baser.env!.transactionSync(() => {
+    reg.store.baser.transaction(() => {
       reg.store.putEvent(event);
       if (options.public) reg.store.retainOpening(event, opening);
       const decision = reg.processEvent(event);

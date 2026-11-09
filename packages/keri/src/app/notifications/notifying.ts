@@ -13,7 +13,8 @@
 import { type Cigar } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
-import { createNoter, type Noter, type NoterOptions, Notice, type NoticeAttrs } from "../../db/noting.ts";
+import { openOwner } from "../../db/core/store-owner.ts";
+import { Noter, type NoterOptions, Notice, type NoticeAttrs } from "../../db/noting.ts";
 import type { Habery, Signator } from "../identity/habbing.ts";
 import { Signaler } from "./signaling.ts";
 
@@ -43,13 +44,7 @@ export function noterOptionsForHabery(
   options: Partial<NoterOptions> = {},
 ): NoterOptions {
   return {
-    name: hby.name,
-    base: hby.base,
-    temp: hby.temp,
-    headDirPath: hby.headDirPath,
-    compat: hby.compat,
-    readonly: hby.readonly,
-    reopen: true,
+    ...hby.storeIdentity(),
     ...options,
   };
 }
@@ -59,7 +54,8 @@ export function* openNoterForHabery(
   hby: Habery,
   options: Partial<NoterOptions> = {},
 ): Operation<Noter> {
-  return yield* createNoter(noterOptionsForHabery(hby, options));
+  const identity = noterOptionsForHabery(hby, options);
+  return yield* openOwner(new Noter(hby.opener.create(Noter.Family, identity)), "Noter", identity);
 }
 
 /**

@@ -13,6 +13,10 @@ the first persistence failure latches, and the browser HttpClient waits on `flus
 Wrappers hold opaque `Table` handles; only LMDB-specific code may call `lmdbTable()`.
 Dupsort `scanKeys` yields each key once, unlike entry `scan`; use `seekVal` to seek
 within one key's duplicates. Native table-name spellings stay inside `hasTable`.
+Domain code commits through `transaction`, waits through `flushed` and compares
+`writeVersion`; a rebound `Table` handle, not `env`, detects that a store reopened.
+`StoreIdentity` names a store on every backend; paths and map size are `LmdbLocation`.
+Domain stores become `StoreOwner`s over an injected `DBer`; a `StoreOpener` places each `StoreFamily`, and `lmdbDefaultsFor` reproduces the established LMDB paths exactly. Domain stores compose this way; the `lmdb*` factories build each default. `openHabery` takes an opener or borrowed `stores`, which it never closes; `createHabery` is its LMDB default. `keri-ts/db` and `keri-ts/runtime` must not reach the addon; LMDB lives behind `keri-ts/db/lmdb`, and the boundary check walks value imports only.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

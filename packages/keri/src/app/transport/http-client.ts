@@ -3,6 +3,7 @@ import { call, type Operation, resource, scoped } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { abortable } from "../runtime/abortable.ts";
 import { collectBytes } from "./byte-source.ts";
+import type { TcpDialer } from "./tcp-dialer.ts";
 import { TransportError } from "./transport-error.ts";
 
 /** Existing HTTP request choices; protocol framing and retry policy belong to callers. */
@@ -52,6 +53,9 @@ export interface HttpStreamResponse {
 
 /** A scoped HTTP implementation supplied by composition, with an explicit transport-error contract. */
 export interface HttpClient {
+  /** Host-supplied TCP dialing; absent where the host has no TCP, such as browsers. */
+  readonly tcp?: TcpDialer;
+
   /**
    * Return finite response bytes after the owned request scope has closed.
    *

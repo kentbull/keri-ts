@@ -12,12 +12,8 @@ import {
 import { call, run } from "effection";
 import { assertEquals, assertExists, assertRejects } from "jsr:@std/assert";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";
 import { Deck } from "../../../../src/core/deck.ts";

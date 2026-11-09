@@ -4,5 +4,4 @@
 
 export * from "./dber.ts";
 export * from "./keys.ts";
-export * from "./lmdber.ts";
-export * from "./path-manager.ts";
+export * from "./store-owner.ts";

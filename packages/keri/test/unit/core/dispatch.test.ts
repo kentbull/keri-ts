@@ -39,7 +39,7 @@ import {
   TransLastIdxSigGroup,
   TransReceiptQuadruple,
 } from "../../../src/core/dispatch.ts";
-import { createKeeper } from "../../../src/db/keeping.ts";
+import { createKeeper } from "../../../src/db/lmdb-stores.ts";
 
 Deno.test("core/dispatch - named dispatch value objects round-trip tuples and derived getters", async () => {
   await run(function*() {

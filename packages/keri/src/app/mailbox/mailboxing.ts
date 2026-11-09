@@ -18,7 +18,8 @@
 import type { Operation } from "npm:effection@^3.6.0";
 import { TopicsRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
-import { createMailboxer, type Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
+import { openOwner } from "../../db/core/store-owner.ts";
+import { Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 
 /**
@@ -36,13 +37,7 @@ export function mailboxerOptionsForHabery(
   options: Partial<MailboxerOptions> = {},
 ): MailboxerOptions {
   return {
-    name: hby.name,
-    base: hby.base,
-    temp: hby.temp,
-    headDirPath: hby.headDirPath,
-    compat: hby.compat,
-    readonly: hby.readonly,
-    reopen: true,
+    ...hby.storeIdentity(),
     ...options,
   };
 }
@@ -62,7 +57,8 @@ export function* openMailboxerForHabery(
   hby: Habery,
   options: Partial<MailboxerOptions> = {},
 ): Operation<Mailboxer> {
-  return yield* createMailboxer(mailboxerOptionsForHabery(hby, options));
+  const identity = mailboxerOptionsForHabery(hby, options);
+  return yield* openOwner(new Mailboxer(hby.opener.create(Mailboxer.Family, identity)), "Mailboxer", identity);
 }
 
 /**

@@ -10,14 +10,15 @@ import { makeBlindState, MtrDex, parseBytes, Salter, type SerderACDC, Vrsn_2_0 }
 import { ensure, type Operation } from "effection";
 import { assertEquals, assertExists, assertNotEquals } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../src/acdc/messaging.ts";
-import { openRegistry } from "../../src/acdc/registering.ts";
 import { Regery } from "../../src/acdc/registraring.ts";
 import type { RegistryRoot } from "../../src/acdc/salting.ts";
-import { createHabery, type Hab, type Habery } from "../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../src/app/identity/habbing.ts";
+import { createHabery } from "../../src/app/identity/lmdb-habery.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient, type HttpClient } from "../../src/app/transport/http-client.ts";
 import { messagize } from "../../src/core/protocol-serialization.ts";
+import { openLmdbRegistry } from "../../src/db/lmdb-stores.ts";
 
 export interface Side {
   name: string;
@@ -106,7 +107,7 @@ export function* world(
     });
     yield* ensure(() => hby.close(true));
     const hab = hby.makeHab(name);
-    const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
     yield* ensure(() => baser.close(true));
     const rgy = new Regery(hby, baser);
     const runtime = yield* createAgentRuntime(hby, http ?? new FetchHttpClient(), systemClock, {

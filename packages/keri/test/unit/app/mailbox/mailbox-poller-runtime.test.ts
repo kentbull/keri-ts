@@ -2,12 +2,8 @@ import { call, type Operation, run, spawn, suspend } from "effection";
 import { assert, assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import { ParserError, WireParseError } from "../../../../../cesr/mod.ts";
 import { findVerifiedChallengeResponse } from "../../../../src/app/identity/challenging.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { MailboxDirector } from "../../../../src/app/mailbox/mailbox-director.ts";
 import { type MailboxPollBatch, MailboxPoller } from "../../../../src/app/mailbox/mailbox-poller.ts";
 import { mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
@@ -18,7 +14,7 @@ import {
   settleRuntimeIngress,
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { FakeRuntimeHttpClient } from "../../../support/runtime-fakes.ts";
 
 import { runtimeTurn } from "../../../../src/app/runtime/runtime-turn.ts";
@@ -370,7 +366,7 @@ Deno.test("mailbox polling normalizes positive fractional timeouts without produ
         const poller = new MailboxPoller(
           hby,
           new MailboxDirector(hby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           new ManualRuntimeClock(),
           { timeouts: { requestOpenTimeoutMs: value, maxPollDurationMs: value } },
         );

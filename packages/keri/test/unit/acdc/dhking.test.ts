@@ -39,11 +39,12 @@ import { joinWalletIpex } from "../../../../tufa/src/cli/commands/ipex.ts";
 import { loadNests } from "../../../db.ts";
 import { deriveRoot, Dhke, generateKeyPair } from "../../../src/acdc/dhking.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
-import { openRegistry, type RegistryStore } from "../../../src/acdc/registering.ts";
+import { type RegistryStore } from "../../../src/acdc/registering.ts";
 import { Regery } from "../../../src/acdc/registraring.ts";
 import { RegistryRoot } from "../../../src/acdc/salting.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
@@ -61,6 +62,7 @@ import { ValidationError } from "../../../src/core/errors.ts";
 import { interact as interactEvent, query as queryEvent, reply } from "../../../src/core/protocol-eventing.ts";
 import { messageAttachmentGroups, messagize } from "../../../src/core/protocol-serialization.ts";
 import { Roles } from "../../../src/core/roles.ts";
+import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
 
@@ -163,7 +165,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }[] = [];
     for (const [index, side] of members.entries()) {
       const hab = creations[index].hab;
-      const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
       const rgy = new Regery(side.hby, baser);
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
@@ -662,7 +664,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     const issuee = issueeHby.makeHab("issuee", undefined, { icount: 2, isith: "2", ncount: 2, nsith: "2" });
     const parties = [];
     for (const [hby, hab] of [[issuerHby, issuer], [issueeHby, issuee]] as const) {
-      const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
       const rgy = new Regery(hby, baser);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), {

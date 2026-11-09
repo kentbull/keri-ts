@@ -9,12 +9,11 @@
 import { run } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
 import { b } from "../../../../cesr/mod.ts";
-import { createHabery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { Notifier, openNoterForHabery } from "../../../src/app/notifications/notifying.ts";
 import { dumpDatabase } from "../../../src/cli/tools/db-dump.ts";
-import { createBaser } from "../../../src/db/basing.ts";
-import { createKeeper, PrePrm } from "../../../src/db/keeping.ts";
-import { createMailboxer } from "../../../src/db/mailbox/mailboxing.ts";
+import { PrePrm } from "../../../src/db/keeping.ts";
+import { createBaser, createKeeper, createMailboxer } from "../../../src/db/lmdb-stores.ts";
 import { CLITestHarness } from "../../../test/utils.ts";
 
 /** Capture stdout/stderr from one `db dump` invocation for assertion. */

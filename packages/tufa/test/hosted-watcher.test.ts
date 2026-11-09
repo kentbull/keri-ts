@@ -2,10 +2,10 @@
 import { concatBytes, Matter, parseBytes, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acceptedEventReplayMessage,
   createAgentRuntime,
-  createHabery,
   FetchHttpClient,
   query,
   reply,

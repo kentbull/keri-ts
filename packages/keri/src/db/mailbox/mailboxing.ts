@@ -16,7 +16,9 @@
 import { Diger, MtrDex } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../../core/errors.ts";
-import { LMDBer, type LMDBerOptions } from "../core/lmdber.ts";
+import type { StoreIdentity } from "../core/dber.ts";
+import type { LMDBerOptions } from "../core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "../core/store-owner.ts";
 import { CesrOnSuber, Suber } from "../subing.ts";
 
 /** Accepted topic key shapes for the mailbox ordering store. */
@@ -56,46 +58,24 @@ class BytesSuber extends Suber<Uint8Array> {
  * - `.tpcs` stores `(topic, on) -> digest`
  * - `.msgs` stores `digest -> raw message bytes`
  */
-export class Mailboxer extends LMDBer {
+export class Mailboxer extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "mbx", maxTables: 8 };
+
   public tpcs!: CesrOnSuber<Diger>;
   public msgs!: BytesSuber;
-
-  /** Default primary path for Tufa-owned mailbox environments. */
-  static override readonly TailDirPath = "keri/mbx";
-  /** Default alternate path for Tufa-owned mailbox environments. */
-  static override readonly AltTailDirPath = ".tufa/mbx";
-  /** Alternate path used when opening KERIpy-compatible mailbox stores. */
-  static readonly CompatAltTailDirPath = ".keri/mbx";
-  static override readonly TempPrefix = "keri_mbx_";
-  static override readonly MaxNamedDBs = 8;
-
-  constructor(options: MailboxerOptions = {}) {
-    const compat = options.compat ?? false;
-    super(options, {
-      tailDirPath: Mailboxer.TailDirPath,
-      cleanTailDirPath: "keri/clean/mbx",
-      altTailDirPath: compat
-        ? Mailboxer.CompatAltTailDirPath
-        : Mailboxer.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/mbx" : ".tufa/clean/mbx",
-      tempPrefix: Mailboxer.TempPrefix,
-      maxNamedDBs: Mailboxer.MaxNamedDBs,
-    });
-  }
 
   /**
    * Reopen the mailbox environment and bind the KERIpy-shaped named subdbs.
    */
-  override *reopen(
-    options: Partial<MailboxerOptions> = {},
-  ): Operation<boolean> {
-    const opened = yield* super.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) {
       return false;
     }
 
-    this.tpcs = new CesrOnSuber(this, { subkey: "tpcs.", ctor: Diger });
-    this.msgs = new BytesSuber(this, { subkey: "msgs." });
+    this.tpcs = new CesrOnSuber(this.store, { subkey: "tpcs.", ctor: Diger });
+    this.msgs = new BytesSuber(this.store, { subkey: "msgs." });
     return true;
   }
 
@@ -176,23 +156,4 @@ export class Mailboxer extends LMDBer {
       yield [on, keys[0] ?? "", msg];
     }
   }
-}
-
-/**
- * Open a mailbox environment and return the ready-to-use databaser.
- *
- * Compatibility rule:
- * - explicit mailbox opens stay strict
- * - missing additive sidecars are tolerated only by higher-level habery open
- *   flows that are inspecting compat stores readonly
- */
-export function* createMailboxer(
-  options: MailboxerOptions = {},
-): Operation<Mailboxer> {
-  const mailboxer = new Mailboxer(options);
-  const opened = yield* mailboxer.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open Mailboxer");
-  }
-  return mailboxer;
 }

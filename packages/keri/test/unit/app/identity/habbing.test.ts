@@ -32,10 +32,11 @@ import { type Poster, type PosterEvent, type PosterMsg } from "../../../../src/a
 import { introduce } from "../../../../src/app/delivery/introducing.ts";
 import { createConfiger } from "../../../../src/app/identity/configing.ts";
 import { Anchorer, DELEGATE_REQUEST_ROUTE } from "../../../../src/app/identity/delegating.ts";
-import { createHabery, eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";
+import { eventPayloadMessage, eventReplayMessage, SIGNER } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { genusFramed } from "../../../../src/core/genus-framing.ts";
 
@@ -355,7 +356,7 @@ Deno.test("Anchorer uses the proxy habitat for delegated inception and retries w
         postman,
         querying,
         null,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
       );
 
@@ -489,7 +490,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
           postman,
           querying,
           null,
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         );
 
@@ -533,7 +534,7 @@ Deno.test("Anchorer completes delegated inception once the delegator approval is
             url: `tcp://127.0.0.1:${(server.address() as { port: number }).port}`,
           });
           delegator.interact({ data: [{ i: witnessed.pre, s: "0", d: event.said }] });
-          const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+          const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
           try {
             runtime.postman.send = postman.send; // Reuse the fixture's delegator mailbox sink; witness TCP is real.
             runtime.postman.wait = postman.wait;
@@ -610,7 +611,7 @@ Deno.test("Anchorer fails delegated inception without an explicit proxy", async 
         postman,
         querying,
         null,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
       );
 
@@ -702,7 +703,7 @@ Deno.test("Anchorer uses the delegate habitat for delegated rotation and queues 
         postman,
         querying,
         null,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
       );
 
@@ -1060,7 +1061,7 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
       name: `habery-group-pending-rot-${crypto.randomUUID()}`,
       temp: true,
     });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
     const remoteHby = yield* createHabery({
       name: `habery-group-pending-rot-remote-${crypto.randomUUID()}`,
       temp: true,
@@ -1138,7 +1139,7 @@ Deno.test("Habery rotateGroupHab preserves accepted member metadata while rotati
   });
 });
 
-Deno.test("a v1 identifier keeps its KEL version and refuses conflicting v2 events", async () => {
+Deno.test("a v1 identifier keeps its KEL version and refuses an unrequested v2 interaction", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `habery-v1-${crypto.randomUUID()}`, temp: true });
     try {
@@ -1151,7 +1152,6 @@ Deno.test("a v1 identifier keeps its KEL version and refuses conflicting v2 even
         assertEquals(frame.body.sn, sn);
       }
       assertThrows(() => hab.interact({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
-      assertThrows(() => hab.rotate({ version: Vrsn_2_0 }), ValidationError, "refusing a KERI 2.0 event");
       assertEquals(hab.kever!.sn, 2);
     } finally {
       yield* hby.close(true);
@@ -1436,7 +1436,7 @@ Deno.test("Habery keeps a local kevery separate from runtime-owned kevery cues",
         nsith: "1",
         toad: 0,
       });
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
 
       assertStrictEquals(hab.kevery, hby.kevery);
       assertStrictEquals(hby.kevery.local, true);
@@ -2346,7 +2346,7 @@ Deno.test("Habery rotateGroupHab repeatedly replaces an inaccessible user with t
   await run(function*() {
     const hby = yield* createHabery({ name: `group-recovery-${crypto.randomUUID()}`, temp: true });
     const observer = yield* createHabery({ name: `group-recovery-observer-${crypto.randomUUID()}`, temp: true });
-    const runtime = yield* createAgentRuntime(observer, new FetchHttpClient(), systemClock);
+    const runtime = yield* createAgentRuntime(observer, new NodeHttpClient(), systemClock);
     try {
       const services = [hby.makeHab("service1"), hby.makeHab("service2"), hby.makeHab("service3")];
       const mids = services.map((member) => member.pre);

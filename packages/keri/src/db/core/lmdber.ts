@@ -9,7 +9,7 @@ import type { Database, Key, RootDatabase } from "npm:lmdb@3.5.3";
 import { startsWith } from "../../core/bytes.ts";
 import { DatabaseKeyError, DatabaseNotOpenError, DatabaseOperationError } from "../../core/errors.ts";
 import { consoleLogger, type Logger } from "../../core/logger.ts";
-import { BaseDBer, type ScanOptions, type Table, type TableEntry } from "./dber.ts";
+import { BaseDBer, type ScanOptions, type StoreIdentity, type Table, type TableEntry } from "./dber.ts";
 import { PathManager, PathManagerDefaults, PathManagerOptions } from "./path-manager.ts";
 
 /** Binary LMDB key type used by the low-level wrapper surface. */
@@ -57,10 +57,9 @@ function branchScanOptions(
  * LMDBer can be configured with read only, dupsort for storing values in keyspace,
  * and a logger.
  */
-export interface LMDBerOptions extends PathManagerOptions {
-  readonly?: boolean;
+/** Where an LMDB store's files live and how they are mapped; meaningless on other backends. */
+export interface LmdbLocation extends Omit<PathManagerOptions, keyof StoreIdentity> {
   dupsort?: boolean;
-  logger?: Logger;
   /**
    * Requested LMDB map size in bytes.
    *
@@ -71,6 +70,9 @@ export interface LMDBerOptions extends PathManagerOptions {
    */
   mapSize?: number;
 }
+
+/** A store's backend-neutral identity plus its LMDB location. */
+export interface LMDBerOptions extends StoreIdentity, LmdbLocation {}
 
 /** Defaultable LMDB/path settings shared by all `LMDBer` instances. */
 export interface LMDBerDefaults extends PathManagerDefaults {
@@ -561,6 +563,30 @@ export class LMDBer extends BaseDBer {
     for (const entry of lmdbTable(table).getRange(options)) {
       yield { key: copyDbBytes(entry.key), value: copyDbBytes(entry.value) };
     }
+  }
+
+  /** LMDB's committed transaction ID, which also counts other processes' commits. */
+  get writeVersion(): number {
+    const version = (this.requireEnv().getStats() as { lastTxnId?: number }).lastTxnId;
+    if (!Number.isSafeInteger(version) || version! < 0) {
+      throw new DatabaseOperationError("Invalid LMDB transaction ID");
+    }
+    return version!;
+  }
+
+  /** Join native flush completion, including when the waiter is halted. */
+  *flushed(): Operation<void> {
+    const root = this.requireEnv();
+    const pending = Promise.resolve(root.flushed);
+    yield* call(function*() {
+      yield* ensure(() => call(() => pending));
+      yield* call(() => pending);
+    });
+  }
+
+  /** Release the shared read transaction so later reads see other commits. */
+  refreshRead(): void {
+    this.requireEnv().resetReadTxn();
   }
 
   /** Yield caller-owned key copies; native dupsort iteration already yields each key once. */

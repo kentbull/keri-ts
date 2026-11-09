@@ -13,12 +13,8 @@ import {
   WireParseError,
 } from "../../../../../cesr/mod.ts";
 import { startWitnessTcpServer } from "../../../../../tufa/src/host/witness-tcp.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { envelopesFromFrames } from "../../../../src/app/protocol/parsering.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import {
@@ -28,7 +24,7 @@ import {
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { buildCesrRequest } from "../../../../src/app/transport/cesr-http.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 
 import { socketBytes } from "../../../../src/app/transport/socket-source.ts";
 import { Receiptor } from "../../../../src/app/witness/receipting.ts";
@@ -66,7 +62,7 @@ function* seedWitnessHostState(
   witness: Hab,
   hostUrl: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+  const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
     enableMailboxStore: true,
   });
   try {
@@ -87,7 +83,7 @@ function* seedRemoteWitnessLocation(
   url: string,
   scheme: string,
 ): Operation<void> {
-  const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+  const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
     enableMailboxStore: true,
   });
   try {
@@ -146,7 +142,7 @@ Deno.test("Witness runtime serves KERIpy-style receipts, KEL query replay, and c
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(
         providerHby,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         { enableMailboxStore: true },
       );
@@ -281,7 +277,7 @@ Deno.test("Witness runtime returns 202 for receipting before the prior KEL state
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(
         providerHby,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         { enableMailboxStore: true },
       );
@@ -357,7 +353,7 @@ Deno.test("Witness runtime rejects receipting when the hosted witness is not aut
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(
         providerHby,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         { enableMailboxStore: true },
       );
@@ -446,7 +442,7 @@ Deno.test("Witness runtime accepts root-path catchup before synchronous receipti
       yield* seedWitnessHostState(providerHby, witness, hostUrl);
       const runtime = yield* createAgentRuntime(
         providerHby,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         { enableMailboxStore: true },
       );
@@ -539,7 +535,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       yield* seedRemoteWitnessLocation(sourceHby, witness, tcpUrl, Schemes.tcp);
 
       const drains: number[] = [];
-      const runtime = yield* createAgentRuntime(providerHby, new FetchHttpClient(), {
+      const runtime = yield* createAgentRuntime(providerHby, new NodeHttpClient(), {
         ...systemClock,
         setTimeout(callback, ms) {
           if (ms === 200) drains.push(ms);
@@ -565,7 +561,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
       let tcpTask = yield* spawn(serve);
       const receiver = yield* createAgentRuntime(
         sourceHby,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         { enableMailboxStore: true },
       );
@@ -578,7 +574,7 @@ Deno.test("Receiptor catchup falls back to TCP witness transport when only tcp i
         const receiptor = new Receiptor(
           sourceHby,
           createProtocolProcessor(sourceHby),
-          new FetchHttpClient(),
+          new NodeHttpClient(),
           systemClock,
         );
         yield* receiptor.catchup(controller.pre, witness.pre);
@@ -832,7 +828,7 @@ Deno.test("TCP TEL replay refuses an incompatible cue without bytes and continue
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const service = hby.makeHab("service", undefined, { transferable: false });
     const issuer = hby.makeHab("issuer");
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
     const registry = runtime.vdr!.makeRegistry("replay", issuer);
     const regk = registry.regk;
     assertExists(regk);

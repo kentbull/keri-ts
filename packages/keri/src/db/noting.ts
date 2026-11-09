@@ -13,7 +13,9 @@
 import { Cigar, MtrDex, Salter } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { DatabaseNotOpenError } from "../core/errors.ts";
-import { LMDBer, type LMDBerOptions } from "./core/lmdber.ts";
+import type { StoreIdentity } from "./core/dber.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { CesrSuber, Suber } from "./subing.ts";
 
 const textEncoder = new TextEncoder();
@@ -157,47 +159,27 @@ class NoticeSuber extends Suber<Notice> {
  * - `.nidx` stores `rid -> dt`
  * - `.ncigs` stores detached `Cigar`s for integrity verification
  */
-export class Noter extends LMDBer {
+export class Noter extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "not", maxTables: 8 };
+
   public notes!: NoticeSuber;
   public nidx!: Suber<string>;
   public ncigs!: CesrSuber<Cigar>;
 
-  static override readonly TailDirPath = "keri/not";
-  static override readonly AltTailDirPath = ".tufa/not";
-  static readonly CompatAltTailDirPath = ".keri/not";
-  static override readonly TempPrefix = "keri_not_";
-  static override readonly MaxNamedDBs = 8;
-
-  /** Select `.tufa/not` by default while preserving `.keri/not` compat mode. */
-  constructor(options: NoterOptions = {}) {
-    const compat = options.compat ?? false;
-    super(options, {
-      tailDirPath: Noter.TailDirPath,
-      cleanTailDirPath: "keri/clean/not",
-      altTailDirPath: compat
-        ? Noter.CompatAltTailDirPath
-        : Noter.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/not" : ".tufa/clean/not",
-      tempPrefix: Noter.TempPrefix,
-      maxNamedDBs: Noter.MaxNamedDBs,
-    });
-  }
-
   /** Open all notice, reverse-index, and detached-signature families. */
-  override *reopen(
-    options: Partial<NoterOptions> = {},
-  ) {
-    const opened = yield* super.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) {
       return false;
     }
 
-    this.notes = new NoticeSuber(this, {
+    this.notes = new NoticeSuber(this.store, {
       subkey: "nots.",
       sep: "/",
     });
-    this.nidx = new Suber(this, { subkey: "nidx." });
-    this.ncigs = new CesrSuber(this, {
+    this.nidx = new Suber(this.store, { subkey: "nidx." });
+    this.ncigs = new CesrSuber(this.store, {
       subkey: "ncigs.",
       ctor: Cigar,
     });
@@ -285,16 +267,4 @@ export class Noter extends LMDBer {
 
     return pairs;
   }
-}
-
-/** Open a notification sidecar and return the ready-to-use databaser. */
-export function* createNoter(
-  options: NoterOptions = {},
-): Operation<Noter> {
-  const noter = new Noter(options);
-  const opened = yield* noter.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open Noter");
-  }
-  return noter;
 }

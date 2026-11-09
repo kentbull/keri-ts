@@ -86,6 +86,8 @@ export {
   type HttpResponse,
   type HttpStreamResponse,
 } from "../app/transport/http-client.ts";
+export { NodeHttpClient, nodeTcpDialer } from "../app/transport/node-http-client.ts";
+export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
 
 export {
   socketBytes,
@@ -211,7 +213,6 @@ export {
 } from "../app/identity/endpoint-roleing.ts";
 export {
   acceptedEventReplayMessage,
-  createHabery,
   type GroupHabCreation,
   type GroupHabInteraction,
   type GroupHabRotation,
@@ -220,6 +221,7 @@ export {
   type HaberyArgs,
   type MakeGroupHabArgs,
   type MakeHabArgs,
+  openHabery,
 } from "../app/identity/habbing.ts";
 export {
   Algos,

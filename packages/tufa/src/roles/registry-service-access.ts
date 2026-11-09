@@ -1,6 +1,7 @@
 /** Service-owned account permissions; authenticated public evidence stays in the Habery. */
 import type { Operation } from "effection";
-import { Komer, LMDBer, type LMDBerOptions } from "keri-ts/db";
+import { Komer } from "keri-ts/db";
+import { LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { RawRecord } from "keri-ts/runtime";
 
 /** Registrar publishers/source observers and Observer readers are distinct permissions. */

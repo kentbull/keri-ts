@@ -16,7 +16,8 @@ import {
   Vrsn_1_0,
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
-import { createHabery, type Hab } from "../../../src/app/identity/habbing.ts";
+import { type Hab } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { envelopeFromFrame, queryEnvelopeFromDispatch } from "../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntimeUntil } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
@@ -39,7 +40,8 @@ import {
 } from "../../../src/core/protocol-vdr-eventing.ts";
 import { Revery, Router } from "../../../src/core/routing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { createReger, type Reger } from "../../../src/db/reger.ts";
+import { createReger } from "../../../src/db/lmdb-stores.ts";
+import { type Reger } from "../../../src/db/reger.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import { Tevery } from "../../../src/vdr/eventing.ts";
 import { prepareTsnQuery } from "../../../src/vdr/tsn-query.ts";

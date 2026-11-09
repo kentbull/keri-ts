@@ -30,7 +30,8 @@ import {
   Vrsn_2_0,
 } from "../../../../cesr/mod.ts";
 import structingVectors from "../../../../cesr/test/fixtures/current-structing-vectors.json" with { type: "json" };
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import {
   KeriDispatchEnvelope,
   PathedMaterialGroup,
@@ -41,9 +42,10 @@ import {
 import { exchange } from "../../../src/core/exchange/protocol-exchanging.ts";
 import { incept, interact, receipt, rotate } from "../../../src/core/protocol-eventing.ts";
 import { loadEvent } from "../../../src/core/protocol-serialization.ts";
-import { Baser, BaserDoer, createBaser } from "../../../src/db/basing.ts";
+import { Baser, BaserDoer } from "../../../src/db/basing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
 import { lmdbTable } from "../../../src/db/core/lmdber.ts";
+import { createBaser, lmdbBaser } from "../../../src/db/lmdb-stores.ts";
 import {
   rehydrateKramFactors,
   removeKramFactors,
@@ -134,7 +136,7 @@ Deno.test("db/basing - BaserDoer reopens closed basers and clears temp stores on
   let tempPath: string | null = null;
 
   await run(function*() {
-    const baser = new Baser({
+    const baser = lmdbBaser({
       name: `baser-doer-${crypto.randomUUID()}`,
       temp: true,
     });

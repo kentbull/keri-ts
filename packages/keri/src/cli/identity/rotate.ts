@@ -2,7 +2,7 @@ import type { ThresholdSith, Versionage } from "cesr-ts";
 import type { Hab } from "../../app/identity/habbing.ts";
 import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import type { WitnessAuthMap } from "../../app/witness/receipting.ts";
 
 /**
@@ -129,7 +129,7 @@ export function* rotateCommand(
   { witnessAuths }: { witnessAuths?: (hab: Hab, witnesses: readonly string[]) => WitnessAuthMap } = {},
 ): Operation<void> {
   // Select one HTTP implementation for all work owned by this command.
-  const http = new FetchHttpClient();
+  const http = new NodeHttpClient();
   const rotateArgs: RotateArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),

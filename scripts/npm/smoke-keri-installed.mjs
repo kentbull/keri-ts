@@ -9,6 +9,7 @@ import { Signer } from "cesr-ts";
 import { run } from "effection";
 import * as keri from "keri-ts";
 import * as db from "keri-ts/db";
+import * as dbLmdb from "keri-ts/db/lmdb";
 import { parseGvrsn } from "keri-ts/cli";
 import * as runtime from "keri-ts/runtime";
 import { createHash } from "node:crypto";
@@ -50,8 +51,10 @@ assert(typeof runtime.createAgentRuntime === "function", "keri-ts/runtime missin
 assert(typeof runtime.Kevery === "function", "keri-ts/runtime missing Kevery");
 assert(typeof runtime.messagize === "function", "keri-ts/runtime missing messagize");
 assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing inceptRegistry");
-assert(typeof db.createBaser === "function", "keri-ts/db missing createBaser");
-assert(typeof db.LMDBer === "function", "keri-ts/db missing LMDBer");
+assert(typeof dbLmdb.createBaser === "function", "keri-ts/db/lmdb missing createBaser");
+assert(typeof dbLmdb.LMDBer === "function", "keri-ts/db/lmdb missing LMDBer");
+assert(typeof dbLmdb.createHabery === "function", "keri-ts/db/lmdb missing createHabery");
+assert(typeof runtime.openHabery === "function", "keri-ts/runtime missing openHabery");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
@@ -66,13 +69,14 @@ assert(runtime.Algos?.salty === "salty", "keri-ts/runtime missing Manager algori
 console.error("keri-ts root exports:", Object.keys(keri).sort().join(", "));
 console.error("keri-ts/runtime exports:", Object.keys(runtime).slice(0, 12).sort().join(", "));
 console.error("keri-ts/db exports:", Object.keys(db).slice(0, 12).sort().join(", "));
+console.error("keri-ts/db/lmdb exports:", Object.keys(dbLmdb).slice(0, 12).sort().join(", "));
 
 // Exercise the installed native reader above LMDB-js's 16 MiB shared-buffer threshold.
 // This is a fresh current-version raw table, not a prior-version data compatibility test.
 const nativeRoot = await mkdtemp(join(tmpdir(), "keri-native-smoke-"));
 try {
   await run(function*() {
-    const store = yield* db.openLMDB({ name: "installed", headDirPath: nativeRoot, temp: false });
+    const store = yield* dbLmdb.openLMDB({ name: "installed", headDirPath: nativeRoot, temp: false });
     try {
       let table = store.openDB("installed.", false);
       const key = new TextEncoder().encode("large");
@@ -103,7 +107,7 @@ console.error("Installed native LMDB >16 MiB read/reopen and owned-byte checks p
 const keeperRoot = await mkdtemp(join(tmpdir(), "keri-aeid-smoke-"));
 try {
   await run(function*() {
-    const keeper = yield* db.createKeeper({ name: "installed-aeid", headDirPath: keeperRoot });
+    const keeper = yield* dbLmdb.createKeeper({ name: "installed-aeid", headDirPath: keeperRoot });
     try {
       const first = Signer.random({ transferable: false });
       const second = Signer.random({ transferable: false });
@@ -176,7 +180,7 @@ await new Promise((resolve, reject) => {
 });
 try {
   await run(function*() {
-    const hby = yield* runtime.createHabery({ name: "installed-messengers", temp: true, skipConfig: true });
+    const hby = yield* dbLmdb.createHabery({ name: "installed-messengers", temp: true, skipConfig: true });
     try {
       const sender = hby.makeHab("sender");
       sender.interact();
@@ -232,7 +236,7 @@ try {
   // Cross the factory writer's 64 KiB chunk boundary without adding a transport knob.
   const wire = Buffer.concat([Buffer.alloc(128 * 1024, 0xa5), signature.qb64b]);
   const [, bytes] = await Promise.all([
-    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.FetchHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
+    run(() => runtime.streamMessengerFrom("installed-destination", { tcp: `tcp://127.0.0.1:${server.address().port}` }, wire, new runtime.NodeHttpClient(), runtime.systemClock).send({ signal: AbortSignal.timeout(5000) })),
     received,
   ]);
   assert(Buffer.from(bytes).equals(Buffer.from(wire)), "installed TCP changed transmitted bytes");

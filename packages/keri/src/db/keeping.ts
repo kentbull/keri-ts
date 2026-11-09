@@ -15,7 +15,9 @@ import type { Database } from "npm:lmdb@3.5.3";
 import { DatabaseNotOpenError, DatabaseOperationError } from "../core/errors.ts";
 import { consoleLogger, type Logger } from "../core/logger.ts";
 import { GroupMemberTuple, RawRecord } from "../core/records.ts";
-import { LMDBer, LMDBerOptions } from "./core/lmdber.ts";
+import type { DBer, StoreIdentity } from "./core/dber.ts";
+import type { LMDBerOptions } from "./core/lmdber.ts";
+import { type StoreFamily, StoreOwner } from "./core/store-owner.ts";
 import { Komer } from "./koming.ts";
 import { CatCesrIoSetSuber, CesrSuber, CryptSignerSuber, Suber } from "./subing.ts";
 
@@ -215,8 +217,10 @@ function reencryptSalt(salt: string, encrypter: Encrypter | null, decrypter: Dec
  *   named handles
  * - compatibility mode supports KERIpy `.keri/ks` layout visibility
  */
-export class Keeper {
-  private lmdber: LMDBer;
+export class Keeper extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "ks", maxTables: 24 };
+
   private readonly logger: Logger;
 
   /** Keeper-global parameters shared across all managed prefixes. */
@@ -242,55 +246,11 @@ export class Keeper {
   /** Encrypted Salt128 roots scoped by canonical local AID and registry SAID. */
   public rroots!: CesrSuber<Cipher>;
 
-  static readonly TailDirPath = "keri/ks";
-  static readonly AltTailDirPath = ".tufa/ks";
-  static readonly CompatAltTailDirPath = ".keri/ks";
-  static readonly TempPrefix = "keri_ks_";
   static readonly MaxNamedDBs = 24;
 
-  constructor(options: KeeperOptions = {}) {
-    this.logger = options.logger ?? consoleLogger;
-    const compat = options.compat ?? false;
-    this.lmdber = new LMDBer(options, {
-      tailDirPath: Keeper.TailDirPath,
-      cleanTailDirPath: "keri/clean/ks",
-      altTailDirPath: compat
-        ? Keeper.CompatAltTailDirPath
-        : Keeper.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/ks" : ".tufa/clean/ks",
-      tempPrefix: Keeper.TempPrefix,
-      maxNamedDBs: Keeper.MaxNamedDBs,
-    });
-  }
-
-  /** Expose the resolved keeper database name delegated from the root LMDBer. */
-  get name(): string {
-    return this.lmdber.name;
-  }
-
-  /** Expose the resolved keeper base prefix delegated from the root LMDBer. */
-  get base(): string {
-    return this.lmdber.base;
-  }
-
-  /** Report whether the keeper LMDB environment and named subdb surface are open. */
-  get opened(): boolean {
-    return this.lmdber.opened;
-  }
-
-  /** Report whether the keeper environment is opened in read-only mode. */
-  get readonly(): boolean {
-    return this.lmdber.readonly;
-  }
-
-  /** Report whether this keeper uses a temporary backing directory. */
-  get temp(): boolean {
-    return this.lmdber.temp;
-  }
-
-  /** Expose the resolved filesystem path for the keeper environment, when open. */
-  get path(): string | null {
-    return this.lmdber.path;
+  constructor(store: DBer, logger: Logger = consoleLogger) {
+    super(store);
+    this.logger = logger;
   }
 
   /**
@@ -301,8 +261,8 @@ export class Keeper {
    * of the keeper surface remains parity-bound even where higher-level runtime
    * flows have not yet exercised it deeply.
    */
-  *reopen(options: Partial<KeeperOptions> = {}): Operation<boolean> {
-    const opened = yield* this.lmdber.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) return false;
 
     try {
@@ -310,17 +270,17 @@ export class Keeper {
       // `aeid` anchors the encrypter/decrypter used to protect salts and
       // private keys, while `pidx`, `algo`, `salt`, and `tier` capture the
       // default root key-management settings.
-      this.gbls = new Suber(this.lmdber, { subkey: "gbls." });
+      this.gbls = new Suber(this.store, { subkey: "gbls." });
 
       // Public-key to private-key secret material store.
       // Keys are fully qualified public keys and values are the corresponding
       // fully qualified private keys.
-      this.pris = new CryptSignerSuber(this.lmdber, { subkey: "pris." });
+      this.pris = new CryptSignerSuber(this.store, { subkey: "pris." });
 
       // Group signing member tuples for one multisig prefix.
       // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
       // identifier set used by GroupSignifyHab flows.
-      this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
+      this.smids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
         subkey: "smids.",
         ctor: [Prefixer, NumberPrimitive],
       });
@@ -328,7 +288,7 @@ export class Keeper {
       // Group rotating member tuples for one multisig prefix.
       // The stored tuple shape mirrors KERIpy's `(Prefixer, Number)` member
       // identifier set used by GroupSignifyHab flows.
-      this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.lmdber, {
+      this.rmids = new CatCesrIoSetSuber<GroupMemberTuple>(this.store, {
         subkey: "rmids.",
         ctor: [Prefixer, NumberPrimitive],
       });
@@ -336,19 +296,19 @@ export class Keeper {
       // Prefix index keyed by the first public key in a key sequence.
       // Values are the identifier prefix, or the first public key for
       // temporary prefixes, matching the KERIpy keeper index contract.
-      this.pres = new CesrSuber<Prefixer>(this.lmdber, {
+      this.pres = new CesrSuber<Prefixer>(this.store, {
         subkey: "pres.",
         ctor: Prefixer,
       });
 
       // Root derivation parameters for one managed identifier prefix.
-      this.prms = new Komer<PrePrm>(this.lmdber, {
+      this.prms = new Komer<PrePrm>(this.store, {
         subkey: "prms.",
         recordClass: PrePrm,
       });
 
       // Old/current/next key situation for one managed identifier prefix.
-      this.sits = new Komer<PreSit>(this.lmdber, {
+      this.sits = new Komer<PreSit>(this.store, {
         subkey: "sits.",
         recordClass: PreSit,
       });
@@ -356,25 +316,25 @@ export class Keeper {
       // Replayable public-key sets keyed by `(prefix, ridx)`.
       // This enables lookup of the current signing keys after each rotation so
       // establishment events can be replayed in order.
-      this.pubs = new Komer<PubSet>(this.lmdber, {
+      this.pubs = new Komer<PubSet>(this.store, {
         subkey: "pubs.",
         recordClass: PubSet,
       });
 
       // Encrypted next private keys used by group-signify keeper flows.
       // KERIpy notes these are not yet broadly exercised outside that path.
-      this.prxs = new CesrSuber<Cipher>(this.lmdber, {
+      this.prxs = new CesrSuber<Cipher>(this.store, {
         subkey: "prxs.",
         ctor: Cipher,
       });
 
       // Encrypted next-key commitments used by group-signify keeper flows.
       // KERIpy notes these are not yet broadly exercised outside that path.
-      this.nxts = new CesrSuber<Cipher>(this.lmdber, {
+      this.nxts = new CesrSuber<Cipher>(this.store, {
         subkey: "nxts.",
         ctor: Cipher,
       });
-      this.rroots = new CesrSuber<Cipher>(this.lmdber, { subkey: "rroots.", ctor: Cipher });
+      this.rroots = new CesrSuber<Cipher>(this.store, { subkey: "rroots.", ctor: Cipher });
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
@@ -386,8 +346,8 @@ export class Keeper {
   }
 
   /** Close the underlying keeper LMDB environment. */
-  *close(clear = false): Operation<boolean> {
-    return yield* this.lmdber.close(clear);
+  override *close(clear = false): Operation<boolean> {
+    return yield* this.store.close(clear);
   }
 
   /**
@@ -420,11 +380,11 @@ export class Keeper {
     decrypter: Decrypter | null;
   }): void {
     if (this.readonly) throw new DatabaseOperationError("Cannot change encryption in a read-only keeper");
-    if (!this.lmdber.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
-    if (this.lmdber.inWriteTransaction) {
+    if (!this.store.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (this.store.inWriteTransaction) {
       throw new DatabaseOperationError("Keeper encryption change must own its write transaction");
     }
-    this.lmdber.transaction(() => {
+    this.store.transaction(() => {
       const storedAeid = this.getGbls("aeid");
       if ((storedAeid ?? "") !== currentAeid) {
         throw new DatabaseOperationError("Keeper AEID changed before encryption migration; reopen the manager");
@@ -470,11 +430,11 @@ export class Keeper {
     decrypter: Decrypter,
   ): boolean {
     if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
-    if (!this.lmdber.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
-    if (this.lmdber.inWriteTransaction) {
+    if (!this.store.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (this.store.inWriteTransaction) {
       throw new DatabaseOperationError("Registry root retention must own its write transaction");
     }
-    return this.lmdber.transaction(() => {
+    return this.store.transaction(() => {
       if (this.getGbls("aeid") !== currentAeid) {
         throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
       }
@@ -627,40 +587,5 @@ export class Keeper {
   /** Read group-rotating member tuples from `rmids.`. */
   getRmids(pre: string): GroupMemberTuple[] {
     return this.rmids.get(pre);
-  }
-}
-
-/** Constructor-safe async factory for a fully reopened `Keeper`. */
-export function* createKeeper(
-  options: KeeperOptions = {},
-): Operation<Keeper> {
-  const keeper = new Keeper(options);
-  let delivered = false;
-  let failure: { error: unknown } | undefined;
-  try {
-    const opened = yield* keeper.reopen(options);
-    if (!opened) {
-      throw new DatabaseNotOpenError("Failed to open Keeper");
-    }
-    delivered = true;
-    return keeper;
-  } catch (error) {
-    failure = { error };
-    throw error;
-  } finally {
-    if (!delivered) {
-      try {
-        yield* keeper.close();
-      } catch (error) {
-        if (failure) {
-          // deno-lint-ignore no-unsafe-finally -- Preserve the operation failure alongside shutdown failure.
-          throw new AggregateError([failure.error, error], "Database acquisition and close failed", {
-            cause: failure.error,
-          });
-        }
-        // deno-lint-ignore no-unsafe-finally -- A shutdown failure must propagate.
-        throw error;
-      }
-    }
   }
 }

@@ -2,8 +2,9 @@ import { Encrypter } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
 import { resolveBootstrap } from "../../app/bootstrap/bootstrapping.ts";
 import { type Configer, createConfiger } from "../../app/identity/configing.ts";
-import { branToSeedAeid, createHabery, type Habery } from "../../app/identity/habbing.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { branToSeedAeid, type Habery } from "../../app/identity/habbing.ts";
+import { createHabery } from "../../app/identity/lmdb-habery.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { assertBootstrapComplete } from "../common/bootstrap.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
@@ -106,7 +107,7 @@ export function* initCommand(args: Record<string, unknown>): Operation<void> {
       seed,
       salt: initArgs.salt,
     });
-    assertBootstrapComplete(yield* resolveBootstrap(hby, new FetchHttpClient()));
+    assertBootstrapComplete(yield* resolveBootstrap(hby, new NodeHttpClient()));
 
     created = { keystore: hby.ks.path, database: hby.db.path, aeid: hby.mgr.aeid };
   } catch (error) {

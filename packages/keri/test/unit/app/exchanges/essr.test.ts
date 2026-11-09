@@ -3,7 +3,8 @@ import { call, run } from "effection";
 import { assertEquals, assertThrows } from "jsr:@std/assert";
 import { type EssrDecision, type EssrMessage, EssrRecipient } from "../../../../src/app/exchanges/essr.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
 

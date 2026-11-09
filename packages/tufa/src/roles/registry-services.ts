@@ -4,16 +4,16 @@ import { createObservationBaser, type ObservationBaser, Observer } from "@keri-t
 import { Registrar } from "@keri-ts/registrar";
 import { b, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, spawn, type Task } from "effection";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   collectBytes,
   consoleLogger,
   createAgentRuntime,
-  createHabery,
   EndpointRoles,
-  FetchHttpClient,
   type Hab,
   type Habery,
+  NodeHttpClient,
   reply,
   requestBytes,
   runAgentRuntime,
@@ -260,7 +260,7 @@ function* runService(selection: Selection): Operation<void> {
     });
     const hab = hby.habByName(options.alias);
     if (!hab) throw new ValidationError("Initialize the selected service identity before starting it");
-    runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+    runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       enableMailboxStore: false,
       registryRoots: "refuse",
       kram: { enabled: true, denials: [], caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },

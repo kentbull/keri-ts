@@ -17,6 +17,8 @@ import type { Operation } from "effection";
 import { DatabaseNotOpenError, DatabaseOperationError, ValidationError } from "../core/errors.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { RawRecord } from "../core/records.ts";
+import type { Table } from "../db/core/dber.ts";
+import type { StoreOpener } from "../db/core/store-owner.ts";
 import { Komer } from "../db/koming.ts";
 import { RegBaser, type RegBaserOptions } from "./regbasing.ts";
 import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
@@ -59,18 +61,23 @@ export interface RegistryRecordShape {
 export class RegistryRecord extends RawRecord<RegistryRecordShape> implements RegistryRecordShape {
   declare registryKey: string;
 }
-/** Constructor-safe LMDB opening; the reference web backend remains unsupported. */
+/** Options for opening a registry store through a `StoreOpener`. */
 export interface OpenRegistryOptions extends RegBaserOptions {
-  web?: boolean;
   reopen?: boolean;
+  /** Creates the registry store. */
+  opener?: StoreOpener;
 }
 
 /** Acquire one backing owner; failures/cancellation join cleanup before ownership transfers. */
 export function* openRegistry(
-  { web = false, reopen = true, ...options }: OpenRegistryOptions = {},
+  { reopen = true, opener, ...options }: OpenRegistryOptions = {},
 ): Operation<RegBaser> {
-  if (web) throw new ValidationError("web registry backend is not yet supported by V2 Regery");
-  const baser = new RegBaser(options);
+  if (!opener) throw new ValidationError("A registry store needs a store opener.");
+  return yield* adoptRegistry(new RegBaser(opener.create(RegBaser.Family, options)), reopen);
+}
+
+/** Take ownership of a constructed registry owner, reopening it unless told otherwise. */
+export function* adoptRegistry(baser: RegBaser, reopen = true): Operation<RegBaser> {
   let delivered = false;
   try {
     if (reopen && !(yield* baser.reopen())) throw new DatabaseNotOpenError("Registry backing store could not open.");
@@ -98,18 +105,18 @@ function registryOrdinal(sn: number): number {
  */
 export class RegistryStore {
   private aliases: Komer<RegistryRecord> | null = null;
-  private aliasEnv: RegBaser["env"] = null;
+  private aliasTable: Table | null = null;
 
   constructor(readonly baser: RegBaser) {}
 
   /** Local alias mapper is optional; refresh it after the owner's reopen. */
   get records(): Komer<RegistryRecord> | null {
-    if (!this.baser.env) throw new DatabaseNotOpenError("Registry backing store is closed.");
-    if (this.aliasEnv !== this.baser.env) {
+    if (!this.baser.opened) throw new DatabaseNotOpenError("Registry backing store is closed.");
+    if (this.aliasTable !== this.baser.evts.sdb) {
       this.aliases = this.baser.hasTable("regs.")
-        ? new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord })
+        ? new Komer(this.baser.store, { subkey: "regs.", recordClass: RegistryRecord })
         : null;
-      this.aliasEnv = this.baser.env;
+      this.aliasTable = this.baser.evts.sdb;
     }
     return this.aliases;
   }
@@ -124,7 +131,7 @@ export class RegistryStore {
     let records = this.records;
     if (!records) {
       if (this.baser.readonly) throw new DatabaseOperationError("Cannot create readonly registry aliases.");
-      records = this.aliases = new Komer(this.baser, { subkey: "regs.", recordClass: RegistryRecord });
+      records = this.aliases = new Komer(this.baser.store, { subkey: "regs.", recordClass: RegistryRecord });
     }
     return records;
   }

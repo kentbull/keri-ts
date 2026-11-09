@@ -2,17 +2,17 @@
 import { createProtocolHandler, handleWitnessReceiptPost, type ProtocolHandler, startServer } from "@keri-ts/hosting";
 import { Encrypter, Matter, MtrDex, parseBytes, ParserError, Prefixer, SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, race, run, type Scope, spawn, suspend, type Task, useScope } from "effection";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   type AgentRuntime,
   CESR_DESTINATION_HEADER,
   collectBytes,
   consoleLogger,
   createAgentRuntime,
-  createHabery,
   EndpointRoles,
-  FetchHttpClient,
   type Hab,
   type Habery,
+  NodeHttpClient,
   readRequiredCesrRequestBytes,
   reply,
   requestBytes,
@@ -320,7 +320,7 @@ export class HostedWitnesses {
       const hab = fresh ? hby.makeHab("witness", undefined, { transferable: false }) : hby.habByName("witness");
       if (!hab || (!fresh && hab.pre !== record.eid)) throw new ValidationError("Allocated witness identity missing");
       record.eid = hab.pre;
-      const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
+      const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
         enableMailboxStore: true,
         registryRoots: "refuse",
         kram: { enabled: true, caches: { "~": [1000, 5000, 5000, 86400000, 5000, 5000, 86400000] } },

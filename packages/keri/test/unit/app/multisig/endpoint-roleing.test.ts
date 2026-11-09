@@ -8,7 +8,7 @@ import {
   proposeGroupEndpointRole,
 } from "../../../../src/app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { MULTISIG_RPY_ROUTE } from "../../../../src/app/multisig/grouping.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";

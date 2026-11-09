@@ -6,12 +6,8 @@ import { credentialStreamBytes } from "../../../../src/app/credentials/credentia
 import { Verifier } from "../../../../src/app/credentials/verifying.ts";
 import { createExchangeMessage } from "../../../../src/app/exchanges/exchange-messaging.ts";
 import type { ExchangeRouteVerification } from "../../../../src/app/exchanges/exchanging.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-  type Hab,
-  type Habery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   credentialSupportMessages,
   ipexCredentialGrant,
@@ -28,7 +24,8 @@ import { consoleLogger } from "../../../../src/core/logger.ts";
 import { Revery } from "../../../../src/core/routing.ts";
 import { Schemer } from "../../../../src/core/scheming.ts";
 import { dgKey } from "../../../../src/db/core/keys.ts";
-import { createReger, type Reger } from "../../../../src/db/reger.ts";
+import { createReger } from "../../../../src/db/lmdb-stores.ts";
+import { type Reger } from "../../../../src/db/reger.ts";
 import { Credentialer, CredentialWallet, Regery, type Registry } from "../../../../src/vdr/credentialing.ts";
 import { Tevery } from "../../../../src/vdr/eventing.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";

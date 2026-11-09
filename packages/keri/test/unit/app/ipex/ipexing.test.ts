@@ -2,7 +2,7 @@ import { call, run } from "effection";
 import { assertEquals, assertExists, assertThrows } from "jsr:@std/assert";
 import { Diger, Prefixer, Saider } from "../../../../../cesr/mod.ts";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   IPEX_ADMIT_ROUTE,
   IPEX_AGREE_ROUTE,

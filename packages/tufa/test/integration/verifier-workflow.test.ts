@@ -20,11 +20,11 @@ import {
 } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
+import { createHabery } from "keri-ts/db/lmdb";
 import {
   acdcmap,
   blindate,
   createAgentRuntime,
-  createHabery,
   FetchHttpClient,
   ipexExnBody,
   Receiptor,

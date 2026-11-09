@@ -13,17 +13,17 @@ import { createServer, type Socket } from "node:net";
 import { call, run, suspend } from "npm:effection@^3.6.0";
 import { KERIPY_V1_JSON_ICP_BODY as json } from "../../../../../cesr/test/fixtures/external-vectors.ts";
 import vectors from "../../../../../cesr/test/fixtures/nested-vectors.json" with { type: "json" };
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
 import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../../src/app/transport/cesr-http.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import { HTTPMessenger } from "../../../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../../../src/app/transport/http-stream-messenger.ts";
 import { processMessages } from "../../../../src/app/transport/message-source.ts";
 import { messengerFrom, streamMessengerFrom } from "../../../../src/app/transport/messengering.ts";
+import { NodeHttpClient, nodeTcpDialer } from "../../../../src/app/transport/node-http-client.ts";
 import { TCPMessenger } from "../../../../src/app/transport/tcp-messenger.ts";
 import { TCPStreamMessenger } from "../../../../src/app/transport/tcp-stream-messenger.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
@@ -726,7 +726,7 @@ Deno.test("native HTTP completion drains the response and neither redirects nor 
   });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
-  const messenger = new HTTPMessenger(url, new FetchHttpClient());
+  const messenger = new HTTPMessenger(url, new NodeHttpClient());
   const send = () => run(() => messenger.send(fixture()));
   try {
     let completed = false;
@@ -781,10 +781,13 @@ Deno.test("native HTTP completion drains the response and neither redirects nor 
 
 Deno.test("messenger construction selects concrete endpoints before I/O without identity preferences", () => {
   let requests = 0;
-  const http = httpClient(() => {
-    requests++;
-    return new Response(null, { status: 204 });
-  });
+  const http = Object.assign(
+    httpClient(() => {
+      requests++;
+      return new Response(null, { status: 204 });
+    }),
+    { tcp: nodeTcpDialer },
+  );
   for (
     const [urls, expected, ordinaryType, streamType] of [
       [
@@ -899,7 +902,7 @@ Deno.test("TCP stream factory admits its full payload and completes without wait
   const url = `tcp://127.0.0.1:${(server.address() as { port: number }).port}`;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const messenger = streamMessengerFrom("peer", { tcp: url }, payload, new FetchHttpClient(), systemClock);
+    const messenger = streamMessengerFrom("peer", { tcp: url }, payload, new NodeHttpClient(), systemClock);
     if (!(messenger instanceof TCPStreamMessenger)) throw new Error("Expected TCP stream messenger");
     const [, bytes] = await Promise.race([
       Promise.all([run(() => messenger.send({ maxChunkBytes: 7 })), received.promise]),
@@ -932,7 +935,7 @@ Deno.test("native stream PUT cancellation joins request cleanup without POST fal
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stream`;
-  const messenger = streamMessengerFrom("provider", { http: url }, fixture(), new FetchHttpClient(), systemClock);
+  const messenger = streamMessengerFrom("provider", { http: url }, fixture(), new NodeHttpClient(), systemClock);
   const controller = new AbortController(), reason = new Error("cancel finite PUT");
   let timer: ReturnType<typeof setTimeout> | undefined;
   const task = run(function*() {

@@ -1,4 +1,5 @@
 import { oobiTerminalState } from "../../../src/app/bootstrap/oobiery.ts";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 /** Independent KERIpy/TS credential processors exchange signed graphs through KRAM. */
@@ -9,7 +10,7 @@ import { call, run, spawn } from "effection";
 import { assertEquals, assertExists, assertInstanceOf } from "jsr:@std/assert";
 import { decodeBase64 } from "jsr:@std/encoding/base64";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
-import { acceptedEventReplayMessage, createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { consumeMailboxSse } from "../../../src/app/mailbox/mailbox-sse.ts";
 import {

@@ -10,20 +10,18 @@ import {
   parseBytes,
   SerderKERI,
 } from "../../../../../cesr/mod.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import {
   createAgentRuntime,
   settleMailboxPollBatch,
   settleRuntimeIngress,
 } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { httpClient } from "../../../support/http-client.ts";
 
 import { introduce } from "../../../../src/app/delivery/introducing.ts";
-import {
-  acceptedEventReplayMessage,
-  createHabery,
-} from "../../../../src/app/identity/habbing.ts";
+import { acceptedEventReplayMessage } from "../../../../src/app/identity/habbing.ts";
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
@@ -94,7 +92,7 @@ Deno.test("query transport prepends KERIpy-style introduction before outbound qr
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -303,7 +301,7 @@ Deno.test("query transport resolves explicit witness-targeted queries from witne
           [remoteController.pre, remoteController.kever!.said],
           remoteWitness.sign(remoteController.kever!.serder.raw, true),
         );
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteWitness.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);
@@ -492,7 +490,7 @@ Deno.test("ordinary query acknowledgement leaves state unchanged until an indepe
           },
         );
 
-        const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+        const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
         try {
           for (const msg of remoteHby.db.clonePreIter(remoteController.pre)) {
             yield* settleRuntimeIngress(runtime, [msg]);

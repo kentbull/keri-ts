@@ -1,4 +1,6 @@
 import { createProtocolHandler } from "@keri-ts/hosting";
+import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
+import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 /** Real encrypted owners repair exact presentations through the maintained finite HTTP workflow. */
 import {
   type CesrFrame,
@@ -22,11 +24,11 @@ import { assert, assertEquals, assertExists, assertNotEquals, assertRejects, ass
 import { runPresentationUnblind } from "../../../../tufa/src/cli/commands/ipex-unblinding.ts";
 import { loadNests } from "../../../db.ts";
 import { acdcmap, blindate, regcept } from "../../../src/acdc/messaging.ts";
-import { openRegistry, publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
+import { publicOpeningAttachment, type RegistryStore } from "../../../src/acdc/registering.ts";
 import { Regery } from "../../../src/acdc/registraring.ts";
 import { Unblind } from "../../../src/acdc/unblinding.ts";
 import type { Exchanger } from "../../../src/app/exchanges/exchanging.ts";
-import { createHabery, type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
@@ -76,7 +78,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       runtime: AgentRuntime;
     }[] = [];
     for (const [hby, hab] of [[senderHby, sender], [verifierHby, verifier]] as const) {
-      const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
       const rgy = new Regery(hby, baser);
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
@@ -388,7 +390,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     }[] = [];
     for (const [index, side] of members.entries()) {
       const hab = groups[index].hab;
-      const baser = yield* openRegistry({ name: crypto.randomUUID(), temp: true });
+      const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
       yield* ensure(() => baser.close(true));
       const rgy = new Regery(side.hby, baser);
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {

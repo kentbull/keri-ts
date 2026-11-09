@@ -1,3 +1,4 @@
+import { createHabery } from "keri-ts/db/lmdb";
 import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../keri/src/app/transport/http-client.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
@@ -31,7 +32,6 @@ import {
 import { join } from "jsr:@std/path";
 import {
   createAgentRuntime,
-  createHabery,
   cueDo,
   envelopeFromFrame,
   exchange,

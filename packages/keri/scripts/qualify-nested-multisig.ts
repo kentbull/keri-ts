@@ -2,7 +2,7 @@
 import { b, type CesrFrame, concatBytes, Counter, Kinds, parseBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run } from "effection";
 import { Exchanger } from "../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../src/app/identity/habbing.ts";
+import { createHabery } from "../src/app/identity/lmdb-habery.ts";
 import {
   loadMultisigHandlers,
   multisigInceptExn,

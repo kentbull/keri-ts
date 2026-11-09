@@ -13,7 +13,7 @@ import {
 } from "../../../../../cesr/mod.ts";
 import { endsAddCommand } from "../../../../../tufa/src/cli/commands/endpoints.ts";
 import { isWellKnownOobiUrl, Oobiery, parseOobiUrl } from "../../../../src/app/bootstrap/oobiery.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";

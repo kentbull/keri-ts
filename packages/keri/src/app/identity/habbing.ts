@@ -53,9 +53,11 @@ import { HabitatRecord } from "../../core/records.ts";
 import { type Role, Roles } from "../../core/roles.ts";
 import { BasicReplyRouteHandler, Revery, Router } from "../../core/routing.ts";
 import { type Scheme, Schemes } from "../../core/schemes.ts";
-import { Baser, createBaser } from "../../db/basing.ts";
+import { Baser } from "../../db/basing.ts";
+import type { StoreIdentity } from "../../db/core/dber.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import { createKeeper, Keeper, PreSit } from "../../db/keeping.ts";
+import { openOwner, type StoreOpener } from "../../db/core/store-owner.ts";
+import { Keeper, PreSit } from "../../db/keeping.ts";
 import { makeNowIso8601 } from "../../time/mod.ts";
 import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
@@ -85,6 +87,10 @@ export interface HaberyArgs {
   cf?: Configer;
   skipConfig?: boolean;
   skipSignator?: boolean;
+  /** Creates this Habery's stores and sidecars. Required unless `stores` is given. */
+  opener?: StoreOpener;
+  /** Already-open stores to borrow. The Habery never closes borrowed stores. */
+  stores?: { db: Baser; ks: Keeper };
   bran?: string;
   seed?: string;
   aeid?: string;
@@ -166,13 +172,19 @@ const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
 /**
  * Select the KERI version for a new event on an existing identifier.
  *
- * An identifier keeps the KERI version of its accepted KEL, so rotation and
- * interaction never mix versions within one KEL. An explicit selection that
- * conflicts with the accepted KEL is refused rather than silently ignored.
+ * An identifier follows the KERI version of its latest accepted event. An explicit
+ * selection that conflicts with it is refused rather than silently ignored, except
+ * for a deliberate upgrade rotation, which is how a v1 identifier moves up to v2.
+ * Stricter than KERIpy, whose per-event default can mix versions without being asked.
  */
-function acceptedKelVersion(kever: Kever, requested?: Versionage): Versionage {
+function acceptedKelVersion(
+  kever: Kever,
+  requested?: Versionage,
+  { allowUpgrade = false }: { allowUpgrade?: boolean } = {},
+): Versionage {
   const accepted = kever.serder.pvrsn.major === 1 ? Vrsn_1_0 : Vrsn_2_0;
   if (requested && (requested.major !== accepted.major || requested.minor !== accepted.minor)) {
+    if (allowUpgrade && requested.major > accepted.major) return requested;
     throw new ValidationError(
       `KEL of ${kever.prefixer.qb64} is KERI ${accepted.major}.${accepted.minor}; `
         + `refusing a KERI ${requested.major}.${requested.minor} event.`,
@@ -650,7 +662,7 @@ export class Hab {
     cuts?: string[];
     adds?: string[];
     data?: unknown[];
-    /** Must match the accepted KEL version when given. */
+    /** Must match the accepted KEL version, or be higher for a deliberate upgrade. */
     version?: Versionage;
   } = {}): Uint8Array {
     if (!this.pre) {
@@ -660,7 +672,7 @@ export class Hab {
     if (!kever) {
       throw new ValidationError(`Missing accepted key state for ${this.pre}.`);
     }
-    const version = acceptedKelVersion(kever, args.version);
+    const version = acceptedKelVersion(kever, args.version, { allowUpgrade: true });
 
     const priorSit = this.ks.getSits(this.pre);
     if (!priorSit) {
@@ -1418,6 +1430,9 @@ export class Habery {
   readonly headDirPath?: string;
   readonly compat: boolean;
   readonly readonly: boolean;
+  private readonly storeOpener?: StoreOpener;
+  /** True when `db` and `ks` were borrowed; their owner closes them. */
+  private readonly borrowsStores: boolean;
   readonly db: Baser;
   readonly ks: Keeper;
   readonly mgr: Manager;
@@ -1442,7 +1457,11 @@ export class Habery {
     mgr: Manager,
     cf?: Configer,
     skipSignator = false,
+    opener?: StoreOpener,
+    borrowsStores = false,
   ) {
+    this.storeOpener = opener;
+    this.borrowsStores = borrowsStores;
     this.name = name;
     this.base = base;
     this.temp = temp;
@@ -2165,10 +2184,21 @@ export class Habery {
     return hab;
   }
 
-  /** Closes backing databases and optionally clears temp storage. */
+  /** Creates this Habery's sidecar stores. */
+  get opener(): StoreOpener {
+    if (!this.storeOpener) throw new ValidationError("This Habery was given stores without an opener for sidecars.");
+    return this.storeOpener;
+  }
+
+  /** Identity shared by this Habery's stores and sidecars. */
+  storeIdentity(): StoreIdentity {
+    return { name: this.name, base: this.base, temp: this.temp, reopen: true, readonly: this.readonly };
+  }
+
+  /** Closes owned backing databases and optionally clears temp storage. */
   *close(clear = false): Operation<void> {
     const failures: unknown[] = [];
-    const closing = [this.db.close(clear), this.ks.close(clear)];
+    const closing: Operation<unknown>[] = this.borrowsStores ? [] : [this.db.close(clear), this.ks.close(clear)];
     if (this.cf) closing.push(this.cf.close(clear && this.temp));
     for (const operation of closing) {
       try {
@@ -2201,7 +2231,7 @@ export function branToSeedAeid(bran: string): { seed: string; aeid: string } {
  * The returned `Habery` immediately reconstructs its local habitat cache from
  * durable DB state rather than depending on process-local creation history.
  */
-export function* createHabery(args: HaberyArgs): Operation<Habery> {
+export function* openHabery(args: HaberyArgs): Operation<Habery> {
   const {
     name,
     base = "",
@@ -2212,6 +2242,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
     cf: providedCf,
     skipConfig = false,
     skipSignator = false,
+    opener,
+    stores,
     bran,
     seed,
     aeid,
@@ -2225,24 +2257,10 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
   let delivered = false;
   let failure: { error: unknown } | undefined;
   try {
-    db = yield* createBaser({
-      name,
-      base,
-      temp,
-      headDirPath,
-      compat,
-      reopen: true,
-      readonly,
-    });
-    ks = yield* createKeeper({
-      name,
-      base,
-      temp,
-      headDirPath,
-      compat,
-      reopen: true,
-      readonly,
-    });
+    if (!opener && !stores) throw new ValidationError("A Habery needs a store opener or borrowed stores.");
+    const identity: StoreIdentity = { name, base, temp, reopen: true, readonly };
+    db = stores?.db ?? (yield* openOwner(new Baser(opener!.create(Baser.Family, identity)), "Baser", identity));
+    ks = stores?.ks ?? (yield* openOwner(new Keeper(opener!.create(Keeper.Family, identity)), "Keeper", identity));
 
     cf = providedCf
       ?? (skipConfig ? undefined : (yield* createConfiger({
@@ -2285,6 +2303,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       mgr,
       cf,
       skipSignator,
+      opener,
+      !!stores,
     );
     delivered = true;
     return hby;
@@ -2298,8 +2318,8 @@ export function* createHabery(args: HaberyArgs): Operation<Habery> {
       if (failure) failures.push(failure.error);
       const closing: Operation<unknown>[] = [];
       if (cf && cf !== providedCf) closing.push(cf.close());
-      if (ks) closing.push(ks.close());
-      if (db) closing.push(db.close());
+      if (ks && !stores) closing.push(ks.close());
+      if (db && !stores) closing.push(db.close());
       for (const operation of closing) {
         try {
           yield* operation;

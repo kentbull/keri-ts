@@ -38,7 +38,6 @@ import { nestedIpexRoute, supportsNestedExchange } from "../../core/exchange/pro
 import { Kever } from "../../core/kel/kever.ts";
 import { consoleLogger } from "../../core/logger.ts";
 import { messageAttachmentGroups, serializeMessage } from "../../core/protocol-serialization.ts";
-import { lmdbTable } from "../../db/core/lmdber.ts";
 import { hasNests, loadNests, prepareNests, publishNests } from "../../db/exchange/exchange-nests.ts";
 import type { ExchangeRegistryStateShape } from "../../db/exchange/exchange-records.ts";
 import { encodeDateTimeToDater, makeNowIso8601, timestampMicros } from "../../time/mod.ts";
@@ -413,7 +412,7 @@ export class Exchanger {
     const nests = args.nests?.length
       ? yield* abortable((signal) => prepareNests(args.nests!, signal))
       : undefined;
-    const result = this.hby.db.env!.transactionSync((): ExchangeAdmission | undefined => {
+    const result = this.hby.db.transaction((): ExchangeAdmission | undefined => {
       if (selectedGrant) {
         const db = this.hby.db;
         const stored = selectedGrant === "proof" ? db.epse.get([said]) : db.exns.get([said]) ?? db.epse.get([said]);
@@ -472,9 +471,7 @@ export class Exchanger {
       return admission;
     });
     // Durable completion joins the actual LMDB flush; no external file lifetime remains.
-    yield* abortable(async () => {
-      await this.hby.db.env!.flushed;
-    });
+    yield* this.hby.db.flushed();
     if (!result) return undefined;
     for (const cue of result.cues) this.cues.push(cue);
     if (result.handling && handler) yield* call(() => handler.handle(result.handling!));
@@ -648,7 +645,7 @@ export class Exchanger {
     const table = schema ? this.hby.db.emse! : this.hby.db.epse;
     let end: Uint8Array | undefined;
     // Capture a finite key horizon without retaining bodies or holding a cursor across mutations.
-    for (const key of lmdbTable(table.sdb).getKeys({ reverse: true, limit: 1 })) {
+    for (const key of this.hby.db.scanKeys(table.sdb, { reverse: true, limit: 1 })) {
       end = b(`${textDecoder.decode(key)}\0`);
     }
     if (!end) {
@@ -657,7 +654,7 @@ export class Exchanger {
     let start: Uint8Array | undefined;
     for (;;) {
       let physical: string | undefined;
-      for (const key of lmdbTable(table.sdb).getKeys({ start, end, limit: 1 })) {
+      for (const key of this.hby.db.scanKeys(table.sdb, { start, end, limit: 1 })) {
         physical = textDecoder.decode(key);
       }
       if (!physical) break;
@@ -1569,7 +1566,7 @@ export class Exchanger {
   /** Decide expiry and remove pending rows in the same native transaction. */
   private *expirePending(serder: SerderKERI): Operation<EscrowEjection | undefined> {
     const said = serder.said!;
-    const result = this.hby.db.env!.transactionSync(() => {
+    const result = this.hby.db.transaction(() => {
       const status = this.escrowStatus(said);
       if (status.kind === "accepted") {
         this.clearPending(serder);
@@ -1578,9 +1575,7 @@ export class Exchanger {
       if (status.kind === "absent" || status.kind === "pending") return undefined;
       return this.retireCurrent(serder, this.expiryReport(status));
     });
-    yield* abortable(async () => {
-      await this.hby.db.env!.flushed;
-    });
+    yield* this.hby.db.flushed();
     return result;
   }
 

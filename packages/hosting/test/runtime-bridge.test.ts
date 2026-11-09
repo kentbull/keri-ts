@@ -1,3 +1,4 @@
+import { createHabery } from "keri-ts/db/lmdb";
 import { systemClock } from "../../keri/src/app/runtime/runtime-clock.ts";
 import { httpClient } from "../../keri/test/support/http-client.ts";
 // @file-test-lane app-fast-parallel
@@ -7,7 +8,6 @@ import { call, run, sleep, spawn } from "effection";
 import { assertEquals, assertExists, assertRejects, assertStrictEquals } from "jsr:@std/assert";
 import {
   createAgentRuntime,
-  createHabery,
   envelopeFromFrame,
   type KramConfig,
   query,

@@ -70,7 +70,7 @@ export class TelPublication {
 
   /** Move accepted anchors forward; empty witness/publication cohorts need no I/O. */
   advance(): void {
-    this.reger.env!.transactionSync(() => {
+    this.reger.transaction(() => {
       for (const [keys, seal] of [...this.reger.tmse.getTopItemIter()]) {
         const target = this.target(keys, seal);
         if (!target || target.said !== keys[2]) continue;
@@ -98,7 +98,7 @@ export class TelPublication {
   receipted(target: TelPublicationTarget): void {
     if (!this.allReceipts(target)) throw new ValidationError("TEL anchor is missing required witness receipts.");
     const seal = this.seal(target);
-    this.reger.env!.transactionSync(() => {
+    this.reger.transaction(() => {
       this.reger.tede.add(this.keys(target), [seal[0], seal[1], new Saider({ qb64: target.anchorSaid })]);
       this.reger.tpwe.rem(this.keys(target), seal);
     });
@@ -118,7 +118,7 @@ export class TelPublication {
       throw new ValidationError("TEL publication dependencies changed before completion.");
     }
     const seal = this.seal(target);
-    this.reger.env!.transactionSync(() => {
+    this.reger.transaction(() => {
       this.reger.ctel.pin(this.keys(target), new Saider({ qb64: target.anchorSaid }));
       this.reger.tede.rem(this.keys(target), [seal[0], seal[1], new Saider({ qb64: target.anchorSaid })]);
     });

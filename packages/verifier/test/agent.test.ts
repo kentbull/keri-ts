@@ -1,12 +1,13 @@
 import { concatBytes, Counter, Dater, type SerderACDC, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { action, call, type Operation, run } from "effection";
 import { assertEquals, assertExists, assertStrictEquals } from "jsr:@std/assert";
-import { createReger, type Reger } from "keri-ts/db";
+import { type Reger } from "keri-ts/db";
+import { createHabery } from "keri-ts/db/lmdb";
+import { createReger } from "keri-ts/db/lmdb";
 import {
   type AgentCue,
   type AgentRuntime,
   createAgentRuntime,
-  createHabery,
   Credentialer,
   type Hab,
   type Habery,

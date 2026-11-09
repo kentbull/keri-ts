@@ -2,7 +2,8 @@
 import { concatBytes, t, Vrsn_2_0 } from "cesr-ts";
 import { call, run, sleep, spawn, type Task } from "effection";
 import { assertEquals } from "jsr:@std/assert";
-import { buildCesrStreamRequest, createHabery } from "keri-ts/runtime";
+import { createHabery } from "keri-ts/db/lmdb";
+import { buildCesrStreamRequest } from "keri-ts/runtime";
 import { fileURLToPath } from "node:url";
 import { author, signed } from "../../observer/test/fixtures/service.ts";
 import { runObserver, runRegistrar } from "../src/roles/registry-services.ts";

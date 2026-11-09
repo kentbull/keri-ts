@@ -9,7 +9,8 @@ import {
   mailboxRemoveCommand,
   mailboxUpdateCommand,
 } from "../../../../../tufa/src/cli/commands/mailbox.ts";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { parseMailboxSse, readMailboxSseBody } from "../../../../src/app/mailbox/mailbox-sse.ts";
 import { mailboxQueryTopics, mailboxTopicKey } from "../../../../src/app/mailbox/mailboxing.ts";
 import {

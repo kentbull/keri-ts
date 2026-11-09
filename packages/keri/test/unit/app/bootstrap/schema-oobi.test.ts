@@ -2,7 +2,7 @@ import { type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { Oobiery, parseOobiUrl } from "../../../../src/app/bootstrap/oobiery.ts";
 import { parseSchemaReference, resolveCachedSchema } from "../../../../src/app/credentials/schema-resolving.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import type { AgentCue } from "../../../../src/core/cues.ts";

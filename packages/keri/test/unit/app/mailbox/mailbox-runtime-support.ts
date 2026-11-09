@@ -1,7 +1,7 @@
 import { type Operation, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { endsAddCommand } from "../../../../../tufa/src/cli/commands/endpoints.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime, settleRuntimeIngress } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";

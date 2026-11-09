@@ -6,8 +6,8 @@
  * This is Sally-inspired workflow state, not a claim of exact Sally storage parity.
  */
 import { Dater, Prefixer, SerderACDC } from "cesr-ts";
-import { CesrSuber, LMDBer, type LMDBerOptions, SerderSuber } from "keri-ts/db";
-import { DatabaseNotOpenError } from "keri-ts/runtime";
+import { CesrSuber, openOwner, SerderSuber, type StoreFamily, type StoreIdentity, StoreOwner } from "keri-ts/db";
+import { lmdbDefaultsFor, LMDBer, type LMDBerOptions } from "keri-ts/db/lmdb";
 import { type Operation } from "npm:effection@^3.6.0";
 
 /** Options for opening the verifier cue sidecar. */
@@ -27,7 +27,10 @@ export interface VerifierCueCounts {
 }
 
 /** Durable local workflow records for pending, ready and delivered webhook work. */
-export class VerifierCueBaser extends LMDBer {
+export class VerifierCueBaser extends StoreOwner {
+  /** Placement of this store kind. */
+  static readonly Family: StoreFamily = { tail: "verifier" };
+
   snd!: CesrSuber<Prefixer>;
   iss!: CesrSuber<Dater>;
   rev!: CesrSuber<Dater>;
@@ -36,36 +39,20 @@ export class VerifierCueBaser extends LMDBer {
   ack!: SerderSuber<SerderACDC>;
   rack!: SerderSuber<SerderACDC>;
 
-  static override readonly TailDirPath = "keri/verifier";
-  static override readonly AltTailDirPath = ".tufa/verifier";
-  static readonly CompatAltTailDirPath = ".keri/verifier";
-  static override readonly TempPrefix = "keri_verifier_";
-
-  constructor(options: VerifierCueBaserOptions = {}) {
-    const compat = options.compat ?? false;
-    super(options, {
-      tailDirPath: VerifierCueBaser.TailDirPath,
-      cleanTailDirPath: "keri/clean/verifier",
-      altTailDirPath: compat ? VerifierCueBaser.CompatAltTailDirPath : VerifierCueBaser.AltTailDirPath,
-      altCleanTailDirPath: compat ? ".keri/clean/verifier" : ".tufa/clean/verifier",
-      tempPrefix: VerifierCueBaser.TempPrefix,
-    });
-  }
-
   /** Open ordinary LMDB storage and bind this application's typed tables. */
-  override *reopen(options: VerifierCueBaserOptions = {}): Operation<boolean> {
-    const opened = yield* super.reopen(options);
+  *reopen(options: StoreIdentity = {}): Operation<boolean> {
+    const opened = yield* this.store.reopen(options);
     if (!opened) {
       return false;
     }
 
-    this.snd = new CesrSuber<Prefixer>(this, { subkey: "snd.", ctor: Prefixer });
-    this.iss = new CesrSuber<Dater>(this, { subkey: "iss.", ctor: Dater });
-    this.rev = new CesrSuber<Dater>(this, { subkey: "rev.", ctor: Dater });
-    this.recv = new SerderSuber<SerderACDC>(this, { subkey: "recv", ctor: SerderACDC });
-    this.revk = new SerderSuber<SerderACDC>(this, { subkey: "revk", ctor: SerderACDC });
-    this.ack = new SerderSuber<SerderACDC>(this, { subkey: "ack", ctor: SerderACDC });
-    this.rack = new SerderSuber<SerderACDC>(this, { subkey: "rack", ctor: SerderACDC });
+    this.snd = new CesrSuber<Prefixer>(this.store, { subkey: "snd.", ctor: Prefixer });
+    this.iss = new CesrSuber<Dater>(this.store, { subkey: "iss.", ctor: Dater });
+    this.rev = new CesrSuber<Dater>(this.store, { subkey: "rev.", ctor: Dater });
+    this.recv = new SerderSuber<SerderACDC>(this.store, { subkey: "recv", ctor: SerderACDC });
+    this.revk = new SerderSuber<SerderACDC>(this.store, { subkey: "revk", ctor: SerderACDC });
+    this.ack = new SerderSuber<SerderACDC>(this.store, { subkey: "ack", ctor: SerderACDC });
+    this.rack = new SerderSuber<SerderACDC>(this.store, { subkey: "rack", ctor: SerderACDC });
     return true;
   }
 
@@ -95,12 +82,8 @@ export class VerifierCueBaser extends LMDBer {
 
 /** Open a verifier cue sidecar and return the ready-to-use databaser. */
 export function* createVerifierCueBaser(
-  options: VerifierCueBaserOptions = {},
+  { compat, ...options }: VerifierCueBaserOptions = {},
 ): Operation<VerifierCueBaser> {
-  const cdb = new VerifierCueBaser(options);
-  const opened = yield* cdb.reopen(options);
-  if (!opened) {
-    throw new DatabaseNotOpenError("Failed to open VerifierCueBaser");
-  }
-  return cdb;
+  const store = new LMDBer(options, lmdbDefaultsFor(VerifierCueBaser.Family, compat));
+  return yield* openOwner(new VerifierCueBaser(store), "VerifierCueBaser", options);
 }

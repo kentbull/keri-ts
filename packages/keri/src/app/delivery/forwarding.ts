@@ -25,7 +25,7 @@ import { runtimeTurn } from "../runtime/runtime-turn.ts";
 import { CesrHttpRefusal } from "../transport/cesr-egress.ts";
 import type { HttpClient } from "../transport/http-client.ts";
 import { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../transport/messengering.ts";
-import { TCPMessenger } from "../transport/tcp-messenger.ts";
+import { requireTcpDialer } from "../transport/tcp-dialer.ts";
 import { TransportError } from "../transport/transport-error.ts";
 import { introduce } from "./introducing.ts";
 
@@ -128,6 +128,30 @@ type PreparedCesrTarget =
     /** Prepared introduction/forwarding wire borrowed until this transport operation joins cleanup. */
     readonly message: Uint8Array;
   };
+
+/**
+ * A v2 message refused for a peer this node must treat as v1.
+ *
+ * A v1 parser treats a v2 version string as an extraction failure and discards the rest of
+ * its stream, so sending would lose more than this one message.
+ */
+export class PeerVersionError extends ValidationError {}
+
+/**
+ * Whether an AID's own accepted KEL ends in a v1 event, which is the only evidence of a v1 reader.
+ *
+ * An AID with no accepted KEL is not refused. A delegate awaiting approval has only an escrowed
+ * inception, and refusing its approval traffic would stop the delegation from ever completing.
+ */
+function knownV1Peer(hby: Habery, aid: string): boolean {
+  const kever = hby.db.getKever(aid);
+  return kever !== null && kever !== undefined && kever.serder.pvrsn.major < 2;
+}
+
+/** Whether any frame of this complete signed wire needs a v2 reader. */
+function wireNeedsV2(message: Uint8Array): boolean {
+  return parseBytes(message).some(frame => frame.body.pvrsn.major >= 2 || (frame.gvrsn?.major ?? 1) >= 2);
+}
 
 /**
  * Preserve resolved endpoint schemes and signed bytes for concrete transport construction.
@@ -429,11 +453,18 @@ export class Poster {
             failed.push(new ValidationError(`No supported endpoint URL for ${endpoint.eid}.`));
             continue;
           }
-          const target = yield* this.prepareBytesTarget(hab, route, {
-            eid: endpoint.eid,
-            url: endpoint.url,
-            urls: endpoint.urls,
-          }, evt);
+          let target: PreparedCesrTarget;
+          try {
+            target = yield* this.prepareBytesTarget(hab, route, {
+              eid: endpoint.eid,
+              url: endpoint.url,
+              urls: endpoint.urls,
+            }, evt);
+          } catch (error) {
+            if (!(error instanceof PeerVersionError)) throw error;
+            failed.push(error);
+            continue;
+          }
           try {
             if (target.kind !== "stored") {
               const refusal = yield* this.sendPreparedTarget(target, evt, signal);
@@ -473,7 +504,7 @@ export class Poster {
   ): Operation<CesrHttpRefusal | undefined> {
     if (target.kind === "tcp" && evt.replies) {
       // Explicit duplex work retains its receive owner; send-only factories need none.
-      yield* new TCPMessenger(target.url, this.clock, this.protocol).send(target.message, {
+      yield* requireTcpDialer(this.http).messenger(target.url, this.clock, this.protocol).send(target.message, {
         signal,
         replies: true,
       });
@@ -554,6 +585,7 @@ export class Poster {
    * @param endpoint One selected endpoint AID and URL from the route.
    * @param evt Original signed source and concrete ordinary/stream operation.
    * @returns A prepared remote target, or stored after authorized local mailbox publication.
+   * @throws PeerVersionError when the wire needs a v2 reader that this peer is known not to be.
    */
   private *prepareBytesTarget(
     hab: Hab,
@@ -561,8 +593,16 @@ export class Poster {
     endpoint: { eid: string; url: string; urls: MessengerUrls },
     evt: PosterEvent,
   ): Operation<PreparedCesrTarget> {
+    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, evt.dest)) {
+      throw new PeerVersionError(`Refusing a v2 message for ${evt.dest}, whose latest accepted event is v1.`);
+    }
     if (route.kind !== "direct") {
       return yield* this.prepareForwardedTarget(hab, evt.dest, evt.topic, evt, endpoint);
+    }
+    if (wireNeedsV2(evt.msg) && knownV1Peer(this.hby, endpoint.eid)) {
+      throw new PeerVersionError(
+        `Refusing a v2 message for endpoint ${endpoint.eid}, whose latest accepted event is v1.`,
+      );
     }
     return remoteCesrTarget(endpoint, evt.msg);
   }
@@ -600,6 +640,12 @@ export class Poster {
       }
     } else {
       msgs.push(evt.msg);
+    }
+    // The provider reads the envelope, so it must read v2 whenever the envelope or child is v2.
+    if ((hab.kelVersion.major >= 2 || msgs.some(wireNeedsV2)) && knownV1Peer(this.hby, endpoint.eid)) {
+      throw new PeerVersionError(
+        `Refusing a v2 envelope for provider ${endpoint.eid}, whose latest accepted event is v1.`,
+      );
     }
     const forwarded: Uint8Array[] = [];
     for (const message of msgs) forwarded.push(yield* buildForwardedDelivery(hab, { recipient, topic, message }));

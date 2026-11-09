@@ -3,7 +3,7 @@ import { b, collectPayload, concatBytes, framePayload, parseBytes } from "cesr-t
 import { call, run } from "effection";
 import { assertEquals } from "jsr:@std/assert";
 import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { loadIpexHandlers } from "../../../../src/app/ipex/ipexing.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import vectors from "../../../fixtures/keripy-ipex-disclosure-vectors.json" with { type: "json" };

@@ -2,11 +2,12 @@
 import { parseBytes } from "cesr-ts";
 import { call, run } from "effection";
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { createHabery, type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { type Hab, type Habery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { NodeHttpClient } from "../../../../src/app/transport/node-http-client.ts";
 import { processWitnessIngress } from "../../../../src/app/witness/ingress.ts";
 import { DatabaseOperationError } from "../../../../src/core/errors.ts";
 import { protocolFixture } from "../../../protocol-fixture.ts";
@@ -54,7 +55,7 @@ Deno.test("generic ingress processes messages after an unknown reply route", asy
 Deno.test("witness ingress processes messages after an unknown reply route", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
-    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock);
+    const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock);
     try {
       const hab = hby.makeHab("sender");
       yield* processWitnessIngress(runtime, hab, sandwich(hab));

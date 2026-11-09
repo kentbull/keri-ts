@@ -20,6 +20,7 @@ const ENTRYPOINT = "./src/npm/index.ts";
 const CLI_ENTRYPOINT = "./src/npm/cli.ts";
 const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
+const DB_LMDB_ENTRYPOINT = "./src/npm/db-lmdb.ts";
 const OUT_DIR = "./npm";
 const DNT_IMPORT_MAP_PATH = "./.dnt.import-map.json";
 const NPM_MAIN_PATH = "./esm/keri/npm/src/keri/src/npm/index.js";
@@ -30,6 +31,8 @@ const NPM_RUNTIME_PATH = "./esm/keri/npm/src/keri/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
 const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
+const NPM_DB_LMDB_PATH = "./esm/keri/npm/src/keri/src/npm/db-lmdb.js";
+const NPM_DB_LMDB_TYPES_PATH = "./types/keri/src/npm/db-lmdb.d.ts";
 
 /** Manifest fields that this build script owns after DNT emits package.json. */
 interface BuiltNpmPackageManifest {
@@ -51,6 +54,7 @@ interface NpmExportTargets {
   cli: NpmExportTarget;
   runtime: NpmExportTarget;
   db: NpmExportTarget;
+  dbLmdb: NpmExportTarget;
 }
 
 // These marker comments live in source entrypoints and should survive DNT
@@ -60,6 +64,7 @@ const ENTRYPOINT_MARKERS = {
   cli: "npm subpath entrypoint for `keri-ts/cli`.",
   runtime: "npm subpath entrypoint for `keri-ts/runtime`.",
   db: "npm subpath entrypoint for `keri-ts/db`.",
+  dbLmdb: "npm subpath entrypoint for `keri-ts/db/lmdb`.",
 } as const;
 
 /**
@@ -153,6 +158,14 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
         { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "db.d.ts", marker: ENTRYPOINT_MARKERS.db },
       ),
     },
+    dbLmdb: {
+      import: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "db-lmdb.js", marker: ENTRYPOINT_MARKERS.dbLmdb },
+      ),
+      types: findGeneratedEntrypoint(
+        { root: `${OUT_DIR}/types`, outDir: OUT_DIR, fileName: "db-lmdb.d.ts", marker: ENTRYPOINT_MARKERS.dbLmdb },
+      ),
+    },
   };
 
   for (const target of Object.values(targets)) {
@@ -204,6 +217,10 @@ function normalizeBuiltManifest(): void {
       import: targets.db.import,
       types: targets.db.types,
     },
+    "./db/lmdb": {
+      import: targets.dbLmdb.import,
+      types: targets.dbLmdb.types,
+    },
   };
   writeJsonFileSync(packageJsonPath, manifest);
 }
@@ -251,6 +268,7 @@ try {
       CLI_ENTRYPOINT,
       RUNTIME_ENTRYPOINT,
       DB_ENTRYPOINT,
+      DB_LMDB_ENTRYPOINT,
     ],
     outDir: OUT_DIR,
     shims: {
@@ -298,6 +316,10 @@ try {
         "./db": {
           import: NPM_DB_PATH,
           types: NPM_DB_TYPES_PATH,
+        },
+        "./db/lmdb": {
+          import: NPM_DB_LMDB_PATH,
+          types: NPM_DB_LMDB_TYPES_PATH,
         },
       },
       files: ["esm", "types", "README.md", "LICENSE"],

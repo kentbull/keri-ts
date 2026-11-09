@@ -1,9 +1,10 @@
 /** Offline, exact-key maintenance of the existing pending-OOBI table. */
 import { call, type Operation } from "effection";
 import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
-import { baserDefaults } from "../../db/baser-defaults.ts";
-import { createBaser } from "../../db/basing.ts";
+import { Baser } from "../../db/basing.ts";
+import { lmdbDefaultsFor } from "../../db/core/lmdb-opener.ts";
 import { PathManager } from "../../db/core/path-manager.ts";
+import { createBaser } from "../../db/lmdb-stores.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
 import { writeJsonLine } from "../common/rendering.ts";
 
@@ -56,7 +57,7 @@ export function* oobiCleanCommand(args: Record<string, unknown>): Operation<void
   const keys = yield* loadKeys(args.keyFile);
   // Resolve through ordinary path preparation before Baser can create data.mdb.
   // Empty directories are ordinary startup effects; missing databases still fail.
-  const paths = new PathManager(options, baserDefaults(options.compat));
+  const paths = new PathManager(options, lmdbDefaultsFor(Baser.Family, options.compat));
   paths.name = name;
   yield* paths.reopen();
   const path = paths.path!;

@@ -1,7 +1,7 @@
 import { call, run, spawn } from "effection";
 import { assertEquals, assertInstanceOf, assertRejects, assertStrictEquals, assertThrows } from "jsr:@std/assert";
 import { SerderKERI, Vrsn_1_0, Vrsn_2_0 } from "../../../../../cesr/mod.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { processCuesOnce } from "../../../../src/app/runtime/cue-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";

@@ -1,10 +1,10 @@
 import { run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { b, DigDex, Diger, SerderKERI, Verfer } from "../../../../../cesr/mod.ts";
-import { createHabery } from "../../../../src/app/identity/habbing.ts";
+import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { Kever } from "../../../../src/core/kel/kever.ts";
 import { KeyStateRecord } from "../../../../src/core/records.ts";
-import { createBaser } from "../../../../src/db/basing.ts";
+import { createBaser } from "../../../../src/db/lmdb-stores.ts";
 
 Deno.test("Kever reloads durable state and serializes back to the same key-state record", async () => {
   await run(function*() {

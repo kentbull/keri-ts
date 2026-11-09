@@ -4,9 +4,9 @@ import { parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
   createAgentRuntime,
-  FetchHttpClient,
   type Habery,
   type KramConfig,
+  NodeHttpClient,
   Receiptor,
   systemClock,
   ValidationError,
@@ -47,7 +47,7 @@ function timeout(args: Record<string, unknown>): number {
 /** Discovery is public configuration and never reports account or allocation acceptance. */
 export function* kfBootDiscoverCommand(args: Record<string, unknown>): Operation<void> {
   const provider = required(args, "url");
-  const discovery = yield* timed(args, () => discoverKfBoot(new FetchHttpClient(), provider));
+  const discovery = yield* timed(args, () => discoverKfBoot(new NodeHttpClient(), provider));
   writeJsonLine(discovery);
 }
 
@@ -74,7 +74,7 @@ function* authenticated<T>(
       return yield* scoped(function*() {
         const configured = hby.cf?.get<{ kram?: KramConfig }>().kram;
         if (configured?.enabled === false) throw new ValidationError("KF boot requires enabled KRAM.");
-        const http = new FetchHttpClient();
+        const http = new NodeHttpClient();
         // Match kf-boot's ordinary cache windows unless the store selects its own policy.
         const kram: KramConfig = {
           ...configured,

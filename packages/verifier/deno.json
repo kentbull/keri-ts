@@ -14,6 +14,7 @@
     "@deno/dnt": "jsr:@deno/dnt@^0.42.3",
     "cesr-ts": "../cesr/mod.ts",
     "keri-ts/db": "../keri/db.ts",
+    "keri-ts/db/lmdb": "../keri/db-lmdb.ts",
     "keri-ts/runtime": "../keri/runtime.ts",
     "effection": "npm:effection@^3.6.0",
     "@keri-ts/registrar": "../registrar/mod.ts"

@@ -10,10 +10,11 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { displayStr } from "../../core/bytes.ts";
 import { DatabaseOperationError, ValidationError } from "../../core/errors.ts";
 import { RawRecord } from "../../core/records.ts";
-import { Baser, type BaserOptions, createBaser } from "../../db/basing.ts";
-import { createKeeper, Keeper, type KeeperOptions } from "../../db/keeping.ts";
-import { createMailboxer, Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
-import { createNoter, Noter, type NoterOptions } from "../../db/noting.ts";
+import { Baser, type BaserOptions } from "../../db/basing.ts";
+import { Keeper, type KeeperOptions } from "../../db/keeping.ts";
+import { createBaser, createKeeper, createMailboxer, createNoter } from "../../db/lmdb-stores.ts";
+import { Mailboxer, type MailboxerOptions } from "../../db/mailbox/mailboxing.ts";
+import { Noter, type NoterOptions } from "../../db/noting.ts";
 import { parseBooleanOption, parseIntegerOption, parseStringOption } from "../common/parsing.ts";
 
 type DomainName = "baser" | "keeper" | "mailboxer" | "noter";

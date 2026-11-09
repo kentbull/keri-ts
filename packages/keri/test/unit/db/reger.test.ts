@@ -23,7 +23,8 @@ import type { AgentCue } from "../../../src/core/cues.ts";
 import { Deck } from "../../../src/core/deck.ts";
 import { incept as inceptRegistry } from "../../../src/core/protocol-vdr-eventing.ts";
 import { dgKey } from "../../../src/db/core/keys.ts";
-import { createReger, Reger } from "../../../src/db/reger.ts";
+import { createReger } from "../../../src/db/lmdb-stores.ts";
+import { Reger } from "../../../src/db/reger.ts";
 import { CapturedTelReplay, UnsupportedTelReplayError } from "../../../src/db/replay/tel-replay.ts";
 
 const KERI_V1 = Object.freeze({ major: 1, minor: 0 } as const);
@@ -227,9 +228,9 @@ Deno.test("db/reger - cloneTvt rebuilds KERIpy TEL replay attachments", async ()
       };
       try {
         const wide = b(`${regk}.${(1n << 53n).toString(16).padStart(32, "0")}`);
-        reger.putVal(reger.tels.sdb, wide, new Diger({ qb64: regk }).qb64b);
+        reger.store.putVal(reger.tels.sdb, wide, new Diger({ qb64: regk }).qb64b);
         assertThrows(() => reger.replay(regk), "supported range");
-        reger.delVal(reger.tels.sdb, wide);
+        reger.store.delVal(reger.tels.sdb, wide);
         const reader = replay[Symbol.iterator]();
         assertEquals(reader.next().value, expected);
         assertEquals(reading, 0, "Slow consumers and iterator cancellation retain no LMDB cursor");

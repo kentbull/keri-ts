@@ -144,6 +144,7 @@ export const suites: Record<string, TestSuite> = {
       "test/integration/app/tufa-delegation-group.test.ts",
       "test/unit/app/identity/challenge/challenge-direct-runtime.test.ts",
       "test/unit/app/delivery/forwarding.test.ts",
+      "test/unit/app/delivery/peer-version-selection.test.ts",
       "test/unit/app/mailbox/mailbox-director-lifecycle.test.ts",
       "test/unit/app/mailbox/mailbox-poller-runtime.test.ts",
       "test/unit/app/mailbox/mailbox-runtime.test.ts",
@@ -243,6 +244,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/subing.test.ts",
       "test/unit/vdr/credentialing.test.ts",
       "test/unit/vdr/eventing.test.ts",
+      "test/unit/db/core/store-owner.test.ts",
     ],
   },
   "interop-keystore-parity": {

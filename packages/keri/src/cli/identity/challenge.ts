@@ -15,7 +15,7 @@ import { Organizer } from "../../app/identity/organizing.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
-import { FetchHttpClient } from "../../app/transport/http-client.ts";
+import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { parseBooleanOption, parseIntegerOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";
 
@@ -123,7 +123,7 @@ export function* challengeRespondCommand(
       const { serder } = yield* sendExchangeMessage(
         hby,
         hab,
-        new FetchHttpClient(),
+        new NodeHttpClient(),
         systemClock,
         {
           dest: recipient,
