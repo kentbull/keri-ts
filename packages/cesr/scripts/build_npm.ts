@@ -15,7 +15,6 @@ import {
   readPackageVersionSync,
   writeJsonFileSync,
 } from "../../../scripts/npm/dnt-helpers.ts";
-import { vendorSodium } from "../../../scripts/npm/vendor-sodium.ts";
 
 const ENTRYPOINT = "./mod.ts";
 const NODE_CLI_ENTRYPOINT = "./src/cli/node.ts";
@@ -158,9 +157,6 @@ await build({
       tephra: NPM_BIN_PATH,
     },
     files: ["esm", "types", "README.md", "LICENSE"],
-    dependencies: {
-      "libsodium-wrappers-sumo": "0.8.4",
-    },
     engines: {
       node: ">=20.3",
     },
@@ -173,7 +169,6 @@ await build({
     lib: ["ES2022", "DOM"],
   },
   postBuild() {
-    vendorSodium(OUT_DIR);
     const bin = normalizeBuiltManifest();
     Deno.copyFileSync("./README.md", `${OUT_DIR}/README.md`);
     Deno.copyFileSync("../../LICENSE", `${OUT_DIR}/LICENSE`);

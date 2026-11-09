@@ -196,7 +196,7 @@ reference material and historical reports.
   curve code or suite helpers directly.
 - Keep sealed-box encryption primitive-driven too: higher layers should call
   `Cipher` / `Encrypter` / `Decrypter` rather than reimplementing
-  libsodium/X25519 behavior in app or keeper code.
+  sealed-box/X25519 behavior in app or keeper code.
 - Treat `Manager.sign({ pre, path })` as keeper-state addressing, not as a raw
   derivation-string passthrough. `path` identifies a managed key lot by
   `(ridx, kidx)`; `salty` managers may reconstruct it from persisted derivation

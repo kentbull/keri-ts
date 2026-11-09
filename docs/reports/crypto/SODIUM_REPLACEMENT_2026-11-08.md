@@ -6,14 +6,15 @@ byte-identical KERIpy/pysodium behavior. This report records what was measured; 
 
 ## Sources
 
-| Item                  | Identity                                                                                                         |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| keri-ts base          | `9d2d3f94` (master, PR #822 merge)                                                                               |
-| KERIpy reference      | `/Users/kbull/enc/keri/core/python/keripy` at `f05d200c`, version `2.1.0-dev1`, pysodium over libsodium `1.0.22` |
-| Runtime               | Deno 2.9.8, aarch64-apple-darwin; Node 25.9.0 for the npm smoke test                                             |
-| Pure-JS candidates    | `@noble/curves@1.9.7`, `@noble/hashes@1.8.0` (already shipped), `@noble/ciphers@1.3.0` (new)                     |
-| WASM Argon2 candidate | `hash-wasm@4.13.0`                                                                                               |
-| Incumbent             | `libsodium-wrappers-sumo@0.8.4` / `libsodium-sumo@0.8.4`                                                         |
+| Item                  | Identity                                                                                                                           |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| keri-ts base          | `9d2d3f94` (master, PR #822 merge)                                                                                                 |
+| KERIpy reference      | `/Users/kbull/enc/keri/core/python/keripy` at `f05d200c`, version `2.1.0-dev1`, pysodium over libsodium `1.0.22`                   |
+| Runtime               | Deno 2.9.8, aarch64-apple-darwin; Node 25.9.0 for the npm smoke test                                                               |
+| Pure-JS candidates    | `@noble/curves@1.9.7`, `@noble/hashes@1.8.0` (already shipped), `@noble/ciphers@1.3.0` (new)                                       |
+| WASM Argon2 candidate | `hash-wasm@4.13.0`                                                                                                                 |
+| Incumbent             | `libsodium-wrappers-sumo@0.8.4` / `libsodium-sumo@0.8.4`                                                                           |
+| Adopted Argon2        | `@keri-ts/hash-wasm@4.14.0`, fork commit `2214e3ae`, integrity in [Argon2 ownership](../../design-docs/crypto/ARGON2_OWNERSHIP.md) |
 
 ## Vector matrix
 
@@ -92,17 +93,41 @@ Marginal cost of the noble sealed box over what keri-ts already ships is about 2
 6.8 KB gzipped. The raw `libsodium-sumo.js` file is 1.2 MB / 391 KB gzipped; the bundler's
 536 KB figure is what a consumer actually ships. The standard non-sumo build is larger, not smaller.
 
+## Argon2id on the published fork
+
+`hash-wasm` was forked to accept empty passwords and to add a synchronous `createArgon2` API, both proposed upstream
+([#86](https://github.com/Daninet/hash-wasm/pull/86), [#87](https://github.com/Daninet/hash-wasm/pull/87)). `pwhash.ts`
+now runs on `@keri-ts/hash-wasm@4.14.0` and libsodium is gone from `cesr-ts`. A reused Argon2 instance returned a wrong
+hash until its working memory was zeroed before each call; the fork does this.
+
+`packages/cesr/scripts/qualify-argon2-backends.ts --allow-high-memory`, 18 vectors per backend, all exact:
+
+| Backend                        | temp   | low (64 MiB, t=2) | med (256 MiB, t=3) | high (1 GiB, t=4) |
+| ------------------------------ | ------ | ----------------- | ------------------ | ----------------- |
+| `pwhash.ts` on the fork (sync) | 0–2 ms | 91–116 ms         | 590–614 ms         | 3.4–3.6 s         |
+| fork async `argon2id`          | 0–1 ms | 94–99 ms          | 618–660 ms         | 3.4–3.6 s         |
+| `@noble/hashes/argon2`         | 0–5 ms | 1.06–1.11 s       | 6.4–6.6 s          | 34.3–35.4 s       |
+
+The isolated `qualify-salter-derivation.ts --allow-high-memory` run matched all 18 vectors with peak RSS of about 1.07 GiB,
+the same as the libsodium baseline. Node 25.9.0 reproduced the temp and low `Salter.stretch` vectors from the built npm
+package.
+
+Final browser payload, measured as above:
+
+| Entry                                               | Minified | Gzipped  | `libsodium` occurrences |
+| --------------------------------------------------- | -------- | -------- | ----------------------- |
+| crypto layer: sealed box, X25519, `pwhash`, ed25519 | 80,829 B | 31,277 B | 0                       |
+| `pwhash.ts` alone                                   | 29,982 B | 11,748 B | 0                       |
+
 ## Conclusions
 
-1. Sealed boxes, Ed25519 to X25519 conversion and raw X25519 agreement do not need libsodium.
-   The noble implementation is byte-identical in both directions and is adopted in this change.
-2. The browser payload only drops once `pwhash.ts` stops importing libsodium, because the blob is
-   shared. After this change libsodium is loaded for Argon2id alone.
-3. Argon2id options, all byte-identical where they run:
-   - keep libsodium: 188 KB gzipped, fastest, current zeroization ownership;
-   - `@noble/hashes/argon2`: 5 KB gzipped, about 13x slower (35 s at the high tier);
-   - `hash-wasm`: 11 KB gzipped, libsodium speed, blocked by its empty-password check.
-     The choice is a policy decision (derivation latency versus payload) and is left open here.
+1. Sealed boxes, Ed25519 to X25519 conversion and raw X25519 agreement do not need libsodium. The noble implementation
+   is byte-identical in both directions.
+2. Removing `pwhash.ts`'s libsodium import reduces the crypto layer's browser payload from about 188 KB to about 31 KB
+   gzipped.
+3. The Argon2id options were all byte-identical where they ran. `hash-wasm` was chosen over `@noble/hashes/argon2`,
+   which is smaller by about 6 KB gzipped but about 10x slower (35 s at the high tier), at the cost of carrying a fork
+   until upstream releases both changes and of losing libsodium's owned-buffer zeroing.
 
 ## Limits
 

@@ -29,7 +29,7 @@ retains exact source identity, validation and limits at its recorded revision.
 ## Read by subject
 
 - [CESR](learnings/PROJECT_LEARNINGS_CESR.md): parsing, framing and primitives.
-- [Crypto](learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md): suites, sodium and secrets.
+- [Crypto](learnings/PROJECT_LEARNINGS_CRYPTO_SUITE.md): suites, Argon2id and secrets.
 - [KELs](learnings/PROJECT_LEARNINGS_KELS.md): accepted state, delegation and replay.
 - [Exchange](learnings/PROJECT_LEARNINGS_EXCHANGE.md): proofs, multisig and IPEX.
 - [ACDC](learnings/PROJECT_LEARNINGS_ACDC.md): disclosure, TEL, verifier state and explicit newcomer root selection.

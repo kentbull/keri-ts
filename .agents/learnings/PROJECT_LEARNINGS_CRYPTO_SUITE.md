@@ -23,39 +23,30 @@ Diger owns the shared incremental algorithm registry. Hash ordered concatenated
 decoded Texter bytes, not qualified text. EXN `a` may be a string digest even
 though `.seals` is array-only; verify it after signatures and before acceptance.
 
-## Sealed boxes, X25519 and the remaining sodium backend
+## Sealed boxes, X25519 and Argon2id
 
 Sealed boxes, Ed25519-to-X25519 conversion and raw X25519 agreement are pure `@noble/*`
 (`sealed-box.ts`, `x25519.ts`): HSalsa20 `beforenm`, BLAKE2b-192 nonce, XSalsa20-Poly1305 with
 the tag first. Only noble's `invalid private or public key received` (low-order peer) and
-`invalid tag` map to null; short ciphertext and wrong-length keys throw. Do not reintroduce
-sodium calls there. `sodium-parity-vectors.json` holds pysodium vectors for every former
-libsodium call, including fixed-ephemeral constructions that must match byte for byte;
-regenerate with `scripts/reference-sodium-parity-vectors.py` when KERIpy or the seam changes.
+`invalid tag` map to null; short ciphertext and wrong-length keys throw.
+`sodium-parity-vectors.json` holds pysodium vectors for every former libsodium call, including
+fixed-ephemeral constructions that must match byte for byte; regenerate with
+`scripts/reference-sodium-parity-vectors.py` when KERIpy or a seam changes.
 The IPEX DHKE owner supplies fresh independent keys and Python's local `/v1` HKDF-SHA256
 context; carrying it in v2 messages does not standardize the KDF. Owned ephemeral/shared
 arrays are cleared best effort, without an erasure claim.
 
-`pwhash.ts` is now the only consumer of the initialized sodium backend, so the libsodium blob
-(about 188 KB gzipped bundled) is still shipped until Argon2id moves. Wrapper and raw
-distribution identity both matter for its private wasm32 ABI. The frozen Deno lock and
-generated npm vendor hashes bind the exact distribution; do not rely on an upstream semver
-range or instantiate a second heap as an identity check. The npm loader supplies native Web
-Crypto only when its global is absent, before evaluating either pinned distribution. Measured
-alternatives are byte-identical but trade differently: `@noble/hashes/argon2` is about 13x
-slower, `hash-wasm` matches libsodium speed but rejects the empty password KERIpy's default
-path produces. See the [replacement report](../../docs/reports/crypto/SODIUM_REPLACEMENT_2026-11-08.md).
+Argon2id runs on the published `@keri-ts/hash-wasm` fork through one shared hasher, preloaded by
+`pwhash.ts`'s top-level await, so derivation stays synchronous. A reused Argon2 instance must
+zero its matrix before each call or it silently returns a wrong hash; the fork's `createArgon2`
+does this. It leaves the Argon2 matrix, final block and derived bytes (and the tail of a password
+over 1 KiB) in WebAssembly memory after a call, and memory stays at its high-water mark, so make no erasure or memory-shrink claim. KERIpy Argon2id13
+work factors remain unchanged; output is a safe integer of at least 16 bytes.
+Switch to upstream `hash-wasm` once it releases both fork changes.
 
-`pwhash.ts` owns password/salt/output allocations and reloads HEAPU8 after growth.
-Zero-before-free applies only to owned ranges. Native temporaries and JS copies
-can remain, and WASM retains its high-water memory after free. No process-erasure
-or memory-shrink guarantee follows. KERIpy Argon2id13 work factors remain unchanged;
-output is a safe integer of at least 16 bytes, not the old Noble-only 4–15 range.
-
-Any upgrade must repeat ABI/authentication-failure mapping, independent all-tier
-vectors, allocation/cleanup failures and built Node/browser bindings. Run high-tier
-vectors in an explicit isolated process. Faster derivation does not change key-cache
-authority or LMDB reopen/close requirements.
+Any backend change must repeat independent all-tier vectors and built Node/browser bindings.
+Run high-tier vectors in an explicit isolated process. Faster derivation does not change
+key-cache authority or LMDB reopen/close requirements.
 
 See [Argon2 ownership](../../docs/design-docs/crypto/ARGON2_OWNERSHIP.md).
 Remaining shared admission belongs to the [ESSR plan](../../docs/plans/essr/ESSR_PLAN.md).

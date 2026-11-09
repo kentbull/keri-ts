@@ -1,105 +1,51 @@
 import { assertEquals, assertThrows } from "jsr:@std/assert";
-import { MtrDex } from "../../../../src/primitives/base/codex.ts";
-import { Salter } from "../../../../src/primitives/crypto/salter.ts";
-import sodium from "../../../../src/primitives/crypto/sodium.ts";
+import { deriveArgon2id } from "../../../../src/primitives/crypto/pwhash.ts";
+import vectors from "../../../fixtures/sodium-parity-vectors.json" with { type: "json" };
 
-interface NativePwhash {
-  HEAPU8: Uint8Array;
-  _malloc(length: number): number;
-  _free(address: number): void;
-  _crypto_pwhash(...args: number[]): number;
-}
-const nativeModule = () => (sodium as unknown as { libsodium: NativePwhash }).libsodium;
-const salt = Uint8Array.from({ length: 16 }, (_, i) => i);
-const path = "SYNTHETIC-owned-pwhash-lifetime-751c8924";
+const hex = (text: string) => Uint8Array.from(text.match(/../g) ?? [], (n) => parseInt(n, 16));
+const salt = hex(vectors.argon2id.salt);
+const tiers: Record<string, { t: number; m: number }> = { temp: { t: 1, m: 8192 }, low: { t: 2, m: 65536 * 1024 } };
+const cases = vectors.argon2id.cases.filter((c) => c.mode in tiers);
+const derive = (c: (typeof cases)[number]) =>
+  deriveArgon2id(new TextEncoder().encode(c.path), salt, c.size, tiers[c.mode].t, tiers[c.mode].m);
 
-for (
-  const failure of [
-    "none",
-    "growth",
-    "native-return",
-    "native-throw",
-    "allocation-1",
-    "allocation-2",
-    "allocation-3",
-  ] as const
-) {
-  Deno.test(`pwhash: zero before free on ${failure}`, () => {
-    const native = nativeModule();
-    const allocate = native._malloc, free = native._free, derive = native._crypto_pwhash;
-    const owned = new Map<number, number>();
-    const releases: boolean[] = [];
-    let allocations = 0;
-    const beforeHeap = native.HEAPU8;
-    native._malloc = (length: number) => {
-      allocations++;
-      if (
-        (failure === "allocation-1" && allocations === 1) || (failure === "allocation-2" && allocations === 2)
-        || (failure === "allocation-3" && allocations === 3)
-      ) return 0;
-      const address = allocate(length);
-      if (address) owned.set(address, length);
-      return address;
-    };
-    native._free = (address: number) => {
-      const length = owned.get(address);
-      if (length !== undefined) {
-        releases.push((native.HEAPU8 as Uint8Array).subarray(address, address + length).every((byte) => byte === 0));
-        owned.delete(address);
-      }
-      free(address);
-    };
-    if (failure === "native-return" || failure === "native-throw") {
-      native._crypto_pwhash = (output: number, length: number) => {
-        (native.HEAPU8 as Uint8Array).fill(0x5a, output, output + length);
-        if (failure === "native-throw") throw new Error("injected native failure");
-        return -1;
-      };
-    }
-    try {
-      const stretch = () =>
-        new Salter({ raw: salt, code: MtrDex.Salt_128 }).stretch({ temp: failure !== "growth", path });
-      if (failure === "none" || failure === "growth") assertEquals(stretch().length, 32);
-      else assertThrows(stretch);
-      if (failure === "growth") {
-        assertEquals(
-          native.HEAPU8.buffer !== beforeHeap.buffer,
-          true,
-          "actual low-tier derivation replaces the initial 4MiB heap view",
-        );
-      }
-      assertEquals(owned.size, 0, "all acquired buffers must be released");
-      assertEquals(
-        releases.length,
-        failure === "allocation-1" ? 0 : failure === "allocation-2" ? 1 : failure === "allocation-3" ? 2 : 3,
-      );
-      assertEquals(releases.every(Boolean), true, "every owned range must be zero before _free");
-    } finally {
-      native._malloc = allocate;
-      native._free = free;
-      native._crypto_pwhash = derive;
-      for (const [address, length] of owned) {
-        (native.HEAPU8 as Uint8Array).fill(0, address, address + length);
-        free(address);
-      }
-    }
-  });
-}
+Deno.test("pwhash: matches pysodium, in either memory-size order on the shared hasher", () => {
+  for (const c of [...cases, ...cases.toReversed()]) assertEquals(derive(c), hex(c.hex), `${c.mode} ${c.path}`);
+});
 
-Deno.test("pwhash: invalid output sizes reject before any native allocation", () => {
-  const native = nativeModule(), allocate = native._malloc;
-  let allocations = 0;
-  native._malloc = (length: number) => {
-    allocations++;
-    return allocate(length);
-  };
-  try {
-    for (const size of [-1, 0, 4, 15, 16.5, NaN, Infinity, 0x80000000]) {
-      assertThrows(() => new Salter({ raw: salt, code: MtrDex.Salt_128 }).stretch({ temp: true, size }), RangeError);
-    }
-    assertEquals(allocations, 0);
-    assertEquals(new Salter({ raw: salt, code: MtrDex.Salt_128 }).stretch({ temp: true, size: 16 }).length, 16);
-  } finally {
-    native._malloc = allocate;
+Deno.test("pwhash: output size is an integer from 16 through 2147483647", () => {
+  for (const size of [-1, 0, 4, 15, 16.5, NaN, Infinity, 0x80000000]) {
+    assertThrows(() => deriveArgon2id(new Uint8Array(0), salt, size, 1, 8192), RangeError);
   }
+  assertEquals(deriveArgon2id(new Uint8Array(0), salt, 16, 1, 8192).length, 16);
+});
+
+Deno.test("pwhash: invalid inputs reject before derivation", () => {
+  const empty = new Uint8Array(0);
+  const invalid: Array<[Uint8Array, Uint8Array, number, number]> = [
+    ["x" as unknown as Uint8Array, salt, 1, 8192],
+    [empty, new Uint8Array(15), 1, 8192],
+    [empty, new Uint8Array(17), 1, 8192],
+    [empty, salt, 0, 8192],
+    [empty, salt, 1.5, 8192],
+    [empty, salt, 1, 8191],
+    [empty, salt, 1, 0x80000000],
+  ];
+  for (const [password, inputSalt, operations, memory] of invalid) {
+    assertThrows(() => deriveArgon2id(password, inputSalt, 32, operations, memory), RangeError);
+  }
+});
+
+Deno.test("pwhash: a backend failure propagates and leaves derivation usable", () => {
+  const empty = new Uint8Array(0);
+  // Within this seam's input bounds but above the WebAssembly module's maximum memory.
+  assertThrows(() => deriveArgon2id(empty, salt, 32, 1, 0x7fffffff));
+  assertEquals(derive(cases[0]), hex(cases[0].hex));
+});
+
+Deno.test("pwhash: returned bytes are owned by the caller", () => {
+  const first = derive(cases[0]);
+  assertEquals(first.buffer.byteLength, first.length);
+  first.fill(0);
+  assertEquals(derive(cases[0]), hex(cases[0].hex));
 });

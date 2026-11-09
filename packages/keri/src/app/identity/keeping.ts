@@ -1685,7 +1685,7 @@ export function b64DecodeUrl(text: string): Uint8Array {
 /**
  * Backward-compatibility no-op for older app-layer startup seams.
  *
- * CESR primitives now own libsodium readiness through their own module
+ * CESR primitives now own crypto backend readiness through their own module
  * initialization, so higher layers no longer need an explicit keeper-crypto
  * readiness step.
  */

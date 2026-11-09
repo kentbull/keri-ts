@@ -1,9 +1,9 @@
 /** Compare Argon2id13 backends against pysodium/KERIpy vectors with timings.
  *
- * Usage: deno run -A packages/cesr/scripts/qualify-argon2-backends.ts --allow-high-memory [--modes temp,low,med,high] [--backends libsodium,noble,hashwasm]
+ * Usage: deno run -A packages/cesr/scripts/qualify-argon2-backends.ts --allow-high-memory [--modes temp,low,med,high] [--backends pwhash,noble,hashwasm]
  */
+import { argon2id as wasmArgon2id } from "npm:@keri-ts/hash-wasm@4.14.0";
 import { argon2id as nobleArgon2id } from "npm:@noble/hashes@1.8.0/argon2";
-import { argon2id as wasmArgon2id } from "npm:hash-wasm@4.13.0";
 import { deriveArgon2id } from "../src/primitives/crypto/pwhash.ts";
 import { SALTER_PWHASH_VECTORS } from "../test/fixtures/salter-pwhash-vectors.ts";
 import parity from "../test/fixtures/sodium-parity-vectors.json" with { type: "json" };
@@ -16,7 +16,7 @@ const arg = (name: string, fallback: string) => {
   return (i >= 0 ? Deno.args[i + 1] : fallback).split(",");
 };
 const modes = arg("--modes", "temp,low,med,high");
-const backendNames = arg("--backends", "libsodium,noble,hashwasm");
+const backendNames = arg("--backends", "pwhash,noble,hashwasm");
 const hex = (t: string) => Uint8Array.from(t.match(/../g)!, (n) => parseInt(n, 16));
 const toHex = (b: Uint8Array) => Array.from(b, (n) => n.toString(16).padStart(2, "0")).join("");
 const params: Record<string, { t: number; m: number }> = {
@@ -27,7 +27,7 @@ const params: Record<string, { t: number; m: number }> = {
 };
 type Backend = (password: Uint8Array, salt: Uint8Array, size: number, t: number, mKiB: number) => Promise<Uint8Array>;
 const backends: Record<string, Backend> = {
-  libsodium: (pw, salt, size, t, m) => Promise.resolve(deriveArgon2id(pw, salt, size, t, m * 1024)),
+  pwhash: (pw, salt, size, t, m) => Promise.resolve(deriveArgon2id(pw, salt, size, t, m * 1024)),
   noble: (pw, salt, size, t, m) => Promise.resolve(nobleArgon2id(pw, salt, { t, m, p: 1, dkLen: size })),
   hashwasm: (pw, salt, size, t, m) =>
     wasmArgon2id({
