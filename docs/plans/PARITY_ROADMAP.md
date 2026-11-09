@@ -80,6 +80,13 @@ consumers own cancellation and joined I/O. Memory/latency may grow with the comp
 enclosure. No incomplete-enclosure child delivery, constant-memory giant-group
 or all-group rollback promise; a complete enclosed message may progress before EOF.
 
+## Browser-embeddable wallet storage
+
+[ADR-0015](../adr/adr-0015-pluggable-store-contract.md) authorizes the pluggable
+store contract and browser durability model, lifting D8's former gate in the
+[DB parity plan](db/DB_PARITY_PLAN.md) without closing D0–D7. Its refactor lands
+behind LMDB with no behavior change before any browser backend exists.
+
 ## Maintained boundaries
 
 | Area              | Owning standard                                                               | Retained responsibility                                                     |

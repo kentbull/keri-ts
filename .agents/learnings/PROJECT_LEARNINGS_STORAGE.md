@@ -4,6 +4,12 @@
 accounting/durability removal and the prohibition on restoring it. Preserve
 protocol evidence, transactions and actual resource cleanup.
 
+[ADR-0015](../../docs/adr/adr-0015-pluggable-store-contract.md) owns the pluggable
+`DBer` contract and browser durability; LMDB is still the only implemented backend
+and the parity reference. Nested transactions are savepoints. Browser stores commit
+to their mirrors synchronously and share one prefix-durable queue per composition;
+the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
+
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
 do not cast the native environment or infer commit completion from a nested return.

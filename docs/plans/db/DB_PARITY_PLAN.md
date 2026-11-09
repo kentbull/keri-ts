@@ -55,7 +55,7 @@ legacy KERI/ACDC/CESR wire requirements or defer main-targeted ESSR parity.
 | D5 escrow          | Verify reconstruction, retry, timeout and state transitions      |
 | D6 CLI integration | Prove init/incept/endpoints/OOBI/comms/challenge stores          |
 | D7 closure         | Resolve rows to equivalent or explicitly approved exclusion      |
-| D8 providers       | Deferred until parity closure; no implementation authorized here |
+| D8 providers       | Authorized by [ADR-0015][adr]; sequencing held in the enctx plan |
 
 Prioritize high-value Partial rows such as shared `fetchTsgs` and Komer evidence.
 Existing runtime-specific reconstruction is not automatically a generic DB API.
@@ -76,10 +76,11 @@ an active dependency: the exit criteria above and the [command matrix][commands]
 identify the retained obligations. Full DB parity requires all D0–D7 evidence,
 not merely passing bootstrap commands.
 
-Use typed storage seams; avoid command-level bypasses and speculative provider
-abstraction before LMDB parity closure. The [provider proposal][provider] remains
-unimplemented. Runtime row allocation, payload copies and crash recovery belong
-to the coordinated [storage phase](STORAGE_RECOVERY_PLAN.md), not a duplicate task.
+Use typed storage seams and avoid command-level bypasses. [ADR-0015][adr] lifts the
+former provider gate without closing D0–D7: LMDB remains the parity reference and
+a passing alternate backend makes no parity claim. Runtime row allocation, payload
+copies and crash recovery belong to the coordinated
+[storage phase](STORAGE_RECOVERY_PLAN.md), not a duplicate task.
 
+[adr]: ../../adr/adr-0015-pluggable-store-contract.md
 [commands]: ../../reference/cli/KLI_TUFA_COMMAND_PARITY_MATRIX.md
-[provider]: ../../design-docs/db/PROVIDER_PROPOSAL.md
