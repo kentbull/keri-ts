@@ -3,12 +3,12 @@ import { startServer } from "@keri-ts/hosting";
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
-import { NodeHttpClient } from "keri-ts/runtime";
 import {
   consoleLogger,
   createAgentRuntime,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { setupHby } from "../support/existing.ts";
 
 interface DwsResolverArgs {

@@ -1,7 +1,8 @@
 import { annotate } from "cesr-ts";
 import type { Operation } from "npm:effection@^3.6.0";
 import { abortable } from "../../app/runtime/abortable.ts";
-import { collectBytes, fileBytes, streamBytes } from "../../app/transport/byte-source.ts";
+import { collectBytes, streamBytes } from "../../app/transport/byte-source.ts";
+import { fileBytes } from "../../app/transport/file-bytes.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
 import { writeStdout } from "../output.ts";
 import { colorizeAnnotatedOutput } from "./annotate-color.ts";

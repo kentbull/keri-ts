@@ -29,7 +29,6 @@ import {
   type KramConfig,
   localGroupMember,
   messagize,
-  NodeHttpClient,
   Organizer,
   Receiptor,
   runAgentRuntime,
@@ -39,6 +38,7 @@ import {
   ValidationError,
   type WitnessAuthMap,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { withExistingHab } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
 import { openWallet, walletStoreArgs } from "../support/wallet.ts";

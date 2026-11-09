@@ -1,6 +1,7 @@
 import { assertEquals, assertRejects } from "jsr:@std/assert";
-import { collectBytes, fileBytes, streamBytes } from "../../../../src/app/transport/byte-source.ts";
+import { collectBytes, streamBytes } from "../../../../src/app/transport/byte-source.ts";
 import { requestBytes } from "../../../../src/app/transport/cesr-http.ts";
+import { fileBytes } from "../../../../src/app/transport/file-bytes.ts";
 
 Deno.test("transport reads wait for consumption and cancel on early return", async () => {
   let pulls = 0;

@@ -6,11 +6,11 @@ import {
   createAgentRuntime,
   type Habery,
   type KramConfig,
-  NodeHttpClient,
   Receiptor,
   systemClock,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { discoverKfBoot, KfBootClient } from "../../operator/kfboot/client.ts";
 import { onboardKfAccount } from "../../operator/kfboot/onboarding.ts";
 import { withExistingHab } from "../support/context.ts";

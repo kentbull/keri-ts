@@ -46,12 +46,12 @@ import {
   type Hab,
   type Habery,
   type HttpClient,
-  NodeHttpClient,
   requestBytes,
   runAgentRuntime,
   systemClock,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { readFileSync } from "node:fs";
 import {
   BootApiError,

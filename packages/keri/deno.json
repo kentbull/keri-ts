@@ -6,7 +6,8 @@
     "./cli": "./cli.ts",
     "./runtime": "./runtime.ts",
     "./db": "./db.ts",
-    "./db/lmdb": "./db-lmdb.ts"
+    "./db/lmdb": "./db-lmdb.ts",
+    "./runtime/node": "./runtime-node.ts"
   },
   "tasks": {
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
