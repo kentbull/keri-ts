@@ -53,6 +53,8 @@ assert(typeof runtime.messagize === "function", "keri-ts/runtime missing messagi
 assert(typeof runtime.inceptRegistry === "function", "keri-ts/runtime missing inceptRegistry");
 assert(typeof dbLmdb.createBaser === "function", "keri-ts/db/lmdb missing createBaser");
 assert(typeof dbLmdb.LMDBer === "function", "keri-ts/db/lmdb missing LMDBer");
+assert(typeof dbLmdb.createHabery === "function", "keri-ts/db/lmdb missing createHabery");
+assert(typeof runtime.openHabery === "function", "keri-ts/runtime missing openHabery");
 assert(typeof db.dgKey === "function", "keri-ts/db missing dgKey");
 assert(typeof runtime.EssrRecipient === "function", "keri-ts/runtime missing ESSR recipient");
 assert(typeof runtime.credential === "function", "keri-ts/runtime missing credential");
@@ -178,7 +180,7 @@ await new Promise((resolve, reject) => {
 });
 try {
   await run(function*() {
-    const hby = yield* runtime.createHabery({ name: "installed-messengers", temp: true, skipConfig: true });
+    const hby = yield* dbLmdb.createHabery({ name: "installed-messengers", temp: true, skipConfig: true });
     try {
       const sender = hby.makeHab("sender");
       sender.interact();
