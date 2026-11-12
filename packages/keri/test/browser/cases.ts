@@ -11,6 +11,7 @@ import { MemStore } from "../../src/db/core/memstore.ts";
 import type { WebDBer } from "../../src/db/core/webdber.ts";
 import { storeContract, wrapperContract } from "../unit/db/store-contract.ts";
 import { registerEngineCases } from "./engine-cases.ts";
+import { registerHaltCases } from "./halt-cases.ts";
 import { registerWalletCases } from "./wallet-cases.ts";
 
 /** A fresh `WebDBer` on real IndexedDB under a unique database name; `close(true)` deletes it. */
@@ -68,6 +69,7 @@ export function registerCases(): void {
     wrapperContract(() => open(), backend);
   }
   registerEngineCases();
+  registerHaltCases();
   registerWalletCases();
   Deno.test("indexeddb reopen fidelity: flushed rows are byte-identical through a fresh opener", reopenFidelity);
 }
