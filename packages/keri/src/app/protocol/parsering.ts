@@ -149,6 +149,11 @@ export type DispatchDecision =
 export interface AuxiliaryQueryProcessor {
   /** Concrete custom query route selected by composition before any replay-cache admission. */
   readonly resource: string;
+  /**
+   * Overrides the single-`resource` check for receivers that own several routes or identifiers.
+   * Evaluated before KRAM, so a refused query leaves no cache state, as for a missing receiver.
+   */
+  claims?(serder: SerderKERI): boolean;
   processQuery(envelope: KeriDispatchEnvelope): DispatchDecision;
 }
 
@@ -325,7 +330,7 @@ function* dispatchMessage(
   }
   if (
     serder.ilk === "qry" && !["logs", "ksn", "mbx", "tels", "tsn"].includes(serder.route ?? "")
-    && qvy?.resource !== serder.route
+    && !(qvy?.claims ? qvy.claims(serder) : qvy?.resource === serder.route)
   ) {
     return { envelope, decision: { kind: "drop", reason: "missingProcessor" } };
   }
