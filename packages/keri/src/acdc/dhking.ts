@@ -53,6 +53,7 @@ import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
+import type { Baser } from "../db/basing.ts";
 import { timestampMicros } from "../time/mod.ts";
 import { validateUpdate, verifyRegistryAnchor } from "./regeventing.ts";
 import { publicOpeningAttachment, type RegistryStore } from "./registering.ts";
@@ -698,8 +699,17 @@ export class Dhke implements AuxiliaryQueryProcessor {
    */
   inTransaction(sender: string, xid: string): boolean {
     return this.operations.has(xid) || (this.group && sender === this.hab.pre)
-      || [...this.hab.db.tmsc.getTopItemIter([sender, xid])]
-        .some(([key]) => this.hab.db.epse.get([key[2]])?.sad?.ri === this.hab.pre);
+      || Dhke.recipients(this.hab.db, sender, xid).includes(this.hab.pre!);
+  }
+
+  /** Recipients of the pending Grants `sender` opened in DH transaction `xid`, from KRAM-accepted store rows. */
+  static recipients(db: Baser, sender: string, xid: string): string[] {
+    const recipients: string[] = [];
+    for (const [key] of db.tmsc.getTopItemIter([sender, xid])) {
+      const recipient = db.epse.get([key[2]])?.sad?.ri;
+      if (typeof recipient === "string") recipients.push(recipient);
+    }
+    return recipients;
   }
 
   /** Release all process-local approvals and retry bytes; zero owned ephemeral scalar arrays. */

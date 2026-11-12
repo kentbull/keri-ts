@@ -234,8 +234,8 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(requested.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
     assertEquals(envelopeFromFrame(requested).bsqs, [], "query carries public state, never openings");
     yield* presenter.reactor.processBytes(query);
-    assertEquals(presenter.route.outgoing.length, 0, "receipt without release consent discloses no proofs");
-    assertEquals(presenter.store.head(rip.said!)!.qb64, event1.said!, "unapproved public suffix is not imported");
+    assertEquals(presenter.route.outgoing.length, 1, "the discloser answers an authenticated query for its live Grant");
+    assertEquals(presenter.store.head(rip.said!)!.qb64, events[2].said!, "the authenticated suffix is imported");
     assertEquals(presenter.route.approve(pending.said!), xid);
     {
       // The state vocabulary belongs to each approved operation, not to the owner.
@@ -586,9 +586,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     });
     assertEquals(query.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
     assertEquals(queryEvidence.tsgs.flatMap(group => group.sigers.map(siger => siger.index)).sort(), [0, 1]);
-    for (const side of presenters) {
-      assertEquals(side.store.head(rip.said!)!.qb64, event1.said!, "unapproved receipt does not import or disclose");
-    }
+    // A group discloser needs member contributions before any reply exists; none has been authored yet.
     assertEquals(replies, []);
 
     // Index 1 authors the proof; rootless index 0 validates and contributes under its one setup approval.

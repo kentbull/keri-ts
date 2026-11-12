@@ -6,7 +6,6 @@ import { parseIntegerOption, parseNumberOption, parseStringOption, withRuntimeWo
 import {
   abandonUnblinding,
   type AgentRuntime,
-  approveUnblind,
   consoleLogger,
   createAgentRuntime,
   envelopeFromFrame,
@@ -314,9 +313,9 @@ function* runIndividualUnblind(
     clock: runtime.clock,
   });
   const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
-  const consent = requester ? requestUnblind : approveUnblind;
   const run = function*() {
-    const { xid, role } = consent(ops, { hab, grant, states });
+    // The disclosee consents explicitly; the discloser only listens, and the owner answers an authenticated query.
+    const begun = requester ? requestUnblind(ops, { hab, grant, states }) : null;
     const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
       const driver = yield* spawn(function*() {
         while (true) {
@@ -325,11 +324,19 @@ function* runIndividualUnblind(
         }
       });
       try {
-        return yield* waitForUnblinding(ops, grant, { timeoutMs });
+        const stop = runtime.clock.now() + timeoutMs;
+        while (!begun && !ops.deps.store.get(grant)) {
+          if (runtime.clock.now() >= stop) {
+            throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
+          }
+          yield* wait(runtime, 50);
+        }
+        return yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - runtime.clock.now()) });
       } finally {
         yield* driver.halt();
       }
     });
+    const xid = begun?.xid ?? ops.deps.store.get(grant)!.xid, role = requester ? "requester" : "responder";
     const { status } = outcome;
     if (status.state === "done") return { grant, xid, role, completed: true, admitted: false } as const;
     if (status.state === "active") abandonUnblinding(ops, grant, "Elapsed limit");

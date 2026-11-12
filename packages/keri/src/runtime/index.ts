@@ -907,7 +907,6 @@ export {
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {
   abandonUnblinding,
-  approveUnblind,
   MemoryUnblindingOperationStore,
   requestUnblind,
   type UnblindingBegun,

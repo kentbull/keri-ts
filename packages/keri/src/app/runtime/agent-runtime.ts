@@ -379,7 +379,7 @@ export function* createAgentRuntime(
   // One registry serves the legacy single selection and per-identifier hosts: one dispatch path.
   const ipex = (selected || options.ipexOwners) && registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.ipexOwners ? hby.habs : undefined);
+      const owners = new IpexAuxiliaries(exc, registry, revery, now);
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);

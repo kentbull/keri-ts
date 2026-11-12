@@ -2,7 +2,7 @@
  * Single-signature Unblind operations over two in-process parties: a presenter (the Grant's sender) that knows
  * only the first registry event and a verifier that already holds the later public suffix. Ported from KERIpy
  * `tests/acdc/test_held_openings.py` where the case concerns what the owner leaves behind: the exact opening is
- * released only after explicit consent, is held on the Grant (not in public TEL replay), survives a reload
+ * released on the discloser's signed Grant (no second approval), is held on the Grant (not in public TEL replay), survives a reload
  * of the owner, and the root never leaves the presenter. The registry-store cases of that file (`putOpening`
  * refusals, corrupt rows) are `RegistryStore` behaviour and are covered with the store.
  */
@@ -22,17 +22,19 @@ import { call, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment } from "../../../../src/acdc/registering.ts";
+import { Unblind } from "../../../../src/acdc/unblinding.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import {
   abandonUnblinding,
-  approveUnblind,
   MemoryUnblindingOperationStore,
   requestUnblind,
   UnblindingOperations,
   unblindingStatus,
   waitForUnblinding,
 } from "../../../../src/app/ipex/unblinding-workflow.ts";
+import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import { query } from "../../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
 import { type Party, route, scenario } from "./issuance-fixtures.ts";
 
@@ -122,16 +124,11 @@ function* drive(a: UnblindingOperations, b: UnblindingOperations, grant: string,
   }
 }
 
-Deno.test("both parties consent; the owners exchange the query and reply and finish the pending Grant", async () => {
+Deno.test("the disclosee consents; the discloser answers on its own and the owners exchange the query and reply and finish the pending Grant", async () => {
   await run(function*() {
     const f = yield* fixture();
     const requester = f.mk(f.observer), responder = f.mk(f.presenter);
     const g = f.grant.said!, deadline = f.observer.runtime.exc.exchangeDeadline(f.grant);
-    assertThrows(
-      () => approveUnblind(requester, { hab: f.verifier, grant: g, states: STATES }),
-      ValidationError,
-      "Only the discloser",
-    );
     assertThrows(
       () => requestUnblind(responder, { hab: f.sender, grant: g, states: STATES }),
       ValidationError,
@@ -139,14 +136,13 @@ Deno.test("both parties consent; the owners exchange the query and reply and fin
     );
     const begun = requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
     assertEquals(begun.role, "requester");
-    approveUnblind(responder, { hab: f.sender, grant: g, states: STATES });
     assertEquals(unblindingStatus(requester, g), {
       state: "active",
       role: "requester",
       phase: "awaitingReply",
       deadline: deadline!,
     });
-    assertEquals(f.sent.length, 0, "the consent steps send nothing");
+    assertEquals(f.sent.length, 0, "requesting sends nothing until a pass runs");
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
     assertEquals(unblindingStatus(responder, g), { state: "done", role: "responder" });
@@ -162,27 +158,74 @@ Deno.test("both parties consent; the owners exchange the query and reply and fin
   });
 });
 
-Deno.test("a query that arrives before the release consent discloses nothing, then is replayed on approval", async () => {
+Deno.test("an authenticated query for a live Grant the discloser sent is answered with no approval call", async () => {
   await run(function*() {
     const f = yield* fixture();
-    const requester = f.mk(f.observer), responder = f.mk(f.presenter), g = f.grant.said!;
+    const requester = f.mk(f.observer), g = f.grant.said!;
     requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
     yield* requester.processOnce();
-    assertEquals(f.sent.length, 1, "the signed query went to the discloser");
-    assertEquals(f.sent[0].dest, f.sender.pre);
-    f.s.clock.skew += 1100;
-    yield* requester.processOnce();
-    assertEquals(f.sent.length, 2);
-    assertEquals(f.sent[1].msg, f.sent[0].msg, "the unchanged query is resent each second");
-    assertEquals(f.presenter.rgy.store.head(f.rip.said!)!.qb64, f.head, "an unapproved public suffix is not imported");
-    const waited = yield* waitForUnblinding(requester, g, { timeoutMs: 100 });
-    assertEquals(waited.outcome, "timed-out");
-    const before = f.sent.length;
-    approveUnblind(responder, { hab: f.sender, grant: g, states: STATES });
+    assertEquals(f.sent[0].dest, f.sender.pre, "the signed query went to the discloser");
+    // The discloser never approved: its owner appeared at the query and holds the reply for delivery.
+    const owner = f.presenter.runtime.ipex!.unblind(f.sender);
+    assertEquals(owner.awaitingReply().length, 1);
+    const responder = f.mk(f.presenter);
     yield* drive(requester, responder, g);
     assertEquals(unblindingStatus(responder, g).state, "done");
     assertEquals(unblindingStatus(requester, g).state, "done");
-    assert(f.sent.length > before);
+    assertEquals(
+      f.presenter.rgy.store.head(f.rip.said!)!.qb64 !== f.head,
+      true,
+      "the authenticated suffix is imported",
+    );
+  });
+});
+
+Deno.test("a reloaded discloser answers a repeated query from stored state, with no approve call", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const requester = f.mk(f.observer), g = f.grant.said!;
+    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    yield* requester.processOnce();
+    // The discloser's process restarts: owners and driver are gone, the stores are not.
+    f.presenter.runtime.ipex!.release(f.sender.pre!);
+    const responder = f.mk(f.presenter);
+    yield* responder.processOnce();
+    assertEquals(f.sent.length, 1, "nothing was replied while the owner was gone");
+    // KRAM refuses the identical query as a replay, so the requester renews it, as `requery` is for.
+    const renewed = f.observer.runtime.ipex!.unblind(f.verifier).requery(g);
+    yield* f.presenter.runtime.reactor.processBytes(renewed);
+    yield* drive(requester, responder, g);
+    assertEquals(unblindingStatus(responder, g).state, "done");
+    assertEquals(unblindingStatus(requester, g).state, "done");
+  });
+});
+
+Deno.test("no reply after the Grant's deadline, and none for a Grant this identifier did not send", async () => {
+  await run(function*() {
+    const f = yield* fixture();
+    const requester = f.mk(f.observer), g = f.grant.said!;
+    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    yield* requester.processOnce();
+    const owner = f.presenter.runtime.ipex!.unblind(f.sender);
+    const wire = f.sent[0].msg;
+    f.presenter.runtime.ipex!.release(f.sender.pre!);
+    f.s.clock.skew = Number(timestampMicros(f.presenter.runtime.exc.exchangeDeadline(f.grant))! / 1000n)
+      - Date.now() + 1;
+    const late = f.presenter.runtime.ipex!.unblind(f.sender);
+    assertEquals(late.processQuery(envelopeFromFrame(parseBytes(wire)[0])), { kind: "drop", reason: "invalidQuery" });
+    assertEquals(late.awaitingReply(), []);
+    assertEquals(owner.awaitingReply(), []);
+    // The verifier received this Grant; it did not send it, so a query from the sender is not answered.
+    const probe = query(Unblind.Route, { x: g, re: {} }, {
+      pre: f.sender.pre!,
+      replyRoute: Unblind.Route,
+      pvrsn: Vrsn_2_0,
+      kind: Kinds.json,
+    });
+    const foreign = f.observer.runtime.ipex!.unblind(f.verifier);
+    const envelope = envelopeFromFrame(parseBytes(f.sender.endorse(probe, { gvrsn: Vrsn_2_0 }))[0]);
+    assertEquals(foreign.processQuery(envelope).kind, "drop");
+    assertEquals(foreign.awaitingReply(), []);
   });
 });
 
