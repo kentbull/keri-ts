@@ -1,7 +1,7 @@
 /** Per-identifier IPEX auxiliary owners: registry, dispatch by transaction, KRAM invariant and legacy option. */
 import { Diger, Kinds, parseBytes, Vrsn_2_0 } from "cesr-ts";
 import { ensure, run, sleep, spawn } from "effection";
-import { assert, assertEquals, assertNotEquals, assertRejects, assertThrows } from "jsr:@std/assert";
+import { assert, assertEquals, assertRejects, assertThrows } from "jsr:@std/assert";
 import { Dhke } from "../../../../src/acdc/dhking.ts";
 import { Regery } from "../../../../src/acdc/registraring.ts";
 import { Unblind } from "../../../../src/acdc/unblinding.ts";
@@ -69,9 +69,13 @@ function spyQueries(owner: Dhke | Unblind, tag: string, seen: string[]) {
   };
 }
 
-/** Stand in for an approved operation, which is what makes an owner claim a transaction. */
-function approve(owner: Dhke | Unblind, xid: string) {
-  (owner as unknown as { operations: Map<string, unknown> }).operations.set(xid, {});
+/** Stand in for an approved operation, which is what makes an owner claim a transaction; removed before teardown. */
+function* approve(owner: Dhke | Unblind, xid: string) {
+  const operations = (owner as unknown as { operations: Map<string, unknown> }).operations;
+  operations.set(xid, {});
+  yield* ensure(() => {
+    operations.delete(xid);
+  });
 }
 
 Deno.test("per-identifier owners are created once per identifier and kind, and released", async () => {
@@ -79,14 +83,14 @@ Deno.test("per-identifier owners are created once per identifier and kind, and r
     const { a, b, runtime } = yield* wallet();
     const ipex = runtime.ipex!;
     assert(ipex.dhke(a) === ipex.dhke(a));
-    assertNotEquals(ipex.dhke(a), ipex.dhke(b));
+    assert(ipex.dhke(a) !== ipex.dhke(b));
     assert(ipex.unblind(a, STATES) === ipex.unblind(a, STATES));
     assertEquals(ipex.dhke(a).hab, a);
     assertEquals(ipex.unblind(a, STATES).hab, a);
     assertThrows(() => ipex.unblind(a, ["issued"]), ValidationError, "different states");
     const before = ipex.dhke(a);
     ipex.release(a.pre!);
-    assertNotEquals(ipex.dhke(a), before, "a released identifier gets a fresh owner");
+    assert(ipex.dhke(a) !== before, "a released identifier gets a fresh owner");
     assertEquals(runtime.ipexAuxiliary, null);
   });
 });
@@ -99,9 +103,9 @@ Deno.test("each identifier receives only its own DH queries, and both kinds coex
     spyQueries(ipex.dhke(a), "dhke-a", seen);
     spyQueries(ipex.dhke(b), "dhke-b", seen);
     spyQueries(ipex.unblind(a, STATES), "unblind-a", seen);
-    approve(ipex.dhke(a), "xid-a");
-    approve(ipex.dhke(b), "xid-b");
-    approve(ipex.unblind(a, STATES), "xid-u");
+    yield* approve(ipex.dhke(a), "xid-a");
+    yield* approve(ipex.dhke(b), "xid-b");
+    yield* approve(ipex.unblind(a, STATES), "xid-u");
     for (const [route, xid] of [[Dhke.Route, "xid-b"], [Dhke.Route, "xid-a"], [Unblind.Route, "xid-u"]]) {
       const envelope = envelopeFromFrame(frame(remote, route, xid));
       assert(runtime.protocol.qvy!.claims!(envelope.serder));
@@ -117,7 +121,7 @@ Deno.test("a message for an identifier with no owner is handled as without any o
   await run(function*() {
     const { a, remote, runtime } = yield* wallet();
     const plain = yield* wallet(() => ({}));
-    approve(runtime.ipex!.dhke(a), "xid-a");
+    yield* approve(runtime.ipex!.dhke(a), "xid-a");
     for (const side of [runtime, plain.runtime]) {
       const result = yield* side.protocol.dispatch(frame(remote, Dhke.Route, "unowned"));
       assertEquals(result.decision, { kind: "drop", reason: "missingProcessor" });
@@ -146,7 +150,7 @@ Deno.test("replies reach the owner of their transaction, including owners regist
         seen.push(tag);
         return { kind: "accept" };
       };
-      approve(owner, `xid-${tag}`);
+      yield* approve(owner, `xid-${tag}`);
     }
     for (const xid of ["xid-b", "xid-a"]) {
       const serder = reply(Dhke.Route, { x: xid, pk: {} }, { pre: remote.pre, pvrsn: Vrsn_2_0, kind: Kinds.json });
@@ -169,7 +173,7 @@ Deno.test("the legacy single owner is the registry's owner and other identifiers
     assert(runtime.protocol.qvy === runtime.ipex);
     const seen: string[] = [];
     spyQueries(owner, "legacy", seen);
-    approve(owner, "xid-a");
+    yield* approve(owner, "xid-a");
     runtime.protocol.qvy!.processQuery(envelopeFromFrame(frame(remote, Unblind.Route, "xid-a")));
     assertEquals(seen, ["legacy"]);
     const other = yield* runtime.protocol.dispatch(frame(remote, Unblind.Route, "xid-other"));
