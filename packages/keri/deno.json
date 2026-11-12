@@ -26,6 +26,7 @@
     "check:surface": "deno run -A scripts/check_library_boundary.ts",
     "test": "deno run -A ../../scripts/ci/run-keri-test-group.ts full",
     "test:quality": "deno run -A ../../scripts/ci/run-keri-test-group.ts quality",
+    "test:browser": "deno run -A scripts/run_browser_tests.ts",
     "test:audit": "deno run -A ../../scripts/ci/run-keri-test-group.ts audit",
     "test:qualification": "deno run -A ../../scripts/ci/run-keri-test-group.ts qualification",
     "test:quality:app-fast-parallel": "deno run -A ../../scripts/ci/run-keri-test-group.ts app-fast-parallel",

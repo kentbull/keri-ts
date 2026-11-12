@@ -42,6 +42,7 @@
     "test:ci-tools": "deno test -A scripts/ci/pr-test-scope.test.ts scripts/ci/extended-interop-matrix.test.ts",
     "test:quality:tufa": "cd packages/tufa && deno task test:quality",
     "test:integration:server": "cd packages/tufa && deno task test:integration:server",
+    "test:browser": "cd packages/keri && deno task test:browser",
     "test:cesr": "cd packages/cesr && deno task test",
     "bench:cesr": "cd packages/cesr && deno task bench",
     "tephra:bench": "cd packages/cesr && deno task bench:parser",
