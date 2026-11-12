@@ -15,7 +15,7 @@ import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-p
 import { Reactor } from "../../../../src/app/protocol/reactor.ts";
 import type { HttpClient, HttpRequestInit, HttpResponse } from "../../../../src/app/transport/http-client.ts";
 
-const MAILBOX = "EMailboxProviderAidForUnitTests0000000000";
+const MAILBOX = `E${"MailboxProvider".padEnd(43, "A")}`;
 const PROVIDER_URL = "http://mailbox.test:7723/base/";
 
 interface Recorded {
