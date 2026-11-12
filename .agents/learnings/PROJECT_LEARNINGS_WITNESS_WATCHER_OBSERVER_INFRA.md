@@ -178,6 +178,11 @@ delete closed sessions' watcher+witnesses, then stamp `resources_cleaned_at`); u
 that stamp a closed session blocks a new start with 409, and a failed teardown retries
 next sweep. Rows are never purged.
 The shared host answers CORS preflight `OPTIONS` 204 (kf-boot 200): both 2xx.
+Browser transport is probed by `deno task test:browser:transport` (local, Docker servers; evidence in
+`docs/reports/browser-transport-probe-2026-11.md`). The shared host's CORS allow list must name every request
+header keri-ts sends (`CESR-Genus` on v2 detached POSTs, `Authorization` for witness TOTP codes); a missing
+one blocks the whole request in every engine. KERIpy's witness has no `Access-Control-Expose-Headers`, so
+`Keri-Aid` is unreadable from a page. `redirect: "manual"` reads as status 0 in browsers.
 Completed sessions stay readable by the ephemeral signer and the account and
 `/onboarding/complete` is idempotent on them; `--session` recovery depends on it.
 Service activation enrolls `cloneDelegation`+`clonePreIter` text KEL and fails the

@@ -56,7 +56,7 @@ Deno.test("tufa/http app - OPTIONS short-circuits before protocol routing", asyn
   );
   assertEquals(
     response.headers.get("Access-Control-Allow-Headers"),
-    "Content-Type, CESR-ATTACHMENT, CESR-DESTINATION, Oobi-Aid",
+    "Content-Type, CESR-ATTACHMENT, CESR-DESTINATION, CESR-Genus, Authorization, Oobi-Aid",
   );
 });
 
