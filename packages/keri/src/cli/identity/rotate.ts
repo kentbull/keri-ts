@@ -20,10 +20,9 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
-import { completeEvent } from "../../app/identity/event-completion.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { withExistingHab } from "../common/context.ts";
-import { cliEventCompletionDeps } from "../common/event-completion.ts";
+import { cliEventCompletionDeps, completeEventOrThrow } from "../common/event-completion.ts";
 import {
   loadRotateFileOptions,
   parseBooleanOption,
@@ -210,7 +209,7 @@ export function* rotateCommand(
         version: rotateArgs.version,
       });
 
-      const { delegationPhase } = yield* completeEvent(
+      const { delegationPhase } = yield* completeEventOrThrow(
         cliEventCompletionDeps(hby, http),
         hab,
         hab.kever!.sn,

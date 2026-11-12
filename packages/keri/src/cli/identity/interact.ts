@@ -11,11 +11,10 @@ import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
  *   `incept` and `rotate`
  */
 import { type Operation } from "npm:effection@^3.6.0";
-import { completeEvent } from "../../app/identity/event-completion.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHab } from "../common/context.ts";
-import { cliEventCompletionDeps } from "../common/event-completion.ts";
+import { cliEventCompletionDeps, completeEventOrThrow } from "../common/event-completion.ts";
 import {
   parseBooleanOption,
   parseDataItems,
@@ -111,7 +110,7 @@ export function* interactCommand(
             promptMissing: interactArgs.authenticate ?? false,
           },
         );
-        yield* completeEvent(cliEventCompletionDeps(hby, http), hab, hab.kever.sn, {
+        yield* completeEventOrThrow(cliEventCompletionDeps(hby, http), hab, hab.kever.sn, {
           auths,
           endpoint: interactArgs.endpoint,
         });

@@ -11,9 +11,17 @@
  */
 import { SealEvent } from "cesr-ts";
 import type { Operation } from "effection";
-import { parseBooleanOption, parseStringOption } from "keri-ts/cli";
+import { parseBooleanOption, parseStringOption, withRuntimeWorkers } from "keri-ts/cli";
 import { dgKey } from "keri-ts/db";
-import { type Habery, queryAnchor, queryKeyState, requireQueryRequester, ValidationError } from "keri-ts/runtime";
+import {
+  type AgentCue,
+  Deck,
+  type Habery,
+  queryAnchor,
+  queryKeyState,
+  requireQueryRequester,
+  ValidationError,
+} from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
 
 /** Validate the exact event-seal shape before opening stores or starting workers. */
@@ -88,9 +96,16 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     function*({ hby, runtime, hab }) {
       requireQueryRequester(hby, hab);
       console.log(anchor ? `Checking for anchor ${JSON.stringify(anchor)}...` : "Checking for updates...");
-      const outcome = yield* (anchor
-        ? queryAnchor(runtime, { hab, prefix, anchor })
-        : queryKeyState(runtime, { hab, prefix }));
+      const queryCues = new Deck<AgentCue>();
+      const deps = { hby, querying: runtime.querying };
+      const outcome = yield* withRuntimeWorkers(
+        runtime,
+        { hab, queryCues: anchor ? undefined : queryCues },
+        () =>
+          anchor
+            ? queryAnchor(deps, { hab, prefix, anchor })
+            : queryKeyState({ ...deps, cues: queryCues }, { hab, prefix }),
+      );
       if (outcome.status === "timed-out") {
         throw new ValidationError(`Query timed out before accepted evidence satisfied ${prefix}.`);
       }

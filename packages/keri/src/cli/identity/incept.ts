@@ -7,8 +7,7 @@ import { assertBootstrapComplete } from "../common/bootstrap.ts";
 
 import { type Configer, createConfiger } from "../../app/identity/configing.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
-import { completeEvent } from "../../app/identity/event-completion.ts";
-import { cliEventCompletionDeps } from "../common/event-completion.ts";
+import { cliEventCompletionDeps, completeEventOrThrow } from "../common/event-completion.ts";
 import { setupHby } from "../common/existing.ts";
 import {
   InceptFileOptions,
@@ -162,7 +161,7 @@ export function* inceptCommand(args: Record<string, unknown>): Operation<void> {
         version: inceptArgs.version,
       });
 
-      const { delegationPhase } = yield* completeEvent(
+      const { delegationPhase } = yield* completeEventOrThrow(
         cliEventCompletionDeps(hby, http),
         hab,
         0,

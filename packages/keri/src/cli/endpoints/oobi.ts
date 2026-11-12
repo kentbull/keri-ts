@@ -2,6 +2,7 @@ import { type Operation } from "npm:effection@^3.6.0";
 import { resolveOobi } from "../../app/bootstrap/oobi-resolving.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../../app/bootstrap/oobiery.ts";
 import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
+import { runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -9,6 +10,7 @@ import { EndpointRoles, isEndpointRole } from "../../core/roles.ts";
 import { parseBooleanOption, parseStringOption } from "../common/parsing.ts";
 
 import { withAgentRuntime, withExistingHab } from "../common/context.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
 /** Parsed arguments for `tufa oobi generate`. */
 interface OobiGenerateArgs {
@@ -199,7 +201,16 @@ export function* oobiResolveCommand(
       skipSignator: false,
     },
     function*({ runtime }) {
-      const result = yield* resolveOobi(runtime, url, { alias: commandArgs.oobiAlias, timeoutMs: 30_000 });
+      const result = yield* withRuntimeWorkers(
+        runtime,
+        { pollMailbox: false },
+        () =>
+          resolveOobi(
+            { oobiery: runtime.oobiery, db: runtime.hby.db, settled: () => runtimeOobiConverged(runtime, url) },
+            url,
+            { alias: commandArgs.oobiAlias, timeoutMs: 30_000 },
+          ),
+      );
       if (result.status === "timed-out") {
         throw new Error(`Runtime did not converge within ${result.timeoutMs}ms.`);
       }

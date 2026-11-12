@@ -54,6 +54,7 @@ import { Receiptor } from "../witness/receipting.ts";
 import { cueDo } from "./cue-runtime.ts";
 import type { RuntimeClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
+import { observeUntil } from "./workflow-contract.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 
@@ -754,37 +755,7 @@ export function runtimeOobiConverged(
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param done Synchronous accepted-state/completion predicate, checked before worker startup and each turn.
  * @param options Required timeoutMs plus optional signer and mailbox polling selection.
- * @returns True when the predicate held, false when the deadline expired first.
- * @throws Worker/cleanup failure propagates.
- */
-export function* runAgentRuntimeWithin(
-  runtime: AgentRuntime,
-  done: () => boolean,
-  options: {
-    hab?: Hab;
-    timeoutMs: number;
-    pollMailbox?: boolean;
-  },
-): Operation<boolean> {
-  if (done()) return true;
-  const { timeoutMs, ...workerOptions } = options;
-  const deadline = Date.now() + timeoutMs;
-  const worker = yield* spawn(() => runAgentRuntime(runtime, workerOptions));
-  try {
-    while (!done()) {
-      if (Date.now() >= deadline) return false;
-      yield* runtimeTurn();
-    }
-    return true;
-  } finally {
-    yield* worker.halt();
-  }
-}
-
-/**
- * Like {@link runAgentRuntimeWithin}, but an expired deadline is an error.
- *
- * @throws Error when the deadline expires, plus worker/cleanup failures.
+ * @throws Timeout or worker/cleanup failure propagates.
  */
 export function* runAgentRuntimeUntil(
   runtime: AgentRuntime,
@@ -795,8 +766,13 @@ export function* runAgentRuntimeUntil(
     pollMailbox?: boolean;
   },
 ): Operation<void> {
-  if (!(yield* runAgentRuntimeWithin(runtime, done, options))) {
-    throw new Error(`Runtime did not converge within ${options.timeoutMs}ms.`);
+  if (done()) return;
+  const { timeoutMs, ...workerOptions } = options;
+  const worker = yield* spawn(() => runAgentRuntime(runtime, workerOptions));
+  try {
+    if (!(yield* observeUntil(done, { timeoutMs }))) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
+  } finally {
+    yield* worker.halt();
   }
 }
 
