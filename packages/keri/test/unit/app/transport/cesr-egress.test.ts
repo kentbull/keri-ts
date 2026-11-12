@@ -17,7 +17,13 @@ import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { createProtocolProcessor } from "../../../../src/app/protocol/protocol-processing.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { chunkBytes } from "../../../../src/app/transport/byte-source.ts";
-import { attemptPostCesr, CesrHttpRefusal, postCesr, requestFrame } from "../../../../src/app/transport/cesr-egress.ts";
+import {
+  attemptPostCesr,
+  CesrHttpRefusal,
+  isNativeCesrFrame,
+  postCesr,
+  requestFrame,
+} from "../../../../src/app/transport/cesr-egress.ts";
 import { CESR_ATTACHMENT_HEADER } from "../../../../src/app/transport/cesr-http.ts";
 import { HTTPMessenger } from "../../../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../../../src/app/transport/http-stream-messenger.ts";
@@ -956,5 +962,168 @@ Deno.test("native stream PUT cancellation joins request cleanup without POST fal
     await task.halt().catch(() => {});
     for (const socket of sockets) socket.destroy();
     await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  }
+});
+
+/**
+ * KERIpy 2b19fa87 `hab.replay(gvrsn=Vrsn_2_0)` for a kind-CESR v2 Hab: a native icp then
+ * ixn, each body followed by its own v2 attachment enclosure and no genus selector.
+ * These mirror the native rows of keripy's test_http_messenger_key_history.
+ */
+const NATIVE_V2_ICP =
+  "-FA50OKERICAACAAXicpEHReJUvHy9PeBYFow16yASFGc7d67Ha-kxSu8zhpJDnTEHReJUvHy9PeBYFow16yASFGc7d67Ha-kxSu8zhpJDnTMAAAMAAB-JALDJyHFGFamIYNEx506I2OIjDBcIgLELMcRk9PVaWohri4MAAB-JALEEsWwTKLhp5ad6ksJ3NgygcGgUsmOB6jPuc4MSWeiJMRMAAA-JAA-JAA-JAA-CAi-KAWAACFFYBAKBLX2AigWN-ZG1xCNJsXzmhPXaQUuF5rI9_TPk-rEFyhSQ1UyOzu5m-FermMyDZ4Ywxh8b7s2C34LVwN-OAKMAAA1AAG2026-11-12T02c59c06d210360p00c00";
+const NATIVE_V2_IXN =
+  "-FAn0OKERICAACAAXixnEGqAALkzTCRH3cxTyh4P1mpvK-__s--JeK8OEtaBhBQREHReJUvHy9PeBYFow16yASFGc7d67Ha-kxSu8zhpJDnTMAABEHReJUvHy9PeBYFow16yASFGc7d67Ha-kxSu8zhpJDnT-JAA-CAi-KAWAABst5-JjM-g82yCIxxGRqs0ETFinaT35xxEdvxZB5agmSYgay0bVEesAJPdDpRmZnbKPRHPT0CvpnjepRuhAQMI-OAKMAAB1AAG2026-11-12T02c59c06d301833p00c00";
+const NATIVE_V2_SAIDS = [
+  "EHReJUvHy9PeBYFow16yASFGc7d67Ha-kxSu8zhpJDnT",
+  "EGqAALkzTCRH3cxTyh4P1mpvK-__s--JeK8OEtaBhBQR",
+];
+/** The shared serializer puts the frame's own v2 genus selector before KERIpy's unchanged message bytes. */
+const V2_GENUS_SELECTOR = "-_AAACAA";
+
+Deno.test("native CESR frames each travel as one whole PUT in the source domain without detached headers", async () => {
+  for (const domain of ["txt", "bny"] as const) {
+    /** The same key history in KERIpy's text domain or its urlsafe-base64-decoded binary domain. */
+    const qualify = (text: string) => domain === "txt" ? b(text) : decodeB64(text);
+    const requests: { method: string; redirect: string; headers: Headers; body: Uint8Array }[] = [];
+    const messenger = new HTTPMessenger(
+      "https://peer.test/",
+      httpClient(async (_url, init) => {
+        requests.push({
+          method: init!.method!,
+          redirect: init!.redirect!,
+          headers: new Headers(init!.headers),
+          body: new Uint8Array(await new Response(init!.body).arrayBuffer()),
+        });
+        return new Response(null, { status: 204 });
+      }),
+      {
+        destination: "provider",
+        // Caller authentication survives; stale detached framing metadata cannot leak into a PUT.
+        headers: {
+          Authorization: "witness-code",
+          "Content-Type": "incorrect",
+          [CESR_ATTACHMENT_HEADER]: "stale-attachment",
+          "CESR-Genus": "1",
+        },
+      },
+    );
+    assertEquals(await run(() => messenger.send(qualify(NATIVE_V2_ICP + NATIVE_V2_IXN))), { kind: "complete" });
+    assertEquals(requests.map((request) => request.method), ["PUT", "PUT"], domain);
+    assertEquals(requests.map((request) => request.body), [
+      qualify(V2_GENUS_SELECTOR + NATIVE_V2_ICP),
+      qualify(V2_GENUS_SELECTOR + NATIVE_V2_IXN),
+    ], domain);
+    for (const request of requests) {
+      assertEquals(request.redirect, "manual");
+      assertEquals(request.headers.get("Content-Type"), "application/cesr");
+      assertEquals(request.headers.get("Content-Length"), String(request.body.byteLength));
+      assertEquals(request.headers.get("CESR-DESTINATION"), "provider");
+      assertEquals(request.headers.get("Authorization"), "witness-code");
+      assertEquals(request.headers.has(CESR_ATTACHMENT_HEADER), false);
+      assertEquals(request.headers.has("CESR-Genus"), false);
+    }
+    // Each PUT body alone is one complete native message with its signatures and replay couples.
+    const delivered = await Promise.all(requests.map((request) => read(request.body)));
+    assertEquals(delivered.map((frame) => [frame.body.kind, frame.body.ilk, frame.body.said]), [
+      ["CESR", "icp", NATIVE_V2_SAIDS[0]],
+      ["CESR", "ixn", NATIVE_V2_SAIDS[1]],
+    ]);
+    for (const frame of delivered) {
+      assertEquals(frame.attachments.map((group) => group.name), ["ControllerIdxSigs", "FirstSeenReplayCouples"]);
+    }
+  }
+});
+
+Deno.test("mixed sources POST detached JSON frames and PUT native frames in source order", async () => {
+  assertEquals(isNativeCesrFrame(await read(fixture())), false, "a wrapped JSON body is not native");
+  assertEquals(isNativeCesrFrame(await read(b(NATIVE_V2_ICP))), true);
+  const requests: { method: string; attachment: string | null; genus: string | null; body: Uint8Array }[] = [];
+  const transport = httpClient(async (_url, init) => {
+    const headers = new Headers(init!.headers);
+    requests.push({
+      method: init!.method!,
+      attachment: headers.get(CESR_ATTACHMENT_HEADER),
+      genus: headers.get("CESR-Genus"),
+      body: new Uint8Array(await new Response(init!.body).arrayBuffer()),
+    });
+    assertEquals(headers.get("CESR-DESTINATION"), "provider");
+    return new Response(null, { status: 204 });
+  });
+  await run(() =>
+    postCesr(
+      "https://peer.test/",
+      (signal) => chunkBytes(concatBytes(fixture(), b(NATIVE_V2_ICP), b(json)), { signal }),
+      transport,
+      { destination: "provider" },
+    )
+  );
+  assertEquals(requests.map((request) => request.method), ["POST", "PUT", "POST"]);
+  assertEquals(requests.map((request) => request.body), [b(json), b(V2_GENUS_SELECTOR + NATIVE_V2_ICP), b(json)]);
+  // Only detached POSTs carry header framing; the native PUT body is self-describing.
+  assertEquals(requests.map((request) => request.attachment !== null), [true, false, true]);
+  assertEquals(requests.map((request) => request.genus), ["2", null, "2"]);
+});
+
+Deno.test("native PUT refusal stays typed data without media fallback and cancellation joins its request", async () => {
+  // KERIpy's legacy content-type refusal cannot trigger the detached-POST fallback for a PUT.
+  let attempts = 0;
+  const refusing = httpClient(() => {
+    attempts++;
+    return Response.json({ title: "Content type error", description: "Unacceptable content type." }, { status: 406 });
+  });
+  const native = (signal: AbortSignal) => chunkBytes(b(NATIVE_V2_ICP), { signal });
+  const result = await run(() => attemptPostCesr("https://peer.test/", native, refusing, {}));
+  assertEquals(result.kind, "refuse");
+  if (result.kind === "refuse") assertEquals(result.error.status, 406);
+  assertEquals(attempts, 1, "one PUT, no alternate media attempt");
+  const refusal = await assertRejects(
+    () => run(() => postCesr("https://peer.test/", native, refusing, {})),
+    CesrHttpRefusal,
+  );
+  assertEquals([refusal.status, attempts], [406, 2]);
+
+  // requestFrame lends a live native PUT response exactly as it lends a POST response.
+  const frame = await read(b(NATIVE_V2_ICP));
+  await run(function*() {
+    const response = yield* requestFrame(
+      "https://peer.test/",
+      frame,
+      httpClient((_url, init) => {
+        assertEquals(init!.method, "PUT");
+        return Promise.resolve(new Response("owned", { status: 200 }));
+      }),
+      {},
+    );
+    assertEquals(response.status, 200);
+  });
+
+  // Cancellation during a pending native PUT reaches that request and fails the send.
+  const controller = new AbortController();
+  const opened = Promise.withResolvers<void>();
+  let aborted = false;
+  const sending = run(() =>
+    postCesr(
+      "https://peer.test/",
+      native,
+      httpClient((_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          init!.signal!.addEventListener("abort", () => {
+            aborted = true;
+            reject(init!.signal!.reason);
+          }, { once: true });
+          opened.resolve();
+        })
+      ),
+      { signal: controller.signal },
+    )
+  );
+  await opened.promise;
+  controller.abort(new Error("stop native PUT"));
+  try {
+    await assertRejects(() => sending);
+    assertEquals(aborted, true);
+  } finally {
+    await sending.halt();
   }
 });
