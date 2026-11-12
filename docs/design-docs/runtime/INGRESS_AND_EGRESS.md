@@ -125,9 +125,9 @@ does not prove prior threshold completion. Ordinary query routes retain replay
 refusal. A finite sender may retry the same frozen query when initial delivery
 preceded recipient consent; retries never renew either lifetime.
 
-`createAgentRuntime` can select one concrete owner with `ipexAuxiliary: {kind: "dhke", hab}` or `{kind: "unblind", hab, states}`. The habitat must be the
+`createAgentRuntime` can select one concrete owner with `ipexAuxiliary: {kind: "dhke", hab}` or `{kind: "unblind", hab}`. The habitat must be the
 actual local object in this Habery, a v2 registry must be available, and caller
-configuration must explicitly enable KRAM. Missing or disabled KRAM is a caller
+configuration must explicitly enable KRAM (without `caches`, `DEFAULT_KRAM_CACHES` apply). Missing or disabled KRAM is a caller
 error, never a fallback to unauthenticated receiver time. The composition constructs
 the owner with its Exchanger and registry, registers the reply route on its actual
 Revery, and supplies the same owner as immutable `ProtocolProcessor.qvy`. Both
@@ -136,7 +136,7 @@ composition defaults to the habitat's Revery.
 
 `ipexOwners: "per-identifier"` composes the same owner registry without selecting
 an identifier, for hosts such as wallets whose identifiers appear after the runtime
-exists. `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab, states)` create and
+exists. `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab)` create and
 register one owner per identifier and kind on first use; `release(pre)` removes
 both. It has the same registry and KRAM requirements and may be combined with
 `ipexAuxiliary`, which is registered in it. Dispatch keys on sender plus transaction
@@ -155,9 +155,13 @@ basis. Retained encrypted roots and public evidence are unchanged. Applications
 stop and join workers before explicit runtime close; no operation restart ledger
 or automatic Admit is introduced.
 
-`Unblind({hab, exc, registry, states})` composes that query seam with
-the existing Revery Router at `/ipex/unblind`. Each party explicitly approves the
-same retained live Grant. Only this v2 query route admits nested public BUPs;
+`Unblind({hab, exc, registry})` composes that query seam with
+the existing Revery Router at `/ipex/unblind`. The disclosee explicitly approves the
+retained live Grant; the discloser has no approval step, because it consented by signing that Grant: an
+authenticated query for a live Grant the identifier sent (resolved from stored rows, so it survives a restart)
+is answered automatically, bounded by the Grant's registry scope and original deadline. KERIpy keeps a
+local approve gate; the wire is unchanged. `approve(grant, {states})` freezes that operation's ordinary-state
+vocabulary (default `["issued", "revoked", ""]`), so one owner serves operations with different vocabularies. Only this v2 query route admits nested public BUPs;
 the Unblind owner verifies their exact requested order, anchors and contiguous
 accepted prefix before ordinary registry intake. Revery forwards the parsed reply
 envelope so BSQ/BSS evidence survives KRAM signature accumulation. Route owners
@@ -590,6 +594,21 @@ reply mode also joins processed receive EOF. TCPMessenger.receiptDo composes the
 concurrent send/receive work corresponding to KERIpy receiptDo/msgDo. Verified
 persisted receipts and protocol decisions establish acceptance; local drain or
 HTTP status cannot substitute for them.
+
+### Root copy replication
+
+`RootReplicator` derives owed `/registry/root` copies from state, never from a queue: for each local group,
+each registry whose root this member holds, and each other current signing member, a copy is owed unless the
+Baser sub-database `rrsn.` holds a marker for (group, registry, recipient) whose key is the public key the
+recipient now contributes to the group. A new member has no marker and a rekeyed member's marker holds its
+old key, so both are owed after an accepted rotation. The marker (`key`, `dt`; coordinates and a public key,
+never a root) is written when the Poster reports a copy sent, so a crash before the write costs one harmless
+resend. A pass derives a group's copies on the replicator's first pass, when its latest establishment
+changes, and when the Dhke completion cue prompts it (a wake-up, not the source of truth); at most
+`RootSendsPerPass` copies are attempted per pass, a copy that cannot be prepared or delivered backs off in
+process memory, and `status()` reports it. Overlapping `processOnce` calls skip a copy already in flight.
+Because every root holder sends, the worst case on an existing store (which has no markers) is N x (N - 1)
+copies per registry, once, and once more per rekey. `rrsn.` is keri-ts only and unknown to KERIpy.
 
 ## Replay and database lifetime
 

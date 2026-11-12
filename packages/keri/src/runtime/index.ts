@@ -545,10 +545,7 @@ export {
   type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
 export {
-  MemoryRootLedger,
-  type OwedCopy,
   type OwedCopyStatus,
-  type RootLedger,
   RootReplicator,
   type RootReplicatorDeps,
   type RootReplicatorStatus,
@@ -616,7 +613,7 @@ export {
   noopLogger,
   setLogLevel,
 } from "../core/logger.ts";
-export { type KramConfig, Kramer, type KramRefusal } from "../core/mailbox/kraming.ts";
+export { DEFAULT_KRAM_CACHES, type KramConfig, Kramer, type KramRefusal } from "../core/mailbox/kraming.ts";
 export {
   CREDENTIAL_MAILBOX_TOPIC,
   DELEGATE_MAILBOX_TOPIC,
@@ -910,7 +907,6 @@ export {
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {
   abandonUnblinding,
-  approveUnblind,
   MemoryUnblindingOperationStore,
   requestUnblind,
   type UnblindingBegun,

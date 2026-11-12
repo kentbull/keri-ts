@@ -1,7 +1,14 @@
 /**
- * Explicitly approved IPEX Unblind, following Python's local query/reply profile.
+ * IPEX Unblind, following Python's local query/reply profile.
  * Only event openings cross this boundary. Roots, application state vocabulary,
  * transport and final Admit remain with their existing owners.
+ *
+ * Consent: the disclosee explicitly approves (`approve`/`start`) the Grant it requests proofs for.
+ * The discloser has no separate approval step: it consented by signing the presentation Grant, so an
+ * authenticated query for a live Grant this identifier sent is answered automatically, bounded by that
+ * Grant's registry scope and original deadline. The rule is decided from stored state, so it survives a
+ * restart. KERIpy's `Unblind` keeps its own local approve gate; that is local policy and the wire is
+ * unchanged.
  */
 import {
   bytesEqual,
@@ -28,7 +35,6 @@ import { IpexV2Handler } from "../app/ipex/ipex-v2.ts";
 import { isLocalGroupHab, latestGroupContribution, localGroupMember } from "../app/multisig/group-members.ts";
 import {
   type AuxiliaryQueryProcessor,
-  copyAuxiliaryQuery,
   envelopeFromFrame,
   type MessageDropDecision,
 } from "../app/protocol/parsering.ts";
@@ -41,8 +47,8 @@ import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
+import type { Baser } from "../db/basing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
-import { timestampMicros } from "../time/mod.ts";
 import type { RegistryObserver } from "./observing.ts";
 import {
   type RegistryDisclosure,
@@ -68,12 +74,17 @@ interface UnblindOperation {
   requested: Selection | null;
   selected: Selection | null;
   openings: Map<string, RegistryDisclosure>;
+  /** Ordinary-state vocabulary frozen when the operation was approved. */
+  states: readonly string[];
   requestedByPeer: boolean;
   received: boolean;
   abandoned: boolean;
   proposal: Uint8Array | null;
   contribution: Uint8Array | null;
 }
+
+/** Ordinary registry states an Unblind operation may reveal unless its approval names others. */
+export const DEFAULT_UNBLIND_STATES: readonly string[] = Object.freeze(["issued", "revoked", ""]);
 
 /** Member signing proposals or elected delivery of full aggregates; all bytes are process-local. */
 export interface UnblindOutgoing {
@@ -115,27 +126,19 @@ export class Unblind implements AuxiliaryQueryProcessor {
   static readonly Route = "/ipex/unblind";
   readonly resource = Unblind.Route;
   readonly outgoing = new Deck<UnblindOutgoing>();
-  private readonly pendingQueries = new Map<
-    string,
-    { envelope: KeriDispatchEnvelope; expires: bigint; grant: string }
-  >();
-  private readonly now: () => number;
   private readonly operations = new Map<string, UnblindOperation>();
   readonly hab: Hab;
   readonly exc: Exchanger;
   readonly rvy: Revery;
   readonly registry: RegistryObserver;
-  readonly states: readonly string[];
   readonly group: boolean;
 
-  /** Bind the exact Grant verifier's store and an explicit ordinary-state vocabulary. */
-  constructor({ hab, exc, registry, states, rvy = hab.rvy, now = Date.now }: {
+  /** Bind the exact Grant verifier's store; the state vocabulary is chosen per approved operation. */
+  constructor({ hab, exc, registry, rvy = hab.rvy }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
-    states: readonly string[];
     rvy?: Revery;
-    now?: () => number;
   }) {
     if (
       !(hab instanceof Hab) || hab.db !== exc.hby.db || registry.db !== hab.db || rvy.db !== hab.db
@@ -145,20 +148,23 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
     this.group = isLocalGroupHab(exc.hby, hab);
     if (this.group) localGroupMember(exc.hby, hab.pre!);
-    if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
-      throw new ValidationError("Unblind requires an explicit sequence of state strings");
-    }
-    this.now = now;
     this.hab = hab;
     this.exc = exc;
     this.rvy = rvy;
     this.registry = registry;
-    this.states = [...states];
   }
 
-  /** Freeze one authenticated live Grant's exact bodies, parties and authorized registry scope. */
-  approve(grant: string): string {
-    this.pruneQueries();
+  /**
+   * Freeze one authenticated live Grant's exact bodies, parties, authorized registry scope and
+   * ordinary-state vocabulary. `states` defaults to the registry-root triple and applies to this
+   * operation only; approving the same Grant again with different explicit states is refused,
+   * while omitting `states` on a repeat approval keeps the frozen vocabulary.
+   */
+  approve(grant: string, options: { states?: readonly string[] } = {}): string {
+    const states = options.states ?? DEFAULT_UNBLIND_STATES;
+    if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
+      throw new ValidationError("Unblind requires an explicit sequence of state strings");
+    }
     const input = this.exc.retainedInput(grant);
     if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
     const message = input.serder, sender = message.pre, recipient = message.sad!.ri;
@@ -174,6 +180,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
     const existing = this.operations.get(xid);
     if (existing) {
       if (existing.grant !== grant) throw new ValidationError("Another Grant is selected for this transaction");
+      if (
+        options.states
+        && (existing.states.length !== states.length || existing.states.some((state, i) => state !== states[i]))
+      ) {
+        throw new ValidationError("Unblind operation already approved with different states");
+      }
       this.live(existing);
       return xid;
     }
@@ -192,19 +204,19 @@ export class Unblind implements AuxiliaryQueryProcessor {
       requested: null,
       selected: null,
       openings: new Map(),
+      states: [...states],
       requestedByPeer: false,
       received: false,
       abandoned: false,
       proposal: null,
       contribution: null,
     });
-    this.replayQuery(xid);
     return xid;
   }
 
   /** Freeze a signed disclosee query over the missing accepted public suffix. */
-  start(grant: string): Uint8Array {
-    const op = this.operation(this.approve(grant));
+  start(grant: string, options: { states?: readonly string[] } = {}): Uint8Array {
+    const op = this.operation(this.approve(grant, options));
     if (this.hab.pre !== op.recipient) throw new ValidationError("Only the disclosee starts Unblind");
     if (!op.query && !op.contribution) {
       const { requested, children } = this.request(op);
@@ -342,7 +354,6 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Authenticate the full peer threshold before public evidence intake or proof release. */
   processQuery(envelope: KeriDispatchEnvelope): { kind: "accept" } | MessageDropDecision {
-    this.pruneQueries();
     try {
       const { serder } = envelope;
       if (serder.ilk !== "qry" || serder.sad!.rr !== Unblind.Route) throw new ValidationError("Invalid Unblind query");
@@ -350,8 +361,9 @@ export class Unblind implements AuxiliaryQueryProcessor {
       const own = this.group && serder.pre === this.hab.pre;
       const xid = (serder.sad?.q as { x?: unknown } | undefined)?.x;
       if (!own && typeof xid === "string" && !this.operations.has(xid)) {
-        this.retainQuery(envelope);
-        return { kind: "accept" };
+        // The discloser consented by signing the Grant: answer an authenticated query for a live one it sent.
+        if (!verifyQueryAttachments(this.hab.db, envelope)) return { kind: "drop", reason: "missingAuthentication" };
+        this.approve(this.sentGrant(serder.pre!, xid));
       }
       const { op, selected } = this.preflight(serder, "q", own ? "recipient" : "sender", own);
       if (own && (!op.proposal || !bytesEqual(op.proposal, serder.raw))) {
@@ -598,8 +610,6 @@ export class Unblind implements AuxiliaryQueryProcessor {
 
   /** Discard approved work and unsent replies; delivered bytes remain caller-owned. */
   abandon(xid: string): void {
-    const retained = this.pendingQueries.delete(xid);
-    if (retained && !this.operations.has(xid)) return;
     const op = this.operation(xid);
     const keep = [...this.outgoing].filter(item =>
       ![op.query, op.reply, op.contribution]
@@ -660,85 +670,47 @@ export class Unblind implements AuxiliaryQueryProcessor {
    */
   inTransaction(sender: string, xid: string): boolean {
     return this.operations.has(xid) || (this.group && sender === this.hab.pre)
-      || [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, xid])]
-        .some(([key]) => {
-          const grant = this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]);
-          return grant?.pre === this.hab.pre && grant.sad?.ri === sender;
-        });
+      || Unblind.recipients(this.hab.db, this.hab.pre!, xid).includes(sender);
+  }
+
+  /** Recipients of the Grants `pre` sent in transaction `xid`, from KRAM-accepted store rows. */
+  static recipients(db: Baser, pre: string, xid: string): string[] {
+    const recipients: string[] = [];
+    for (const [key] of db.tmsc.getTopItemIter([pre, xid])) {
+      const grant = db.exns.get([key[2]]) ?? db.epse.get([key[2]]);
+      if (grant?.pre === pre && typeof grant.sad?.ri === "string") recipients.push(grant.sad.ri);
+    }
+    return recipients;
   }
 
   /** Release all process-local approvals, opening references and retry bytes without changing stores. */
   close(): void {
     for (const xid of this.operations.keys()) this.abandon(xid);
     this.operations.clear();
-    this.pendingQueries.clear();
     this.outgoing.clear();
   }
 
-  /** Hold one authenticated public suffix for explicit release consent; never import events here. */
-  private retainQuery(envelope: KeriDispatchEnvelope): void {
-    const query = envelope.serder, data = this.parameters(query, "q");
-    if (!verifyQueryAttachments(this.hab.db, envelope)) throw new ValidationError("Unauthenticated Unblind query");
-    const candidates = [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, data.x])]
+  /** The one live Grant this identifier sent to `recipient` in exchange `xid`, from KRAM-accepted store rows. */
+  private sentGrant(recipient: string, xid: string): string {
+    const said = [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, xid])]
       .map(([key]) => this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]))
-      .filter(grant =>
-        grant && grant.pre === this.hab.pre && grant.sad!.ri === query.pre
-        && this.exc.presentationContext(grant.said!, { xid: data.x, sender: this.hab.pre, recipient: query.pre! })
+      .filter((grant) =>
+        grant && grant.pre === this.hab.pre && grant.sad!.ri === recipient
+        && this.exc.presentationContext(grant.said!, { xid, sender: this.hab.pre!, recipient })
       );
-    if (candidates.length !== 1) throw new ValidationError("Unblind query has no unique authenticated Grant");
-    const grant = candidates[0]!;
-    const context = this.exc.presentationContext(grant.said!, {
-      xid: data.x,
-      sender: this.hab.pre,
-      recipient: query.pre!,
-    })!;
-    const selected = this.selection(data.re, context.registries, "q");
-    this.validateEvents(selected, envelope.nests);
-    const expires = this.retainUntil(envelope, grant);
-    const prior = this.pendingQueries.get(data.x);
-    if (prior && !bytesEqual(prior.envelope.serder.raw, query.raw)) {
-      throw new ValidationError("Conflicting Unblind query");
-    }
-    if (!prior) {
-      this.pendingQueries.set(data.x, { envelope: copyAuxiliaryQuery(envelope), expires, grant: grant.said! });
-    }
+    if (said.length !== 1) throw new ValidationError("Unblind query has no unique live Grant sent by this identifier");
+    return said[0]!.said!;
   }
 
-  /** Expired evidence cannot survive another owner interaction. */
-  private pruneQueries(): bigint {
-    const now = BigInt(this.now()) * 1000n;
-    for (const [xid, query] of this.pendingQueries) if (now >= query.expires) this.pendingQueries.delete(xid);
-    return now;
-  }
-
-  /** Consume the first authenticated request only after explicit approval; never renew either clock. */
-  private replayQuery(xid: string): void {
-    const pending = this.pendingQueries.get(xid);
-    this.pendingQueries.delete(xid);
-    if (
-      pending && pending.grant === this.operations.get(xid)?.grant
-      && BigInt(this.now()) * 1000n < pending.expires
-    ) this.processQuery(pending.envelope);
-  }
-
-  /** Bound process-local public evidence by the original query and accepted Grant lifetimes. */
-  private retainUntil(envelope: KeriDispatchEnvelope, grant: SerderKERI): bigint {
-    const now = this.pruneQueries();
-    const cache = this.hab.db.msgc.get([envelope.serder.pre!, envelope.serder.said!]);
-    const messageTime = cache && timestampMicros(cache.mdt);
-    const grantTime = timestampMicros(this.exc.exchangeDeadline(grant) ?? undefined);
-    if (
-      !cache || this.hab.db.pmkm.get([envelope.serder.pre!, envelope.serder.said!]) || messageTime === null
-      || messageTime === undefined || grantTime === null
-      || !Number.isSafeInteger(cache.d) || !Number.isSafeInteger(cache.ml)
-      || cache.d! < 0 || cache.ml! < 0 || !Number.isSafeInteger(cache.d! + cache.ml!)
-    ) {
-      throw new ValidationError("Query has no accepted original lifetime");
-    }
-    const queryTime = messageTime + BigInt(cache.d! + cache.ml!) * 1000n;
-    const expires = queryTime < grantTime ? queryTime : grantTime;
-    if (now >= expires) throw new ValidationError("Query or Grant has expired");
-    return expires;
+  /**
+   * Individual discloser operations whose authenticated peer query is waiting for a delivered reply.
+   * Hosts adopt these to deliver the reply; a group discloser's replies need member contributions instead.
+   */
+  awaitingReply(): { xid: string; grant: string }[] {
+    if (this.group) return [];
+    return [...this.operations.values()]
+      .filter((op) => op.sender === this.hab.pre && op.requestedByPeer && !op.abandoned)
+      .map(({ xid, grant }) => ({ xid, grant }));
   }
 
   private operation(xid: string): UnblindOperation {
@@ -1056,7 +1028,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
             said: String(event.sad!.b),
             uuid: makeBlindUuid({ salt: root.qb64, sn: BigInt(ordinal(event)) }),
             acdc: target,
-            states: this.states,
+            states: op.states,
           });
           if (opening) break;
         }

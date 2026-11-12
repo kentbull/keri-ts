@@ -17,7 +17,7 @@ export type KramIntakeResult = KramRefusal | {
   receiverTime?: string;
 };
 /** Explicit receiver-owned cache and exemption configuration. */
-export type { KramConfig } from "./kram-policy.ts";
+export { DEFAULT_KRAM_CACHES, type KramConfig } from "./kram-policy.ts";
 
 /** Optional receiver intake returns ordinary decisions without owning parser input. */
 export class Kramer {

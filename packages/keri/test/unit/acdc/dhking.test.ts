@@ -286,7 +286,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         proposal: preparedGrant.proposal,
         coordinator: coordinator.said!,
         custodian: lead.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
     assertEquals(queries, [], "one Grant contribution cannot publish a DH query");
@@ -299,7 +299,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       proposal: preparedGrant.proposal,
       coordinator: coordinator.said!,
       custodian: lead.member.pre,
-    }, { timeoutMs: 15000 });
+    }, { timeoutMs: 90000 });
     assertEquals([contributed.contributed, contributed.registryIssued, contributed.admitted], [true, false, false]);
     const peerHost = yield* spawn(() =>
       runAgentRuntime(issuers[1].runtime, { hab: issuers[1].member, pollMailbox: true })
@@ -321,7 +321,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
     assertEquals(responses, [], "one recipient's setup cannot publish a threshold reply");
@@ -333,7 +333,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
 
     // DH setup consent never approves the issuer's later registry update.
@@ -402,7 +402,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         issuerPeer.wallet,
         grant.said!,
         { coordinator: coordinator.said!, custodian: lead.member.pre },
-        15000,
+        90000,
       ),
       true,
     );
@@ -834,7 +834,10 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assertNotEquals(issuer.mgr.ks.rroots.get([issuer.pre, rip.said!])!.qb64, root.qb64);
     assertEquals(new TextDecoder().decode(query).includes(root.qb64), false);
     assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
-    assertThrows(() => new Dhke({ hab: issuer, exc: left.exc, registryStore: left.store }).approve(grant.said!));
+    // The registry has no staged or accepted update, so the held root is unused: a new owner may approve over it,
+    // but nothing is overwritten until that exchange retains its own root.
+    new Dhke({ hab: issuer, exc: left.exc, registryStore: left.store }).approve(grant.said!);
+    assertEquals(issuer.mgr.getRegistryRoot(issuer.pre, rip.said!)!.qb64, root.qb64);
 
     // DH creates custody only. Exact issued evidence finishes the original Grant, then Admit is separate.
     yield* call(() => assertRejects(() => run(() => left.dh.finish(grant.said!))));

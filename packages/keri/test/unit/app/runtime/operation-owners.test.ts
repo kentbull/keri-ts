@@ -1,11 +1,10 @@
 /**
- * Runtime wiring of the operations owners (`ipexOwners: "per-identifier"`): owner composition, DH owners for every
- * local identifier before traffic, one fiber per owner, and root replication as a runtime reaction.
+ * Runtime wiring of the operations owners (`ipexOwners: "per-identifier"`): owner composition, DH owners created at the first
+ * message that addresses an identifier, one fiber per owner, and root replication as a runtime reaction.
  */
 import { parseBytes } from "cesr-ts";
 import { type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
-import { MemoryRootLedger } from "../../../../src/app/credentials/root-replicator.ts";
 import { beginIssuance } from "../../../../src/app/ipex/issuance.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { operationOwnersDo, OWNER_LOOP_MS } from "../../../../src/app/runtime/operation-owners.ts";
@@ -62,13 +61,9 @@ Deno.test("a DH query that arrives before any explicit dhke(hab) call finds its 
     yield* ops.processOnce();
     const query = s.log.find((sent) => new TextDecoder().decode(sent.msg).includes("/ipex/dhke"))!;
     const serder = envelopeFromFrame(parseBytes(query.msg)[0]).serder;
-    const owners = [...s.holder.runtime.ipex!.dhkeOwners()].map((owner) => owner.hab.pre);
-    assertEquals(owners, [s.holder.habs[0].pre], "the owner exists without an explicit call");
-    assert(s.holder.runtime.ipex!.claims(serder), "the held Grant lets that owner claim the query");
-    // An identifier created after the runtime gets its owner at the next DH dispatch.
-    const late = s.holder.hby.makeHab("late");
-    s.holder.runtime.ipex!.claims(serder);
-    assert([...s.holder.runtime.ipex!.dhkeOwners()].some((owner) => owner.hab.pre === late.pre));
+    const owners = () => [...s.holder.runtime.ipex!.dhkeOwners()].map((owner) => owner.hab.pre);
+    assert(s.holder.runtime.ipex!.claims(serder), "the held Grant lets its recipient claim the query");
+    assertEquals(owners(), [s.holder.habs[0].pre], "the claimant is the recipient's owner");
   });
 });
 
@@ -106,32 +101,21 @@ Deno.test("runtime loop: an accepted rotation that adds a member re-seals the he
     reachable(w.alice, w.bob);
     reachable(w.alice, w.outsider);
     yield* running(w.alice);
-    yield* sleep(2 * OWNER_LOOP_MS);
-    assertEquals(posted.length, 0, "an inception owes nothing");
+    yield* until(() => posted.length >= 1);
+    assertEquals(posted.length, 1, "the loop's first pass sends the inception member its copy");
     const current = [w.alice, w.bob, w.outsider];
     yield* rotate(w, current, current, "2");
-    yield* until(() => posted.length >= 2);
-    assertEquals(posted.length, 2, "one copy for the newcomer and one for the rekeyed member");
+    yield* until(() => posted.length >= 3);
+    yield* sleep(3 * OWNER_LOOP_MS);
+    assertEquals(posted.length, 3, "one copy for the newcomer and one for the rekeyed member, once");
   });
 });
 
-Deno.test("with rootReplication off nothing is sent, and an idle loop is bounded by its cadence", async () => {
+Deno.test("an idle loop is bounded by its cadence", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
-    const ledger = new MemoryRootLedger();
-    const w = yield* posting(posted, {
-      runtime: { ipexOwners: "per-identifier", operationStores: { rootReplication: "off", rootLedger: ledger } },
-    });
+    const w = yield* posting(posted, OWNERS);
     yield* seed(w);
-    yield* storeGrant(w.alice, [w.credential]);
-    reachable(w.alice, w.bob);
-    assertEquals(w.alice.runtime.rootReplicator, null);
-    yield* running(w.alice);
-    w.alice.runtime.ipex!.dhke(w.alice.group!).replicated.push({ gid: w.gid, registries: [w.registry] });
-    yield* sleep(5 * OWNER_LOOP_MS);
-    assertEquals(posted, []);
-    assertEquals(ledger.owed(), []);
-
     // Idle cost: with nothing owed or in progress an owner is polled once per cadence, not spun.
     let passes = 0;
     const issuance = w.bob.runtime.operations!.issuance, once = issuance.processOnce.bind(issuance);

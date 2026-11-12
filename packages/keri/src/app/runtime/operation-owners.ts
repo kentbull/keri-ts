@@ -10,15 +10,15 @@
  * copies already owed; an idle pass is a few empty map walks every
  * {@link OWNER_LOOP_MS} and creates no per-pass allocation beyond the timer.
  *
- * The root replicator is a runtime reaction and is on unless
- * `operationStores.rootReplication` is `"off"`. CLI commands that send copies build their
- * own replicator (scan off) and never set `ipexOwners`, so they do not double-send.
+ * The root replicator is a runtime reaction. It derives what is owed from state and records
+ * sent copies in the Baser (`rrsn.`), so a CLI command that sends copies through its own
+ * replicator shares that record with the loop and a later pass does not repeat its sends.
  */
 import { action, type Operation, spawn, suspend } from "npm:effection@^3.6.0";
 import { type DerivedUpdateStore, MemoryDerivedUpdateStore } from "../../acdc/custody.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
-import { MemoryRootLedger, type RootLedger, RootReplicator } from "../credentials/root-replicator.ts";
+import { RootReplicator } from "../credentials/root-replicator.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
@@ -56,12 +56,8 @@ export interface OperationStores {
   unblinding?: UnblindingOperationStore;
   /** Non-secret blind-derivation coordinates for issuance. */
   derived?: DerivedUpdateStore;
-  /** Owed root copies and examined rotations. */
-  rootLedger?: RootLedger;
   /** Receives identity-only changes after commit; defaults to the runtime's Signaler when it has one. */
   changes?: ChangeSink;
-  /** `"off"` leaves root copies to the commands that send them. Default `"runtime"`. */
-  rootReplication?: "runtime" | "off";
 }
 
 /** The operations owners of one runtime, additive on `AgentRuntime.operations`. */
@@ -135,15 +131,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       changes,
     }),
   };
-  const rootReplicator = registryRoot && stores.rootReplication !== "off"
-    ? new RootReplicator({
-      root: registryRoot,
-      postman,
-      clock,
-      ledger: stores.rootLedger ?? new MemoryRootLedger(),
-      changes,
-    })
-    : null;
+  const rootReplicator = registryRoot ? new RootReplicator({ root: registryRoot, postman, clock, changes }) : null;
   return { operations, rootReplicator };
 }
 
@@ -163,9 +151,8 @@ function* every(clock: RuntimeClock, pass: () => Operation<unknown>): Operation<
 }
 
 /**
- * Run every owner in its own fiber until halted. The replicator's fiber first makes sure every local
- * identifier has its DH owner, drains their `replicated` cues into the ledger, then runs a pass with
- * its rotation scan on.
+ * Run every owner in its own fiber until halted. The replicator's fiber prompts the replicator with the
+ * live DH owners' `replicated` cues, then runs a pass.
  */
 export function* operationOwnersDo(
   owners: ComposedOwners & { ipex: IpexAuxiliaries; clock: RuntimeClock },
@@ -180,7 +167,6 @@ export function* operationOwnersDo(
     fibers.push(
       yield* spawn(() =>
         every(clock, function*() {
-          ipex.ensureDhkes();
           for (const dh of ipex.dhkeOwners()) {
             while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
           }

@@ -10,7 +10,7 @@
 import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import { registryEventRef, registryEventStatus, settleRegistryEvent } from "../../app/credentials/registry-settling.ts";
-import { MemoryRootLedger, RootReplicator } from "../../app/credentials/root-replicator.ts";
+import { RootReplicator } from "../../app/credentials/root-replicator.ts";
 import {
   telEventStatus,
   waitForIssuedCredential,
@@ -70,7 +70,7 @@ import {
   type RotateFileOptions,
 } from "../common/parsing.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
-import { type RootCopyLine, rootCopyLine, type RootResealLine, rootResealLine } from "./root-copy-lines.ts";
+import { type RootCopyLine, rootCopyLine, type RootResealLine } from "./root-copy-lines.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -114,11 +114,9 @@ function* resealAfterRotation(
     root,
     postman: runtime.postman,
     clock: runtime.clock,
-    ledger: new MemoryRootLedger(),
   });
-  const examination = replicating.examine(ghab, rotation);
-  if (examination) return [rootResealLine(examination)];
-  return (yield* replicating.processOnce({ scan: false })).map(rootCopyLine);
+  replicating.prompt(group);
+  return (yield* replicating.processOnce()).map(rootCopyLine);
 }
 
 interface MultisigBaseArgs {
