@@ -26,29 +26,27 @@ if (!command) {
   Deno.exit(2);
 }
 
-const child = new Deno.Command(command, {
-  args,
-  stdin: "null",
-  stdout: "inherit",
-  stderr: "inherit",
-}).spawn();
-
+// Every signal handler is installed before the child exists. The owner learns the
+// child is running only from the child's own output, so it can never signal a guard
+// that has not yet armed its handlers: an unhandled SIGTERM/SIGUSR2 would kill the
+// guard by default action (exit 143/140) and orphan the child it was about to start.
+// Spawning is synchronous, so no handler can run between installing them and creating it.
+let child: Deno.ChildProcess | undefined;
 let stopping = false;
+
+function killChild(signal: Deno.Signal): void {
+  try {
+    child?.kill(signal);
+  } catch {
+    // Already exited.
+  }
+}
+
 function stopChild(): void {
   if (stopping) return;
   stopping = true;
-  try {
-    child.kill("SIGTERM");
-  } catch {
-    return; // Already exited.
-  }
-  setTimeout(() => {
-    try {
-      child.kill("SIGKILL");
-    } catch {
-      // Exited during the grace period.
-    }
-  }, KILL_GRACE_MS);
+  killChild("SIGTERM");
+  setTimeout(() => killChild("SIGKILL"), KILL_GRACE_MS);
 }
 
 for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
@@ -56,12 +54,15 @@ for (const signal of ["SIGTERM", "SIGINT", "SIGHUP"] as const) {
 }
 Deno.addSignalListener("SIGUSR2", () => {
   stopping = true;
-  try {
-    child.kill("SIGKILL");
-  } catch {
-    // Already exited.
-  }
+  killChild("SIGKILL");
 });
+
+child = new Deno.Command(command, {
+  args,
+  stdin: "null",
+  stdout: "inherit",
+  stderr: "inherit",
+}).spawn();
 
 (async () => {
   try {
