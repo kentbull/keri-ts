@@ -211,7 +211,7 @@ without renewing the original cache/Grant lifetime. Only completed DH supplies
 custody to WalletAuthor for a real anchored issued BUP. Both sides finish the
 same Grant; held inventory still requires a separate explicit wallet Admit.
 Finite callers abandon operation state on every exit; optional prepared files
-do not imply persistent DH restart support. Group issuance uses exact accepted
+do not imply persistent DH restart support. Library `resumeIssuance` finishes a retained-root exchange after a restart (see Runtime learnings); it never repeats key exchange. Group issuance uses exact accepted
 coordinator/custodian selection and ordinary member signatures. Issuer contributors
 return after their DH query contribution, before separately approving the exact
 BUP with multisig join. Elected issuers return a public proof artifact for explicit

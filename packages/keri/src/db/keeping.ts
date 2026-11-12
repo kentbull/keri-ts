@@ -5,6 +5,7 @@ import {
   MtrDex,
   NumberPrimitive,
   Prefixer,
+  Saider,
   Salter,
   Signer,
   type Tier,
@@ -245,6 +246,8 @@ export class Keeper extends StoreOwner {
   public nxts!: CesrSuber<Cipher>;
   /** Encrypted Salt128 roots scoped by canonical local AID and registry SAID. */
   public rroots!: CesrSuber<Cipher>;
+  /** SAID of the Grant whose DH exchange retained the root at the same `rroots.` key; absent for copied or provisioned roots. */
+  public rrgrants!: CesrSuber<Saider>;
 
   static readonly MaxNamedDBs = 24;
 
@@ -335,6 +338,7 @@ export class Keeper extends StoreOwner {
         ctor: Cipher,
       });
       this.rroots = new CesrSuber<Cipher>(this.store, { subkey: "rroots.", ctor: Cipher });
+      this.rrgrants = new CesrSuber<Saider>(this.store, { subkey: "rrgrants.", ctor: Saider });
       return true;
     } catch (error) {
       this.logger.error(`Failed to open Keeper sub-databases: ${error}`);
@@ -451,6 +455,42 @@ export class Keeper extends StoreOwner {
       }
       return true;
     });
+  }
+
+  /**
+   * Retain the first root of a DH exchange together with the Grant that produced it, in one transaction.
+   * The binding is the durable evidence that this exact root belongs to that exchange; it never exists
+   * without the root. Refuses a registry that already holds any root.
+   */
+  retainExchangeRoot(
+    keys: string[],
+    root: Salter,
+    grant: string,
+    currentAeid: string,
+    encrypter: Encrypter,
+  ): void {
+    if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
+    if (!this.store.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
+    if (this.store.inWriteTransaction) {
+      throw new DatabaseOperationError("Registry root retention must own its write transaction");
+    }
+    this.store.transaction(() => {
+      if (this.getGbls("aeid") !== currentAeid) {
+        throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
+      }
+      if (this.rroots.get(keys)) throw new Error("A registry root is already retained for this AID and registry");
+      if (
+        !this.rroots.put(keys, encrypter.encrypt({ prim: root }))
+        || !this.rrgrants.put(keys, new Saider({ qb64: grant }))
+      ) {
+        throw new DatabaseOperationError("Keeper registry root write failed");
+      }
+    });
+  }
+
+  /** SAID of the Grant whose exchange retained the root at `keys`, or null. Needs no decryption. */
+  registryRootGrant(keys: string[]): string | null {
+    return this.rrgrants.get(keys)?.qb64 ?? null;
   }
 
   /** Insert the first public-key to prefix mapping in `pres.` if absent. */

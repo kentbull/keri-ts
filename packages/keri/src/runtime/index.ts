@@ -863,6 +863,7 @@ export {
   MemoryIssuanceOperationStore,
   posterDelivery,
   prepareIssuanceGrant,
+  resumeIssuance,
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 

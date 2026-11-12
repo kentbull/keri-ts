@@ -14,6 +14,7 @@ import {
   type IssuanceStatus,
   issuanceStatus,
   prepareIssuanceGrant,
+  resumeIssuance,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
@@ -217,7 +218,7 @@ Deno.test("reload mid-exchange: interrupted, nothing signed or sent; a new Grant
   });
 });
 
-Deno.test("reload after DH completed but before the anchor: both roots retained, a new Grant on that registry cannot begin", async () => {
+Deno.test("reload after DH completed but before the anchor: resumable, nothing signed until the user resumes, then it completes", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0), hab = s.issuer.habs[0];
     const first = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
@@ -226,15 +227,44 @@ Deno.test("reload after DH completed but before the anchor: both roots retained,
     yield* pump(s.holder, route([s.issuer, s.holder], s.log)); // the reply reaches the issuer: DH is complete
     assert(hab.mgr.getRegistryRoot(hab.pre!, reg.regid), "the issuer retained the root");
     s.issuer.runtime.ipex!.release(hab.pre!); // reload before the next pass anchors
-    const sn = hab.kever!.sn, reloaded = s.owner();
+    const sent = s.log.length, sn = hab.kever!.sn, reloaded = s.owner();
+    assertEquals(issuanceStatus(reloaded, first.grant), {
+      state: "active",
+      role: "issuer",
+      phase: "rootRetained",
+      needs: "anchor",
+      deadline: s.store.get(first.grant)!.deadline,
+    });
     yield* reloaded.processOnce();
-    assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
-    assertEquals(hab.kever!.sn, sn, "the anchor is not signed without its live authorisation");
+    assertEquals(s.store.get(first.grant)!.ended, undefined, "the restart does not end a resumable issuance");
+    assertEquals([s.log.length, hab.kever!.sn], [sent, sn], "the anchor is not signed without its live authorisation");
     assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "rip");
+    // While the first Grant can resume, a new Grant on its registry is still refused: resume is preferred.
     yield* refuses(
       () => beginIssuance(reloaded, { hab, credential: reg.credential(), options: grantOptions(s) }),
       "Registry root conflicts with this live DH operation",
     );
+    yield* refuses(() => resumeIssuance(reloaded, { hab: s.issuer.habs[0], grant: "Eunknown" }), "can be resumed");
+
+    // The user's explicit step re-establishes the authorisation; the loop then finishes as if uninterrupted.
+    yield* resumeIssuance(reloaded, { hab, grant: first.grant });
+    assertEquals(
+      issuanceStatus(reloaded, first.grant).state === "active" && "needs" in issuanceStatus(reloaded, first.grant),
+      false,
+    );
+    assertEquals(s.log.length, sent, "resuming sends nothing itself");
+    yield* reloaded.processOnce();
+    assertEquals(issuanceStatus(reloaded, first.grant), { state: "done", role: "issuer", phase: "issued" });
+    assertEquals(hab.kever!.sn, sn + 1, "exactly one KEL event anchors the registry update");
+    assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "bup");
+    assert(s.issuer.runtime.exc.complete(first.grant));
+    assert(
+      !text(s.log.at(-1)!.msg).includes("/ipex/grant"),
+      "final message is proof support only, the Grant is not resent",
+    );
+    // The holder verifies the update against the root it retained before the restart.
+    assertEquals((yield* s.holder.runtime.ipex!.dhke(s.holder.habs[0]).finish(first.grant)).kind, "accept");
+    assertEquals(s.store.get(first.grant)!.resumed !== undefined, true);
   });
 });
 

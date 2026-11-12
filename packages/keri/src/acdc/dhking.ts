@@ -10,6 +10,7 @@ import {
   concatBytes,
   Counter,
   type Diger,
+  Encrypter,
   Kinds,
   makeBlindUuid,
   Matter,
@@ -131,6 +132,48 @@ export function deriveRoot(privateKey: Uint8Array, context: DhkeContext): Salter
   }
 }
 
+/** The exact pending Grant a local habitat is a DH party of, with its parties, transaction and fresh registry scope. */
+interface GrantScope {
+  input: ExchangeInput;
+  issuer: string;
+  issuee: string;
+  xid: string;
+  registries: readonly string[];
+}
+
+/** Resolve the pending Grant `hab` may take part in, or the reason it cannot. Reads only; creates no approval. */
+function grantScope(hab: Hab, exc: Exchanger, grant: string): GrantScope | string {
+  const input = exc.retainedInput(grant, { pending: true });
+  if (!input) return "DH requires an authenticated pending Grant";
+  const message = input.serder, issuer = message.pre!, issuee = message.sad!.ri;
+  const xid = message.ilk === "xip" ? message.said : message.sad!.x;
+  if (
+    typeof xid !== "string" || typeof issuee !== "string" || issuer === issuee || ![issuer, issuee].includes(hab.pre!)
+  ) return "Local habitat is not a DH party";
+  const context = exc.pendingGrant(grant, { xid, sender: issuer, recipient: issuee });
+  if (!context) return "DH requires authenticated fresh registry scope";
+  return { input, issuer, issuee, xid, registries: [...context.registries] };
+}
+
+/**
+ * Durable evidence that the DH exchange of `grant` already retained its roots and can finish without new
+ * key exchange: the Grant is still pending inside its original deadline, `hab` holds, for every registry in
+ * its scope, the root that this very Grant's exchange retained (the Keeper binds root to Grant), and no
+ * registry has an accepted update yet. Pure read of stores; an in-memory flag decides nothing and the
+ * Keeper need not be unlocked. Returns the scope, or null when the exchange is not resumable.
+ */
+export function resumableExchange(
+  { hab, exc, registryStore }: { hab: Hab; exc: Exchanger; registryStore: RegistryStore },
+  grant: string,
+): GrantScope | null {
+  const scope = grantScope(hab, exc, grant);
+  if (typeof scope === "string") return null;
+  const held = scope.registries.every((registry) =>
+    hab.mgr.ks.registryRootGrant([hab.pre!, registry]) === grant && registryStore.headEvent(registry)?.ilk === "rip"
+  );
+  return held ? scope : null;
+}
+
 interface DhkeOperation {
   xid: string;
   grant: string;
@@ -247,25 +290,56 @@ export class Dhke implements AuxiliaryQueryProcessor {
         return op.xid;
       }
     }
-    const input = this.exc.retainedInput(grant, { pending: true });
-    if (!input) throw new ValidationError("DH requires an authenticated pending Grant");
-    const message = input.serder, issuer = message.pre!, issuee = message.sad!.ri;
-    const xid = message.ilk === "xip" ? message.said : message.sad!.x;
-    if (
-      typeof xid !== "string" || typeof issuee !== "string" || issuer === issuee
-      || ![issuer, issuee].includes(this.hab.pre!)
-    ) throw new ValidationError("Local habitat is not a DH party");
+    const op = this.frozen(grant, { coordinator, custodian }, false);
+    this.roots(op);
+    this.operations.set(op.xid, op);
+    this.replayQuery(op.xid);
+    return op.xid;
+  }
+
+  /**
+   * Resume a completed exchange after a process restart, without new key exchange. Rebuilds the operation
+   * as completed from the root this Grant's exchange retained (see {@link resumableExchange}), bound to the
+   * same Grant, transaction and parties. It holds no ephemeral key, so it cannot start, answer or renew a
+   * query; it can only {@link complete} and {@link finish}. Like {@link approve} it is an explicit consent
+   * and needs an unlocked Keeper; wire intake never calls it. Repeating it returns the same transaction.
+   * Neither side can resume once a registry has an accepted update.
+   *
+   * @throws ValidationError unless the Grant is pending and every registry in its scope holds this Grant's root.
+   */
+  resume(grant: string, { coordinator, custodian }: DhkeApproval = {}): string {
+    this.pruneQueries();
+    this.hab.mgr.requireRegistryRootAccess();
+    for (const op of this.operations.values()) {
+      if (op.grant !== grant) continue;
+      if (!op.completed) throw new ValidationError("DH is still exchanging keys for this Grant; nothing to resume");
+      this.pending(op);
+      return op.xid;
+    }
+    if (!resumableExchange(this, grant)) {
+      throw new ValidationError("No exchange of this pending Grant retained its root with the registry still fresh");
+    }
+    const op = this.frozen(grant, { coordinator, custodian }, true);
+    this.roots(op);
+    this.operations.set(op.xid, op);
+    this.pendingQueries.delete(op.xid);
+    return op.xid;
+  }
+
+  /** Freeze the exact pending Grant, parties and registry order into an operation; registers nothing. */
+  private frozen(grant: string, { coordinator, custodian }: DhkeApproval, completed: boolean): DhkeOperation {
+    const scope = grantScope(this.hab, this.exc, grant);
+    if (typeof scope === "string") throw new ValidationError(scope);
+    const { input, issuer, issuee, xid, registries } = scope;
     if (this.operations.has(xid)) throw new ValidationError("Another Grant is selected for this transaction");
-    const context = this.exc.pendingGrant(grant, { xid, sender: issuer, recipient: issuee });
-    if (!context) throw new ValidationError("DH requires authenticated fresh registry scope");
     const op: DhkeOperation = {
       xid,
       grant,
       issuer,
       issuee,
-      raw: message.raw.slice(),
+      raw: input.serder.raw.slice(),
       bodies: (input.nests ?? []).map((nest) => nest.body.raw.slice()),
-      registries: [...context.registries],
+      registries,
       privateKeys: new Map(),
       publicKeys: {},
       peer: null,
@@ -274,7 +348,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       proposal: null,
       contribution: null,
       custody: null,
-      completed: false,
+      completed,
       abandoned: false,
     };
     if (this.group) {
@@ -294,10 +368,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
     } else if (coordinator !== undefined || custodian !== undefined) {
       throw new ValidationError("Individual DH has no group coordinator");
     }
-    this.roots(op);
-    this.operations.set(xid, op);
-    this.replayQuery(xid);
-    return xid;
+    return op;
   }
 
   /** Return the stable issuer proposal until own threshold intake supplies the complete query. */
@@ -731,6 +802,8 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }
 
   private generate(op: DhkeOperation): void {
+    // A completed operation, including a resumed one, never holds or makes ephemeral keys again.
+    if (op.completed) throw new ValidationError("DH operation has already completed");
     this.custody(op, true);
     if (op.privateKeys.size) return;
     for (const registry of op.registries) {
@@ -759,7 +832,11 @@ export class Dhke implements AuxiliaryQueryProcessor {
   }
 
   private retain(op: DhkeOperation, peer: Record<string, string>, roots: ReadonlyMap<string, Salter>): void {
-    for (const [registry, root] of roots) this.hab.mgr.putRegistryRoot(this.hab.pre!, registry, root);
+    this.hab.mgr.requireRegistryRootAccess();
+    const { aeid } = this.hab.mgr, encrypter = new Encrypter({ verkey: aeid });
+    for (const [registry, root] of roots) {
+      this.hab.mgr.ks.retainExchangeRoot([this.hab.pre!, registry], root, op.grant, aeid, encrypter);
+    }
     op.peer = { ...peer };
     op.completed = true;
     this.clearPrivate(op);

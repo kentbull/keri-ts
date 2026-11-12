@@ -22,8 +22,16 @@
  * root in the Keeper, staged and accepted registry events and their derivation
  * coordinates. Memory only: ephemeral DH keys and peer keys (inside `Dhke`), the
  * witness authorisation codes, the anchor authorisation itself, resend timers.
- * A process that loses memory therefore reads `interrupted` and never signs.
- * The Grant's exchange deadline bounds everything; passing it reads `expired`.
+ * A process that loses memory therefore never signs, and reads `interrupted`
+ * unless the exchange already retained its root. That one case is not dead: the
+ * Keeper binds each DH root to the Grant whose exchange produced it, so a
+ * pending Grant inside its deadline whose registry has no accepted update yet
+ * only needs its remaining steps. It reads active with `needs: "anchor"` (issuer:
+ * stage, anchor, finish, prove) or `"finish"` (holder: verify the update, finish
+ * the Grant), and {@link resumeIssuance} is the user's explicit step that
+ * re-establishes the in-memory authorisation without a new key exchange. This is
+ * decided from stores only. The Grant's exchange deadline bounds everything;
+ * passing it reads `expired`.
  *
  * The runtime never writes wallet inventory. Completion is pushed to the
  * `ChangeSink` as `{kind: "issuance", id: <grant>}` and the embedder records it.
@@ -46,14 +54,14 @@ import {
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
-import type { Dhke } from "../../acdc/dhking.ts";
+import { type Dhke, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
-import type { Exchanger } from "../exchanges/exchanging.ts";
+import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
@@ -82,8 +90,13 @@ export type IssuancePhase =
   | "proving"
   | "awaitingAdmitConsent";
 
-/** A user step an active issuance waits for. Single-signature issuers never wait: `beginIssuance` authorises the anchor. */
-export type IssuanceNeed = "exchange" | "admit";
+/**
+ * A user step an active issuance waits for. A fresh single-signature issuer never waits: `beginIssuance`
+ * authorises the anchor. After a restart that kept the retained root, `"anchor"` (issuer) and `"finish"`
+ * (holder) both mean "call {@link resumeIssuance}"; a UI says "approve to finish". `"exchange"` and
+ * `"admit"` are the holder's first consent and its separate Admit.
+ */
+export type IssuanceNeed = "exchange" | "anchor" | "finish" | "admit";
 
 /** Durable, non-secret operation facts. Never holds keys, roots or authorisation codes. */
 export interface IssuanceRecord {
@@ -100,6 +113,8 @@ export interface IssuanceRecord {
   readonly consents: { readonly exchange?: string; readonly anchor?: string; readonly admit?: string };
   /** Holder: when the Grant was accepted locally, leaving only the Admit consent. */
   readonly issued?: string;
+  /** When {@link resumeIssuance} re-established the authorisation after a restart (ISO 8601). */
+  readonly resumed?: string;
   /** When the operation completed: the issuer's final proof support was sent, or the holder's Admit was accepted. */
   readonly done?: string;
   readonly ended?: { readonly state: IssuanceEndState; readonly reason: string; readonly at: string };
@@ -200,7 +215,8 @@ interface LiveIssuance {
     /** Grant body and nested disclosure, the input of proof support. */
     readonly raw: Uint8Array;
     readonly grantWire: Uint8Array;
-    readonly query: Uint8Array;
+    /** The unchanged DH query to resend; null for a resumed operation, whose key exchange is already complete. */
+    readonly query: Uint8Array | null;
     /** Transient witness codes for the anchor. */
     readonly auths?: WitnessAuthMap;
     sent: boolean;
@@ -264,7 +280,8 @@ export class IssuanceOperations {
     if (!this.swept) {
       this.swept = true;
       for (const record of this.deps.store.list()) {
-        if (!record.ended && !record.issued && !record.done && !this.live.has(record.grant)) this.orphan(record);
+        const settled = record.ended || record.issued || record.done || this.live.has(record.grant);
+        if (!settled && !resumable(this.deps, record)) this.orphan(record);
       }
     }
     for (const op of [...this.live.values()]) {
@@ -335,7 +352,7 @@ export class IssuanceOperations {
       yield* this.send(op, queued.dest, queued.msg);
     }
     if (!op.dh.complete(op.record.xid)) {
-      if (issuer && this.deps.clock.now() >= issuer.nextQuery) {
+      if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
         yield* this.send(op, op.peer, issuer.query);
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
       }
@@ -375,6 +392,18 @@ export class IssuanceOperations {
     this.deps.store.put({ ...op.record, done: iso(this.deps.clock.now()) });
     this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
   }
+}
+
+/**
+ * Whether a restarted process can finish this record without new key exchange: the Grant is inside its
+ * deadline, this record's own habitat is the party its role names, and {@link resumableExchange} finds the
+ * exchange's root retained with the registry still fresh. A pure read of stores.
+ */
+function resumable(deps: IssuanceDeps, record: IssuanceRecord): boolean {
+  const hab = deps.hby.habs.get(record.hab);
+  if (!hab || lapsed(deps, record)) return false;
+  const scope = resumableExchange({ hab, exc: deps.exc, registryStore: deps.rgy.store }, record.grant);
+  return !!scope && (scope.issuer === hab.pre) === (record.role === "issuer");
 }
 
 /** Whether the Grant's exchange deadline has passed; a record without one never lapses. */
@@ -452,6 +481,18 @@ function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: Iss
   return { retained, credential, deadline, expires };
 }
 
+/** The Grant body with its nested disclosure (the input of proof support) and the Grant as sent to the holder. */
+function* grantWires(retained: ExchangeInput): Operation<{ raw: Uint8Array; grantWire: Uint8Array }> {
+  const raw = concatBytes(
+    Counter.makeGVC(Vrsn_2_0),
+    ...yield* call(() => Promise.all((retained.nests ?? []).map((nest) => collectPayload(framePayload(nest))))),
+  );
+  const frame =
+    parseBytes(messagize(retained.serder, { tsgs: retained.tsgs, cigars: retained.cigars, gvrsn: Vrsn_2_0 }))[0];
+  frame.nests = [...retained.nests ?? []];
+  return { raw, grantWire: yield* call(() => collectPayload(framePayload(frame))) };
+}
+
 /**
  * The issuer's one "issue this credential" consent. Signs the Grant when given
  * a credential, approves the DH exchange, signs the query and records the
@@ -466,14 +507,7 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
   const { deps } = ops, { hab, auths } = input;
   const grant = "grant" in input ? input.grant : (yield* prepareIssuanceGrant(ops, input)).grant;
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
-  const raw = concatBytes(
-    Counter.makeGVC(Vrsn_2_0),
-    ...yield* call(() => Promise.all((retained.nests ?? []).map((nest) => collectPayload(framePayload(nest))))),
-  );
-  const frame =
-    parseBytes(messagize(retained.serder, { tsgs: retained.tsgs, cigars: retained.cigars, gvrsn: Vrsn_2_0 }))[0];
-  frame.nests = [...retained.nests ?? []];
-  const grantWire = yield* call(() => collectPayload(framePayload(frame)));
+  const { raw, grantWire } = yield* grantWires(retained);
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant), now = iso(deps.clock.now());
   const record: IssuanceRecord = {
     grant,
@@ -515,6 +549,15 @@ export function issuanceStatus(ops: Pick<IssuanceOperations, "deps" | "live">, g
   if (record.issued) return { state: "active", role, phase: "awaitingAdmitConsent", needs: "admit" };
   const live = ops.live.get(grant), over = lapsed(ops.deps, record);
   if (live && !over) return { state: "active", role, phase: live.phase, deadline: record.deadline };
+  if (!live && resumable(ops.deps, record)) {
+    return {
+      state: "active",
+      role,
+      phase: "rootRetained",
+      needs: role === "issuer" ? "anchor" : "finish",
+      deadline: record.deadline,
+    };
+  }
   const [state, reason] = orphaned(over);
   return { state, role, reason };
 }
@@ -580,6 +623,59 @@ export function approveIssuanceExchange(
     registry: credential.regid!,
     expires,
     phase: "exchangingKeys",
+    busy: false,
+  });
+  deps.changes?.push({ kind: "issuance", id: grant });
+  return { grant, xid };
+}
+
+/**
+ * The explicit consent to finish an exchange whose key exchange already completed before a restart: the
+ * issuer's "anchor and finish" or the holder's "finish" ({@link IssuanceNeed}). Needs the Grant's existing
+ * record and an issuance whose status reads active with that need. Performs no key exchange and signs
+ * nothing itself: the Keeper's retained root is rebound to this Grant ({@link Dhke.resume}), the in-memory
+ * authorisation, including the later KEL signature that anchors the update, is recorded as `beginIssuance`
+ * does, and `processOnce` stages and anchors the registry update (issuer), finishes the Grant and sends
+ * proof support. The blinded update derives from the same retained root, so the peer verifies it as it would
+ * have without the restart. Returns after local commit.
+ *
+ * @throws ValidationError when the issuance has no active record of `hab`, or its status is not resumable.
+ */
+export function* resumeIssuance(
+  ops: IssuanceOperations,
+  { hab, grant, auths }: { hab: Hab; grant: string; auths?: WitnessAuthMap },
+): Operation<IssuanceBegun> {
+  const { deps } = ops, old = deps.store.get(grant), status = old && issuanceStatus(ops, grant);
+  if (
+    !old || old.hab !== hab.pre || status?.state !== "active"
+    || (status.needs !== "anchor" && status.needs !== "finish")
+  ) {
+    throw new ValidationError(
+      "Only an issuance of this identifier that reads active and needs to anchor or finish can be resumed",
+    );
+  }
+  const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, old.role);
+  const wires = old.role === "issuer" ? yield* grantWires(retained) : null;
+  const dh = deps.dhkes.dhke(hab), xid = dh.resume(grant);
+  if (xid !== old.xid || deadline !== old.deadline) {
+    throw new ValidationError("Resumed exchange differs from its record");
+  }
+  const now = iso(deps.clock.now());
+  const record: IssuanceRecord = {
+    ...old,
+    resumed: now,
+    consents: wires ? { ...old.consents, anchor: now } : old.consents,
+  };
+  deps.store.put(record);
+  ops.live.set(grant, {
+    record,
+    hab,
+    dh,
+    peer: wires ? retained.serder.sad!.ri as string : retained.serder.pre!,
+    registry: credential.regid!,
+    expires,
+    issuer: wires ? { credential, ...wires, query: null, auths, sent: true, nextQuery: 0 } : undefined,
+    phase: "rootRetained",
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
