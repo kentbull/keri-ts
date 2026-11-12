@@ -184,7 +184,8 @@ event/seqEvent remain raw access. Replay validates without writing, including re
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
 IpexDiscloser (`app/ipex/ipex-discloser.ts`) holds the inventory-free half (exchange wire, source
 anchoring, fresh-issuance Grant body, proof support, KEL replay, graph authorization, registry proof,
-unblind, Apply/Reply); `WalletDiscloser` extends it and keeps selection from issued/held views.
+unblind, Apply/Reply, selection, Offer/Grant bodies); selection reads issued and held credentials
+through the `CredentialViews` port, which `Wallet` implements; `WalletDiscloser` extends the core.
 RegistryAuthor (`acdc/authoring.ts`) holds stage, anchor and update; `WalletAuthor` extends it
 and adds only the inventory methods `issue`, `stageRevocation` and `revoke`.
 RegistryCustody (core in `acdc/custody.ts`; the wallet class extends it and supplies
