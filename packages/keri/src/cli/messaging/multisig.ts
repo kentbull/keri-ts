@@ -49,6 +49,7 @@ import {
 import { type AgentRuntime, runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import type { KeyStateRecord } from "../../core/records.ts";
 import { Roles } from "../../core/roles.ts";
 import { withAgentRuntime } from "../common/context.ts";
@@ -346,6 +347,10 @@ export function* multisigJoinCommand(
         result.accepted = reger.saved.get(tel.pre) !== null;
       }
       tel.publicationComplete = publication.complete(tel.pre, tel.sn);
+      return result;
+    }
+    if (isV2RegistryRoute(result.route)) {
+      result.accepted = yield* settleRegistryApproval(hby, runtime, result, commandArgs, approval.deadline);
       return result;
     }
     if (result.accepted) {
@@ -758,12 +763,14 @@ function approvePrompt(
  * @param pre Accepted group event subject.
  * @param args Witness authentication and HTTP endpoint mode choices.
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
+ * @param sn Accepted event ordinal to receipt; defaults to the current event.
  */
 function* receiptAcceptedEvent(
   hby: Habery,
   pre: string,
   args: MultisigBaseArgs,
   runtime: AgentRuntime,
+  sn?: number,
 ): Operation<void> {
   const kever = hby.db.getKever(pre);
   if (!kever || kever.wits.length === 0) {
@@ -779,10 +786,43 @@ function* receiptAcceptedEvent(
   );
   if (args.endpoint) {
     const receiptor = new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock);
-    yield* receiptor.receipt(pre, { sn: kever.sn, auths });
+    yield* receiptor.receipt(pre, { sn: sn ?? kever.sn, auths });
   } else {
     const witDoer = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
-    yield* witDoer.submit(pre, { sn: kever.sn, auths });
+    yield* witDoer.submit(pre, { sn: sn ?? kever.sn, auths });
+  }
+}
+
+/**
+ * Settle one approved v2 RIP/BUP as KERIpy's join Counselor does: wait for the group's KEL acceptance of
+ * the exact anchor, converge that anchor's witness receipts, and let the anchor escrow accept the TEL event.
+ * The TEL event needs a fully witnessed anchor, so receipting only after TEL acceptance would never accept it.
+ *
+ * @returns Whether the approved TEL event is accepted before the approval deadline.
+ */
+function* settleRegistryApproval(
+  hby: Habery,
+  runtime: AgentRuntime,
+  result: ApprovalResult,
+  args: MultisigBaseArgs,
+  deadline: number,
+): Operation<boolean> {
+  const store = runtime.acdc?.store, tel = store?.event(result.embedded);
+  const anc = (hby.db.exns.get([result.said])?.sad?.a as { anc?: unknown } | undefined)?.anc;
+  if (!store || !tel || typeof tel.sad?.n !== "string" || typeof anc !== "string") return result.accepted;
+  const regid = tel.ilk === "rip" ? tel.said! : tel.regid!, sn = Number(BigInt(`0x${tel.sad.n}`));
+  let receipted = false;
+  while (true) {
+    if (store.seqEvent(regid, sn)?.said === tel.said) return true;
+    const anchor = hby.db.getEvtSerder(result.group, anc);
+    if (!receipted && anchor && hby.db.kels.getLast(result.group, anchor.sn!) === anc) {
+      if (!hby.db.fullyWitnessed(anchor)) yield* receiptAcceptedEvent(hby, result.group, args, runtime, anchor.sn!);
+      receipted = true;
+    }
+    yield* runtime.protocol.processEscrowsOnce();
+    if (store.seqEvent(regid, sn)?.said === tel.said) return true;
+    if (Date.now() >= deadline) return false;
+    yield* sleep(Math.min(250, deadline - Date.now()));
   }
 }
 
