@@ -412,6 +412,16 @@ export {
   listGroupProposals,
 } from "../app/multisig/proposals.ts";
 export {
+  type GroupEventResult,
+  type GroupInceptionSpec,
+  type GroupProposeDeps,
+  type GroupRotationSpec,
+  proposeGroupInception,
+  proposeGroupInteraction,
+  proposeGroupRotation,
+  settleProposedRotation,
+} from "../app/multisig/proposing.ts";
+export {
   Notifier,
 } from "../app/notifications/notifying.ts";
 export {

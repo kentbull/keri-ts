@@ -35,6 +35,7 @@ import {
   type ApprovalResult,
   approveKelProposal,
   approveRpyProposal,
+  eventAccepted,
   isKelRoute,
   isVdrRoute,
   kelApproval,
@@ -70,8 +71,17 @@ export interface GroupProposal {
   readonly smids: readonly string[];
   /** Rotation members named by the proposal; empty where it names none. */
   readonly rmids: readonly string[];
-  /** `approved` once the local member's own contribution to this payload is stored. */
-  readonly local: "unapproved" | "approved";
+  /**
+   * Standing of this host's member:
+   * - `approved`: its own contribution to this payload is stored.
+   * - `inapplicable`: the event is already accepted here and names no local signing member (for example a rotation that only
+   *   adds this member as a next member), so there is nothing to sign; hosts should not offer it.
+   * - `unapproved`: otherwise.
+   *
+   * A group with several local members is judged by its recorded joining member, or for a group not joined yet by the first
+   * local member the proposal names. Approval signs for every local member, so the answer holds for all of them.
+   */
+  readonly local: "unapproved" | "approved" | "inapplicable";
   /** Choices approval will need; both false once the proposal is locally approved. */
   readonly needs: GroupProposalNeeds;
   /** The group KEL event this proposal sets up, or the anchor that seals its TEL event; absent for replies. */
@@ -187,6 +197,8 @@ interface Decoded {
   rmids: readonly string[];
   event?: GroupEventRef;
   kind: GroupProposalKind;
+  /** KEL event already accepted here with no local signing member. */
+  inapplicable?: boolean;
 }
 
 function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kind: GroupProposalKind): Decoded | null {
@@ -204,6 +216,7 @@ function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kin
       smids,
       rmids: rmids ?? [],
       event: eventRef(approval.event, approval.group),
+      inapplicable: eventAccepted(hby, approval.event) && !smids.some(mid => hby.habs.has(mid)),
     };
   }
   if (isV2RegistryRoute(route)) {
@@ -253,6 +266,7 @@ function readProposal(deps: GroupProposalReadDeps, said: string): GroupProposal 
   if (!decoded) return null;
   const member = approvingMember(hby, decoded.group, uniqueMembers([...decoded.smids, ...decoded.rmids]));
   const approved = !!member && storedGroupMessage(hby.db, member.pre, exn) !== null;
+  const inapplicable = !approved && decoded.inapplicable === true;
   return {
     said: exn.said,
     kind,
@@ -261,10 +275,10 @@ function readProposal(deps: GroupProposalReadDeps, said: string): GroupProposal 
     proposer: exn.pre,
     smids: decoded.smids,
     rmids: decoded.rmids,
-    local: approved ? "approved" : "unapproved",
+    local: approved ? "approved" : inapplicable ? "inapplicable" : "unapproved",
     needs: {
-      groupAlias: !approved && (kind === "icp" || (kind === "rot" && !hby.habs.has(decoded.group))),
-      registryName: !approved && kind === "vcp",
+      groupAlias: !approved && !inapplicable && (kind === "icp" || (kind === "rot" && !hby.habs.has(decoded.group))),
+      registryName: !approved && !inapplicable && kind === "vcp",
     },
     ...(decoded.event ? { event: decoded.event } : {}),
   };
