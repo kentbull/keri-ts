@@ -787,3 +787,26 @@ export {
   waitForIpexArrival,
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
+
+// Library delegator approval (list, approve, status, wait, dismiss).
+export {
+  approveDelegation,
+  type ApproveDelegationOptions,
+  DELEGATION_APPROVAL_TIMEOUT_MS,
+  type DelegationAnchor,
+  type DelegationApprovalDeps,
+  type DelegationApprovalReadDeps,
+  type DelegationApprovalStatus,
+  delegationApprovalStatus,
+  type DelegationApprovalWaitDeps,
+  type DelegationApprovalWaitResult,
+  type DelegationDismissDeps,
+  type DelegationRequest,
+  dismissDelegation,
+  listPendingDelegations,
+  type PendingDelegation,
+  type PendingDelegationFilter,
+  settleDelegationApproval,
+  waitForDelegationApproval,
+  type WaitForDelegationApprovalOptions,
+} from "../app/identity/delegation-approval.ts";
