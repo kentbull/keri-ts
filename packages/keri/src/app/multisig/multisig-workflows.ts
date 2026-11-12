@@ -257,7 +257,7 @@ export type MultisigProposalRoute =
   | typeof MULTISIG_BUP_ROUTE;
 
 /** Decoded child and membership fields consumed by KEL approval policy; child proofs are verified during intake. */
-type KelApproval = MultisigChild & {
+export type KelApproval = MultisigChild & {
   group: string;
   proposal: Extract<MultisigEventProposal, { route: MultisigKelRoute }>;
 };
@@ -827,7 +827,7 @@ function* approveVdrProposal(
 }
 
 /** Preserve the recorded signing/rotation participant order during approval and resume. */
-function kelApprovalMembers({ proposal }: KelApproval): string[] {
+export function kelApprovalMembers({ proposal }: KelApproval): string[] {
   if (proposal.route === MULTISIG_IXN_ROUTE) return [...proposal.attrs.smids];
   return uniqueMembers([...proposal.attrs.smids, ...proposal.attrs.rmids]);
 }
@@ -897,7 +897,7 @@ function kelProposalLabel(route: MultisigKelRoute): "icp" | "rot" | "ixn" {
 }
 
 /** Decode the fields used by approval, preserving existing missing-embed and member-list behavior. */
-function kelApproval(exn: SerderKERI, route: MultisigKelRoute, child: MultisigChild | null): KelApproval | null {
+export function kelApproval(exn: SerderKERI, route: MultisigKelRoute, child: MultisigChild | null): KelApproval | null {
   if (!child) return null;
   const { event } = child;
   const attrs: unknown = exn.ked?.a;
@@ -1065,7 +1065,7 @@ function rpyAttrs(serder: SerderKERI): { cid: string; role: string; eid: string 
   return { cid: attrs.cid, role: attrs.role, eid: attrs.eid };
 }
 
-function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
+export function payloadSection(ked: Record<string, unknown>): Record<string, unknown> {
   return isRecord(ked.a) ? ked.a : {};
 }
 
@@ -1091,11 +1091,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isKelRoute(route: string): route is MultisigKelRoute {
+export function isKelRoute(route: string): route is MultisigKelRoute {
   return route === MULTISIG_ICP_ROUTE || route === MULTISIG_ROT_ROUTE || route === MULTISIG_IXN_ROUTE;
 }
 
-function isVdrRoute(route: string): route is MultisigVdrRoute {
+export function isVdrRoute(route: string): route is MultisigVdrRoute {
   return route === MULTISIG_VCP_ROUTE || route === MULTISIG_ISS_ROUTE || route === MULTISIG_REV_ROUTE;
 }
 
