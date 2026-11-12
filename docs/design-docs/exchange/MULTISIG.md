@@ -94,16 +94,16 @@ approval interoperability; the receiving workflow remains a separate audit.
 
 ## CLI approval lifetime
 
-`approvePendingMultisigProposal` approves one matching stored proposal. It has
-no polling or deadline contract. CLI orchestration owns the host, waits, prompts
-and output; background mailbox/query/escrow workers run once for the command and
+`approveGroupProposal` approves the one stored proposal named by its SAID. It has
+no polling or deadline contract and never prompts. `multisig join` owns selection,
+the prompt and output, and the command owns the host and waits; background mailbox/query/escrow workers run once for the command and
 join before stores close. Delegated-group completion observes those same workers.
 It must not start a nested runtime over the same Habery.
 
 `multisig join --approval-timeout <seconds>` sets one elapsed deadline for finding
 a proposal and its local-completion fallback (default 60 seconds). Zero permits
-an immediate stored-state attempt. Proposer approval waits also use elapsed
-seconds rather than deriving a turn count. Acceptance remains the actual KEL or
+an immediate stored-state attempt. Proposer waits also use elapsed
+seconds rather than deriving a turn count, and never approve anything. Acceptance remains the actual KEL or
 endpoint-role state, not a mailbox poll or successful transmission.
 
 ## CLI group boundaries

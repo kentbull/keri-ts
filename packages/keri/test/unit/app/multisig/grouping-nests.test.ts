@@ -75,10 +75,14 @@ import {
 import { multisigPayloadSaid, signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
 import {
   approveAcdcV2Registry,
-  approvePendingMultisigProposal,
   commitAcceptedGroupMembers,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
+import {
+  proposeCredentialIssue,
+  proposeCredentialRegistry,
+  proposeCredentialRevocation,
+} from "../../../../src/app/multisig/proposing.ts";
 import { Notifier, openNoterForHabery } from "../../../../src/app/notifications/notifying.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
@@ -99,6 +103,7 @@ import { Schemer } from "../../../../src/core/scheming.ts";
 import { loadNests } from "../../../../src/db/exchange/exchange-nests.ts";
 import { credential, Credentialer, Regery, serializeCredential } from "../../../../src/vdr/credentialing.ts";
 import framing714 from "../../../fixtures/multisig-framing-714.json" with { type: "json" };
+import { approvePending } from "./approve-pending.ts";
 
 // @ts-expect-error Event publication cannot accept a registry proposal.
 void ({ route: "/multisig/vcp", attrs: { gid: "group" } } satisfies Parameters<typeof publishProposal>[5]);
@@ -226,18 +231,7 @@ Deno.test("multisig publication records its actual local proposal before deliver
         assertEquals(left.db.getKever(local.hab.pre), null);
         assertEquals(notifier.list().length, 0);
         yield* left.db.reopen();
-        const resumed = yield* approvePendingMultisigProposal(left, runtime, {
-          said: delivered.said!,
-          callbacks: {
-            approveProposal: () => {
-              throw new Error("Pending recorded approval must not prompt again.");
-            },
-            chooseGroupAlias: () => {
-              throw new Error("Pending group already has an alias.");
-            },
-            chooseRegistryName: () => "unused",
-          },
-        });
+        const resumed = yield* approvePending(left, runtime, { said: delivered.said! });
         assertEquals(resumed?.accepted, false);
         assertEquals(resumed?.messages, publication.messages);
         assertEquals(left.db.getKever(local.hab.pre), null);
@@ -297,33 +291,6 @@ for (const localSender of [false, true]) {
           runtime.postman.wait = function*(evt) {
             return { kin: "sent", evt, deliveries: ["test"] };
           };
-          let prompts = 0;
-          const callbacks = {
-            approveProposal: () => {
-              prompts++;
-              return true;
-            },
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "unused",
-          };
-          if (!localSender) {
-            yield* call(() =>
-              assertRejects(
-                () =>
-                  run(() =>
-                    approvePendingMultisigProposal(left, runtime, {
-                      said: signed.exnSaid,
-                      group: bob.pre,
-                      callbacks,
-                    })
-                  ),
-                Error,
-                "belongs to group",
-              )
-            );
-            assertEquals(left.db.meids.get([signed.payloadSaid]), []);
-            assertEquals(prompts, 0);
-          }
           const sign = alice.mgr.sign;
           if (localSender) {
             alice.mgr.sign = () => {
@@ -331,16 +298,11 @@ for (const localSender of [false, true]) {
             };
           }
           try {
-            const result = yield* approvePendingMultisigProposal(left, runtime, {
-              said: signed.exnSaid,
-              group: local.hab.pre,
-              callbacks,
-            });
+            const result = yield* approvePending(left, runtime, { said: signed.exnSaid });
             assertExists(result);
             assertEquals(result.said, signed.exnSaid);
             assertEquals(result.embedded, child.serder.said);
             assertEquals(result.accepted, !localSender);
-            assertEquals(prompts, localSender ? 0 : 1);
             assertEquals(left.db.meids.get([signed.payloadSaid]).some(index => index.qb64 === signed.exnSaid), true);
             if (localSender) assertEquals(result.messages[0].exnSaid, signed.exnSaid);
           } finally {
@@ -386,52 +348,16 @@ Deno.test("multisig join selects, signs and resumes v2 group inception and reply
         };
         const peer = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, remote.message));
         yield* runtime.reactor.processBytes(peer.message, { local: true });
-        const callbacks = {
-          approveProposal: () => {
-            prompts++;
-            return true;
-          },
-          chooseGroupAlias: () => "group",
-          chooseRegistryName: () => "registry",
-        };
-        let prompts = 0;
-        // The wrong group must not prompt, sign or consume the pending notice.
+        // The wrong group selects nothing: no signature, and the pending notice stays.
         const pending = notifier.list();
         assertEquals(pending.length, 1);
-        assertEquals(
-          yield* approvePendingMultisigProposal(left, runtime, {
-            group: bob.pre,
-            callbacks,
-          }),
-          null,
-        );
-        assertEquals(prompts, 0);
+        assertEquals(yield* approvePending(left, runtime, { group: bob.pre }), null);
         assertEquals(notifier.list(), pending);
-        yield* call(() =>
-          assertRejects(
-            () =>
-              run(() =>
-                approvePendingMultisigProposal(left, runtime, {
-                  group: bob.pre,
-                  said: peer.exnSaid,
-                  callbacks,
-                })
-              ),
-            Error,
-            "belongs to group",
-          )
-        );
-        assertEquals(prompts, 0);
         // Explicit selection uses durable evidence even after every notice is consumed.
         for (const notice of pending) notifier.remove(notice.rid);
-        const result = yield* approvePendingMultisigProposal(left, { ...runtime, notifier: null }, {
-          group: "group",
-          said: peer.exnSaid,
-          callbacks,
-        });
+        const result = yield* approvePending(left, { ...runtime, notifier: null }, { said: peer.exnSaid });
         assertEquals(result?.said, peer.exnSaid);
         assertEquals(result?.embedded, local.serder.said);
-        assertEquals(prompts, 1);
         assertEquals(result?.accepted, true);
         assertEquals(left.db.getKever(local.hab.pre)?.said, local.serder.said);
         yield* call(() => learn(right, local.hab));
@@ -442,7 +368,7 @@ Deno.test("multisig join selects, signs and resumes v2 group inception and reply
         const peerRpy = groupEndorseReply(right, remote.hab.pre, rpy, Vrsn_2_0);
         const rpyWrapper = signGroupMessage(bob, alice.pre, yield* multisigRpyExn(local.hab.pre, bob, peerRpy));
         yield* runtime.reactor.processBytes(rpyWrapper.message, { local: true });
-        const replyResult = yield* approvePendingMultisigProposal(left, runtime, { callbacks });
+        const replyResult = yield* approvePending(left, runtime);
         assertEquals(replyResult?.said, rpyWrapper.exnSaid);
         assertEquals(replyResult?.accepted, true);
         assertEquals(left.db.ends.get([local.hab.pre, "mailbox", bob.pre])?.allowed, true);
@@ -453,23 +379,8 @@ Deno.test("multisig join selects, signs and resumes v2 group inception and reply
           throw new Error("Resume must reuse the recorded member contribution and outer signatures.");
         };
         try {
-          const recorded = {
-            approveProposal: () => {
-              throw new Error("Recorded approval must not prompt again.");
-            },
-            chooseGroupAlias: () => {
-              throw new Error("Recorded group must not be renamed.");
-            },
-            chooseRegistryName: () => {
-              throw new Error("Recorded registry must not be renamed.");
-            },
-          };
           for (const [wrapper, prior] of [[peer, result], [rpyWrapper, replyResult]] as const) {
-            const resumed = yield* approvePendingMultisigProposal(left, runtime, {
-              said: wrapper.exnSaid,
-              group: "group",
-              callbacks: recorded,
-            });
+            const resumed = yield* approvePending(left, runtime, { said: wrapper.exnSaid });
             assertEquals(resumed?.accepted, true);
             assertEquals(resumed?.messages, prior?.messages);
             assertEquals(resumed?.embedded, prior?.embedded);
@@ -524,19 +435,8 @@ Deno.test("multisig join skips an accepted rotation that only names the local me
             yield* multisigRotateExn(local.hab, alice, mids, next, own.message),
           );
           yield* runtime.reactor.processBytes(stale.message, { local: true });
-          let prompts = 0;
-          const result = yield* approvePendingMultisigProposal(third, runtime, {
-            callbacks: {
-              approveProposal: () => {
-                prompts++;
-                return true;
-              },
-              chooseGroupAlias: () => "group",
-              chooseRegistryName: () => "registry",
-            },
-          });
+          const result = yield* approvePending(third, runtime);
           assertEquals(result, null);
-          assertEquals(prompts, 0);
           assertEquals(third.habByName("group"), null);
         } finally {
           yield* runtime.close();
@@ -629,13 +529,7 @@ Deno.test("multisig join answers a v2 nested rotation proposal in its proposal's
           ),
         );
         yield* runtime.reactor.processBytes(proposed.message, { local: true });
-        const result = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "registry",
-          },
-        });
+        const result = yield* approvePending(left, runtime);
         assertEquals(result?.said, proposed.exnSaid);
         assertEquals(result?.accepted, true);
         assertEquals(left.db.getKever(local.hab.pre)?.said, peer.serder.said);
@@ -1203,18 +1097,7 @@ for (const route of ["ixn", "vcp"] as const) {
             local: true,
           });
           assertNotEquals(left.db.getKever(b.hab.pre)?.said, event.serder.said);
-          let prompted = "";
-          const result = yield* approvePendingMultisigProposal(left, runtime, {
-            callbacks: {
-              approveProposal: ({ group }) => {
-                prompted = group;
-                return true;
-              },
-              chooseGroupAlias: () => "a",
-              chooseRegistryName: () => "unused",
-            },
-          });
-          assertEquals(prompted, "");
+          const result = yield* approvePending(left, runtime, { groupAlias: "a" });
           assertEquals(result, null);
           assertNotEquals(left.db.getKever(b.hab.pre)?.said, event.serder.said);
         } finally {
@@ -1225,7 +1108,7 @@ for (const route of ["ixn", "vcp"] as const) {
   });
 }
 
-Deno.test("multisig issuance missing its credential neither prompts nor accepts its anchor", async () => {
+Deno.test("multisig issuance missing its credential is not approved and does not accept its anchor", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
@@ -1246,19 +1129,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
           local: true,
         });
         assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
-        let prompted = false;
-        const result = yield* approvePendingMultisigProposal(left, runtime, {
-          callbacks: {
-            approveProposal: () => {
-              prompted = true;
-              return true;
-            },
-            chooseGroupAlias: () => "group",
-            chooseRegistryName: () => "unused",
-          },
-        });
-        assertEquals(prompted, false);
-        assertEquals(result, null);
+        yield* call(() => assertRejects(() => run(() => approvePending(left, runtime)), Error, "cannot be approved"));
         assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
       } finally {
         yield* runtime.close();
@@ -1811,6 +1682,61 @@ Deno.test("group establishment-only registry inception, issuance and revocation 
   });
 });
 
+Deno.test("propose* wrappers hand each group anchor of a legacy registry, issuance and revocation to the Counselor", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        runtime.postman.send = evt => ({ ...evt, kin: "msg" });
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        const deps = {
+          rgy: runtime.vdr!,
+          input: runtime.reactor,
+          postman: runtime.postman,
+          counselor: runtime.counselor,
+        };
+        const registry = yield* proposeCredentialRegistry(deps, local.hab, { registryName: "counseled" }, {
+          fallbackAfterMs: 0,
+        });
+        const schemer = new Schemer({ sed: { $id: "", type: "object" } });
+        left.db.schema.pin(schemer.said, schemer);
+        const issued = yield* proposeCredentialIssue(deps, {
+          registryName: "counseled",
+          schema: schemer.said,
+          recipient: bob.pre,
+          data: { role: "holder" },
+        });
+        const revoked = yield* proposeCredentialRevocation(deps, {
+          registryName: "counseled",
+          credentialSaid: issued.creder.said!,
+        });
+        const counseled = runtime.counselor.pending(local.hab.pre).map(({ said }) => said);
+        for (const proposed of [registry, issued, revoked]) {
+          assertEquals(proposed.group.event.pre, local.hab.pre);
+          assertEquals(counseled.includes(proposed.group.event.said), true);
+        }
+        assertEquals(new Set(counseled).size, 3, "each proposal has its own anchor");
+        // A single-signature identifier is not a group: the wrapper refuses it instead of proposing.
+        const solo = left.makeHab("solo", undefined, {});
+        yield* call(() =>
+          assertRejects(
+            () => run(() => proposeCredentialRegistry(deps, solo, { registryName: "solo-registry" })),
+            Error,
+            "must be proposed by a local group",
+          )
+        );
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
 Deno.test("VDR proposal preflight refuses mismatched evidence and waits for schema before signing", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
@@ -1839,15 +1765,6 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
           )
         );
         assertEquals(left.db.getState(local.hab.pre), state);
-        let prompts = 0;
-        const callbacks = {
-          approveProposal: () => {
-            prompts++;
-            return true;
-          },
-          chooseGroupAlias: () => "unused",
-          chooseRegistryName: () => "untrusted-registry",
-        };
         const schemer = new Schemer({
           sed: {
             $id: "",
@@ -1892,11 +1809,13 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
           return { wrapper, anchor };
         };
         const pending = yield* submit(valid);
-        assertEquals(
-          yield* approvePendingMultisigProposal(left, runtime, { said: pending.wrapper.said!, callbacks }),
-          null,
+        yield* call(() =>
+          assertRejects(
+            () => run(() => approvePending(left, runtime, { said: pending.wrapper.said! })),
+            Error,
+            "cannot be approved",
+          )
         );
-        assertEquals(prompts, 0);
         assertEquals(left.db.getSigs(local.hab.pre, pending.anchor.said!), []);
         assertEquals(left.db.getState(local.hab.pre), state);
         left.db.schema.pin(schemer.said, schemer);
@@ -1904,8 +1823,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         const badSource = yield* submit(valid, true);
         yield* call(() =>
           assertRejects(
-            () =>
-              run(() => approvePendingMultisigProposal(left, runtime, { said: badSource.wrapper.said!, callbacks })),
+            () => run(() => approvePending(left, runtime, { said: badSource.wrapper.said! })),
             Error,
             "source seal",
           )
@@ -1913,10 +1831,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         const badPredecessor = yield* submit(valid, false, true);
         yield* call(() =>
           assertRejects(
-            () =>
-              run(() =>
-                approvePendingMultisigProposal(left, runtime, { said: badPredecessor.wrapper.said!, callbacks })
-              ),
+            () => run(() => approvePending(left, runtime, { said: badPredecessor.wrapper.said! })),
             Error,
             "anchor predecessor",
           )
@@ -1931,8 +1846,7 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         const badSchema = yield* submit(invalid);
         yield* call(() =>
           assertRejects(
-            () =>
-              run(() => approvePendingMultisigProposal(left, runtime, { said: badSchema.wrapper.said!, callbacks })),
+            () => run(() => approvePending(left, runtime, { said: badSchema.wrapper.said! })),
             Error,
             "schema validation",
           )
@@ -1955,23 +1869,18 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         });
         yield* call(() =>
           assertRejects(
-            () => run(() => approvePendingMultisigProposal(left, runtime, { said: foreign.said!, callbacks })),
+            () => run(() => approvePending(left, runtime, { said: foreign.said! })),
             Error,
             "issuer does not match",
           )
         );
-        assertEquals(prompts, 0);
         assertEquals(left.db.getState(local.hab.pre), state);
         for (const anchor of [badSource.anchor, badPredecessor.anchor, badSchema.anchor, foreignAnchor]) {
           assertEquals(left.db.getSigs(local.hab.pre, anchor.said!), []);
         }
         assertEquals(rgy.reger.regs.get("untrusted-registry"), null);
-        const completed = yield* approvePendingMultisigProposal(left, runtime, {
-          said: pending.wrapper.said!,
-          callbacks,
-        });
+        const completed = yield* approvePending(left, runtime, { said: pending.wrapper.said! });
         assertEquals(completed?.accepted, true);
-        assertEquals(prompts, 1);
         assertExists(rgy.reger.saved.get([valid.said!]));
         const issuedState = left.db.getState(local.hab.pre);
         const wrongPrior = revokeCredentialEvent(valid.said!, registry.registry!, registry.registry!);
@@ -1996,12 +1905,11 @@ Deno.test("VDR proposal preflight refuses mismatched evidence and waits for sche
         });
         yield* call(() =>
           assertRejects(
-            () => run(() => approvePendingMultisigProposal(left, runtime, { said: revWrapper.said!, callbacks })),
+            () => run(() => approvePending(left, runtime, { said: revWrapper.said! })),
             Error,
             "predecessor does not match",
           )
         );
-        assertEquals(prompts, 1);
         assertEquals(left.db.getState(local.hab.pre), issuedState);
         assertEquals(left.db.getSigs(local.hab.pre, revAnchor.said!), []);
       } finally {
@@ -2031,18 +1939,11 @@ Deno.test("VDR approval without a registry preserves decline and fails before ac
           local: true,
         });
         const unavailable = { ...runtime, vdr: null };
-        const callbacks = {
-          approveProposal: () => false,
-          chooseGroupAlias: () => "group",
-          chooseRegistryName: () => "registry",
-        };
-        assertEquals(yield* approvePendingMultisigProposal(left, unavailable, { callbacks }), null);
-        callbacks.approveProposal = () => true;
         const before = left.db.getKever(local.hab.pre)?.said;
         const signatures = left.db.getSigs(local.hab.pre, anchor.serder.said!);
         yield* call(() =>
           assertRejects(
-            () => run(() => approvePendingMultisigProposal(left, unavailable, { callbacks })),
+            () => run(() => approvePending(left, unavailable)),
             Error,
             "registry is unavailable",
           )
@@ -2174,22 +2075,6 @@ Deno.test("v2 RIP and BUP group proposals retain peer evidence until exact local
         const candidate = { serder: wrapper, nests: [telFrame, kelFrame], tsgs: proof(bob, wrapper) };
         assertEquals((yield* receiver.exc.processEvent(candidate)).kind, "accept");
         assertEquals(receiver.acdc!.store.head(rip.said!), null, "peer proposal is not member consent");
-        assertEquals(
-          yield* approvePendingMultisigProposal(left, receiver, {
-            said: wrapper.said!,
-            callbacks: {
-              approveProposal: () => false,
-              chooseGroupAlias: () => "acdc-v2-group",
-              chooseRegistryName: () => "registry",
-            },
-          }),
-          null,
-        );
-        assertEquals(
-          receiver.acdc!.store.head(rip.said!),
-          null,
-          "declining the actual CLI approval path remains inert",
-        );
         const [approval, approvalFoot] = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, rip, {
           anchor,
         });
@@ -2495,21 +2380,16 @@ Deno.test("v2 IPEX group wrappers preserve child proofs and require explicit mem
             eid: bob.pre,
             role: "agent",
           });
-          const callbacks = {
-            approveProposal: () => true,
-            chooseGroupAlias: () => "v2-ipex",
-            chooseRegistryName: () => "unused",
-          };
-          const peerRole = yield* approvePendingMultisigProposal(right, sender, {
+          const peerRole = yield* approvePending(right, sender, {
             said: role.messages[0].exnSaid,
-            callbacks,
+            groupAlias: "v2-ipex",
           });
           assertExists(peerRole);
           const returned = peerRole.messages[0].exnSaid;
           assertEquals(left.db.exns.get([returned])?.pvrsn, Vrsn_1_0);
-          const completedRole = yield* approvePendingMultisigProposal(left, receiver, { said: returned, callbacks });
+          const completedRole = yield* approvePending(left, receiver, { said: returned });
           assertEquals(completedRole?.accepted, true);
-          const resumedRole = yield* approvePendingMultisigProposal(right, sender, { said: returned, callbacks });
+          const resumedRole = yield* approvePending(right, sender, { said: returned });
           assertEquals(resumedRole?.accepted, true);
           assertEquals(endpointRoleAccepted(left, local.hab.pre, "agent", bob.pre), true);
           assertEquals(endpointRoleAccepted(right, remote.hab.pre, "agent", bob.pre), true);

@@ -22,6 +22,12 @@ import {
 import { waitForIssuedCredential, waitForTelEvent } from "../../app/credentials/tel-completion.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { isLocalGroupHab, localGroupMember } from "../../app/multisig/group-members.ts";
+import {
+  type CredentialProposeDeps,
+  proposeCredentialIssue,
+  proposeCredentialRegistry,
+  proposeCredentialRevocation,
+} from "../../app/multisig/proposing.ts";
 import type { AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
@@ -114,14 +120,13 @@ export function* vcRegistryInceptCommand(
     const signer = group ? localGroupMember(hby, hab.pre) : hab;
     return yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
       const deadline = Date.now() + timeout * 1000;
-      const created = yield* inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, hab, {
-        registryName: vcArgs.registryName!,
-        estOnly: vcArgs.estOnly,
-        usage: vcArgs.usage,
-      });
+      const options = { registryName: vcArgs.registryName!, estOnly: vcArgs.estOnly, usage: vcArgs.usage };
+      const created = group
+        ? yield* proposeCredentialRegistry(proposeDeps(rgy, runtime), hab, options, GROUP_INPUTS)
+        : yield* inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, hab, options);
       const waited = yield* waitForTelEvent(rgy, created.registry!, 0, { deadline });
       created.publicationComplete = waited.outcome === "settled";
-      // TODO: the group branch moves to the group proposal API (app/multisig counseling); until then it stays here.
+      // Report the accepted state the wait ended with; sending the proposal is not acceptance.
       if (created.group) {
         created.group.accepted = rgy.reger.tels.getOn(created.registry!, 0)?.qb64 === created.registry;
         if (created.group.accepted) created.group.status = "accept";
@@ -186,19 +191,14 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
     const signer = group ? localGroupMember(hby, issuer.pre) : issuer;
     const result = yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
       const deadline = Date.now() + timeout * 1000;
-      const created = yield* createCredential(rgy, runtime.reactor, runtime.postman, {
-        registryName: vcArgs.registryName!,
-        schema: schema!,
-        recipient,
-        data,
-        edges,
-        rules,
-      });
+      const options = { registryName: vcArgs.registryName!, schema: schema!, recipient, data, edges, rules };
+      const created = group
+        ? yield* proposeCredentialIssue(proposeDeps(rgy, runtime), options, GROUP_INPUTS)
+        : yield* createCredential(rgy, runtime.reactor, runtime.postman, options);
       yield* waitForIssuedCredential(rgy, created.creder.said!, { deadline });
       const saved = rgy.reger.saved.get(created.creder.said!) !== null;
       created.publicationComplete = rgy.publication.complete(created.creder.said!);
       if (saved) created.status = "accept";
-      // TODO: the group branch moves to the group proposal API (app/multisig counseling); until then it stays here.
       if (created.group) {
         created.group.saved = saved;
         if (rgy.reger.tels.getOn(created.creder.said!, 0)?.qb64 === created.tel) created.group.telStatus = "accept";
@@ -314,10 +314,10 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<Crede
     const signer = group ? localGroupMember(hby, registry.hab.pre) : registry.hab;
     const result = yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
       const deadline = Date.now() + timeout * 1000;
-      const revoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
-        registryName: vcArgs.registryName!,
-        credentialSaid: vcArgs.said!,
-      });
+      const options = { registryName: vcArgs.registryName!, credentialSaid: vcArgs.said! };
+      const revoked = group
+        ? yield* proposeCredentialRevocation(proposeDeps(rgy, runtime), options, GROUP_INPUTS)
+        : yield* revokeCredential(rgy, runtime.reactor, runtime.postman, options);
       const waited = yield* waitForTelEvent(rgy, revoked.said, 1, { deadline });
       revoked.publicationComplete = waited.outcome === "settled";
       revoked.accepted = reger.tels.getOn(revoked.said, 1)?.qb64 === revoked.tel;
@@ -334,6 +334,13 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<Crede
     }
     return result;
   });
+}
+
+/** Every group member submits receipts for the anchors it proposes, as this command always has. */
+const GROUP_INPUTS = { fallbackAfterMs: 0 };
+
+function proposeDeps(rgy: Regery, runtime: AgentRuntime): CredentialProposeDeps {
+  return { rgy, input: runtime.reactor, postman: runtime.postman, counselor: runtime.counselor };
 }
 
 function baseArgs(args: Record<string, unknown>): VcBaseArgs {

@@ -17,7 +17,6 @@ import {
 import { signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
 import {
   approveAcdcV2Registry,
-  approvePendingMultisigProposal,
   publishProposal,
 } from "../../../../src/app/multisig/multisig-workflows.ts";
 import {
@@ -39,6 +38,7 @@ import {
   issue as issueCredential,
   revoke as revokeCredentialEvent,
 } from "../../../../src/core/protocol-vdr-eventing.ts";
+import { approvePending } from "./approve-pending.ts";
 import { GROUP, learn, peerInteraction, readDeps, receive, scenario } from "./proposal-fixture.ts";
 
 Deno.test("listGroupProposals reads every proposal kind the multisig routes carry", async () => {
@@ -188,14 +188,7 @@ Deno.test("a dismissed proposal leaves the list but is still found, and approved
       assertEquals(listGroupProposals(deps), []);
       assertEquals(findGroupProposal(deps, signed.exnSaid)?.local, "unapproved");
       assertEquals(dismissGroupProposal({ hby: s.left, notifier: s.notifier }, signed.exnSaid), 0);
-      const approved = yield* approvePendingMultisigProposal(s.left, s.runtime, {
-        said: signed.exnSaid,
-        callbacks: {
-          approveProposal: () => true,
-          chooseGroupAlias: () => "unused",
-          chooseRegistryName: () => "unused",
-        },
-      });
+      const approved = yield* approvePending(s.left, s.runtime, { said: signed.exnSaid });
       assertExists(approved);
       assertEquals(approved.said, signed.exnSaid);
       assertEquals(findGroupProposal(deps, signed.exnSaid)?.local, "approved");

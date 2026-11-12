@@ -48,7 +48,7 @@ import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../src/app/ipex/ipex-building.ts";
 import { prepareAcdcV2GroupIpex, publishInitialGroupIpex } from "../../../src/app/ipex/ipex-grouping.ts";
 import { acdcV2RegistryProposal } from "../../../src/app/multisig/grouping.ts";
-import { approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
+import { findGroupProposal } from "../../../src/app/multisig/proposals.ts";
 import { dispatchEnvelope, envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import type { ProtocolProcessor } from "../../../src/app/protocol/protocol-processing.ts";
 import type { Reactor } from "../../../src/app/protocol/reactor.ts";
@@ -65,6 +65,7 @@ import { Roles } from "../../../src/core/roles.ts";
 import { openLmdbRegistry } from "../../../src/db/lmdb-stores.ts";
 import { makeNowIso8601 } from "../../../src/time/mod.ts";
 import vector from "../../fixtures/dhke.json" with { type: "json" };
+import { approvalDepsOf, approvePending } from "../app/multisig/approve-pending.ts";
 
 const unhex = (value: string) => Uint8Array.from(value.match(/../g)!, pair => parseInt(pair, 16));
 
@@ -361,20 +362,11 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
     }
     const event = staged.tel, opening = envelopeFromFrame(nests[0]).bsqs[0];
     assertExists(opening);
-    const approved = yield* approvePendingMultisigProposal(issuerPeer.hby, issuerPeer.runtime, {
+    const proposal = findGroupProposal(approvalDepsOf(issuerPeer.hby, issuerPeer.runtime), bup.said!);
+    assertEquals([proposal?.kind, proposal?.group, proposal?.embedded], ["bup", lead.hab.pre, event.said!]);
+    const approved = yield* approvePending(issuerPeer.hby, issuerPeer.runtime, {
       said: bup.said!,
-      callbacks: {
-        approveProposal(context) {
-          assertEquals(context, { route: "/multisig/bup", group: lead.hab.pre, embedded: event.said! });
-          return true;
-        },
-        chooseGroupAlias() {
-          return "group";
-        },
-        chooseRegistryName() {
-          return "group-derived";
-        },
-      },
+      registryName: "group-derived",
     });
     assertExists(approved);
     const issued = yield* issuing, recipientIssued = yield* receiving, peerReceived = yield* peerReceiving;

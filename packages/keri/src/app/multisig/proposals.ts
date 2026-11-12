@@ -387,18 +387,7 @@ export function* approveGroupProposal(
       throw new ValidationError(`Group proposal ${said} is not indexed after replay.`);
     }
   }
-  const callbacks = {
-    approveProposal: () => true,
-    chooseGroupAlias: (group: string) => {
-      if (!choices.groupAlias) throw new ValidationError(`A group alias is required to join ${group}.`);
-      return choices.groupAlias;
-    },
-    chooseRegistryName: (registry: string) => {
-      if (!choices.registryName) throw new ValidationError(`A registry name is required for ${registry}.`);
-      return choices.registryName;
-    },
-  };
-  const options = { callbacks, resume: true };
+  const options = { resume: true, groupAlias: choices.groupAlias, registryName: choices.registryName };
   const result = isKelRoute(route)
     ? yield* approveKelProposal(hby, deps, exn, route, options)
     : isVdrRoute(route)

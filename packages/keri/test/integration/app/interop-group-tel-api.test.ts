@@ -34,7 +34,7 @@ import {
   sendCompletedGroupIpex,
 } from "../../../src/app/ipex/ipex-grouping.ts";
 import { ipexOfferExn, ipexSpurnExn } from "../../../src/app/ipex/ipexing.ts";
-import { approveAcdcV2Registry, approvePendingMultisigProposal } from "../../../src/app/multisig/multisig-workflows.ts";
+import { approveAcdcV2Registry } from "../../../src/app/multisig/multisig-workflows.ts";
 import { envelopeFromFrame } from "../../../src/app/protocol/parsering.ts";
 import { type AgentRuntime, createAgentRuntime, runAgentRuntime } from "../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../src/app/runtime/runtime-clock.ts";
@@ -47,6 +47,7 @@ import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
 import type { TelPublication } from "../../../src/vdr/tel-publication.ts";
+import { approvePending } from "../../unit/app/multisig/approve-pending.ts";
 import {
   createInteropContext,
   randomPort,
@@ -172,13 +173,9 @@ Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy
               })
             );
             const pythonSaid = String(pythonIssue.credential);
-            const approved = yield* approvePendingMultisigProposal(hby, runtime, {
+            const approved = yield* approvePending(hby, runtime, {
               said: String(pythonIssue.exnSaid),
-              callbacks: {
-                approveProposal: () => true,
-                chooseGroupAlias: () => "group",
-                chooseRegistryName: () => "registry",
-              },
+              registryName: "registry",
             });
             assertEquals(approved?.accepted, true);
             assertEquals(yield* waitForTelPublication(rgy.publication, pythonSaid, 0, Date.now() + 10_000), true);

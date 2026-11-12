@@ -21,10 +21,13 @@
  * of `Baser` requires them, which would re-anchor in the window between signing
  * and receipting.
  *
+ * - A group delegator's anchor is a group interaction: `proposeGroupDelegationApproval`
+ *   proposes it, the other members approve it with `approveGroupProposal`, and the
+ *   Counselor receipts it. `requestDelegatedEvent` then asks for the delegate's event.
+ *
  * Boundaries:
  * - Dependencies are declared collaborators, not an AgentRuntime (ADR-0013).
- * - Single-signature delegators only. A group delegator needs the group
- *   proposal workflow and is rejected here.
+ * - `approveDelegation` serves single-signature delegators and rejects a group.
  * - Witness authorization codes arrive resolved. Prompting is a host concern.
  */
 import { Diger, type SerderKERI } from "cesr-ts";
@@ -33,6 +36,8 @@ import type { QueryRequest } from "../../core/cues.ts";
 import { ValidationError } from "../../core/errors.ts";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
+import type { CounselInputs } from "../multisig/counseling.ts";
+import { type GroupEventResult, type GroupProposeDeps, proposeGroupInteraction } from "../multisig/proposing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import type { WitnessInquisitor } from "../queries/witness-inquisitor.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
@@ -320,19 +325,66 @@ export function* approveDelegation(
   }
 
   yield* receiptEvent(deps, hab.pre, { sn: anchorOf(anchor).sn, auths });
-  settleDelegationApproval(deps, request);
+  requestDelegatedEvent(deps, request, hab.pre);
+  return delegationApprovalStatus(hby, request);
+}
 
+/**
+ * After the anchor exists: record the approving seal and ask the delegate's witness
+ * for the delegated event unless it already arrived. `signer` is the local identifier
+ * that sends the query: the delegator, or a group delegator's local member. Idempotent.
+ */
+export function requestDelegatedEvent(
+  deps: Pick<DelegationApprovalDeps, "hby" | "querying" | "changes">,
+  request: DelegationRequest,
+  signer: string,
+): void {
+  const { hby } = deps;
+  const delegated = hby.db.getEvtSerder(request.delegate, request.said);
+  if (!delegated) {
+    throw new ValidationError(`No delegated ${request.ilk} ${request.said} is held for ${request.delegate}.`);
+  }
+  settleDelegationApproval(deps, request);
   const [witness] = delegateWitnesses(hby.db, delegated).sort();
   if (!delegateCommitted(hby.db, request.delegate, request.sn)) {
     // A delegate with no witness is asked through the same logs route with the usual attester choice.
     deps.querying.enqueue(
       witness
-        ? delegateWitnessLogsQuery(hab.pre, delegated, witness)
-        : { pre: request.delegate, signer: hab.pre, route: "logs", q: { fn: "0", s: delegated.snh! } },
+        ? delegateWitnessLogsQuery(signer, delegated, witness)
+        : { pre: request.delegate, signer, route: "logs", q: { fn: "0", s: delegated.snh! } },
     );
   }
   deps.changes?.push({ kind: "delegation", id: `${request.delegate}:${request.sn}` });
-  return delegationApprovalStatus(hby, request);
+}
+
+/**
+ * Propose a group delegator's anchoring interaction for one request: the group
+ * interaction that seals the delegated event, published to the other members.
+ * Returns without waiting; the other members approve it with `approveGroupProposal`
+ * and the Counselor receipts it, so read progress with `delegationApprovalStatus`
+ * and `counselor.status(result.event)`.
+ *
+ * Idempotent: null when the group's KEL already holds the anchor, so a repeat
+ * never anchors twice.
+ *
+ * @throws ValidationError for a request not held locally or a delegator that is not a local group.
+ */
+export function* proposeGroupDelegationApproval(
+  deps: GroupProposeDeps,
+  request: DelegationRequest,
+  inputs?: CounselInputs,
+): Operation<GroupEventResult | null> {
+  const { hby } = deps;
+  const delegated = hby.db.getEvtSerder(request.delegate, request.said);
+  if (delegationApprovalStatus(hby, request).state === "unknown" || !delegated) {
+    throw new ValidationError(`No delegated ${request.ilk} ${request.said} is held for ${request.delegate}.`);
+  }
+  const group = hby.habs.get(request.delegator);
+  if (!group || !isLocalGroupHab(hby, group)) {
+    throw new ValidationError(`${request.delegator} is not a local group delegator.`);
+  }
+  if (findAnchor(hby.db, request)) return null;
+  return yield* proposeGroupInteraction(deps, group, [delegationSeal(delegated)], inputs);
 }
 
 /**
