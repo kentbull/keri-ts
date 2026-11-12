@@ -2,16 +2,25 @@
  * Registry root copies carry a per-registry verification hint the sender has checked.
  *
  * Ports the KERIpy kentbull/keripy root-replication tests in tests/acdc/test_registry_root.py
- * (33287d3f per-registry hints and self-check, 66e0800c nested Grant hints) over the shared
- * real-object world. Grants are stored as the Exchanger stores them (`exns` plus `enst` rows),
+ * (33287d3f per-registry hints and self-check, ccf157fc issuance-completion sends, 66e0800c
+ * nested Grant hints) over the shared real-object world. Copies are posted through each side's
+ * real Poster to a capturing HTTP client and delivered from there. Grants are stored as the Exchanger stores them (`exns` plus `enst` rows),
  * the only evidence the hint search reads.
  */
 import { makeBlindUuid } from "cesr-ts";
-import { call, ensure, run } from "effection";
-import { assertEquals, assertThrows } from "jsr:@std/assert";
+import { call, ensure, type Operation, run, spawn } from "effection";
+import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert";
 import { registryRoot } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { RootUnverified } from "../../../src/acdc/salting.ts";
+import {
+  replicateRegistryRoots,
+  RootCopyRecovery,
+  type RootCopyReport,
+} from "../../../src/app/credentials/root-replicating.ts";
+import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
+import { Roles } from "../../../src/core/roles.ts";
+import { httpClient } from "../../support/http-client.ts";
 import {
   copy,
   held,
@@ -26,6 +35,40 @@ import {
   type World,
   world,
 } from "../../support/registry-root-world.ts";
+
+/** A world whose every posted copy is captured, in order, instead of reaching a network. */
+function* posting(posted: Uint8Array[], options: Parameters<typeof world>[0] = {}): Operation<World> {
+  return yield* world({
+    ...options,
+    http: httpClient(async (url, init) => {
+      posted.push(await readCesrRequestBytes(new Request(url, init)));
+      return new Response(null, { status: 204 });
+    }),
+  });
+}
+
+/** Give `from` a controller endpoint for `to`, so its Poster can deliver to `to`. */
+function reachable(from: Side, to: Side): void {
+  from.hby.db.locs.pin([to.hab.pre!, "https"], { url: `https://${to.name}.test/` });
+  from.hby.db.ends.pin([to.hab.pre!, Roles.controller, to.hab.pre!], { allowed: true });
+}
+
+/** Run `side`'s automatic replication for its group while its Poster delivers. */
+function* replicate(
+  side: Side,
+  registries: readonly string[],
+  options: { recipients?: readonly string[]; timeoutMs?: number } = {},
+): Operation<RootCopyReport[]> {
+  const delivering = yield* spawn(() => side.runtime.postman.deliverDo());
+  try {
+    return yield* replicateRegistryRoots(side.root, side.runtime.postman, side.runtime.clock, side.group!, registries, {
+      timeoutMs: 30_000,
+      ...options,
+    });
+  } finally {
+    yield* delivering.halt();
+  }
+}
 
 /** The uuid `side`'s retained root derives for the registry's head BUP. */
 function uuid(side: Side, gid: string, registry: string): string {
@@ -134,5 +177,67 @@ Deno.test("registry root replication: Tufa newcomers seals each registry with it
     yield* receive(w.outsider, yield* call(() => Deno.readFile(out)));
     assertEquals(stored(w.outsider), []);
     assertEquals(w.outsider.root.held(w.gid), Object.keys(acdcs).sort());
+  });
+});
+
+Deno.test("registry root replication: issuance completion sends every root to every other member", async () => {
+  await run(function*() {
+    // Holder group: Alice retains both registries' roots and the Grant disclosing them.
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    const acdcs = yield* twoRegistries(w);
+    const regks = Object.keys(acdcs).sort();
+    yield* storeGrant(w.alice, Object.values(acdcs));
+    reachable(w.alice, w.bob);
+    const reports = yield* replicate(w.alice, regks);
+    assertEquals(
+      reports.map(report => [report.registry, report.sender, report.recipient, report.transmitted]),
+      regks.map(regk => [regk, w.alice.hab.pre, w.bob.hab.pre, true]),
+    );
+    assertEquals(posted.map(said), reports.map(report => report.exchange));
+    // Duplicate copies, as several senders may produce, are harmless.
+    for (const wire of [...posted, ...posted]) yield* receive(w.bob, wire);
+    assertEquals(stored(w.bob), []);
+    assertEquals(w.bob.root.held(w.gid), regks);
+  });
+  await run(function*() {
+    // Issuer group: the group issued the registry and Alice, its custodian, retains the root.
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    const issued = yield* issueRegistry(w, "group-issued-rt1", { group: true });
+    yield* storeGrant(w.alice, [issued.acdc]);
+    reachable(w.alice, w.bob);
+    const reports = yield* replicate(w.alice, [issued.registry]);
+    assertEquals(reports.map(report => [report.recipient, report.transmitted]), [[w.bob.hab.pre, true]]);
+    for (const wire of posted) yield* receive(w.bob, wire);
+    assertEquals(w.bob.hby.mgr.getRegistryRoot(w.gid, issued.registry)?.qb64, issued.root.qb64);
+    assertEquals(stored(w.bob), []);
+  });
+});
+
+Deno.test("registry root replication: a copy that cannot be sent is reported and never raises", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    yield* storeGrant(w.alice, [w.credential]);
+    // Bob has no end role at Alice, so the Poster attempt fails.
+    const [failed] = yield* replicate(w.alice, [w.registry]);
+    assertEquals([failed.recipient, failed.transmitted, failed.recovery], [w.bob.hab.pre, false, RootCopyRecovery]);
+    assertStringIncludes(failed.error!, "No end roles");
+    assertEquals(posted, []);
+    // A registry with no accepted BUP is reported, not sent, and does not stop the others.
+    reachable(w.alice, w.bob);
+    const reports = yield* replicate(w.alice, [w.registry, w.event.said!]);
+    assertEquals(reports.map(report => [report.registry, report.transmitted]), [
+      [w.registry, true],
+      [w.event.said!, false],
+    ]);
+    assertEquals(posted.length, 1);
+    // An exhausted budget reports every copy unsent.
+    const late = yield* replicate(w.alice, [w.registry], { timeoutMs: 0 });
+    assertEquals(late.map(report => report.transmitted), [false]);
+    assertStringIncludes(late[0].error!, "budget");
+    assertEquals(posted.length, 1);
   });
 });

@@ -26,7 +26,7 @@ import {
   Prefixer,
   Vrsn_2_0,
 } from "cesr-ts";
-import { action, call, type Operation, spawn } from "effection";
+import { action, call, type Operation, scoped, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
@@ -38,6 +38,8 @@ import {
   Organizer,
   type RegistryDisclosure,
   type RegistryRoot,
+  replicateRegistryRoots,
+  type RootCopyReport,
   RootUnverified,
   runAgentRuntime,
   type RuntimeClock,
@@ -231,6 +233,27 @@ function* receive(context: Replication, options: RegistryRootOptions): Operation
     }
     writeJsonLine({ gid: hab.pre, registry: options.registry, retained: true });
   }
+}
+
+/**
+ * Fire-and-forget root copies from a group command once a send is possible.
+ *
+ * Hosts Poster delivery for the copies only, under their own `timeoutMs`
+ * budget, and returns each outcome for the command to display as a
+ * `root_copy` line. A runtime that refuses roots holds none to send.
+ */
+export function* sendRootCopies(
+  runtime: AgentRuntime,
+  ghab: Hab,
+  registries: readonly string[],
+  options: { recipients?: readonly string[]; timeoutMs: number },
+): Operation<RootCopyReport[]> {
+  const root = runtime.registryRoot;
+  if (!root) return [];
+  return yield* scoped(function*() {
+    yield* spawn(() => runtime.postman.deliverDo());
+    return yield* replicateRegistryRoots(root, runtime.postman, runtime.clock, ghab, registries, options);
+  });
 }
 
 /** Run one verb over the alias's actual runtime and registry owners. */

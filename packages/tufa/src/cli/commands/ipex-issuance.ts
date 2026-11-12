@@ -31,6 +31,7 @@ import {
   messagize,
   Organizer,
   Receiptor,
+  type RootCopyReport,
   runAgentRuntime,
   type RuntimeClock,
   systemClock,
@@ -424,7 +425,10 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
       }
     },
   );
-  writeJsonLine(completed);
+  // Root copies follow the issuance result they cannot change, one `root_copy` line each.
+  const { rootCopies = [], ...result } = completed as typeof completed & { rootCopies?: RootCopyReport[] };
+  writeJsonLine(result);
+  for (const report of rootCopies) writeJsonLine(report);
 }
 
 /** Explicit issuer action: fresh Grant and DH followed by a genuinely anchored issued BUP. */
