@@ -9,12 +9,7 @@
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
-import {
-  createProtocolProcessor,
-  Receiptor,
-  ValidationError,
-  WitnessReceiptor,
-} from "keri-ts/runtime";
+import { createProtocolProcessor, receiptEvent, ValidationError } from "keri-ts/runtime";
 import { type Configer, createConfiger, NodeHttpClient } from "keri-ts/runtime/node";
 import { configFileCandidates, validateIsoDatetime } from "../../operator/host-planning.ts";
 import { reconcileWitnessHostStartup, resolveWitnessHostStartup } from "../../operator/witness-startup.ts";
@@ -140,29 +135,19 @@ export function* witnessSubmitCommand(
     },
     function*({ hby, hab }) {
       const auths = authoringWitnessAuths(hab, { ...args, ...commandArgs });
-      if (commandArgs.endpoint) {
-        const receiptor = new Receiptor(
-          hby,
-          createProtocolProcessor(hby),
-          new NodeHttpClient(),
-          systemClock,
-        );
-        yield* receiptor.receipt(hab.pre, { sn: hab.kever?.sn, auths });
-      } else {
-        const witDoer = new WitnessReceiptor(
-          hby,
-          createProtocolProcessor(hby),
-          new NodeHttpClient(),
-          systemClock,
-          {
-            force: commandArgs.force ?? false,
-          },
-        );
-        yield* witDoer.submit(hab.pre, {
-          sn: hab.kever?.sn,
-          auths,
-        });
+      if (!hab.kever) {
+        throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
       }
+      yield* receiptEvent(
+        {
+          hby,
+          protocol: createProtocolProcessor(hby),
+          http: new NodeHttpClient(),
+          clock: systemClock,
+        },
+        hab.pre,
+        { sn: hab.kever.sn, auths, endpoint: commandArgs.endpoint, force: commandArgs.force },
+      );
 
       console.log(`Prefix  ${hab.pre}`);
       console.log(`Sequence No.  ${hab.kever?.sn ?? ""}`);

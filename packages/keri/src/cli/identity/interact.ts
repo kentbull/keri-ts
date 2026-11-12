@@ -1,6 +1,4 @@
 import type { Versionage } from "cesr-ts";
-import { createProtocolProcessor } from "../../app/protocol/protocol-processing.ts";
-import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 
 /**
@@ -13,10 +11,11 @@ import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
  *   `incept` and `rotate`
  */
 import { type Operation } from "npm:effection@^3.6.0";
+import { completeEvent } from "../../app/identity/event-completion.ts";
 import { isLocalGroupHab } from "../../app/multisig/group-members.ts";
-import { Receiptor, WitnessReceiptor } from "../../app/witness/receipting.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { withExistingHab } from "../common/context.ts";
+import { cliEventCompletionDeps } from "../common/event-completion.ts";
 import {
   parseBooleanOption,
   parseDataItems,
@@ -112,29 +111,10 @@ export function* interactCommand(
             promptMissing: interactArgs.authenticate ?? false,
           },
         );
-        if (interactArgs.endpoint) {
-          const receiptor = new Receiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* receiptor.receipt(hab.pre, {
-            sn: hab.kever.sn,
-            auths,
-          });
-        } else {
-          const witDoer = new WitnessReceiptor(
-            hby,
-            createProtocolProcessor(hby),
-            http,
-            systemClock,
-          );
-          yield* witDoer.submit(hab.pre, {
-            sn: hab.kever.sn,
-            auths,
-          });
-        }
+        yield* completeEvent(cliEventCompletionDeps(hby, http), hab, hab.kever.sn, {
+          auths,
+          endpoint: interactArgs.endpoint,
+        });
       }
 
       const state = hby.db.getState(hab.pre);
