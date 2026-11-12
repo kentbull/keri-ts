@@ -191,7 +191,8 @@ Deno.test("grant, settle and admit run a v1 credential end to end and a second a
       assertEquals(holder.posted.length, 1);
 
       // The granter observes the admit.
-      yield* deliver(issuer, [admit.wire]);
+      const inception = holder.hby.db.cloneEvtMsg(holder.hab.pre, 0, holder.hby.db.kels.getLast(holder.hab.pre, 0)!);
+      yield* deliver(issuer, [inception, admit.wire]);
       const status = ipexExchangeStatus(issuer.deps, sent.grant.said!);
       assertEquals(status.state === "replied" && status.reply.route, "/ipex/admit");
     });
