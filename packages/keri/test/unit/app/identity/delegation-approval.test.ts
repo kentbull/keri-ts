@@ -126,7 +126,7 @@ Deno.test(
     delegator.interact({ data: [{ i: req.delegate, s: "0", d: req.said }] });
     assertEquals(delegationApprovalStatus(hby, req).state, "anchored");
     assertEquals(listPendingDelegations(hby)[0]!.anchored, true);
-    assertEquals(hby.db.kels.getLast(req.delegate, 0), undefined);
+    assert(!hby.db.kels.getLast(req.delegate, 0));
 
     const status = yield* approveDelegation(deps, req, { event: "rot" });
     assertEquals(status.state, "approved");
@@ -139,7 +139,7 @@ Deno.test(
   "an unreceipted anchor still counts as anchored",
   withFixture(function*({ hby, request }) {
     const witness = hby.makeHab("witness", undefined, { transferable: false, icount: 1, isith: "1", toad: 0 });
-    const witnessed = hby.makeHab("witnessed", undefined, { wits: [witness.pre], toad: 0 });
+    const witnessed = hby.makeHab("witnessed", undefined, { wits: [witness.pre], toad: 1 });
     const req = request(witnessed.pre);
     witnessed.interact({ data: [{ i: req.delegate, s: "0", d: req.said }] });
     assertEquals(
@@ -217,7 +217,7 @@ Deno.test(
   withFixture(function*({ hby, deps, request }) {
     const req = request();
     settleDelegationApproval(deps, req);
-    assertEquals(hby.db.aess.get(dgKey(req.delegate, req.said)), undefined);
+    assert(!hby.db.aess.get(dgKey(req.delegate, req.said)));
     assertEquals(delegationApprovalStatus(hby, req).state, "awaiting-approval");
   }),
 );
