@@ -1,5 +1,5 @@
 /** IpexDiscloser prepares exchange wires, proof support and fresh-issuance refusals with no wallet inventory. */
-import { parseBytes, type SerderACDC } from "cesr-ts";
+import { concatBytes, Counter, parseBytes, type SerderACDC } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, regcept } from "../../../../src/acdc/messaging.ts";
@@ -170,7 +170,13 @@ Deno.test("IpexDiscloser selects offered credentials through an in-memory Creden
         issuedRegistry: () => credential.regid ?? undefined,
         held(grant, options) {
           heldCalls.push([grant, options]);
-          return Promise.resolve({ credential, proof: new Uint8Array(), artifacts: [] } as unknown as HeldCredential);
+          return Promise.resolve(
+            {
+              credential,
+              proof: concatBytes(credential.raw, Counter.enclose({ qb64: new Uint8Array() })),
+              artifacts: [],
+            } as unknown as HeldCredential,
+          );
         },
       };
       const options = { message: "", recipient: hab.pre, plan: [] };
