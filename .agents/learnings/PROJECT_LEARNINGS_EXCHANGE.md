@@ -257,6 +257,13 @@ Authenticate exact route/gid/tel/anc wrappers in either arrival order before cou
 consent; an anchor bucket alone is insufficient. V2 group authors explicitly
 select V2 body/proof framing, also the default for ordinary group KEL authoring. Historical
 accepted anchors reuse retained local contributions, including after key retirement.
+`Counselor` (`app/multisig/counseling.ts`) owns group-event completion on KERIpy's
+`gpse/gdee/gpwe/cgms` rows and never signs. It removes an escrow row by exact
+(Number, Diger) tuple, judges receipts against the event's own establishment,
+derives "must submit" from stored receipts, and lets non-elected members submit after
+`fallbackAfterMs`. The `cgms` key number is whatever width `start` was given (KERIpy
+auto-sizes; only `delegate confirm` writes `0A`), so readers accept both. Delegated
+`dip/drt` park in `gdee` as `blocked: notSupported` until the delegation stage lands.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
 EXNs and their Multiplexor indexes independently of notification presence. When
