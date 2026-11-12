@@ -2,8 +2,8 @@
  * Registry root copies carry a per-registry verification hint the sender has checked.
  *
  * Ports the KERIpy kentbull/keripy root-replication tests in tests/acdc/test_registry_root.py
- * (33287d3f per-registry hints and self-check, ccf157fc issuance-completion sends, 66e0800c
- * nested Grant hints) over the shared real-object world. Copies are posted through each side's
+ * (33287d3f per-registry hints and self-check, ccf157fc issuance-completion sends, 0a9fe186
+ * rotation re-seals, 66e0800c nested Grant hints) over the shared real-object world. Copies are posted through each side's
  * real Poster to a capturing HTTP client and delivered from there. Grants are stored as the Exchanger stores them (`exns` plus `enst` rows),
  * the only evidence the hint search reads.
  */
@@ -14,8 +14,10 @@ import { registryRoot } from "../../../../tufa/src/cli/commands/registry-root.ts
 import { RootUnverified } from "../../../src/acdc/salting.ts";
 import {
   replicateRegistryRoots,
+  resealRegistryRoots,
   RootCopyRecovery,
   type RootCopyReport,
+  type RootResealFailure,
 } from "../../../src/app/credentials/root-replicating.ts";
 import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
@@ -67,6 +69,24 @@ function* replicate(
     });
   } finally {
     yield* delivering.halt();
+  }
+}
+
+/** Run `side`'s accepted-rotation re-seal while its Poster delivers. */
+function* reseal(side: Side, rotation: string): Operation<(RootCopyReport | RootResealFailure)[]> {
+  const delivering = yield* spawn(() => side.runtime.postman.deliverDo());
+  try {
+    return yield* resealRegistryRoots(side.root, side.runtime.postman, side.runtime.clock, side.group!, rotation);
+  } finally {
+    yield* delivering.halt();
+  }
+}
+
+/** Deliver each posted copy to the side its report names. */
+function* deliverPosted(w: World, posted: readonly Uint8Array[], reports: readonly RootCopyReport[]) {
+  assertEquals(posted.map(said), reports.map(report => report.exchange));
+  for (const [index, wire] of posted.entries()) {
+    yield* receive(w.sides.find(side => side.hab.pre === reports[index].recipient)!, wire);
   }
 }
 
@@ -239,5 +259,83 @@ Deno.test("registry root replication: a copy that cannot be sent is reported and
     assertEquals(late.map(report => report.transmitted), [false]);
     assertStringIncludes(late[0].error!, "budget");
     assertEquals(posted.length, 1);
+  });
+});
+
+Deno.test("registry root replication: an accepted rotation re-seals to newcomers and rekeyed members", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted, { newcomer: true });
+    yield* seed(w);
+    // A held opening is Alice's per-registry hint evidence.
+    w.alice.rgy.store.retainOpening(w.event, w.opening);
+    const current = [w.alice, w.bob, w.outsider];
+    const rotation = yield* rotate(w, current, current, "2");
+    // The plain newcomers query is unchanged; the re-seal adds Bob's changed key.
+    assertEquals(w.alice.root.newcomers(w.alice.group!, rotation), [w.outsider.hab.pre]);
+    assertEquals(w.alice.root.resealed(w.alice.group!, rotation), [w.bob.hab.pre, w.outsider.hab.pre]);
+    // The newcomer held no prior key, so it owes nothing; Bob holds no root to send.
+    assertEquals(w.outsider.root.resealed(w.outsider.group!, rotation), []);
+    assertEquals(yield* reseal(w.outsider, rotation), []);
+    assertEquals(yield* reseal(w.bob, rotation), []);
+    reachable(w.alice, w.bob);
+    reachable(w.alice, w.outsider);
+    const reports = (yield* reseal(w.alice, rotation)) as RootCopyReport[];
+    assertEquals(reports.map(report => [report.recipient, report.transmitted]), [
+      [w.bob.hab.pre, true],
+      [w.outsider.hab.pre, true],
+    ]);
+    yield* deliverPosted(w, posted, reports);
+    assertEquals(new Set(current.map(side => held(w, side)?.qb64)), new Set([w.root.qb64]));
+    assertEquals([stored(w.bob), stored(w.outsider)], [[], []]);
+  });
+});
+
+Deno.test("registry root replication: a re-seal reaches a continuing member under its rotated key", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    w.alice.rgy.store.retainOpening(w.event, w.opening);
+    const rotation = yield* rotate(w, [w.alice, w.bob], [w.alice, w.bob], "2");
+    assertEquals(w.alice.root.newcomers(w.alice.group!, rotation), []);
+    reachable(w.alice, w.bob);
+    const reports = (yield* reseal(w.alice, rotation)) as RootCopyReport[];
+    assertEquals(reports.map(report => [report.recipient, report.transmitted]), [[w.bob.hab.pre, true]]);
+    // Sealed to Bob's rotated key, the copy decrypts and is retained on arrival.
+    yield* deliverPosted(w, posted, reports);
+    assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
+    assertEquals(stored(w.bob), []);
+  });
+});
+
+Deno.test("registry root replication: a member holding only a copy re-seals via its nested Grant", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted, { newcomer: true });
+    yield* seed(w);
+    yield* copy(w, w.alice, w.bob);
+    const current = [w.alice, w.bob, w.outsider];
+    const rotation = yield* rotate(w, current, current, "2");
+    reachable(w.bob, w.alice);
+    reachable(w.bob, w.outsider);
+    // Copies carry their hint encrypted, so without stored Grant evidence Bob reports his re-seal unsent.
+    const unsent = (yield* reseal(w.bob, rotation)) as RootCopyReport[];
+    assertEquals(unsent.map(report => [report.recipient, report.transmitted]), [
+      [w.alice.hab.pre, false],
+      [w.outsider.hab.pre, false],
+    ]);
+    assertStringIncludes(unsent[0].error!, "no held opening or stored Grant");
+    assertEquals(posted, []);
+    // The Grant nested in the /multisig/exn proposal Bob signed yields the hint.
+    yield* storeGrant(w.bob, [w.credential], { wrapped: true });
+    const reports = (yield* reseal(w.bob, rotation)) as RootCopyReport[];
+    assertEquals(reports.map(report => [report.recipient, report.transmitted]), [
+      [w.alice.hab.pre, true],
+      [w.outsider.hab.pre, true],
+    ]);
+    yield* deliverPosted(w, posted, reports);
+    assertEquals(held(w, w.outsider)?.qb64, w.root.qb64);
+    assertEquals(stored(w.outsider), []);
   });
 });

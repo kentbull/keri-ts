@@ -1,8 +1,10 @@
 /**
- * Explicit encrypted copies of existing registry roots.
+ * Encrypted copies of existing registry roots.
  *
  * `RegistryRoot` replicates held roots to individual members with ESSR `exn`
  * messages, ported from KERIpy `keri.acdc.salting` (kentbull/keripy v2-spec).
+ * Operators send them explicitly; group issuance completion and accepted group
+ * rotations also send them, fire and forget (`app/credentials/root-replicating.ts`).
  *
  * Local profile, not a KERI, ACDC or #1740 standard. Upstream KERIpy uses ESSR
  * only as the v1 `/essr/req` transport envelope on direct sends.
@@ -45,11 +47,13 @@ import {
 } from "cesr-ts";
 import type { ExchangeRouteHandler } from "../app/exchanges/exchanging.ts";
 import type { Hab, Habery } from "../app/identity/habbing.ts";
-import { groupWitnesserSelection, isLocalGroupHab } from "../app/multisig/group-members.ts";
+import { groupWitnesserSelection, isLocalGroupHab, localGroupMember } from "../app/multisig/group-members.ts";
 import type { Notifier } from "../app/notifications/notifying.ts";
 import { ValidationError } from "../core/errors.ts";
+import { Kever } from "../core/kel/kever.ts";
 import { exchange } from "../core/protocol-eventing.ts";
 import type { Baser } from "../db/basing.ts";
+import { dgKey } from "../db/core/keys.ts";
 import { hasNests, loadNests } from "../db/exchange/exchange-nests.ts";
 import { makeNowIso8601 } from "../time/mod.ts";
 import { type RegistryDisclosure, validateRip, validateUpdate, verifyRegistryAnchor, vetBlind } from "./regeventing.ts";
@@ -333,14 +337,8 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return rip;
   }
 
-  /**
-   * Return current signing member AIDs added by one accepted group rotation.
-   *
-   * Members, not keys, are compared: a continuing member usually rotates its
-   * own key, so it contributes to both establishments. Candidates are the AIDs
-   * with accepted key state in this Habery.
-   */
-  newcomers(ghab: Hab, rotation: string): string[] {
+  /** Return `ghab`'s accepted `rotation` and the establishment before it; ValidationError otherwise. */
+  private rotation(ghab: Hab, rotation: string): [SerderKERI, SerderKERI] {
     const db = this.hby.db, pre = ghab.pre;
     if (!pre || ghab.db !== db || !isLocalGroupHab(this.hby, ghab)) {
       throw new ValidationError("newcomers require a local group habitat");
@@ -349,24 +347,59 @@ export class RegistryRoot implements ExchangeRouteHandler {
     if (!event || !["rot", "drt"].includes(event.ilk!) || db.kels.getLast(pre, event.sn!) !== rotation) {
       throw new ValidationError("newcomers require an accepted group rotation");
     }
-    let prior: SerderKERI | null = null;
     for (const [, sn, said] of db.kels.getOnItemBackIter(pre, event.sn! - 1)) {
       if (db.kels.getLast(pre, sn) !== said) continue;
       const candidate = db.getEvtSerder(pre, said);
-      if (candidate?.estive) {
-        prior = candidate;
-        break;
-      }
+      if (candidate?.estive) return [event, candidate];
     }
-    if (!prior) throw new ValidationError("rotation has no accepted prior establishment");
+    throw new ValidationError("rotation has no accepted prior establishment");
+  }
+
+  /**
+   * Return current signing member AIDs added by one accepted group rotation.
+   *
+   * Members, not keys, are compared: a continuing member usually rotates its
+   * own key, so it contributes to both establishments. `rekeyed` also returns
+   * continuing members whose contributing key changed, the recipients a
+   * re-seal must reach under their new key. Candidates are the AIDs with
+   * accepted key state in this Habery.
+   */
+  newcomers(ghab: Hab, rotation: string, { rekeyed = false }: { rekeyed?: boolean } = {}): string[] {
+    const db = this.hby.db, pre = ghab.pre!, [event, prior] = this.rotation(ghab, rotation);
     const found: [number, string][] = [];
     for (const [keys] of db.states.getTopItemIter()) {
       const aid = keys.join(".");
       if (aid === pre || !db.getKever(aid)) continue;
-      const added = contribution(db, aid, event.verfers);
-      if (added && !contribution(db, aid, prior.verfers) && this.current(aid, pre)) found.push([added.index, aid]);
+      const added = contribution(db, aid, event.verfers), before = contribution(db, aid, prior.verfers);
+      if (added && this.current(aid, pre) && (!before || rekeyed && before.key !== added.key)) {
+        found.push([added.index, aid]);
+      }
     }
     return found.sort((left, right) => left[0] - right[0]).map(([, aid]) => aid);
+  }
+
+  /**
+   * Return the members `ghab`'s local member re-seals held roots to after `rotation`.
+   *
+   * Only a signer of the accepted rotation that held a key in the prior
+   * establishment sends, and it sends to each current signing member that is
+   * new in the rotation or whose contributing key changed (`newcomers` with
+   * `rekeyed`). Every such signer sends: copies are idempotent, so no single
+   * sender is elected. An empty list means nothing is owed.
+   */
+  resealed(ghab: Hab, rotation: string): string[] {
+    const recipients = this.newcomers(ghab, rotation, { rekeyed: true });
+    const db = this.hby.db, [event, prior] = this.rotation(ghab, rotation);
+    const member = localGroupMember(this.hby, ghab.pre!).pre;
+    const own = contribution(db, member, event.verfers);
+    if (!own || !contribution(db, member, prior.verfers)) return [];
+    const { indices } = Kever.verifyIndexedSignatures(
+      event.raw,
+      db.sigs.get(dgKey(ghab.pre!, rotation)),
+      event.verfers,
+    );
+    if (!indices.includes(own.index)) return [];
+    return recipients.filter(aid => aid !== member);
   }
 
   /** Return the current signing member AIDs of `gid` known to this Habery. */

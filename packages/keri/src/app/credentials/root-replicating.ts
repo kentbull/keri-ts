@@ -149,3 +149,44 @@ export function* replicateRegistryRoots(
   }
   return reports;
 }
+
+/** Budget for re-seal copies from a command without its own `--timeout`, as KERIpy `rootreplicating.Budget`. */
+export const RootResealBudgetMs = 30_000;
+
+/** A re-seal that could not even select its recipients, displayed as a `root_copy` line. */
+export interface RootResealFailure {
+  phase: "root_copy";
+  gid: string;
+  rotation: string;
+  transmitted: false;
+  error: string;
+}
+
+/**
+ * After an accepted group rotation, send held roots to new or rekeyed members.
+ *
+ * Fire and forget like `replicateRegistryRoots`: only a signer of the rotation
+ * that held a prior key sends (`RegistryRoot.resealed`), every such signer
+ * sends with no election, a member holding no root for the group sends
+ * nothing, and no failure ever fails the rotation. The caller runs
+ * `postman.deliverDo` for the duration.
+ */
+export function* resealRegistryRoots(
+  root: RegistryRoot,
+  postman: Poster,
+  clock: RuntimeClock,
+  ghab: Hab,
+  rotation: string,
+  { timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {},
+): Operation<(RootCopyReport | RootResealFailure)[]> {
+  let recipients: string[];
+  try {
+    recipients = root.resealed(ghab, rotation);
+  } catch (error) {
+    if (!(error instanceof AppError)) throw error;
+    return [{ phase: "root_copy", gid: ghab.pre, rotation, transmitted: false, error: error.message }];
+  }
+  const registries = root.held(ghab.pre);
+  if (!recipients.length || !registries.length) return [];
+  return yield* replicateRegistryRoots(root, postman, clock, ghab, registries, { recipients, timeoutMs });
+}

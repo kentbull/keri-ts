@@ -9,6 +9,11 @@
  */
 import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import {
+  resealRegistryRoots,
+  type RootCopyReport,
+  type RootResealFailure,
+} from "../../app/credentials/root-replicating.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
@@ -77,6 +82,27 @@ export interface GroupEventResult extends GroupSendResult {
   accepted: boolean;
   state: KeyStateRecord | null;
   delegationPhase: string | null;
+  /** Fire-and-forget registry root re-seals after an accepted rotation; display only. */
+  rootCopies?: RootCopyOutcome[];
+}
+
+/** One automatic registry root copy outcome, displayed as a `root_copy` line. */
+export type RootCopyOutcome = RootCopyReport | RootResealFailure;
+
+/** A join's approval facts plus any registry root re-seals its accepted rotation caused. */
+export interface MultisigJoinResult extends ApprovalResult {
+  rootCopies?: RootCopyOutcome[];
+}
+
+/**
+ * Re-seal held registry roots to members an accepted group rotation added or
+ * rekeyed, as KERIpy `kli multisig rotate|join`. Runs while the command's
+ * runtime worker delivers; every outcome is returned, none fails the rotation.
+ */
+function* resealAfterRotation(hby: Habery, runtime: AgentRuntime, group: string, rotation: string) {
+  const ghab = hby.habs.get(group), root = runtime.registryRoot;
+  if (!ghab || !root) return [];
+  return yield* resealRegistryRoots(root, runtime.postman, runtime.clock, ghab, rotation);
 }
 
 interface MultisigBaseArgs {
@@ -269,7 +295,7 @@ export function* multisigInceptCommand(
 /** Poll for and approve one pending group multisig event. */
 export function* multisigJoinCommand(
   args: Record<string, unknown>,
-): Operation<ApprovalResult> {
+): Operation<MultisigJoinResult> {
   const commandArgs: MultisigJoinArgs = {
     name: parseStringOption(args.name, "name"),
     base: parseStringOption(args.base, "base"),
@@ -303,6 +329,9 @@ export function* multisigJoinCommand(
         if (local.route === MULTISIG_ICP_ROUTE || local.route === MULTISIG_ROT_ROUTE) {
           yield* completeDelegationIfNeeded(hby, runtime, local.group, commandArgs.proxy);
         }
+        if (local.route === MULTISIG_ROT_ROUTE) {
+          return { ...local, rootCopies: yield* resealAfterRotation(hby, runtime, local.group, local.embedded) };
+        }
       }
       return local;
     }
@@ -331,6 +360,9 @@ export function* multisigJoinCommand(
           result.group,
           commandArgs.proxy,
         );
+      }
+      if (result.route === MULTISIG_ROT_ROUTE) {
+        return { ...result, rootCopies: yield* resealAfterRotation(hby, runtime, result.group, result.embedded) };
       }
     }
     return result;
@@ -477,6 +509,7 @@ export function* multisigRotateCommand(
       }),
     );
     let delegationPhase: string | null = null;
+    let rootCopies: RootCopyOutcome[] = [];
     if (accepted) {
       // The proposer's own acceptance must commit the rotated membership as a joiner's does.
       commitAcceptedGroupMembers(hby, rotated.serder, smids, rmids);
@@ -487,6 +520,7 @@ export function* multisigRotateCommand(
         rotated.hab.pre,
         commandArgs.proxy,
       );
+      rootCopies = yield* resealAfterRotation(hby, runtime, rotated.hab.pre, rotated.serder.said!);
     }
     return {
       route: MULTISIG_ROT_ROUTE,
@@ -496,6 +530,7 @@ export function* multisigRotateCommand(
       deliveries,
       state: hby.db.getState(rotated.hab.pre),
       delegationPhase: delegationPhase,
+      rootCopies,
     };
   });
 }

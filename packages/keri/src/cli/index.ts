@@ -79,8 +79,10 @@ export {
   multisigInceptCommand,
   multisigInteractCommand,
   multisigJoinCommand,
+  type MultisigJoinResult,
   multisigRotateCommand,
   multisigRpyCommand,
+  type RootCopyOutcome,
 } from "./messaging/multisig.ts";
 export {
   notificationsListCommand,

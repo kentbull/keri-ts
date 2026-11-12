@@ -14,6 +14,7 @@ import {
   multisigJoinCommand as join,
   multisigRotateCommand as rotate,
   multisigRpyCommand as rpy,
+  type RootCopyOutcome,
 } from "keri-ts/cli";
 import { writeJsonLine } from "../support/rendering.ts";
 import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
@@ -33,6 +34,12 @@ function printEvent(result: GroupEventResult): void {
     messages: result.messages,
     deliveries: result.deliveries,
   });
+  printRootCopies(result.rootCopies);
+}
+
+/** Registry root re-seals follow the rotation result they cannot change, one `root_copy` line each. */
+function printRootCopies(rootCopies: readonly RootCopyOutcome[] = []): void {
+  for (const report of rootCopies) writeJsonLine(report);
 }
 
 /** Propose group inception and display results after owned resources close. */
@@ -52,7 +59,9 @@ export function* multisigRotateCommand(args: Record<string, unknown>): Operation
 
 /** Join the selected outer EXN; sending alone does not report group acceptance. */
 export function* multisigJoinCommand(args: Record<string, unknown>): Operation<void> {
-  writeJsonLine(yield* join(args));
+  const { rootCopies, ...result } = yield* join(args);
+  writeJsonLine(result);
+  printRootCopies(rootCopies);
 }
 
 /** Render the endpoint-role proposal's typed identities and delivery outcomes. */
