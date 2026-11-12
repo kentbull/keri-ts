@@ -306,6 +306,7 @@ interface NoticeLike {
  * @param proposal Route-correlated group proposal with its named business fields.
  * @param embeddedMessage Signed child wire to include under the route-derived label.
  * @param childGvrsn Optional explicit attachment genus for the child.
+ * @param wrapperVersion Optional wrapper protocol version; an approval mirrors its proposal's.
  * @returns Stable proposal/wrapper identities and completed deliveries, independent of group acceptance.
  */
 export function* publishProposal(
@@ -317,6 +318,7 @@ export function* publishProposal(
   proposal: MultisigEventProposal,
   embeddedMessage: Uint8Array,
   childGvrsn?: Versionage,
+  wrapperVersion?: Versionage,
 ): Operation<GroupSendResult> {
   const input = new Reactor(protocol);
   const outcomes: GroupDelivery[] = [];
@@ -325,6 +327,7 @@ export function* publishProposal(
     const prepared = yield* prepareMultisigEventExn(member.pre, proposal, embeddedMessage, {
       recipient: destination,
       childGvrsn,
+      ...(wrapperVersion ? { pvrsn: wrapperVersion } : {}),
     });
     const signed = yield* prepareGroupMessage(protocol.exc, member, destination, prepared);
     outcomes.push(yield* admitAndSendGroupMessage(input, postman, signed));
@@ -661,6 +664,9 @@ function* approveKelProposal(
     proposal,
     localMessage,
     approval.genus,
+    // KERIpy indexes contributions by wrapper form (v1 `e` SAID, v2 child SAID), so an
+    // approval must reuse its proposal's wrapper version for the proposer to merge it.
+    exn.pvrsn,
   );
   const accepted = eventAccepted(hby, serder);
   if (proposal.route !== MULTISIG_IXN_ROUTE) {

@@ -581,8 +581,9 @@ export function* prepareMultisigEventExn(
   // Keep the route selection stable through parser suspension; attribute values remain immutable borrows.
   const captured = { ...proposal };
   const { route, attrs } = captured;
-  // KERIpy `kli multisig incept|interact|rotate` and `ends add` send these routes as v1
-  // `e`-embed wrappers whatever the group KEL version, and `kli multisig join` reads only `e`.
+  // KERIpy `kli multisig incept|interact` and `ends add` send these routes as v1 `e`-embed
+  // wrappers whatever the group KEL version. `kli multisig rotate --version 2.0` sends a v2
+  // nested wrapper, and `kli multisig join` replies in its proposal's form, as approvals here do.
   const keripyEmbedRoute = KERIPY_EMBED_PROPOSAL_ROUTES.includes(route);
   const version = options.pvrsn ?? options.version ?? (keripyEmbedRoute ? Vrsn_1_0 : Vrsn_2_0);
   const field = route.slice(route.lastIndexOf("/") + 1);

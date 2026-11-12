@@ -12,7 +12,7 @@
  * uses each implementation's library on the same store; delivery and listening
  * use the installed CLIs only.
  *
- * Three mixed-group stories follow, each over its own group of one KERIpy and
+ * Four mixed-group stories follow, each over its own group of one KERIpy and
  * one Tufa member formed and anchored with the real multisig commands. In the
  * first two, the member holding the group root runs its implementation's
  * group issuance completion send (`rootreplicating.replicate`, Tufa
@@ -22,7 +22,9 @@
  * do not prove that issuance completion invokes the send; each implementation's
  * own group issuance tests cover that. In the third, the Tufa custodian's
  * `tufa multisig rotate`, approved by `kli multisig join`, rekeys the KERIpy
- * member and re-seals the root to it automatically.
+ * member and re-seals the root to it automatically. In the fourth, the mirror
+ * direction, the KERIpy custodian's v2 `kli multisig rotate`, approved by
+ * `tufa multisig join`, rekeys the Tufa member and re-seals the root to it.
  */
 import { makeBlindState, MtrDex, Salter, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -792,6 +794,74 @@ Deno.test("Interop registry root: a mixed group rotation rekeys the KERIpy membe
     ]);
     assertEquals(await kliListenRetains(group, registry), root);
     await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+      assertEquals(hby.db.getKever(group.group)?.sn, 3, "inception, two registry anchors, then the rotation");
+    });
+  }));
+
+Deno.test("Interop registry root: a KERIpy-proposed mixed group rotation rekeys the Tufa member and the KERIpy custodian re-seals the root to it", () =>
+  withMixedGroup(async group => {
+    const { ctx } = group;
+    const { registry, root } = await keripyCustodian(group);
+    // Each member first rotates its own key, so the group rotation changes both contributing keys.
+    await requireSuccess(
+      "kli rotates its member",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        ["rotate", ...group.kliStore, ...group.versions, "--alias", "kli", "--receipt-endpoint"],
+        ctx.env,
+        30_000,
+      ),
+    );
+    await requireSuccess(
+      "tufa rotates its member",
+      runTufaWithTimeout(
+        ["rotate", ...group.tufaStore, "--alias", "tufa", "--receipt-endpoint", "--toad", "1"],
+        ctx.env,
+        ctx.repoRoot,
+        30_000,
+      ),
+    );
+    await queryKliPrefix(ctx.kliCommand, ctx.env, group.kli.name, group.kli.base, "kli", group.tsPre);
+    await requireSuccess(
+      "tufa queries the rotated KERIpy member",
+      runTufaWithTimeout(
+        ["query", ...group.tufaStore, "--alias", "tufa", "--prefix", group.kliPre],
+        ctx.env,
+        ctx.repoRoot,
+        30_000,
+      ),
+    );
+    // The KERIpy custodian proposes the v2 group rotation; the Tufa member approves it.
+    const [rotated, approved] = await settled(
+      "group rotation",
+      runCmdWithTimeout(
+        ctx.kliCommand,
+        [
+          ...["multisig", "rotate", ...group.kliStore, ...group.versions, "--alias", "group"],
+          ...["--isith", "2", "--nsith", "2"],
+        ],
+        ctx.env,
+        120_000,
+      ),
+      runTufaWithTimeout(
+        [
+          ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto"],
+          ...["--approval-timeout", "60", "--receipt-endpoint"],
+        ],
+        ctx.env,
+        ctx.repoRoot,
+        120_000,
+      ),
+    );
+    assertEquals(results(approved.stdout).at(-1)!.accepted, true, approved.stdout);
+    // `kli multisig rotate` re-seals automatically after acceptance, to the rekeyed Tufa member only.
+    const resealed = results(rotated.stdout).filter(line => line.phase === "root_copy");
+    assertEquals(resealed.map(item => [item.sender, item.recipient, item.gid, item.registry, item.transmitted]), [
+      [group.kliPre, group.tsPre, group.group, registry, true],
+    ]);
+    assertEquals(await tufaAgentRetains(group, registry), [{ gid: group.group, registry, retained: true }]);
+    await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+      assertEquals(hby.mgr.getRegistryRoot(group.group, registry)?.qb64, root);
       assertEquals(hby.db.getKever(group.group)?.sn, 3, "inception, two registry anchors, then the rotation");
     });
   }));
