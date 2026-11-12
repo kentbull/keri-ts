@@ -1,5 +1,5 @@
 /**
- * Runtime wiring of the operations owners (`ipexOwners: "per-identifier"`): owner composition, DH owners created at the first
+ * Runtime wiring of the operations owners: owner composition, DH owners created at the first
  * message that addresses an identifier, one fiber per owner, and root replication as a runtime reaction.
  */
 import { parseBytes } from "cesr-ts";
