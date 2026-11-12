@@ -20,7 +20,14 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { action, call, type Operation, race, scoped, spawn } from "effection";
-import { parseBooleanOption, parseGvrsn, parseIntegerOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
+import {
+  parseBooleanOption,
+  parseGvrsn,
+  parseIntegerOption,
+  parseNumberOption,
+  parseStringOption,
+  type RootCopyLine,
+} from "keri-ts/cli";
 import {
   type AgentRuntime,
   createAgentRuntime,
@@ -31,7 +38,6 @@ import {
   messagize,
   Organizer,
   Receiptor,
-  type RootCopyReport,
   runAgentRuntime,
   type RuntimeClock,
   systemClock,
@@ -426,7 +432,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
     },
   );
   // Root copies follow the issuance result they cannot change, one `root_copy` line each.
-  const { rootCopies = [], ...result } = completed as typeof completed & { rootCopies?: RootCopyReport[] };
+  const { rootCopies = [], ...result } = completed as typeof completed & { rootCopies?: RootCopyLine[] };
   writeJsonLine(result);
   for (const report of rootCopies) writeJsonLine(report);
 }

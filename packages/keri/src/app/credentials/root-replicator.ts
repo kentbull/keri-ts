@@ -30,9 +30,9 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import type { ChangeSink } from "../runtime/workflow-contract.ts";
 import {
   replicateRootCopy,
-  type RootCopyReport,
+  type RootCopyResult,
+  type RootExamination,
   RootResealBudgetMs,
-  type RootResealFailure,
 } from "./root-replicating.ts";
 
 /** One owed copy: non-secret coordinates; `rotation` is the accepted rotation that owed it, null for issuance. */
@@ -78,15 +78,15 @@ export class MemoryRootLedger implements RootLedger {
   }
 }
 
-/** An owed copy and why its last attempt did not send it (null before the first attempt). */
+/** An owed copy and the error of its last attempt (null before the first attempt). */
 export interface OwedCopyStatus extends OwedCopy {
-  lastFailure: string | null;
+  lastFailure: unknown;
 }
 
 export interface RootReplicatorStatus {
   owed: OwedCopyStatus[];
-  /** Rotations the last pass could not examine, reported once and not retried. */
-  examinations: RootResealFailure[];
+  /** Rotations the last scan could not examine, reported once and not retried. */
+  examinations: RootExamination[];
 }
 
 /** The declared collaborators; no runtime bundle. `postman.deliverDo` is run by the host. */
@@ -100,8 +100,8 @@ export interface RootReplicatorDeps {
 
 export class RootReplicator {
   readonly #deps: RootReplicatorDeps;
-  readonly #failures = new Map<string, string>();
-  #examinations: RootResealFailure[] = [];
+  readonly #failures = new Map<string, unknown>();
+  #examinations: RootExamination[] = [];
 
   constructor(deps: RootReplicatorDeps) {
     this.#deps = deps;
@@ -113,35 +113,27 @@ export class RootReplicator {
     if (!root.hby.db.getHab(cue.gid)?.mid) return 0;
     const sender = localGroupMember(root.hby, cue.gid).pre;
     const held = new Set(root.held(cue.gid));
-    return this.#owe(
+    return this.owe(
       cue.gid,
       cue.registries.filter(registry => held.has(registry)),
       root.members(cue.gid).filter(aid => aid !== sender),
-      null,
     );
   }
 
   /**
    * Owe `rotation`'s re-seal copies for every root held for `ghab`. Returns the
-   * failure when the rotation cannot be examined at all, as `resealRegistryRoots` does.
+   * failure when the rotation cannot be examined at all, as `resealRootCopies` does.
    */
-  examine(ghab: Hab, rotation: string): RootResealFailure | null {
+  examine(ghab: Hab, rotation: string): RootExamination | null {
     const { root } = this.#deps;
     let recipients: string[];
     try {
       recipients = root.resealed(ghab, rotation);
     } catch (error) {
       if (!(error instanceof AppError)) throw error;
-      const failure: RootResealFailure = {
-        phase: "root_copy",
-        gid: ghab.pre!,
-        rotation,
-        transmitted: false,
-        error: error.message,
-      };
-      return failure;
+      return { group: ghab.pre!, rotation, error };
     }
-    this.#owe(ghab.pre!, root.held(ghab.pre!), recipients, rotation);
+    this.owe(ghab.pre!, root.held(ghab.pre!), recipients, rotation);
     return null;
   }
 
@@ -161,15 +153,18 @@ export class RootReplicator {
   /**
    * Scan, then send each owed copy once within `timeoutMs`. Settled when sent or
    * refused for good; kept when evidence is missing or delivery fails, to retry on
-   * the next pass. Never throws on a remote failure; every attempt is reported.
+   * the next pass. Never throws on a remote failure; every attempt is returned.
+   * `scan: false` skips the rotation scan, for a one-shot host that owes explicit copies.
    * The host runs `postman.deliverDo` for the duration.
    */
-  *processOnce({ timeoutMs = RootResealBudgetMs }: { timeoutMs?: number } = {}): Operation<RootCopyReport[]> {
+  *processOnce(
+    { timeoutMs = RootResealBudgetMs, scan = true }: { timeoutMs?: number; scan?: boolean } = {},
+  ): Operation<RootCopyResult[]> {
     const { root, postman, clock, ledger, changes } = this.#deps, deadline = clock.now() + Math.max(timeoutMs, 0);
-    this.scan();
-    const reports: RootCopyReport[] = [];
+    if (scan) this.scan();
+    const results: RootCopyResult[] = [];
     for (const copy of ledger.owed()) {
-      const { kin, report, failure } = yield* replicateRootCopy(
+      const result = yield* replicateRootCopy(
         root,
         postman,
         clock,
@@ -178,15 +173,14 @@ export class RootReplicator {
         copy.recipient,
         deadline,
       );
-      reports.push(report);
+      results.push(result);
       const key = [copy.group, copy.registry, copy.recipient].join("/");
-      if (kin === "sent" || kin === "refused") {
-        ledger.settle(copy);
-        this.#failures.delete(key);
-      } else this.#failures.set(key, failure instanceof Error ? failure.message : String(failure));
+      if (result.kin === "sent" || result.kin === "refused") ledger.settle(copy);
+      if (result.kin === "sent" || result.kin === "refused") this.#failures.delete(key);
+      else this.#failures.set(key, result.error);
       changes?.push({ kind: "group", id: copy.group });
     }
-    return reports;
+    return results;
   }
 
   /** Pure read: what is owed and why it has not gone yet. */
@@ -198,7 +192,13 @@ export class RootReplicator {
     return { owed, examinations: this.#examinations.map(failure => ({ ...failure })) };
   }
 
-  #owe(group: string, registries: readonly string[], recipients: readonly string[], rotation: string | null): number {
+  /** Owe each registry's root to each recipient; returns rows newly owed. Held roots are not checked until sent. */
+  owe(
+    group: string,
+    registries: readonly string[],
+    recipients: readonly string[],
+    rotation: string | null = null,
+  ): number {
     const { ledger, changes } = this.#deps, before = ledger.owed().length;
     for (const registry of registries) {
       for (const recipient of recipients) ledger.owe({ group, registry, recipient, rotation });
