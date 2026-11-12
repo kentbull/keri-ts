@@ -11,22 +11,31 @@
  * - approval ordering and event selection come from the delegated-event escrows
  *   and the delegator's own KEL state
  */
-import { Diger, type SerderKERI } from "cesr-ts";
-import { call, type Operation, race, sleep, spawn } from "npm:effection@^3.6.0";
-import { type AgentRuntime, runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
-import type { QueryRequest } from "../../core/cues.ts";
+import type { SerderKERI } from "cesr-ts";
+import type { Operation } from "npm:effection@^3.6.0";
+import type { AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { dgKey } from "../../db/core/keys.ts";
 import { parseBooleanOption, parseStringListOption, parseStringOption } from "../common/parsing.ts";
 
 import { createExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
+import {
+  approveDelegation,
+  delegateCommitted,
+  delegateWitnesses,
+  delegateWitnessLogsQuery,
+  type DelegationApprovalDeps,
+  delegationSeal,
+  listPendingDelegations,
+  pinApprovalSeal,
+  settleDelegationApproval,
+  waitForDelegationApproval,
+} from "../../app/identity/delegation-approval.ts";
 import { groupSigningMembers, isLocalGroupHab, localGroupMember } from "../../app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { MULTISIG_IXN_ROUTE } from "../../app/multisig/grouping.ts";
-import { SeqNoQuerier } from "../../app/queries/querying.ts";
-import { runtimeTurn } from "../../app/runtime/runtime-turn.ts";
-import { WitnessReceiptor } from "../../app/witness/receipting.ts";
+import { observeUntil } from "../../app/runtime/workflow-contract.ts";
 import { withHabAndAgentRuntime } from "../common/context.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
 
 interface DelegateConfirmArgs {
@@ -43,55 +52,6 @@ interface DelegateConfirmArgs {
   codeTime?: string;
 }
 
-/** Return pending delegated events for one local delegator, oldest first. */
-function pendingDelegations(
-  hby: Habery,
-  delegatorPre: string,
-): SerderKERI[] {
-  const pending: SerderKERI[] = [];
-  for (const [keys, said] of hby.db.delegables.getTopItemIter()) {
-    const pre = keys[0];
-    if (!pre) {
-      continue;
-    }
-    const serder = hby.db.getEvtSerder(pre, said);
-    if (!serder) {
-      continue;
-    }
-    const sourcePrefix = delegationSourcePrefix(hby, serder, pre);
-    if (sourcePrefix !== delegatorPre) {
-      continue;
-    }
-    pending.push(serder);
-  }
-  return pending.sort((left, right) => (left.sn ?? 0) - (right.sn ?? 0));
-}
-
-/** Determine the delegator prefix for `dip` or `drt` escrow material. */
-function delegationSourcePrefix(
-  hby: Habery,
-  serder: SerderKERI,
-  pre: string,
-): string | undefined {
-  if (serder.delpre) {
-    return serder.delpre;
-  }
-  if (serder.ilk !== "drt") {
-    return undefined;
-  }
-  const delegatedPre = serder.pre ?? pre;
-  return hby.db.getKever(delegatedPre)?.delpre
-    ?? hby.db.getState(delegatedPre)?.di;
-}
-
-/** Project a delegated event into the seal embedded by the approving event. */
-function anchorData(serder: SerderKERI): { i: string; s: string; d: string } {
-  if (!serder.pre || !serder.snh || !serder.said) {
-    throw new ValidationError("Delegated event is missing pre, sn, or said.");
-  }
-  return { i: serder.pre, s: serder.snh, d: serder.said };
-}
-
 function approvingEvent(
   hby: Habery,
   serder: SerderKERI,
@@ -99,55 +59,8 @@ function approvingEvent(
 ): SerderKERI | null {
   return hby.db.fetchLastSealingEventByEventSeal(
     delegator.pre,
-    anchorData(serder),
+    delegationSeal(serder),
   );
-}
-
-/** Resolve delegate witnesses for either delegated inception or rotation. */
-function delegateWitnesses(
-  hby: Habery,
-  serder: SerderKERI,
-): string[] {
-  if ((serder.sn ?? 0) === 0) {
-    return [...serder.backs];
-  }
-  if (!serder.pre) {
-    return [];
-  }
-  return [...(hby.db.getKever(serder.pre)?.wits ?? [])];
-}
-
-/** Return true once the delegated event has left escrow and reached local state. */
-function delegateCommitted(
-  hby: Habery,
-  serder: SerderKERI,
-): boolean {
-  if (!serder.pre) {
-    return false;
-  }
-  const kever = hby.db.getKever(serder.pre);
-  return kever !== undefined && kever !== null && kever.sn >= (serder.sn ?? 0);
-}
-
-/** Build a witness log query used to pull delegate-side completion material. */
-function delegateWitnessLogsQuery(
-  hab: Hab,
-  serder: SerderKERI,
-  witness: string,
-): QueryRequest {
-  if (!serder.pre || !serder.snh) {
-    throw new ValidationError(
-      "Delegated event is missing pre or sn for query.",
-    );
-  }
-  return {
-    pre: serder.pre,
-    signer: hab.pre,
-    src: witness,
-    route: "logs",
-    q: { fn: "0", s: serder.snh },
-    wits: [witness],
-  };
 }
 
 /**
@@ -192,29 +105,9 @@ function eventAccepted(hby: Habery, serder: SerderKERI): boolean {
     && hby.db.kels.getLast(serder.pre, serder.sn ?? 0) === serder.said;
 }
 
-function pinApprovalSeal(
-  hby: Habery,
-  hab: Hab,
-  delegated: SerderKERI,
-  approving: SerderKERI,
-): void {
-  if (!approving.sner || !approving.said || !delegated.pre || !delegated.said) {
-    throw new ValidationError("Approving event material is incomplete.");
-  }
-  hby.db.aess.pin(dgKey(delegated.pre, delegated.said), [
-    approving.sner,
-    new Diger({ qb64: approving.said }),
-  ]);
-  hab.kvy.processEscrowDelegables();
-}
-
-/** Observe approval state while the command's host workers own background progress. */
+/** Observe until `done`, or fail with the text the CLI has always printed. */
 function* waitForDelegation(done: () => boolean, timeoutMs: number): Operation<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!done()) {
-    if (Date.now() >= deadline) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
-    yield* runtimeTurn();
-  }
+  if (!(yield* observeUntil(done, { timeoutMs }))) throw new Error(`Runtime did not converge within ${timeoutMs}ms.`);
 }
 
 /**
@@ -234,11 +127,11 @@ function* performDelegationApproval(
   const interactionApproval = confirmArgs.interact ?? false;
 
   yield* waitForDelegation(
-    () => pendingDelegations(hby, hab.pre).length > 0,
+    () => listPendingDelegations(hby, { delegator: hab.pre }).length > 0,
     15_000,
   );
 
-  const pending = pendingDelegations(hby, hab.pre);
+  const pending = listPendingDelegations(hby, { delegator: hab.pre });
   if (pending.length === 0) {
     throw new ValidationError(
       `No delegated events are awaiting approval for ${hab.pre}.`,
@@ -259,151 +152,117 @@ function* performDelegationApproval(
     },
   );
   const selected = confirmArgs.auto ? pending : [pending[0]!];
+  const deps: DelegationApprovalDeps = {
+    hby,
+    protocol: runtime.protocol,
+    http: runtime.http,
+    clock: runtime.clock,
+    querying: runtime.querying,
+  };
 
-  for (const serder of selected) {
-    const anchor = anchorData(serder);
+  for (const request of selected) {
+    const serder = hby.db.getEvtSerder(request.delegate, request.said)!;
     if (isLocalGroupHab(hby, hab)) {
-      if (!interactionApproval) {
-        throw new ValidationError(
-          "Multisig delegated approval currently requires --interact.",
-        );
-      }
-
-      const approving = approvingEvent(hby, serder, hab);
-      if (!approving) {
-        const created = hby.interactGroupHab(confirmArgs.alias!, undefined, { data: [anchor] });
-        const deliveries = yield* publishGroupDelegationApproval(
-          runtime,
-          hby,
-          created.hab,
-          created.message,
-        );
-        console.log(JSON.stringify({
-          status: eventAccepted(hby, created.serder) ? "accepted" : "multisig-pending",
-          route: MULTISIG_IXN_ROUTE,
-          group: created.hab.pre,
-          delegated: serder.pre,
-          said: serder.said,
-          anchor: created.serder.said,
-          deliveries,
-        }));
-        continue;
-      }
-
-      const witnesses = delegateWitnesses(hby, serder).sort();
-      const selectedWitness = witnesses[0];
-      const member = localGroupMember(hby, hab.pre);
-
-      pinApprovalSeal(hby, hab, serder, approving);
-
-      if (!delegateCommitted(hby, serder) && selectedWitness) {
-        runtime.querying.enqueue(
-          delegateWitnessLogsQuery(member, serder, selectedWitness),
-        );
-        yield* waitForDelegation(
-          () => delegateCommitted(hby, serder),
-          30_000,
-        );
-      }
-      pinApprovalSeal(hby, hab, serder, approving);
-
-      if (serder.pre && serder.said) {
-        const stillPending = hby.db.delegables.get([serder.pre]).includes(
-          serder.said,
-        );
-        if (stillPending) {
-          throw new ValidationError(
-            `Delegated event ${serder.said} remained in delegables escrow after approval.`,
-          );
-        }
-      }
-
-      console.log(
-        `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using multisig ixn.`,
-      );
+      // TODO: replace this group branch with the group delegation proposal API
+      // being built in app/multisig/counseling.ts; until then the CLI keeps the
+      // existing interactGroupHab flow unchanged.
+      yield* approveGroupDelegation(hby, hab, runtime, confirmArgs, serder);
       continue;
     }
 
-    // KERIpy permits either interaction or rotation approval. Keep this
-    // explicit because the chosen approving event type affects later
-    // replay, but the embedded anchor seal is the same.
-    if (interactionApproval) {
-      hab.interact({ data: [anchor] });
-    } else {
-      hab.rotate({ data: [anchor] });
+    yield* approveDelegation(deps, request, {
+      event: interactionApproval ? "ixn" : "rot",
+      auths,
+    });
+    const result = yield* waitForDelegationApproval(
+      { db: hby.db, settle: () => settleDelegationApproval(deps, request) },
+      request,
+      { timeoutMs: 30_000 },
+    );
+    if (result.outcome === "timed-out") {
+      throw new Error(`Runtime did not converge within ${result.timeoutMs}ms.`);
     }
-
-    if (hab.kever?.wits.length) {
-      const witDoer = new WitnessReceiptor(hby, runtime.protocol, runtime.http, runtime.clock);
-      yield* witDoer.submit(hab.pre, {
-        sn: hab.kever.sn,
-        auths,
-      });
-    }
-
-    const approving = hby.db.getEvtSerder(hab.pre, hab.kever!.said);
-    if (!approving) {
+    if (hby.db.delegables.get([request.delegate]).includes(request.said)) {
       throw new ValidationError(
-        "Approving event material is incomplete.",
+        `Delegated event ${request.said} remained in delegables escrow after approval.`,
       );
-    }
-    const witnesses = delegateWitnesses(hby, serder).sort();
-    const selectedWitness = witnesses[0];
-    if (selectedWitness) {
-      // Witnessed delegates must prove the delegated event is committed
-      // locally before we pin `aess.` and retry delegated unescrow. Doing
-      // it earlier can make local state look approved but incomplete.
-      runtime.querying.enqueue(
-        delegateWitnessLogsQuery(hab, serder, selectedWitness),
-      );
-      yield* waitForDelegation(
-        () => delegateCommitted(hby, serder),
-        30_000,
-      );
-    } else {
-      // No delegate witness exists to query. Process the local delegable
-      // after the delegator has anchored approval; the delegate still
-      // discovers approval through its own delegator-KEL query path.
-      pinApprovalSeal(hby, hab, serder, approving);
-      const observed = yield* race([
-        call(function*() {
-          yield* new SeqNoQuerier(hby.db, runtime.querying, serder.pre!, serder.sn ?? 0, {
-            signer: hab.pre,
-          }).queryDo();
-          return true;
-        }),
-        call(function*() {
-          yield* sleep(30_000);
-          return false;
-        }),
-      ]);
-      if (!observed) throw new Error("Runtime did not converge within 30000ms.");
-    }
-
-    // Match KERIpy sequencing: only record the approving seal and retry
-    // delegated unescrow after the delegate event has been observed as
-    // locally committed through the witness-backed query/replay path.
-    if (selectedWitness) {
-      pinApprovalSeal(hby, hab, serder, approving);
-    }
-
-    if (serder.pre && serder.said) {
-      const stillPending = hby.db.delegables.get([serder.pre]).includes(
-        serder.said,
-      );
-      if (stillPending) {
-        throw new ValidationError(
-          `Delegated event ${serder.said} remained in delegables escrow after approval.`,
-        );
-      }
     }
 
     console.log(
-      `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using ${
+      `Approved delegated ${request.ilk} ${request.said} for ${request.delegate} using ${
         interactionApproval ? "ixn" : "rot"
       }.`,
     );
   }
+}
+
+/** Group delegator approval through `interactGroupHab`; kept as the CLI had it. */
+function* approveGroupDelegation(
+  hby: Habery,
+  hab: Hab,
+  runtime: AgentRuntime,
+  confirmArgs: DelegateConfirmArgs,
+  serder: SerderKERI,
+): Operation<void> {
+  if (!confirmArgs.interact) {
+    throw new ValidationError(
+      "Multisig delegated approval currently requires --interact.",
+    );
+  }
+  const anchor = delegationSeal(serder);
+
+  const approving = approvingEvent(hby, serder, hab);
+  if (!approving) {
+    const created = hby.interactGroupHab(confirmArgs.alias!, undefined, { data: [anchor] });
+    const deliveries = yield* publishGroupDelegationApproval(
+      runtime,
+      hby,
+      created.hab,
+      created.message,
+    );
+    console.log(JSON.stringify({
+      status: eventAccepted(hby, created.serder) ? "accepted" : "multisig-pending",
+      route: MULTISIG_IXN_ROUTE,
+      group: created.hab.pre,
+      delegated: serder.pre,
+      said: serder.said,
+      anchor: created.serder.said,
+      deliveries,
+    }));
+    return;
+  }
+
+  const witnesses = delegateWitnesses(hby.db, serder).sort();
+  const selectedWitness = witnesses[0];
+  const member = localGroupMember(hby, hab.pre);
+
+  pinApprovalSeal(hby, hab, serder, approving);
+
+  if (!delegateCommitted(hby.db, serder.pre!, serder.sn ?? 0) && selectedWitness) {
+    runtime.querying.enqueue(
+      delegateWitnessLogsQuery(member.pre, serder, selectedWitness),
+    );
+    yield* waitForDelegation(
+      () => delegateCommitted(hby.db, serder.pre!, serder.sn ?? 0),
+      30_000,
+    );
+  }
+  pinApprovalSeal(hby, hab, serder, approving);
+
+  if (serder.pre && serder.said) {
+    const stillPending = hby.db.delegables.get([serder.pre]).includes(
+      serder.said,
+    );
+    if (stillPending) {
+      throw new ValidationError(
+        `Delegated event ${serder.said} remained in delegables escrow after approval.`,
+      );
+    }
+  }
+
+  console.log(
+    `Approved delegated ${serder.ilk} ${serder.said ?? ""} for ${serder.pre ?? ""} using multisig ixn.`,
+  );
 }
 
 /** Approve pending delegated events for the selected local delegator habitat. */
@@ -441,11 +300,10 @@ export function* delegateConfirmCommand(
       throw new ValidationError(`Missing accepted key state for ${hab.pre}.`);
     }
     const signer = isLocalGroupHab(hby, hab) ? localGroupMember(hby, hab.pre) : hab;
-    const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer }));
-    try {
-      yield* performDelegationApproval(hby, hab, runtime, confirmArgs);
-    } finally {
-      yield* worker.halt();
-    }
+    yield* withRuntimeWorkers(
+      runtime,
+      { hab: signer },
+      () => performDelegationApproval(hby, hab, runtime, confirmArgs),
+    );
   });
 }
