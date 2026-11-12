@@ -26,6 +26,17 @@ export interface DerivedUpdateStore {
   pin(event: string, value: DerivedUpdate): void;
 }
 
+/** Process-local store for a CLI or tests; a wallet backs the port with its own durable table. */
+export class MemoryDerivedUpdateStore implements DerivedUpdateStore {
+  private readonly rows = new Map<string, DerivedUpdate>();
+  get(event: string): DerivedUpdate | null {
+    return this.rows.get(event) ?? null;
+  }
+  pin(event: string, value: DerivedUpdate): void {
+    this.rows.set(event, structuredClone(value));
+  }
+}
+
 /** Owners a custody borrows; construction opens nothing. */
 export interface RegistryCustodyOptions {
   hby: Habery;
