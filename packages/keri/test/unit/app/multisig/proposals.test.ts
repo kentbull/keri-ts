@@ -1,7 +1,12 @@
 /** Group proposal reads: listing, lookup by SAID and local dismissal over real stored wrappers. */
-import { concatBytes, parseBytes, Vrsn_2_0 } from "cesr-ts";
+import { concatBytes, Diger, makeBlindState, parseBytes, Prefixer, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
+import {
+  acdcmap as acdcV2Map,
+  blindate as acdcV2Blindate,
+  regcept as acdcV2Regcept,
+} from "../../../../src/acdc/messaging.ts";
 import { groupEndorseReply } from "../../../../src/app/identity/endpoint-roleing.ts";
 import type { Hab, Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
@@ -12,7 +17,11 @@ import {
   multisigRpyExn,
 } from "../../../../src/app/multisig/grouping.ts";
 import { signGroupMessage } from "../../../../src/app/multisig/multisig-messaging.ts";
-import { approvePendingMultisigProposal, publishProposal } from "../../../../src/app/multisig/multisig-workflows.ts";
+import {
+  approveAcdcV2Registry,
+  approvePendingMultisigProposal,
+  publishProposal,
+} from "../../../../src/app/multisig/multisig-workflows.ts";
 import {
   dismissGroupProposal,
   findGroupProposal,
@@ -24,9 +33,10 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
+import { TransIdxSigGroup } from "../../../../src/core/dispatch.ts";
 import { exchange } from "../../../../src/core/exchange/protocol-exchanging.ts";
-import { reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
-import { messagize } from "../../../../src/core/protocol-serialization.ts";
+import { interact as interactEvent, reply as replyEvent } from "../../../../src/core/protocol-eventing.ts";
+import { messageAttachmentGroups, messagize } from "../../../../src/core/protocol-serialization.ts";
 import {
   incept as inceptRegistry,
   issue as issueCredential,
@@ -271,5 +281,115 @@ Deno.test("a dismissed proposal leaves the list but is still found, and approved
       assertEquals(approved.said, signed.exnSaid);
       assertEquals(findGroupProposal(deps, signed.exnSaid)?.local, "approved");
     });
+  });
+});
+
+Deno.test("v2 registry proposals list as rip and bup with their anchors", async () => {
+  await run(function*() {
+    const left = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const right = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const noter = yield* openNoterForHabery(left);
+    try {
+      const alice = left.makeHab("alice");
+      const bob = right.makeHab("bob");
+      yield* call(() => learn(left, bob));
+      yield* call(() => learn(right, alice));
+      const members = [alice.pre, bob.pre];
+      const local = left.makeGroupHab("acdc-v2-group", alice, members, members, undefined, { isith: "2", nsith: "2" });
+      const remote = right.makeGroupHab("acdc-v2-group", bob, members, members, undefined, {
+        isith: "2",
+        nsith: "2",
+      });
+      const notifier = new Notifier(left.signator!, { noter });
+      const receiver = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      const sender = yield* createAgentRuntime(right, new FetchHttpClient(), systemClock);
+      try {
+        for (const runtime of [receiver, sender]) {
+          yield* runtime.reactor.processBytes(
+            messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }),
+            { local: true },
+          );
+        }
+        const rip = acdcV2Regcept(local.hab.pre);
+        const anchor = interactEvent(
+          local.hab.pre,
+          local.hab.kever!.said,
+          1,
+          [{ i: rip.said!, s: "0", d: rip.said! }],
+          { version: Vrsn_2_0 },
+        );
+        const source = messageAttachmentGroups({
+          sourceSeals: [{
+            i: new Prefixer({ qb64: local.hab.pre }),
+            s: anchor.sner!,
+            d: new Diger({ qb64: anchor.said! }),
+          }],
+        }, Vrsn_2_0);
+        const telFrame = parseBytes(messagize(rip, concatBytes(...source.map(group => group.raw)), {
+          gvrsn: Vrsn_2_0,
+        }))[0];
+        const kelFrame =
+          parseBytes(messagize(anchor, { sigers: remote.hab.sign(anchor.raw, true), gvrsn: Vrsn_1_0 }))[0];
+        const wrapper = exchange("/multisig/rip", { gid: local.hab.pre, tel: rip.said!, anc: anchor.said! }, {
+          sender: bob.pre,
+          version: Vrsn_2_0,
+        })[0];
+        const establishment = bob.db.getEvtSerder(bob.pre, bob.kever!.lastEst.d)!;
+        const tsgs = [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: bob.pre }),
+            establishment.sner!,
+            new Diger({ qb64: establishment.said! }),
+            bob.sign(wrapper.raw, true),
+          ),
+        ];
+        assertEquals(
+          (yield* receiver.exc.processEvent({ serder: wrapper, nests: [telFrame, kelFrame], tsgs })).kind,
+          "accept",
+        );
+        const deps = {
+          hby: left,
+          exc: receiver.exc,
+          notifier,
+          registryStore: receiver.acdc!.store,
+        };
+        const [listed] = listGroupProposals(deps);
+        assertEquals(
+          { kind: listed.kind, embedded: listed.embedded, local: listed.local, proposer: listed.proposer },
+          { kind: "rip", embedded: rip.said, local: "unapproved", proposer: bob.pre },
+        );
+        assertEquals(listed.event, { pre: local.hab.pre, sn: 1, said: anchor.said });
+        assertEquals(listed.needs, { groupAlias: false, registryName: false });
+
+        // The local approval stores this member's contribution; the peer then proposes a blinded update.
+        const [approval, approvalFoot] = yield* approveAcdcV2Registry(left, receiver.protocol, local.hab, rip, {
+          anchor,
+        });
+        yield* sender.reactor.processBytes(concatBytes(approval.raw, approvalFoot));
+        const [peer, peerFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, rip, { anchor });
+        yield* receiver.reactor.processBytes(concatBytes(peer.raw, peerFoot));
+        assertEquals(findGroupProposal(deps, wrapper.said!)?.local, "approved");
+        const credential = acdcV2Map(local.hab.pre, {
+          regid: rip.said!,
+          attribute: { d: "", i: alice.pre, role: "group holder" },
+        });
+        const opening = makeBlindState({ acdc: credential.said!, state: "issued", sn: 1n });
+        const update = acdcV2Blindate(rip.said!, rip.said!, opening.d.nonce, { sn: 1 });
+        const [bup, bupFoot] = yield* approveAcdcV2Registry(right, sender.protocol, remote.hab, update, { opening });
+        yield* receiver.reactor.processBytes(concatBytes(bup.raw, bupFoot));
+        const bups = listGroupProposals(deps).filter(p => p.kind === "bup");
+        assertEquals(bups.length, 1);
+        assertEquals(bups[0].said, bup.said);
+        assertEquals(bups[0].embedded, update.said);
+        assertEquals(bups[0].local, "unapproved");
+      } finally {
+        yield* sender.close();
+        yield* receiver.close();
+      }
+    } finally {
+      yield* noter.close(true);
+      yield* right.close(true);
+      yield* left.close(true);
+    }
   });
 });
