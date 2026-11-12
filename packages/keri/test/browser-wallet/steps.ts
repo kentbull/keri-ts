@@ -23,7 +23,6 @@ import {
   type Hab,
   type IssuanceOperations,
   issuanceStatus,
-  type KramConfig,
   mailboxStatus,
   oobiStatus,
   Receiptor,
@@ -138,7 +137,7 @@ function describe(error: unknown): string {
  * Why a step is stuck: a runtime that crashed closes the wallet's stores and releases its lock, and
  * `openWebWallet` reports the crash only from `close()`, so closing is the one way to read the cause.
  */
-async function crashCause(): Promise<string> {
+export async function crashCause(): Promise<string> {
   if (!wallet) return "";
   try {
     wallet.hby.db.kels.getLast(identifier().pre!, 0);
@@ -272,19 +271,10 @@ async function awaitMailboxCursor({ mailbox, topic, above }: StepArgs) {
   return { cursor };
 }
 
-/**
- * TEMPORARY WORKAROUND for a keri-ts defect: `openWebWallet` enables KRAM without cache windows, so
- * the first timely v2 exn or qry on a fresh store throws "No KRAM cache type for message"
- * (kram-policy.ts). A fix with built-in default windows is in progress in another PR; remove this
- * option when it merges. The windows are mailbox sized (60 s lag, as the mailbox interop tests use):
- * a wallet reads mail some time after it was stamped, so short windows would drop a Grant.
- */
-const KRAM: KramConfig = { enabled: true, caches: { "~": [1000, 60000, 60000, 300000, 60000, 60000, 300000] } };
-
 /** Step 1: open a new wallet with a passcode and record the persistence request. */
 async function openWallet({ name, bran }: StepArgs) {
   assert(!wallet, "a wallet is already open");
-  wallet = await openWebWallet({ name, bran, runtime: { kram: KRAM } });
+  wallet = await openWebWallet({ name, bran });
   // Firefox holds the persistence request on a permission prompt that headless runs never answer, so
   // record "still pending" instead of waiting; the open itself has already returned.
   const pending = Symbol("pending");
@@ -367,7 +357,7 @@ async function reopenWallet(args: StepArgs) {
     held: string[];
     cursor: Record<string, number>;
   };
-  wallet = await openWebWallet({ name, bran, runtime: { kram: KRAM } });
+  wallet = await openWebWallet({ name, bran });
   const { hby } = open();
   const pre = expect.pre;
   hab = hby.habs.get(pre);

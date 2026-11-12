@@ -21,6 +21,7 @@ import {
   FetchHttpClient,
   type Habery,
   type HttpClient,
+  type KramConfig,
   openHabery,
   runAgentRuntime,
   type RuntimeClock,
@@ -36,6 +37,19 @@ import {
 import { WalletDerivedUpdates } from "../custody.ts";
 import { openWalletBaser, type WalletBaser } from "../storing.ts";
 import { Wallet } from "../wallet.ts";
+
+/**
+ * KRAM windows a web wallet uses unless its host passes `runtime.kram`, as one catchall row in milliseconds in
+ * the order `[d, sl, ll, xl, psl, pll, pxl]` of `KramWindows`. A mailbox wallet may be offline for hours and then
+ * drain its mailbox, so strictness would drop Grants that were stamped long before they were read:
+ * - `d`, clock drift: 5 minutes;
+ * - `sl`, `ll`, `xl`, the single-key, multi-key and exchange acceptance (lag/replay) windows: 24 hours each;
+ * - `psl`, `pll`, `pxl`, the pruning windows, which may not be shorter than the acceptance windows: 24 hours each.
+ * No field is left at a library default. KERIpy requires explicit windows; these are looser than its tests use.
+ */
+export const WALLET_KRAM_CACHES: NonNullable<KramConfig["caches"]> = Object.freeze({
+  "~": Object.freeze([300_000, 86_400_000, 86_400_000, 86_400_000, 86_400_000, 86_400_000, 86_400_000] as const),
+});
 
 /** The keeper would hold plaintext seeds in IndexedDB, so the wallet refuses to open it. */
 export class UnencryptedKeeperError extends AppError {}
@@ -181,7 +195,7 @@ function* compose(
             // The operation owners record blind-derivation coordinates where the wallet's own custody
             // reads them back; a process-local default would hide them from `recordIssued`.
             operationStores: { derived: new WalletDerivedUpdates(inventory), ...options.runtime?.operationStores },
-            kram: options.runtime?.kram ?? { enabled: true },
+            kram: options.runtime?.kram ?? { enabled: true, caches: WALLET_KRAM_CACHES },
           });
           try {
             const worker = yield* spawn(() => runAgentRuntime(runtime, { pollMailbox: true }));
