@@ -10,7 +10,7 @@
  * an expired wait, are returned values; only caller-contract, invariant and
  * infrastructure failures throw.
  */
-import type { Operation } from "npm:effection@^3.6.0";
+import { type Operation, sleep } from "npm:effection@^3.6.0";
 import type { Signaler } from "../notifications/signaling.ts";
 import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
@@ -76,16 +76,23 @@ export function signalerChangeSink(signaler: Pick<Signaler, "push">): ChangeSink
  * its own.
  *
  * @param done Synchronous status read; checked before the first yield.
+ * @param pollMs Elapsed milliseconds between checks. Omitted: yield one scheduler turn.
  * @returns True when `done` held, false when `timeoutMs` elapsed first.
  */
 export function* observeUntil(
   done: () => boolean,
-  { timeoutMs, clock = systemClock }: { timeoutMs: number; clock?: Pick<RuntimeClock, "now"> },
+  { timeoutMs, clock = systemClock, pollMs }: {
+    timeoutMs: number;
+    clock?: Pick<RuntimeClock, "now">;
+    pollMs?: number;
+  },
 ): Operation<boolean> {
   const deadline = clock.now() + timeoutMs;
   while (!done()) {
-    if (clock.now() >= deadline) return false;
-    yield* runtimeTurn();
+    const remaining = deadline - clock.now();
+    if (remaining <= 0) return false;
+    if (pollMs === undefined) yield* runtimeTurn();
+    else yield* sleep(Math.min(pollMs, remaining));
   }
   return true;
 }
