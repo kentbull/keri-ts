@@ -28,7 +28,7 @@ import { action, call, type Operation, spawn } from "effection";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "keri-ts/cli";
 import {
   type AgentRuntime,
-  CREDENTIAL_MAILBOX_TOPIC,
+  deliverRegistryRoots,
   type Hab,
   type Habery,
   isLocalGroupHab,
@@ -151,7 +151,7 @@ function* send(context: Replication, options: RegistryRootOptions): Operation<vo
     check(context);
     const wire = root.prepare(member, aid, gid, registry, { event: options.event, td: options.acdc });
     const exchange = parseBytes(wire)[0].body.said!;
-    return { result: { registry, sender: member.pre!, recipient: aid, gid, exchange }, wire };
+    return { result: { registry, sender: member.pre!, recipient: aid, gid, exchange }, recipient: aid, wire };
   });
   if (options.verb === "newcomers") {
     writeJsonLine({
@@ -167,15 +167,10 @@ function* send(context: Replication, options: RegistryRootOptions): Operation<vo
   } else if (prepared.length) {
     const delivering = yield* spawn(() => runtime.postman.deliverDo());
     try {
-      for (const { result, wire } of prepared) {
+      // One copy per call keeps the per-copy deadline and stops at the first failure, before any output.
+      for (const copy of prepared) {
         check(context);
-        const event = runtime.postman.send({
-          src: member.pre!,
-          dest: result.recipient,
-          topic: CREDENTIAL_MAILBOX_TOPIC,
-          msg: wire,
-        }, { notify: true });
-        const outcome = yield* runtime.postman.wait(event);
+        const [outcome] = yield* deliverRegistryRoots(runtime.postman, member.pre!, [copy]);
         if (outcome.kin === "failed") throw outcome.error;
       }
     } finally {

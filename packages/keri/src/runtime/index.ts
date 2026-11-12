@@ -285,6 +285,7 @@ export {
 } from "../app/mailbox/mailboxing.ts";
 export {
   type GroupCoordinator,
+  groupElectedMember,
   groupSigningMembers,
   groupWitnesserSelection,
   isLocalGroupHab,
@@ -419,6 +420,7 @@ export {
   Registry as AcdcV2Registry,
 } from "../acdc/registraring.ts";
 export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
+export { deliverRegistryRoots, type RootCopy, type RootDelivery } from "../app/credentials/root-replicating.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,

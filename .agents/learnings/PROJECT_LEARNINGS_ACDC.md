@@ -249,6 +249,10 @@ runtime retains copies with no command; construction `reconcile()`s stored-but-u
 pass `registryRoots: "refuse"` (`RouteRefuser`, nothing persisted). Never register a second instance on a runtime.
 `newcomers` derives the prior roster from the accepted KEL. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is an optional drain (`--message`, `--listen --registry`, reconcile plus one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
 roster selector; missing custody never starts fresh DH.
+`deliverRegistryRoots` sends prepared copies through Poster with one sent/failed outcome per copy
+(sent means transmitted). `groupElectedMember` is KERIpy `GroupHab.elected` (current signing members
+only); `RegistryRoot.witnesser` stays KERIpy `witnesser` (local member, no roster filter), DH custody
+rechecks its frozen choice without reelecting, and revocation's anchor lead matches any historical member key.
 WalletAuthor composes the existing v2 Regery, finite builders and Receiptor.
 BUP staging is not acceptance: success and issued inventory require the exact
 accepted TEL event after the sealing KEL's verified witness quorum. Explicit retries

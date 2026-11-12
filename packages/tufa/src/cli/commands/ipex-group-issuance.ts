@@ -29,8 +29,8 @@ import {
   Dhke,
   envelopeFromFrame,
   type ExchangeRouteHandler,
+  groupElectedMember,
   groupSigningMembers,
-  groupWitnesserSelection,
   Kever,
   latestGroupContribution,
   localGroupMember,
@@ -82,11 +82,8 @@ function owners(runtime: AgentRuntime, wallet: Wallet, selection: GroupIssuanceS
   const dh = selected.owner, hab = dh.hab, member = localGroupMember(runtime.hby, hab.pre);
   const event = hab.db.getEvtSerder(hab.pre, selection.coordinator);
   const coordinator = event ? { sn: event.sn!, said: event.said! } : null;
-  const elected = coordinator && groupWitnesserSelection(hab.db, hab.pre, coordinator);
-  const contribution = elected && latestGroupContribution(hab.db, selection.custodian, elected.establishment.verfers);
   if (
-    !elected || !coordinator || contribution?.index !== elected.index
-    || !groupSigningMembers(runtime.hby, hab.pre).includes(selection.custodian)
+    !coordinator || groupElectedMember(runtime.hby, hab.pre, coordinator) !== selection.custodian
     || !latestGroupContribution(hab.db, member.pre, hab.kever!.verfers)
   ) {
     throw new ValidationError(
