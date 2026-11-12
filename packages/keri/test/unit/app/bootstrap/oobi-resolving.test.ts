@@ -63,9 +63,10 @@ Deno.test("resolveOobi reports resolved, failed and timed-out states from the Oo
             assertEquals(oobiStatus(targetRuntime, url).status, "resolved");
             assertExists(target.db.getState(pre));
 
-            // The provider has no replies for this AID's mailbox role, so it answers 404 and the
-            // Oobiery records the failure with that reason.
-            const deadUrl = `http://127.0.0.1:${port}/oobi/${pre}/mailbox/${pre}`;
+            // The provider hosts no such AID, so it answers 404 and the Oobiery records the
+            // failure with that reason.
+            const unknown = target.makeHab("unknown").pre;
+            const deadUrl = `http://127.0.0.1:${port}/oobi/${unknown}/controller`;
             const failed = yield* resolveOobi(targetRuntime, deadUrl);
             assertEquals(failed.status, "failed");
             if (failed.status !== "failed") throw new Error("unreachable");
