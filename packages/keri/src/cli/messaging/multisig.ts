@@ -9,11 +9,7 @@
  */
 import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
-import {
-  resealRegistryRoots,
-  type RootCopyReport,
-  type RootResealFailure,
-} from "../../app/credentials/root-replicating.ts";
+import { MemoryRootLedger, RootReplicator } from "../../app/credentials/root-replicator.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
@@ -69,6 +65,7 @@ import {
 } from "../common/parsing.ts";
 import { waitForIssuedCredential, waitForTelPublication } from "../common/tel-completion.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
+import { type RootCopyLine, rootCopyLine, type RootResealLine, rootResealLine } from "./root-copy-lines.ts";
 
 const MULTISIG_TOPIC = "multisig";
 
@@ -88,7 +85,7 @@ export interface GroupEventResult extends GroupSendResult {
 }
 
 /** One automatic registry root copy outcome, displayed as a `root_copy` line. */
-export type RootCopyOutcome = RootCopyReport | RootResealFailure;
+export type RootCopyOutcome = RootCopyLine | RootResealLine;
 
 /** A join's approval facts plus any registry root re-seals its accepted rotation caused. */
 export interface MultisigJoinResult extends ApprovalResult {
@@ -100,10 +97,23 @@ export interface MultisigJoinResult extends ApprovalResult {
  * rekeyed, as KERIpy `kli multisig rotate|join`. Runs while the command's
  * runtime worker delivers; every outcome is returned, none fails the rotation.
  */
-function* resealAfterRotation(hby: Habery, runtime: AgentRuntime, group: string, rotation: string) {
+function* resealAfterRotation(
+  hby: Habery,
+  runtime: AgentRuntime,
+  group: string,
+  rotation: string,
+): Operation<RootCopyOutcome[]> {
   const ghab = hby.habs.get(group), root = runtime.registryRoot;
   if (!ghab || !root) return [];
-  return yield* resealRegistryRoots(root, runtime.postman, runtime.clock, ghab, rotation);
+  const replicating = new RootReplicator({
+    root,
+    postman: runtime.postman,
+    clock: runtime.clock,
+    ledger: new MemoryRootLedger(),
+  });
+  const examination = replicating.examine(ghab, rotation);
+  if (examination) return [rootResealLine(examination)];
+  return (yield* replicating.processOnce({ scan: false })).map(rootCopyLine);
 }
 
 interface MultisigBaseArgs {

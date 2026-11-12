@@ -8,6 +8,7 @@ import {
   parseIntegerOption,
   parseNumberOption,
   parseStringOption,
+  type RootCopyLine,
   withRuntimeWorkers,
 } from "keri-ts/cli";
 import {
@@ -27,7 +28,6 @@ import {
   posterDelivery,
   prepareIssuanceGrant,
   Receiptor,
-  type RootCopyReport,
   runAgentRuntime,
   type RuntimeClock,
   systemClock,
@@ -392,7 +392,7 @@ function* issuanceCommand(args: Record<string, unknown>, role: "issuer" | "recip
     },
   );
   // Root copies follow the issuance result they cannot change, one `root_copy` line each.
-  const { rootCopies = [], ...result } = completed as typeof completed & { rootCopies?: RootCopyReport[] };
+  const { rootCopies = [], ...result } = completed as typeof completed & { rootCopies?: RootCopyLine[] };
   writeJsonLine(result);
   for (const report of rootCopies) writeJsonLine(report);
 }

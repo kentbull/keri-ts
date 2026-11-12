@@ -7,7 +7,8 @@
  */
 import { type Operation, run, spawn } from "effection";
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
-import type { RootCopyReport } from "../../../../src/app/credentials/root-replicating.ts";
+import type { RootCopyResult } from "../../../../src/app/credentials/root-replicating.ts";
+import { replicateRegistryRoots, replicateRootCopies } from "../../../../src/app/credentials/root-replicating.ts";
 import {
   MemoryRootLedger,
   type OwedCopy,
@@ -15,6 +16,7 @@ import {
 } from "../../../../src/app/credentials/root-replicator.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
+import { rootCopyLine } from "../../../../src/cli/messaging/root-copy-lines.ts";
 import { Roles } from "../../../../src/core/roles.ts";
 import { httpClient } from "../../../support/http-client.ts";
 import {
@@ -53,7 +55,7 @@ function replicator(side: Side, ledger = new MemoryRootLedger(), changes?: Memor
 }
 
 /** One processing pass while the side's Poster delivers. */
-function* pass(side: Side, replicating: RootReplicator): Operation<RootCopyReport[]> {
+function* pass(side: Side, replicating: RootReplicator): Operation<RootCopyResult[]> {
   const delivering = yield* spawn(() => side.runtime.postman.deliverDo());
   try {
     return yield* replicating.processOnce();
@@ -80,7 +82,7 @@ Deno.test("root replicator: a Dhke cue owes the other members and a pass sends a
     assertEquals(ledger.owed()[0].rotation, null);
     assertEquals(changes.changes, [{ kind: "group", id: w.gid }]);
     const reports = yield* pass(w.alice, replicating);
-    assertEquals(reports.map(report => [report.recipient, report.transmitted]), [[w.bob.hab.pre, true]]);
+    assertEquals(reports.map(report => [report.recipient, report.kin]), [[w.bob.hab.pre, "sent"]]);
     assertEquals(ledger.owed(), []);
     assertEquals(replicating.status().owed, []);
     assertEquals(posted.map(said), reports.map(report => report.exchange));
@@ -117,19 +119,19 @@ Deno.test("root replicator: a deferred or undelivered copy stays owed and a late
     replicating.replicate({ gid: w.gid, registries: [w.registry] });
     // No hint evidence yet: reported, kept, nothing sent.
     const [deferred] = yield* pass(w.alice, replicating);
-    assertEquals(deferred.transmitted, false);
+    assertEquals(deferred.kin, "deferred");
     const [owed] = replicating.status().owed;
     assertEquals([owed.registry, owed.recipient], [w.registry, w.bob.hab.pre]);
-    assertStringIncludes(owed.lastFailure!, "no held opening or stored Grant");
+    assertStringIncludes((owed.lastFailure as Error).message, "no held opening or stored Grant");
     // Evidence arrives but Bob has no end role: the Poster fails, the row stays.
     yield* storeGrant(w.alice, [w.credential]);
     yield* pass(w.alice, replicating);
-    assertStringIncludes(replicating.status().owed[0].lastFailure!, "No end roles");
+    assertStringIncludes((replicating.status().owed[0].lastFailure as Error).message, "No end roles");
     assertEquals(posted, []);
     // Bob becomes reachable: the same row is sent and settled.
     reachable(w.alice, w.bob);
     const [sent] = yield* pass(w.alice, replicating);
-    assertEquals(sent.transmitted, true);
+    assertEquals(sent.kin, "sent");
     assertEquals(replicating.status().owed, []);
     assertEquals(posted.length, 1);
   });
@@ -164,7 +166,8 @@ Deno.test("root replicator: a copy that can never be authorized is dropped, not 
     // The issuer is not a signing member of the holder group.
     ledger.owe({ group: w.gid, registry: w.registry, recipient: w.issuer.hab.pre!, rotation: null });
     const [report] = yield* pass(w.alice, replicating);
-    assertStringIncludes(report.error!, "not a current signing member");
+    assertEquals(report.kin, "refused");
+    assertStringIncludes((report.error as Error).message, "not a current signing member");
     assertEquals(ledger.owed(), []);
     assertEquals(posted, []);
   });
@@ -207,7 +210,7 @@ Deno.test("root replicator: the scan owes an accepted rotation once, to newcomer
     replicator(w.alice, ledger).scan();
     assertEquals(ledger.owed().length, 2);
     const reports = yield* pass(w.alice, replicating);
-    assertEquals(reports.map(report => report.transmitted), [true, true]);
+    assertEquals(reports.map(report => report.kin), ["sent", "sent"]);
     assertEquals(ledger.owed(), []);
     // Settled copies are not re-owed by a later pass.
     assertEquals(yield* pass(w.alice, replicating), []);
@@ -220,5 +223,31 @@ Deno.test("root replicator: the scan owes an accepted rotation once, to newcomer
     const newcomer = replicator(w.outsider);
     assertEquals(yield* pass(w.outsider, newcomer), []);
     assertEquals(newcomer.status(), { owed: [], examinations: [] });
+  });
+});
+
+Deno.test("root replicating: typed results keep the error and map to the legacy root_copy lines", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    yield* storeGrant(w.alice, [w.credential]);
+    const { root, runtime, group } = w.alice, args = [root, runtime.postman, runtime.clock, group!] as const;
+    const delivering = yield* spawn(() => runtime.postman.deliverDo());
+    try {
+      for (const reachability of [false, true]) {
+        if (reachability) reachable(w.alice, w.bob);
+        const [typed] = yield* replicateRootCopies(...args, [w.registry], { timeoutMs: 30_000 });
+        const [legacy] = yield* replicateRegistryRoots(...args, [w.registry], { timeoutMs: 30_000 });
+        assertEquals(typed.kin, reachability ? "sent" : "failed");
+        assertEquals(typed.error instanceof Error, !reachability);
+        // The CLI line is today's line: same fields in the same order, apart from the per-send exchange.
+        const { exchange: _typed, ...line } = rootCopyLine(typed), { exchange: _legacy, ...old } = legacy;
+        assertEquals(JSON.stringify(line), JSON.stringify(old));
+        assertEquals(line.recovery, reachability ? undefined : "tufa vc registry root send");
+      }
+    } finally {
+      yield* delivering.halt();
+    }
   });
 });
