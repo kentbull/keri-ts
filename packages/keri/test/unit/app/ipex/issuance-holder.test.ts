@@ -7,7 +7,7 @@ import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { type Operation } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../../../src/acdc/authoring.ts";
-import { RegistryCustody } from "../../../../src/acdc/custody.ts";
+import { BaserDerivedUpdateStore, RegistryCustody } from "../../../../src/acdc/custody.ts";
 import { RootDeferred } from "../../../../src/acdc/salting.ts";
 import {
   abandonIssuance,
@@ -487,5 +487,50 @@ Deno.test("an honest issuer cannot send a second Grant after anchoring, and a ho
       ValidationError,
     );
     assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, root);
+  });
+});
+
+Deno.test("status after a reopen equals status before, for issuer and holder at each phase the stores prove", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab, issuerHab } = yield* started(s);
+    const reopened = () => [s.owner(), s.holderOwner()] as const;
+    // Holder before consent: the pending Grant alone proves it.
+    assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(holderOps, grant));
+    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    yield* holderOps.processOnce(); // answers; the root is retained and the issuer anchors on its next pass
+    s.holder.runtime.ipex!.release(holderHab.pre!);
+    assertEquals(issuanceStatus(reopened()[1], grant).state, "active");
+    // Holder waiting for the update (root held): live reads rootRetained, a reopened owner reads the same.
+    const fresh = s.holderOwner();
+    yield* fresh.processOnce();
+    const waiting = issuanceStatus(fresh, grant);
+    assertEquals(waiting.state === "active" && waiting.phase, "rootRetained");
+    assertEquals(issuanceStatus(reopened()[1], grant), waiting);
+    // Issuer anchors; holder is ready for Admit; issuer is done.
+    yield* issuerOps.processOnce();
+    yield* fresh.processOnce();
+    for (const [live, again] of [[issuerOps, reopened()[0]], [fresh, reopened()[1]]] as const) {
+      assertEquals(issuanceStatus(again, grant), issuanceStatus(live, grant));
+    }
+    assertEquals(issuanceStatus(reopened()[0], grant), { state: "done", role: "issuer", phase: "issued" });
+    // Holder admitted.
+    yield* admitIssuance(fresh.deps, { hab: holderHab, grant });
+    assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(fresh, grant));
+    assertEquals(issuanceStatus(reopened()[1], grant), { state: "done", role: "holder", phase: "admitted" });
+    assert(issuerHab.pre);
+  });
+});
+
+Deno.test("the registry database keeps derivation coordinates durably as the runtime default", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const store = new BaserDerivedUpdateStore(s.issuer.rgy.store.baser);
+    assertEquals(store.get("Eevent"), null);
+    store.pin("Eevent", { credential: "Ecred", state: "issued", bound: { bn: "1", bd: "Ebound" } });
+    assertEquals(new BaserDerivedUpdateStore(s.issuer.rgy.store.baser).get("Eevent"), {
+      credential: "Ecred",
+      state: "issued",
+      bound: { bn: "1", bd: "Ebound" },
+    });
   });
 });
