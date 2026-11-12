@@ -172,22 +172,29 @@ function* runGroupIssuance(
       counsel: { fallbackAfterMs: 0 },
     })
     : approveGroupIssuanceExchange(ops, { ...selection, grant: selected });
+  // An issuer member is done once it has contributed; a holder stops where it needs its separate Admit consent.
   const contributed = (status: IssuanceStatus) =>
     status.state === "active" && request.role === "issuer" && !lead && status.phase === "awaitingAnchor";
+  const completed = (status: IssuanceStatus) =>
+    status.state === "done" || (status.state === "active" && status.needs === "admit");
   const { status } = yield* withRuntimeWorkers(
     runtime,
     { hab: member, pollMailbox: true },
     () =>
-      waitForIssuance(ops, grant, { timeoutMs, until: (status) => status.state !== "active" || contributed(status) }),
+      waitForIssuance(ops, grant, {
+        timeoutMs,
+        until: (status) => status.state !== "active" || completed(status) || contributed(status),
+      }),
   );
-  if (status.state !== "done" && !contributed(status)) {
+  if (!completed(status) && !contributed(status)) {
     if (status.state === "active") abandonIssuance(ops, grant, ELAPSED);
-    throw new ValidationError(status.state === "active" || status.state === "expired" ? ELAPSED : status.reason);
+    const elapsed = status.state === "active" || status.state === "expired" || status.state === "done";
+    throw new ValidationError(elapsed ? ELAPSED : status.reason);
   }
   const origin = runtime.exc.retainedInput(grant, { pending: true })?.nests?.[0].body
     ?? runtime.exc.retainedInput(grant)!.nests![0].body;
   const registry = (origin as SerderACDC).regid!;
-  const issued = status.state === "done";
+  const issued = completed(status);
   const result: GroupIssuanceResult = {
     grant,
     xid,
