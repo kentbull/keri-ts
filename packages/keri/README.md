@@ -43,6 +43,9 @@ The graph includes `cesr-ts`, which uses a top-level `await` to instantiate its
 Argon2 WebAssembly, so bundle as ESM targeting ES2022 or later. See the
 `cesr-ts` README for the Content Security Policy note.
 
+esbuild also fails on `effection`'s `main()` runner, which lazily imports
+`node:process`; mark `node:process` external. Vite and webpack need nothing.
+
 ## Maintainer Docs
 
 - `docs/ARCHITECTURE_MAP.md`: package and module ownership map
