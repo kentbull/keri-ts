@@ -212,7 +212,8 @@ jobs:
   browser-tests:
     needs:           changeset-required
     if:              needs.changeset-required.outputs.run_browser == 'true'
-    runs-on:         ubuntu-latest
+    # Playwright 1.56 does not support ubuntu-latest (26.04); pin a supported image.
+    runs-on:         ubuntu-24.04
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
