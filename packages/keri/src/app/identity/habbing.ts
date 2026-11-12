@@ -101,6 +101,16 @@ export interface HaberyArgs {
   tier?: Tier;
 }
 
+/** A pre-signed inception adopted by `Hab.makeSigned()` / `Habery.makeSignedHab()`. */
+export interface SignedHabArgs {
+  /** Inception (`icp` or `dip`) the caller built and signed; it is verified, not trusted. */
+  serder: SerderKERI;
+  /** Indexed signatures over `serder.raw`; they must satisfy the event's own threshold. */
+  sigers: Siger[];
+  /** Skip the habitat and name records, as `MakeHabArgs.hidden` does. */
+  hidden?: boolean;
+}
+
 /** Habitat inception options consumed by the local bootstrap `Hab.make()` flow. */
 export interface MakeHabArgs {
   code?: string;
@@ -424,6 +434,21 @@ export class Hab {
     return !!this.pre && this.db.getKever(this.pre) !== null;
   }
 
+  /**
+   * Whether the held or stored signing keys currently allow this habitat to sign.
+   * False for a keyless habitat (`makeSignedHab`) until the host holds its signer.
+   */
+  canSign(): boolean {
+    try {
+      const probe = new Uint8Array(1);
+      if (this.kever?.transferable === false) this.sign(probe, false);
+      else this.sign(probe, true);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Return the live accepted-state `Kever` for this habitat when available. */
   get kever(): Kever | null {
     return this.pre ? this.db.getKever(this.pre) : null;
@@ -622,8 +647,29 @@ export class Hab {
       );
     }
 
-    const opre = verfers[0].qb64;
-    this.mgr.move(opre, pre);
+    const sigs = this.mgr.sign(serder.raw, keys, true);
+    this.mgr.move(verfers[0].qb64, pre);
+    this.admitInception(serder, sigs, hidden);
+  }
+
+  /**
+   * Admit one signed inception as this habitat's first event: bind `pre`,
+   * register the name and habitat records unless `hidden`, and accept the event
+   * into the local KEL.
+   *
+   * Shared tail of `make()` and `makeSigned()`. It writes no keeper state and
+   * never signs. On rejection the `prefixes` entry is withdrawn and the error
+   * propagates; callers decide what else to undo.
+   */
+  private admitInception(
+    serder: SerderKERI,
+    sigers: readonly Siger[],
+    hidden: boolean,
+  ): void {
+    const pre = serder.pre;
+    if (!pre || !serder.said) {
+      throw new Error("Expected inception serder to provide string pre and said.");
+    }
     this.pre = pre;
 
     if (!hidden) {
@@ -637,13 +683,56 @@ export class Hab {
       this.db.prefixes.add(pre);
     }
 
-    const sigs = this.mgr.sign(serder.raw, keys, true);
     try {
-      this.acceptLocally(serder, sigs);
+      this.acceptLocally(serder, sigers);
     } catch (error) {
       if (!hidden) {
         this.db.prefixes.delete(pre);
       }
+      throw error;
+    }
+  }
+
+  /**
+   * Adopt a pre-signed inception this `Habery` did not generate, with no
+   * keeper key state for it (KERIpy `SignifyHab.incept` / `makeSignifyHab`).
+   *
+   * The inception is evaluated first, without mutation, by the same `Kever`
+   * decision local acceptance uses: SAID, prefix derivation, key and threshold
+   * material, and the signatures against the event's own keys. Anything but an
+   * accept (including an escrow for missing signatures) is refused before any
+   * record is written. A name or prefix already in use is refused too.
+   *
+   * Differences from KERIpy: verification precedes persistence instead of
+   * following it, a taken name is refused before anything is written (KERIpy
+   * pins the habitat record first), and `sign` is not disabled; it succeeds
+   * once the host holds the matching signer (`Manager.hold`).
+   */
+  makeSigned(args: SignedHabArgs): void {
+    const { serder, sigers, hidden = false } = args;
+    const pre = serder.pre;
+    if (!pre || !serder.said) {
+      throw new ValidationError("Pre-signed inception must provide a prefix and SAID.");
+    }
+    if (this.db.getHab(pre) || this.db.getKever(pre) || this.db.prefixes.has(pre)) {
+      throw new ValidationError(`Habitat prefix ${pre} already exists.`);
+    }
+    if (!hidden && this.db.getName(this.ns ?? "", this.name) !== null) {
+      throw new ValidationError(`Habitat name ${this.name} already exists.`);
+    }
+    const decision = Kever.evaluateInception({ db: this.db, serder, sigers, local: true });
+    if (decision.kind !== "accept") {
+      const detail = decision.kind === "duplicate" ? decision.duplicate : decision.message;
+      throw new ValidationError(`Pre-signed inception ${serder.said} refused: ${detail}`);
+    }
+    try {
+      this.admitInception(serder, sigers, hidden);
+    } catch (error) {
+      if (!hidden) {
+        this.db.habs.rem(pre);
+        this.db.names.rem([this.ns ?? "", this.name]);
+      }
+      this.pre = "";
       throw error;
     }
   }
@@ -1509,10 +1598,19 @@ export class Habery {
   }
 
   /**
+   * Prefixes of habitats whose alias config was not applied at open because they
+   * could not sign yet (a keyless habitat before the host holds its signer). The
+   * host calls `hab.reconfigure()` after holding; applying config is retried then.
+   */
+  readonly deferredReconfigure: string[] = [];
+
+  /**
    * Populate the in-memory habitat cache from durable `habs.` + `states.` data.
    *
-   * Bare metadata records without corresponding accepted key state are skipped
-   * so `Habery.habs` only contains reopenable local habitats.
+   * Like KERIpy `loadHabs`, a local group record is held even while its
+   * inception is unaccepted: the `Hab` reads accepted state on demand, so it
+   * becomes usable the moment the event is accepted. A non-group record without
+   * accepted state is an orphan; `Baser.reloadKevers` already dropped it.
    */
   private loadHabs(): void {
     this.reconfigure();
@@ -1537,6 +1635,7 @@ export class Habery {
       );
       if (!hab.accepted) {
         if (habord.mid) {
+          this.habs.set(hab.pre, hab);
           continue;
         }
         throw new ValidationError(
@@ -1545,7 +1644,13 @@ export class Habery {
       }
       this.habs.set(hab.pre, hab);
     }
+    this.deferredReconfigure.length = 0;
     for (const hab of this.habs.values()) {
+      // Config replies are signed. A habitat that cannot sign yet applies them once its signer is held.
+      if (hab.accepted && hab.configuredSection() && !hab.canSign()) {
+        this.deferredReconfigure.push(hab.pre);
+        continue;
+      }
       hab.reconfigure();
     }
     // Restart recovery: commit members of an accepted establishment event
@@ -1614,6 +1719,44 @@ export class Habery {
         this.db.woobi.pin(url, { date, state: "queued" });
       }
     }
+  }
+
+  /**
+   * Adopt an inception the caller built and signed, creating a habitat with no
+   * keeper key state (KERIpy `makeSignifyHab`).
+   *
+   * Contract:
+   * - the inception and its signatures are verified before anything is
+   *   persisted; a bad, under-signed or duplicate inception is refused and
+   *   leaves no record behind
+   * - nothing is written to the keeper, so the hab cannot sign until the host
+   *   calls `mgr.hold()` with the matching signer(s), cannot rotate, and after
+   *   reopen is present again with signing unavailable until re-held
+   * - hold signers with the encoding the inception's keys use (`D...` for
+   *   transferable, `B...` for non-transferable)
+   * - unlike `makeHab`, bootstrap config replies are not applied, since they
+   *   need a signing key; the host reconfigures after holding
+   */
+  makeSignedHab(name: string, ns: string | undefined, args: SignedHabArgs): Hab {
+    const pre = args.serder.pre;
+    if (pre && this.habs.has(pre)) {
+      throw new ValidationError(`Habitat prefix ${pre} already exists.`);
+    }
+    const hab = new Hab(
+      name,
+      this.db,
+      this.ks,
+      this.mgr,
+      this.cf,
+      this.rtr,
+      this.rvy,
+      this.kevery,
+      ns,
+      "",
+    );
+    hab.makeSigned(args);
+    this.habs.set(hab.pre, hab);
+    return hab;
   }
 
   /** Creates and caches a new habitat under this habery. */

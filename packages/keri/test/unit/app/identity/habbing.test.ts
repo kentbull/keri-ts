@@ -1344,7 +1344,7 @@ Deno.test("eventPayloadMessage can clone a pre-approval delegated event", async 
   });
 });
 
-Deno.test("Habery skips pending delegated group records during reopen", async () => {
+Deno.test("Habery holds pending delegated group records during reopen, unaccepted until their event is", async () => {
   const name = `habery-pending-group-${crypto.randomUUID()}`;
   const headDirPath = `/tmp/tufa-habery-${crypto.randomUUID()}`;
   let groupPre = "";
@@ -1407,7 +1407,7 @@ Deno.test("Habery skips pending delegated group records during reopen", async ()
     const hby = yield* createHabery({ name, headDirPath });
     try {
       assertEquals(hby.db.getHab(groupPre)?.name, "team");
-      assertEquals(hby.habs.has(groupPre), false);
+      assertEquals(hby.habs.get(groupPre)?.accepted, false, "held like KERIpy loadHabs, but with no key state yet");
       assertEquals(hby.db.getKever(groupPre), null);
       assertEquals(hby.db.groups.has(groupPre), true, "local membership does not assert accepted key state");
       assertEquals(hby.db.prefixes.has(groupPre), false);

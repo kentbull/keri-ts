@@ -267,9 +267,11 @@ accepts its own `dip/drt` before the anchor and before witnesses receipt it; the
 waits in `gdee`. The publishing member (elected, or any after `fallbackAfterMs`) begins
 the Anchorer, which owns request, anchor and publication, and the Counselor writes
 `cgms` when it completes. Other members query for the anchor, pin `aess` and finish in
-`gpwe`. A delegated inception needs a supplied proxy (KERIpy uses the member hab);
-proxy and witness auths are memory only. Anchorer escrows key by `(pre, snh)`, KERIpy's
-by `(pre, said)`. Without an Anchorer the event reads `notSupported`.
+`gpwe`. The member hab sends delegation traffic unless a proxy is supplied, as in
+KERIpy; proxy and witness auths are memory only. `runtime.counselor` runs one
+`processOnce` loop per `runAgentRuntime` and costs three row counts per idle turn.
+A group reopened unaccepted is held in `Habery.habs` (KERIpy `loadHabs`) and becomes
+usable on acceptance. Anchorer escrows key by `(pre, snh)`, KERIpy's by `(pre, said)`. Without an Anchorer the event reads `notSupported`.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
 EXNs and their Multiplexor indexes independently of notification presence. When
