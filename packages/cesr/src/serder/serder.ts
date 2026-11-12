@@ -969,7 +969,15 @@ function acdcSectionConfig(
   return null;
 }
 
-/** Ensure the section carries the saidive placeholder label KERIpy computes over. */
+/**
+ * Prepare one section map for compaction.
+ *
+ * Only the schema section gains a placeholder: its `$id` is always saidive.
+ * Attribute, edge and rule sections keep exactly the labels they were given.
+ * KERIpy never inserts a missing section `d`; such a section stays expanded in
+ * both the displayed and hashed message, while nested maps that carry their
+ * own `d` are still saidified.
+ */
 function withAcdcSectionPlaceholder(
   label: string,
   value: SadMap,
@@ -977,9 +985,6 @@ function withAcdcSectionPlaceholder(
   const copy = shallowCloneSad(value);
   if (label === "s" && !("$id" in copy)) {
     copy.$id = "";
-  }
-  if ((label === "a" || label === "e" || label === "r") && !("d" in copy)) {
-    copy.d = "";
   }
   return copy;
 }
@@ -1054,9 +1059,12 @@ function computeAcdcFieldVariants(
     if (!topLevelCompactable) return { display, compact: display };
 
     if (label === "s") section.compact();
+    // A section without its own SAID has no compact form: the top-level SAID
+    // commits to its expanded (nested-saidified) map, as KERIpy does.
+    const commitment = section.said ?? display;
     return {
-      display: compactify ? (section.said ?? section.mad) : display,
-      compact: section.said ?? section.mad,
+      display: compactify ? commitment : display,
+      compact: commitment,
     };
   }
 
