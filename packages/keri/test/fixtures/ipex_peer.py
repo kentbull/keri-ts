@@ -30,6 +30,15 @@ from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, s
 from ipex_disclosures import delegated_graph_case, graph_disclosures, partial_disclosure
 
 
+def grant_walk_options(grant_walk):
+    """KERIpy Grant walk policy ("open" or "closed"); None keeps KERIpy's default.
+
+    The keyword follows the unmerged KERIpy Grant walk policy change. Confirm it
+    against the merged KERIpy commit when scripts/ci/keripy-reference.json moves.
+    """
+    return {} if grant_walk is None else dict(walk=grant_walk)
+
+
 class Recorder:
     """Observe accepted exchanges without adding a UI service."""
     def __init__(self):
@@ -41,7 +50,7 @@ class Recorder:
 
 class IpexPeer:
     """Own one key store, protocol receiver and listener, independent of scenario order."""
-    def __init__(self, hby, cf, graph_case, port, version, *, derived=False):
+    def __init__(self, hby, cf, graph_case, port, version, *, derived=False, grant_walk=None):
         self.hby = hby
         self.hab = hby.makeHab(name="peer", version=version, kind=Kinds.json)
         self.graph_case = graph_case
@@ -60,7 +69,7 @@ class IpexPeer:
         self.rgy = Regery(hby, name="ipex-peer", baser=RegBaser(
             name="ipex-peer", headDirPath=hby.db.headDirPath, temp=hby.db.temp))
         self.exc = Exchanger(hby=hby, handlers=[])
-        loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder, rgy=self.rgy)
+        loadHandlers(hby=hby, exc=self.exc, notifier=self.recorder, rgy=self.rgy, **grant_walk_options(grant_walk))
         self.kvy = Kevery(db=hby.db, lax=False, local=False, cf=cf,
                           enableKram=True, exc=self.exc, rvy=self.hab.rvy)
         self.parser = Parser(version=Vrsn_2_0, kvy=self.kvy, exc=self.exc,
@@ -641,7 +650,7 @@ class PeerControl:
 
 
 @contextmanager
-def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=False, group=False):
+def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=False, group=False, grant_walk=None):
     """Fresh peer stores/listener; KEL version is independent of v2 IPEX messages."""
     with openCF(name="ipex-http", temp=True) as cf:
         cf.put(dict(kram=dict(enabled=True, denials=[], caches={
@@ -651,7 +660,8 @@ def open_peer(port, graph_case=None, *, version=Vrsn_2_0, root=None, derived=Fal
                      **(dict(bran="DerivedFixturePasscode") if derived else {})) as hby:
             if group:
                 from ipex_group_peer import GroupIpexPeer
-            peer = (GroupIpexPeer if group else IpexPeer)(hby, cf, graph_case, port, version, derived=derived)
+            peer = (GroupIpexPeer if group else IpexPeer)(hby, cf, graph_case, port, version, derived=derived,
+                                                          grant_walk=grant_walk)
             try:
                 peer.doist.enter()
                 if not peer.server.servant.opened:
