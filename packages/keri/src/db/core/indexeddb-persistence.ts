@@ -31,7 +31,9 @@
  * the composition's job, not this adapter's.
  *
  * A blocked `clear` rejects. Our own connection is already closed, and ours
- * close on `versionchange`, so only a foreign connection can block. The browser
+ * close on `versionchange`, so only a foreign connection can block. Reads settle on
+ * their transaction's `complete`, like writes: WebKit reports `blocked` for a
+ * connection whose close is still waiting on a finishing read transaction. The browser
  * keeps the delete request pending and performs it once that connection closes,
  * which is what `clear` asked for.
  */
@@ -139,7 +141,9 @@ export class IndexedDbPersistence implements Persistence {
     const transaction = db.transaction(META, "readonly");
     const store = transaction.objectStore(META);
     const range = this.#keyRange.bound(TABLE_PREFIX, `${TABLE_PREFIX}￿`);
-    const [version, names, flags] = await Promise.all([
+    // Settle on `complete`: a connection with a transaction still finishing is not yet closed.
+    const [, version, names, flags] = await Promise.all([
+      completion(transaction),
       result(store.get(VERSION_KEY)),
       result(store.getAllKeys(range)),
       result(store.getAll(range)),
@@ -159,7 +163,11 @@ export class IndexedDbPersistence implements Persistence {
     const store = transaction.objectStore(ROWS);
     // Binary sorts below array, so `[table, []]` bounds every `[table, key, value]`.
     const range = this.#keyRange.bound([table], [table, []]);
-    const [keys, records] = await Promise.all([result(store.getAllKeys(range)), result(store.getAll(range))]);
+    const [, keys, records] = await Promise.all([
+      completion(transaction),
+      result(store.getAllKeys(range)),
+      result(store.getAll(range)),
+    ]);
     return keys.map((row, index) => {
       const [, key, duplicate] = row as [string, ArrayBuffer, ArrayBuffer];
       const value = duplicate.byteLength > 0 ? duplicate : records[index] as ArrayBuffer;

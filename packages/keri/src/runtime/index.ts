@@ -89,6 +89,7 @@ export {
 export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
+export { type AcdcV2UpdateOptions, RegistryAuthor } from "../acdc/authoring.ts";
 export {
   type AcdcGraph,
   type AcdcWalkPolicy,
@@ -283,6 +284,20 @@ export {
   type IpexRoute,
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
+export {
+  addMailbox,
+  completeMailboxAdmin,
+  type MailboxAdminDeps,
+  type MailboxAdminResponse,
+  mailboxAdminUrl,
+  type MailboxStatus,
+  mailboxStatus,
+  type MailboxWaitOptions,
+  type MailboxWaitResult,
+  removeMailbox,
+  requireMailboxEndpointUrl,
+  waitForMailboxState,
+} from "../app/mailbox/mailbox-admin.ts";
 export {
   MailboxDirector,
 } from "../app/mailbox/mailbox-director.ts";
@@ -700,3 +715,30 @@ export { type RuntimeClock, systemClock } from "../app/runtime/runtime-clock.ts"
 
 export { AnchorQuerier, KeyStateNoticer, LogQuerier, SeqNoQuerier } from "../app/queries/querying.ts";
 export { WitnessInquisitor } from "../app/queries/witness-inquisitor.ts";
+
+// Library OOBI resolution and key-state/anchor queries (begin, status, wait).
+export {
+  beginOobi,
+  type BeginOobiOptions,
+  OOBI_RESOLVE_TIMEOUT_MS,
+  type OobiResolutionDeps,
+  type OobiResolveResult,
+  type OobiStatus,
+  oobiStatus,
+  resolveOobi,
+  type ResolveOobiOptions,
+} from "../app/bootstrap/oobi-resolving.ts";
+export {
+  anchorQueryStatus,
+  beginAnchorQuery,
+  beginKeyStateQuery,
+  QUERY_TIMEOUT_MS,
+  type QueryAnchor,
+  queryAnchor,
+  queryKeyState,
+  type QueryOutcome,
+  type QueryRun,
+  type QueryTarget,
+  type QueryWaitOptions,
+  requireQueryRequester,
+} from "../app/queries/query-workflows.ts";

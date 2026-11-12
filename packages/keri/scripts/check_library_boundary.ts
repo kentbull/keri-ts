@@ -49,6 +49,7 @@ const EXPECTED_EXPORT_KEYS = [
   "./cli",
   "./runtime",
   "./runtime/node",
+  "./runtime/web",
   "./db",
   "./db/lmdb",
   "./db/indexeddb",
@@ -58,7 +59,7 @@ const EXPECTED_EXPORT_KEYS = [
  * Export keys whose source graph is gated above and that therefore ship a
  * polyfill-free `browser` target. The Node-only keys must not have one.
  */
-const BROWSER_EXPORT_KEYS = [".", "./runtime", "./db", "./db/indexeddb"];
+const BROWSER_EXPORT_KEYS = [".", "./runtime", "./runtime/web", "./db", "./db/indexeddb"];
 
 interface SurfaceCheck {
   label: string;
@@ -98,6 +99,12 @@ const SURFACES: SurfaceCheck[] = [
     label: "keri-ts runtime/node surface",
     entrypoint: new URL("../runtime-node.ts", import.meta.url),
     forbidden: [...APP_FORBIDDEN, "npm:lmdb", "npm:/lmdb@"],
+  },
+  {
+    label: "keri-ts runtime/web surface",
+    entrypoint: new URL("../runtime-web.ts", import.meta.url),
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
   },
   {
     label: "keri-ts db surface",

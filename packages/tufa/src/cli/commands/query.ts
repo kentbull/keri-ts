@@ -1,31 +1,20 @@
 /**
  * Tufa composition/presentation for the KERIpy-style query workflows.
  *
- * Start a concrete state/anchor wait alongside ordinary runtime workers and
- * independent reply intake. One ten-second elapsed deadline covers the query;
+ * Call the library query workflows (`keri-ts/runtime`), which run a concrete
+ * state/anchor wait alongside ordinary runtime workers and independent reply
+ * intake. One ten-second elapsed deadline covers the query;
  * timeout is command failure, not permission to print stale state as success.
  * Capture the accepted-state display while Baser is open, join workers and close
  * owned resources, then print it. KERI's query library has no CLI formatting or
  * hidden OOBI recovery path; prerequisite discovery is a separate operation.
  */
 import { SealEvent } from "cesr-ts";
-import { call, type Operation, race, sleep, spawn, type Task } from "effection";
+import type { Operation } from "effection";
 import { parseBooleanOption, parseStringOption } from "keri-ts/cli";
 import { dgKey } from "keri-ts/db";
-import {
-  type AgentCue,
-  AnchorQuerier,
-  Deck,
-  type Habery,
-  isLocalGroupHab,
-  KeyStateNoticer,
-  runAgentRuntime,
-  ValidationError,
-} from "keri-ts/runtime";
+import { type Habery, queryAnchor, queryKeyState, requireQueryRequester, ValidationError } from "keri-ts/runtime";
 import { withHabAndAgentRuntime } from "../support/context.ts";
-
-/** One elapsed deadline covers query sending and independently received evidence. */
-const QueryTimeoutMs = 10_000;
 
 /** Validate the exact event-seal shape before opening stores or starting workers. */
 function loadAnchor(path: string): ReturnType<typeof SealEvent.toSad> {
@@ -35,25 +24,6 @@ function loadAnchor(path: string): ReturnType<typeof SealEvent.toSad> {
   }
   SealEvent.fromSad(anchor);
   return anchor;
-}
-
-/**
- * Observe completion within this window without transferring task ownership.
- * The race cancels only its observation when the timer wins. queryCommand's
- * finally owns halting/joining the original query and runtime tasks, so both
- * successful and timed-out commands finish cleanup before stores can close.
- */
-function queryCompletedWithin(query: Task<void>, ms: number): Operation<boolean> {
-  return race([
-    call(function*() {
-      yield* query;
-      return true;
-    }),
-    call(function*() {
-      yield* sleep(ms);
-      return false;
-    }),
-  ]);
 }
 
 /** Capture the KLI-style accepted-state display while the database is open. */
@@ -116,30 +86,13 @@ export function* queryCommand(args: Record<string, unknown>): Operation<void> {
     alias,
     { compat: compat ?? false, readonly: false, skipConfig: true, skipSignator: true },
     function*({ hby, runtime, hab }) {
-      if (isLocalGroupHab(hby, hab)) {
-        throw new ValidationError(
-          "Query --alias must select a member requester, not a group requiring additional signatures.",
-        );
-      }
-      let queryCues: Deck<AgentCue> | undefined;
-      let workflow: AnchorQuerier | KeyStateNoticer;
-      if (anchor) {
-        workflow = new AnchorQuerier(hby.db, runtime.querying, prefix, anchor, { signer: hab.pre });
-      } else {
-        queryCues = new Deck<AgentCue>();
-        workflow = new KeyStateNoticer(hby.db, runtime.querying, prefix, queryCues, { signer: hab.pre });
-      }
+      requireQueryRequester(hby, hab);
       console.log(anchor ? `Checking for anchor ${JSON.stringify(anchor)}...` : "Checking for updates...");
-      const observing = yield* spawn(() => workflow.queryDo());
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab, queryCues }));
-      try {
-        const complete = yield* queryCompletedWithin(observing, QueryTimeoutMs);
-        if (!complete) {
-          throw new ValidationError(`Query timed out before accepted evidence satisfied ${prefix}.`);
-        }
-      } finally {
-        yield* observing.halt();
-        yield* worker.halt();
+      const outcome = yield* (anchor
+        ? queryAnchor(runtime, { hab, prefix, anchor })
+        : queryKeyState(runtime, { hab, prefix }));
+      if (outcome.status === "timed-out") {
+        throw new ValidationError(`Query timed out before accepted evidence satisfied ${prefix}.`);
       }
       return externalStateLines(hby, prefix);
     },

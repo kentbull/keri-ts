@@ -26,6 +26,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/interop/keripy-runtime.test.ts",
       "test/unit/interop/child-lifetime.test.ts",
       "test/unit/app/mailbox/mailbox-sse.test.ts",
+      "test/unit/app/mailbox/mailbox-admin.test.ts",
       "test/unit/app/queries/query-delivery.test.ts",
       "test/unit/app/transport/cesr-http.test.ts",
       "test/unit/app/identity/challenge/challenge-generate.test.ts",
@@ -55,6 +56,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/ipex/ipex-disclosure.test.ts",
       "test/unit/acdc/chaining.test.ts",
       "test/unit/acdc/dhking.test.ts",
+      "test/unit/acdc/registry-author.test.ts",
       "test/unit/acdc/registry-custody.test.ts",
       "test/unit/acdc/registry-root.test.ts",
       "test/unit/acdc/registry-root-replication.test.ts",
@@ -160,7 +162,9 @@ export const suites: Record<string, TestSuite> = {
     files: [
       "test/unit/app/identity/challenge/challenge-mailbox-runtime.test.ts",
       "test/unit/app/bootstrap/oobi-runtime.test.ts",
+      "test/unit/app/bootstrap/oobi-resolving.test.ts",
       "test/unit/app/queries/query-runtime.test.ts",
+      "test/unit/app/queries/query-workflows.test.ts",
       "test/unit/app/mailbox/mailbox-runtime-slow.test.ts",
       "test/unit/app/bootstrap/oobi-mailbox-runtime.test.ts",
       "test/unit/app/witness/witness-runtime.test.ts",
@@ -256,10 +260,13 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "db-web": {
-    // Browser store adapter over fake-indexeddb; never opens LMDB.
+    // Browser store adapter over fake-indexeddb and browser host fakes; never opens LMDB.
     files: [
       "test/unit/db/core/indexeddb-persistence.test.ts",
       "test/unit/db/indexeddb-opener.test.ts",
+      "test/unit/runtime/web/output-barrier.test.ts",
+      "test/unit/runtime/web/persistent-storage.test.ts",
+      "test/unit/runtime/web/store-lock.test.ts",
     ],
   },
   "interop-keystore-parity": {

@@ -104,6 +104,16 @@ are callers. Receipting is a no-op until accepted key state has witnesses;
 delegation begin, status and wait are separate, status being the Anchorer's
 durable escrow phase. Deps are narrow collaborators; the host lends its runtime
 through `withDelegation` for one scope, and witness auth prompting stays in the CLI.
+Single-signature mailbox administration lives in `app/mailbox/mailbox-admin.ts`
+(exported from `keri-ts/runtime`); `tufa mailbox add|remove` call it. It posts the
+signed end-role reply through a fetch-only `HttpClient` (raw CESR first, multipart
+on 406/415), accepts it locally and confirms state; `mailboxStatus` reads accepted
+`ends.`, and `waitForMailboxState` only observes and returns a timed-out value.
+Group add keeps its CLI propose/complete split (the proposal needs Poster delivery
+and the group coordinator as collaborators) and reuses `completeMailboxAdmin`.
+`ipex poll` still hosts a full runtime inside the command and is not yet split into
+an observing wait plus a CLI-only runtime helper; `mailbox update` only writes a
+`tops.` cursor row and is a different operation.
 
 ## Protocol and output owners
 
@@ -199,8 +209,12 @@ key-state facts once into an explicitly supplied command-owned Deck with one
 noticer consumer. Only received, validated/persisted KSNs produce keyStateSaved;
 ordinary KEL acceptance is observed through the accepted-state store. Runtime
 pending state describes sending, while the invoking operation represents active semantic work. Tufa owns
-query command composition and final display after close; an unsatisfied deadline
-fails without OOBI catch-up. HTTP queries acknowledge intake and send-only
+query command display after close; the library (`app/queries/query-workflows.ts`)
+owns workflow choice, worker spawn and the elapsed-deadline race, so a CLI is a thin
+caller. An unsatisfied deadline fails without OOBI catch-up. Key-state query status is
+process-local (its cue leaves no durable record); anchor status is durable. OOBI
+resolution likewise lives in `app/bootstrap/oobi-resolving.ts`: begin queues, status
+reads the Oobiery records, resolve is begin plus a bounded runtime wait. HTTP queries acknowledge intake and send-only
 HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message
