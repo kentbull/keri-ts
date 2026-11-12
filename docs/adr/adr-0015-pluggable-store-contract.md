@@ -59,12 +59,18 @@ shared backend-neutral code built on those primitives. `getVer`/`setVer` keep th
 `__version__` marker semantics.
 
 **Bytes and limits.** Keys and values are bytes compared as unsigned bytewise.
-Empty values are valid. Writes reject an empty key and a key or dupsort value
-longer than 1,978 bytes, the pinned lmdb-js limit, with `DatabaseKeyError`, so
-one input cannot succeed on one backend and fail on another. Point reads and
-deletes reject an empty key and report an over-long key as absent. Scan bounds
-are not validated. Backends copy on write and on read: returned bytes are
-caller-owned and never alias the store.
+Empty values are valid on plain tables only. Writes reject an empty key, an
+empty dupsort value, and a key or dupsort value longer than 1,978 bytes, the
+pinned lmdb-js limit, with `DatabaseKeyError`, so one input cannot succeed on
+one backend and fail on another. LMDB cannot hold an empty duplicate alongside
+others, and no store needs one. `delVal` of an empty dupsort value reports absent. Point reads and
+deletes reject an empty key and report an over-long key as absent. Reads of a
+key's duplicates (`getVals`, `getValLast`, `getValsIter`, `cntVals`, `seekVal`)
+report an empty key as absent too, and `delVals` follows the delete rule. Scan
+bounds are not validated, so a bound over the limit compares as bytes like any
+other. Backends copy on write and on read: returned bytes are caller-owned and
+never alias the store, and a backend never writes into the options a caller
+passes.
 
 **Scans.** Options are `start`, `end`, `exclusiveStart`, `reverse` and `limit`.
 `start` is inclusive unless `exclusiveStart` is set and `end` is always
@@ -94,7 +100,8 @@ caller's writer; only the owner publishes cues after commit.
 
 **`writeVersion`.** A number that increases on every outermost commit that wrote
 rows and does not change on rollback or an empty commit. It is comparable only
-within one open handle, and increments need not be one.
+within one open handle, and increments need not be one. A commit that only
+creates a table or rewrites an identical row may or may not advance it.
 
 **`flushed()`.** An Effection operation that completes when every commit made
 before the call is durable, or fails with the store's recorded persistence
@@ -131,7 +138,8 @@ adapter never reserializes a whole table.
 Open bulk-loads every persisted table before returning, so reads never suspend.
 `openTable` needs no prior declaration: on a writable store an absent table
 starts as an empty mirror and is physically created by the batch that first
-carries it. IndexedDB can create an object store only during a version change,
+carries it, or by a batch of its own at `flushed()` or `close` when no commit has
+carried it. IndexedDB can create an object store only during a version change,
 which other open connections block, so that adapter must either handle
 `versionchange` or keep logical tables inside one object store.
 
@@ -153,9 +161,10 @@ synchronous instead of becoming operations at every call site.
    batch committed. `IndexedDbPersistence` requests strict durability on every
    batch. That is a browser hint, so power loss on a browser that ignores it is
    outside this contract.
-3. **Failure latches.** The first failed write puts the store in a failed state,
-   because a later batch would create a gap. Further transactions throw, reads
-   continue, and `flushed()` and `close` report the original failure. There is no
+3. **Failure latches.** The first failed write puts the queue, and so every store
+   of the composition, in a failed state, because a later batch would create a
+   gap. Further transactions throw, reads continue, and `flushed()` and `close`
+   report the original failure. There is no
    retry, skip or storage-quota policy; exhausted storage is an ordinary failure
    under ADR-0013.
 4. **Close joins.** `close` drains and joins the queue, including when cancelled,

@@ -12,7 +12,6 @@ import {
   envelopeFromFrame,
   type Hab,
   type Habery,
-  NodeHttpClient,
   queryEnvelopeFromDispatch,
   readRequiredCesrRequestBytes,
   reply,
@@ -22,6 +21,7 @@ import {
   systemClock,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import { join } from "node:path";
 import {
   HostedWatcherBaser,

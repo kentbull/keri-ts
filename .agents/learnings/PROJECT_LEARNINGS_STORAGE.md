@@ -5,8 +5,8 @@ accounting/durability removal and the prohibition on restoring it. Preserve
 protocol evidence, transactions and actual resource cleanup.
 
 [ADR-0015](../../docs/adr/adr-0015-pluggable-store-contract.md) owns the pluggable
-`DBer` contract and browser durability; LMDB is still the only implemented backend
-and the parity reference. Nested transactions are savepoints. Browser stores commit
+`DBer` contract and browser durability; `LMDBer`, `MemStore` and `WebDBer` implement it and
+LMDB remains the parity reference. Nested transactions are savepoints. Browser stores commit
 to their mirrors synchronously and share one prefix-durable queue per composition;
 the first persistence failure latches, and the browser HttpClient waits on `flushed()`.
 `BaseDBer` owns the ordinal, IoSet and IoDup families over backend row primitives.
@@ -16,7 +16,44 @@ within one key's duplicates. Native table-name spellings stay inside `hasTable`.
 Domain code commits through `transaction`, waits through `flushed` and compares
 `writeVersion`; a rebound `Table` handle, not `env`, detects that a store reopened.
 `StoreIdentity` names a store on every backend; paths and map size are `LmdbLocation`.
+`PathManager` follows hio `Filer` for persistent stores, so compare against the pinned hio, not KERIpy alone: each open retries the primary head, and `headDirPath` never changes on fallback. Config files are `keri/cf/{base}/{name}.json`. Temp stores deliberately keep one directory per name so tests can reopen them; KERIpy never sees them.
 Domain stores become `StoreOwner`s over an injected `DBer`; a `StoreOpener` places each `StoreFamily`, and `lmdbDefaultsFor` reproduces the established LMDB paths exactly. Domain stores compose this way; the `lmdb*` factories build each default. `openHabery` takes an opener or borrowed `stores`, which it never closes; `createHabery` is its LMDB default. `keri-ts/db` and `keri-ts/runtime` must not reach the addon; LMDB lives behind `keri-ts/db/lmdb`, and the boundary check walks value imports only.
+
+`MemStore` is one sorted row array per table with an undo log whose savepoints are
+indexes, so scans must re-seek from their last row rather than hold an index. Probing
+`LMDBer` in Linux found behavior the ADR does not state: exclusive start on a dupsort
+entry scan skips every duplicate at that key; empty scan bounds count as absent;
+negative `limit` yields nothing; and a plain table's `delVal(key, val)` ignores `val`.
+LMDB cannot hold an empty dupsort value beside others (it silently dropped one when a
+second arrived, and refused to add one with `MDB_BAD_VALSIZE`), so ADR-0015 rejects an
+empty dupsort value with `DatabaseKeyError` on every backend and `delVal` of one is
+absent; empty values stay valid on plain tables. `addVal` takes a non-null value.
+`test/unit/db/store-contract.ts` runs one set of assertions over `LMDBer` and `MemStore`; new `DBer` behavior
+lands there first. It found three LMDB-only faults, now fixed: lmdb-js writes into the
+options it is given (`getKeys` sets `values: false`), so a reused `ScanOptions` made a
+later `scan` yield empty rows; an empty key read as the table's first key for duplicate
+reads; and over-long `end` or `seekVal` bounds threw. `writeVersion` is only promised to
+grow on row writes: LMDB also advances for table creation and identical dupsort pairs.
+
+`WebDBer` extends `MemStore` through two protected hooks: `committed` receives each
+outermost commit's changes, and `loadContents` installs a snapshot. A batch holds each
+row identity's first prior state against its latest, so a savepoint rollback, which pops
+the undo log, can never leak into one; a commit ending where it began writes nothing.
+One `PersistenceQueue` per composition is a promise chain outside Effection, so halting
+a waiter cannot cancel a write. The first failure latches every store on that queue:
+commits already in the mirror stay readable, later transactions throw, and recovery is a
+new composition loading the durable prefix. An unwritten table rides the next batch, or
+a table-only batch at `flushed` or `close`, so its dupsort flag persists.
+
+`IndexedDbPersistence` keeps all logical tables in one `rows` object store (keys
+`[table, key, valueOrEmpty]`, `ArrayBuffer` parts) plus a `meta` store, so a new table never needs
+a schema upgrade that another tab's open connection could block. A write is one strict
+`readwrite` transaction settled on `complete`; a request's `success` fires before the
+commit is final. `versionchange` closes the connection and the adapter then refuses
+`load` and `write` until a new `meta`, because writing on after another context deleted the
+database would break prefix durability. A blocked `deleteDatabase` stays pending in the
+browser, so `clear` rejects rather than hanging. `fake-indexeddb` honors all of this, but
+real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;

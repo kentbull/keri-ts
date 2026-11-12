@@ -233,6 +233,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/core/lmdber-map-size.test.ts",
       "test/unit/db/core/lmdber-on.test.ts",
       "test/unit/db/core/lmdber-plain.test.ts",
+      "test/unit/db/core/memstore.test.ts",
       "test/unit/db/core/path-manager.test.ts",
       "test/unit/db/escrowing.test.ts",
       "test/unit/db/keeping.test.ts",
@@ -241,10 +242,18 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/db/mailboxing.test.ts",
       "test/unit/db/reger.test.ts",
       "test/unit/db/registry-evidence.test.ts",
+      "test/unit/db/store-contract.test.ts",
       "test/unit/db/subing.test.ts",
       "test/unit/vdr/credentialing.test.ts",
       "test/unit/vdr/eventing.test.ts",
       "test/unit/db/core/store-owner.test.ts",
+      "test/unit/db/core/webdber.test.ts",
+    ],
+  },
+  "db-web": {
+    // Browser store adapter over fake-indexeddb; never opens LMDB.
+    files: [
+      "test/unit/db/core/indexeddb-persistence.test.ts",
     ],
   },
   "interop-keystore-parity": {
@@ -293,6 +302,7 @@ export const suites: Record<string, TestSuite> = {
 /** The required KERI CI coverage, reused by the local required-suite command. */
 export const required = [
   "db-fast",
+  "db-web",
   "core-fast-a",
   "core-fast-b",
   "app-fast-parallel",
@@ -326,7 +336,7 @@ export const interop = [
 export const groups: Record<string, readonly string[]> = {
   ci: required,
   quality: [...required, "interop-parity"],
-  fast: ["db-fast", "core-fast-a", "core-fast-b", "app-fast-parallel", "app-fast-isolated", "runtime-medium"],
+  fast: ["db-fast", "db-web", "core-fast-a", "core-fast-b", "app-fast-parallel", "app-fast-isolated", "runtime-medium"],
   "core-fast": ["core-fast-a", "core-fast-b"],
   "app-fast": ["app-fast-parallel", "app-fast-isolated"],
   "interop-witness": ["interop-witness-main", "interop-witness-cli"],

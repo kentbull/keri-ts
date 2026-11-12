@@ -1,4 +1,4 @@
-import { basename, dirname, join } from "jsr:@std/path";
+import { basename, dirname, extname, join } from "jsr:@std/path";
 import { type Operation } from "npm:effection@^3.6.0";
 import { ValidationError } from "../../core/errors.ts";
 import { PathManager, type PathManagerOptions } from "../../db/core/path-manager.ts";
@@ -25,6 +25,8 @@ const CONFIGER_DEFAULTS: ConfigerDefaults = {
 export interface ConfigerOptions extends PathManagerOptions {
   /** File extension for the config file */
   fext?: string;
+  /** Use the `.keri` home fallback, like the stores of a compat Habery. */
+  compat?: boolean;
 }
 
 /**
@@ -47,10 +49,10 @@ export class Configer {
   readonly pathManager: PathManager;
   path: string | null = null;
 
-  /** Create a config manager bound to a PathManager-backed directory. */
+  /** Create a config manager bound to a PathManager-resolved file. */
   constructor(options: ConfigerOptions = {}) {
     this.name = options.name || "conf";
-    this.base = options.base || "";
+    this.base = options.base ?? "main";
     this.temp = options.temp || false;
     this.fext = options.fext || CONFIGER_DEFAULTS.fext;
     this.pathManager = new PathManager(
@@ -59,12 +61,14 @@ export class Configer {
         name: this.name,
         base: this.base,
         temp: this.temp,
+        filed: true,
+        fext: this.fext,
       },
       {
         tailDirPath: CONFIGER_DEFAULTS.tailDirPath,
         cleanTailDirPath: CONFIGER_DEFAULTS.cleanTailDirPath,
-        altTailDirPath: CONFIGER_DEFAULTS.altTailDirPath,
-        altCleanTailDirPath: CONFIGER_DEFAULTS.altCleanTailDirPath,
+        altTailDirPath: options.compat ? ".keri/cf" : CONFIGER_DEFAULTS.altTailDirPath,
+        altCleanTailDirPath: options.compat ? ".keri/clean/cf" : CONFIGER_DEFAULTS.altCleanTailDirPath,
         tempPrefix: CONFIGER_DEFAULTS.tempPrefix,
       },
     );
@@ -74,18 +78,13 @@ export class Configer {
     return this.path !== null;
   }
 
-  /** Resolve and validate the config filename and extension. */
-  private resolvedFileName(): string {
-    if (this.name.endsWith(`.${this.fext}`)) {
-      return this.name;
-    }
-    const hasExt = this.name.includes(".");
-    if (hasExt) {
+  /** Refuse a config name carrying an extension this manager cannot read. */
+  private assertSupportedExtension(): void {
+    if (extname(this.name) && !this.name.endsWith(`.${this.fext}`)) {
       throw new ValidationError(
         `Unsupported config extension for '${this.name}'. Only .${this.fext} is supported.`,
       );
     }
-    return `${this.name}.${this.fext}`;
   }
 
   private ensureOpenPath(): string {
@@ -193,45 +192,23 @@ export class Configer {
     }
   }
 
-  /** Open or create the config file in the resolved Configer directory. */
+  /** Open the config file at KERIpy's `{head}/keri/cf/{base}/{name}.{fext}`, creating it when absent. */
   *reopen(options: Partial<ConfigerOptions> = {}): Operation<boolean> {
-    const opened = yield* this.pathManager.reopen({
-      ...options,
-      name: this.name,
-      base: this.base,
-      temp: this.temp,
-    });
+    this.assertSupportedExtension();
+    const opened = yield* this.pathManager.reopen(options);
     if (!opened || !this.pathManager.path) {
       return false;
     }
 
-    const fileName = this.resolvedFileName();
-    this.path = join(this.pathManager.path, fileName);
-
-    try {
-      Deno.statSync(this.path);
-    } catch (error) {
-      if (error instanceof Deno.errors.NotFound) {
-        this.writeAtomic(this.path, "{}\n");
-      } else {
-        throw error;
-      }
+    this.path = this.pathManager.path;
+    if (Deno.statSync(this.path).size === 0) {
+      this.writeAtomic(this.path, "{}\n");
     }
-
     return true;
   }
 
-  /** Close the config manager and optionally remove files. */
+  /** Close the config manager and optionally remove the file. */
   *close(clear = false): Operation<boolean> {
-    if (clear && this.path) {
-      try {
-        Deno.removeSync(this.path);
-      } catch (error) {
-        if (!(error instanceof Deno.errors.NotFound)) {
-          throw error;
-        }
-      }
-    }
     this.path = null;
     yield* this.pathManager.close(clear);
     return true;

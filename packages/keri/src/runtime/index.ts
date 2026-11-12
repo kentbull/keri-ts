@@ -1,5 +1,6 @@
 /**
- * Supported non-browser-safe KERI operations and data contracts.
+ * Supported KERI operations and data contracts that need no host sockets or
+ * files. TCP transport and the local-file reader live in `keri-ts/runtime/node`.
  *
  * This curated surface serves library users and Tufa composition. Private
  * continuation state, handler installation, reply-slot bookkeeping and internal
@@ -52,7 +53,6 @@ export {
 export {
   chunkBytes,
   collectBytes,
-  fileBytes,
   type SourceOptions,
 } from "../app/transport/byte-source.ts";
 export {
@@ -86,30 +86,7 @@ export {
   type HttpResponse,
   type HttpStreamResponse,
 } from "../app/transport/http-client.ts";
-export { NodeHttpClient, nodeTcpDialer } from "../app/transport/node-http-client.ts";
 export { requireTcpDialer, type TcpDialer } from "../app/transport/tcp-dialer.ts";
-
-export {
-  socketBytes,
-  type SocketSourceOptions,
-} from "../app/transport/socket-source.ts";
-export {
-  TCPMessenger,
-  type TCPMessengerOptions,
-} from "../app/transport/tcp-messenger.ts";
-
-export {
-  openTcpConnection,
-  sendCesrTcp,
-  sendCesrTcpFrame,
-  sendCesrTcpSocket,
-  streamCesrTcp,
-  type TcpConnection,
-  type TcpSendOptions,
-  type TcpSocketWriteOptions,
-  type TcpSourceFactory,
-  writeCesrTcpSocket,
-} from "../app/transport/tcp-egress.ts";
 export { TransportError } from "../app/transport/transport-error.ts";
 // Controller state, credentials and protocol operations.
 export { type AcdcGraph, type ChainVerdict, evaluateChain } from "../acdc/chaining.ts";
@@ -194,11 +171,6 @@ export {
   markChallengeVerified,
   parseChallengeWords,
 } from "../app/identity/challenging.ts";
-export {
-  Configer,
-  type ConfigerOptions,
-  createConfiger,
-} from "../app/identity/configing.ts";
 export {
   Anchorer,
   type DelegationPhase,
@@ -683,7 +655,6 @@ export { HTTPMessenger, type HTTPMessengerOptions } from "../app/transport/http-
 export { HTTPStreamMessenger } from "../app/transport/http-stream-messenger.ts";
 export type { IngressOptions } from "../app/transport/message-source.ts";
 export { messengerFrom, type MessengerUrls, streamMessengerFrom } from "../app/transport/messengering.ts";
-export { TCPStreamMessenger } from "../app/transport/tcp-stream-messenger.ts";
 
 export { type RuntimeClock, systemClock } from "../app/runtime/runtime-clock.ts";
 

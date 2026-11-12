@@ -1,5 +1,5 @@
-import { NodeHttpClient } from "keri-ts/runtime";
 import { systemClock } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 /**
  * Mailbox operator debug report collection.
  *

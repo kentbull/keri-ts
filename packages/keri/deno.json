@@ -6,7 +6,8 @@
     "./cli": "./cli.ts",
     "./runtime": "./runtime.ts",
     "./db": "./db.ts",
-    "./db/lmdb": "./db-lmdb.ts"
+    "./db/lmdb": "./db-lmdb.ts",
+    "./runtime/node": "./runtime-node.ts"
   },
   "tasks": {
     "fmt": "deno run -A npm:dprint@0.49.0 fmt --config ../../dprint.json .",
@@ -40,6 +41,7 @@
     "test:quality:app-fast-isolated": "deno run -A ../../scripts/ci/run-keri-test-group.ts app-fast-isolated",
     "test:quality:core-fast-b": "deno run -A ../../scripts/ci/run-keri-test-group.ts core-fast-b",
     "test:quality:db-fast": "deno run -A ../../scripts/ci/run-keri-test-group.ts db-fast",
+    "test:quality:db-web": "deno run -A ../../scripts/ci/run-keri-test-group.ts db-web",
     "test:quality:interop-keystore-parity": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-keystore-parity",
     "test:quality:interop-keystore-storage": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-keystore-storage",
     "test:quality:interop-oobi-bootstrap": "deno run -A ../../scripts/ci/run-keri-test-group.ts interop-oobi-bootstrap",

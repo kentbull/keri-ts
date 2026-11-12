@@ -62,7 +62,7 @@ import { makeNowIso8601 } from "../../time/mod.ts";
 import { oobiReplyMessages } from "../bootstrap/oobi-replies.ts";
 import { loadStoredReply } from "../delivery/stored-replies.ts";
 import { acceptedGroupMembers, latestGroupContribution } from "../multisig/group-members.ts";
-import { Configer, createConfiger } from "./configing.ts";
+import type { Configer, ConfigerOptions } from "./configing.ts";
 import {
   Algos,
   branToSaltQb64,
@@ -85,6 +85,8 @@ export interface HaberyArgs {
   compat?: boolean;
   readonly?: boolean;
   cf?: Configer;
+  /** Creates the Habery-owned Configer when `cf` is absent and `skipConfig` is false. */
+  createConfig?: (options: ConfigerOptions) => Operation<Configer>;
   skipConfig?: boolean;
   skipSignator?: boolean;
   /** Creates this Habery's stores and sidecars. Required unless `stores` is given. */
@@ -2240,6 +2242,7 @@ export function* openHabery(args: HaberyArgs): Operation<Habery> {
     compat = false,
     readonly = false,
     cf: providedCf,
+    createConfig,
     skipConfig = false,
     skipSignator = false,
     opener,
@@ -2258,16 +2261,20 @@ export function* openHabery(args: HaberyArgs): Operation<Habery> {
   let failure: { error: unknown } | undefined;
   try {
     if (!opener && !stores) throw new ValidationError("A Habery needs a store opener or borrowed stores.");
+    if (!providedCf && !skipConfig && !createConfig) {
+      throw new ValidationError("A Habery needs a Configer, a Configer factory or skipConfig.");
+    }
     const identity: StoreIdentity = { name, base, temp, reopen: true, readonly };
     db = stores?.db ?? (yield* openOwner(new Baser(opener!.create(Baser.Family, identity)), "Baser", identity));
     ks = stores?.ks ?? (yield* openOwner(new Keeper(opener!.create(Keeper.Family, identity)), "Keeper", identity));
 
     cf = providedCf
-      ?? (skipConfig ? undefined : (yield* createConfiger({
+      ?? (skipConfig ? undefined : (yield* createConfig!({
         name,
         base,
         temp,
         headDirPath,
+        compat,
         reopen: true,
         clear: false,
       })));

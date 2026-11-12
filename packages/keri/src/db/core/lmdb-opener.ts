@@ -12,7 +12,8 @@ export function lmdbDefaultsFor(family: StoreFamily, compat = false): Partial<LM
     cleanTailDirPath: `keri/clean/${family.tail}`,
     altTailDirPath: `${altRoot}/${family.tail}`,
     altCleanTailDirPath: `${altRoot}/clean/${family.tail}`,
-    tempPrefix: `keri_${family.tail.replaceAll("/", "_")}_`,
+    // As in KERIpy, Baser keeps the base LMDBer temp prefix.
+    tempPrefix: family.tail === "db" ? "keri_lmdb_" : `keri_${family.tail.replaceAll("/", "_")}_`,
     ...(family.maxTables === undefined ? {} : { maxNamedDBs: family.maxTables }),
   };
 }

@@ -327,6 +327,10 @@ TCP egress reaches domain code only through `HttpClient.tcp`. `FetchHttpClient` 
 fetch; hosts with sockets construct `NodeHttpClient`. Reaching a `tcp:` endpoint without a
 dialer throws `ValidationError`, so every CLI or test that can dial TCP must use the Node
 client. A test that awaits a socket event can hang on that throw instead of failing.
+`keri-ts/runtime` must not reach `node:` modules or the `Deno` global; TCP transport,
+`NodeHttpClient`, `fileBytes` and `Configer` live in `keri-ts/runtime/node`, enforced by the
+library boundary script. `openHabery` takes `cf`, `createConfig` or `skipConfig`; a factory
+keeps config creation after store acquisition, so a failed store open leaves no config file.
 
 ## OOBI, DID, mailbox and notices
 

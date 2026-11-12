@@ -8,7 +8,6 @@
  */
 import type { Operation } from "effection";
 import { systemClock } from "keri-ts/runtime";
-import { NodeHttpClient } from "keri-ts/runtime";
 import {
   createAgentRuntime,
   EndpointRoles,
@@ -18,6 +17,7 @@ import {
   settleRuntimeIngress,
   ValidationError,
 } from "keri-ts/runtime";
+import { NodeHttpClient } from "keri-ts/runtime/node";
 import {
   canonicalOrigin,
   controllerRoleEnabled,

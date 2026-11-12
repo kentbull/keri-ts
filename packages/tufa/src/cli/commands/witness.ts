@@ -9,15 +9,13 @@
 import type { Operation } from "effection";
 import { parseBooleanOption, parseIntegerOption, parseStringListOption, parseStringOption } from "keri-ts/cli";
 import { systemClock } from "keri-ts/runtime";
-import { NodeHttpClient } from "keri-ts/runtime";
 import {
-  type Configer,
-  createConfiger,
   createProtocolProcessor,
   Receiptor,
   ValidationError,
   WitnessReceiptor,
 } from "keri-ts/runtime";
+import { type Configer, createConfiger, NodeHttpClient } from "keri-ts/runtime/node";
 import { configFileCandidates, validateIsoDatetime } from "../../operator/host-planning.ts";
 import { reconcileWitnessHostStartup, resolveWitnessHostStartup } from "../../operator/witness-startup.ts";
 import { runWitnessHost } from "../../roles/witness.ts";
@@ -219,6 +217,7 @@ function* loadWitnessStartConfig(
       base: "",
       temp: false,
       headDirPath: args.configDir,
+      compat: args.compat,
       reopen: true,
       clear: false,
     });
@@ -235,6 +234,7 @@ function* loadWitnessStartConfig(
           name: candidate,
           base: "",
           temp: false,
+          compat: args.compat,
           reopen: true,
           clear: false,
         });

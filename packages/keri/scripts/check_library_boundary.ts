@@ -45,6 +45,7 @@ const EXPECTED_EXPORT_KEYS = [
   ".",
   "./cli",
   "./runtime",
+  "./runtime/node",
   "./db",
   "./db/lmdb",
 ];
@@ -53,49 +54,45 @@ interface SurfaceCheck {
   label: string;
   entrypoint: URL;
   forbidden: string[];
+  /** Forbid the `Deno.` global in reachable package sources. */
+  forbidDenoGlobal?: boolean;
 }
+
+/** App and host-process dependencies that no library surface may load. */
+const APP_FORBIDDEN = [
+  "/packages/tufa/",
+  "/src/cli/",
+  "npm:commander",
+  "npm:/commander@",
+  "npm:hono",
+  "npm:/hono@",
+];
+
+/** Host modules that only `keri-ts/runtime/node` may load. */
+const HOST_FORBIDDEN = ["npm:lmdb", "npm:/lmdb@", "node:"];
 
 const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts root surface",
     entrypoint: new URL("../mod.ts", import.meta.url),
-    forbidden: [
-      "/packages/tufa/",
-      "/src/cli/",
-      "npm:commander",
-      "npm:/commander@",
-      "npm:hono",
-      "npm:/hono@",
-      "node:",
-    ],
+    forbidden: [...APP_FORBIDDEN, "node:"],
   },
   {
     label: "keri-ts runtime surface",
     entrypoint: new URL("../runtime.ts", import.meta.url),
-    forbidden: [
-      "/packages/tufa/",
-      "/src/cli/",
-      "npm:commander",
-      "npm:/commander@",
-      "npm:hono",
-      "npm:/hono@",
-      "npm:lmdb",
-      "npm:/lmdb@",
-    ],
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
+  },
+  {
+    label: "keri-ts runtime/node surface",
+    entrypoint: new URL("../runtime-node.ts", import.meta.url),
+    forbidden: [...APP_FORBIDDEN, "npm:lmdb", "npm:/lmdb@"],
   },
   {
     label: "keri-ts db surface",
     entrypoint: new URL("../db.ts", import.meta.url),
-    forbidden: [
-      "/packages/tufa/",
-      "/src/cli/",
-      "npm:commander",
-      "npm:/commander@",
-      "npm:hono",
-      "npm:/hono@",
-      "npm:lmdb",
-      "npm:/lmdb@",
-    ],
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
   },
 ];
 
@@ -139,7 +136,7 @@ function runtimeReach(info: DenoInfoOutput): string[] {
 
 /** Assert that a public source surface does not import forbidden app/runtime modules. */
 async function assertSurfaceBoundary(
-  { label, entrypoint, forbidden }: SurfaceCheck,
+  { label, entrypoint, forbidden, forbidDenoGlobal }: SurfaceCheck,
 ): Promise<void> {
   const info = await loadInfo(entrypoint);
   const specifiers = runtimeReach(info);
@@ -150,6 +147,27 @@ async function assertSurfaceBoundary(
       "\n",
     );
     throw new Error(`${label} reaches forbidden modules:\n${details}`);
+  }
+
+  if (forbidDenoGlobal) assertNoDenoGlobal(label, specifiers);
+}
+
+/**
+ * Assert that reachable package sources do not touch the `Deno` global. A
+ * browser bundle has no `Deno`, and the npm shim only papers over the gap in
+ * the entrypoints that declare themselves host-only.
+ */
+function assertNoDenoGlobal(label: string, specifiers: string[]): void {
+  const hits: string[] = [];
+  for (const specifier of specifiers) {
+    if (!specifier.startsWith("file://")) continue;
+    const path = new URL(specifier).pathname;
+    if (!path.startsWith(PACKAGE_DIR.pathname)) continue;
+    if (/\bDeno\./.test(Deno.readTextFileSync(path))) hits.push(specifier);
+  }
+  if (hits.length > 0) {
+    const details = hits.sort().map((specifier) => `  - ${specifier}`).join("\n");
+    throw new Error(`${label} reaches sources using the Deno global:\n${details}`);
   }
 }
 

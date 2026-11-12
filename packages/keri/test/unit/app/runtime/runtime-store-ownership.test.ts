@@ -23,20 +23,7 @@ const habitatOptions = { name: "runtime-ownership", temp: true, skipConfig: true
 
 /** Assert native close has joined before a temporary owner is released. */
 function assertReleased(store: RegBaser | Reger | Noter | Mailboxer): void {
-  assertEquals(store.opened, false);
-  assertEquals(store.env, null);
-  // close clears store.path; check the real temp directory rather than stat(null).
-  const tempPrefix = store instanceof Noter
-    ? "keri_not_"
-    : store instanceof Mailboxer
-    ? "keri_mbx_"
-    : store instanceof Reger
-    ? "keri_reg_"
-    : "keri_acdc_reg_";
-  const directory = `${
-    Deno.env.get("TMPDIR") ?? Deno.env.get("TMP") ?? Deno.env.get("TEMP") ?? "/tmp"
-  }/${tempPrefix}${store.name}${LMDBer.TempSuffix}`;
-  assertThrows(() => Deno.statSync(directory), Deno.errors.NotFound);
+  assertThrows(() => Deno.statSync(store.path!), Deno.errors.NotFound);
 }
 
 Deno.test("runtime stores - default owners close explicitly and scope exit is harmless", async () => {

@@ -7,10 +7,9 @@ import {
   processCuesOnce,
   type QueryReply,
   rethrowCleanupFailure,
-  socketBytes,
   UnsupportedTelReplayError,
-  writeCesrTcpSocket,
 } from "keri-ts/runtime";
+import { socketBytes, writeCesrTcpSocket } from "keri-ts/runtime/node";
 import { createServer, type Socket } from "node:net";
 
 /** Concrete listener supervision and joined connection lifetimes. */
