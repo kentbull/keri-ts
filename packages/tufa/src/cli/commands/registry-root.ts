@@ -3,7 +3,9 @@
  * the `kli vc registry root send|receive|newcomers` equivalent.
  *
  * `send` and `newcomers` prepare one signed ESSR `exn` per (recipient,
- * registry) through `RegistryRoot` and deliver each to the recipient's mailbox
+ * registry) through `RegistryRoot`, each with the verification hint
+ * `RegistryRoot.prepare` derives for its own registry unless `--acdc`
+ * overrides it, and deliver each to the recipient's mailbox
  * (topic `credential`) through the runtime Poster. `--out` writes the same bytes
  * to a file instead. `receive` ingests copies from the `credential` mailbox
  * (`--listen`) or `--message` files through the ordinary Reactor, KRAM and
