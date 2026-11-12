@@ -27,8 +27,9 @@
  * are refused; group Unblind belongs to the group proposal API.
  */
 import { action, type Operation, race } from "npm:effection@^3.6.0";
-import type { Unblind } from "../../acdc/unblinding.ts";
+import { Unblind } from "../../acdc/unblinding.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Hab, Habery } from "../identity/habbing.ts";
@@ -65,6 +66,8 @@ export interface UnblindingDeps {
   /** Same clock the exchanger and Unblind owners were composed with. */
   readonly clock: RuntimeClock;
   readonly changes?: ChangeSink;
+  /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
+  readonly wake?: () => void;
 }
 
 /** One operation the user consented to or the discloser owes; exists only while its approval is live in memory. */
@@ -83,6 +86,8 @@ interface LiveUnblinding {
   readonly expires: bigint;
   /** Requester: the frozen signed query, resent unchanged. */
   query?: Uint8Array;
+  /** When {@link query} was signed (host clock, ms); it is re-dated once older than the single-key window. */
+  queryAt: number;
   nextQuery: number;
   phase: UnblindingPhase;
   /** A step is running; overlapping `processOnce` calls skip it. */
@@ -143,6 +148,16 @@ export class UnblindingOperations {
 
   constructor(readonly deps: UnblindingDeps) {}
 
+  /**
+   * Whether a pass has work: a live operation, or an owner holds an authenticated peer query whose reply is
+   * owed (an in-memory walk of the owners, no store read).
+   */
+  active(): boolean {
+    if (this.live.size > 0) return true;
+    for (const owner of this.deps.unblinds.unblindOwners()) if (owner.awaitingReply().length) return true;
+    return false;
+  }
+
   /** Advance every live operation by one pass, each bounded by its Grant deadline. */
   *processOnce(): Operation<void> {
     const { deps } = this;
@@ -175,8 +190,18 @@ export class UnblindingOperations {
     for (const owner of deps.unblinds.unblindOwners()) {
       for (const { xid, grant } of owner.awaitingReply()) {
         if (this.live.has(grant)) continue;
-        const input = deps.exc.retainedInput(grant);
-        const deadline = input && deps.exc.exchangeDeadline(input.serder), expires = timestampMicros(deadline);
+        let input, deadline, expires;
+        try {
+          input = deps.exc.retainedInput(grant);
+          deadline = input && deps.exc.exchangeDeadline(input.serder);
+          expires = timestampMicros(deadline);
+        } catch (error) {
+          // Unreadable stored state fails this reply alone; release the owner's approval so it is not retried.
+          owner.abandon(xid);
+          this.settled.set(grant, { role: "responder", state: "failed", reason: message(error) });
+          deps.changes?.push({ kind: "unblinding", id: grant });
+          continue;
+        }
         if (!input || !deadline || expires === null || BigInt(deps.clock.now()) * 1000n >= expires) continue;
         this.settled.delete(grant);
         this.live.set(grant, {
@@ -188,6 +213,7 @@ export class UnblindingOperations {
           owner,
           peer: String(input.serder.sad!.ri),
           expires,
+          queryAt: 0,
           nextQuery: 0,
           phase: "proving",
           busy: false,
@@ -257,10 +283,26 @@ export class UnblindingOperations {
       return this.finishedStep(op);
     }
     if (op.query && deps.clock.now() >= op.nextQuery) {
-      yield* send(op.peer, op.query);
+      yield* send(op.peer, this.current(op));
       op.nextQuery = deps.clock.now() + UNBLIND_QUERY_RESEND_MS;
     }
     return "stepped";
+  }
+
+  /**
+   * The query to send now: the signed bytes unchanged while they are timely, and a re-dated one
+   * (`Unblind.requery`: same frozen request, new `dt`, SAID and signatures) once they are older than the
+   * single-key window, which the discloser's KRAM would drop as stale. Re-signing happens only here, inside
+   * the consent that began the operation; a registry head that moved since fails the operation instead. A
+   * group threshold query cannot be re-dated by one member; group Unblind is not run here.
+   */
+  private current(op: LiveUnblinding): Uint8Array {
+    const now = this.deps.clock.now(), window = singleKeyQueryWindow(this.deps.hby.db, Unblind.Route);
+    if (window !== null && now - op.queryAt >= window) {
+      op.query = op.owner.requery(op.xid);
+      op.queryAt = now;
+    }
+    return op.query!;
   }
 
   private finishedStep(op: LiveUnblinding): "stepped" {
@@ -326,6 +368,7 @@ function consent(
       owner,
       peer: selected.peer,
       expires: selected.expires,
+      queryAt: deps.clock.now(),
       nextQuery: 0,
       phase: "awaitingReply",
       busy: false,
@@ -348,6 +391,7 @@ export function requestUnblind(ops: UnblindingOperations, request: UnblindingReq
     ops.settled.delete(request.grant);
     ops.live.set(request.grant, op);
     ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
+    ops.deps.wake?.();
   }
   return begun;
 }

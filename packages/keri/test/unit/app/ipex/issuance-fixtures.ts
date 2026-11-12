@@ -20,9 +20,11 @@ import type { RuntimeClock } from "../../../../src/app/runtime/runtime-clock.ts"
 import type { ChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { Receiptor } from "../../../../src/app/witness/receipting.ts";
+import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 import { timestampMicros } from "../../../../src/time/mod.ts";
 
+/** Windows in ms `[d, sl, ll, xl, psl, pll, pxl]`; a test that needs a query to age in real time passes tighter ones. */
 export const KRAM = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
 
 /**
@@ -57,6 +59,7 @@ export function* party(
   names: string[],
   onReceipt = () => {},
   register = true,
+  kram: KramConfig = KRAM,
 ): Operation<Party> {
   const hby = yield* createHabery({
     name: crypto.randomUUID(),
@@ -70,7 +73,7 @@ export function* party(
   const rgy = new Regery(hby, baser);
   const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), clock, {
     acdc: rgy,
-    kram: KRAM,
+    kram,
     ipexOwners: "per-identifier",
   });
   yield* ensure(() => runtime.close());
@@ -137,11 +140,16 @@ export interface Scenario {
 }
 
 /** Issuer with `count` identifiers, holder with `count`, KELs exchanged so each side knows the other. */
-export function* scenario(count = 1, onReceipt = () => {}, register = true): Operation<Scenario> {
+export function* scenario(
+  count = 1,
+  onReceipt = () => {},
+  register = true,
+  kram: KramConfig = KRAM,
+): Operation<Scenario> {
   const clock = new TestClock();
   const names = Array.from({ length: count }, (_, i) => `n${i}`);
-  const issuer = yield* party(clock, "Issuer", names.map((n) => `i${n}`), onReceipt);
-  const holder = yield* party(clock, "Holder", names.map((n) => `h${n}`), undefined, register);
+  const issuer = yield* party(clock, "Issuer", names.map((n) => `i${n}`), onReceipt, true, kram);
+  const holder = yield* party(clock, "Holder", names.map((n) => `h${n}`), undefined, register, kram);
   for (const [from, to] of [[issuer, holder], [holder, issuer]] as const) {
     for (const hab of from.habs) {
       for (const wire of from.hby.db.clonePreIter(hab.pre!, 0)) yield* to.runtime.reactor.processBytes(wire);

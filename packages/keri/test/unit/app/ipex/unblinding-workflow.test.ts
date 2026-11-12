@@ -18,7 +18,7 @@ import {
   Salter,
   Vrsn_2_0,
 } from "cesr-ts";
-import { call, run } from "effection";
+import { call, run, sleep } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, blindate, regcept } from "../../../../src/acdc/messaging.ts";
 import { publicOpeningAttachment } from "../../../../src/acdc/registering.ts";
@@ -33,14 +33,15 @@ import {
 } from "../../../../src/app/ipex/unblinding-workflow.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
+import type { KramConfig } from "../../../../src/core/mailbox/kraming.ts";
 import { query } from "../../../../src/core/protocol-eventing.ts";
 import { makeNowIso8601, timestampMicros } from "../../../../src/time/mod.ts";
 import { type Party, route, scenario } from "./issuance-fixtures.ts";
 
 const STATES = ["issued", "revoked", ""];
 
-function* fixture() {
-  const s = yield* scenario();
+function* fixture(kram?: KramConfig) {
+  const s = yield* scenario(1, undefined, true, kram);
   const presenter = s.issuer, observer = s.holder, sender = presenter.habs[0], verifier = observer.habs[0];
   const stamp = makeNowIso8601(new Date());
   const both = function*(raw: Uint8Array) {
@@ -266,5 +267,39 @@ Deno.test("abandon is local and final", async () => {
       ValidationError,
       "authenticated retained Grant",
     );
+  });
+});
+
+Deno.test("an aged Unblind query is re-dated and accepted instead of resent as a stale replay", async () => {
+  await run(function*() {
+    // A 2 s single-key window lets the query age in real time while the fixture still builds in time.
+    const f = yield* fixture({ enabled: true, caches: { "~": [100, 2000, 60000, 300000, 2000, 60000, 300000] } });
+    let lose = true;
+    const queries: Uint8Array[] = [];
+    const requester = new UnblindingOperations({
+      hby: f.observer.hby,
+      exc: f.observer.runtime.exc,
+      unblinds: f.observer.runtime.ipex!,
+      delivery: {
+        *deliver(sent) {
+          if (parseBytes(sent.msg)[0].body.ilk === "qry") {
+            queries.push(sent.msg);
+            if (lose) return [sent.dest]; // reported delivered, never received
+          }
+          return yield* f.delivery(sent);
+        },
+      },
+      clock: f.s.clock,
+    });
+    const responder = f.mk(f.presenter), g = f.grant.said!;
+    requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
+    yield* requester.processOnce();
+    yield* sleep(2200); // past the resend interval and the window
+    lose = false;
+    yield* requester.processOnce();
+    assertEquals(queries.length, 2);
+    assert(queries[0].some((byte, i) => byte !== queries[1][i]) || queries[0].length !== queries[1].length);
+    yield* drive(requester, responder, g);
+    assertEquals(unblindingStatus(requester, g), { state: "done", role: "requester" });
   });
 });

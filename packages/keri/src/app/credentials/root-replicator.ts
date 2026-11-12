@@ -144,6 +144,11 @@ export class RootReplicator {
     return results;
   }
 
+  /** Whether a copy is owed or a group is waiting to be re-derived; in memory, reads no store. */
+  pending(): boolean {
+    return this.#pending.size > 0 || this.#dirty.size > 0;
+  }
+
   /** Pure read: what is owed and why it has not gone yet. */
   status(): RootReplicatorStatus {
     return {
