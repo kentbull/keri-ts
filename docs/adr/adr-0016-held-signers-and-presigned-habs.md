@@ -2,8 +2,8 @@
 
 - Status: Accepted
 - Date: 2026-11-12
-- Scope: `Manager.hold` / `Manager.release` in `packages/keri`; the companion
-  `Habery.makeSignedHab` is specified here and lands in the next change
+- Scope: `Manager.hold` / `Manager.release` and `Habery.makeSignedHab` in
+  `packages/keri`
 - Related: [Manager derived-path signing](adr-0006-manager-derived-path-signing.md),
   [pluggable store contract](adr-0015-pluggable-store-contract.md),
   `packages/keri/src/app/identity/keeping.ts`,
@@ -38,7 +38,7 @@ live in the process.
 Add two general mechanisms. Neither knows about any product.
 
 1. `Manager.hold(signers)` and `Manager.release(pubs?)` (this change).
-2. `Habery.makeSignedHab(name, ns, { serder, sigers, hidden? })` (next change).
+2. `Habery.makeSignedHab(name, ns, { serder, sigers, hidden? })`.
 
 ### Held signers
 
@@ -95,6 +95,21 @@ no marker is written to the Keeper for held keys (adding a field to the prefix
 parameter record would change a record shape shared with KERIpy). `Algos.extern`
 continues to throw as unsupported.
 
+### Pre-signed habs
+
+`makeSignedHab` adopts an inception the embedder built and signed, as KERIpy's
+`makeSignifyHab` does for KERIA. `Hab.make`'s tail (bind the prefix, register the
+name and habitat records, accept the event) is one private step shared by both
+paths. Before that step the inception is evaluated without mutation by
+`Kever.evaluateInception`, so SAID, prefix, key and threshold material and the
+signatures against the event's own keys are checked, and a refusal leaves no
+record. A name or prefix already in use is refused. No Keeper row is written, so
+the hab reloads from the habs record plus accepted key state and signs only while
+the host holds its signer. Rotation is refused by existing code: `Hab.rotate`
+requires Keeper situation state. Differences from KERIpy: verification precedes
+persistence, `sign` is not disabled, and the habitat record carries no `sid`.
+Unlike `makeHab`, bootstrap config replies are not applied (they need a key).
+
 ## Interactions
 
 - AEID change (`updateAeid`): re-encryption reads and rewrites Keeper rows only.
@@ -127,7 +142,9 @@ supplies the two mechanisms and a missing-key error; it needs no product marker.
 - A hab whose keys are only held cannot rotate by itself (`Manager.rotate`
   refuses an empty next lot and `Hab.rotate` needs Keeper situation state). That
   is the intended behavior for such habs and needs no new refusal code.
-- Tests: `test/unit/app/identity/held-signers.test.ts` covers sign by pubs and
+- Tests: `test/unit/app/identity/signed-hab.test.ts` covers both key types,
+  refusals, reopen, rotation refusal and a held member at index 3 of a
+  five-member group. `test/unit/app/identity/held-signers.test.ts` covers sign by pubs and
   verfers, both encodings, decrypt and ESSR open, precedence over a stored key,
   a byte-exact Keeper snapshot around hold and sign, release in whole and part,
   reopen, and an AEID change.

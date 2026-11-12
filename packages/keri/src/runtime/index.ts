@@ -831,3 +831,6 @@ export {
   waitForDelegationApproval,
   type WaitForDelegationApprovalOptions,
 } from "../app/identity/delegation-approval.ts";
+
+// Pre-signed hab adoption (Habery.makeSignedHab).
+export type { SignedHabArgs } from "../app/identity/habbing.ts";
