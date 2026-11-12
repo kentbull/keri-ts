@@ -929,6 +929,8 @@ export {
   type OperationStores,
   OWNER_BUSY_MS,
   OWNER_IDLE_MS,
+  type OwnerFault,
+  OwnerHealth,
   OwnerWake,
   type RuntimeOperations,
 } from "../app/runtime/operation-owners.ts";

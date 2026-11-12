@@ -190,8 +190,18 @@ export class UnblindingOperations {
     for (const owner of deps.unblinds.unblindOwners()) {
       for (const { xid, grant } of owner.awaitingReply()) {
         if (this.live.has(grant)) continue;
-        const input = deps.exc.retainedInput(grant);
-        const deadline = input && deps.exc.exchangeDeadline(input.serder), expires = timestampMicros(deadline);
+        let input, deadline, expires;
+        try {
+          input = deps.exc.retainedInput(grant);
+          deadline = input && deps.exc.exchangeDeadline(input.serder);
+          expires = timestampMicros(deadline);
+        } catch (error) {
+          // Unreadable stored state fails this reply alone; release the owner's approval so it is not retried.
+          owner.abandon(xid);
+          this.settled.set(grant, { role: "responder", state: "failed", reason: message(error) });
+          deps.changes?.push({ kind: "unblinding", id: grant });
+          continue;
+        }
         if (!input || !deadline || expires === null || BigInt(deps.clock.now()) * 1000n >= expires) continue;
         this.settled.delete(grant);
         this.live.set(grant, {

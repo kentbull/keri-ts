@@ -5,7 +5,7 @@
 import { parseBytes } from "cesr-ts";
 import { type Operation, run, sleep, spawn } from "effection";
 import { assert, assertEquals } from "jsr:@std/assert";
-import { beginIssuance } from "../../../../src/app/ipex/issuance.ts";
+import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
 import { envelopeFromFrame } from "../../../../src/app/protocol/parsering.ts";
 import { operationOwnersDo, OWNER_BUSY_MS } from "../../../../src/app/runtime/operation-owners.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
@@ -171,5 +171,53 @@ Deno.test("an operation begun while the loop idles is picked up at once, not at 
     });
     yield* until(() => passes > 1, 1000);
     assert(passes > 1, "begin woke the idle loop");
+  });
+});
+
+Deno.test("a delivery that throws fails its operation and the loop keeps serving; an escaped fault is readable", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const { operations, ipex } = s.issuer.runtime;
+    // The runtime's own delivery path throws, as a Poster that refuses the wire does.
+    (operations!.issuance.deps.delivery as { deliver: unknown }).deliver = function*() {
+      throw new Error("refused");
+    };
+    yield* spawn(() =>
+      operationOwnersDo({ operations: operations!, rootReplicator: null, ipex: ipex!, clock: s.clock }, {
+        busyMs: 10,
+        idleMs: 20,
+      })
+    );
+    const reg = yield* s.registry(0);
+    const { grant } = yield* beginIssuance(operations!.issuance, {
+      hab: s.issuer.habs[0],
+      credential: reg.credential(),
+      options: { recipient: s.holder.habs[0].pre!, message: "Issue" },
+    });
+    yield* until(() => issuanceStatus(operations!.issuance, grant).state === "failed", 1500);
+    assertEquals(issuanceStatus(operations!.issuance, grant), { state: "failed", role: "issuer", reason: "refused" });
+    assertEquals(operations!.health.faults, 0, "an operation's own failure is not an owner fault");
+
+    // Something no operation owns throws out of an owner pass: the loop survives and records it.
+    const presentation = operations!.presentation;
+    let faulted = false;
+    presentation.active = () => !faulted;
+    presentation.processOnce = function*() {
+      faulted = true;
+      throw new Error("unreadable state");
+    };
+    operations!.wake.notify();
+    yield* until(() => operations!.health.faults > 0, 1500);
+    assertEquals(operations!.health.last?.owner, "presentation");
+    assertEquals(operations!.health.last?.error, "unreadable state");
+    let passes = 0;
+    const once = operations!.unblinding.processOnce.bind(operations!.unblinding);
+    operations!.unblinding.active = () => true;
+    operations!.unblinding.processOnce = function*() {
+      passes++;
+      yield* once();
+    };
+    yield* until(() => passes > 2, 1500);
+    assert(passes > 2, "the other owners still run after a fault");
   });
 });

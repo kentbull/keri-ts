@@ -57,6 +57,27 @@ export interface RuntimeOperations {
   readonly unblinding: UnblindingOperations;
   /** Wakes the owner loop ({@link operationOwnersDo}) from its idle sleep; the owners call it themselves. */
   readonly wake: OwnerWake;
+  /** What the owner loop could not do; read by a host that reports runtime health. */
+  readonly health: OwnerHealth;
+}
+
+/** The last failure of an owner pass that no single operation owned, and how many there have been. */
+export interface OwnerFault {
+  owner: "issuance" | "presentation" | "unblinding" | "replicator";
+  error: string;
+  /** ISO 8601 time of the failure on the host clock. */
+  at: string;
+}
+
+/**
+ * Failures of the owner loop itself. A failure of one operation (a delivery that throws, an unreadable stored
+ * Grant) ends that operation as `failed` and is never recorded here; this records only what escaped an owner
+ * pass, which the loop survives so that the other owners keep running. `faults` counts them and `last` keeps
+ * the latest. Nothing clears it: a host reads it and decides.
+ */
+export class OwnerHealth {
+  faults = 0;
+  last: OwnerFault | null = null;
 }
 
 /** What the runtime composes for `ipexOwners`. */
@@ -115,6 +136,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       wake: wake.notify,
     }),
     wake,
+    health: new OwnerHealth(),
     unblinding: new UnblindingOperations({
       hby,
       exc,
@@ -180,23 +202,38 @@ function working({ operations, rootReplicator }: Pick<ComposedOwners, "operation
  * No owner reads a protocol store. Only the first pass, once, scans the pending exchange escrow for
  * resumable Grants.
  *
- * The owners run one after another, so a delivery that does not return holds the others up until it fails or
+ * A failure that escapes an owner pass is recorded in `operations.health` and the loop keeps running, so
+ * one owner's fault never stops the others. The owners run one after another, so a delivery that does not return holds the others up until it fails or
  * its Grant deadline passes; operations already bound each delivery by that deadline.
  */
 export function* operationOwnersDo(
   owners: ComposedOwners & { ipex: IpexAuxiliaries; clock: RuntimeClock },
   { busyMs = OWNER_BUSY_MS, idleMs = OWNER_IDLE_MS }: { busyMs?: number; idleMs?: number } = {},
 ): Operation<void> {
-  const { operations, rootReplicator, ipex, clock } = owners, { wake } = operations;
+  const { operations, rootReplicator, ipex, clock } = owners, { wake, health } = operations;
+  const guarded = function*(owner: OwnerFault["owner"], pass: () => Operation<unknown>): Operation<void> {
+    try {
+      yield* pass();
+    } catch (error) {
+      health.faults++;
+      health.last = {
+        owner,
+        error: error instanceof Error ? error.message : String(error),
+        at: new Date(clock.now()).toISOString(),
+      };
+    }
+  };
   while (true) {
-    if (operations.issuance.active()) yield* operations.issuance.processOnce();
-    if (operations.presentation.active()) yield* operations.presentation.processOnce();
-    if (operations.unblinding.active()) yield* operations.unblinding.processOnce();
+    if (operations.issuance.active()) yield* guarded("issuance", () => operations.issuance.processOnce());
+    if (operations.presentation.active()) yield* guarded("presentation", () => operations.presentation.processOnce());
+    if (operations.unblinding.active()) yield* guarded("unblinding", () => operations.unblinding.processOnce());
     if (rootReplicator) {
-      for (const dh of ipex.dhkeOwners()) {
-        while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
-      }
-      yield* rootReplicator.processOnce();
+      yield* guarded("replicator", function*() {
+        for (const dh of ipex.dhkeOwners()) {
+          while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
+        }
+        yield* rootReplicator.processOnce();
+      });
     }
     yield* wake.sleep(clock, working(owners) ? busyMs : idleMs);
   }

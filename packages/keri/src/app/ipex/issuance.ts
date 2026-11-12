@@ -127,12 +127,14 @@ export interface IssuanceDelivery {
 }
 
 /** Adapt a `Poster`; its delivery worker must be running (a one-shot CLI runs it under `withRuntimeWorkers`). */
-export function posterDelivery(postman: Pick<Poster, "send" | "wait">): IssuanceDelivery {
+export function posterDelivery(postman: Pick<Poster, "sendStream" | "wait">): IssuanceDelivery {
   return {
     *deliver({ src, dest, msg }) {
-      const outcome = yield* postman.wait(postman.send({ src, dest, topic: CREDENTIAL_MAILBOX_TOPIC, msg }, {
-        notify: true,
-      }));
+      const outcome = yield* postman.wait(
+        postman.sendStream({ src, dest, topic: CREDENTIAL_MAILBOX_TOPIC, msgs: [msg] }, {
+          notify: true,
+        }),
+      );
       if (outcome.kin === "failed") throw outcome.error;
       return outcome.deliveries;
     },
@@ -334,7 +336,12 @@ export class IssuanceOperations {
     try {
       yield* this.adopt(found);
     } catch (error) {
-      if (!(error instanceof ValidationError)) throw error;
+      // A refusal means the stores no longer prove it resumable and status reads from them; anything else is
+      // this Grant's failure alone and must not stop the other operations.
+      if (!(error instanceof ValidationError)) {
+        this.ended.set(found.grant, { role: found.role, state: "failed", reason: message(error) });
+        this.deps.changes?.push({ kind: "issuance", id: found.grant });
+      }
     }
     return true;
   }
