@@ -710,6 +710,23 @@ export class WellKnownAuthN extends RawRecord<WellKnownAuthNShape> implements We
   declare dt: string;
 }
 
+export interface RootSentRecordShape {
+  /** Public key by which the recipient contributed to the group when the copy was sealed to it. */
+  key: string;
+  /** ISO-8601 time the Poster reported the copy sent. */
+  dt: string;
+}
+
+/**
+ * A `/registry/root` copy the Poster reported sent: coordinates only, never the root.
+ *
+ * keri-ts only. Stored through `Komer` in `Baser.rrsn`, keyed (group, registry, recipient).
+ */
+export class RootSentRecord extends RawRecord<RootSentRecordShape> implements RootSentRecordShape {
+  declare key: string;
+  declare dt: string;
+}
+
 /** Authorizing/source event seal tuple used by `aess.`, `udes.`, and related escrows. */
 export type EventSealTuple = ReturnType<typeof SealSourceValue.toTuple>;
 /** Non-transferable receipt couple stored in `rcts.`. */

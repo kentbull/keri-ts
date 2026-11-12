@@ -545,10 +545,7 @@ export {
   type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
 export {
-  MemoryRootLedger,
-  type OwedCopy,
   type OwedCopyStatus,
-  type RootLedger,
   RootReplicator,
   type RootReplicatorDeps,
   type RootReplicatorStatus,

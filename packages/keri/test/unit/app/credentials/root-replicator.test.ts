@@ -1,19 +1,15 @@
 /**
- * `RootReplicator` turns the Dhke completion cue and an accepted group rotation into owed
- * `/registry/root` copies in the embedder's ledger and sends them without a command.
+ * `RootReplicator` derives owed `/registry/root` copies from state (held roots, current
+ * members, the `rrsn.` sent marker) and sends them without a command; the Dhke cue only prompts it.
  *
  * Runs over the shared real-object registry-root world. Copies are posted through each side's
  * real Poster to a capturing HTTP client; delivery to the recipient is done from the capture.
  */
 import { type Operation, run, spawn } from "effection";
-import { assertEquals, assertStringIncludes } from "jsr:@std/assert";
+import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import type { RootCopyResult } from "../../../../src/app/credentials/root-replicating.ts";
 import { replicateRegistryRoots, replicateRootCopies } from "../../../../src/app/credentials/root-replicating.ts";
-import {
-  MemoryRootLedger,
-  type OwedCopy,
-  RootReplicator,
-} from "../../../../src/app/credentials/root-replicator.ts";
+import { RootReplicator, RootSendsPerPass } from "../../../../src/app/credentials/root-replicator.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
 import { rootCopyLine } from "../../../../src/cli/messaging/root-copy-lines.ts";
@@ -49,9 +45,9 @@ function reachable(from: Side, to: Side): void {
   from.hby.db.ends.pin([to.hab.pre!, Roles.controller, to.hab.pre!], { allowed: true });
 }
 
-function replicator(side: Side, ledger = new MemoryRootLedger(), changes?: MemoryChangeSink) {
+function replicator(side: Side, changes?: MemoryChangeSink) {
   const { root, runtime } = side;
-  return new RootReplicator({ root, postman: runtime.postman, clock: runtime.clock, ledger, changes });
+  return new RootReplicator({ root, postman: runtime.postman, clock: runtime.clock, changes });
 }
 
 /** One processing pass while the side's Poster delivers. */
@@ -64,38 +60,54 @@ function* pass(side: Side, replicating: RootReplicator): Operation<RootCopyResul
   }
 }
 
-const coordinates = (owed: readonly OwedCopy[]) => owed.map(({ registry, recipient }) => [registry, recipient]);
+const recipients = (reports: readonly RootCopyResult[]) => reports.map(report => [report.recipient, report.kin]);
+const markers = (side: Side) => [...side.hby.db.rrsn.getTopItemIter()].map(([keys]) => keys.join("/"));
 
-Deno.test("root replicator: a Dhke cue owes the other members and a pass sends and settles it", async () => {
+Deno.test("root replicator: a Dhke cue prompts a pass that sends and records the copy once", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted);
     yield* seed(w);
     yield* storeGrant(w.alice, [w.credential]);
     reachable(w.alice, w.bob);
-    const ledger = new MemoryRootLedger(), changes = new MemoryChangeSink();
-    const replicating = replicator(w.alice, ledger, changes);
-    const cue = { gid: w.gid, registries: [w.registry] };
-    assertEquals(replicating.replicate(cue), 1);
-    assertEquals(replicating.replicate(cue), 0, "a duplicate cue does not double-owe");
-    assertEquals(coordinates(ledger.owed()), [[w.registry, w.bob.hab.pre]]);
-    assertEquals(ledger.owed()[0].rotation, null);
-    assertEquals(changes.changes, [{ kind: "group", id: w.gid }]);
+    const changes = new MemoryChangeSink(), replicating = replicator(w.alice, changes);
+    replicating.replicate({ gid: w.gid, registries: [w.registry] });
     const reports = yield* pass(w.alice, replicating);
-    assertEquals(reports.map(report => [report.recipient, report.kin]), [[w.bob.hab.pre, "sent"]]);
-    assertEquals(ledger.owed(), []);
+    assertEquals(recipients(reports), [[w.bob.hab.pre, "sent"]]);
     assertEquals(replicating.status().owed, []);
     assertEquals(posted.map(said), reports.map(report => report.exchange));
+    assertEquals(changes.changes.at(0), { kind: "group", id: w.gid });
     yield* receive(w.bob, posted[0]);
     assertEquals(held(w, w.bob)?.qb64, w.root.qb64);
     assertEquals(stored(w.bob), []);
-    // Nothing owed, nothing sent.
+    // Recorded: nothing owed, nothing sent.
+    assertEquals(markers(w.alice), [[w.gid, w.registry, w.bob.hab.pre].join("/")]);
     assertEquals(yield* pass(w.alice, replicating), []);
     assertEquals(posted.length, 1);
   });
 });
 
-Deno.test("root replicator: a group-issued registry's custodian replicates its root", async () => {
+Deno.test("root replicator: a crash after retention and before the send is recovered from state, and a second process sends nothing", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    yield* storeGrant(w.alice, [w.credential]);
+    reachable(w.alice, w.bob);
+    // The first process retained the root, cued, and died: no replicator, no cue deck survives.
+    replicator(w.alice).replicate({ gid: w.gid, registries: [w.registry] });
+    assertEquals(posted, []);
+    const restarted = replicator(w.alice);
+    assertEquals(recipients(yield* pass(w.alice, restarted)), [[w.bob.hab.pre, "sent"]]);
+    // A later process over the same stores finds the marker.
+    const another = replicator(w.alice);
+    assertEquals(yield* pass(w.alice, another), []);
+    assertEquals(another.status().owed, []);
+    assertEquals(posted.length, 1);
+  });
+});
+
+Deno.test("root replicator: a group-issued registry's custodian sends its root", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted);
@@ -103,93 +115,63 @@ Deno.test("root replicator: a group-issued registry's custodian replicates its r
     yield* storeGrant(w.alice, [issued.acdc]);
     reachable(w.alice, w.bob);
     const replicating = replicator(w.alice);
-    assertEquals(replicating.replicate({ gid: w.gid, registries: [issued.registry] }), 1);
     yield* pass(w.alice, replicating);
     yield* receive(w.bob, posted[0]);
     assertEquals(w.bob.hby.mgr.getRegistryRoot(w.gid, issued.registry)?.qb64, issued.root.qb64);
   });
 });
 
-Deno.test("root replicator: a deferred or undelivered copy stays owed and a later pass sends it", async () => {
+Deno.test("root replicator: a deferred or undelivered copy stays owed, backs off, and a later pass sends it", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted);
     yield* seed(w);
     const replicating = replicator(w.alice);
-    replicating.replicate({ gid: w.gid, registries: [w.registry] });
     // No hint evidence yet: reported, kept, nothing sent.
     const [deferred] = yield* pass(w.alice, replicating);
     assertEquals(deferred.kin, "deferred");
     const [owed] = replicating.status().owed;
-    assertEquals([owed.registry, owed.recipient], [w.registry, w.bob.hab.pre]);
+    assertEquals([owed.registry, owed.recipient, owed.attempts], [w.registry, w.bob.hab.pre, 1]);
     assertStringIncludes((owed.lastFailure as Error).message, "no held opening or stored Grant");
-    // Evidence arrives but Bob has no end role: the Poster fails, the row stays.
+    // Backoff: the very next pass does not retry it, a prompt does.
     yield* storeGrant(w.alice, [w.credential]);
+    assertEquals(yield* pass(w.alice, replicating), []);
+    replicating.prompt(w.gid);
     yield* pass(w.alice, replicating);
     assertStringIncludes((replicating.status().owed[0].lastFailure as Error).message, "No end roles");
     assertEquals(posted, []);
-    // Bob becomes reachable: the same row is sent and settled.
+    // Bob becomes reachable: the same copy is sent and recorded.
     reachable(w.alice, w.bob);
-    const [sent] = yield* pass(w.alice, replicating);
-    assertEquals(sent.kin, "sent");
+    replicating.prompt(w.gid);
+    assertEquals((yield* pass(w.alice, replicating)).map(report => report.kin), ["sent"]);
     assertEquals(replicating.status().owed, []);
     assertEquals(posted.length, 1);
   });
 });
 
-Deno.test("root replicator: a restarted replicator resumes the copies its ledger still owes", async () => {
+Deno.test("root replicator: overlapping passes and an explicit send do not double-send", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted);
     yield* seed(w);
     yield* storeGrant(w.alice, [w.credential]);
     reachable(w.alice, w.bob);
-    const ledger = new MemoryRootLedger();
-    // The first process owes the copy and dies before sending.
-    replicator(w.alice, ledger).replicate({ gid: w.gid, registries: [w.registry] });
-    assertEquals(posted, []);
-    const restarted = replicator(w.alice, ledger);
-    assertEquals(restarted.status().owed.map(copy => copy.recipient), [w.bob.hab.pre]);
-    yield* pass(w.alice, restarted);
+    const replicating = replicator(w.alice);
+    const delivering = yield* spawn(() => w.alice.runtime.postman.deliverDo());
+    try {
+      const first = yield* spawn(() => replicating.processOnce());
+      const second = yield* spawn(() => replicating.processOnce());
+      const explicit = yield* spawn(() => replicating.send(w.alice.group!, [w.registry], { timeoutMs: 30_000 }));
+      const all = [...yield* first, ...yield* second, ...yield* explicit];
+      assertEquals(all.map(report => report.kin), ["sent"]);
+    } finally {
+      yield* delivering.halt();
+    }
     assertEquals(posted.length, 1);
-    assertEquals(ledger.owed(), []);
   });
 });
 
-Deno.test("root replicator: a copy that can never be authorized is dropped, not retried", async () => {
-  await run(function*() {
-    const posted: Uint8Array[] = [];
-    const w = yield* posting(posted);
-    yield* seed(w);
-    yield* storeGrant(w.alice, [w.credential]);
-    const ledger = new MemoryRootLedger(), replicating = replicator(w.alice, ledger);
-    // The issuer is not a signing member of the holder group.
-    ledger.owe({ group: w.gid, registry: w.registry, recipient: w.issuer.hab.pre!, rotation: null });
-    const [report] = yield* pass(w.alice, replicating);
-    assertEquals(report.kin, "refused");
-    assertStringIncludes((report.error as Error).message, "not a current signing member");
-    assertEquals(ledger.owed(), []);
-    assertEquals(posted, []);
-  });
-});
-
-Deno.test("root replicator: a member holding no root owes nothing", async () => {
-  await run(function*() {
-    const posted: Uint8Array[] = [];
-    const w = yield* posting(posted, { newcomer: true });
-    yield* seed(w);
-    const ledger = new MemoryRootLedger();
-    // Bob holds no root, so neither the cue nor the rotation scan owes anything for him.
-    const replicating = replicator(w.bob, ledger);
-    assertEquals(replicating.replicate({ gid: w.gid, registries: [w.registry] }), 0);
-    const current = [w.alice, w.bob, w.outsider];
-    const rotation = yield* rotate(w, current, current, "2");
-    assertEquals(yield* pass(w.bob, replicating), []);
-    assertEquals([ledger.owed(), ledger.examined(w.gid, rotation)], [[], true]);
-  });
-});
-
-Deno.test("root replicator: the scan owes an accepted rotation once, to newcomers and rekeyed members", async () => {
+Deno.test("root replicator: a newcomer and a rekeyed member get a re-sealed copy after an accepted rotation, once", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted, { newcomer: true });
@@ -197,32 +179,71 @@ Deno.test("root replicator: the scan owes an accepted rotation once, to newcomer
     w.alice.rgy.store.retainOpening(w.event, w.opening);
     reachable(w.alice, w.bob);
     reachable(w.alice, w.outsider);
-    const ledger = new MemoryRootLedger(), replicating = replicator(w.alice, ledger);
-    replicating.scan();
-    assertEquals(ledger.owed(), [], "an inception owes nothing");
+    const replicating = replicator(w.alice);
+    assertEquals(recipients(yield* pass(w.alice, replicating)), [[w.bob.hab.pre, "sent"]]);
     const current = [w.alice, w.bob, w.outsider];
-    const rotation = yield* rotate(w, current, current, "2");
-    replicating.scan();
-    assertEquals(coordinates(ledger.owed()), [[w.registry, w.bob.hab.pre], [w.registry, w.outsider.hab.pre]]);
-    assertEquals(ledger.owed().map(copy => copy.rotation), [rotation, rotation]);
-    assertEquals(ledger.examined(w.gid, rotation), true);
-    // A restarted replicator over the same ledger does not examine it again.
-    replicator(w.alice, ledger).scan();
-    assertEquals(ledger.owed().length, 2);
+    yield* rotate(w, current, current, "2");
     const reports = yield* pass(w.alice, replicating);
+    assertEquals(
+      new Set(recipients(reports).map(([aid]) => aid)),
+      new Set([w.bob.hab.pre, w.outsider.hab.pre]),
+      "the rekeyed member and the newcomer",
+    );
     assertEquals(reports.map(report => report.kin), ["sent", "sent"]);
-    assertEquals(ledger.owed(), []);
-    // Settled copies are not re-owed by a later pass.
+    // A restarted replicator, and further passes, owe nothing more.
+    assertEquals(yield* pass(w.alice, replicator(w.alice)), []);
     assertEquals(yield* pass(w.alice, replicating), []);
-    for (const [index, wire] of posted.entries()) {
-      yield* receive(w.sides.find(side => side.hab.pre === reports[index].recipient)!, wire);
+    for (const wire of posted.slice(1)) {
+      const to = reports.find(report => report.exchange === said(wire))!.recipient;
+      yield* receive(w.sides.find(side => side.hab.pre === to)!, wire);
     }
     assertEquals(new Set(current.map(side => held(w, side)?.qb64)), new Set([w.root.qb64]));
-    assertEquals([stored(w.bob), stored(w.outsider)], [[], []]);
-    // The newcomer held no prior key, so it re-seals nothing.
+    // Every root holder sends: the newcomer now holds the root but has no hint evidence, so its copies stay owed.
     const newcomer = replicator(w.outsider);
-    assertEquals(yield* pass(w.outsider, newcomer), []);
-    assertEquals(newcomer.status(), { owed: [], examinations: [] });
+    assertEquals((yield* pass(w.outsider, newcomer)).map(report => report.kin), ["deferred", "deferred"]);
+    assertEquals(newcomer.status().owed.map(copy => copy.attempts), [1, 1]);
+  });
+});
+
+Deno.test("root replicator: an existing store with an old rotation sends one copy per member once, a few per pass", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted, { newcomer: true });
+    yield* seed(w);
+    w.alice.rgy.store.retainOpening(w.event, w.opening);
+    reachable(w.alice, w.bob);
+    reachable(w.alice, w.outsider);
+    const current = [w.alice, w.bob, w.outsider];
+    yield* rotate(w, current, current, "2");
+    // No marker exists, as in a store from before the table: every other member is sent a copy once.
+    const replicating = replicator(w.alice);
+    const reports = yield* pass(w.alice, replicating);
+    assertEquals(reports.length, 2);
+    assert(reports.length <= RootSendsPerPass);
+    assertEquals(yield* pass(w.alice, replicating), []);
+    assertEquals(posted.length, 2);
+  });
+});
+
+Deno.test("root replicator: markers of a departed group or recipient are pruned, and hold only identifiers and a public key", async () => {
+  await run(function*() {
+    const posted: Uint8Array[] = [];
+    const w = yield* posting(posted);
+    yield* seed(w);
+    yield* storeGrant(w.alice, [w.credential]);
+    reachable(w.alice, w.bob);
+    const rrsn = w.alice.hby.db.rrsn, stray = { key: "Dstray", dt: "2026-01-01T00:00:00.000000+00:00" };
+    rrsn.pin([w.issuer.hab.pre!, w.registry, w.bob.hab.pre!], stray);
+    rrsn.pin([w.gid, w.registry, w.issuer.hab.pre!], stray);
+    yield* pass(w.alice, replicator(w.alice));
+    assertEquals(markers(w.alice), [[w.gid, w.registry, w.bob.hab.pre].join("/")]);
+    const raw = new TextDecoder().decode(
+      rrsn.db.getVal(rrsn.sdb, new TextEncoder().encode([w.gid, w.registry, w.bob.hab.pre].join(".")))!,
+    );
+    const record = JSON.parse(raw);
+    assertEquals(Object.keys(record).sort(), ["dt", "key"]);
+    assertEquals(record.key, w.alice.root.contributor(w.gid, w.bob.hab.pre!));
+    assert(!raw.includes(w.root.qb64) && !raw.includes(w.root.qb64.slice(1)), "no root in the marker");
   });
 });
 

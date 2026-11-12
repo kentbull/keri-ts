@@ -591,6 +591,21 @@ concurrent send/receive work corresponding to KERIpy receiptDo/msgDo. Verified
 persisted receipts and protocol decisions establish acceptance; local drain or
 HTTP status cannot substitute for them.
 
+### Root copy replication
+
+`RootReplicator` derives owed `/registry/root` copies from state, never from a queue: for each local group,
+each registry whose root this member holds, and each other current signing member, a copy is owed unless the
+Baser sub-database `rrsn.` holds a marker for (group, registry, recipient) whose key is the public key the
+recipient now contributes to the group. A new member has no marker and a rekeyed member's marker holds its
+old key, so both are owed after an accepted rotation. The marker (`key`, `dt`; coordinates and a public key,
+never a root) is written when the Poster reports a copy sent, so a crash before the write costs one harmless
+resend. A pass derives a group's copies on the replicator's first pass, when its latest establishment
+changes, and when the Dhke completion cue prompts it (a wake-up, not the source of truth); at most
+`RootSendsPerPass` copies are attempted per pass, a copy that cannot be prepared or delivered backs off in
+process memory, and `status()` reports it. Overlapping `processOnce` calls skip a copy already in flight.
+Because every root holder sends, the worst case on an existing store (which has no markers) is N x (N - 1)
+copies per registry, once, and once more per rekey. `rrsn.` is keri-ts only and unknown to KERIpy.
+
 ## Replay and database lifetime
 
 AgentRuntime borrows its Habery and injected stores. Default v2 Regery/RegBaser,

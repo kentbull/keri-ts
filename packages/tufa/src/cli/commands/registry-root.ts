@@ -41,7 +41,6 @@ import {
   type Habery,
   isLocalGroupHab,
   localGroupMember,
-  MemoryRootLedger,
   Organizer,
   type RegistryDisclosure,
   type RegistryRoot,
@@ -260,17 +259,10 @@ export function* sendRootCopies(
     root,
     postman: runtime.postman,
     clock: runtime.clock,
-    ledger: new MemoryRootLedger(),
   });
-  const sender = localGroupMember(root.hby, ghab.pre).pre;
-  replicating.owe(
-    ghab.pre,
-    registries,
-    options.recipients ?? root.members(ghab.pre).filter(aid => aid !== sender),
-  );
   return yield* scoped(function*() {
     yield* spawn(() => runtime.postman.deliverDo());
-    return (yield* replicating.processOnce({ timeoutMs: options.timeoutMs, scan: false })).map(rootCopyLine);
+    return (yield* replicating.send(ghab, registries, options)).map(rootCopyLine);
   });
 }
 
