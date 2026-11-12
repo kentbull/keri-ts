@@ -12,8 +12,8 @@ explicit profile limits; they do not resume the completed cleanup sequence.
 - [KERIpy compatibility ports](compatibility/KERIPY_COMPATIBILITY_PORTS.md): proposed
   1.x/2.x target assessment and ports tied to the maintained v1/v2 compatibility inventory.
 - [2.0.0 release completion](V2_RELEASE_COMPLETION_PLAN.md): completed implementation,
-  organization and unpublished qualification. V2 registry/wallet completion
-  and publication remain separately deferred.
+  organization and preparation for the published 2.0.0. Remaining v2 registry
+  qualification is in the [v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md).
 
 Completed runtime execution plans and the historical declaration-coverage ledger
 are removed. Keep current behavior in design documents and decisions in ADRs;

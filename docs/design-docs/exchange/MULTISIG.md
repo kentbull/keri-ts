@@ -128,4 +128,4 @@ business signing and mutation. Normal store loading still occurs.
 
 Revocation and IPEX completion remain implementation work. Selected VCP/ISS
 checks do not replace the final interoperability matrix.
-V2 ACDC registry authoring remains in its deferred roadmap.
+Remaining V2 ACDC registry qualification is tracked in its roadmap.

@@ -1,9 +1,10 @@
 # Complete implementation and qualification for 2.0.0
 
-Status: **complete, excluding publication**, 2026-10-21.
-Prepared **cesr-ts 2.0.0, keri-ts 2.0.0 and @keri-ts/tufa 2.0.0**.
-Publication remains deferred until the separate v2 ACDC registry work is
-complete and affected qualification is repeated. Do not publish under this goal.
+Status: **complete**. Implementation and preparation finished 2026-10-21.
+2.0.0 was published on 2026-11-07, with 2.0.1 following on 2026-11-09. The
+[2.0.0 release notes](../versioning/2.0.0-release-notes.md) own what shipped,
+including the ACDC v2 registry, IPEX and service-package work completed after
+this plan, and the post-publication qualification posture.
 
 The [final qualification report](../reports/parity/V2_PREPARATION_2026-10-21.md)
 owns source/artifact identities, executed checks, known limits and significant
@@ -98,28 +99,18 @@ ideas. Native local LMDB tests use Docker named volumes, not host/bind-mounted s
 Future repairs require relevant retesting; changed/rebuilt artifacts need identical
 hashes or independent qualification. No hosted extended-job dispatch is authorized.
 
-## Deferred work and later publication
+## Deferred work
 
-All remaining v2 rip/bup/upd-dependent authoring, CLI/wallet/disclosure,
-presentation and N1–N3 lifecycle work belongs to the
-[v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md). Keep retained
-partial APIs/regressions honest; they do not establish a complete v2 lifecycle.
-Independent KERI/CESR v2 remains supported. Pinned Python CLI URL/framing/protected-
-source limits are separately [documented](../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md).
+2.0.0 shipped the v2 registry, IPEX and wallet work through `--acdc-v2` after
+this plan's preparation. The release notes record that the full battery runs after
+publication and that a regression it finds ships as a 2.0.x patch. Reciprocal peer
+qualification (N1–N3) and the `upd` assessment remain with the
+[v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md). Independent
+KERI/CESR v2 remains supported. Pinned Python CLI URL/framing/protected-source
+limits are separately [documented](../reports/interop/KERIPY_MULTISIG_VCP_GENUS.md).
 
-Also deferred: generic retries, durable outboxes, delivery acknowledgements,
-generic database providers, broad Python porting and direct legacy ESSR LMDB
-interchange. Ordinary protocol escrows/recovery and legacy wire support remain.
-
-After the side-chat work is complete and publication is separately authorized:
-
-1. Reconcile its code, notes and breaking guide into the still-unpublished 2.0.0
-   preparation. Recheck registry state; do not mechanically bump to 3.0.0 before
-   2.0.0 has shipped. Preserve 1.0.0 packages/tags/releases/assets.
-2. Repeat affected clean-source, actual-peer and installed-artifact qualification.
-   Prior evidence is scoped to its recorded source/bytes, not moving master.
-3. Publish CESR → KERI → Tufa from one qualified source, compare workflow/npm/GitHub
-   artifact identities, and verify dependencies, dist-tags, release notes and assets.
-4. Run registry-only installed runtime/CLI/declaration checks. Publication and these
-   post-publication checks were excluded here. Do not ungate #527, push release
-   tags, publish/unpublish npm packages or create GitHub releases under this goal.
+Also deferred from 2.0.0: generic retries, durable outboxes, delivery
+acknowledgements, generic database providers, broad Python porting and direct
+legacy ESSR LMDB interchange. Ordinary protocol escrows/recovery and legacy wire
+support remain. The pluggable store contract of ADR-0015 has since landed on
+master for the next release.
