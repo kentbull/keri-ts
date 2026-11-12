@@ -29,8 +29,7 @@ standalone owners may use Hab Revery. Selection is not approval. Runtime teardow
 clears process-local approvals/retries and best-effort zeros pending DH scalars;
 commands still abandon their scoped XID and join workers before closing stores.
 `runtime.ipex` (`IpexAuxiliaries`) is the one owner registry and dispatch path: the
-single `ipexAuxiliary` selection is its first entry, and `ipexOwners:
-"per-identifier"` lets a wallet obtain `dhke(hab)` / `unblind(hab, states)` per
+single `ipexAuxiliary` selection is its first entry, and `ipexOwners: "per-identifier"` lets a wallet obtain `dhke(hab)` / `unblind(hab, states)` per
 identifier after the runtime, even its loop, exists. KRAM stays required because
 owners rely on its receiver-time message cache and accumulated sender signatures.
 `/ipex/*` messages carry no recipient: the key is sender plus transaction id
