@@ -2,9 +2,9 @@ import { Organizer } from "../identity/organizing.ts";
 /**
  * Multisig proposal and approval workflows.
  *
- * CLI orchestration owns timed waits, worker lifetimes, prompts and output.
  * This module publishes proposals and approves stored KEL/RPY/VDR proposals
- * without starting or driving background workers.
+ * without starting or driving background workers. `approveGroupProposal` is the
+ * only caller that approves; it never asks, because calling it is the consent.
  */
 import {
   attachmentPayload,
@@ -33,7 +33,6 @@ import {
 } from "../../acdc/regeventing.ts";
 import { publicOpeningAttachment } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { RegistryRecord } from "../../core/records.ts";
@@ -98,7 +97,6 @@ import {
   type GroupDelivery,
   type GroupSendResult,
   groupSendResult,
-  multisigPayloadSaid,
   prepareGroupMessage,
   remoteGroupMembers,
   signGroupMessage,
@@ -282,18 +280,6 @@ export interface ApprovalResult extends GroupSendResult {
   accepted: boolean;
 }
 
-export interface ApprovalPromptContext {
-  route: string;
-  group: string;
-  embedded: string;
-}
-
-export interface MultisigApprovalCallbacks {
-  approveProposal(context: ApprovalPromptContext): boolean;
-  chooseGroupAlias(groupPre: string): string;
-  chooseRegistryName(regk: string): string;
-}
-
 /** Collaborators KEL and reply approval need; an `AgentRuntime` fits, and no host is required to have one. */
 export interface ApprovalChannels {
   readonly exc: Exchanger;
@@ -302,17 +288,14 @@ export interface ApprovalChannels {
   readonly postman: Poster;
 }
 
+/** Choices an approval needs; the caller's explicit call is the consent, so nothing here asks. */
 export interface MultisigApprovalOptions {
   /** Reuse this member's recorded event signatures instead of signing again. */
   resume?: boolean;
-  group?: string;
-  said?: string;
-  callbacks: MultisigApprovalCallbacks;
-}
-
-interface NoticeLike {
-  rid: string;
-  attrs: { r?: unknown; d?: unknown };
+  /** Local alias for a group not joined yet. */
+  groupAlias?: string;
+  /** Local name for a registry (`vcp`) proposal. */
+  registryName?: string;
 }
 
 /**
@@ -422,102 +405,6 @@ export function routeForKelEvent(serder: SerderKERI): MultisigKelRoute | null {
   }
 }
 
-/**
- * Select accepted coordination evidence before any approval effects.
- * An explicit SAID names the outer EXN and survives notification consumption.
- * Notices discover candidates; their attributes do not authorize a route or group.
- * An explicit accepted wrapper missing its handler index is replayed by the caller.
- */
-function* pendingMultisigProposals(
-  hby: Habery,
-  runtime: AgentRuntime,
-  notices: readonly NoticeLike[],
-  options: MultisigApprovalOptions,
-): Operation<{ exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[]> {
-  const candidates = options.said ? [options.said] : notices.map(note => note.attrs.d);
-  const group = options.group && (hby.habByName(options.group)?.pre ?? options.group);
-  const selected: { exn: SerderKERI; route: MultisigProposalRoute; indexed: boolean }[] = [];
-  for (const said of new Set(candidates)) {
-    if (typeof said !== "string") continue;
-    const exn = hby.db.exns.get([said]);
-    if (!exn?.ked) continue;
-    const route = exn.route ?? "";
-    if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && !isV2RegistryRoute(route)) {
-      continue;
-    }
-    const payloadSaid = multisigPayloadSaid(exn);
-    if (!payloadSaid) continue;
-    const indexed = hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said);
-    if (!indexed && !options.said) continue;
-    const proposalGroup = isKelRoute(route)
-      ? kelApproval(exn, route, yield* kelChild(hby, runtime, exn, route))?.group
-      : stringField(payloadSection(exn.ked), "gid");
-    if (!proposalGroup) continue;
-    if (group && group !== proposalGroup) {
-      if (options.said) {
-        throw new ValidationError(`Multisig exchange ${said} belongs to group ${proposalGroup}, not ${group}.`);
-      }
-      continue;
-    }
-    selected.push({ exn, route, indexed });
-  }
-  return selected;
-}
-
-/** Approve matching stored evidence; host progress and deadlines belong to the caller. */
-export function* approvePendingMultisigProposal(
-  hby: Habery,
-  runtime: AgentRuntime,
-  options: MultisigApprovalOptions,
-): Operation<ApprovalResult | null> {
-  const notifier = runtime.notifier;
-  if (!notifier && !options.said) {
-    throw new ValidationError("Multisig join requires notification storage or an explicit exchange SAID.");
-  }
-  const notices = (notifier?.list(0, 100) ?? []) as NoticeLike[];
-  for (const { exn, route, indexed } of yield* pendingMultisigProposals(hby, runtime, notices, options)) {
-    if (!indexed) {
-      // Acceptance commits before the asynchronous handler. Resume that ordinary
-      // authenticated intake after interruption; never synthesize approval indexes.
-      const message = yield* abortable(signal => collectBytes(runtime.exc.replay(exn.said!, signal)));
-      yield* runtime.reactor.processBytes(message, { local: true });
-      const payloadSaid = multisigPayloadSaid(exn)!;
-      if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === exn.said)) continue;
-    }
-    const rgy = isVdrRoute(route) ? runtime.vdr : null;
-    let result: ApprovalResult | null;
-    if (isKelRoute(route)) {
-      result = yield* approveKelProposal(hby, runtime, exn, route, options);
-    } else if (isVdrRoute(route)) {
-      result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
-    } else if (isV2RegistryRoute(route)) {
-      result = yield* approveRegistryV2Proposal(
-        hby,
-        {
-          exc: runtime.exc,
-          reactor: runtime.reactor,
-          protocol: runtime.protocol,
-          postman: runtime.postman,
-          registryStore: runtime.acdc?.store ?? null,
-        },
-        exn,
-        route,
-        options,
-      );
-      if (!result) continue;
-    } else {
-      result = yield* approveRpyProposal(hby, runtime, exn, route, options);
-    }
-    if (result) {
-      for (const note of notices) {
-        if (note.attrs.d === exn.said) notifier?.remove(note.rid);
-      }
-      return result;
-    }
-  }
-  return null;
-}
-
 /** Collaborators the ACDC v2 registry approval adds to the shared channels. */
 export interface RegistryChannels extends ApprovalChannels {
   readonly registryStore: RegistryStore | null;
@@ -525,8 +412,7 @@ export interface RegistryChannels extends ApprovalChannels {
 
 /**
  * Approve and publish this member's contribution to one `rip` or `bup` proposal.
- * Null when the proposal is not a well-formed one for a joined group or consent
- * is declined; the proposal then stays inert.
+ * Null when the proposal is not a well-formed one for a joined group; it then stays inert.
  */
 export function* approveRegistryV2Proposal(
   hby: Habery,
@@ -541,7 +427,6 @@ export function* approveRegistryV2Proposal(
   if (!proposal || !group) return null;
   const head = group.kever?.serder.said;
   if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
-  if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) return null;
   if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.registryStore)) {
     throw new ValidationError("Group or registry changed while approval was pending.");
   }
@@ -568,7 +453,7 @@ export function* approveRegistryV2Proposal(
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param exn Stored multisig exchange wrapper.
  * @param route Selected multisig route identifying the proposal kind.
- * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @param options Alias and name choices plus `resume`; a proposal that is not well formed is left inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
 export function* approveRpyProposal(
@@ -594,9 +479,6 @@ export function* approveRpyProposal(
   const { event: rpySerder, attachment, genus } = child;
   const embeddedSaid = rpySerder.said ?? "";
   const prior = storedGroupMessage(hby.db, member.pre, exn);
-  if (!prior && !options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
-    return null;
-  }
 
   yield* runtime.reactor.processBytes(
     concatBytes(Counter.makeGVC(genus), rpySerder.raw, attachment),
@@ -639,7 +521,7 @@ export function* approveRpyProposal(
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param exn Stored multisig exchange wrapper.
  * @param route Selected multisig route identifying the proposal kind.
- * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @param options Alias and name choices plus `resume`; a proposal that is not well formed is left inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
 export function* approveKelProposal(
@@ -691,17 +573,15 @@ export function* approveKelProposal(
     // Signing writes the member's signatures to `sigs.` when the event is first
     // processed, before any wrapper exists. A resuming caller (explicit consent
     // already given) finds them and reuses them: no second signature and no
-    // second join. The prompting path ignores them, as it always has.
+    // second join.
     const signed = options.resume ? recordedLocalSignatures(hby, serder, groupPre, smids) : null;
     if (signed) {
       localMessage = messagize(serder, { sigers: signed, pipelined: false, gvrsn: approval.genus });
     } else {
-      if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
-        return null;
-      }
       if (proposal.route === MULTISIG_ICP_ROUTE || (proposal.route === MULTISIG_ROT_ROUTE && !hby.habs.has(groupPre))) {
         const rmids = proposal.attrs.rmids;
-        const alias = options.callbacks.chooseGroupAlias(groupPre);
+        const alias = options.groupAlias;
+        if (!alias) throw new ValidationError(`A group alias is required to join ${groupPre}.`);
         hby.joinGroupHab(groupPre, alias, member, smids, rmids.length > 0 ? rmids : smids);
       }
       const keys = groupEventKeys(hby, groupPre, serder);
@@ -749,7 +629,7 @@ export function* approveKelProposal(
  * @param runtime Borrowed composed runtime; caller owns its worker and store lifetime.
  * @param exn Stored multisig exchange wrapper.
  * @param route Selected multisig route identifying the proposal kind.
- * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
+ * @param options Alias and name choices plus `resume`; a proposal that is not well formed is left inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
 export function* approveVdrProposal(
@@ -810,16 +690,14 @@ export function* approveVdrProposal(
   }
   const prior = storedGroupMessage(hby.db, member.pre, exn);
   if (!prior && !groupCredentialAnchorReady(hby, groupPre, anchorSerder)) return null;
-  if (!prior && !options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid || "<unknown>" })) {
-    return null;
-  }
 
-  // Declined or malformed proposals remain inert; require VDR before signing or intake.
+  // Malformed proposals remain inert; require VDR before signing or intake.
   if (!rgy) throw new ValidationError("Legacy credential registry is unavailable in this runtime.");
 
   let registryName: string | undefined;
   if (proposal.route === MULTISIG_VCP_ROUTE && !prior) {
-    registryName = options.callbacks.chooseRegistryName(embeddedSerder.pre!);
+    registryName = options.registryName;
+    if (!registryName) throw new ValidationError(`A registry name is required for ${embeddedSerder.pre}.`);
     validateRegistryName(rgy.reger, registryName, embeddedSerder.pre!);
   }
   const smids = groupSigningMembers(hby, groupPre);
