@@ -122,7 +122,11 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
       const other = right.makeGroupHab("other", bob, mids, mids, undefined, GROUP);
       const incept = signGroupMessage(bob, alice.pre, yield* multisigInceptExn(bob, mids, mids, other.message));
       yield* receive(s, incept.message);
-      found.set("icp", { embedded: other.serder.said!, said: incept.exnSaid });
+      found.set("icp", {
+        embedded: other.serder.said!,
+        said: incept.exnSaid,
+        event: { pre: other.hab.pre, sn: 0, said: other.serder.said },
+      });
 
       // vcp, iss and rev around three anchors of the joined group
       const registry = inceptRegistry(group, { cnfg: ["NB"] });
@@ -203,7 +207,6 @@ Deno.test("listGroupProposals reads every proposal kind the multisig routes carr
         assertEquals(proposal.needs, { groupAlias: proposal.kind === "icp", registryName: proposal.kind === "vcp" });
         assertEquals(findGroupProposal(readDeps(s), proposal.said), proposal);
       }
-      assertEquals(listed.find(p => p.kind === "icp")?.event?.sn, 0);
       assertEquals(listed.find(p => p.kind === "rot")?.rmids, mids);
       assertEquals(listGroupProposals(readDeps(s), { group: "group" }).length, listed.length - 1);
       assertEquals(listGroupProposals({ ...readDeps(s), notifier: null }), []);
