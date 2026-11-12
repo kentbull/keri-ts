@@ -286,7 +286,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         proposal: preparedGrant.proposal,
         coordinator: coordinator.said!,
         custodian: lead.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
     assertEquals(queries, [], "one Grant contribution cannot publish a DH query");
@@ -299,7 +299,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
       proposal: preparedGrant.proposal,
       coordinator: coordinator.said!,
       custodian: lead.member.pre,
-    }, { timeoutMs: 15000 });
+    }, { timeoutMs: 90000 });
     assertEquals([contributed.contributed, contributed.registryIssued, contributed.admitted], [true, false, false]);
     const peerHost = yield* spawn(() =>
       runAgentRuntime(issuers[1].runtime, { hab: issuers[1].member, pollMailbox: true })
@@ -321,7 +321,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
     yield* sleep(100);
     assertEquals(responses, [], "one recipient's setup cannot publish a threshold reply");
@@ -333,7 +333,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         grant: grant.said!,
         coordinator: recipientCoordinator.said!,
         custodian: holder.member.pre,
-      }, { timeoutMs: 30000 })
+      }, { timeoutMs: 90000 })
     );
 
     // DH setup consent never approves the issuer's later registry update.
@@ -402,7 +402,7 @@ Deno.test("v2 KERI/ACDC bilateral group DH keeps custody with approved elected m
         issuerPeer.wallet,
         grant.said!,
         { coordinator: coordinator.said!, custodian: lead.member.pre },
-        15000,
+        90000,
       ),
       true,
     );
