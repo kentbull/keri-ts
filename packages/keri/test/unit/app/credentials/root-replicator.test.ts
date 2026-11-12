@@ -198,10 +198,10 @@ Deno.test("root replicator: a newcomer and a rekeyed member get a re-sealed copy
       yield* receive(w.sides.find(side => side.hab.pre === to)!, wire);
     }
     assertEquals(new Set(current.map(side => held(w, side)?.qb64)), new Set([w.root.qb64]));
-    // The newcomer held no root, so it owes nothing.
+    // Every root holder sends: the newcomer now holds the root but has no hint evidence, so its copies stay owed.
     const newcomer = replicator(w.outsider);
-    assertEquals(yield* pass(w.outsider, newcomer), []);
-    assertEquals(newcomer.status(), { owed: [] });
+    assertEquals((yield* pass(w.outsider, newcomer)).map(report => report.kin), ["deferred", "deferred"]);
+    assertEquals(newcomer.status().owed.map(copy => copy.attempts), [1, 1]);
   });
 });
 
