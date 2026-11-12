@@ -20,6 +20,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/delivery/replay-source.test.ts",
       "test/unit/app/delivery/reply-streams.test.ts",
       "test/unit/app/witness/witness-transport.test.ts",
+      "test/unit/app/identity/event-completion.test.ts",
       "test/unit/app/transport/httping.test.ts",
       "test/unit/app/transport/http-client.test.ts",
       "test/unit/interop/keripy-runtime.test.ts",

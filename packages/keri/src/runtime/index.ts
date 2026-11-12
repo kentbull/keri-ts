@@ -190,6 +190,21 @@ export {
   proposeGroupEndpointRole,
 } from "../app/identity/endpoint-roleing.ts";
 export {
+  beginDelegation,
+  completeEvent,
+  type CompleteEventOptions,
+  DELEGATION_WAIT_TIMEOUT_MS,
+  type DelegationCollaborator,
+  type DelegationOptions,
+  delegationStatus,
+  type EventCompletion,
+  type EventCompletionDeps,
+  receiptEvent,
+  type ReceiptingDeps,
+  type ReceiptOptions,
+  waitForDelegation,
+} from "../app/identity/event-completion.ts";
+export {
   acceptedEventReplayMessage,
   type GroupHabCreation,
   type GroupHabInteraction,
