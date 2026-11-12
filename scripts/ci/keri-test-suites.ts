@@ -257,6 +257,7 @@ export const suites: Record<string, TestSuite> = {
     // Browser store adapter over fake-indexeddb; never opens LMDB.
     files: [
       "test/unit/db/core/indexeddb-persistence.test.ts",
+      "test/unit/db/indexeddb-opener.test.ts",
     ],
   },
   "interop-keystore-parity": {

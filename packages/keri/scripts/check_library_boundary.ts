@@ -48,6 +48,7 @@ const EXPECTED_EXPORT_KEYS = [
   "./runtime/node",
   "./db",
   "./db/lmdb",
+  "./db/indexeddb",
 ];
 
 interface SurfaceCheck {
@@ -91,6 +92,12 @@ const SURFACES: SurfaceCheck[] = [
   {
     label: "keri-ts db surface",
     entrypoint: new URL("../db.ts", import.meta.url),
+    forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
+    forbidDenoGlobal: true,
+  },
+  {
+    label: "keri-ts db/indexeddb surface",
+    entrypoint: new URL("../db-indexeddb.ts", import.meta.url),
     forbidden: [...APP_FORBIDDEN, ...HOST_FORBIDDEN],
     forbidDenoGlobal: true,
   },

@@ -54,6 +54,8 @@ commit is final. `versionchange` closes the connection and the adapter then refu
 database would break prefix durability. A blocked `deleteDatabase` stays pending in the
 browser, so `clear` rejects rather than hanging. `fake-indexeddb` honors all of this, but
 real-engine behavior (durability hints, eviction, blocked ordering) is only checked in PR 14.
+It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
+`keri-ts/db`, whose Node consumers must not type-check DOM types.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
