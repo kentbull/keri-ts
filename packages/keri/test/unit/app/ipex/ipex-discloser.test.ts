@@ -31,7 +31,7 @@ Deno.test("IpexDiscloser frames public KEL support and a signed exchange wire fr
         hab.kever!.serder.said,
       ]);
 
-      const exn = ipexExnBody(hab.pre, "/ipex/apply", [], { message: "", recipient: hab.pre });
+      const exn = ipexExnBody(hab.pre, "/ipex/apply", [], { message: "", recipient: hab.pre, plan: [] });
       const [frame] = parseBytes(exchangeWire(hab, exn));
       assertEquals(frame.body.said, exn.said);
       assert(frame.attachments.length > 0);
@@ -57,7 +57,11 @@ Deno.test("IpexDiscloser refuses foreign owners and unselectable fresh issuance"
       const discloser = new IpexDiscloser(hby, registry, exc, receiptorFor(hby));
       let refusal: unknown;
       try {
-        yield* discloser.prepareIssuanceGrantBody("Eunknown", {} as never, { message: "", recipient: hab.pre });
+        yield* discloser.prepareIssuanceGrantBody("Eunknown", {} as never, {
+          message: "",
+          recipient: hab.pre,
+          plan: [],
+        });
       } catch (error) {
         refusal = error;
       }
@@ -70,7 +74,7 @@ Deno.test("IpexDiscloser refuses foreign owners and unselectable fresh issuance"
           hby,
           receiptorFor(other),
           hab,
-          ipexExnBody(hab.pre, "/ipex/apply", [], { message: "", recipient: hab.pre }),
+          ipexExnBody(hab.pre, "/ipex/apply", [], { message: "", recipient: hab.pre, plan: [] }),
         );
       } catch (error) {
         foreign = error;
