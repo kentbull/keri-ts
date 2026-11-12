@@ -351,6 +351,7 @@ export {
   Counselor,
   type CounselStage,
   DEFAULT_FALLBACK_AFTER_MS,
+  type GroupDelegation,
   type GroupEventRef,
   type GroupEventStatus,
   type GroupEventWait,
