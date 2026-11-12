@@ -10,10 +10,14 @@ import { concatBytes, type Versionage, Vrsn_1_0, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run, sleep, spawn } from "npm:effection@^3.6.0";
 import { Poster } from "../../src/app/delivery/forwarding.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery, openHabery } from "../../src/app/identity/habbing.ts";
+import {
+  collectMailboxAdminSubmission,
+  postMailboxAdminCesr,
+  postMailboxAdminMultipart,
+} from "../../src/app/mailbox/mailbox-admin.ts";
 import { MailboxDirector } from "../../src/app/mailbox/mailbox-director.ts";
 import { MailboxPoller } from "../../src/app/mailbox/mailbox-poller.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
-import { buildCesrStreamRequest } from "../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../src/app/transport/http-client.ts";
 import { HTTPMessenger } from "../../src/app/transport/http-messenger.ts";
 import { HTTPStreamMessenger } from "../../src/app/transport/http-stream-messenger.ts";
@@ -119,12 +123,12 @@ function inception(s: Session, hab: Hab): Uint8Array {
 }
 
 /** Deliver one signed message A -> B through `Poster` on `topic`; resolves to the delivery outcome. */
-function* post(s: Session, topic: string, msg: Uint8Array): Operation<Outcome> {
+function* post(s: Session, topic: string, msg: Uint8Array, dest = s.recipient.pre): Operation<Outcome> {
   const poster = new Poster(s.hby, null, null, http, systemClock);
   const worker = yield* spawn(() => poster.deliverDo());
   try {
     const outcome = yield* poster.wait(
-      poster.send({ src: s.sender.pre, dest: s.recipient.pre, topic, msg }, { notify: true }),
+      poster.send({ src: s.sender.pre, dest, topic, msg }, { notify: true }),
     );
     return outcome.kin === "sent" ? { ok: true, observed: "posted" } : failure(outcome.error);
   } finally {
@@ -134,13 +138,18 @@ function* post(s: Session, topic: string, msg: Uint8Array): Operation<Outcome> {
 }
 
 /** Poll the recipient's mailbox with the real `MailboxPoller` until `topic` yields a message or `ms` pass. */
-function* poll(s: Session, topic: string, ms = 20_000): Operation<{ messages: number; cursor: number | undefined }> {
+function* poll(
+  s: Session,
+  topic: string,
+  recipient = s.recipient.pre,
+  ms = 20_000,
+): Operation<{ messages: number; cursor: number | undefined }> {
   const director = new MailboxDirector(s.hby, { topics: [topic] });
   const poller = new MailboxPoller(s.hby, director, http, systemClock);
   let messages = 0;
   const worker = yield* spawn(() =>
     poller.pollDo(function*(batch) {
-      if (batch.pre === s.recipient.pre) messages += batch.messages.length;
+      if (batch.pre === recipient) messages += batch.messages.length;
     })
   );
   try {
@@ -148,7 +157,7 @@ function* poll(s: Session, topic: string, ms = 20_000): Operation<{ messages: nu
   } finally {
     yield* worker.halt();
   }
-  return { messages, cursor: s.hby.db.tops.get([s.recipient.pre, s.server.pre])?.topics[topic] };
+  return { messages, cursor: s.hby.db.tops.get([recipient, s.server.pre])?.topics[topic] };
 }
 
 /** A signed message whose mailbox topic is `topic`; the content only has to be genuine and verifiable. */
@@ -160,24 +169,38 @@ function message(s: Session, topic: string): Uint8Array {
   return a.endorse(exchange(route, {}, { sender: a.pre, pvrsn: a.kelVersion })[0], { pipelined: false });
 }
 
-/** Mailbox admin posting: the CESR-body form and the multipart form (`tufa mailbox add`). */
+/** Mailbox administration through the library's two request builders: CESR body, or multipart form. */
 function* admin(s: Session, hab: Hab, form: "cesr" | "multipart"): Operation<Outcome> {
-  const kel = concatBytes(...s.hby.db.clonePreIter(hab.pre, 0, hab.kelVersion));
+  const submission = collectMailboxAdminSubmission(s.hby, hab.pre);
   const rpy = hab.makeEndRole(s.server.pre, Roles.mailbox, true);
-  let init: { method: string; headers: HeadersInit; body: ArrayBuffer };
-  if (form === "cesr") {
-    const request = buildCesrStreamRequest(concatBytes(kel, rpy), { destination: s.server.pre });
-    init = { method: "POST", headers: request.headers, body: request.body };
-  } else {
-    const data = new FormData();
-    data.append("kel", text.decode(kel));
-    data.append("rpy", text.decode(rpy));
-    const prepared = new Response(data);
-    prepared.headers.set("CESR-DESTINATION", s.server.pre);
-    init = { method: "POST", headers: prepared.headers, body: yield* call(() => prepared.arrayBuffer()) };
-  }
-  const response = yield* http.request(`${s.server.origin}/mailboxes`, init);
-  return { ok: response.ok, observed: `HTTP ${response.status}`, detail: text.decode(response.body).slice(0, 100) };
+  const { origin, pre } = s.server;
+  const response = form === "cesr"
+    ? yield* postMailboxAdminCesr(http, origin, pre, concatBytes(submission.replay, rpy))
+    : yield* postMailboxAdminMultipart(http, origin, pre, submission, rpy);
+  return { ok: response.ok, observed: `HTTP ${response.status}`, detail: response.body.slice(0, 100) };
+}
+
+/** A third identifier authorized through the multipart form receives a message end to end. */
+function* multipartDelivery(s: Session): Operation<Outcome> {
+  const late = s.hby.makeHab("late", undefined, {
+    transferable: true,
+    icount: 1,
+    isith: "1",
+    ncount: 1,
+    nsith: "1",
+    toad: 0,
+  });
+  s.hby.db.ends.pin([late.pre, Roles.mailbox, s.server.pre], { allowed: true });
+  const authorized = yield* admin(s, late, "multipart");
+  if (!authorized.ok) return authorized;
+  const posted = yield* post(s, "/reply", message(s, "/reply"), late.pre);
+  if (!posted.ok) return posted;
+  const polled = yield* poll(s, "/reply", late.pre);
+  return {
+    ok: polled.messages > 0,
+    observed: polled.messages > 0 ? "delivered" : "not delivered",
+    detail: `cursor ${polled.cursor}`,
+  };
 }
 
 /** Read the recipient's mailbox topic: post one message, poll it, then prove the stored cursor skips it. */
@@ -193,19 +216,17 @@ function* topic(s: Session, name: string): Operation<Outcome> {
 }
 
 /**
- * Two deliveries, each polled by a fresh poller: the second poller starts from the stored cursor, so it
- * delivers only the newer message (a replay would deliver the older one first and leave the cursor behind).
+ * After a delivery, a fresh poller resumes from the stored cursor: a poll with nothing newer replays
+ * nothing and ends idle (halting an idle poll is what hung WebKit), then a newer message arrives alone.
  */
 function* resume(s: Session): Operation<Outcome> {
-  yield* post(s, "/reply", message(s, "/reply"));
-  const first = yield* poll(s, "/reply");
+  const before = (yield* poll(s, "/reply", s.recipient.pre, 2_000)).messages;
   yield* post(s, "/reply", s.sender.makeEndRole(s.sender.pre, Roles.agent, true));
-  const second = yield* poll(s, "/reply");
-  const ok = first.cursor !== undefined && second.cursor === first.cursor + 1;
+  const after = yield* poll(s, "/reply");
   return {
-    ok,
-    observed: ok ? "resumed after the stored cursor" : "replayed",
-    detail: `cursors ${first.cursor}, ${second.cursor}`,
+    ok: before === 0 && after.messages === 1,
+    observed: `replayed ${before}, new ${after.messages}`,
+    detail: `cursor ${after.cursor}`,
   };
 }
 
@@ -264,6 +285,7 @@ const SERVER_PROBES: Record<string, { servers: ServerName[]; run: Probe }> = {
   },
   "mailbox-admin-cesr": { servers: ["keripy", "tufa"], run: (s) => admin(s, s.recipient, "cesr") },
   "mailbox-admin-multipart": { servers: ["keripy", "tufa"], run: (s) => admin(s, s.sender, "multipart") },
+  "mailbox-delivery-multipart-authorized": { servers: ["tufa"], run: (s) => multipartDelivery(s) },
   "mailbox-topic-reply": { servers: ["keripy", "tufa"], run: (s) => topic(s, "/reply") },
   "mailbox-topic-receipt": { servers: ["keripy", "tufa"], run: (s) => topic(s, "/receipt") },
   "mailbox-topic-multisig": { servers: ["keripy", "tufa"], run: (s) => topic(s, "/multisig") },
