@@ -10,6 +10,7 @@
  * - credential/TEL artifact ingestion remains VDR/runtime work
  */
 import type { Kind, SerderKERI, Versionage } from "cesr-ts";
+import type { AcdcWalkPolicy } from "../../acdc/chaining.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { exchange, type IpexVerb, isIpexVerb } from "../../core/exchange/protocol-exchanging.ts";
@@ -59,6 +60,8 @@ export interface IpexHandlerOptions {
   notifier?: Notifier | null;
   /** Optional accepted v2 observer evidence, owned by the caller/runtime. */
   registry?: RegistryStore | null;
+  /** v2 Grant treatment of undisclosed far nodes; defaults to `DEFAULT_GRANT_WALK` (`"open"`). */
+  grantWalk?: AcdcWalkPolicy;
 }
 
 export interface IpexBuilderOptions {
@@ -163,7 +166,7 @@ export function loadIpexHandlers(
   for (const route of IPEX_ROUTES) {
     exchanger.addHandler(new IpexHandler(route, hby, options.notifier ?? null));
     exchanger.addHandler(
-      new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null),
+      new IpexV2Handler(route, hby, options.notifier ?? null, options.registry ?? null, options.grantWalk),
     );
   }
 }

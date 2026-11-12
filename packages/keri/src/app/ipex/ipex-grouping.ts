@@ -27,7 +27,7 @@ import {
   Vrsn_2_0,
 } from "cesr-ts";
 import { call, type Operation } from "npm:effection@^3.6.0";
-import { type ChainVerdict, evaluateChain } from "../../acdc/chaining.ts";
+import { type AcdcWalkPolicy, type ChainVerdict, evaluateChain } from "../../acdc/chaining.ts";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { resolveAttachmentGvrsn } from "../../core/attachment-countering.ts";
 import { TransIdxSigGroup } from "../../core/dispatch.ts";
@@ -75,6 +75,7 @@ import {
 } from "./ipex-credentialing.ts";
 import { walkIpexGraph } from "./ipex-graph.ts";
 import { authenticateIpexNode, issuedNodeVerdict } from "./ipex-node-authentication.ts";
+import { ipexGrantWalk } from "./ipex-v2.ts";
 import { IPEX_ADMIT_ROUTE, IPEX_GRANT_ROUTE, ipexConversationReady, ipexRecipient } from "./ipexing.ts";
 
 /** Authenticate the exact disclosed graph; only the existing evaluator's explicit true authorizes new use. */
@@ -83,8 +84,9 @@ function acdcV2GraphUse(
   registry: RegistryStore | null,
   origin: string,
   nests: readonly CesrFrame[],
+  walk: AcdcWalkPolicy,
 ): boolean | null {
-  const graph = walkIpexGraph(origin, nests, true);
+  const graph = walkIpexGraph(origin, nests, walk);
   if (!graph) throw new ValidationError("ACDC v2 group graph is malformed or incomplete.");
   const verdicts = new Map<string, ChainVerdict>();
   for (const [said, node] of graph.nodes) {
@@ -108,7 +110,7 @@ function acdcV2GrantUse(
   if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
     throw new ValidationError("ACDC v2 group Grant requires one origin.");
   }
-  return acdcV2GraphUse(hby, registry, origins[0], loadNests(hby.db, said));
+  return acdcV2GraphUse(hby, registry, origins[0], loadNests(hby.db, said), ipexGrantWalk(exchanger));
 }
 
 /** Recheck current graph authorization at an accepted group's new delivery, output or consent action. */
@@ -176,7 +178,10 @@ export function* prepareAcdcV2GroupIpex(
       if (!Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string") {
         throw new ValidationError("ACDC v2 group Grant requires one origin.");
       }
-      if (acdcV2GraphUse(hby, protocol.registry?.store ?? null, origins[0], frame.nests ?? []) !== true) return null;
+      const walk = ipexGrantWalk(protocol.exc);
+      if (acdcV2GraphUse(hby, protocol.registry?.store ?? null, origins[0], frame.nests ?? [], walk) !== true) {
+        return null;
+      }
     } else if (embedded.route === IPEX_ADMIT_ROUTE) {
       if (
         typeof embedded.sad!.p !== "string"
@@ -480,7 +485,13 @@ function* prepareGroupIpexMessages(
       const origins = (child.sad!.a as { o?: unknown }).o;
       if (
         !Array.isArray(origins) || origins.length !== 1 || typeof origins[0] !== "string"
-        || acdcV2GraphUse(hby, protocol.registry?.store ?? null, origins[0], childFrame.nests ?? []) !== true
+        || acdcV2GraphUse(
+            hby,
+            protocol.registry?.store ?? null,
+            origins[0],
+            childFrame.nests ?? [],
+            ipexGrantWalk(protocol.exc),
+          ) !== true
       ) {
         throw new ValidationError("ACDC v2 group graph is unavailable before proposal publication.");
       }

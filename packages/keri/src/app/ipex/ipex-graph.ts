@@ -1,6 +1,6 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
-import { type AcdcGraph, walkAcdcGraph } from "../../acdc/chaining.ts";
+import { type AcdcGraph, type AcdcWalkPolicy, walkAcdcGraph } from "../../acdc/chaining.ts";
 
 /** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -64,13 +64,13 @@ export function singleDagDisclosurePlan(value: unknown): DisclosurePlan | null {
 
 /**
  * Index unique disclosed credential frames, then delegate the graph walk to `walkAcdcGraph`.
- * Offers may omit far nodes; grants require every referenced node. Nested ownership
+ * Offers always walk open; Grants use the caller's walk policy. Nested ownership
  * does not make these nodes independently accepted runtime messages.
  */
 export function walkIpexGraph(
   origin: string,
   nests: readonly CesrFrame[],
-  closed: boolean,
+  walk: AcdcWalkPolicy,
 ): IpexGraph | null {
   const nodes = new Map<string, CesrFrame & { body: SerderACDC }>();
   for (const [index, frame] of nests.entries()) {
@@ -83,8 +83,8 @@ export function walkIpexGraph(
     if (frame.nests?.length) return null;
     nodes.set(body.said, frame as CesrFrame & { body: SerderACDC });
   }
-  const order = walkAcdcGraph(origin, nodes, closed);
-  return order ? { nodes, order } : null;
+  const order = walkAcdcGraph(origin, nodes, walk);
+  return order ? { nodes, order, walk } : null;
 }
 
 /** Compare SAD values structurally while retaining list order; map insertion order is not semantic here. */

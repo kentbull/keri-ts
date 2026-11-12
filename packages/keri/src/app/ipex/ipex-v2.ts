@@ -14,7 +14,7 @@ import {
   type SerderACDC,
   type SerderKERI,
 } from "cesr-ts";
-import { type ChainVerdict, evaluateChain } from "../../acdc/chaining.ts";
+import { type AcdcWalkPolicy, type ChainVerdict, DEFAULT_GRANT_WALK, evaluateChain } from "../../acdc/chaining.ts";
 import {
   type RegistryDisclosure,
   validateUpdate,
@@ -29,7 +29,12 @@ import { validateSchema } from "../../acdc/scheming.ts";
 import { DatabaseOperationError } from "../../core/errors.ts";
 import { type ExchangeFactors, verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
-import type { ExchangeRouteHandler, ExchangeRouteVerification, PresentationScope } from "../exchanges/exchanging.ts";
+import type {
+  Exchanger,
+  ExchangeRouteHandler,
+  ExchangeRouteVerification,
+  PresentationScope,
+} from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
@@ -79,6 +84,8 @@ function missing(reason: string): ExchangeRouteVerification {
  * Authenticate each disclosed node independently before Exchanger persists an EXN.
  * Registry evidence is caller-owned; notifier delivery follows durable acceptance.
  * Presentation registries require the retained receiver receipt and node-local proofs.
+ * `grantWalk` selects how a Grant treats an undisclosed far node (`AcdcWalkPolicy`);
+ * a far node the disclosure plan selects but the Grant does not nest always refuses.
  */
 export class IpexV2Handler implements ExchangeRouteHandler {
   readonly protocolMajor = 2;
@@ -92,6 +99,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     readonly hby: Habery,
     private readonly notifier: Notifier | null = null,
     readonly registry: RegistryStore | null = null,
+    readonly grantWalk: AcdcWalkPolicy = DEFAULT_GRANT_WALK,
   ) {
     this.acceptsMissingEvidence = resource === "/ipex/grant";
     this.acceptsNests = nestedIpexRoute(resource);
@@ -254,7 +262,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (verb === "offer" && nests.length) {
       if (nests.some(hasIpexNodeAttachments)) return false;
-      const graph = walkIpexGraph((attrs.o as string[])[0], nests, false);
+      const graph = walkIpexGraph((attrs.o as string[])[0], nests, "open");
       return graph ? this.nodeSchemas(graph) : false;
     }
     if (verb !== "grant") return true;
@@ -270,7 +278,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     if (!single(attrs.o, "string") || !this.validOrigin(attrs.o[0]) || !nests.length) return false;
     const origin = attrs.o[0] as string;
-    const graph = walkIpexGraph(origin, nests, true);
+    const graph = walkIpexGraph(origin, nests, this.grantWalk);
     if (!graph || [...graph.nodes.values()].some((node) => isIpexMetadata(node.body))) return false;
     if (!verifyIpexDisclosure(plan, origin, graph)) return false;
     const fulfilled = this.offerFulfilled(previous, origin, graph);
@@ -475,7 +483,7 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     if (offeredOrigin === origin) return true;
     const nests = loadNests(this.hby.db, offerSaid);
     if (!nests.length) return missing(`Missing metadata ACDC for accepted Offer ${offerSaid}.`);
-    const offered = walkIpexGraph(offeredOrigin, nests, false);
+    const offered = walkIpexGraph(offeredOrigin, nests, "open");
     if (!offered) return false;
     const metadata = offered.nodes.get(offeredOrigin)!.body;
     if (!isIpexMetadata(metadata)) return false;
@@ -662,4 +670,13 @@ export class IpexV2Handler implements ExchangeRouteHandler {
     }
     return [[issuee, regid]];
   }
+}
+
+/**
+ * The Grant walk policy of the exchanger's v2 Grant owner. Later use of an
+ * accepted Grant re-walks it under this policy so reuse agrees with admission.
+ */
+export function ipexGrantWalk(exchanger: Exchanger): AcdcWalkPolicy {
+  const handler = exchanger.routeHandler("/ipex/grant", 2);
+  return handler instanceof IpexV2Handler ? handler.grantWalk : DEFAULT_GRANT_WALK;
 }

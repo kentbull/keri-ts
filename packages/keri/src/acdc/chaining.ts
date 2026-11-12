@@ -13,10 +13,24 @@ import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
 import { validateSchema } from "./scheming.ts";
 
-/** Borrow a complete reachable DAG of verified credential views, with its origin first, without projecting frames. */
+/**
+ * How a walk treats an expanded Edge leaf whose far node is not disclosed.
+ *
+ * `closed` refuses the whole graph. `open` skips the leaf in the walk, and
+ * `evaluateChain` then reads it as a non-retryable unknown: disclosed nodes are
+ * fixed bytes, so nothing can supply the far node later. An OR group with a
+ * valid sibling still holds; an AND group or a sole Edge refuses without escrow.
+ */
+export type AcdcWalkPolicy = "open" | "closed";
+/** Every Grant-side caller defaults to `open`, matching KERIpy's Grant walk default. */
+export const DEFAULT_GRANT_WALK: AcdcWalkPolicy = "open";
+
+/** Borrow a reachable DAG of verified credential views, with its origin first, without projecting frames. */
 export interface AcdcGraph {
   nodes: ReadonlyMap<string, { readonly body: SerderACDC }>;
   order: readonly string[];
+  /** The policy the walk enforced; evaluation of undisclosed far nodes follows it. */
+  walk: AcdcWalkPolicy;
 }
 
 /** Reserved Edge-group labels include a pin at every level. The top-level Edge Section additionally forbids `w`. */
@@ -83,14 +97,15 @@ export function acdcEdgeTarget(value: unknown): string | null | false {
  * Every view must verify (including its carried section SAIDs) under its own
  * SAID key, every Edge Section must be well shaped, every disclosed node must be
  * reachable and the reachable graph must be acyclic. Closed walks also require
- * every expanded leaf target to be disclosed; open walks skip undisclosed ones.
+ * every expanded leaf target to be disclosed; open walks skip undisclosed ones
+ * (see `AcdcWalkPolicy`).
  * Compact Edge Sections and compact Edge members are opaque terminals.
  * Protocol frame admission (ilks, nests, duplicates) belongs to the caller.
  */
 export function walkAcdcGraph(
   origin: string,
   nodes: ReadonlyMap<string, { readonly body: SerderACDC }>,
-  closed: boolean,
+  walk: AcdcWalkPolicy,
 ): string[] | null {
   for (const [id, { body }] of nodes) if (body.said !== id || !body.verify()) return null;
   if (!nodes.has(origin)) return null;
@@ -122,7 +137,7 @@ export function walkAcdcGraph(
           if (!record(member)) return null;
           groups.push(member);
         } else if (!nodes.has(target)) {
-          if (closed) return null;
+          if (walk === "closed") return null;
         } else {
           farNodes.add(target);
           if (!seen.has(target)) queue.push(target);
@@ -215,6 +230,7 @@ function leafRelation(db: Baser, ops: readonly string[], near: SerderACDC, far: 
 /**
  * Validate every own schema, then conjoin each caller verdict with its complete edge expression.
  * Every branch is inspected for malformed shape, even when its truth value is unused.
+ * Under an open walk an undisclosed far node is a non-retryable unknown for its leaf.
  * Protocol callers supply issuer authentication; applications supply their state policy.
  * The graph must come from `walkAcdcGraph` (directly or through a protocol walk).
  * This helper reads schemas and KEL state but writes no records and publishes no cues.
@@ -282,17 +298,12 @@ export function evaluateChain(
     near: SerderACDC,
     inherited: readonly unknown[],
   ): ChainVerdict | null => {
-    const far = graph.nodes.get(target)?.body;
-    if (!far) return null;
     const pins = Object.hasOwn(edge, "s") ? [...inherited, edge.s] : inherited;
     const op = edge.o;
     const ops = op == null ? [] : typeof op === "string" ? [op] : Array.isArray(op) ? [...op] : null;
     if (!ops || !ops.every((token) => typeof token === "string")) return null;
     // Pin shape is morphological, so validate it before unsupported tokens or relations.
     const resolved: (string | Record<string, unknown>)[] = [];
-    const ownSchema = far.schema;
-    const ownSchemaId = record(ownSchema) ? ownSchema.$id : ownSchema;
-    if (pins.length && typeof ownSchemaId !== "string") return null;
     for (const pin of pins) {
       if (typeof pin === "string") {
         if (!said(pin)) return null;
@@ -308,6 +319,14 @@ export function evaluateChain(
         resolved.push(pin);
       } else return null;
     }
+    const far = graph.nodes.get(target)?.body;
+    if (!far) {
+      // A closed walk never yields a graph with an undisclosed target.
+      return graph.walk === "open" ? unknown(`Far node ${target} is not disclosed.`) : null;
+    }
+    const ownSchema = far.schema;
+    const ownSchemaId = record(ownSchema) ? ownSchema.$id : ownSchema;
+    if (pins.length && typeof ownSchemaId !== "string") return null;
     const relation = leafRelation(db, ops as string[], near, far);
     const own = [relation];
     // A decided relation refusal needs no pin evidence; otherwise every pin is evaluated, not only the first failure.

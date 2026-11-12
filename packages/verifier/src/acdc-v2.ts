@@ -13,6 +13,7 @@ import {
   type Hab,
   type Habery,
   type HttpClient,
+  ipexGrantWalk,
   isCesrContentType,
   issuedNodeVerdict,
   query,
@@ -154,7 +155,7 @@ export class AcdcV2Verifier {
       observations,
     });
     if (!inspected.credential) return result("refused");
-    const graph = walkIpexGraph(inspected.credential.said!, loadNests(this.hby.db, grant), true);
+    const graph = walkIpexGraph(inspected.credential.said!, loadNests(this.hby.db, grant), ipexGrantWalk(this.exc));
     if (!graph) return result("refused");
     const registrations = new Map<string, RegistryState>();
     const verdicts = new Map<string, ChainVerdict>();
