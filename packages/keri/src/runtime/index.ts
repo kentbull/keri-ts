@@ -813,8 +813,13 @@ export {
 // Runtime-owned single-signature DH issuance operations (begin, process, status, wait, abandon).
 export {
   abandonIssuance,
+  type AdmitDeps,
+  admitIssuance,
+  approveIssuanceExchange,
   beginIssuance,
   type BeginIssuanceInput,
+  deliverIssuanceAdmit,
+  type IssuanceAdmit,
   type IssuanceBegun,
   type IssuanceDelivery,
   type IssuanceDeps,

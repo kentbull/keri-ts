@@ -89,18 +89,19 @@ export interface Sent {
 
 /** Deliver bytes to whichever party owns `dest`; `fail` makes the transport report failure. */
 export function route(parties: Party[], log: Sent[], fail: () => boolean = () => false) {
-  return function*(sent: Sent): Operation<void> {
+  return function*(sent: Sent): Operation<string[]> {
     log.push(sent);
     if (fail()) throw new Error("transport failed");
     const to = parties.find((p) => p.habs.some((hab) => hab.pre === sent.dest));
     if (!to) throw new Error(`no route to ${sent.dest}`);
     yield* to.runtime.reactor.processBytes(sent.msg);
     yield* to.runtime.protocol.processEscrowsOnce();
+    return [sent.dest];
   };
 }
 
 /** Everything a party's DH owners queued, delivered as its holder side would. */
-export function* pump(from: Party, deliver: (sent: Sent) => Operation<void>): Operation<void> {
+export function* pump(from: Party, deliver: (sent: Sent) => Operation<string[]>): Operation<void> {
   for (const hab of from.habs) {
     const dh = from.runtime.ipex!.dhke(hab);
     while (dh.outgoing.length) {
@@ -120,6 +121,10 @@ export interface Scenario {
   changes: { id: string }[];
   /** A fresh owner over the same stores, as after a reload. */
   owner(overrides?: Partial<IssuanceDeps>): IssuanceOperations;
+  /** The holder party's owner, with its own operation store and change sink. */
+  holderOwner(overrides?: Partial<IssuanceDeps>): IssuanceOperations;
+  holderStore: IssuanceOperationStore;
+  holderChanges: { id: string }[];
   fail: { on: boolean };
   author: RegistryAuthor;
   /** A fresh registry for issuer hab `index`, and a credential for holder hab `index`. */
@@ -140,6 +145,7 @@ export function* scenario(count = 1, onReceipt = () => {}): Operation<Scenario> 
   const log: Sent[] = [], fail = { on: false }, changes: { id: string }[] = [];
   const store = new MemoryIssuanceOperationStore(), derived = new MemoryDerivedUpdateStore();
   const sink: ChangeSink = { push: ({ id }) => void changes.push({ id }) };
+  const holderStore = new MemoryIssuanceOperationStore(), holderChanges: { id: string }[] = [];
   const author = new RegistryAuthor(issuer.rgy, issuer.receiptor);
   const deliver = route([issuer, holder], log, () => fail.on);
   const delivery: IssuanceDelivery = { deliver };
@@ -153,6 +159,24 @@ export function* scenario(count = 1, onReceipt = () => {}): Operation<Scenario> 
     changes,
     fail,
     author,
+    holderStore,
+    holderChanges,
+    holderOwner: (overrides = {}) =>
+      new IssuanceOperations({
+        hby: holder.hby,
+        rgy: holder.rgy,
+        exc: holder.runtime.exc,
+        receiptor: holder.receiptor,
+        dhkes: holder.runtime.ipex!,
+        reactor: holder.runtime.reactor,
+        protocol: holder.runtime.protocol,
+        delivery,
+        store: holderStore,
+        derived: new MemoryDerivedUpdateStore(),
+        clock,
+        changes: { push: ({ id }) => void holderChanges.push({ id }) },
+        ...overrides,
+      }),
     owner: (overrides = {}) =>
       new IssuanceOperations({
         hby: issuer.hby,
