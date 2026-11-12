@@ -115,6 +115,8 @@ export interface PresentationDeps {
   /** Derivation coordinates, needed only for a selection with `derive`. */
   readonly derived?: DerivedUpdateStore;
   readonly changes?: ChangeSink;
+  /** Called when a delivery is queued, so the owner loop leaves its idle cadence at once. */
+  readonly wake?: () => void;
 }
 
 /** Body options of a selecting message, plus the presentation registry that carries a Grant's proof. */
@@ -219,6 +221,11 @@ export class PresentationOperations {
   readonly settled = new Map<string, SettledPresentation>();
 
   constructor(readonly deps: PresentationDeps) {}
+
+  /** Whether a delivery is live. */
+  active(): boolean {
+    return this.live.size > 0;
+  }
 
   /** Advance every live delivery by one pass. */
   *processOnce(): Operation<void> {

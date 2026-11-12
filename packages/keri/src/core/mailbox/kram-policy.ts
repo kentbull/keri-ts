@@ -39,6 +39,23 @@ interface PolicyState {
 /** Only this key owns the policy transition metadata in the existing settings table. */
 const policyKey = "kram-policy";
 
+/** The stored cache type for exact route, then message type, then the catchall; null when none is configured. */
+function storedCacheType(db: Baser, ilk: string, route: string | null): KramCacheType | null {
+  const record = (route ? db.ctyp.get(`${ilk}.R.${route}`) : null) ?? db.ctyp.get(ilk) ?? db.ctyp.get("~");
+  if (!record) return null;
+  const [d, sl, ll, xl, psl, pll, pxl] = values(record);
+  return { d, sl, ll, xl, psl, pll, pxl };
+}
+
+/**
+ * How long a single-key query on `route` stays timely under the windows this store was configured with, in
+ * milliseconds: the single-key lag. A sender uses its own windows as the estimate of its peer's, as KERIpy's
+ * `requery` does. Null when this store has no KRAM cache types (KRAM never ran on it).
+ */
+export function singleKeyQueryWindow(db: Baser, route: string): number | null {
+  return storedCacheType(db, "qry", route)?.sl ?? null;
+}
+
 /** Validate caller configuration before any durable policy mutation. */
 function windows(value: unknown, transitional = false): KramWindows {
   if (!Array.isArray(value) || value.length !== 7 || value.some((v) => !Number.isSafeInteger(v) || v < 0)) {
@@ -188,11 +205,9 @@ export class KramPolicy {
 
   /** Select exact route, message type, then catchall; absence is a configuration failure. */
   cacheType(ilk: string, route: string | null): KramCacheType {
-    const record = (route ? this.db.ctyp.get(`${ilk}.R.${route}`) : null) ?? this.db.ctyp.get(ilk)
-      ?? this.db.ctyp.get("~");
-    if (!record) throw new Error("No KRAM cache type for message");
-    const [d, sl, ll, xl, psl, pll, pxl] = values(record);
-    return { d, sl, ll, xl, psl, pll, pxl };
+    const type = storedCacheType(this.db, ilk, route);
+    if (!type) throw new Error("No KRAM cache type for message");
+    return type;
   }
 
   /** Stage expansions and reject coverage holes before changing interoperable rows. */

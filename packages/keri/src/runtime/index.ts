@@ -927,7 +927,9 @@ export {
 export {
   type ComposedOwners,
   type OperationStores,
-  OWNER_LOOP_MS,
+  OWNER_BUSY_MS,
+  OWNER_IDLE_MS,
+  OwnerWake,
   type RuntimeOperations,
 } from "../app/runtime/operation-owners.ts";
 

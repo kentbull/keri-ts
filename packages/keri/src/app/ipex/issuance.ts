@@ -69,9 +69,10 @@ import {
 import { action, call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
-import { type Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
+import { Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
+import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -163,6 +164,8 @@ export interface IssuanceDeps extends AdmitDeps {
   readonly dhkes: { dhke(hab: Hab): Dhke };
   /** Non-secret derivation coordinates of blinded registry updates. */
   readonly derived: DerivedUpdateStore;
+  /** Called when an operation becomes live, so the owner loop leaves its idle cadence at once. */
+  readonly wake?: () => void;
 }
 
 /** One operation the user began or adopted; exists only while it is live in this process. */
@@ -185,8 +188,10 @@ interface LiveIssuance {
     /** Grant body and nested disclosure, the input of proof support. */
     readonly raw: Uint8Array;
     readonly grantWire: Uint8Array;
-    /** The unchanged DH query to resend; null once DH is complete (a completed issuer after a restart). */
-    readonly query: Uint8Array | null;
+    /** The DH query to resend; null once DH is complete (a completed issuer after a restart). */
+    query: Uint8Array | null;
+    /** When {@link query} was signed (host clock, ms); it is re-dated once older than the single-key window. */
+    queryAt: number;
     /** Transient witness codes for the anchor. */
     readonly auths?: WitnessAuthMap;
     sent: boolean;
@@ -259,6 +264,11 @@ export class IssuanceOperations {
 
   constructor(readonly deps: IssuanceDeps) {
     this.discloser = new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor);
+  }
+
+  /** Whether a pass has work: a live operation, or the one-time scan for resumable Grants has not run. */
+  active(): boolean {
+    return this.live.size > 0 || !this.swept || this.stale.length > 0;
   }
 
   /**
@@ -345,11 +355,12 @@ export class IssuanceOperations {
       peer: wires ? retained.serder.sad!.ri as string : retained.serder.pre!,
       registry: credential.regid!,
       expires,
-      issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
+      issuer: wires ? { credential, ...wires, query: null, queryAt: 0, sent: true, nextQuery: 0 } : undefined,
       phase: "rootRetained",
       busy: false,
     });
     this.deps.changes?.push({ kind: "issuance", id: grant });
+    this.deps.wake?.();
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
@@ -381,12 +392,28 @@ export class IssuanceOperations {
     }
     if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
-        yield* this.send(op, op.peer, issuer.query);
+        yield* this.send(op, op.peer, this.current(op, issuer));
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
       }
     } else if (issuer) yield* this.finish(op, issuer);
     else yield* this.receive(op);
     return "stepped";
+  }
+
+  /**
+   * The query to send now: the signed bytes unchanged while they are timely, so a resend stays a replay the
+   * peer's KRAM ignores, and a re-dated one (`Dhke.requery`: same keys and scope, new `dt`, SAID and
+   * signatures) once they are older than the single-key window, which KRAM would drop as stale. Re-signing
+   * happens only here, inside the live authorisation that began the operation. A group threshold query cannot
+   * be re-dated by one member; group issuance is not run here.
+   */
+  private current(op: LiveIssuance, issuer: NonNullable<LiveIssuance["issuer"]>): Uint8Array {
+    const now = this.deps.clock.now(), window = singleKeyQueryWindow(this.deps.hby.db, Dhke.Route);
+    if (window !== null && now - issuer.queryAt >= window) {
+      issuer.query = op.dh.requery(op.xid);
+      issuer.queryAt = now;
+    }
+    return issuer.query!;
   }
 
   /**
@@ -577,11 +604,12 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     peer: retained.serder.sad!.ri as string,
     registry: credential.regid!,
     expires,
-    issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
+    issuer: { credential, raw, grantWire, query, queryAt: deps.clock.now(), auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
+  deps.wake?.();
   return { grant, xid };
 }
 
@@ -687,6 +715,7 @@ export function approveIssuanceExchange(
     busy: false,
   });
   deps.changes?.push({ kind: "issuance", id: grant });
+  deps.wake?.();
   return { grant, xid };
 }
 

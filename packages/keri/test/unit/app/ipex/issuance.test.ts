@@ -6,7 +6,7 @@
  * exclusive-create write of the prepared Grant), so nothing of it is ported.
  */
 import { parseBytes } from "cesr-ts";
-import { type Operation, run } from "effection";
+import { type Operation, run, sleep } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import {
   abandonIssuance,
@@ -329,5 +329,43 @@ Deno.test("two identifiers issue concurrently on one owner without crossing", as
       assertEquals(s.log.filter((m) => m.src === issuerHab.pre).every((m) => m.dest === holderHab.pre), true);
     }
     assert(grants[0] !== grants[1]);
+  });
+});
+
+Deno.test("an aged query is re-dated and accepted; a timely one is resent unchanged", async () => {
+  await run(function*() {
+    // A 300 ms single-key window lets the query age in real time.
+    const s = yield* scenario(1, undefined, true, {
+      enabled: true,
+      caches: { "~": [100, 300, 60000, 300000, 300, 60000, 300000] },
+    });
+    let lose = true;
+    const queries: Uint8Array[] = [];
+    const ops = s.owner({
+      delivery: {
+        *deliver(sent) {
+          if (text(sent.msg).includes("/ipex/dhke") && parseBytes(sent.msg)[0].body.ilk === "qry") {
+            queries.push(sent.msg);
+            if (lose) return [sent.dest]; // the transport reported success, the peer never got it
+          }
+          return yield* s.delivery(sent);
+        },
+      },
+    });
+    const reg = yield* s.registry(0);
+    const { grant } = yield* beginIssuance(ops, {
+      hab: s.issuer.habs[0],
+      credential: reg.credential(),
+      options: grantOptions(s),
+    });
+    yield* ops.processOnce();
+    holderApproves(s, grant); // the Grant arrived; the query did not
+    yield* sleep(1100); // past the resend interval and far past the 300 ms window
+    lose = false;
+    yield* ops.processOnce();
+    assertEquals(queries.length, 2, "the query was due again");
+    assert(text(queries[0]) !== text(queries[1]), "an aged query is re-signed with a new date, not resent");
+    yield* settle(s, ops, [grant]);
+    assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
   });
 });
