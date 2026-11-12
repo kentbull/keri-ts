@@ -44,7 +44,34 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     private readonly registry: RegistryObserver,
     private readonly rvy: Revery,
     private readonly now: () => number,
-  ) {}
+    /** Local identifiers whose DH owners must exist before traffic; omitted leaves owner creation to the caller. */
+    private readonly habs?: ReadonlyMap<string, Hab>,
+  ) {
+    this.ensureDhkes();
+  }
+
+  /**
+   * Create the DH owner of every local identifier that lacks one. A query names no recipient, so an
+   * identifier created or joined after the runtime must own its route before the first query arrives;
+   * this runs at construction, before each DH dispatch and on the owners loop. A group without a local
+   * signing member cannot own DH and is skipped. Construction grants no consent.
+   */
+  ensureDhkes(): void {
+    if (!this.habs) return;
+    for (const hab of this.habs.values()) {
+      if (this.dhkes.has(hab.pre!)) continue;
+      try {
+        this.dhke(hab);
+      } catch (error) {
+        if (!(error instanceof ValidationError)) throw error;
+      }
+    }
+  }
+
+  /** Every live DH owner, for hosts draining their completion cues. */
+  dhkeOwners(): IterableIterator<Dhke> {
+    return this.dhkes.values();
+  }
 
   /** Register the DH and Unblind reply routes once; owners are looked up on each reply. */
   registerReplyRoutes(rtr: Router): void {
@@ -117,6 +144,7 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   }
 
   private select(serder: SerderKERI): Owner | null {
+    if (serder.route === Dhke.Route) this.ensureDhkes();
     const owners = serder.route === Dhke.Route ? this.dhkes : serder.route === Unblind.Route ? this.unblinds : null;
     return owners && this.claimant(owners, serder.pre, (serder.sad?.q as { x?: unknown } | undefined)?.x);
   }

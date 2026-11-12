@@ -384,7 +384,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
     const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
       ...individual
-        ? { ipexOwners: "per-identifier" as const }
+        ? { ipexOwners: "per-identifier" as const, operationStores: { rootReplication: "off" as const } }
         : { ipexAuxiliary: { kind: "unblind" as const, hab, states } },
     });
     try {

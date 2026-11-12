@@ -928,6 +928,14 @@ export {
   waitForUnblinding,
 } from "../app/ipex/unblinding-workflow.ts";
 
+// Operations owners composed by the runtime for `ipexOwners` hosts.
+export {
+  type ComposedOwners,
+  type OperationStores,
+  OWNER_LOOP_MS,
+  type RuntimeOperations,
+} from "../app/runtime/operation-owners.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
