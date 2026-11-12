@@ -244,6 +244,7 @@ export {
   type ContactRecord,
   Organizer,
 } from "../app/identity/organizing.ts";
+export { IpexAdmitter, type PreparedAdmit } from "../app/ipex/ipex-admitting.ts";
 export { ipexExnBody, type IpexV2BodyOptions, prepareIpexExn } from "../app/ipex/ipex-building.ts";
 export {
   type CredentialAdmitMessage,
@@ -261,7 +262,12 @@ export {
 } from "../app/ipex/ipex-credentialing.ts";
 export {
   anchorExchange as anchorIpexExchange,
+  type CredentialViews,
+  type DisclosureSelection,
   exchangeWire,
+  type GrantFileSelection,
+  type HeldCredential,
+  type InspectedGrantFile,
   IpexDiscloser,
   type IssuanceGrantOptions,
   type PreparedDisclosure,
@@ -340,9 +346,23 @@ export {
   resolveHostedEndpointPath,
 } from "../app/mailbox/mailboxing.ts";
 export {
+  type CounselBlock,
+  type CounselInputs,
+  Counselor,
+  type CounselStage,
+  DEFAULT_FALLBACK_AFTER_MS,
+  type GroupEventRef,
+  type GroupEventStatus,
+  type GroupEventWait,
+  type GroupReceipting,
+  RECEIPT_BACKOFF_MS,
+  waitForGroupEvent,
+} from "../app/multisig/counseling.ts";
+export {
   type GroupCoordinator,
   groupElectedMember,
   groupSigningMembers,
+  groupWitnesser,
   groupWitnesserSelection,
   isLocalGroupHab,
   latestGroupContribution,
