@@ -67,7 +67,7 @@ import {
   type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
-import { action, call, type Operation, race } from "npm:effection@^3.6.0";
+import { call, type Operation, race } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../acdc/authoring.ts";
 import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts";
 import { Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
@@ -83,7 +83,7 @@ import { isLocalGroupHab } from "../multisig/group-members.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
-import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
+import { type ChangeSink, observeUntil, waitOnClock, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
@@ -232,14 +232,6 @@ function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** Wait on the host's clock so cancellation releases the timer. */
-function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
-  yield* action<void>((resolve) => {
-    const timer = clock.setTimeout(resolve, milliseconds);
-    return () => clock.clearTimeout(timer);
-  });
-}
-
 /** A Grant a restarted process can finish without a new key exchange. */
 interface Resumable {
   hab: Hab;
@@ -378,7 +370,7 @@ export class IssuanceOperations {
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
-    yield* wait(this.deps.clock, milliseconds);
+    yield* waitOnClock(this.deps.clock, milliseconds);
     return "expired";
   }
 
