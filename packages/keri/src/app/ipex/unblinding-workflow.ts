@@ -1,18 +1,18 @@
 /**
  * Runtime-owned operations for single-signature IPEX Unblind (proof release for one live presentation).
  *
- * Two explicit consent steps, one per side of the presentation. The disclosee calls `requestUnblind`: it
- * approves the exact live Grant, signs the query for the missing public suffix and returns after local
- * commit. The discloser calls `approveUnblind`: it approves the same Grant for proof release; the signed
- * reply is produced when the authenticated peer query arrives (or is replayed from the one already held).
- * `UnblindingOperations.processOnce` then does everything `tufa ipex unblind` did in its polling loop: send
- * and resend the unchanged query each second, deliver the reply, finish the Grant once the authenticated
- * reply is complete, and end the operation at the Grant's original exchange deadline. It never signs a
- * second time: no operation starts or signs except through the two consent steps while their approval lives
- * in memory. A record that is active with no live operation reads `interrupted` (or `expired` past the
- * deadline) and nothing is sent after a restart.
+ * One explicit consent step, the disclosee's. The disclosee calls `requestUnblind`: it approves the exact live
+ * Grant, signs the query for the missing public suffix and returns after local commit. The discloser has no
+ * approval step: it consented by signing the Grant, so an owner that authenticated a peer query for a live
+ * Grant its identifier sent replies on its own, and `processOnce` adopts and delivers that reply under the
+ * Grant's deadline (KERIpy keeps a local approve gate; the wire is unchanged).
+ * `UnblindingOperations.processOnce` also sends and resends the unchanged query each second, finishes the
+ * Grant once the authenticated reply is complete, and ends the operation at the Grant's original exchange
+ * deadline. The only signing outside the Grant's own scope is the requester's query. A record that is active
+ * with no live operation reads `interrupted` (or `expired` past the deadline) and nothing is sent for it
+ * after a restart; a repeated peer query is answered again from stored state.
  *
- * Workflow-contract shape (`app/runtime/workflow-contract.ts`): the consent steps return after local
+ * Workflow-contract shape (`app/runtime/workflow-contract.ts`): `requestUnblind` returns after local
  * commit and never wait for the peer, `unblindingStatus` is a pure read, `waitForUnblinding` only observes
  * and returns a `WaitResult`, `abandonUnblinding` is local. Completion creates no Admit.
  *
@@ -42,7 +42,7 @@ export type UnblindingRole = "requester" | "responder";
 export type UnblindingEndState = "abandoned" | "interrupted" | "expired" | "failed";
 
 /** Where an active Unblind is. */
-export type UnblindingPhase = "awaitingReply" | "awaitingQuery" | "proving";
+export type UnblindingPhase = "awaitingReply" | "proving";
 
 /** Durable, non-secret operation facts. Never holds keys, frozen messages or proofs. */
 export interface UnblindingRecord {
@@ -95,7 +95,7 @@ export interface UnblindingDeps {
   readonly hby: Habery;
   readonly exc: Pick<Exchanger, "retainedInput" | "exchangeDeadline" | "complete" | "verifyGrantProofs">;
   /** Per-identifier Unblind owners (`runtime.ipex`), so several identifiers can unblind on one runtime. */
-  readonly unblinds: { unblind(hab: Hab): Unblind };
+  readonly unblinds: { unblind(hab: Hab): Unblind; unblindOwners(): Iterable<Unblind> };
   readonly delivery: IssuanceDelivery;
   readonly store: UnblindingOperationStore;
   /** Same clock the exchanger and Unblind owners were composed with. */
@@ -186,6 +186,7 @@ export class UnblindingOperations {
         if (!record.ended && !record.done && !this.live.has(record.grant)) this.orphan(record);
       }
     }
+    this.adopt();
     for (const op of [...this.live.values()]) {
       if (op.busy || !this.live.has(op.record.grant)) continue;
       op.busy = true;
@@ -199,6 +200,44 @@ export class UnblindingOperations {
         this.end(op, "failed", message(error));
       } finally {
         op.busy = false;
+      }
+    }
+  }
+
+  /**
+   * Take on the replies the owners owe. The discloser has no consent step: an owner that authenticated a
+   * peer query for a live Grant its identifier sent holds the operation, and this delivers its reply
+   * under the Grant's deadline. Decided from the owners' state, so a restarted process re-answers a
+   * repeated query.
+   */
+  private adopt(): void {
+    const { deps } = this;
+    for (const owner of deps.unblinds.unblindOwners()) {
+      for (const { xid, grant } of owner.awaitingReply()) {
+        if (this.live.has(grant)) continue;
+        const input = deps.exc.retainedInput(grant);
+        const deadline = input && deps.exc.exchangeDeadline(input.serder), expires = timestampMicros(deadline);
+        if (!input || !deadline || expires === null || BigInt(deps.clock.now()) * 1000n >= expires) continue;
+        const record: UnblindingRecord = {
+          grant,
+          xid,
+          hab: owner.hab.pre!,
+          role: "responder",
+          deadline,
+          consented: iso(deps.clock.now()),
+        };
+        deps.store.put(record);
+        this.live.set(grant, {
+          record,
+          hab: owner.hab,
+          owner,
+          peer: String(input.serder.sad!.ri),
+          expires,
+          nextQuery: 0,
+          phase: "proving",
+          busy: false,
+        });
+        deps.changes?.push({ kind: "unblinding", id: grant });
       }
     }
   }
@@ -312,27 +351,22 @@ function selectGrant(ops: UnblindingOperations, { hab, grant }: UnblindingReques
 function consent(
   ops: UnblindingOperations,
   request: UnblindingRequest,
-  role: UnblindingRole,
 ): { op: LiveUnblinding | null; begun: UnblindingBegun } {
   const { deps } = ops, { hab, grant } = request;
   const selected = selectGrant(ops, request);
-  if (selected.role !== role) {
-    throw new ValidationError(
-      role === "requester" ? "Only the disclosee requests Unblind" : "Only the discloser approves Unblind release",
-    );
-  }
+  if (selected.role !== "requester") throw new ValidationError("Only the disclosee requests Unblind");
   const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: request.states });
   const record: UnblindingRecord = {
     grant,
     xid,
     hab: hab.pre!,
-    role,
+    role: "requester",
     deadline: selected.deadline,
     consented: iso(deps.clock.now()),
   };
-  const begun = { grant, xid, role };
+  const begun = { grant, xid, role: "requester" as const };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
-  if (role === "requester" && deps.exc.complete(grant)) {
+  if (deps.exc.complete(grant)) {
     const current = deps.exc.verifyGrantProofs(grant, selected.input.nests ?? []);
     if (current === true || typeof current === "object" && current.kind === "accept") {
       owner.abandon(xid);
@@ -350,7 +384,7 @@ function consent(
       peer: selected.peer,
       expires: selected.expires,
       nextQuery: 0,
-      phase: role === "requester" ? "awaitingReply" : "awaitingQuery",
+      phase: "awaitingReply",
       busy: false,
     },
   };
@@ -365,28 +399,13 @@ function consent(
  * Unblind already begun for it.
  */
 export function requestUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
-  const { op, begun } = consent(ops, request, "requester");
+  const { op, begun } = consent(ops, request);
   if (op) {
     op.query = op.owner.start(request.grant);
     ops.deps.store.put(op.record);
     ops.live.set(request.grant, op);
     ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
   }
-  return begun;
-}
-
-/**
- * The discloser's consent to release proofs for one live Grant it sent. The reply is signed when the peer's
- * authenticated query arrives (an earlier one is replayed), and `processOnce` delivers it.
- *
- * @throws ValidationError for a group identifier, a Grant that is not live and sent by `hab`, or an Unblind
- * already begun for it.
- */
-export function approveUnblind(ops: UnblindingOperations, request: UnblindingRequest): UnblindingBegun {
-  const { op, begun } = consent(ops, request, "responder");
-  ops.deps.store.put(op!.record);
-  ops.live.set(request.grant, op!);
-  ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
   return begun;
 }
 

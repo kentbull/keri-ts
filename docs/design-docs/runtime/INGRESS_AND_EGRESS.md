@@ -156,8 +156,11 @@ stop and join workers before explicit runtime close; no operation restart ledger
 or automatic Admit is introduced.
 
 `Unblind({hab, exc, registry})` composes that query seam with
-the existing Revery Router at `/ipex/unblind`. Each party explicitly approves the
-same retained live Grant; `approve(grant, {states})` freezes that operation's ordinary-state
+the existing Revery Router at `/ipex/unblind`. The disclosee explicitly approves the
+retained live Grant; the discloser has no approval step, because it consented by signing that Grant: an
+authenticated query for a live Grant the identifier sent (resolved from stored rows, so it survives a restart)
+is answered automatically, bounded by the Grant's registry scope and original deadline. KERIpy keeps a
+local approve gate; the wire is unchanged. `approve(grant, {states})` freezes that operation's ordinary-state
 vocabulary (default `["issued", "revoked", ""]`), so one owner serves operations with different vocabularies. Only this v2 query route admits nested public BUPs;
 the Unblind owner verifies their exact requested order, anchors and contiguous
 accepted prefix before ordinary registry intake. Revery forwards the parsed reply

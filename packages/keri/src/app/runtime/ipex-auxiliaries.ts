@@ -56,6 +56,11 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     return this.dhkes.values();
   }
 
+  /** Every live Unblind owner, for hosts delivering the replies they owe. */
+  unblindOwners(): IterableIterator<Unblind> {
+    return this.unblinds.values();
+  }
+
   /** Register the DH and Unblind reply routes once; owners are looked up on each reply. */
   registerReplyRoutes(rtr: Router): void {
     rtr.addRoute(Dhke.Route, { processReply: (args: ReplyArgs) => this.reply("dhke", args) });
@@ -76,7 +81,7 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   unblind(hab: Hab): Unblind {
     const current = this.unblinds.get(hab.pre!);
     if (current?.hab === hab) return current;
-    const owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy, now: this.now });
+    const owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy });
     current?.close();
     this.unblinds.set(hab.pre!, owner);
     return owner;
