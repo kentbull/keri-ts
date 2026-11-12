@@ -1103,7 +1103,7 @@ for (const route of ["ixn", "vcp"] as const) {
   });
 }
 
-Deno.test("multisig issuance missing its credential neither prompts nor accepts its anchor", async () => {
+Deno.test("multisig issuance missing its credential is not approved and does not accept its anchor", async () => {
   await participants(async (left, right, alice, bob, notifier) => {
     const mids = [alice.pre, bob.pre];
     const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "1", nsith: "1", toad: 0 });
@@ -1124,8 +1124,7 @@ Deno.test("multisig issuance missing its credential neither prompts nor accepts 
           local: true,
         });
         assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
-        const result = yield* approvePending(left, runtime);
-        assertEquals(result, null);
+        yield* call(() => assertRejects(() => run(() => approvePending(left, runtime)), Error, "cannot be approved"));
         assertNotEquals(left.db.getKever(local.hab.pre)?.said, anchor.serder.said);
       } finally {
         yield* runtime.close();
