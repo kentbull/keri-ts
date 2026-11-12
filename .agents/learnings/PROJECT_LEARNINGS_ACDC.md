@@ -186,6 +186,8 @@ IpexDiscloser (`app/ipex/ipex-discloser.ts`) holds the inventory-free half (exch
 anchoring, fresh-issuance Grant body, proof support, KEL replay, graph authorization, registry proof,
 unblind, Apply/Reply, selection, Offer/Grant bodies); selection reads issued and held credentials
 through the `CredentialViews` port, which `Wallet` implements; `WalletDiscloser` extends the core.
+Admit preparation lives in `IpexAdmitter` (`app/ipex/ipex-admitting.ts`); `Wallet` delegates to it and keeps
+only admission records, held views and issued inventory.
 RegistryAuthor (`acdc/authoring.ts`) holds stage, anchor and update; `WalletAuthor` extends it
 and adds only the inventory methods `issue`, `stageRevocation` and `revoke`.
 RegistryCustody (core in `acdc/custody.ts`; the wallet class extends it and supplies
