@@ -15,7 +15,6 @@ import {
   isLocalGroupHab,
   type KramConfig,
   localGroupMember,
-  MemoryUnblindingOperationStore,
   multisigExnBody,
   posterDelivery,
   requestUnblind,
@@ -309,7 +308,6 @@ function* runIndividualUnblind(
     exc: runtime.exc,
     unblinds: runtime.ipex!,
     delivery: posterDelivery(runtime.postman),
-    store: new MemoryUnblindingOperationStore(),
     clock: runtime.clock,
   });
   const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
@@ -325,7 +323,7 @@ function* runIndividualUnblind(
       });
       try {
         const stop = runtime.clock.now() + timeoutMs;
-        while (!begun && !ops.deps.store.get(grant)) {
+        while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
           if (runtime.clock.now() >= stop) {
             throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
           }
@@ -336,7 +334,9 @@ function* runIndividualUnblind(
         yield* driver.halt();
       }
     });
-    const xid = begun?.xid ?? ops.deps.store.get(grant)!.xid, role = requester ? "requester" : "responder";
+    const exchange = runtime.exc.retainedInput(grant)!.serder;
+    const xid = begun?.xid ?? String(exchange.ilk === "xip" ? exchange.said : exchange.sad!.x),
+      role = requester ? "requester" : "responder";
     const { status } = outcome;
     if (status.state === "done") return { grant, xid, role, completed: true, admitted: false } as const;
     if (status.state === "active") abandonUnblinding(ops, grant, "Elapsed limit");

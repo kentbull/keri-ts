@@ -14,8 +14,6 @@ import {
   type IssuanceDelivery,
   type IssuanceDeps,
   IssuanceOperations,
-  type IssuanceOperationStore,
-  MemoryIssuanceOperationStore,
 } from "../../../../src/app/ipex/issuance.ts";
 import { type AgentRuntime, createAgentRuntime } from "../../../../src/app/runtime/agent-runtime.ts";
 import type { RuntimeClock } from "../../../../src/app/runtime/runtime-clock.ts";
@@ -23,6 +21,7 @@ import type { ChangeSink } from "../../../../src/app/runtime/workflow-contract.t
 import { FetchHttpClient } from "../../../../src/app/transport/http-client.ts";
 import type { Receiptor } from "../../../../src/app/witness/receipting.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
+import { timestampMicros } from "../../../../src/time/mod.ts";
 
 export const KRAM = { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } } as const;
 
@@ -122,14 +121,12 @@ export interface Scenario {
   issuer: Party;
   holder: Party;
   log: Sent[];
-  store: IssuanceOperationStore;
   derived: MemoryDerivedUpdateStore;
   changes: { id: string }[];
-  /** A fresh owner over the same stores, as after a reload. */
+  /** A fresh owner over the same stores, as after a reload (the live table and ended memory start empty). */
   owner(overrides?: Partial<IssuanceDeps>): IssuanceOperations;
-  /** The holder party's owner, with its own operation store and change sink. */
+  /** The holder party's owner, with its own change sink. */
   holderOwner(overrides?: Partial<IssuanceDeps>): IssuanceOperations;
-  holderStore: IssuanceOperationStore;
   holderChanges: { id: string }[];
   fail: { on: boolean };
   /** The in-process transport shared by both parties. */
@@ -151,9 +148,9 @@ export function* scenario(count = 1, onReceipt = () => {}, register = true): Ope
     }
   }
   const log: Sent[] = [], fail = { on: false }, changes: { id: string }[] = [];
-  const store = new MemoryIssuanceOperationStore(), derived = new MemoryDerivedUpdateStore();
+  const derived = new MemoryDerivedUpdateStore();
   const sink: ChangeSink = { push: ({ id }) => void changes.push({ id }) };
-  const holderStore = new MemoryIssuanceOperationStore(), holderChanges: { id: string }[] = [];
+  const holderChanges: { id: string }[] = [];
   const author = new RegistryAuthor(issuer.rgy, issuer.receiptor);
   const deliver = route([issuer, holder], log, () => fail.on);
   const delivery: IssuanceDelivery = { deliver };
@@ -162,13 +159,11 @@ export function* scenario(count = 1, onReceipt = () => {}, register = true): Ope
     issuer,
     holder,
     log,
-    store,
     derived,
     changes,
     fail,
     delivery: deliver,
     author,
-    holderStore,
     holderChanges,
     holderOwner: (overrides = {}) =>
       new IssuanceOperations({
@@ -180,7 +175,6 @@ export function* scenario(count = 1, onReceipt = () => {}, register = true): Ope
         reactor: holder.runtime.reactor,
         protocol: holder.runtime.protocol,
         delivery,
-        store: holderStore,
         derived: new MemoryDerivedUpdateStore(),
         clock,
         changes: { push: ({ id }) => void holderChanges.push({ id }) },
@@ -196,7 +190,6 @@ export function* scenario(count = 1, onReceipt = () => {}, register = true): Ope
         reactor: issuer.runtime.reactor,
         protocol: issuer.runtime.protocol,
         delivery,
-        store,
         derived,
         clock,
         changes: sink,
@@ -213,4 +206,15 @@ export function* scenario(count = 1, onReceipt = () => {}, register = true): Ope
       };
     },
   };
+}
+
+/** The original exchange deadline of a Grant (ISO 8601), read from `party`'s accepted lifetime. */
+export function deadlineOf(party: Party, grant: string): string {
+  const exn = party.hby.db.epse.get([grant]) ?? party.hby.db.exns.get([grant]);
+  return party.runtime.exc.exchangeDeadline(exn!)!;
+}
+
+/** A clock skew that has just passed the Grant's original exchange deadline. */
+export function pastDeadline(party: Party, grant: string): number {
+  return Number(timestampMicros(deadlineOf(party, grant))! / 1000n) - Date.now() + 1;
 }

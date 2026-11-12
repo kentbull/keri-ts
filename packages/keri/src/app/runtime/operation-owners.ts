@@ -2,8 +2,8 @@
  * Composition and loop of the runtime's operations owners.
  *
  * With `ipexOwners: "per-identifier"` the runtime owns one `IssuanceOperations`, one
- * `PresentationOperations` and one `UnblindingOperations` over in-memory stores (an
- * embedder supplies durable stores through `AgentRuntimeOptions.operationStores`), and,
+ * `PresentationOperations` and one `UnblindingOperations`, each an in-memory live table
+ * with status derived from the protocol stores, and,
  * when it has a registry root owner, one `RootReplicator`. `runAgentRuntime` runs each
  * owner's `processOnce` in its own fiber, so one stuck delivery cannot stall another
  * owner or any other runtime loop. The owners act only for operations a user began or
@@ -15,30 +15,16 @@
  * replicator shares that record with the loop and a later pass does not repeat its sends.
  */
 import { action, type Operation, spawn, suspend } from "npm:effection@^3.6.0";
-import { type DerivedUpdateStore, MemoryDerivedUpdateStore } from "../../acdc/custody.ts";
+import { BaserDerivedUpdateStore, type DerivedUpdateStore } from "../../acdc/custody.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import type { RegistryRoot } from "../../acdc/salting.ts";
 import { RootReplicator } from "../credentials/root-replicator.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
-import {
-  type IssuanceDeps,
-  IssuanceOperations,
-  type IssuanceOperationStore,
-  MemoryIssuanceOperationStore,
-  posterDelivery,
-} from "../ipex/issuance.ts";
-import {
-  MemoryPresentationOperationStore,
-  PresentationOperations,
-  type PresentationOperationStore,
-} from "../ipex/presenting.ts";
-import {
-  MemoryUnblindingOperationStore,
-  UnblindingOperations,
-  type UnblindingOperationStore,
-} from "../ipex/unblinding-workflow.ts";
+import { type IssuanceDeps, IssuanceOperations, posterDelivery } from "../ipex/issuance.ts";
+import { PresentationOperations } from "../ipex/presenting.ts";
+import { UnblindingOperations } from "../ipex/unblinding-workflow.ts";
 import type { ProtocolProcessor } from "../protocol/protocol-processing.ts";
 import type { Reactor } from "../protocol/reactor.ts";
 import type { Receiptor } from "../witness/receipting.ts";
@@ -49,12 +35,16 @@ import type { ChangeSink } from "./workflow-contract.ts";
 /** Milliseconds between idle passes of each owner, the cadence of the CLI drivers these replace. */
 export const OWNER_LOOP_MS = 50;
 
-/** Embedder-supplied stores and policy; every field is optional and defaults to a process-local value. */
+/**
+ * What an embedder may supply; every field is optional. The operation tables are in memory and their status is
+ * derived from the protocol stores, so there is no store port for them.
+ */
 export interface OperationStores {
-  issuance?: IssuanceOperationStore;
-  presentation?: PresentationOperationStore;
-  unblinding?: UnblindingOperationStore;
-  /** Non-secret blind-derivation coordinates for issuance. */
+  /**
+   * Non-secret blind-derivation coordinates for issuance and derived presentation. Defaults to
+   * {@link BaserDerivedUpdateStore} over the registry environment's database, which is durable wherever the
+   * registry store is; a wallet with its own table supplies that instead.
+   */
   derived?: DerivedUpdateStore;
   /** Receives identity-only changes after commit; defaults to the runtime's Signaler when it has one. */
   changes?: ChangeSink;
@@ -88,7 +78,7 @@ export interface OwnerParts {
   changes?: ChangeSink;
 }
 
-/** Construct the owners over in-memory stores unless the embedder supplied its own. */
+/** Construct the owners over their in-memory tables; the derivation store defaults to the registry database. */
 export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): ComposedOwners {
   const { hby, acdc, exc, protocol, reactor, postman, receiptor, ipex, clock, registryRoot } = parts;
   const changes = stores.changes ?? parts.changes, delivery = posterDelivery(postman);
@@ -101,8 +91,7 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
     reactor,
     protocol,
     delivery,
-    store: stores.issuance ?? new MemoryIssuanceOperationStore(),
-    derived: stores.derived ?? new MemoryDerivedUpdateStore(),
+    derived: stores.derived ?? new BaserDerivedUpdateStore(acdc.store.baser),
     clock,
     changes,
   };
@@ -116,7 +105,6 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       reactor,
       protocol,
       delivery,
-      store: stores.presentation ?? new MemoryPresentationOperationStore(),
       clock,
       derived: issuance.derived,
       changes,
@@ -126,7 +114,6 @@ export function composeOwners(parts: OwnerParts, stores: OperationStores = {}): 
       exc,
       unblinds: ipex,
       delivery,
-      store: stores.unblinding ?? new MemoryUnblindingOperationStore(),
       clock,
       changes,
     }),

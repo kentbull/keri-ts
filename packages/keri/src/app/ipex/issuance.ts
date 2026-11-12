@@ -1,48 +1,59 @@
 /**
  * Runtime-owned operations for single-signature v2 DH issuance.
  *
- * One `IssuanceOperations` owner holds an operations table. The user begins an
- * operation with `beginIssuance`, which signs the Grant, approves the DH
- * exchange, starts the query and records that authorisation in memory. The
- * host's runtime loop (or, in a one-shot CLI, a driver under
- * `withRuntimeWorkers`) then calls `processOnce`, which performs exactly the
- * steps `tufa ipex --issue` performed itself: send the proof support and Grant,
- * deliver DH traffic, resend the unchanged query each second, and once DH
- * completes stage and anchor the registry update (BUP), `finish` the Grant and
- * send the final proof support. Nothing starts an operation or signs except
+ * One `IssuanceOperations` owner holds an in-memory table of live operations. The user begins an
+ * operation with `beginIssuance`, which signs the Grant, approves the DH exchange, starts the query
+ * and records that authorisation in memory. The host's runtime loop (or, in a one-shot CLI, a driver
+ * under `withRuntimeWorkers`) then calls `processOnce`, which performs exactly the steps
+ * `tufa ipex --issue` performed itself: send the proof support and Grant, deliver DH traffic, resend
+ * the unchanged query each second, and once DH completes stage and anchor the registry update (BUP),
+ * `finish` the Grant and send the final proof support. Nothing starts an operation or signs except
  * inside an operation the user began while its in-memory authorisation lives.
  *
- * Workflow-contract shape (`app/runtime/workflow-contract.ts`): `beginIssuance`
- * returns after local commit and never waits for the peer; `issuanceStatus` is a
- * pure read of the durable record plus the live table; `waitForIssuance` only
+ * Workflow-contract shape (`app/runtime/workflow-contract.ts`): `beginIssuance` returns after local
+ * commit and never waits for the peer; `issuanceStatus` is a pure read; `waitForIssuance` only
  * observes and returns a `WaitResult`; `abandonIssuance` is local.
  *
- * Durable (the {@link IssuanceOperationStore} record and protocol tables): the
- * non-secret record, the pending Grant and its deadline, the retained registry
- * root in the Keeper, staged and accepted registry events and their derivation
- * coordinates. Memory only: ephemeral DH keys and peer keys (inside `Dhke`), the
- * witness authorisation codes, the anchor authorisation itself, resend timers.
- * A process that loses memory therefore never signs. After a restart:
+ * There is no operation store. Status is derived from the protocol stores plus the live table, so a
+ * reopened store reads what the stores prove, whatever the process was doing:
  *
- * | issuance when the process ended                              | reads after a restart                         |
- * | ------------------------------------------------------------ | --------------------------------------------- |
- * | before its root was retained, or retained but not anchored    | `interrupted`: begin a new Grant              |
- * | issuer: update accepted, Grant not yet finished               | completed by the next `processOnce`           |
- * | holder: root retained, update not yet accepted                | active, `rootRetained`; waits                 |
- * | holder: root retained, update accepted                        | completed by the next `processOnce`           |
+ * | stores prove                                                              | status                                   |
+ * | ------------------------------------------------------------------------- | ---------------------------------------- |
+ * | holder: pending Grant, no root held                                       | `awaitingExchangeConsent`                |
+ * | pending Grant past its deadline                                           | `expired`                                |
+ * | holder: root held, not committed otherwise; issuer: update accepted       | `active`, `rootRetained` (adopted)       |
+ * | issuer: pending Grant, update not accepted                                | `interrupted`                            |
+ * | root held and the registry committed to another exchange                  | `interrupted`                            |
+ * | holder: Grant accepted, no accepted Admit                                 | `active`, `awaitingAdmitConsent`         |
+ * | holder: accepted Admit                                                    | `done`, `admitted`                       |
+ * | issuer: Grant accepted                                                    | `done`, `issued`                         |
  *
- * The two completions sign nothing: the issuer's update was anchored before the restart, and `Dhke.finish`
- * only proves the held root against the accepted update before the Grant is accepted. Admit stays the
- * holder's separate consent. A new Grant on a registry that holds an unused root (no update staged or
- * accepted) replaces that root when its exchange retains its own; otherwise the refusal stands. A KERIpy
- * peer keeps the old rule and refuses a second exchange on a registry it holds a root for. The Grant's
- * exchange deadline bounds everything, even a late completion; passing it reads `expired`.
+ * Lost on reload, by design: the phases that live only in memory (`exchangingKeys`, `awaitingAnchor`,
+ * `proving` read `rootRetained` or `interrupted` afterwards), the `abandoned` and `failed` end states
+ * with their reasons (an abandoned holder reads `awaitingExchangeConsent` again, an abandoned issuer
+ * `interrupted`, and an abandoned operation whose root and accepted update remain is adopted and
+ * completed on the next start; it signs nothing and Admit stays a separate consent), the consent
+ * timestamps, and whether the issuer's final proof support was delivered (an issuer whose Grant is
+ * accepted reads `done` even if the process ended before that message went out). A Grant the issuer
+ * prepared but never began reads `interrupted`, the same as one whose process ended; so does an issuer
+ * that ended between staging its registry update and anchoring it (an explicit recovery action for that
+ * case is a planned follow-up; until then it needs a new Grant, and a held root nothing committed to is
+ * replaced). A wallet that wants any of these keeps them itself from the `ChangeSink`.
  *
- * The runtime never writes wallet inventory. Completion is pushed to the
- * `ChangeSink` as `{kind: "issuance", id: <grant>}` and the embedder records it.
+ * After a restart the first `processOnce` finds the pending Grants this runtime's identifiers are party
+ * to that hold a root and can finish without new key exchange ({@link resumableExchange}) and adopts
+ * them: the holder waits for or verifies the issuer's update, an issuer whose update is already
+ * accepted finishes. Neither signs: the issuer's update was anchored before the restart, and
+ * `Dhke.finish` only proves the held root against the accepted update before the Grant is accepted. A
+ * new Grant on a registry that holds an unused root (no update staged or accepted) replaces that root
+ * when its exchange retains its own; otherwise the refusal stands. A KERIpy peer keeps the old rule and
+ * refuses a second exchange on a registry it holds a root for. The Grant's exchange deadline bounds
+ * everything, even a late completion; passing it reads `expired`.
  *
- * Group steps are a later change: they add records and phases and run inside
- * the same `processOnce`; the table, store port and status union are unchanged.
+ * The runtime never writes wallet inventory. Completion is pushed to the `ChangeSink` as
+ * `{kind: "issuance", id: <grant>}` and the embedder records it.
+ *
+ * Group steps are a later change: they add phases and run inside the same `processOnce`.
  * Collaborators are narrow concrete owners (ADR-0013); no `AgentRuntime`.
  */
 import {
@@ -50,7 +61,6 @@ import {
   concatBytes,
   Counter,
   framePayload,
-  parseBytes,
   SerderACDC,
   type SerderKERI,
   type Versionage,
@@ -63,7 +73,6 @@ import { type Dhke, registryUncommitted, resumableExchange } from "../../acdc/dh
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
-import { messagize } from "../../core/protocol-serialization.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
@@ -75,7 +84,7 @@ import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
-import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions } from "./ipex-discloser.ts";
+import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
 
 /** Milliseconds between resends of the unchanged issuer query, as `tufa ipex --issue` and KERIpy do. */
 export const ISSUANCE_QUERY_RESEND_MS = 1000;
@@ -84,7 +93,7 @@ export const ISSUANCE_QUERY_RESEND_MS = 1000;
 export type IssuanceRole = "issuer" | "holder";
 
 /** Terminal states that are not completion; each carries a reason. */
-export type IssuanceEndState = "abandoned" | "interrupted" | "expired" | "refused" | "failed";
+export type IssuanceEndState = "abandoned" | "interrupted" | "expired" | "failed";
 
 /** Where an active issuance is. Group and holder phases extend this union. */
 export type IssuancePhase =
@@ -97,48 +106,6 @@ export type IssuancePhase =
 
 /** A user step an active issuance waits for. Single-signature issuers never wait: `beginIssuance` authorises the anchor. */
 export type IssuanceNeed = "exchange" | "admit";
-
-/** Durable, non-secret operation facts. Never holds keys, roots or authorisation codes. */
-export interface IssuanceRecord {
-  /** SAID of the Grant exchange. */
-  readonly grant: string;
-  /** DH transaction id; differs from the Grant SAID for a Grant that continues an earlier exchange. */
-  readonly xid: string;
-  /** Prefix of the local identifier. */
-  readonly hab: string;
-  readonly role: IssuanceRole;
-  /** The Grant's original exchange deadline (ISO 8601); absent only for an Admit of a Grant that never needed DH. */
-  readonly deadline?: string;
-  /** When the user gave each consent (ISO 8601). */
-  readonly consents: { readonly exchange?: string; readonly anchor?: string; readonly admit?: string };
-  /** Holder: when the Grant was accepted locally, leaving only the Admit consent. */
-  readonly issued?: string;
-  /** When the operation completed: the issuer's final proof support was sent, or the holder's Admit was accepted. */
-  readonly done?: string;
-  readonly ended?: { readonly state: IssuanceEndState; readonly reason: string; readonly at: string };
-}
-
-/** The embedder's durable table of {@link IssuanceRecord}s, keyed by Grant SAID. */
-export interface IssuanceOperationStore {
-  get(grant: string): IssuanceRecord | null;
-  /** Insert or replace the record for `record.grant`. */
-  put(record: IssuanceRecord): void;
-  list(): IssuanceRecord[];
-}
-
-/** Process-local store for the CLI and tests; a wallet backs the port with its own table. */
-export class MemoryIssuanceOperationStore implements IssuanceOperationStore {
-  private readonly records = new Map<string, IssuanceRecord>();
-  get(grant: string): IssuanceRecord | null {
-    return this.records.get(grant) ?? null;
-  }
-  put(record: IssuanceRecord): void {
-    this.records.set(record.grant, structuredClone(record));
-  }
-  list(): IssuanceRecord[] {
-    return [...this.records.values()].map((record) => structuredClone(record));
-  }
-}
 
 /** Status of one issuance, discriminated on `state`. A pure read. */
 export type IssuanceStatus =
@@ -183,7 +150,6 @@ export interface AdmitDeps {
   readonly reactor: Pick<Reactor, "processBytes">;
   readonly protocol: Pick<ProtocolProcessor, "processEscrowsOnce">;
   readonly delivery: IssuanceDelivery;
-  readonly store: IssuanceOperationStore;
   /** Same clock the exchanger and DH owners were composed with. */
   readonly clock: RuntimeClock;
   readonly changes?: ChangeSink;
@@ -199,9 +165,15 @@ export interface IssuanceDeps extends AdmitDeps {
   readonly derived: DerivedUpdateStore;
 }
 
-/** One operation the user began; exists only while its authorisation is live in memory. */
+/** One operation the user began or adopted; exists only while it is live in this process. */
 interface LiveIssuance {
-  record: IssuanceRecord;
+  /** SAID of the Grant exchange. */
+  readonly grant: string;
+  /** DH transaction id; differs from the Grant SAID for a Grant that continues an earlier exchange. */
+  readonly xid: string;
+  readonly role: IssuanceRole;
+  /** The Grant's original exchange deadline (ISO 8601). */
+  readonly deadline: string;
   readonly hab: Hab;
   readonly dh: Dhke;
   readonly peer: string;
@@ -240,13 +212,9 @@ const EXPIRED = "The selected Grant reached its original exchange deadline";
 const EXPIRED_LATE =
   "The selected Grant reached its original exchange deadline after the issuer's registry update arrived; a Grant is completed only while live, so ask the issuer for a new Grant";
 const RESTARTED =
-  "The process that began this issuance ended before the registry update was anchored; nothing was signed since. Begin a new Grant: its key exchange replaces any unused root";
+  "No live issuance holds this Grant: the process that began it ended before the registry update was anchored (or it was never begun); nothing was signed since. Begin the Grant, or a new one: its key exchange replaces any unused root";
 const COMMITTED =
   "The process that ended a key exchange left a staged or accepted registry update that this Grant can no longer complete, and the registry cannot take another key exchange";
-
-function iso(ms: number): string {
-  return new Date(ms).toISOString();
-}
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -260,40 +228,54 @@ function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
   });
 }
 
+/** A Grant a restarted process can finish without a new key exchange. */
+interface Resumable {
+  hab: Hab;
+  grant: string;
+  role: IssuanceRole;
+}
+
+/** What an operation that ended in this process reports until the process ends. */
+interface EndedIssuance {
+  role: IssuanceRole;
+  state: IssuanceEndState;
+  reason: string;
+}
+
 /**
- * The operations table and its driver. One per host runtime; every identifier
- * of that runtime may issue through it. Only `processOnce` performs work, and
- * only for operations in {@link IssuanceOperations.live}.
+ * The live operations table and its driver. One per host runtime; every identifier of that runtime may
+ * issue through it. Only `processOnce` performs work, and only for operations in
+ * {@link IssuanceOperations.live}.
  */
 export class IssuanceOperations {
-  /** Operations whose authorisation is live in this process. Internal to this module's functions. */
+  /** Operations live in this process. Internal to this module's functions. */
   readonly live = new Map<string, LiveIssuance>();
+  /** Operations that ended in this process with their reasons; not durable, see the module doc. */
+  readonly ended = new Map<string, EndedIssuance>();
   readonly discloser: IpexDiscloser;
   private swept = false;
-  /** Records an earlier process left active: each is completed from stores or ended, once. */
-  private stale: IssuanceRecord[] = [];
+  /** Grants an earlier process left resumable: each is adopted once, or dropped. */
+  private stale: Resumable[] = [];
 
   constructor(readonly deps: IssuanceDeps) {
     this.discloser = new IpexDiscloser(deps.hby, deps.rgy.store, deps.exc, deps.receiptor);
   }
 
   /**
-   * Advance every live operation by one pass. Each pass is bounded by the
-   * operation's Grant deadline. The first pass also settles records left active
-   * by an earlier process as `interrupted`; that signs and sends nothing.
+   * Advance every live operation by one pass. Each pass is bounded by the operation's Grant deadline.
+   * The first pass also adopts the pending Grants the stores prove resumable ({@link resumableGrants});
+   * that signs and sends nothing.
    */
   *processOnce(): Operation<void> {
     if (!this.swept) {
       this.swept = true;
-      this.stale = this.deps.store.list().filter((record) =>
-        !record.ended && !record.issued && !record.done && !this.live.has(record.grant)
-      );
+      this.stale = resumableGrants(this.deps).filter(({ grant }) => !this.live.has(grant));
     }
-    for (const record of [...this.stale]) {
-      if (yield* this.settle(record)) this.stale.splice(this.stale.indexOf(record), 1);
+    for (const found of [...this.stale]) {
+      if (yield* this.settle(found)) this.stale.splice(this.stale.indexOf(found), 1);
     }
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.record.grant)) continue;
+      if (op.busy || !this.live.has(op.grant)) continue;
       op.busy = true;
       try {
         const left = op.expires - BigInt(this.deps.clock.now()) * 1000n;
@@ -309,58 +291,55 @@ export class IssuanceOperations {
     }
   }
 
-  /** End a live operation: release its DH approval, record why, tell the sink. */
+  /** End a live operation: release its DH approval, remember why until the process ends, tell the sink. */
   end(op: LiveIssuance, state: IssuanceEndState, reason: string): void {
     this.release(op);
-    this.deps.store.put({ ...op.record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
-    this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
+    this.ended.set(op.grant, { role: op.role, state, reason });
+    this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
   /** Drop the live entry and the DH approval; a missing approval means the owner already closed. */
   private release(op: LiveIssuance): void {
-    this.live.delete(op.record.grant);
+    this.live.delete(op.grant);
     try {
-      op.dh.abandon(op.record.xid);
+      op.dh.abandon(op.xid);
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
     }
   }
 
   /**
-   * Settle one record an earlier process left active. A resumable one becomes live again, without signing:
-   * the holder waits for or verifies the update, an issuer whose update is already accepted finishes. Anything
-   * else ends as `interrupted` or `expired`. False means the Keeper is locked and the record is retried.
+   * Adopt one Grant an earlier process left resumable, without signing: the holder waits for or verifies the
+   * update, an issuer whose update is already accepted finishes. A Grant the exchange can no longer resume is
+   * dropped and reads from the stores. False means the Keeper is locked and the Grant is retried.
    */
-  private *settle(record: IssuanceRecord): Operation<boolean> {
-    const hab = this.deps.hby.habs.get(record.hab);
-    if (hab && resumable(this.deps, record)) {
-      try {
-        hab.mgr.requireRegistryRootAccess();
-      } catch (error) {
-        if (error instanceof ValidationError) return false;
-        throw error;
-      }
-      try {
-        yield* this.adopt(hab, record);
-        return true;
-      } catch (error) {
-        if (!(error instanceof ValidationError)) throw error;
-      }
+  private *settle(found: Resumable): Operation<boolean> {
+    if (this.live.has(found.grant)) return true;
+    try {
+      found.hab.mgr.requireRegistryRootAccess();
+    } catch (error) {
+      if (error instanceof ValidationError) return false;
+      throw error;
     }
-    const [state, reason] = orphaned(this.deps, record);
-    this.deps.store.put({ ...record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
-    this.deps.changes?.push({ kind: "issuance", id: record.grant });
+    try {
+      yield* this.adopt(found);
+    } catch (error) {
+      if (!(error instanceof ValidationError)) throw error;
+    }
     return true;
   }
 
-  /** Rebuild the live entry of a resumable record from the stored Grant and the held roots. */
-  private *adopt(hab: Hab, record: IssuanceRecord): Operation<void> {
-    const { retained, credential, expires } = selectGrant(this, hab, record.grant, record.role);
-    const wires = record.role === "issuer" ? yield* grantWires(retained) : null;
-    const dh = this.deps.dhkes.dhke(hab);
-    if (dh.resume(record.grant) !== record.xid) throw new ValidationError("Resumed exchange differs from its record");
-    this.live.set(record.grant, {
-      record,
+  /** Rebuild the live entry of a resumable Grant from the stored Grant and the held roots. */
+  private *adopt({ hab, grant, role }: Resumable): Operation<void> {
+    const { retained, credential, deadline, expires } = selectGrant(this, hab, grant, role);
+    const wires = role === "issuer" ? yield* grantWires(retained) : null;
+    const dh = this.deps.dhkes.dhke(hab), xid = dh.resume(grant);
+    this.ended.delete(grant);
+    this.live.set(grant, {
+      grant,
+      xid,
+      role,
+      deadline,
       hab,
       dh,
       peer: wires ? retained.serder.sad!.ri as string : retained.serder.pre!,
@@ -370,7 +349,7 @@ export class IssuanceOperations {
       phase: "rootRetained",
       busy: false,
     });
-    this.deps.changes?.push({ kind: "issuance", id: record.grant });
+    this.deps.changes?.push({ kind: "issuance", id: grant });
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
@@ -385,7 +364,7 @@ export class IssuanceOperations {
   private setPhase(op: LiveIssuance, phase: IssuancePhase): void {
     if (op.phase === phase) return;
     op.phase = phase;
-    this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
+    this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
   /** One pass of the issuer loop, in the order of the CLI loop it replaces. */
@@ -400,7 +379,7 @@ export class IssuanceOperations {
       if (queued.kin === "sign") throw new ValidationError("Individual issuance cannot process group contributions");
       yield* this.send(op, queued.dest, queued.msg);
     }
-    if (!op.dh.complete(op.record.xid)) {
+    if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
         yield* this.send(op, op.peer, issuer.query);
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
@@ -417,11 +396,10 @@ export class IssuanceOperations {
   private *receive(op: LiveIssuance): Operation<void> {
     if (this.deps.rgy.store.headEvent(op.registry)?.ilk === "rip") return this.setPhase(op, "rootRetained");
     this.setPhase(op, "proving");
-    yield* op.dh.finish(op.record.xid);
-    if (!this.deps.exc.complete(op.record.grant)) throw new ValidationError("Issued Grant remains unaccepted");
+    yield* op.dh.finish(op.xid);
+    if (!this.deps.exc.complete(op.grant)) throw new ValidationError("Issued Grant remains unaccepted");
     this.release(op);
-    this.deps.store.put({ ...op.record, issued: iso(this.deps.clock.now()) });
-    this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
+    this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 
   /** DH is complete: stage and anchor the BUP under the live authorisation, finish the Grant, send proof support. */
@@ -438,45 +416,66 @@ export class IssuanceOperations {
       yield* author.anchor(reg, event, issuer.auths);
     }
     this.setPhase(op, "proving");
-    yield* op.dh.finish(op.record.xid);
-    if (!this.deps.exc.complete(op.record.grant)) throw new ValidationError("Issued Grant remains unaccepted");
+    yield* op.dh.finish(op.xid);
+    if (!this.deps.exc.complete(op.grant)) throw new ValidationError("Issued Grant remains unaccepted");
     yield* this.send(op, op.peer, this.discloser.proofSupport(issuer.raw, op.hab));
     this.release(op);
-    this.deps.store.put({ ...op.record, done: iso(this.deps.clock.now()) });
-    this.deps.changes?.push({ kind: "issuance", id: op.record.grant });
+    this.deps.changes?.push({ kind: "issuance", id: op.grant });
   }
 }
 
-/** Whether the Grant's exchange deadline has passed; a record without one never lapses. */
-function lapsed(deps: Pick<IssuanceDeps, "clock">, { deadline }: IssuanceRecord): boolean {
-  const expiry = timestampMicros(deadline);
-  return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
+/** Whether the clock has reached a Grant deadline in microseconds since the epoch. */
+function reached(deps: Pick<IssuanceDeps, "clock">, expires: bigint | null): boolean {
+  return expires !== null && BigInt(deps.clock.now()) * 1000n >= expires;
 }
 
 /**
- * Whether a restarted process can complete this record without a new key exchange: inside the Grant's
- * deadline, the record's habitat is the party its role names, and {@link resumableExchange} finds the roots.
- * An issuer additionally needs its update already accepted; one that is not anchored cannot be resumed, since
- * the anchor would be signed after the restart. A pure read of stores.
+ * Whether a restarted process can complete this Grant without a new key exchange: it is pending inside its
+ * deadline, `hab` is the party `role` names, and {@link resumableExchange} finds the roots. An issuer
+ * additionally needs its update already accepted; one that is not anchored cannot be resumed, since the
+ * anchor would be signed after the restart. A pure read of stores.
  */
-function resumable(deps: IssuanceDeps, record: IssuanceRecord): boolean {
-  const hab = deps.hby.habs.get(record.hab);
-  if (!hab || lapsed(deps, record)) return false;
-  const scope = resumableExchange({ hab, exc: deps.exc }, record.grant);
-  if (!scope || (scope.issuer === hab.pre) !== (record.role === "issuer")) return false;
-  return record.role === "holder" || scope.registries.every((r) => deps.rgy.store.headEvent(r)?.ilk === "bup");
+function resumable(deps: IssuanceDeps, hab: Hab, grant: string, role: IssuanceRole): boolean {
+  const scope = resumableExchange({ hab, exc: deps.exc }, grant);
+  if (!scope || (scope.issuer === hab.pre) !== (role === "issuer")) return false;
+  return role === "holder" || scope.registries.every((r) => deps.rgy.store.headEvent(r)?.ilk === "bup");
 }
 
-/** The terminal reading of a record no process can complete: past its deadline, or ended by a restart. */
-function orphaned(deps: IssuanceDeps, record: IssuanceRecord): ["expired" | "interrupted", string] {
-  const hab = deps.hby.habs.get(record.hab), credential = deps.exc.retainedInput(record.grant)?.nests?.[0]?.body;
-  const registry = credential instanceof SerderACDC ? credential.regid : undefined;
-  const head = registry ? deps.rgy.store.headEvent(registry)?.ilk : undefined;
-  const held = !!hab && !!registry && hab.mgr.hasRegistryRoot(hab.pre!, registry);
-  if (lapsed(deps, record)) {
-    return ["expired", record.role === "holder" && head === "bup" ? EXPIRED_LATE : EXPIRED];
+/** The v2 Grant behind `grant` and the local parties to it, or null when it is not a Grant this runtime is party to. */
+function grantParties(deps: IssuanceDeps, grant: string) {
+  const db = deps.hby.db, serder = db.exns.get([grant]) ?? db.epse.get([grant]);
+  if (!serder || serder.said !== grant || serder.route !== "/ipex/grant" || serder.pvrsn.major < 2) return null;
+  const sender = serder.pre, recipient = serder.sad?.ri;
+  const issuer = typeof sender === "string" ? deps.hby.habs.get(sender) : undefined;
+  const holder = typeof recipient === "string" ? deps.hby.habs.get(recipient) : undefined;
+  return issuer || holder ? { serder, issuer, holder } : null;
+}
+
+/**
+ * Every pending Grant the stores prove a restarted process can finish: one scan of the pending exchange
+ * escrow, made once when the owner first runs. A pure read.
+ */
+function resumableGrants(deps: IssuanceDeps): Resumable[] {
+  const found: Resumable[] = [];
+  for (const [[grant]] of [...deps.hby.db.epse.getTopItemIter()]) {
+    const parties = grantParties(deps, grant);
+    if (!parties) continue;
+    if (parties.issuer && resumable(deps, parties.issuer, grant, "issuer")) {
+      found.push({ hab: parties.issuer, grant, role: "issuer" });
+    } else if (parties.holder && resumable(deps, parties.holder, grant, "holder")) {
+      found.push({ hab: parties.holder, grant, role: "holder" });
+    }
   }
-  if (held && registry && !registryUncommitted(deps.rgy.store, registry)) return ["interrupted", COMMITTED];
+  return found;
+}
+
+/** The terminal reading of a pending Grant no process can complete: ended by a restart, or by another exchange. */
+function orphaned(deps: IssuanceDeps, hab: Hab, grant: string): ["interrupted", string] {
+  const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
+  const registry = credential instanceof SerderACDC ? credential.regid : undefined;
+  if (registry && hab.mgr.hasRegistryRoot(hab.pre!, registry) && !registryUncommitted(deps.rgy.store, registry)) {
+    return ["interrupted", COMMITTED];
+  }
   return ["interrupted", RESTARTED];
 }
 
@@ -521,8 +520,7 @@ function requireIndividual(deps: IssuanceDeps, hab: Hab): void {
 function selectGrant(ops: IssuanceOperations, hab: Hab, grant: string, role: IssuanceRole) {
   const { deps } = ops;
   requireIndividual(deps, hab);
-  const old = deps.store.get(grant);
-  if (ops.live.has(grant) || old?.issued || old?.done) {
+  if (ops.live.has(grant) || deps.exc.complete(grant)) {
     throw new ValidationError("Issuance was already begun for this Grant");
   }
   const retained = deps.exc.retainedInput(grant, { pending: true });
@@ -549,10 +547,7 @@ function* grantWires(retained: ExchangeInput): Operation<{ raw: Uint8Array; gran
     Counter.makeGVC(Vrsn_2_0),
     ...yield* call(() => Promise.all((retained.nests ?? []).map((nest) => collectPayload(framePayload(nest))))),
   );
-  const frame =
-    parseBytes(messagize(retained.serder, { tsgs: retained.tsgs, cigars: retained.cigars, gvrsn: Vrsn_2_0 }))[0];
-  frame.nests = [...retained.nests ?? []];
-  return { raw, grantWire: yield* call(() => collectPayload(framePayload(frame))) };
+  return { raw, grantWire: yield* storedExchangeWire(retained) };
 }
 
 /**
@@ -570,18 +565,13 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
   const grant = "grant" in input ? input.grant : (yield* prepareIssuanceGrant(ops, input)).grant;
   const { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "issuer");
   const { raw, grantWire } = yield* grantWires(retained);
-  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant), now = iso(deps.clock.now());
-  const record: IssuanceRecord = {
+  const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant), query = dh.start(grant);
+  ops.ended.delete(grant);
+  ops.live.set(grant, {
     grant,
     xid,
-    hab: hab.pre!,
     role: "issuer",
     deadline,
-    consents: { exchange: now, anchor: now },
-  };
-  deps.store.put(record);
-  ops.live.set(grant, {
-    record,
     hab,
     dh,
     peer: retained.serder.sad!.ri as string,
@@ -596,36 +586,56 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
 }
 
 /**
- * Pure read of one issuance: its durable record and the live table. A record
- * left active by a process that is gone reads `interrupted` (or `expired` once
- * the Grant deadline has passed); that is a statement, not a write.
+ * Pure read of one issuance: what ended in this process, the live table, and otherwise what the protocol
+ * stores prove (see the module doc for the table and what a reload loses). A pending Grant no live
+ * operation holds reads `interrupted` (or `expired` once the Grant deadline has passed); that is a
+ * statement, not a write.
  *
- * @throws ValidationError when no issuance was begun for `grant`.
+ * @throws ValidationError when `grant` is not a v2 Grant this runtime's identifiers are party to.
  */
-export function issuanceStatus(ops: Pick<IssuanceOperations, "deps" | "live">, grant: string): IssuanceStatus {
-  const record = ops.deps.store.get(grant);
-  if (!record) return unconsented(ops.deps, grant);
-  const { role } = record;
-  if (record.ended) return { state: record.ended.state, role, reason: record.ended.reason };
-  if (record.done) return { state: "done", role, phase: role === "holder" ? "admitted" : "issued" };
-  if (record.issued) return { state: "active", role, phase: "awaitingAdmitConsent", needs: "admit" };
-  const live = ops.live.get(grant), over = lapsed(ops.deps, record);
-  if (live && !over) return { state: "active", role, phase: live.phase, deadline: record.deadline };
-  if (!live && resumable(ops.deps, record)) {
-    return { state: "active", role, phase: "rootRetained", deadline: record.deadline };
+export function issuanceStatus(
+  ops: Pick<IssuanceOperations, "deps" | "live" | "ended">,
+  grant: string,
+): IssuanceStatus {
+  const { deps } = ops, ended = ops.ended.get(grant), live = ops.live.get(grant);
+  if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
+  if (live && !reached(deps, live.expires)) {
+    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline };
   }
-  const [state, reason] = orphaned(ops.deps, record);
+  const parties = grantParties(deps, grant);
+  if (!parties) throw new ValidationError("No issuance was begun for this Grant");
+  const { serder, issuer, holder } = parties, db = deps.hby.db;
+  if (deps.exc.complete(grant)) {
+    const admitted = !!db.erpy.get([grant]);
+    if (!holder || (issuer && !admitted)) return { state: "done", role: "issuer", phase: "issued" };
+    if (admitted) return { state: "done", role: "holder", phase: "admitted" };
+    return { state: "active", role: "holder", phase: "awaitingAdmitConsent", needs: "admit" };
+  }
+  const deadline = deps.exc.exchangeDeadline(serder), expires = timestampMicros(deadline);
+  if (!deadline || expires === null) throw new ValidationError("No issuance was begun for this Grant");
+  const role: IssuanceRole = issuer ? "issuer" : "holder", hab = (issuer ?? holder)!;
+  if (reached(deps, expires)) {
+    const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
+    const registry = credential instanceof SerderACDC ? credential.regid : undefined;
+    const late = role === "holder" && registry && deps.rgy.store.headEvent(registry)?.ilk === "bup";
+    return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED };
+  }
+  if (resumable(deps, hab, grant, role)) return { state: "active", role, phase: "rootRetained", deadline };
+  if (role === "holder" && !heldRoot(deps, hab, grant)) {
+    if (!deps.exc.retainedInput(grant, { pending: true })) {
+      throw new ValidationError("No issuance was begun for this Grant");
+    }
+    return { state: "active", role, phase: "awaitingExchangeConsent", needs: "exchange", deadline };
+  }
+  const [state, reason] = orphaned(deps, hab, grant);
   return { state, role, reason };
 }
 
-/** A Grant addressed to a local identifier that has not yet consented to the exchange reads as awaiting that consent. */
-function unconsented(deps: IssuanceDeps, grant: string): IssuanceStatus {
-  const pending = deps.exc.retainedInput(grant, { pending: true }), holder = pending?.serder.sad?.ri;
-  if (typeof holder !== "string" || !deps.hby.habs.has(holder)) {
-    throw new ValidationError("No issuance was begun for this Grant");
-  }
-  const deadline = deps.exc.exchangeDeadline(pending!.serder) ?? undefined;
-  return { state: "active", role: "holder", phase: "awaitingExchangeConsent", needs: "exchange", deadline };
+/** Whether `hab` holds a registry root for the credential registry this Grant discloses. */
+function heldRoot(deps: IssuanceDeps, hab: Hab, grant: string): boolean {
+  const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
+  const registry = credential instanceof SerderACDC ? credential.regid : undefined;
+  return !!registry && hab.mgr.hasRegistryRoot(hab.pre!, registry);
 }
 
 /** Options for {@link waitForIssuance}. */
@@ -642,7 +652,7 @@ export interface IssuanceWaitOptions {
  * worker and drives nothing: someone else must call `processOnce`.
  */
 export function* waitForIssuance(
-  ops: Pick<IssuanceOperations, "deps" | "live">,
+  ops: Pick<IssuanceOperations, "deps" | "live" | "ended">,
   grant: string,
   { timeoutMs, clock = ops.deps.clock, until = (status) => status.state !== "active" }: IssuanceWaitOptions,
 ): Operation<WaitResult<IssuanceStatus>> {
@@ -662,17 +672,12 @@ export function approveIssuanceExchange(
 ): IssuanceBegun {
   const { deps } = ops, { retained, credential, deadline, expires } = selectGrant(ops, hab, grant, "holder");
   const dh = deps.dhkes.dhke(hab), xid = dh.approve(grant);
-  const record: IssuanceRecord = {
+  ops.ended.delete(grant);
+  ops.live.set(grant, {
     grant,
     xid,
-    hab: hab.pre!,
     role: "holder",
     deadline,
-    consents: { exchange: iso(deps.clock.now()) },
-  };
-  deps.store.put(record);
-  ops.live.set(grant, {
-    record,
     hab,
     dh,
     peer: retained.serder.pre!,
@@ -696,7 +701,7 @@ export interface IssuanceAdmit {
 
 /**
  * The holder's consent to admit one accepted Grant: signs the Admit, accepts it locally and records it. Works for
- * a Grant finished by this module and for any other accepted v2 Grant, for which it creates the record. Returns
+ * a Grant finished by this module and for any other accepted v2 Grant. Returns
  * before delivery so an embedder can record its own inventory first; see {@link deliverIssuanceAdmit}.
  *
  * @throws ValidationError for a Grant that is not accepted and addressed to `hab`, an admitted Grant, or a group identifier.
@@ -711,8 +716,7 @@ export function* admitIssuance(
     auths?: WitnessAuthMap;
   },
 ): Operation<IssuanceAdmit> {
-  const old = deps.store.get(grant);
-  if (old?.done || old?.ended) throw new ValidationError("Issuance cannot be admitted in its state");
+  if (deps.hby.db.erpy.get([grant])) throw new ValidationError("Issuance cannot be admitted in its state");
   const prepared = yield* new IpexAdmitter(deps.hby, deps.rgy.store, deps.exc).prepareAdmit(grant, hab.pre!, {
     consent: true,
     auths,
@@ -724,19 +728,6 @@ export function* admitIssuance(
   yield* deps.reactor.processBytes(wire, { local: true });
   yield* deps.protocol.processEscrowsOnce();
   if (!deps.exc.complete(prepared.admit.said!)) throw new ValidationError("Local ACDC v2 Admit was not accepted.");
-  const now = iso(deps.clock.now()), body = deps.hby.db.exns.get([grant])!;
-  const xid = body.ilk === "xip" ? body.said! : body.sad!.x as string;
-  deps.store.put({
-    grant,
-    xid,
-    hab: hab.pre!,
-    role: "holder",
-    deadline: deps.exc.exchangeDeadline(body) ?? undefined,
-    ...old,
-    consents: { ...old?.consents, admit: now },
-    issued: old?.issued ?? now,
-    done: now,
-  });
   deps.changes?.push({ kind: "issuance", id: grant });
   return { admit: prepared.admit, wire, dest: prepared.admit.sad!.ri as string };
 }
@@ -752,20 +743,19 @@ export function* deliverIssuanceAdmit(
 
 /**
  * Local abandon: release the DH approval (ephemeral keys, permanent refusal of
- * this operation) and record `abandoned`. Does not message the peer and does
+ * this operation) and read `abandoned` until the process ends. Does not message the peer and does
  * not undo a retained root or a registry update that was already anchored.
  * Does nothing to an issuance that is already done or ended.
  *
  * @throws ValidationError when no issuance was begun for `grant`.
  */
 export function abandonIssuance(ops: IssuanceOperations, grant: string, reason = "Abandoned by the user"): void {
-  const record = ops.deps.store.get(grant);
-  if (!record) throw new ValidationError("No issuance was begun for this Grant");
-  if (record.ended || record.done) return;
+  const status = issuanceStatus(ops, grant);
+  if (status.state !== "active") return;
   const live = ops.live.get(grant);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.deps.store.put({ ...record, ended: { state: "abandoned", reason, at: iso(ops.deps.clock.now()) } });
+    ops.ended.set(grant, { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "issuance", id: grant });
   }
 }

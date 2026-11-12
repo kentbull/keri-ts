@@ -39,8 +39,6 @@ import {
   type Hab,
   type Habery,
   isLocalGroupHab,
-  MemoryIssuanceOperationStore,
-  MemoryPresentationOperationStore,
   Organizer,
   posterDelivery,
   prepareAcdcV2GroupIpex,
@@ -251,7 +249,6 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
           reactor: runtime.reactor,
           protocol: runtime.protocol,
           delivery: posterDelivery(runtime.postman),
-          store: new MemoryIssuanceOperationStore(),
           clock: runtime.clock,
         };
         const admitted = yield* admitIssuance(deps, { hab, grant: said, message, gvrsn, auths });
@@ -406,7 +403,6 @@ function* acdcV2Disclosure(
           reactor: runtime.reactor,
           protocol: runtime.protocol,
           delivery: posterDelivery(runtime.postman),
-          store: new MemoryPresentationOperationStore(),
           clock: runtime.clock,
           views: wallet,
           derived: custody?.options.store,
@@ -437,7 +433,7 @@ function* acdcV2Disclosure(
             yield* driver.halt();
           }
         });
-        if (status.state === "done") return { said, accepted: true, deliveries: [...status.deliveries] };
+        if (status.state === "done") return { said, accepted: true, deliveries: [...status.deliveries ?? []] };
         if (status.state === "active") throw new ValidationError("ACDC v2 presentation delivery did not finish.");
         throw status.state === "failed" ? new Error(status.reason) : new ValidationError(status.reason);
       });

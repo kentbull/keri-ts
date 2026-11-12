@@ -23,7 +23,6 @@ import {
   type IssuanceStatus,
   type KramConfig,
   localGroupMember,
-  MemoryIssuanceOperationStore,
   Organizer,
   posterDelivery,
   prepareIssuanceGrant,
@@ -104,7 +103,6 @@ function issuanceOperations(
     reactor: runtime.reactor,
     protocol: runtime.protocol,
     delivery: posterDelivery(runtime.postman),
-    store: new MemoryIssuanceOperationStore(),
     derived: custody.options.store,
     clock: runtime.clock,
   });

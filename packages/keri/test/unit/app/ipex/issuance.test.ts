@@ -18,8 +18,7 @@ import {
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
-import { timestampMicros } from "../../../../src/time/mod.ts";
-import { pump, route, type Scenario, scenario } from "./issuance-fixtures.ts";
+import { deadlineOf, pastDeadline, pump, route, type Scenario, scenario } from "./issuance-fixtures.ts";
 
 const grantOptions = (s: Scenario, index = 0) => ({ recipient: s.holder.habs[index].pre!, message: "Issue" });
 const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
@@ -66,7 +65,7 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
       state: "active",
       role: "issuer",
       phase: "exchangingKeys",
-      deadline: s.store.get(grant)!.deadline,
+      deadline: deadlineOf(s.issuer, grant),
     });
     assertEquals(s.log.length, 0, "begin sends nothing");
     yield* ops.processOnce();
@@ -88,7 +87,6 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
     assertEquals((yield* s.holder.runtime.ipex!.dhke(s.holder.habs[0]).finish(grant)).kind, "accept");
     const root = hab.mgr.getRegistryRoot(hab.pre!, credential.regid!)!;
     assertEquals(s.holder.habs[0].mgr.getRegistryRoot(s.holder.habs[0].pre!, credential.regid!)!.qb64, root.qb64);
-    assert(!JSON.stringify(s.store.list()).includes(root.qb64), "the durable record holds no secret");
     assertEquals(new Set(s.changes.map((c) => c.id)), new Set([grant]));
     assertThrows(
       () => s.issuer.runtime.ipex!.dhke(hab).complete(grant),
@@ -124,10 +122,10 @@ Deno.test("issuing.py: a Grant past its original exchange deadline reads expired
     const { grant } = yield* beginIssuance(ops, { hab, credential: reg.credential(), options: grantOptions(s) });
     yield* ops.processOnce();
     const sent = s.log.length, sn = hab.kever!.sn;
-    s.clock.skew = Number(timestampMicros(s.store.get(grant)!.deadline)! / 1000n) - Date.now() + 1;
+    s.clock.skew = pastDeadline(s.issuer, grant);
     assertEquals(issuanceStatus(ops, grant).state, "expired", "the pure read already knows");
     yield* ops.processOnce();
-    assertEquals(s.store.get(grant)!.ended!.state, "expired");
+    assertEquals(issuanceStatus(ops, grant).state, "expired");
     assertEquals([s.log.length, hab.kever!.sn], [sent, sn]);
     assertThrows(() => s.issuer.runtime.ipex!.dhke(hab).complete(grant), ValidationError);
     yield* ops.processOnce();
@@ -152,7 +150,11 @@ Deno.test("a holder that never replies leaves the wait timed-out; abandon is loc
     assertEquals(s.log.length, sent);
     assertThrows(() => s.issuer.runtime.ipex!.dhke(hab).complete(grant), ValidationError);
     abandonIssuance(ops, grant);
-    assertEquals(s.store.get(grant)!.ended!.reason, "no reply", "a second abandon changes nothing");
+    assertEquals(
+      issuanceStatus(ops, grant),
+      { state: "abandoned", role: "issuer", reason: "no reply" },
+      "a second abandon changes nothing",
+    );
     assertEquals(hab.mgr.getRegistryRoot(hab.pre!, reg.regid), null);
   });
 });
@@ -193,12 +195,12 @@ Deno.test("reload mid-exchange: interrupted; a new Grant replaces the holder's u
     const lateReply = s.holder.runtime.ipex!.dhke(holderHab).outgoing.pull()!;
     const firstRoot = holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!;
 
-    // Reload: ephemeral DH keys and the live table are gone; the stores and the operation store remain.
+    // Reload: ephemeral DH keys and the live table are gone; the protocol stores remain.
     s.issuer.runtime.ipex!.release(hab.pre!);
     const sent = s.log.length, sn = hab.kever!.sn, reloaded = s.owner();
     assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
     yield* reloaded.processOnce();
-    assertEquals(s.store.get(first.grant)!.ended!.state, "interrupted");
+    assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
     assertEquals([s.log.length, hab.kever!.sn], [sent, sn], "no message sent, no KEL event signed");
     try {
       yield* s.issuer.runtime.reactor.processBytes(lateReply.msg); // the reply that was in flight
@@ -249,7 +251,7 @@ Deno.test("reload after DH completed but before the anchor: interrupted, nothing
     const sent = s.log.length, sn = hab.kever!.sn, reloaded = s.owner();
     assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
     yield* reloaded.processOnce();
-    assertEquals(s.store.get(first.grant)!.ended!.state, "interrupted");
+    assertEquals(issuanceStatus(reloaded, first.grant).state, "interrupted");
     assertEquals([s.log.length, hab.kever!.sn], [sent, sn], "the anchor is not signed without its live authorisation");
     assertEquals(s.issuer.rgy.store.headEvent(reg.regid)!.ilk, "rip");
 
@@ -318,7 +320,6 @@ Deno.test("two identifiers issue concurrently on one owner without crossing", as
     for (const [i, grant] of grants.entries()) {
       assertEquals(issuanceStatus(ops, grant).state, "done");
       const [issuerHab, holderHab] = [s.issuer.habs[i], s.holder.habs[i]], other = s.issuer.habs[1 - i];
-      assertEquals(s.store.get(grant)!.hab, issuerHab.pre);
       assert(issuerHab.mgr.getRegistryRoot(issuerHab.pre!, regs[i].regid));
       assertEquals(other.mgr.getRegistryRoot(other.pre!, regs[i].regid), null, "the other identifier holds no root");
       assertEquals(
@@ -327,7 +328,6 @@ Deno.test("two identifiers issue concurrently on one owner without crossing", as
       );
       assertEquals(s.log.filter((m) => m.src === issuerHab.pre).every((m) => m.dest === holderHab.pre), true);
     }
-    assertEquals(s.store.list().length, 2);
     assert(grants[0] !== grants[1]);
   });
 });

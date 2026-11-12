@@ -26,7 +26,6 @@ import { Unblind } from "../../../../src/acdc/unblinding.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
 import {
   abandonUnblinding,
-  MemoryUnblindingOperationStore,
   requestUnblind,
   UnblindingOperations,
   unblindingStatus,
@@ -102,13 +101,12 @@ function* fixture() {
   assert(presenter.runtime.exc.complete(grant.said!));
   assert(!observer.runtime.exc.complete(grant.said!), "the verifier holds the Grant pending");
   const delivery = route([presenter, observer], s.log);
-  const mk = (p: Party, store = new MemoryUnblindingOperationStore()) =>
+  const mk = (p: Party) =>
     new UnblindingOperations({
       hby: p.hby,
       exc: p.runtime.exc,
       unblinds: p.runtime.ipex!,
       delivery: { deliver: delivery },
-      store,
       clock: s.clock,
     });
   const head = presenter.rgy.store.head(rip.said!)!.qb64;
@@ -154,7 +152,9 @@ Deno.test("the disclosee consents; the discloser answers on its own and the owne
     assert(!f.sent.some((m) => text.decode(m.msg).includes(f.root.qb64)), "the root is never on the wire");
     // The finished view is stored on the Grant, so it outlives the owner and its record.
     assert(f.observer.runtime.exc.verifyAccepted(g, "/ipex/grant"));
-    assertEquals(f.mk(f.observer).live.size, 0);
+    // With no store, a reopened requester reads the same from the stored Grant; a responder has nothing to read.
+    assertEquals(unblindingStatus(f.mk(f.observer), g), { state: "done", role: "requester" });
+    assertThrows(() => unblindingStatus(f.mk(f.presenter), g), ValidationError, "No Unblind");
   });
 });
 
@@ -232,13 +232,12 @@ Deno.test("no reply after the Grant's deadline, and none for a Grant this identi
 Deno.test("a reloaded owner reads interrupted; an expired Grant reads expired; neither sends", async () => {
   await run(function*() {
     const f = yield* fixture(), g = f.grant.said!;
-    const store = new MemoryUnblindingOperationStore();
-    const requester = f.mk(f.observer, store);
+    const requester = f.mk(f.observer);
     requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
-    const reloaded = f.mk(f.observer, store);
+    const reloaded = f.mk(f.observer);
     assertEquals(unblindingStatus(reloaded, g).state, "interrupted", "the pure read already knows");
     yield* reloaded.processOnce();
-    assertEquals(store.get(g)!.ended!.state, "interrupted");
+    assertEquals(unblindingStatus(reloaded, g).state, "interrupted");
     assertEquals(f.sent.length, 0);
 
     const other = yield* fixture(), og = other.grant.said!, ops = other.mk(other.observer);

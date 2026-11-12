@@ -12,16 +12,16 @@ import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { beginIssuance, issuanceStatus } from "../../../../src/app/ipex/issuance.ts";
 import {
   abandonPresentation,
-  MemoryPresentationOperationStore,
   present,
   type PresentationDeps,
   PresentationOperations,
   presentationStatus,
+  resendPresentation,
   waitForPresentation,
 } from "../../../../src/app/ipex/presenting.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { timestampMicros } from "../../../../src/time/mod.ts";
-import { pump, route, scenario } from "./issuance-fixtures.ts";
+import { deadlineOf, pump, route, scenario } from "./issuance-fixtures.ts";
 
 const text = (msg: Uint8Array) => new TextDecoder().decode(msg);
 
@@ -32,7 +32,7 @@ function* setup() {
   const s = yield* scenario();
   const reg = yield* s.registry(0), credential: SerderACDC = reg.credential();
   const hab = s.issuer.habs[0];
-  const store = new MemoryPresentationOperationStore(), changes: string[] = [];
+  const changes: string[] = [];
   const deps = (overrides: Partial<PresentationDeps> = {}): PresentationDeps => ({
     hby: s.issuer.hby,
     rgy: s.issuer.rgy,
@@ -41,7 +41,6 @@ function* setup() {
     reactor: s.issuer.runtime.reactor,
     protocol: s.issuer.runtime.protocol,
     delivery: { deliver: s.delivery },
-    store,
     clock: s.clock,
     derived: s.derived,
     views: {
@@ -59,7 +58,7 @@ function* setup() {
       selection: { said: credential.said! },
       options: { recipient: s.holder.habs[0].pre!, message: "offer", plan: [] },
     });
-  return { s, credential, hab, store, changes, deps, offer, ops: new PresentationOperations(deps()) };
+  return { s, credential, hab, changes, deps, offer, ops: new PresentationOperations(deps()) };
 }
 
 Deno.test("an offer is signed and accepted locally at present; processOnce delivers the same bytes", async () => {
@@ -95,7 +94,7 @@ Deno.test("an offer is signed and accepted locally at present; processOnce deliv
 
 Deno.test("a failing transport is retried on an interval, then the operation reads failed", async () => {
   await run(function*() {
-    const { s, ops, offer, store } = yield* setup();
+    const { s, ops, offer } = yield* setup();
     s.fail.on = true;
     const { said } = yield* offer(ops);
     yield* ops.processOnce();
@@ -124,19 +123,60 @@ Deno.test("a failing transport is retried on an interval, then the operation rea
       verb: "apply",
       reason: "transport failed",
     });
-    assertEquals(store.get(second.said)!.ended!.state, "failed");
   });
 });
 
-Deno.test("a new owner over the same store reads interrupted and delivers nothing", async () => {
+Deno.test("a new owner reads interrupted and delivers nothing; resend delivers the identical bytes without signing", async () => {
   await run(function*() {
-    const { s, deps, offer, ops, store } = yield* setup();
-    const { said } = yield* offer(ops);
+    const { s, deps, offer, ops, hab } = yield* setup();
+    const begun = yield* offer(ops);
     const reloaded = new PresentationOperations(deps());
-    assertEquals(presentationStatus(reloaded, said).state, "interrupted", "the pure read already knows");
+    const status = presentationStatus(reloaded, begun.said);
+    assertEquals(status.state, "interrupted", "the pure read already knows");
     yield* reloaded.processOnce();
-    assertEquals(store.get(said)!.ended!.state, "interrupted");
     assertEquals(s.log.length, 0, "nothing is sent after a restart");
+    const sn = hab.kever!.sn;
+    const again = yield* resendPresentation(reloaded, begun.said);
+    assertEquals(again.wire, begun.wire, "rebuilt from the stored signatures");
+    assertEquals(presentationStatus(reloaded, begun.said).state, "active");
+    yield* reloaded.processOnce();
+    assertEquals(s.log.map((m) => m.msg), [begun.wire]);
+    assertEquals(presentationStatus(reloaded, begun.said).state, "done");
+    assertEquals(hab.kever!.sn, sn);
+    assert(s.holder.runtime.exc.complete(begun.said));
+  });
+});
+
+Deno.test("status after a reload equals status before, once the peer answered", async () => {
+  await run(function*() {
+    const { s, deps, ops: offering, offer } = yield* setup();
+    const answering = new PresentationOperations({
+      hby: s.holder.hby,
+      rgy: s.holder.rgy,
+      exc: s.holder.runtime.exc,
+      receiptor: s.holder.receiptor,
+      reactor: s.holder.runtime.reactor,
+      protocol: s.holder.runtime.protocol,
+      delivery: { deliver: s.delivery },
+      clock: s.clock,
+    });
+    const first = yield* offer(offering);
+    yield* offering.processOnce();
+    const agree = yield* present(answering, { verb: "agree", hab: s.holder.habs[0], prior: first.said, message: "ok" });
+    yield* answering.processOnce();
+    const before = presentationStatus(offering, first.said);
+    const after = presentationStatus(new PresentationOperations(deps()), first.said);
+    assertEquals(before.state, "done");
+    assertEquals(after.state === "done" && after.response, before.state === "done" && before.response);
+    assertEquals(after.state === "done" && after.response?.said, agree.said);
+    assertThrows(() => presentationStatus(new PresentationOperations(deps()), "Eunknown"), ValidationError);
+    let refused = "";
+    try {
+      yield* resendPresentation(new PresentationOperations(deps()), first.said);
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    assert(refused.includes("already answered"), refused);
   });
 });
 
@@ -172,7 +212,6 @@ Deno.test("the disclosee answers an accepted Offer with an Agree it signs and de
       reactor: s.holder.runtime.reactor,
       protocol: s.holder.runtime.protocol,
       delivery: { deliver: s.delivery },
-      store: new MemoryPresentationOperationStore(),
       clock: s.clock,
     });
     const first = yield* offer(offering);
@@ -220,20 +259,20 @@ function* issuedGrant(ctx: Ctx) {
 
 Deno.test("a Grant keeps its original deadline: delivered before it, expired and unsent after (test_pending_presentation)", async () => {
   await run(function*() {
-    const ctx = yield* setup(), { s, ops, store } = ctx;
+    const ctx = yield* setup(), { s, ops } = ctx;
     const { said, wire } = yield* issuedGrant(ctx);
-    const deadline = store.get(said)!.deadline!;
+    const deadline = deadlineOf(s.issuer, said);
     assert(deadline, "the accepted Grant has the exchange deadline of its first acceptance");
     s.fail.on = true;
     yield* ops.processOnce();
     assertEquals(presentationStatus(ops, said).state, "active");
-    assertEquals(store.get(said)!.deadline, deadline, "a retry never renews the lifetime");
+    assertEquals(deadlineOf(s.issuer, said), deadline, "a retry never renews the lifetime");
     s.clock.skew = Number(timestampMicros(deadline)! / 1000n) - Date.now() + 1;
     assertEquals(presentationStatus(ops, said).state, "expired", "the pure read already knows");
     s.fail.on = false;
     const sent = s.log.length;
     yield* ops.processOnce();
-    assertEquals(store.get(said)!.ended!.state, "expired");
+    assertEquals(presentationStatus(ops, said).state, "expired");
     assertEquals(s.log.length, sent, "nothing is sent after the deadline");
     assert(!s.holder.runtime.exc.complete(said));
     assert(wire.length > 0);
@@ -248,6 +287,18 @@ Deno.test("a Grant is delivered with its proof support ahead of the exchange", a
     assertEquals(s.log[0].msg, wire);
     assert(text(wire).indexOf("/ipex/grant") > 0, "KEL and support precede the Grant");
     assertEquals(presentationStatus(ops, said).state, "done");
+  });
+});
+
+Deno.test("a Grant resent after a restart is rebuilt with its proof support, byte for byte", async () => {
+  await run(function*() {
+    const ctx = yield* setup(), { s, deps } = ctx;
+    const { said, wire } = yield* issuedGrant(ctx);
+    const reloaded = new PresentationOperations(deps());
+    const again = yield* resendPresentation(reloaded, said);
+    assertEquals(again.wire, wire);
+    yield* reloaded.processOnce();
+    assertEquals(s.log[0].msg, wire);
   });
 });
 
@@ -271,6 +322,6 @@ Deno.test("refusals: unknown presentation registry, unaccepted prior", async () 
     } catch (error) {
       assert(error instanceof ValidationError && error.message.includes("must be accepted"), String(error));
     }
-    assertEquals(ops.deps.store.list().length, 0, "a refused consent records nothing");
+    assertEquals(ops.live.size, 0, "a refused consent queues nothing");
   });
 });

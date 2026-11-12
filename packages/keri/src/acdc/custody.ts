@@ -3,13 +3,15 @@
  *
  * Issuing a blinded (BUP) registry update needs a deterministic opening. The
  * root salt stays in the Keeper; this core derives openings from it and keeps
- * only the public, event-specific coordinates in an embedder-supplied
- * `DerivedUpdateStore`. Wallets back that port with their own table; a CLI can
- * back it with memory. The core opens no database of its own.
+ * only the public, event-specific coordinates in a `DerivedUpdateStore`. A
+ * runtime defaults to {@link BaserDerivedUpdateStore}; a wallet backs the port
+ * with its own table. The core opens no database of its own.
  */
 import { bytesEqual, makeBlindState, makeBoundState, MtrDex, Salter, type SerderACDC } from "cesr-ts";
 import type { Hab, Habery } from "../app/identity/habbing.ts";
 import { ValidationError } from "../core/errors.ts";
+import { DerivedUpdateRecord } from "../core/records.ts";
+import type { RegBaser } from "./regbasing.ts";
 import { type RegistryDisclosure, vetBlind } from "./regeventing.ts";
 import type { RegistryStore } from "./registering.ts";
 
@@ -34,6 +36,22 @@ export class MemoryDerivedUpdateStore implements DerivedUpdateStore {
   }
   pin(event: string, value: DerivedUpdate): void {
     this.rows.set(event, structuredClone(value));
+  }
+}
+
+/**
+ * Derivation coordinates kept in a registry environment's own database (`RegBaser.dvus`). The default of a
+ * runtime that supplies no store, so a server agent keeps them durably beside the registry events they
+ * describe. A wallet with its own table still passes that instead.
+ */
+export class BaserDerivedUpdateStore implements DerivedUpdateStore {
+  constructor(private readonly baser: RegBaser) {}
+  get(event: string): DerivedUpdate | null {
+    const row = this.baser.dvus.get([event]);
+    return row ? { credential: row.credential, state: row.state, bound: row.bound } : null;
+  }
+  pin(event: string, value: DerivedUpdate): void {
+    this.baser.dvus.pin([event], new DerivedUpdateRecord(structuredClone(value)));
   }
 }
 
