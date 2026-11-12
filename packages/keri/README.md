@@ -15,9 +15,16 @@ npm install keri-ts
 - `keri-ts/runtime`: explicit non-browser-safe runtime surface
 - `keri-ts/db`: backend-neutral storage surface
 - `keri-ts/db/lmdb`: native LMDB storage backend
-- `keri-ts/db/indexeddb`: browser IndexedDB storage backend (`indexedDbOpener`)
+- `keri-ts/db/indexeddb`: browser IndexedDB storage backend (`indexedDbOpener`).
+  The opener is single-writer by default: its first store takes a Web Locks lock per
+  store identity (`base`, `name`, `temp`), shared by every family it creates and
+  released when the last closes. A second opener or tab gets `StoreLockHeldError`,
+  and an engine without `navigator.locks` gets `StoreLockUnsupportedError`. Pass
+  `unsafeSkipStoreLock: true` only when another mechanism serializes writers (for
+  example a SharedWorker owner); `locks` injects a lock manager for tests
 - `keri-ts/runtime/web`: browser host concerns (`barrierHttpClient` output barrier,
-  `acquireStoreLock` single-writer lock, `requestPersistentStorage`)
+  `acquireStoreLock` and `storeLockKey` for hosts that compose stores themselves,
+  `requestPersistentStorage`)
 
 These entrypoints are the general library surfaces. `keri-ts/cli` is the
 separate command-helper boundary used by Tufa. Runnable CLI/server ownership

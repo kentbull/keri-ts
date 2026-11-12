@@ -23,7 +23,11 @@ import { Regery } from "../../src/acdc/registraring.ts";
 import type { RegistryRoot } from "../../src/acdc/salting.ts";
 import { type Hab, type Habery } from "../../src/app/identity/habbing.ts";
 import { createHabery } from "../../src/app/identity/lmdb-habery.ts";
-import { type AgentRuntime, createAgentRuntime } from "../../src/app/runtime/agent-runtime.ts";
+import {
+  type AgentRuntime,
+  type AgentRuntimeOptions,
+  createAgentRuntime,
+} from "../../src/app/runtime/agent-runtime.ts";
 import { systemClock } from "../../src/app/runtime/runtime-clock.ts";
 import { FetchHttpClient, type HttpClient } from "../../src/app/transport/http-client.ts";
 import { exchange } from "../../src/core/protocol-eventing.ts";
@@ -107,6 +111,7 @@ export function* world(
     http = undefined as
       | HttpClient
       | undefined,
+    runtime: runtimeOptions = {} as Partial<AgentRuntimeOptions>,
   } = {},
 ): Operation<World> {
   const sides: Side[] = [];
@@ -125,6 +130,7 @@ export function* world(
     const runtime = yield* createAgentRuntime(hby, http ?? new FetchHttpClient(), systemClock, {
       acdc: rgy,
       kram: { enabled, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
+      ...runtimeOptions,
     });
     yield* ensure(() => runtime.close());
     assertExists(runtime.notifier);

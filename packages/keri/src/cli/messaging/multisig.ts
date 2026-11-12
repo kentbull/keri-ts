@@ -9,7 +9,13 @@
  */
 import { type SerderKERI, type ThresholdSith, type Versionage } from "cesr-ts";
 import { action, type Operation, spawn } from "npm:effection@^3.6.0";
+import { registryEventRef, registryEventStatus, settleRegistryEvent } from "../../app/credentials/registry-settling.ts";
 import { MemoryRootLedger, RootReplicator } from "../../app/credentials/root-replicator.ts";
+import {
+  telEventStatus,
+  waitForIssuedCredential,
+  waitForTelEvent,
+} from "../../app/credentials/tel-completion.ts";
 import { resolveDelegationCommunicationHab } from "../../app/identity/delegating.ts";
 import type { GroupRoleResult } from "../../app/identity/endpoint-roleing.ts";
 import {
@@ -63,7 +69,6 @@ import {
   parseThresholdOption,
   type RotateFileOptions,
 } from "../common/parsing.ts";
-import { waitForIssuedCredential, waitForTelPublication } from "../common/tel-completion.ts";
 import { resolveWitnessAuths } from "../common/witness-auth.ts";
 import { type RootCopyLine, rootCopyLine, type RootResealLine, rootResealLine } from "./root-copy-lines.ts";
 
@@ -350,13 +355,13 @@ export function* multisigJoinCommand(
       const { publication, reger } = runtime.vdr!;
       const tel = result.tel;
       if (result.route === MULTISIG_VCP_ROUTE || result.route === MULTISIG_REV_ROUTE) {
-        yield* waitForTelPublication(publication, tel.pre, tel.sn, approval.deadline);
+        yield* waitForTelEvent({ publication }, tel.pre, tel.sn, { deadline: approval.deadline });
         result.accepted = reger.tels.getOn(tel.pre, tel.sn)?.qb64 === result.embedded;
       } else {
-        yield* waitForIssuedCredential(publication, tel.pre, approval.deadline);
+        yield* waitForIssuedCredential({ publication }, tel.pre, { deadline: approval.deadline });
         result.accepted = reger.saved.get(tel.pre) !== null;
       }
-      tel.publicationComplete = publication.complete(tel.pre, tel.sn);
+      tel.publicationComplete = telEventStatus({ publication }, tel.pre, tel.sn).state === "complete";
       return result;
     }
     if (isV2RegistryRoute(result.route)) {
@@ -820,17 +825,21 @@ function* settleRegistryApproval(
   const store = runtime.acdc?.store, tel = store?.event(result.embedded);
   const anc = (hby.db.exns.get([result.said])?.sad?.a as { anc?: unknown } | undefined)?.anc;
   if (!store || !tel || typeof tel.sad?.n !== "string" || typeof anc !== "string") return result.accepted;
-  const regid = tel.ilk === "rip" ? tel.said! : tel.regid!, sn = Number(BigInt(`0x${tel.sad.n}`));
+  const anchor = hby.db.getEvtSerder(result.group, anc);
+  const ref = registryEventRef(tel, { pre: result.group, sn: anchor?.sn ?? 0, said: anc });
+  const deps = { db: hby.db, store, protocol: runtime.protocol };
   let receipted = false;
   while (true) {
-    if (store.seqEvent(regid, sn)?.said === tel.said) return true;
-    const anchor = hby.db.getEvtSerder(result.group, anc);
-    if (!receipted && anchor && hby.db.kels.getLast(result.group, anchor.sn!) === anc) {
-      if (!hby.db.fullyWitnessed(anchor)) yield* receiptAcceptedEvent(hby, result.group, args, runtime, anchor.sn!);
+    let status = registryEventStatus(deps, ref);
+    if (status.state === "accepted") return true;
+    if (!receipted && status.state !== "awaiting-anchor") {
+      if (status.state === "awaiting-receipts") {
+        yield* receiptAcceptedEvent(hby, result.group, args, runtime, anchor!.sn!);
+      }
       receipted = true;
     }
-    yield* runtime.protocol.processEscrowsOnce();
-    if (store.seqEvent(regid, sn)?.said === tel.said) return true;
+    status = yield* settleRegistryEvent(deps, ref);
+    if (status.state === "accepted") return true;
     if (Date.now() >= deadline) return false;
     yield* sleep(Math.min(250, deadline - Date.now()));
   }
