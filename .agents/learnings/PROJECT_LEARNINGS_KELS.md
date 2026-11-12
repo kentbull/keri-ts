@@ -86,6 +86,9 @@ Weighted kt/nt behavior uses Tholder.satisfy, never numeric shortcuts.
 - `core/kel/delegation-ancestry.ts` owns read-only `isDelegated` ancestry for
   credential edges: identity is not delegation, DND precedes the anchor, any
   first-seen delegator approval (superseded included) counts, and it never writes.
+- Remote intake for a joined group strips only its locally controlled signing
+  members' keys (`record.mid`/`smids`); the group prefix is itself local and never
+  counts as a contributor.
 - Persist local group intent and register its membership before event validation,
   as joinGroupHab already does. Protected local acceptance drives subsequent witness
   gathering; membership must not wait on the acceptance it enables. Publish accepted

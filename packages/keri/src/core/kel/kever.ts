@@ -605,21 +605,23 @@ export class Kever {
   }
 
   /**
-   * Return indices contributed by keys also present in a locally controlled KEL.
+   * Return indices of keys contributed by this group's local members.
    *
-   * Current `keri-ts` scope:
-   * - approximates KERIpy's locally membered signature filtering by comparing
-   *   verfer qb64 values across locally accepted kevers
+   * KERIpy strips its one local member (`habord.mid`). A keri-ts Habery may hold
+   * several members of one group, so every locally controlled signing member
+   * counts. The group's own prefix is local too and must not: its keys are all
+   * of `verfers`.
    */
   locallyContributedIndices(verfers: readonly Verfer[]): number[] {
+    const record = this.db.getHab(this.pre);
     const localKeys = new Set<string>();
-    for (const pre of this.prefixes) {
-      const kever = this.db.getKever(pre);
-      if (!kever) {
+    for (const mid of new Set([record?.mid, ...(record?.smids ?? [])])) {
+      if (!mid || !this.locallyOwned(mid)) {
         continue;
       }
-      for (const verfer of kever.verfers) {
-        localKeys.add(verfer.qb64);
+      const key = this.db.getKever(mid)?.verfers[0]?.qb64;
+      if (key) {
+        localKeys.add(key);
       }
     }
     const indices: number[] = [];
