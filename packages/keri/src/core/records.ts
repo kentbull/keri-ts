@@ -727,6 +727,24 @@ export class RootSentRecord extends RawRecord<RootSentRecordShape> implements Ro
   declare dt: string;
 }
 
+export interface DerivedUpdateRecordShape {
+  credential: string;
+  state: string;
+  bound: { bn: string; bd: string } | null;
+}
+
+/**
+ * Public derivation coordinates of one blinded registry update: which credential, state and binding the
+ * update's opening is derived for. Never a salt or an opening.
+ *
+ * keri-ts only. Stored through `Komer` in `Baser.dvus`, keyed by the BUP SAID.
+ */
+export class DerivedUpdateRecord extends RawRecord<DerivedUpdateRecordShape> implements DerivedUpdateRecordShape {
+  declare credential: string;
+  declare state: string;
+  declare bound: DerivedUpdateRecordShape["bound"];
+}
+
 /** Authorizing/source event seal tuple used by `aess.`, `udes.`, and related escrows. */
 export type EventSealTuple = ReturnType<typeof SealSourceValue.toTuple>;
 /** Non-transferable receipt couple stored in `rcts.`. */

@@ -7,7 +7,7 @@ import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { type Operation } from "npm:effection@^3.6.0";
 import { RegistryAuthor } from "../../../../src/acdc/authoring.ts";
-import { RegistryCustody } from "../../../../src/acdc/custody.ts";
+import { BaserDerivedUpdateStore, RegistryCustody } from "../../../../src/acdc/custody.ts";
 import { RootDeferred } from "../../../../src/acdc/salting.ts";
 import {
   abandonIssuance,
@@ -17,13 +17,11 @@ import {
   deliverIssuanceAdmit,
   type IssuanceOperations,
   issuanceStatus,
-  MemoryIssuanceOperationStore,
   prepareIssuanceGrant,
   waitForIssuance,
 } from "../../../../src/app/ipex/issuance.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
-import { timestampMicros } from "../../../../src/time/mod.ts";
-import { route, type Scenario, scenario } from "./issuance-fixtures.ts";
+import { deadlineOf, pastDeadline, route, type Scenario, scenario } from "./issuance-fixtures.ts";
 
 /** Assert that an operation refuses with a ValidationError containing `message`. */
 function* refuses(op: () => Operation<unknown>, message: string): Operation<void> {
@@ -103,7 +101,7 @@ Deno.test("holder: consent, exchange, wait for the registry update, finish, then
   });
 });
 
-Deno.test("holder reload: interrupted, no reply is sent, and an interrupted exchange cannot be admitted", async () => {
+Deno.test("holder reload before it answered: consent is asked again, no reply is sent, and nothing can be admitted", async () => {
   await run(function*() {
     const s = yield* scenario(), { holderOps, grant, holderHab, reg } = yield* started(s);
     approveIssuanceExchange(holderOps, { hab: holderHab, grant });
@@ -111,9 +109,9 @@ Deno.test("holder reload: interrupted, no reply is sent, and an interrupted exch
     holderHab.mgr.ks.rroots.rem([holderHab.pre!, reg.regid]);
     s.holder.runtime.ipex!.release(holderHab.pre!);
     const sent = s.log.length, reloaded = s.holderOwner();
-    assertEquals(issuanceStatus(reloaded, grant).state, "interrupted");
+    const status = issuanceStatus(reloaded, grant);
+    assertEquals(status.state === "active" && [status.phase, status.needs], ["awaitingExchangeConsent", "exchange"]);
     yield* reloaded.processOnce();
-    assertEquals(s.holderStore.get(grant)!.ended!.state, "interrupted");
     assertEquals(s.log.length, sent);
     let refused = "";
     try {
@@ -121,7 +119,7 @@ Deno.test("holder reload: interrupted, no reply is sent, and an interrupted exch
     } catch (error) {
       refused = (error as Error).message;
     }
-    assert(refused.includes("cannot be admitted"), refused);
+    assert(refused.includes("Accepted ACDC v2 exchange"), refused);
   });
 });
 
@@ -129,11 +127,11 @@ Deno.test("holder expiry and abandon end the exchange locally", async () => {
   await run(function*() {
     const s = yield* scenario(), { holderOps, grant, holderHab } = yield* started(s);
     approveIssuanceExchange(holderOps, { hab: holderHab, grant });
-    s.clock.skew = Number(timestampMicros(s.holderStore.get(grant)!.deadline)! / 1000n) - Date.now() + 1;
+    s.clock.skew = pastDeadline(s.holder, grant);
     assertEquals(issuanceStatus(holderOps, grant).state, "expired");
     const sent = s.log.length;
     yield* holderOps.processOnce();
-    assertEquals([s.holderStore.get(grant)!.ended!.state, s.log.length], ["expired", sent]);
+    assertEquals([issuanceStatus(holderOps, grant).state, s.log.length], ["expired", sent]);
 
     const other = yield* scenario(), second = yield* started(other);
     approveIssuanceExchange(second.holderOps, { hab: second.holderHab, grant: second.grant });
@@ -170,7 +168,7 @@ Deno.test("holder refusals: another party's Grant, a repeat, an unaccepted Grant
   });
 });
 
-Deno.test("Admit of an accepted Grant with no issuance record creates the record", async () => {
+Deno.test("Admit of an accepted Grant reads admitted from the stored Admit, and cannot repeat", async () => {
   await run(function*() {
     const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab } = yield* started(s);
     approveIssuanceExchange(holderOps, { hab: holderHab, grant });
@@ -179,14 +177,15 @@ Deno.test("Admit of an accepted Grant with no issuance record creates the record
       holderOps,
       () => issuanceStatus(holderOps, grant).state === "active" && "needs" in issuanceStatus(holderOps, grant),
     );
-    const fresh = new MemoryIssuanceOperationStore();
-    yield* admitIssuance({ ...holderOps.deps, store: fresh }, { hab: holderHab, grant });
-    assertEquals(fresh.get(grant)!.role, "holder");
-    assertEquals(issuanceStatus({ deps: { ...holderOps.deps, store: fresh }, live: new Map() }, grant), {
-      state: "done",
-      role: "holder",
-      phase: "admitted",
-    });
+    yield* admitIssuance(holderOps.deps, { hab: holderHab, grant });
+    assertEquals(issuanceStatus(s.holderOwner(), grant), { state: "done", role: "holder", phase: "admitted" });
+    let refused = "";
+    try {
+      yield* admitIssuance(holderOps.deps, { hab: holderHab, grant });
+    } catch (error) {
+      refused = (error as Error).message;
+    }
+    assert(refused.includes("cannot be admitted"), refused);
   });
 });
 
@@ -203,9 +202,6 @@ function* bothRetained(s: Scenario) {
   return begun;
 }
 
-const deadlineOf = (s: Scenario, store: { get(g: string): { deadline?: string } | null }, grant: string) =>
-  Number(timestampMicros(store.get(grant)!.deadline)! / 1000n) - Date.now() + 1;
-
 Deno.test("holder away while the issuer anchors: the next pass completes it, nothing signed, then Admit", async () => {
   await run(function*() {
     const s = yield* scenario(), { issuerOps, grant, holderHab, reg } = yield* bothRetained(s);
@@ -218,7 +214,7 @@ Deno.test("holder away while the issuer anchors: the next pass completes it, not
       state: "active",
       role: "holder",
       phase: "rootRetained",
-      deadline: s.holderStore.get(grant)!.deadline,
+      deadline: deadlineOf(s.holder, grant),
     } as const;
     assertEquals(issuanceStatus(reloaded, grant), waiting);
     assertEquals(s.holder.runtime.exc.complete(grant), false);
@@ -255,7 +251,7 @@ Deno.test("holder away past the deadline: expired, and the reason says when the 
     const s = yield* scenario(), { grant, holderHab } = yield* bothRetained(s);
     s.holder.runtime.ipex!.release(holderHab.pre!);
     const silent = s.holderOwner();
-    s.clock.skew = deadlineOf(s, s.holderStore, grant);
+    s.clock.skew = pastDeadline(s.holder, grant);
     const never = issuanceStatus(silent, grant);
     assertEquals(never.state, "expired");
     assert(never.state === "expired" && !never.reason.includes("update arrived"), String(never));
@@ -264,7 +260,7 @@ Deno.test("holder away past the deadline: expired, and the reason says when the 
     const t = yield* scenario(), late = yield* bothRetained(t);
     t.holder.runtime.ipex!.release(late.holderHab.pre!);
     yield* late.issuerOps.processOnce();
-    t.clock.skew = deadlineOf(t, t.holderStore, late.grant);
+    t.clock.skew = pastDeadline(t.holder, late.grant);
     const returned = t.holderOwner(), status = issuanceStatus(returned, late.grant);
     assertEquals(status.state, "expired");
     assert(status.state === "expired" && status.reason.includes("ask the issuer for a new Grant"), String(status));
@@ -317,7 +313,7 @@ Deno.test("an issuer that crashed after anchoring completes by itself without a 
       state: "active",
       role: "issuer",
       phase: "rootRetained",
-      deadline: s.store.get(grant)!.deadline,
+      deadline: deadlineOf(s.issuer, grant),
     });
     for (let i = 0; i < 40 && issuanceStatus(reloaded, grant).state === "active"; i++) {
       yield* reloaded.processOnce();
@@ -491,5 +487,50 @@ Deno.test("an honest issuer cannot send a second Grant after anchoring, and a ho
       ValidationError,
     );
     assertEquals(holderHab.mgr.getRegistryRoot(holderHab.pre!, reg.regid)!.qb64, root);
+  });
+});
+
+Deno.test("status after a reopen equals status before, for issuer and holder at each phase the stores prove", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { issuerOps, holderOps, grant, holderHab, issuerHab } = yield* started(s);
+    const reopened = () => [s.owner(), s.holderOwner()] as const;
+    // Holder before consent: the pending Grant alone proves it.
+    assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(holderOps, grant));
+    approveIssuanceExchange(holderOps, { hab: holderHab, grant });
+    yield* holderOps.processOnce(); // answers; the root is retained and the issuer anchors on its next pass
+    s.holder.runtime.ipex!.release(holderHab.pre!);
+    assertEquals(issuanceStatus(reopened()[1], grant).state, "active");
+    // Holder waiting for the update (root held): live reads rootRetained, a reopened owner reads the same.
+    const fresh = s.holderOwner();
+    yield* fresh.processOnce();
+    const waiting = issuanceStatus(fresh, grant);
+    assertEquals(waiting.state === "active" && waiting.phase, "rootRetained");
+    assertEquals(issuanceStatus(reopened()[1], grant), waiting);
+    // Issuer anchors; holder is ready for Admit; issuer is done.
+    yield* issuerOps.processOnce();
+    yield* fresh.processOnce();
+    for (const [live, again] of [[issuerOps, reopened()[0]], [fresh, reopened()[1]]] as const) {
+      assertEquals(issuanceStatus(again, grant), issuanceStatus(live, grant));
+    }
+    assertEquals(issuanceStatus(reopened()[0], grant), { state: "done", role: "issuer", phase: "issued" });
+    // Holder admitted.
+    yield* admitIssuance(fresh.deps, { hab: holderHab, grant });
+    assertEquals(issuanceStatus(reopened()[1], grant), issuanceStatus(fresh, grant));
+    assertEquals(issuanceStatus(reopened()[1], grant), { state: "done", role: "holder", phase: "admitted" });
+    assert(issuerHab.pre);
+  });
+});
+
+Deno.test("the registry database keeps derivation coordinates durably as the runtime default", async () => {
+  await run(function*() {
+    const s = yield* scenario();
+    const store = new BaserDerivedUpdateStore(s.issuer.rgy.store.baser);
+    assertEquals(store.get("Eevent"), null);
+    store.pin("Eevent", { credential: "Ecred", state: "issued", bound: { bn: "1", bd: "Ebound" } });
+    assertEquals(new BaserDerivedUpdateStore(s.issuer.rgy.store.baser).get("Eevent"), {
+      credential: "Ecred",
+      state: "issued",
+      bound: { bn: "1", bd: "Ebound" },
+    });
   });
 });

@@ -15,6 +15,7 @@ import {
   concatBytes,
   Counter,
   Diger,
+  framePayload,
   type MapperMap,
   nestedPayload,
   NumberPrimitive,
@@ -45,7 +46,8 @@ import { validateSchema as validateAcdcSchema } from "../../acdc/scheming.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { verifyExchangeProofs } from "../../core/exchange/exchange-proofing.ts";
 import { Kever } from "../../core/kel/kever.ts";
-import type { Exchanger } from "../exchanges/exchanging.ts";
+import { messagize } from "../../core/protocol-serialization.ts";
+import type { ExchangeInput, Exchanger } from "../exchanges/exchanging.ts";
 import { acceptedEventReplayMessage, type Hab, type Habery } from "../identity/habbing.ts";
 import { isLocalGroupHab } from "../multisig/group-members.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
@@ -126,6 +128,33 @@ export function exchangeWire(
     exn.raw,
     Counter.enclose({ qb64: concatBytes(proof, nested), version: gvrsn }),
   );
+}
+
+/**
+ * Re-encode a signed exchange from its retained, authenticated factors: the wire its signer sent, rebuilt
+ * from the stored signatures or source seal and the stored nests. Signs nothing, so it needs no keys.
+ */
+export function* storedExchangeWire(retained: ExchangeInput, gvrsn: Versionage = Vrsn_2_0): Operation<Uint8Array> {
+  const nests = [...retained.nests ?? []];
+  const seal = retained.sourceSeals?.[0];
+  if (seal) {
+    const nested = concatBytes(
+      ...yield* call(() => Promise.all(nests.map((nest) => collectPayload(framePayload(nest))))),
+    );
+    const proof = Counter.enclose({
+      code: "SealSourceCouples",
+      qb64: SealSource.qb64b({ s: seal.s, d: seal.d }),
+      version: gvrsn,
+    });
+    return concatBytes(
+      Counter.makeGVC(gvrsn),
+      retained.serder.raw,
+      Counter.enclose({ qb64: concatBytes(proof, nested), version: gvrsn }),
+    );
+  }
+  const frame = parseBytes(messagize(retained.serder, { tsgs: retained.tsgs, cigars: retained.cigars, gvrsn }))[0];
+  frame.nests = nests;
+  return yield* call(() => collectPayload(framePayload(frame)));
 }
 
 /** Exact admitted node streams; no fuller cached section replaces retained disclosure. */

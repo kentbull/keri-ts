@@ -98,6 +98,7 @@ export {
   evaluateChain,
 } from "../acdc/chaining.ts";
 export {
+  BaserDerivedUpdateStore,
   type DerivedUpdate,
   type DerivedUpdateStore,
   MemoryDerivedUpdateStore,
@@ -873,14 +874,11 @@ export {
   type IssuanceEndState,
   type IssuanceNeed,
   IssuanceOperations,
-  type IssuanceOperationStore,
   type IssuancePhase,
-  type IssuanceRecord,
   type IssuanceRole,
   type IssuanceStatus,
   issuanceStatus,
   type IssuanceWaitOptions,
-  MemoryIssuanceOperationStore,
   posterDelivery,
   prepareIssuanceGrant,
   waitForIssuance,
@@ -889,7 +887,6 @@ export {
 // Runtime-owned single-signature IPEX presentation operations (present, process, status, wait, abandon).
 export {
   abandonPresentation,
-  MemoryPresentationOperationStore,
   type PreparedPresentation,
   preparePresentation,
   present,
@@ -898,30 +895,26 @@ export {
   type PresentationEndState,
   type PresentationInput,
   PresentationOperations,
-  type PresentationOperationStore,
   type PresentationOptions,
-  type PresentationRecord,
   type PresentationResponse,
   type PresentationStatus,
   presentationStatus,
   type PresentationVerb,
   type PresentationWaitOptions,
   type PresentOptions,
+  resendPresentation,
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
 
 // Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
 export {
   abandonUnblinding,
-  MemoryUnblindingOperationStore,
   requestUnblind,
   type UnblindingBegun,
   type UnblindingDeps,
   type UnblindingEndState,
   UnblindingOperations,
-  type UnblindingOperationStore,
   type UnblindingPhase,
-  type UnblindingRecord,
   type UnblindingRequest,
   type UnblindingRole,
   type UnblindingStatus,

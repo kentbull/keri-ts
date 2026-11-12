@@ -1,9 +1,11 @@
 /** Public ACDC registry database layout and joined LMDB lifecycle. */
 import { b, Diger, NumberPrimitive, Saider, SerderACDC } from "cesr-ts";
 import type { Operation } from "effection";
+import { DerivedUpdateRecord } from "../core/records.ts";
 import type { StoreIdentity } from "../db/core/dber.ts";
 import type { LMDBerOptions } from "../db/core/lmdber.ts";
 import { type StoreFamily, StoreOwner } from "../db/core/store-owner.ts";
+import { Komer } from "../db/koming.ts";
 import { B64OnIoSetSuber, BytesSuber, CatCesrSuber, CesrOnSuber, CesrSuber, SerderSuber } from "../db/subing.ts";
 
 /** Registry paths retain the existing .tufa default and explicit .keri compatibility mode. */
@@ -30,6 +32,9 @@ export class RegBaser extends StoreOwner {
   /** Event-SAID -> one deliberately published counted BSQ/BSS opening; never private custody. */
   openings!: BytesSuber;
 
+  /** keri-ts only. BUP SAID -> public blind-derivation coordinates; never a salt or opening. */
+  dvus!: Komer<DerivedUpdateRecord>;
+
   /** Event-SAID -> earliest verified KEL source couple, in the current store. */
   ancs!: CatCesrSuber<[NumberPrimitive, Diger]>;
   /** Insertion-ordered missing-anchor event-SAID tuples by registry and ordinal. */
@@ -46,6 +51,7 @@ export class RegBaser extends StoreOwner {
       this.tels = new CesrOnSuber(this.store, { subkey: "tels.", ctor: Saider });
       this.heads = new CesrSuber(this.store, { subkey: "heds.", ctor: Saider });
       this.openings = new BytesSuber(this.store, { subkey: "openings." });
+      this.dvus = new Komer(this.store, { subkey: "dvus.", recordClass: DerivedUpdateRecord });
       this.ancs = new CatCesrSuber(this.store, { subkey: "ancs.", ctor: [NumberPrimitive, Diger] });
       this.maes = new B64OnIoSetSuber(this.store, { subkey: "maes." });
       this.ooes = new B64OnIoSetSuber(this.store, { subkey: "ooes." });

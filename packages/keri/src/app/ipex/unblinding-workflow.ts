@@ -16,9 +16,14 @@
  * commit and never wait for the peer, `unblindingStatus` is a pure read, `waitForUnblinding` only observes
  * and returns a `WaitResult`, `abandonUnblinding` is local. Completion creates no Admit.
  *
- * Durable: the non-secret {@link UnblindingRecord} in the embedder's store, the Grant and its deadline, and
- * the finished proof view. Memory only: the owner's approval and frozen query/reply, resend timers.
- * Per-identifier {@link Unblind} owners come through a narrow interface (`runtime.ipex`). Group identifiers
+ * There is no operation store; status is the live table plus what the stores prove. Durable: the Grant and
+ * its deadline, and the finished proof view. A requester whose Grant's proofs are current reads `done`; one
+ * whose Grant is still live with proofs missing and no live operation reads `interrupted` (request it
+ * again), and past the deadline `expired`. A responder is driven entirely by a peer's query, so a
+ * responder's operation exists only while live: its `done`, `failed` and `expired` readings, like every
+ * requester `abandoned` and `failed` reading, are remembered only until the process ends, and a responder
+ * Grant with no live operation throws. Memory only: the owner's approval and frozen query/reply, resend
+ * timers, the consent time. Per-identifier {@link Unblind} owners come through a narrow interface (`runtime.ipex`). Group identifiers
  * are refused; group Unblind belongs to the group proposal API.
  */
 import { action, type Operation, race } from "npm:effection@^3.6.0";
@@ -44,46 +49,6 @@ export type UnblindingEndState = "abandoned" | "interrupted" | "expired" | "fail
 /** Where an active Unblind is. */
 export type UnblindingPhase = "awaitingReply" | "proving";
 
-/** Durable, non-secret operation facts. Never holds keys, frozen messages or proofs. */
-export interface UnblindingRecord {
-  /** SAID of the live Grant. */
-  readonly grant: string;
-  /** Presentation transaction id. */
-  readonly xid: string;
-  /** Prefix of the local identifier. */
-  readonly hab: string;
-  readonly role: UnblindingRole;
-  /** The Grant's original exchange deadline (ISO 8601). */
-  readonly deadline: string;
-  /** When the user gave the consent (ISO 8601). */
-  readonly consented: string;
-  /** When the operation completed: the proofs verified (requester) or the reply was delivered (responder). */
-  readonly done?: string;
-  readonly ended?: { readonly state: UnblindingEndState; readonly reason: string; readonly at: string };
-}
-
-/** The embedder's durable table of {@link UnblindingRecord}s, keyed by Grant SAID. */
-export interface UnblindingOperationStore {
-  get(grant: string): UnblindingRecord | null;
-  /** Insert or replace the record for `record.grant`. */
-  put(record: UnblindingRecord): void;
-  list(): UnblindingRecord[];
-}
-
-/** Process-local store for the CLI and tests; a wallet backs the port with its own table. */
-export class MemoryUnblindingOperationStore implements UnblindingOperationStore {
-  private readonly records = new Map<string, UnblindingRecord>();
-  get(grant: string): UnblindingRecord | null {
-    return this.records.get(grant) ?? null;
-  }
-  put(record: UnblindingRecord): void {
-    this.records.set(record.grant, structuredClone(record));
-  }
-  list(): UnblindingRecord[] {
-    return [...this.records.values()].map((record) => structuredClone(record));
-  }
-}
-
 /** Status of one Unblind, discriminated on `state`. A pure read. */
 export type UnblindingStatus =
   | { state: "active"; role: UnblindingRole; phase: UnblindingPhase; deadline: string }
@@ -97,15 +62,20 @@ export interface UnblindingDeps {
   /** Per-identifier Unblind owners (`runtime.ipex`), so several identifiers can unblind on one runtime. */
   readonly unblinds: { unblind(hab: Hab): Unblind; unblindOwners(): Iterable<Unblind> };
   readonly delivery: IssuanceDelivery;
-  readonly store: UnblindingOperationStore;
   /** Same clock the exchanger and Unblind owners were composed with. */
   readonly clock: RuntimeClock;
   readonly changes?: ChangeSink;
 }
 
-/** One operation the user consented to; exists only while its approval is live in memory. */
+/** One operation the user consented to or the discloser owes; exists only while its approval is live in memory. */
 interface LiveUnblinding {
-  record: UnblindingRecord;
+  /** SAID of the live Grant. */
+  readonly grant: string;
+  /** Presentation transaction id. */
+  readonly xid: string;
+  readonly role: UnblindingRole;
+  /** The Grant's original exchange deadline (ISO 8601). */
+  readonly deadline: string;
   readonly hab: Hab;
   readonly owner: Unblind;
   /** The discloser of the Grant: where the query goes. */
@@ -138,10 +108,6 @@ export interface UnblindingRequest {
 const EXPIRED = "The presentation reached its original exchange deadline";
 const CHANGED = "Original presentation deadline changed";
 
-function iso(ms: number): string {
-  return new Date(ms).toISOString();
-}
-
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -155,40 +121,34 @@ function* wait(clock: RuntimeClock, milliseconds: number): Operation<void> {
 }
 
 /** Whether the Grant's deadline has passed. */
-function lapsed(deps: Pick<UnblindingDeps, "clock">, { deadline }: UnblindingRecord): boolean {
+function lapsed(deps: Pick<UnblindingDeps, "clock">, deadline: string | null): boolean {
   const expiry = timestampMicros(deadline);
   return expiry !== null && BigInt(deps.clock.now()) * 1000n >= expiry;
 }
 
-function orphaned(lapsed: boolean): ["expired" | "interrupted", string] {
-  return lapsed
-    ? ["expired", EXPIRED]
-    : ["interrupted", "The process that began this Unblind ended; nothing was signed since. Begin it again"];
-}
+const INTERRUPTED =
+  "No live Unblind holds this Grant: the process that began it ended (or it was never begun); nothing was signed since. Request it again";
 
-/** The operations table and its driver. One per host runtime; every identifier may unblind through it. */
+/** What an operation that finished or ended in this process reports until the process ends. */
+type SettledUnblinding =
+  | { role: UnblindingRole; state: "done" }
+  | { role: UnblindingRole; state: UnblindingEndState; reason: string };
+
+/** The live operations table and its driver. One per host runtime; every identifier may unblind through it. */
 export class UnblindingOperations {
   /** Operations whose approval is live in this process. Internal to this module's functions. */
   readonly live = new Map<string, LiveUnblinding>();
-  private swept = false;
+  /** Operations that finished or ended in this process; not durable, see the module doc. */
+  readonly settled = new Map<string, SettledUnblinding>();
 
   constructor(readonly deps: UnblindingDeps) {}
 
-  /**
-   * Advance every live operation by one pass, each bounded by its Grant deadline. The first pass also
-   * settles records left active by an earlier process as `interrupted`; that signs and sends nothing.
-   */
+  /** Advance every live operation by one pass, each bounded by its Grant deadline. */
   *processOnce(): Operation<void> {
     const { deps } = this;
-    if (!this.swept) {
-      this.swept = true;
-      for (const record of deps.store.list()) {
-        if (!record.ended && !record.done && !this.live.has(record.grant)) this.orphan(record);
-      }
-    }
     this.adopt();
     for (const op of [...this.live.values()]) {
-      if (op.busy || !this.live.has(op.record.grant)) continue;
+      if (op.busy || !this.live.has(op.grant)) continue;
       op.busy = true;
       try {
         const left = op.expires - BigInt(deps.clock.now()) * 1000n;
@@ -218,17 +178,12 @@ export class UnblindingOperations {
         const input = deps.exc.retainedInput(grant);
         const deadline = input && deps.exc.exchangeDeadline(input.serder), expires = timestampMicros(deadline);
         if (!input || !deadline || expires === null || BigInt(deps.clock.now()) * 1000n >= expires) continue;
-        const record: UnblindingRecord = {
+        this.settled.delete(grant);
+        this.live.set(grant, {
           grant,
           xid,
-          hab: owner.hab.pre!,
           role: "responder",
           deadline,
-          consented: iso(deps.clock.now()),
-        };
-        deps.store.put(record);
-        this.live.set(grant, {
-          record,
           hab: owner.hab,
           owner,
           peer: String(input.serder.sad!.ri),
@@ -242,18 +197,18 @@ export class UnblindingOperations {
     }
   }
 
-  /** End a live operation: release the approval, record why, tell the sink. */
+  /** End a live operation: release the approval, remember why until the process ends, tell the sink. */
   end(op: LiveUnblinding, state: UnblindingEndState, reason: string): void {
     this.release(op);
-    this.deps.store.put({ ...op.record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
-    this.deps.changes?.push({ kind: "unblinding", id: op.record.grant });
+    this.settled.set(op.grant, { role: op.role, state, reason });
+    this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
   /** Drop the live entry and the owner's approval and frozen messages; delivered bytes stay the peer's. */
   private release(op: LiveUnblinding): void {
-    this.live.delete(op.record.grant);
+    this.live.delete(op.grant);
     try {
-      op.owner.abandon(op.record.xid);
+      op.owner.abandon(op.xid);
     } catch (error) {
       if (!(error instanceof ValidationError)) throw error;
     }
@@ -261,14 +216,8 @@ export class UnblindingOperations {
 
   private finished(op: LiveUnblinding): void {
     this.release(op);
-    this.deps.store.put({ ...op.record, done: iso(this.deps.clock.now()) });
-    this.deps.changes?.push({ kind: "unblinding", id: op.record.grant });
-  }
-
-  private orphan(record: UnblindingRecord): void {
-    const [state, reason] = orphaned(lapsed(this.deps, record));
-    this.deps.store.put({ ...record, ended: { state, reason, at: iso(this.deps.clock.now()) } });
-    this.deps.changes?.push({ kind: "unblinding", id: record.grant });
+    this.settled.set(op.grant, { role: op.role, state: "done" });
+    this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
   private *timer(milliseconds: number): Operation<"expired"> {
@@ -279,15 +228,15 @@ export class UnblindingOperations {
   private setPhase(op: LiveUnblinding, phase: UnblindingPhase): void {
     if (op.phase === phase) return;
     op.phase = phase;
-    this.deps.changes?.push({ kind: "unblinding", id: op.record.grant });
+    this.deps.changes?.push({ kind: "unblinding", id: op.grant });
   }
 
   /** One pass, in the order of the CLI loop it replaces. */
   private *step(op: LiveUnblinding): Operation<"stepped"> {
-    const { deps } = this, { owner, record } = op, { xid, grant } = record;
+    const { deps } = this, { owner, xid, grant } = op;
     const send = (dest: string, msg: Uint8Array) => deps.delivery.deliver({ src: op.hab.pre!, dest, msg });
     const input = deps.exc.retainedInput(grant);
-    if (!input || deps.exc.exchangeDeadline(input.serder) !== record.deadline) throw new ValidationError(CHANGED);
+    if (!input || deps.exc.exchangeDeadline(input.serder) !== op.deadline) throw new ValidationError(CHANGED);
     owner.complete(xid); // Rechecks exact live scope and accepted current state; readiness is separate.
     let replied = false;
     while (owner.outgoing.length) {
@@ -301,7 +250,7 @@ export class UnblindingOperations {
       }
     }
     if (replied) return this.finishedStep(op);
-    if (record.role === "requester" && owner.complete(xid)) {
+    if (op.role === "requester" && owner.complete(xid)) {
       this.setPhase(op, "proving");
       const decision = yield* owner.finish(xid);
       if (decision.kind !== "accept") throw new ValidationError("Updated presentation proofs did not verify");
@@ -328,8 +277,7 @@ function selectGrant(ops: UnblindingOperations, { hab, grant }: UnblindingReques
       "Individual Unblind requires an individual habitat; group Unblind needs explicit member coordination",
     );
   }
-  const old = deps.store.get(grant);
-  if (ops.live.has(grant) || old?.done) throw new ValidationError("Unblind was already begun for this Grant");
+  if (ops.live.has(grant)) throw new ValidationError("Unblind was already begun for this Grant");
   const input = deps.exc.retainedInput(grant);
   if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
   const sender = input.serder.pre, recipient = input.serder.sad?.ri;
@@ -356,21 +304,13 @@ function consent(
   const selected = selectGrant(ops, request);
   if (selected.role !== "requester") throw new ValidationError("Only the disclosee requests Unblind");
   const owner = deps.unblinds.unblind(hab), xid = owner.approve(grant, { states: request.states });
-  const record: UnblindingRecord = {
-    grant,
-    xid,
-    hab: hab.pre!,
-    role: "requester",
-    deadline: selected.deadline,
-    consented: iso(deps.clock.now()),
-  };
   const begun = { grant, xid, role: "requester" as const };
   // A current authenticated view needs no empty auxiliary query or new proof writes.
   if (deps.exc.complete(grant)) {
     const current = deps.exc.verifyGrantProofs(grant, selected.input.nests ?? []);
     if (current === true || typeof current === "object" && current.kind === "accept") {
       owner.abandon(xid);
-      deps.store.put({ ...record, done: record.consented });
+      ops.settled.set(grant, { role: "requester", state: "done" });
       deps.changes?.push({ kind: "unblinding", id: grant });
       return { op: null, begun };
     }
@@ -378,7 +318,10 @@ function consent(
   return {
     begun,
     op: {
-      record,
+      grant,
+      xid,
+      role: "requester",
+      deadline: selected.deadline,
       hab,
       owner,
       peer: selected.peer,
@@ -402,7 +345,7 @@ export function requestUnblind(ops: UnblindingOperations, request: UnblindingReq
   const { op, begun } = consent(ops, request);
   if (op) {
     op.query = op.owner.start(request.grant);
-    ops.deps.store.put(op.record);
+    ops.settled.delete(request.grant);
     ops.live.set(request.grant, op);
     ops.deps.changes?.push({ kind: "unblinding", id: request.grant });
   }
@@ -410,21 +353,41 @@ export function requestUnblind(ops: UnblindingOperations, request: UnblindingReq
 }
 
 /**
- * Pure read of one Unblind: its record and the live table. A record left active by a process that is gone
- * reads `interrupted` (or `expired` past the Grant deadline); that is a statement, not a write.
+ * Pure read of one Unblind: what finished or ended in this process, the live table, and otherwise what the
+ * stores prove for the requester (see the module doc for what a reload loses). A requester's Grant whose
+ * proofs are not current and that no live operation holds reads `interrupted`, or `expired` past the Grant
+ * deadline; that is a statement, not a write.
  *
- * @throws ValidationError when no Unblind was begun for `grant`.
+ * @throws ValidationError when `grant` is not a Grant a local identifier is the disclosee of, and no
+ * operation for it is live or remembered.
  */
-export function unblindingStatus(ops: Pick<UnblindingOperations, "deps" | "live">, grant: string): UnblindingStatus {
-  const record = ops.deps.store.get(grant);
-  if (!record) throw new ValidationError("No Unblind was begun for this Grant");
-  const { role } = record;
-  if (record.ended) return { state: record.ended.state, role, reason: record.ended.reason };
-  if (record.done) return { state: "done", role };
-  const live = ops.live.get(grant), over = lapsed(ops.deps, record);
-  if (live && !over) return { state: "active", role, phase: live.phase, deadline: record.deadline };
-  const [state, reason] = orphaned(over);
-  return { state, role, reason };
+export function unblindingStatus(
+  ops: Pick<UnblindingOperations, "deps" | "live" | "settled">,
+  grant: string,
+): UnblindingStatus {
+  const { deps } = ops, settled = ops.settled.get(grant), live = ops.live.get(grant);
+  if (settled) {
+    return settled.state === "done"
+      ? { state: "done", role: settled.role }
+      : { state: settled.state, role: settled.role, reason: settled.reason };
+  }
+  if (live && !lapsed(deps, live.deadline)) {
+    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline };
+  }
+  const input = deps.exc.retainedInput(grant), recipient = input?.serder.sad?.ri;
+  if (!input || typeof recipient !== "string" || !deps.hby.habs.has(recipient)) {
+    throw new ValidationError("No Unblind was begun for this Grant");
+  }
+  if (deps.exc.complete(grant)) {
+    const current = deps.exc.verifyGrantProofs(grant, input.nests ?? []);
+    if (current === true || typeof current === "object" && current.kind === "accept") {
+      return { state: "done", role: "requester" };
+    }
+  }
+  const deadline = deps.exc.exchangeDeadline(input.serder);
+  if (!deadline) throw new ValidationError("No Unblind was begun for this Grant");
+  if (lapsed(deps, deadline)) return { state: "expired", role: "requester", reason: EXPIRED };
+  return { state: "interrupted", role: "requester", reason: INTERRUPTED };
 }
 
 /** Options for {@link waitForUnblinding}. */
@@ -439,7 +402,7 @@ export interface UnblindingWaitOptions {
  * someone else must call `processOnce`.
  */
 export function* waitForUnblinding(
-  ops: Pick<UnblindingOperations, "deps" | "live">,
+  ops: Pick<UnblindingOperations, "deps" | "live" | "settled">,
   grant: string,
   { timeoutMs, clock = ops.deps.clock }: UnblindingWaitOptions,
 ): Operation<WaitResult<UnblindingStatus>> {
@@ -449,19 +412,19 @@ export function* waitForUnblinding(
 }
 
 /**
- * Local abandon: release the approval and frozen messages and record `abandoned`. Does not message the peer
- * and does not undo proofs already finished. Does nothing to an Unblind that is already done or ended.
+ * Local abandon: release the approval and frozen messages and read `abandoned` until the process ends. Does
+ * not message the peer and does not undo proofs already finished. Does nothing to an Unblind that is already
+ * done or ended.
  *
  * @throws ValidationError when no Unblind was begun for `grant`.
  */
 export function abandonUnblinding(ops: UnblindingOperations, grant: string, reason = "Abandoned by the user"): void {
-  const record = ops.deps.store.get(grant);
-  if (!record) throw new ValidationError("No Unblind was begun for this Grant");
-  if (record.ended || record.done) return;
+  const status = unblindingStatus(ops, grant);
+  if (status.state !== "active" && status.state !== "interrupted") return;
   const live = ops.live.get(grant);
   if (live) ops.end(live, "abandoned", reason);
   else {
-    ops.deps.store.put({ ...record, ended: { state: "abandoned", reason, at: iso(ops.deps.clock.now()) } });
+    ops.settled.set(grant, { role: status.role, state: "abandoned", reason });
     ops.deps.changes?.push({ kind: "unblinding", id: grant });
   }
 }
