@@ -19,7 +19,9 @@ import {
   Prefixer,
   SerderACDC,
   SerderKERI,
+  type Siger,
   TraitDex,
+  Verfer,
   type Versionage,
   Vrsn_2_0,
 } from "cesr-ts";
@@ -35,11 +37,13 @@ import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { RegistryRecord } from "../../core/records.ts";
+import { dgKey } from "../../db/core/keys.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import { Credentialer, Regery, Registry, serializeCredential } from "../../vdr/credentialing.ts";
 import { envelopeFromFrame } from "../protocol/parsering.ts";
 import { type AgentRuntime } from "../runtime/agent-runtime.ts";
 
+import type { RegistryStore } from "../../acdc/registering.ts";
 import type { Reger } from "../../db/reger.ts";
 import {
   groupCredentialAnchorReady,
@@ -50,6 +54,7 @@ import {
   validateRegistryProposal,
 } from "../credentials/credential-proposals.ts";
 import type { Poster } from "../delivery/forwarding.ts";
+import type { Exchanger } from "../exchanges/exchanging.ts";
 import {
   endpointRoleAccepted,
   groupEndorseReply,
@@ -284,7 +289,17 @@ export interface MultisigApprovalCallbacks {
   chooseRegistryName(regk: string): string;
 }
 
+/** Collaborators KEL and reply approval need; an `AgentRuntime` fits, and no host is required to have one. */
+export interface ApprovalChannels {
+  readonly exc: Exchanger;
+  readonly reactor: Reactor;
+  readonly protocol: ProtocolProcessor;
+  readonly postman: Poster;
+}
+
 export interface MultisigApprovalOptions {
+  /** Reuse this member's recorded event signatures instead of signing again. */
+  resume?: boolean;
   group?: string;
   said?: string;
   callbacks: MultisigApprovalCallbacks;
@@ -471,27 +486,20 @@ export function* approvePendingMultisigProposal(
     } else if (isVdrRoute(route)) {
       result = yield* approveVdrProposal(hby, rgy, runtime, exn, route, options);
     } else if (isV2RegistryRoute(route)) {
-      const nests = loadNests(hby.db, exn.said!);
-      const proposal = acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null);
-      const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
-      if (!proposal || !group) continue;
-      const head = group.kever?.serder.said;
-      if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
-      if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) continue;
-      if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.acdc?.store ?? null)) {
-        throw new ValidationError("Group or registry changed while approval was pending.");
-      }
-      const envelope = envelopeFromFrame(nests[0]), opening = [...envelope.bsqs, ...envelope.bsss];
-      if (opening.length > 1) throw new ValidationError("Registry proposal carries multiple openings.");
-      const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
-        anchor: proposal.anchor,
-        opening: opening[0],
-      });
-      const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
-      const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
-      const accepted =
-        runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${proposal.tel.sad!.n}`)))?.said === proposal.tel.said;
-      result = { route, said: exn.said!, embedded: proposal.tel.said!, group: group.pre, accepted, ...published };
+      result = yield* approveRegistryV2Proposal(
+        hby,
+        {
+          exc: runtime.exc,
+          reactor: runtime.reactor,
+          protocol: runtime.protocol,
+          postman: runtime.postman,
+          registryStore: runtime.acdc?.store ?? null,
+        },
+        exn,
+        route,
+        options,
+      );
+      if (!result) continue;
     } else {
       result = yield* approveRpyProposal(hby, runtime, exn, route, options);
     }
@@ -503,6 +511,46 @@ export function* approvePendingMultisigProposal(
     }
   }
   return null;
+}
+
+/** Collaborators the ACDC v2 registry approval adds to the shared channels. */
+export interface RegistryChannels extends ApprovalChannels {
+  readonly registryStore: RegistryStore | null;
+}
+
+/**
+ * Approve and publish this member's contribution to one `rip` or `bup` proposal.
+ * Null when the proposal is not a well-formed one for a joined group or consent
+ * is declined; the proposal then stays inert.
+ */
+export function* approveRegistryV2Proposal(
+  hby: Habery,
+  runtime: RegistryChannels,
+  exn: SerderKERI,
+  route: "/multisig/rip" | "/multisig/bup",
+  options: MultisigApprovalOptions,
+): Operation<ApprovalResult | null> {
+  const nests = loadNests(hby.db, exn.said!);
+  const proposal = acdcV2RegistryProposal(exn, nests, runtime.registryStore);
+  const group = proposal?.anchor.pre ? hby.habs.get(proposal.anchor.pre) : null;
+  if (!proposal || !group) return null;
+  const head = group.kever?.serder.said;
+  if (!head) throw new ValidationError("Registry approval requires an accepted local group.");
+  if (!options.callbacks.approveProposal({ route, group: group.pre, embedded: proposal.tel.said! })) return null;
+  if (group.kever?.serder.said !== head || !acdcV2RegistryProposal(exn, nests, runtime.registryStore)) {
+    throw new ValidationError("Group or registry changed while approval was pending.");
+  }
+  const envelope = envelopeFromFrame(nests[0]), opening = [...envelope.bsqs, ...envelope.bsss];
+  if (opening.length > 1) throw new ValidationError("Registry proposal carries multiple openings.");
+  const approval = yield* approveAcdcV2Registry(hby, runtime.protocol, group, proposal.tel, {
+    anchor: proposal.anchor,
+    opening: opening[0],
+  });
+  const published = yield* publishAcdcV2Registry(hby, runtime.postman, group, approval);
+  const regid = proposal.tel.ilk === "rip" ? proposal.tel.said! : proposal.tel.regid!;
+  const accepted = runtime.registryStore?.seqEvent(regid, Number(BigInt(`0x${proposal.tel.sad!.n}`)))?.said
+    === proposal.tel.said;
+  return { route, said: exn.said!, embedded: proposal.tel.said!, group: group.pre, accepted, ...published };
 }
 
 /**
@@ -517,9 +565,9 @@ export function* approvePendingMultisigProposal(
  * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
-function* approveRpyProposal(
+export function* approveRpyProposal(
   hby: Habery,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   exn: SerderKERI,
   route: MultisigRpyRoute,
   options: MultisigApprovalOptions,
@@ -588,9 +636,9 @@ function* approveRpyProposal(
  * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
-function* approveKelProposal(
+export function* approveKelProposal(
   hby: Habery,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   exn: SerderKERI,
   route: MultisigKelRoute,
   options: MultisigApprovalOptions,
@@ -634,17 +682,26 @@ function* approveKelProposal(
     if (eventAccepted(hby, serder) && !smids.some(mid => hby.habs.has(mid))) {
       return null;
     }
-    if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
-      return null;
+    // Signing writes the member's signatures to `sigs.` when the event is first
+    // processed, before any wrapper exists. A resuming caller (explicit consent
+    // already given) finds them and reuses them: no second signature and no
+    // second join. The prompting path ignores them, as it always has.
+    const signed = options.resume ? recordedLocalSignatures(hby, serder, groupPre, smids) : null;
+    if (signed) {
+      localMessage = messagize(serder, { sigers: signed, pipelined: false, gvrsn: approval.genus });
+    } else {
+      if (!options.callbacks.approveProposal({ route, group: groupPre, embedded: embeddedSaid ?? "<unknown>" })) {
+        return null;
+      }
+      if (proposal.route === MULTISIG_ICP_ROUTE || (proposal.route === MULTISIG_ROT_ROUTE && !hby.habs.has(groupPre))) {
+        const rmids = proposal.attrs.rmids;
+        const alias = options.callbacks.chooseGroupAlias(groupPre);
+        hby.joinGroupHab(groupPre, alias, member, smids, rmids.length > 0 ? rmids : smids);
+      }
+      const keys = groupEventKeys(hby, groupPre, serder);
+      const sigers = signLocalGroupEvent(hby, serder, smids, keys);
+      localMessage = messagize(serder, { sigers, pipelined: false, gvrsn: approval.genus });
     }
-    if (proposal.route === MULTISIG_ICP_ROUTE || (proposal.route === MULTISIG_ROT_ROUTE && !hby.habs.has(groupPre))) {
-      const rmids = proposal.attrs.rmids;
-      const alias = options.callbacks.chooseGroupAlias(groupPre);
-      hby.joinGroupHab(groupPre, alias, member, smids, rmids.length > 0 ? rmids : smids);
-    }
-    const keys = groupEventKeys(hby, groupPre, serder);
-    const sigers = signLocalGroupEvent(hby, serder, smids, keys);
-    localMessage = messagize(serder, { sigers, pipelined: false, gvrsn: approval.genus });
   }
   // Each contribution may already own a counted attachment enclosure. Admit
   // complete messages separately and let the ordinary KEL owner union proofs.
@@ -689,10 +746,10 @@ function* approveKelProposal(
  * @param options Human approval/alias callbacks and workflow choices; refusal leaves the proposal inert.
  * @returns Approval result with protocol acceptance and deliveries, or null for declined/incomplete input.
  */
-function* approveVdrProposal(
+export function* approveVdrProposal(
   hby: Habery,
   rgy: Regery | null,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   exn: SerderKERI,
   route: MultisigVdrRoute,
   options: MultisigApprovalOptions,
@@ -765,7 +822,8 @@ function* approveVdrProposal(
     localAnchor = storedContribution(hby, prior, "anc", anchorSerder.said!);
   } else {
     const keys = groupEventKeys(hby, groupPre, anchorSerder);
-    const sigers = signLocalGroupEvent(hby, anchorSerder, smids, keys);
+    const sigers = (options.resume ? recordedLocalSignatures(hby, anchorSerder, groupPre, smids) : null)
+      ?? signLocalGroupEvent(hby, anchorSerder, smids, keys);
     localAnchor = messagize(anchorSerder, { sigers, pipelined: false, gvrsn: genus });
   }
   yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), localAnchor), { local: true });
@@ -826,6 +884,29 @@ function* approveVdrProposal(
   };
 }
 
+/**
+ * This process's verified signatures for a group event, one per local signing
+ * member, read from `sigs.`; null unless every local member's key index has one.
+ * Remote members' signatures in the same row never count.
+ */
+function recordedLocalSignatures(
+  hby: Habery,
+  serder: SerderKERI,
+  groupPre: string,
+  smids: readonly string[],
+): Siger[] | null {
+  if (!hby.habs.has(groupPre) || !serder.pre || !serder.said) return null;
+  const local = smids.flatMap((mid, index) => hby.habs.has(mid) ? [index] : []);
+  const stored = hby.db.sigs.get(dgKey(serder.pre, serder.said));
+  if (local.length === 0 || stored.length === 0) return null;
+  const verfers = groupEventKeys(hby, groupPre, serder).map(qb64 => new Verfer({ qb64 }));
+  const { sigers } = Kever.verifyIndexedSignatures(serder.raw, stored, verfers);
+  const own = sigers.filter(siger => local.includes(siger.index));
+  return local.every(index => own.some(siger => siger.index === index))
+    ? own.sort((left, right) => left.index - right.index)
+    : null;
+}
+
 /** Preserve the recorded signing/rotation participant order during approval and resume. */
 export function kelApprovalMembers({ proposal }: KelApproval): string[] {
   if (proposal.route === MULTISIG_IXN_ROUTE) return [...proposal.attrs.smids];
@@ -833,14 +914,14 @@ export function kelApprovalMembers({ proposal }: KelApproval): string[] {
 }
 
 /** Revalidate v2 nested reply commitments through ordinary exchange admission before reading proofs. */
-function replyChild(hby: Habery, runtime: AgentRuntime, wrapper: SerderKERI): Operation<MultisigChild | null> {
+function replyChild(hby: Habery, runtime: ApprovalChannels, wrapper: SerderKERI): Operation<MultisigChild | null> {
   return nestedChild(hby, runtime, wrapper, MULTISIG_RPY_ROUTE, "rpy");
 }
 
 /** Read a KEL proposal's named v1 embed, or its v2 nested child after authenticated wrapper admission. */
 function kelChild(
   hby: Habery,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   wrapper: SerderKERI,
   route: MultisigKelRoute,
 ): Operation<MultisigChild | null> {
@@ -850,7 +931,7 @@ function kelChild(
 /** v1 reads the named pathed embed; v2 reads the first nest of an accepted wrapper with its own proof. */
 function* nestedChild(
   hby: Habery,
-  runtime: AgentRuntime,
+  runtime: ApprovalChannels,
   wrapper: SerderKERI,
   route: MultisigKelRoute | typeof MULTISIG_RPY_ROUTE,
   label: string,

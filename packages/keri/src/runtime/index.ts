@@ -397,8 +397,12 @@ export type {
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
+  approveGroupProposal,
   dismissGroupProposal,
   findGroupProposal,
+  type GroupApprovalChoices,
+  type GroupApprovalDeps,
+  type GroupApprovalResult,
   type GroupProposal,
   type GroupProposalDismissDeps,
   type GroupProposalFilter,
@@ -407,6 +411,19 @@ export {
   type GroupProposalReadDeps,
   listGroupProposals,
 } from "../app/multisig/proposals.ts";
+export {
+  type GroupEventResult,
+  type GroupInceptionSpec,
+  type GroupProposeDeps,
+  type GroupRotationSpec,
+  proposeGroupInception,
+  proposeGroupInteraction,
+  proposeGroupRotation,
+  proposeRegistryEvent,
+  type RegistryEventResult,
+  type RegistryProposeDeps,
+  settleProposedRotation,
+} from "../app/multisig/proposing.ts";
 export {
   Notifier,
 } from "../app/notifications/notifying.ts";
