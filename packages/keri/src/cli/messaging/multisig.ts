@@ -698,6 +698,7 @@ function chooseGroupAlias(
   }
 }
 
+/** Ask whether to join a proposal; `--auto` answers yes without asking, only for the join command that set it. */
 export function approvePrompt(
   args: Pick<MultisigJoinArgs, "auto">,
   proposal: GroupProposal,
