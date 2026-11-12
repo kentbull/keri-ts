@@ -254,6 +254,14 @@ export {
   processCredentialPresentationArtifacts,
   storedGrantArtifacts,
 } from "../app/ipex/ipex-credentialing.ts";
+export {
+  anchorExchange as anchorIpexExchange,
+  exchangeWire,
+  IpexDiscloser,
+  type IssuanceGrantOptions,
+  type PreparedDisclosure,
+  type PreparedGrantBody,
+} from "../app/ipex/ipex-discloser.ts";
 export { type IpexGraph, walkIpexGraph } from "../app/ipex/ipex-graph.ts";
 export type { DisclosurePlan } from "../app/ipex/ipex-graph.ts";
 export {
