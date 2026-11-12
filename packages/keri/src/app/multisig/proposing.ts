@@ -193,7 +193,7 @@ export function* proposeRegistryEvent(
   inputs?: CounselInputs,
 ): Operation<RegistryEventResult> {
   const { hby } = deps;
-  const approval = yield* approveAcdcV2Registry(hby, deps.protocol, group, event, { opening });
+  const approval = yield* approveAcdcV2Registry(hby, deps.protocol, group, event, { opening, resume: true });
   const anchorSaid = (approval[0].sad?.a as { anc?: string } | undefined)?.anc;
   const anchor = anchorSaid ? hby.db.getEvtSerder(group.pre, anchorSaid) : null;
   if (!anchor || anchor.sn === null) throw new ValidationError("Registry proposal lost its group anchor.");

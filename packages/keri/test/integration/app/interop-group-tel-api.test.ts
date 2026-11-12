@@ -22,6 +22,7 @@ import { acdcmap, blindate as acdcBlindate } from "../../../src/acdc/messaging.t
 import type { RegistryDisclosure } from "../../../src/acdc/regeventing.ts";
 import { deliverCredentialRevocation, revokeCredential } from "../../../src/app/credentials/credential-revoking.ts";
 import { createCredential, inceptCredentialRegistry } from "../../../src/app/credentials/credential-workflows.ts";
+import { waitForTelEvent } from "../../../src/app/credentials/tel-completion.ts";
 import { groupEndorseReply } from "../../../src/app/identity/endpoint-roleing.ts";
 import { type Hab, type Habery } from "../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
@@ -42,10 +43,10 @@ import { requestFrame } from "../../../src/app/transport/cesr-egress.ts";
 import { buildCesrStreamRequest } from "../../../src/app/transport/cesr-http.ts";
 import { FetchHttpClient } from "../../../src/app/transport/http-client.ts";
 import { Receiptor } from "../../../src/app/witness/receipting.ts";
-import { waitForTelPublication } from "../../../src/cli/common/tel-completion.ts";
 import { reply as replyEvent } from "../../../src/core/protocol-eventing.ts";
 import { Schemer } from "../../../src/core/scheming.ts";
 import { loadNests } from "../../../src/db/exchange/exchange-nests.ts";
+import type { TelPublication } from "../../../src/vdr/tel-publication.ts";
 import {
   createInteropContext,
   randomPort,
@@ -54,6 +55,16 @@ import {
   withStartedChild,
 } from "./interop-test-helpers.ts";
 import { selectedKeripyProfile } from "./keripy-runtime.ts";
+
+/** Observe one TEL coordinate to an epoch-millisecond deadline; true when it completed. */
+function* waitForTelPublication(
+  publication: TelPublication,
+  pre: string,
+  sn: number,
+  deadline: number,
+) {
+  return (yield* waitForTelEvent({ publication }, pre, sn, { deadline })).outcome === "settled";
+}
 
 Deno.test("selected Python and TypeScript public APIs complete reciprocal legacy group credential handoffs", async () => {
   const ctx = await createInteropContext();
