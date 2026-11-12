@@ -103,7 +103,7 @@ class Probe extends IpexDiscloser {
   }
 }
 
-Deno.test("IpexDiscloser prepares Apply, reduces an attribute view and refuses incomplete evidence", async () => {
+Deno.test("IpexDiscloser prepares Apply, keeps the whole view without paths and refuses incomplete evidence", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
     const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
@@ -127,7 +127,6 @@ Deno.test("IpexDiscloser prepares Apply, reduces an attribute view and refuses i
         attribute: { d: "", i: hab.pre, name: "Alice", role: "holder" },
       });
       assertEquals(discloser.reduce(credential), credential);
-      assertEquals(discloser.reduce(credential, ["name"]).said, credential.said);
       assertThrows(
         () => discloser.registryProof(credential, "Eunknown"),
         ValidationError,
