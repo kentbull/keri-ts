@@ -3,7 +3,8 @@
 Each command opens one existing kli keystore the way an operator would and
 leaves protocol delivery to the installed `kli vc registry root` commands:
 
-- ``kram`` enables KRAM in the store's own config with a short window;
+- ``kram`` enables KRAM in the store's own config with a short window, or with
+  the ``--caches`` JSON windows a longer live exchange needs;
 - ``author`` creates an existing issuer registry whose root this AID holds,
   witnesses its anchors and writes the public KEL/TEL for the holder;
 - ``accept`` gives a holder a foreign issuer's public KEL and TEL;
@@ -50,7 +51,7 @@ def kram(args):
     hby = setupHby(name=args.name, base=args.base, bran=args.passcode, noPrompt=True, version=V2)
     try:
         config = hby.cf.get()
-        config['kram'] = KRAM
+        config['kram'] = dict(KRAM, caches={'~': json.loads(args.caches)}) if args.caches else KRAM
         hby.cf.put(config)
         return dict(kram=hby.cf.get()['kram'])
     finally:
@@ -217,6 +218,7 @@ def main():
     parser.add_argument('--tel')
     parser.add_argument('--acdc')
     parser.add_argument('--event')
+    parser.add_argument('--caches')
     args = parser.parse_args()
     commands = {'kram': kram, 'author': author, 'accept': accept, 'root': root, 'group-registry': group_registry,
                 'group-issue': group_issue, 'group-publish': group_publish, 'replicate': replicate}

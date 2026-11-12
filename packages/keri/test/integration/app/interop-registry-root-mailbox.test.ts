@@ -12,21 +12,33 @@
  * uses each implementation's library on the same store; delivery and listening
  * use the installed CLIs only.
  *
- * Four mixed-group stories follow, each over its own group of one KERIpy and
+ * Six mixed-group stories follow, each over its own group of one KERIpy and
  * one Tufa member formed and anchored with the real multisig commands. In the
  * first two, the member holding the group root runs its implementation's
  * group issuance completion send (`rootreplicating.replicate`, Tufa
- * `sendRootCopies`) directly, and the other member retains the root from its
- * mailbox. A full mixed-member group DH issuance is not expressible here, so
- * the custodian's root, `bup` and opening come from store setup and the stories
- * do not prove that issuance completion invokes the send; each implementation's
- * own group issuance tests cover that. In the third, the Tufa custodian's
- * `tufa multisig rotate`, approved by `kli multisig join`, rekeys the KERIpy
- * member and re-seals the root to it automatically. In the fourth, the mirror
- * direction, the KERIpy custodian's v2 `kli multisig rotate`, approved by
- * `tufa multisig join`, rekeys the Tufa member and re-seals the root to it.
+ * `sendRootCopies`) directly over store-set-up root, `bup` and opening, and the
+ * other member retains the root from its mailbox. In the third, the Tufa
+ * custodian's `tufa multisig rotate`, approved by `kli multisig join`, rekeys
+ * the KERIpy member and re-seals the root to it automatically. In the fourth,
+ * the mirror direction, the KERIpy custodian's v2 `kli multisig rotate`,
+ * approved by `tufa multisig join`, rekeys the Tufa member and re-seals the root
+ * to it.
+ *
+ * The last two drive a full group IPEX issuance with DH through the installed
+ * CLIs only, once with each implementation as the elected DH custodian (the
+ * member holding signing index 0 of the group inception, the coordinator). The
+ * custodian's member proposes the group registry RIP and the other approves it
+ * with `multisig join`; the custodian proposes the Grant with `ipex grant
+ * --issue --proposal-output`, the other member approves that exact proposal and
+ * contributes its DH query signature with its own `ipex grant`, then approves
+ * the BUP with `multisig join`; an individual holder on the custodian's
+ * implementation completes DH and admits. Issuance completion alone sends the
+ * root copy, and the other member, on the other implementation, retains the
+ * identical root from its mailbox. Credential bodies carry an explicit empty
+ * attribute SAID (`"d":""`) because Tufa rejects the SAID-less attribute
+ * section that KERIpy `vc create --data` otherwise emits.
  */
-import { makeBlindState, MtrDex, Salter, Vrsn_2_0 } from "cesr-ts";
+import { makeBlindState, MtrDex, parseBytes, Salter, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
 import { assertEquals, assertExists } from "jsr:@std/assert";
 import { fromFileUrl } from "jsr:@std/path/from-file-url";
@@ -361,10 +373,18 @@ interface MixedGroup {
   kliPre: string;
   tsPre: string;
   group: string;
+  witness: KeriPyWitnessNode;
 }
 
-/** Run one mixed-group story over its own witness, stores and temporary directory. */
-async function withMixedGroup(story: (group: MixedGroup) => Promise<void>): Promise<void> {
+/**
+ * Run one mixed-group story over its own witness, stores and temporary directory.
+ * `first` names the member that holds signing index 0, so the group's DH
+ * custodian election (lowest verified signing index) picks that member.
+ */
+async function withMixedGroup(
+  story: (group: MixedGroup) => Promise<void>,
+  first: "tufa" | "kli" = "tufa",
+): Promise<void> {
   const ctx = await createInteropContext();
   ctx.env.PYTHONUNBUFFERED = "1";
   const headDirPath = await Deno.makeTempDir({ prefix: "tufa-mixed-root-" });
@@ -459,8 +479,8 @@ async function withMixedGroup(story: (group: MixedGroup) => Promise<void>): Prom
     await Deno.writeTextFile(
       groupConfig,
       JSON.stringify({
-        aids: [tsPre, kliPre],
-        rmids: [tsPre, kliPre],
+        aids: first === "tufa" ? [tsPre, kliPre] : [kliPre, tsPre],
+        rmids: first === "tufa" ? [tsPre, kliPre] : [kliPre, tsPre],
         isith: "2",
         nsith: "2",
         toad: 1,
@@ -499,6 +519,7 @@ async function withMixedGroup(story: (group: MixedGroup) => Promise<void>): Prom
       kliPre,
       tsPre,
       group: String(group.group),
+      witness,
     });
   } finally {
     await harness.close();
@@ -865,3 +886,428 @@ Deno.test("Interop registry root: a KERIpy-proposed mixed group rotation rekeys 
       assertEquals(hby.db.getKever(group.group)?.sn, 3, "inception, two registry anchors, then the rotation");
     });
   }));
+
+/** KRAM windows long enough for a live multi-process group exchange, as KERIpy's group issuance CLI tests use. */
+const LIVE_KRAM_CACHES = [1000, 60000, 60000, 300000, 60000, 60000, 300000];
+
+/** An individual Issuee on one implementation, witnessed by the group's witness. */
+interface Holder {
+  pre: string;
+  name: string;
+  base: string;
+  store: string[];
+}
+
+/** Run one KERIpy command for a story, failing with its output. */
+function kliRun(group: MixedGroup, label: string, args: string[], timeoutMs = 60_000): Promise<CmdResult> {
+  return requireSuccess(label, runCmdWithTimeout(group.ctx.kliCommand, args, group.ctx.env, timeoutMs));
+}
+
+/** Run one Tufa command for a story, failing with its output. */
+function tufaRun(group: MixedGroup, label: string, args: string[], timeoutMs = 60_000): Promise<CmdResult> {
+  return requireSuccess(label, runTufaWithTimeout(args, group.ctx.env, group.ctx.repoRoot, timeoutMs));
+}
+
+/** Enable live KRAM on both members, as an operator does before the first v2 IPEX Grant. */
+async function enableLiveKram(group: MixedGroup): Promise<void> {
+  await peer(group.ctx, [
+    ...["kram", "--name", group.kli.name, "--base", group.kli.base, "--caches", JSON.stringify(LIVE_KRAM_CACHES)],
+  ]);
+  await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+    hby.cf!.put({ ...hby.cf!.get(), kram: { enabled: true, denials: [], caches: { "~": LIVE_KRAM_CACHES } } });
+  });
+}
+
+/**
+ * Create a witnessed individual holder with live KRAM, and introduce it and the
+ * group to each other by witness OOBI, after the group registry is anchored.
+ */
+async function makeHolder(group: MixedGroup, kind: "tufa" | "kli"): Promise<Holder> {
+  const { ctx, witness } = group;
+  const id = crypto.randomUUID().slice(0, 8);
+  let holder: Holder;
+  if (kind === "tufa") {
+    const name = `tufa-holder-${id}`;
+    const store = ["--name", name, "--head-dir", group.headDirPath, "--passcode", PASSCODE];
+    await tufaRun(group, "tufa holder init", ["init", ...store]);
+    await tufaRun(group, "tufa holder resolves witness", [
+      "oobi",
+      "resolve",
+      ...store,
+      "--url",
+      witness.controllerOobi,
+    ]);
+    const pre = extractPrefix(
+      (await tufaRun(group, "tufa holder incept", [
+        ...["incept", ...store, "--version", "2.0", "--alias", "holder", "--transferable"],
+        ...["--icount", "1", "--ncount", "1", "--toad", "1", "--wits", witness.pre, "--receipt-endpoint"],
+      ])).stdout,
+    );
+    await withTufaStore(name, group.headDirPath, function*(hby) {
+      hby.cf!.put({ ...hby.cf!.get(), kram: { enabled: true, denials: [], caches: { "~": LIVE_KRAM_CACHES } } });
+    });
+    await tufaRun(group, "tufa holder resolves the group", [
+      ...["oobi", "resolve", ...store, "--url", witnessOobi(witness, group.group), "--oobi-alias", "group"],
+    ]);
+    holder = { pre, name, base: "", store };
+  } else {
+    const name = `kli-holder-${id}`, base = `holder-${id}`;
+    const store = ["--name", name, "--base", base, "--passcode", PASSCODE];
+    await kliRun(group, "kli holder init", ["init", ...store]);
+    await kliRun(group, "kli holder resolves witness", [
+      ...["oobi", "resolve", ...store, ...group.versions, "--oobi", witness.controllerOobi],
+    ]);
+    const pre = extractPrefix(
+      (await kliRun(group, "kli holder incept", [
+        ...["incept", ...store, ...group.versions, "--alias", "holder"],
+        ...["--file", `${group.headDirPath}/member.json`, "--receipt-endpoint"],
+      ])).stdout,
+    );
+    await peer(ctx, ["kram", "--name", name, "--base", base, "--caches", JSON.stringify(LIVE_KRAM_CACHES)]);
+    await kliRun(group, "kli holder resolves the group", [
+      ...["oobi", "resolve", ...store, ...group.versions, "--oobi", witnessOobi(witness, group.group)],
+      ...["--oobi-alias", "group"],
+    ]);
+    holder = { pre, name, base, store };
+  }
+  await kliRun(group, "kli member resolves the holder", [
+    ...["oobi", "resolve", ...group.kliStore, ...group.versions, "--oobi", witnessOobi(witness, holder.pre)],
+    ...["--oobi-alias", "holder"],
+  ]);
+  await tufaRun(group, "tufa member resolves the holder", [
+    ...["oobi", "resolve", ...group.tufaStore, "--url", witnessOobi(witness, holder.pre), "--oobi-alias", "holder"],
+  ]);
+  return holder;
+}
+
+/** A command started in the background whose failure is reported, never swallowed. */
+interface Started {
+  label: string;
+  settled: boolean;
+  result: Promise<CmdResult>;
+}
+
+function start(label: string, command: Promise<CmdResult>): Started {
+  const started: Started = { label, settled: false, result: command };
+  command.then(() => started.settled = true, () => started.settled = true);
+  return started;
+}
+
+/** Wait for every started command and fail with all their output if any failed. */
+async function finish(label: string, commands: Started[]): Promise<CmdResult[]> {
+  const done = await Promise.allSettled(commands.map(command => command.result));
+  const report = done.map((outcome, index) =>
+    `--- ${commands[index].label}: ${
+      outcome.status === "rejected"
+        ? String(outcome.reason)
+        : `exit ${outcome.value.code}\n${outcome.value.stdout}\n${outcome.value.stderr}`
+    }`
+  );
+  if (done.some(outcome => outcome.status === "rejected" || outcome.value.code !== 0)) {
+    throw new Error(`${label} failed:\n${report.join("\n")}`);
+  }
+  return done.map(outcome => (outcome as PromiseFulfilledResult<CmdResult>).value);
+}
+
+/** Wait for a file a running command writes, failing early if that command has already exited. */
+async function written(path: string, writer: Started, others: Started[] = []): Promise<Uint8Array> {
+  const deadline = Date.now() + 90_000;
+  while (true) {
+    const bytes = await Deno.readFile(path).catch(() => undefined);
+    if (bytes?.length) {
+      await new Promise(resolve => setTimeout(resolve, 250));
+      return await Deno.readFile(path);
+    }
+    if (writer.settled || Date.now() > deadline) {
+      await finish(`waiting for ${path}`, [writer, ...others]);
+      throw new Error(`${writer.label} exited without writing ${path}`);
+    }
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+/** The group KEL inception: both members signed it, so the lowest signing index elects the custodian. */
+async function coordinatorEvent(group: MixedGroup): Promise<string> {
+  return await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+    const said = hby.db.kels.getLast(group.group, 0);
+    assertExists(said);
+    return said;
+  });
+}
+
+/** The exact Grant SAID nested in a `/multisig/exn` proposal file. */
+function proposedGrant(proposal: Uint8Array): string {
+  const wrapper = parseBytes(proposal)[0];
+  assertEquals((wrapper.body as SerderKERI).route, "/multisig/exn");
+  return (wrapper.nests![0].body as SerderKERI).said!;
+}
+
+function rootCopies(output: string) {
+  return results(output).filter(line => line.phase === "root_copy").map(item => [
+    item.sender,
+    item.recipient,
+    item.gid,
+    item.registry,
+    item.transmitted,
+  ]);
+}
+
+Deno.test("Interop registry root: a mixed group issues with DH through the CLIs and the Tufa custodian's root copy reaches the KERIpy member", () =>
+  withMixedGroup(async group => {
+    const { headDirPath } = group;
+    await enableLiveKram(group);
+    // Group registry: the Tufa member proposes the RIP, the KERIpy member approves its exact anchor.
+    await finish("group registry inception", [
+      start(
+        "tufa vc registry incept",
+        runTufaWithTimeout(
+          [
+            ...["vc", "registry", "incept", "--acdc-v2", ...group.tufaStore, "--alias", "group"],
+            ...["--registry-name", "issuer-fresh", "--usage", "group reader", "--timeout", "90"],
+          ],
+          group.ctx.env,
+          group.ctx.repoRoot,
+          120_000,
+        ),
+      ),
+      start(
+        "kli multisig join (RIP)",
+        runCmdWithTimeout(
+          group.ctx.kliCommand,
+          ["multisig", "join", ...group.kliStore, ...group.versions, "--group", "group", "--auto"],
+          group.ctx.env,
+          120_000,
+        ),
+      ),
+    ]);
+    const holder = await makeHolder(group, "tufa");
+    const bodyFile = `${headDirPath}/body.cesr`;
+    await tufaRun(group, "tufa vc create --prepare", [
+      ...["vc", "create", "--acdc-v2", "--prepare", ...group.tufaStore, "--alias", "group"],
+      ...[
+        "--registry-name",
+        "issuer-fresh",
+        "--recipient",
+        holder.pre,
+        "--data",
+        "{\"d\":\"\",\"role\":\"group reader\"}",
+      ],
+      ...["--out", bodyFile],
+    ]);
+    const body = new SerderACDC({ raw: await Deno.readFile(bodyFile) });
+    const registry = body.regid!;
+    const coordinator = await coordinatorEvent(group);
+    const selection = ["--recipient", holder.pre, "--coordinator", coordinator, "--custodian", group.tsPre];
+    const proposal = `${headDirPath}/proposal.cesr`;
+
+    // The elected Tufa custodian proposes the Grant; the KERIpy member approves it and contributes to DH.
+    const lead = start(
+      "tufa ipex grant --issue (custodian)",
+      runTufaWithTimeout(
+        [
+          ...["ipex", "grant", "--issue", ...group.tufaStore, "--alias", "group", "--credential", bodyFile],
+          ...selection,
+          ...["--proposal-output", proposal, "--timeout", "240"],
+        ],
+        group.ctx.env,
+        group.ctx.repoRoot,
+        260_000,
+      ),
+    );
+    const grant = proposedGrant(await written(proposal, lead));
+    const contributor = start(
+      "kli ipex grant --proposal (contributor)",
+      runCmdWithTimeout(
+        group.ctx.kliCommand,
+        [
+          ...["ipex", "grant", ...group.kliStore, ...group.versions, "--alias", "group", "--credential", bodyFile],
+          ...selection,
+          ...["--issue", "--deliver", "--proposal", proposal, "--consent-lifetime", "120", "--timeout", "90"],
+        ],
+        group.ctx.env,
+        120_000,
+      ),
+    );
+    await finish("KERIpy contribution", [contributor]).catch(async error => {
+      await finish("Tufa custodian", [lead]).catch(lead => console.error(String(lead)));
+      throw error;
+    });
+    const contributed = results((await contributor.result).stdout);
+    assertEquals(contributed.some(line => line.phase === "contributed"), true, JSON.stringify(contributed));
+
+    // The Issuee drains the delivered Grant, then explicitly approves DH; the KERIpy member separately approves the BUP.
+    await tufaRun(group, "tufa holder poll", ["ipex", "poll", ...holder.store, "--alias", "holder", "--timeout", "8"]);
+    const setup = start(
+      "tufa ipex setup (holder)",
+      runTufaWithTimeout(
+        ["ipex", "setup", ...holder.store, "--alias", "holder", "--said", grant, "--timeout", "150"],
+        group.ctx.env,
+        group.ctx.repoRoot,
+        170_000,
+      ),
+    );
+    const bup = start(
+      "kli multisig join (BUP)",
+      runCmdWithTimeout(
+        group.ctx.kliCommand,
+        ["multisig", "join", ...group.kliStore, ...group.versions, "--group", "group", "--auto"],
+        group.ctx.env,
+        170_000,
+      ),
+    );
+    const [issued, approved] = await finish("group DH issuance", [lead, bup, setup]);
+    assertEquals(approved.stdout.includes("Approve exact BUP anchor") || approved.stdout.includes(registry), true);
+    const outcome = results(issued.stdout).find(line => line.contributed === true)!;
+    assertEquals([outcome.grant, outcome.registry, outcome.registryIssued], [grant, registry, true], issued.stdout);
+    // Issuance completion sent the root to the KERIpy member, which has not yet drained its mailbox.
+    assertEquals(rootCopies(issued.stdout), [[group.tsPre, group.kliPre, group.group, registry, true]]);
+    const held = await peer(group.ctx, [
+      ...["root", "--name", group.kli.name, "--base", group.kli.base, "--gid", group.group, "--registry", registry],
+    ]);
+    assertEquals(held.root, null, "the KERIpy member holds no root before it drains its mailbox");
+
+    // The Issuee admits the issued credential.
+    const admitted = results(
+      (await tufaRun(group, "tufa ipex admit (holder)", [
+        ...["ipex", "admit", "--acdc-v2", "--consent", ...holder.store, "--alias", "holder", "--said", grant],
+      ], 90_000)).stdout,
+    ).at(-1)!;
+    assertExists(admitted);
+
+    const root = await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+      return hby.mgr.getRegistryRoot(group.group, registry)?.qb64;
+    });
+    assertExists(root);
+    assertEquals(await kliListenRetains(group, registry), root);
+  }));
+
+Deno.test("Interop registry root: a mixed group issues with DH through the CLIs and the KERIpy custodian's root copy reaches the Tufa member", () =>
+  withMixedGroup(async group => {
+    const { headDirPath } = group;
+    await enableLiveKram(group);
+    // Group registry: the KERIpy member proposes the RIP, the Tufa member approves its exact anchor.
+    const [, ripJoined] = await finish("group registry inception", [
+      start(
+        "kli vc registry incept",
+        runCmdWithTimeout(
+          group.ctx.kliCommand,
+          [
+            ...["vc", "registry", "incept", ...group.kliStore, ...group.versions, "--alias", "group"],
+            ...["--registry-name", "issuer-fresh", "--usage", "group reader"],
+          ],
+          group.ctx.env,
+          120_000,
+        ),
+      ),
+      start(
+        "tufa multisig join (RIP)",
+        runTufaWithTimeout(
+          [
+            ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto"],
+            ...["--approval-timeout", "90", "--receipt-endpoint"],
+          ],
+          group.ctx.env,
+          group.ctx.repoRoot,
+          120_000,
+        ),
+      ),
+    ]);
+    // The join converged the RIP anchor's witness receipts, so the Tufa member's own TEL accepted the RIP.
+    assertEquals(results(ripJoined.stdout).at(-1)!.accepted, true, ripJoined.stdout);
+    const holder = await makeHolder(group, "kli");
+    const bodyFile = `${headDirPath}/body.cesr`;
+    await kliRun(group, "kli vc create --output", [
+      ...["vc", "create", ...group.kliStore, ...group.versions, "--alias", "group", "--registry-name", "issuer-fresh"],
+      ...["--recipient", holder.pre, "--data", "{\"d\":\"\",\"role\":\"group reader\"}", "--output", bodyFile],
+    ]);
+    const body = new SerderACDC({ raw: await Deno.readFile(bodyFile) });
+    const registry = body.regid!;
+    const coordinator = await coordinatorEvent(group);
+    const selection = ["--recipient", holder.pre, "--coordinator", coordinator, "--custodian", group.kliPre];
+    const proposal = `${headDirPath}/proposal.cesr`, grantFile = `${headDirPath}/grant.cesr`;
+
+    // The elected KERIpy custodian proposes the Grant; the Tufa member approves it and contributes to DH.
+    const lead = start(
+      "kli ipex grant --issue (custodian)",
+      runCmdWithTimeout(
+        group.ctx.kliCommand,
+        [
+          ...["ipex", "grant", ...group.kliStore, ...group.versions, "--alias", "group", "--credential", bodyFile],
+          ...selection,
+          ...["--issue", "--deliver", "--proposal-output", proposal, "--output", grantFile],
+          ...["--consent-lifetime", "120", "--timeout", "240"],
+        ],
+        group.ctx.env,
+        260_000,
+      ),
+    );
+    const grant = proposedGrant(await written(proposal, lead));
+    const contributor = start(
+      "tufa ipex grant --resume (contributor)",
+      runTufaWithTimeout(
+        [
+          ...["ipex", "grant", "--issue", ...group.tufaStore, "--alias", "group", ...selection],
+          ...["--resume", grant, "--proposal", proposal, "--timeout", "90"],
+        ],
+        group.ctx.env,
+        group.ctx.repoRoot,
+        120_000,
+      ),
+    );
+    await finish("Tufa contribution", [contributor]).catch(async error => {
+      await finish("KERIpy custodian", [lead]).catch(lead => console.error(String(lead)));
+      throw error;
+    });
+    const contributed = results((await contributor.result).stdout).at(-1)!;
+    assertEquals([contributed.grant, contributed.contributed, contributed.registryIssued], [grant, true, false]);
+
+    // The KERIpy Issuee approves DH and admits in one invocation; the Tufa member separately approves the BUP.
+    await written(grantFile, lead);
+    const admit = start(
+      "kli ipex admit (holder)",
+      runCmdWithTimeout(
+        group.ctx.kliCommand,
+        [
+          ...["ipex", "admit", ...holder.store, ...group.versions, "--alias", "holder", "--said", grant],
+          ...["--input", grantFile, "--deliver", "--timeout", "150"],
+        ],
+        group.ctx.env,
+        170_000,
+      ),
+    );
+    const bup = start(
+      "tufa multisig join (BUP)",
+      runTufaWithTimeout(
+        [
+          ...["multisig", "join", ...group.tufaStore, "--group", "group", "--auto"],
+          ...["--approval-timeout", "150", "--receipt-endpoint"],
+        ],
+        group.ctx.env,
+        group.ctx.repoRoot,
+        170_000,
+      ),
+    );
+    const [issued, approved, holderDone] = await finish("group DH issuance", [lead, bup, admit]);
+    // The Tufa member's join converged the BUP anchor's witness receipts, so its own TEL accepted the BUP.
+    assertEquals(
+      [results(approved.stdout).at(-1)!.route, results(approved.stdout).at(-1)!.accepted],
+      ["/multisig/bup", true],
+      approved.stdout,
+    );
+    const outcome = results(issued.stdout).find(line => line.admitted !== undefined)!;
+    assertEquals([outcome.grant, outcome.registry_issued, outcome.admitted], [grant, true, true], issued.stdout);
+    assertEquals(results(holderDone.stdout).at(-1)!.admit, outcome.admit, holderDone.stdout);
+    // Issuance completion sent the root to the Tufa member, which has not yet drained its mailbox.
+    assertEquals(rootCopies(issued.stdout), [[group.kliPre, group.tsPre, group.group, registry, true]]);
+    await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+      assertEquals(hby.mgr.getRegistryRoot(group.group, registry), null, "no root before the mailbox drains");
+    });
+    const root = (await peer(group.ctx, [
+      ...["root", "--name", group.kli.name, "--base", group.kli.base, "--gid", group.group, "--registry", registry],
+    ])).root as string;
+    assertExists(root);
+    assertEquals(await tufaAgentRetains(group, registry), [{ gid: group.group, registry, retained: true }]);
+    await withTufaStore(group.tufa, group.headDirPath, function*(hby) {
+      assertEquals(hby.mgr.getRegistryRoot(group.group, registry)?.qb64, root);
+    });
+  }, "kli"));
