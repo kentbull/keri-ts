@@ -153,7 +153,7 @@ Deno.test("completeEvent opens the delegation scope only for delegated events, a
     await run(() => completeEvent(stalledDeps, delegatedHab, 0, { delegation: { timeoutMs: 20 } })),
     {
       outcome: "timed-out",
-      status: unknownEvent,
+      status: { state: "active", phase: "waitingDelegatorAnchor" },
       timeoutMs: 20,
       delegationPhase: "waitingDelegatorAnchor",
     },
