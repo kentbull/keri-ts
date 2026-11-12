@@ -30,8 +30,10 @@
  *   Without an Anchorer such events stay in `gdee`, reported `notSupported`.
  *
  * Witness authorization codes, the delegation proxy and retry timers are process
- * memory only, as in KERIpy and the Anchorer; after a restart a delegated
- * inception reads `blocked: proxy` until `supply` provides one. Collaborators are narrow (ADR-0013); nothing here reaches a runtime.
+ * memory only, as in KERIpy and the Anchorer. Without a proxy the local group
+ * member sends delegation traffic, as KERIpy does for every group event, so a
+ * restart never leaves a delegated event waiting for one. Collaborators are
+ * narrow (ADR-0013); nothing here reaches a runtime.
  */
 import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
@@ -65,8 +67,6 @@ export type CounselStage = "signatures" | "delegation" | "witnesses";
 export type CounselBlock =
   | { kind: "witnessAuth"; witnesses: string[] }
   | { kind: "witness"; reason: string }
-  /** A delegated inception needs a local proxy hab to send the delegation request. */
-  | { kind: "proxy" }
   | { kind: "delegatorUnknown"; delpre: string }
   /** No Anchorer was supplied, so delegated events cannot progress. */
   | { kind: "notSupported"; feature: "delegation" };
@@ -97,8 +97,8 @@ export interface CounselInputs {
   fallbackAfterMs?: number;
   /**
    * Local hab that sends the delegation request and queries the delegator's
-   * witness. Required to publish a delegated inception; rotations and queries
-   * fall back to the local group member. Memory only.
+   * witness. Optional: the local group member sends when none is supplied, as
+   * in KERIpy. An explicit proxy wins. Memory only.
    */
   proxy?: Hab;
 }
@@ -225,7 +225,7 @@ export class Counselor {
     const status: GroupEventStatus = { state: "pending", stage, elected, receipts: { have, need } };
     const run = this.runs.get(this.runKey(event));
     const failure = run?.failure ? this.receiptBlock(run, missing) : undefined;
-    if (stage === "delegation") status.blocked = this.delegationBlock(event, run, elected) ?? failure;
+    if (stage === "delegation") status.blocked = this.delegationBlock(event) ?? failure;
     else if (stage === "witnesses") status.blocked = failure;
     if (!status.blocked) delete status.blocked;
     return status;
@@ -240,15 +240,10 @@ export class Counselor {
   }
 
   /** What keeps a delegated event in `gdee`, if anything the caller can fix. */
-  private delegationBlock(
-    event: GroupEventRef,
-    run: Run | undefined,
-    elected: boolean | null,
-  ): CounselBlock | undefined {
+  private delegationBlock(event: GroupEventRef): CounselBlock | undefined {
     if (!this.delegation) return { kind: "notSupported", feature: "delegation" };
     const delpre = this.hby.db.getKever(event.pre)?.delpre;
     if (delpre && !this.hby.db.getKever(delpre)) return { kind: "delegatorUnknown", delpre };
-    if (event.sn === 0 && !run?.proxy && (elected || this.fallbackElapsed(run))) return { kind: "proxy" };
     return undefined;
   }
 
@@ -300,6 +295,9 @@ export class Counselor {
 
   /** One pass over all stages, as KERIpy `processEscrows`. */
   *processOnce(): Operation<void> {
+    // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.
+    const db = this.hby.db;
+    if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0) return;
     this.processSignatures();
     yield* this.processDelegation();
     yield* this.processWitnesses();
@@ -357,10 +355,8 @@ export class Counselor {
       this.finish(this.hby.db.gdee, event, row);
       return;
     }
-    // The Anchorer asks the delegator only once the event's witnesses have receipted it, and
-    // receipts need no proxy, so they proceed while an inception waits for one.
+    // The Anchorer asks the delegator only once the event's witnesses have receipted it.
     if (!this.hby.db.fullyWitnessed(serder)) yield* this.pursueReceipts(event, serder, true);
-    if (event.sn === 0 && !run.proxy) return; // reported as blocked: proxy
     if (!run.begun) {
       anchorer.begin(serder, { communicationHab: run.proxy ?? member });
       run.begun = true;

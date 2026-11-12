@@ -714,21 +714,23 @@ Deno.test("design risk 4: a delegate accepts its own delegated event and takes w
   });
 });
 
-Deno.test("KERIpy test_counselor (delegated): the publishing member drives the Anchorer, needs a proxy for an inception, and completes with it", async () => {
+Deno.test("KERIpy test_counselor (delegated): the publishing member drives the Anchorer with the member hab, an explicit proxy wins, and it completes", async () => {
   await run(function*() {
     const { a, gid, gw, dip } = yield* delegated();
     const x = counselor(a, [gw], undefined, true);
     x.c.start(dip);
     yield* x.c.processOnce();
-    assertEquals(blockedOf(x.c.status(dip)), { kind: "proxy" }); // nothing to send the request with yet
-    assertEquals(x.anchorer.begun, []);
-    assertEquals(x.receipting.calls, ["receipt:0"]); // receipts do not wait for the proxy
+    // KERIpy sends group traffic from the member hab: an inception needs no proxy.
+    assertEquals(x.anchorer.begun, [{ said: gid, sender: a.hab.pre }]);
+    assertEquals(x.receipting.calls, ["receipt:0"]);
+    assertEquals(blockedOf(x.c.status(dip)), undefined);
 
     const proxy = a.hby.makeHab("proxy");
     x.c.supply(dip, { proxy });
     yield* x.c.processOnce();
     yield* x.c.processOnce();
-    assertEquals(x.anchorer.begun, [{ said: gid, sender: proxy.pre }]); // begun once
+    assertEquals(x.anchorer.begun.at(-1), { said: gid, sender: proxy.pre }); // re-pinned once, then stable
+    assertEquals(x.anchorer.begun.length, 2);
     assertEquals(blockedOf(x.c.status(dip)), undefined);
     assertEquals(x.c.status(dip).state, "pending");
 
@@ -812,7 +814,7 @@ Deno.test("fallback publishes the delegation request at 0 and after a positive g
   });
 });
 
-Deno.test("a restarted Counselor finds a delegated inception in the delegation stage and blocks on the proxy until supplied", async () => {
+Deno.test("a restarted Counselor resumes a delegated inception from its rows with the member hab, and re-pins a supplied proxy", async () => {
   await run(function*() {
     const { a, gid, gw, dip } = yield* delegated();
     const proxy = a.hby.makeHab("proxy");
@@ -825,10 +827,13 @@ Deno.test("a restarted Counselor finds a delegated inception in the delegation s
     const second = counselor(a, [gw], undefined, true);
     assertEquals(second.c.pending(), [{ ...dip, stage: "delegation" }]);
     yield* second.c.processOnce();
-    assertEquals([blockedOf(second.c.status(dip)), second.anchorer.begun], [{ kind: "proxy" }, []]);
+    assertEquals([blockedOf(second.c.status(dip)), second.anchorer.begun], [undefined, [{
+      said: gid,
+      sender: a.hab.pre,
+    }]]);
     second.c.supply(dip, { proxy });
     yield* second.c.processOnce();
-    assertEquals(second.anchorer.begun.length, 1);
+    assertEquals(second.anchorer.begun.at(-1), { said: gid, sender: proxy.pre });
     second.anchorer.done.add(`${gid}:0`);
     yield* second.c.processOnce();
     assertEquals(second.c.status(dip), { state: "complete" });
@@ -845,7 +850,7 @@ Deno.test("a delegated event reads delegatorUnknown until the delegator's KEL ar
     assertEquals(blockedOf(x.c.status(dip)), { kind: "delegatorUnknown", delpre: del.pre });
     assertEquals(x.anchorer.begun, []);
     share(d.hby, del.pre!, [a.hby]);
-    assertEquals(blockedOf(x.c.status(dip)), { kind: "proxy" });
+    assertEquals(blockedOf(x.c.status(dip)), undefined);
 
     // A stale tuple at the same sn is removed alone.
     const stale = { pre: gid, sn: 0, said: "E" + "C".repeat(43) };

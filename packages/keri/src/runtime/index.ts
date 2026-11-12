@@ -100,6 +100,7 @@ export {
 export {
   type DerivedUpdate,
   type DerivedUpdateStore,
+  MemoryDerivedUpdateStore,
   RegistryCustody,
   type RegistryCustodyOptions,
 } from "../acdc/custody.ts";
@@ -110,6 +111,7 @@ export {
   type DhkeApproval,
   type DhkeContext,
   type DhkeOutgoing,
+  type DhkeReplicate,
   generateKeyPair,
 } from "../acdc/dhking.ts";
 export {
@@ -395,6 +397,17 @@ export type {
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
+  dismissGroupProposal,
+  findGroupProposal,
+  type GroupProposal,
+  type GroupProposalDismissDeps,
+  type GroupProposalFilter,
+  type GroupProposalKind,
+  type GroupProposalNeeds,
+  type GroupProposalReadDeps,
+  listGroupProposals,
+} from "../app/multisig/proposals.ts";
+export {
   Notifier,
 } from "../app/notifications/notifying.ts";
 export {
@@ -500,14 +513,25 @@ export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export {
   deliverRegistryRoots,
   replicateRegistryRoots,
+  replicateRootCopy,
   resealRegistryRoots,
   type RootCopy,
+  type RootCopyKin,
   RootCopyRecovery,
   type RootCopyReport,
   type RootDelivery,
   RootResealBudgetMs,
   type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
+export {
+  MemoryRootLedger,
+  type OwedCopy,
+  type OwedCopyStatus,
+  type RootLedger,
+  RootReplicator,
+  type RootReplicatorDeps,
+  type RootReplicatorStatus,
+} from "../app/credentials/root-replicator.ts";
 export { publishPendingTel } from "../app/credentials/tel-publishing.ts";
 export {
   type AgentCue,
@@ -809,6 +833,35 @@ export {
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
 
+// Runtime-owned single-signature DH issuance operations (begin, process, status, wait, abandon).
+export {
+  abandonIssuance,
+  type AdmitDeps,
+  admitIssuance,
+  approveIssuanceExchange,
+  beginIssuance,
+  type BeginIssuanceInput,
+  deliverIssuanceAdmit,
+  type IssuanceAdmit,
+  type IssuanceBegun,
+  type IssuanceDelivery,
+  type IssuanceDeps,
+  type IssuanceEndState,
+  type IssuanceNeed,
+  IssuanceOperations,
+  type IssuanceOperationStore,
+  type IssuancePhase,
+  type IssuanceRecord,
+  type IssuanceRole,
+  type IssuanceStatus,
+  issuanceStatus,
+  type IssuanceWaitOptions,
+  MemoryIssuanceOperationStore,
+  posterDelivery,
+  prepareIssuanceGrant,
+  waitForIssuance,
+} from "../app/ipex/issuance.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
@@ -852,3 +905,6 @@ export {
   type WaitForChallengeOptions,
   waitForChallengeResponse,
 } from "../app/identity/challenging.ts";
+
+// Pre-signed hab adoption (Habery.makeSignedHab).
+export type { SignedHabArgs } from "../app/identity/habbing.ts";

@@ -226,6 +226,8 @@ v1 TEL completion is library code (`app/credentials/tel-completion.ts`): `telEve
 
 IPEX poll-and-settle is library code (`app/mailbox/ipex-arrival.ts`: `settleStoredGrants`, `ipexArrivalStatus`, `waitForIpexArrival`). A wallet reads status and waits; `tufa ipex poll` supplies the workers, mailbox poller and `MailboxIntakeTally` itself.
 
+Single-signature DH issuance is library code (`app/ipex/issuance.ts`). `IssuanceOperations` holds a live in-memory table; `processOnce` is the only worker and acts solely for operations the user began (`beginIssuance` signs the Grant, approves DH, signs the query and holds the anchor authorisation in memory, so one consent covers the later KEL anchor). Durable: `IssuanceRecord` (non-secret) in the embedder's `IssuanceOperationStore`, Grant and deadline, Keeper root, staged/accepted registry events. Memory only: DH keys, witness codes, authorisation, resend timers. A record that is active with no live operation reads `interrupted` (or `expired` past the Grant deadline) and nothing is signed or sent. Retained-root hazard (tested, not fixed): `Dhke.approve` refuses any registry that already has a Keeper root, so after a reload that follows root retention the party holding the root cannot consent to a new Grant on that registry; resuming needs a protocol decision. DH owners must exist before traffic (`runtime.ipex.dhke(hab)` at wallet open) or queries drop as `missingProcessor`. The runtime never writes wallet inventory; the embedder reacts to the `issuance` change. Holder: `approveIssuanceExchange` is the DH consent; `processOnce` answers the query, waits for the issuer's registry update and finishes the Grant, leaving `awaitingAdmitConsent` (`needs: "admit"`); `admitIssuance(deps, ...)` is the separate Admit consent. It signs and accepts locally, works for any accepted v2 Grant (creating the record when no DH ran) and returns before delivery (`deliverIssuanceAdmit`), so an embedder records its inventory (the wallet's `recordAdmission`) between the two. `tufa ipex --issue/setup/admit` are thin callers and do exactly that.
+
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
 key-state facts once into an explicitly supplied command-owned Deck with one
@@ -338,7 +340,10 @@ local; infrastructure/cleanup failures reach the host.
 Composition supplies HttpClient.request (completed finite bytes) and open
 (scoped streaming response). FetchHttpClient constructs Request
 before native fetch classification and owns response-read cancellation and joined
-cleanup. Producers prepare finite HTTP bodies before requesting; no upload-source
+cleanup. It holds the Request and its signal strongly until the request scope ends: WebKit
+drops a pending fetch's abort link when either is collected, after which abort never settles
+the fetch or closes the connection. WebKit and Node 20 reject an abort with a fresh AbortError,
+which is the cancellation, not a transport failure. Producers prepare finite HTTP bodies before requesting; no upload-source
 factory or upload pump remains. Consumers borrow HttpStreamResponse metadata and body(signal) only through open;
 finite HttpResponse bytes remain usable after request cleanup. Native Response never escapes.
 Source/parser/consumer errors remain distinct; test clients explicitly produce
