@@ -75,21 +75,27 @@ function traced(real: IDBFactory, label = "db", events: string[] = []): { factor
     );
   };
   const spyDatabase = (db: IDBDatabase) =>
-    spy(db, (prop, realDb) =>
-      prop === "transaction"
-        ? (stores: string | string[], mode: IDBTransactionMode, options?: unknown) => {
-          const id = trace.transactions.length;
-          trace.transactions.push({ stores, mode, options });
-          trace.events.push(`${label}#${id} begin ${mode}`);
-          const transaction = (realDb.transaction as (...a: unknown[]) => IDBTransaction)(stores, mode, options);
-          return spyTransaction(transaction, id);
-        }
-        : undefined);
-  const factory = spy(real, (prop, realFactory) =>
-    prop === "open"
-      ? (name: string, version?: number) =>
-        spy(realFactory.open(name, version), (p, request) => p === "result" ? spyDatabase(request.result) : undefined)
-      : undefined);
+    spy(
+      db,
+      (prop, realDb) =>
+        prop === "transaction"
+          ? (stores: string | string[], mode: IDBTransactionMode, options?: unknown) => {
+            const id = trace.transactions.length;
+            trace.transactions.push({ stores, mode, options });
+            trace.events.push(`${label}#${id} begin ${mode}`);
+            const transaction = (realDb.transaction as (...a: unknown[]) => IDBTransaction)(stores, mode, options);
+            return spyTransaction(transaction, id);
+          }
+          : undefined,
+    );
+  const factory = spy(
+    real,
+    (prop, realFactory) =>
+      prop === "open"
+        ? (name: string, version?: number) =>
+          spy(realFactory.open(name, version), (p, request) => p === "result" ? spyDatabase(request.result) : undefined)
+        : undefined,
+  );
   return { factory, trace };
 }
 
@@ -236,6 +242,21 @@ Deno.test("write resolves only after the transaction completes, never on a reque
   assertEquals(events.filter((event) => event.endsWith("success")).length, 5, "all requests succeed first");
   const lastSuccess = events.findLastIndex((event) => event.endsWith("success"));
   assertEquals(events.lastIndexOf("db complete") > lastSuccess, true);
+  await persistence.close();
+});
+
+Deno.test("meta and load resolve only after their read transaction completes", async () => {
+  const { factory, trace } = traced(newFactory());
+  const persistence = adapter(factory);
+  trace.events.length = 0;
+  await persistence.meta().then(() => trace.events.push("meta resolved"));
+  await persistence.load("plain.").then(() => trace.events.push("load resolved"));
+  await Promise.resolve();
+  const events = trace.events.map((event) => event.replace(/#\d+/, ""));
+  assertEquals(events.filter((event) => event === "db complete").length, 2);
+  assertEquals(events.indexOf("meta resolved") > events.indexOf("db complete"), true, "meta waited for complete");
+  assertEquals(events.at(-2), "db complete", "load waited for complete");
+  assertEquals(events.at(-1), "load resolved");
   await persistence.close();
 });
 
