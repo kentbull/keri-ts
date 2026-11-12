@@ -44,6 +44,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/app/bootstrap/oobi-local-state.test.ts",
       "test/unit/app/multisig/group-members.test.ts",
       "test/unit/app/multisig/group-election.test.ts",
+      "test/unit/app/multisig/counseling.test.ts",
       "test/unit/app/multisig/grouping.test.ts",
       "test/unit/app/multisig/grouping-nests.test.ts",
       "test/unit/app/multisig/coordination-routes.test.ts",
