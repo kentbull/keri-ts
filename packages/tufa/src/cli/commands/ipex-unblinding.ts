@@ -59,19 +59,22 @@ function* wait(runtime: AgentRuntime, milliseconds: number): Operation<void> {
 function* wire(frame: CesrFrame): Operation<Uint8Array> {
   return yield* call(() => collectPayload(framePayload(frame)));
 }
-/** Acquire optional direct intake before approving the exact live presentation. */
-export function* runPresentationUnblind(
+/**
+ * Group Unblind through the CLI-owned member loop, until the group proposal API replaces it. Acquires optional
+ * direct intake before approving the exact live presentation for `hab`.
+ */
+export function* runGroupUnblind(
   runtime: AgentRuntime,
+  hab: Hab,
   grant: string,
   options: PresentationUnblindOptions,
 ): Operation<PresentationUnblindResult> {
-  if (options.listen === undefined) return yield* runUnblind(runtime, grant, options);
+  if (options.listen === undefined) return yield* runUnblind(runtime, hab, grant, options);
   if (!Number.isInteger(options.listen) || options.listen < 1 || options.listen > 65535) {
     throw new ValidationError("--listen must be a port between 1 and 65535");
   }
-  const selected = runtime.ipexAuxiliary;
-  if (selected?.kind !== "unblind") throw new ValidationError("Live Unblind requires its selected runtime");
-  const hab = selected.owner.hab, member = selected.owner.group ? localGroupMember(runtime.hby, hab.pre) : hab;
+  if (!runtime.ipex) throw new ValidationError("Live Unblind requires a runtime with a v2 registry");
+  const member = isLocalGroupHab(runtime.hby, hab) ? localGroupMember(runtime.hby, hab.pre) : hab;
   return yield* scoped(function*() {
     let ready!: () => void;
     const bound = new Promise<void>(resolve => ready = resolve);
@@ -85,7 +88,7 @@ export function* runPresentationUnblind(
     );
     try {
       yield* call(() => bound);
-      return yield* runUnblind(runtime, grant, options);
+      return yield* runUnblind(runtime, hab, grant, options);
     } finally {
       yield* listener.halt();
     }
@@ -95,15 +98,13 @@ export function* runPresentationUnblind(
 /** Run one exact retained presentation through its selected Unblind owner, without creating an Admit. */
 function* runUnblind(
   runtime: AgentRuntime,
+  hab: Hab,
   grant: string,
   { timeoutMs, proposer, states }: PresentationUnblindOptions,
 ): Operation<PresentationUnblindResult> {
-  const selected = runtime.ipexAuxiliary;
-  if (selected?.kind !== "unblind" || !runtime.acdc || selected.owner.exc !== runtime.exc) {
-    throw new ValidationError("Live Unblind requires its selected runtime and registry");
-  }
+  if (!runtime.ipex || !runtime.acdc) throw new ValidationError("Live Unblind requires a runtime with a v2 registry");
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new ValidationError("Unblind timeout must be positive");
-  const protocol = selected.owner, hab = protocol.hab;
+  const protocol = runtime.ipex.unblind(hab);
   const member = protocol.group ? localGroupMember(runtime.hby, hab.pre) : hab;
   if (
     protocol.group
@@ -290,7 +291,7 @@ function* runUnblind(
  * One individual Unblind through the library owner: consent, then `processOnce` under the host workers while
  * the wait observes. Only the optional direct listener (`--listen`) is the CLI's own.
  */
-function* runIndividualUnblind(
+export function* runIndividualUnblind(
   runtime: AgentRuntime,
   hab: Hab,
   grant: string,
@@ -303,36 +304,22 @@ function* runIndividualUnblind(
   if (proposer !== undefined) {
     throw new ValidationError("Group Unblind requires a current signing member proposer; individual Unblind has none");
   }
-  const ops = new UnblindingOperations({
-    hby: runtime.hby,
-    exc: runtime.exc,
-    unblinds: runtime.ipex!,
-    delivery: posterDelivery(runtime.postman),
-    clock: runtime.clock,
-  });
+  // The runtime's own owner: the host loop under `withRuntimeWorkers` drives it, so a reply the discloser owes is
+  // delivered once, not by this command and the loop both.
+  const ops = runtime.operations!.unblinding;
   const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
   const run = function*() {
     // The disclosee consents explicitly; the discloser only listens, and the owner answers an authenticated query.
     const begun = requester ? requestUnblind(ops, { hab, grant, states }) : null;
     const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
-      const driver = yield* spawn(function*() {
-        while (true) {
-          yield* ops.processOnce();
-          yield* wait(runtime, 50);
+      const stop = runtime.clock.now() + timeoutMs;
+      while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
+        if (runtime.clock.now() >= stop) {
+          throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
         }
-      });
-      try {
-        const stop = runtime.clock.now() + timeoutMs;
-        while (!begun && !ops.live.has(grant) && !ops.settled.has(grant)) {
-          if (runtime.clock.now() >= stop) {
-            throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
-          }
-          yield* wait(runtime, 50);
-        }
-        return yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - runtime.clock.now()) });
-      } finally {
-        yield* driver.halt();
+        yield* wait(runtime, 50);
       }
+      return yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - runtime.clock.now()) });
     });
     const exchange = runtime.exc.retainedInput(grant)!.serder;
     const xid = begun?.xid ?? String(exchange.ilk === "xip" ? exchange.said : exchange.sad!.x),
@@ -388,13 +375,10 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
   const completed = yield* withExistingHab(walletStoreArgs(args), parseStringOption(args.alias, "alias"), {
     skipConfig: false,
   }, function*({ hby, hab }) {
-    // TODO(group proposal API): group Unblind keeps its CLI-owned loop (runPresentationUnblind) until that API.
+    // TODO(group proposal API): group Unblind keeps its CLI-owned loop (runGroupUnblind) until that API.
     const individual = !isLocalGroupHab(hby, hab);
     const runtime = yield* createAgentRuntime(hby, new NodeHttpClient(), systemClock, {
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
-      ...individual
-        ? { ipexOwners: "per-identifier" as const }
-        : { ipexAuxiliary: { kind: "unblind" as const, hab } },
     });
     try {
       const input = parseStringOption(args.input, "input");
@@ -410,7 +394,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
       };
       return individual
         ? yield* runIndividualUnblind(runtime, hab, grant, { ...options, states })
-        : yield* runPresentationUnblind(runtime, grant, options);
+        : yield* runGroupUnblind(runtime, hab, grant, options);
     } finally {
       yield* runtime.close();
     }

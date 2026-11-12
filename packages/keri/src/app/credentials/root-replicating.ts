@@ -1,11 +1,11 @@
 /**
  * Finite delivery of prepared `/registry/root` copies; transmission is never receipt.
  *
- * `replicateRegistryRoots` is the KERIpy `rootreplicating.replicate` happy path:
- * group commands call it once a send is possible and report each outcome. There
- * is no acknowledgement, sent-copies record or retry; receiving is idempotent,
- * so duplicate copies are harmless, and `tufa vc registry root send` is the
- * recovery path for a copy that was not sent.
+ * `replicateRootCopies` is the KERIpy `rootreplicating.replicate` happy path: a
+ * command calls it once a send is possible and reports each typed outcome. There
+ * is no acknowledgement or retry here (the runtime's `RootReplicator` derives
+ * what is owed and retries); receiving is idempotent, so duplicate copies are
+ * harmless.
  */
 import { parseBytes } from "cesr-ts";
 import { action, type Operation, race } from "effection";
@@ -27,35 +27,6 @@ export interface RootCopy {
 export type RootDelivery<C extends RootCopy = RootCopy> =
   | { kin: "sent"; copy: C; deliveries: string[] }
   | { kin: "failed"; copy: C; error: unknown };
-
-/**
- * The operator command that resends a copy automatic replication did not send.
- *
- * @deprecated A Tufa command string is display text, not library API; an embedded wallet has no such CLI.
- * Read `RootCopyResult.kin` and `error` instead; the CLI layer owns its recovery text.
- */
-export const RootCopyRecovery = "tufa vc registry root send";
-
-/**
- * One automatic copy's outcome, displayed as a `root_copy` JSON line.
- *
- * @deprecated Display-shaped (`phase`, a recovery command, the error flattened to text). Use
- * `RootCopyResult`, which keeps the error object; the CLI maps results to these lines itself.
- * `exchange`
- * is the prepared copy's SAID; `transmitted` means handed to the mailbox, not
- * received. A copy not sent carries the error and the recovery command.
- */
-export interface RootCopyReport {
-  phase: "root_copy";
-  gid: string;
-  registry: string;
-  sender: string;
-  recipient: string;
-  exchange?: string;
-  transmitted: boolean;
-  error?: string;
-  recovery?: string;
-}
 
 /**
  * Send each copy from `sender` to its recipient's `credential` mailbox, in
@@ -210,19 +181,6 @@ export function* replicateRootCopies(
 export const RootResealBudgetMs = 30_000;
 
 /**
- * A re-seal that could not even select its recipients, displayed as a `root_copy` line.
- *
- * @deprecated Display-shaped; see `RootExamination`.
- */
-export interface RootResealFailure {
-  phase: "root_copy";
-  gid: string;
-  rotation: string;
-  transmitted: false;
-  error: string;
-}
-
-/**
  * After an accepted group rotation, send held roots to new or rekeyed members.
  *
  * Only a signer of the rotation that held a prior key sends (`RegistryRoot.resealed`),
@@ -249,65 +207,4 @@ export function* resealRootCopies(
   if (!recipients.length || !registries.length) return { examination: null, copies: [] };
   const copies = yield* replicateRootCopies(root, postman, clock, ghab, registries, { recipients, timeoutMs });
   return { examination: null, copies };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** Map a typed result to the legacy display shape; for the deprecated functions below only. */
-function legacyReport(result: RootCopyResult): RootCopyReport {
-  const report: RootCopyReport = {
-    phase: "root_copy",
-    gid: result.group,
-    registry: result.registry,
-    sender: result.sender,
-    recipient: result.recipient,
-    transmitted: false,
-  };
-  if (result.exchange !== undefined) report.exchange = result.exchange;
-  if (result.kin === "sent") return { ...report, transmitted: true };
-  return { ...report, error: errorText(result.error), recovery: RootCopyRecovery };
-}
-
-/**
- * Fire and forget root copies, reported as display lines.
- *
- * @deprecated Use `replicateRootCopies`, which returns typed `RootCopyResult`s with the error object.
- */
-export function* replicateRegistryRoots(
-  root: RegistryRoot,
-  postman: Poster,
-  clock: RuntimeClock,
-  ghab: Hab,
-  registries: readonly string[],
-  options: { recipients?: readonly string[]; timeoutMs: number },
-): Operation<RootCopyReport[]> {
-  return (yield* replicateRootCopies(root, postman, clock, ghab, registries, options)).map(legacyReport);
-}
-
-/**
- * Fire and forget re-seal copies after an accepted rotation, reported as display lines.
- *
- * @deprecated Use `resealRootCopies`, which returns typed `RootCopyResult`s with the error object.
- */
-export function* resealRegistryRoots(
-  root: RegistryRoot,
-  postman: Poster,
-  clock: RuntimeClock,
-  ghab: Hab,
-  rotation: string,
-  options: { timeoutMs?: number } = {},
-): Operation<(RootCopyReport | RootResealFailure)[]> {
-  const { examination, copies } = yield* resealRootCopies(root, postman, clock, ghab, rotation, options);
-  if (examination) {
-    return [{
-      phase: "root_copy",
-      gid: examination.group,
-      rotation,
-      transmitted: false,
-      error: examination.error.message,
-    }];
-  }
-  return copies.map(legacyReport);
 }

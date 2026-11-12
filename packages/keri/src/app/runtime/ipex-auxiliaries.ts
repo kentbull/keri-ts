@@ -43,12 +43,15 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
    * @param registry Public registry observer shared by every owner.
    * @param rvy Reply verifier whose router the owners' routes are registered on.
    * @param now Receiver clock shared by every owner.
+   * @param kram Whether KRAM is enabled; with it off, `approve` of either owner throws.
    */
   constructor(
     private readonly exc: Exchanger,
     private readonly registry: RegistryObserver,
     private readonly rvy: Revery,
     private readonly now: () => number,
+    /** Whether the runtime's KRAM is on; DH and Unblind approval need the rows only KRAM writes. */
+    private readonly kram: boolean,
   ) {}
 
   /** Every live DH owner, for hosts draining their completion cues. */
@@ -71,7 +74,14 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   dhke(hab: Hab): Dhke {
     const current = this.dhkes.get(hab.pre!);
     if (current?.hab === hab) return current;
-    const owner = new Dhke({ hab, exc: this.exc, registryStore: this.registry.store, rvy: this.rvy, now: this.now });
+    const owner = new Dhke({
+      hab,
+      exc: this.exc,
+      registryStore: this.registry.store,
+      rvy: this.rvy,
+      now: this.now,
+      kram: this.kram,
+    });
     current?.close();
     this.dhkes.set(hab.pre!, owner);
     return owner;
@@ -81,7 +91,7 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
   unblind(hab: Hab): Unblind {
     const current = this.unblinds.get(hab.pre!);
     if (current?.hab === hab) return current;
-    const owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy });
+    const owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy, kram: this.kram });
     current?.close();
     this.unblinds.set(hab.pre!, owner);
     return owner;

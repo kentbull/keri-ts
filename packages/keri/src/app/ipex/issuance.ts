@@ -61,6 +61,7 @@ import {
   concatBytes,
   Counter,
   framePayload,
+  parseBytes,
   SerderACDC,
   type SerderKERI,
   type Versionage,
@@ -126,15 +127,19 @@ export interface IssuanceDelivery {
   deliver(message: { src: string; dest: string; msg: Uint8Array }): Operation<string[]>;
 }
 
-/** Adapt a `Poster`; its delivery worker must be running (a one-shot CLI runs it under `withRuntimeWorkers`). */
-export function posterDelivery(postman: Pick<Poster, "sendStream" | "wait">): IssuanceDelivery {
+/**
+ * Adapt a `Poster`; its delivery worker must be running (a one-shot CLI runs it under `withRuntimeWorkers`).
+ * A wire of several complete messages (proof support plus Grant) goes as one ordered stream, which mailbox
+ * forwarding needs; a single message goes as an ordinary send, which is what a direct peer's query route expects.
+ */
+export function posterDelivery(postman: Pick<Poster, "send" | "sendStream" | "wait">): IssuanceDelivery {
   return {
     *deliver({ src, dest, msg }) {
-      const outcome = yield* postman.wait(
-        postman.sendStream({ src, dest, topic: CREDENTIAL_MAILBOX_TOPIC, msgs: [msg] }, {
-          notify: true,
-        }),
-      );
+      const event = { src, dest, topic: CREDENTIAL_MAILBOX_TOPIC };
+      const sent = parseBytes(msg).length > 1
+        ? postman.sendStream({ ...event, msgs: [msg] }, { notify: true })
+        : postman.send({ ...event, msg }, { notify: true });
+      const outcome = yield* postman.wait(sent);
       if (outcome.kin === "failed") throw outcome.error;
       return outcome.deliveries;
     },
@@ -333,6 +338,8 @@ export class IssuanceOperations {
       if (error instanceof ValidationError) return false;
       throw error;
     }
+    // Another operations table over this runtime reached the Grant first (a command's own, beside the host's).
+    if (this.deps.dhkes.dhke(found.hab).holds(found.grant)) return true;
     try {
       yield* this.adopt(found);
     } catch (error) {

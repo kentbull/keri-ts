@@ -38,8 +38,6 @@ export {
   type AgentRuntime,
   type AgentRuntimeOptions,
   createAgentRuntime,
-  type IpexAuxiliary,
-  type IpexAuxiliarySelection,
   runAgentRuntime,
   runAgentRuntimeUntil,
   runtimeOobiConverged,
@@ -536,20 +534,15 @@ export {
 export { validateSchema as validateAcdcSchema } from "../acdc/scheming.ts";
 export {
   deliverRegistryRoots,
-  replicateRegistryRoots,
   replicateRootCopies,
   replicateRootCopy,
-  resealRegistryRoots,
   resealRootCopies,
   type RootCopy,
   type RootCopyKin,
-  RootCopyRecovery,
-  type RootCopyReport,
   type RootCopyResult,
   type RootDelivery,
   type RootExamination,
   RootResealBudgetMs,
-  type RootResealFailure,
 } from "../app/credentials/root-replicating.ts";
 export {
   type OwedCopyStatus,

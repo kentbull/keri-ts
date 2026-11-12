@@ -28,10 +28,7 @@ const KRAM = { enabled: true } as const;
 
 /** One wallet Habery with two local identifiers, one remote sender, and a runtime over them. */
 function* wallet(
-  options: (habs: { a: Hab; b: Hab }) => Partial<AgentRuntimeOptions> = () => ({
-    ipexOwners: "per-identifier",
-    kram: KRAM,
-  }),
+  options: (habs: { a: Hab; b: Hab }) => Partial<AgentRuntimeOptions> = () => ({ kram: KRAM }),
 ) {
   const hby = yield* createHabery({
     name: crypto.randomUUID(),
@@ -94,7 +91,6 @@ Deno.test("per-identifier owners are created once per identifier and kind, and r
     const before = ipex.dhke(a);
     ipex.release(a.pre!);
     assert(ipex.dhke(a) !== before, "a released identifier gets a fresh owner");
-    assertEquals(runtime.ipexAuxiliary, null);
   });
 });
 
@@ -164,46 +160,14 @@ Deno.test("replies reach the owner of their transaction, including owners regist
   });
 });
 
-Deno.test("the legacy single owner is the registry's owner and other identifiers stay unowned", async () => {
-  await run(function*() {
-    const { a, remote, runtime } = yield* wallet(({ a }) => ({
-      kram: KRAM,
-      ipexAuxiliary: { kind: "unblind", hab: a },
-    }));
-    const owner = runtime.ipexAuxiliary!.owner;
-    assertEquals(runtime.ipexAuxiliary!.kind, "unblind");
-    assert(owner === runtime.ipex!.unblind(a));
-    assert(runtime.protocol.qvy === runtime.ipex);
-    const seen: string[] = [];
-    spyQueries(owner, "legacy", seen);
-    yield* approve(owner, "xid-a");
-    runtime.protocol.qvy!.processQuery(envelopeFromFrame(frame(remote, Unblind.Route, "xid-a")));
-    assertEquals(seen, ["legacy"]);
-    const other = yield* runtime.protocol.dispatch(frame(remote, Unblind.Route, "xid-other"));
-    assertEquals(other.decision, { kind: "drop", reason: "missingProcessor" });
-    const dhke = yield* runtime.protocol.dispatch(frame(remote, Dhke.Route, "xid-a"));
-    assertEquals(dhke.decision, { kind: "drop", reason: "missingProcessor" });
-  });
-});
-
 for (const kram of [undefined, { enabled: false }]) {
-  Deno.test(`owners require explicitly enabled KRAM (${JSON.stringify(kram)})`, async () => {
-    await assertRejects(
-      () =>
-        run(function*() {
-          yield* wallet(({ a }) => ({ ipexOwners: "per-identifier", kram, ipexAuxiliary: { kind: "dhke", hab: a } }));
-        }),
-      ValidationError,
-      "IPEX auxiliary runtime requires explicitly enabled KRAM",
-    );
-    await assertRejects(
-      () =>
-        run(function*() {
-          yield* wallet(() => ({ ipexOwners: "per-identifier", kram }));
-        }),
-      ValidationError,
-      "IPEX auxiliary runtime requires explicitly enabled KRAM",
-    );
+  Deno.test(`with KRAM off (${JSON.stringify(kram)}) the owners still compose and approve says KRAM is required`, async () => {
+    await run(function*() {
+      const { a, runtime } = yield* wallet(() => ({ kram }));
+      assert(runtime.ipex && runtime.operations, "owners compose without a KRAM option");
+      assertThrows(() => runtime.ipex!.dhke(a).approve("Egrant"), ValidationError, "DH requires KRAM");
+      assertThrows(() => runtime.ipex!.unblind(a).approve("Egrant"), ValidationError, "Unblind requires KRAM");
+    });
   });
 }
 
@@ -315,7 +279,7 @@ Deno.test("a stale owner is replaced when the Habery's identifier object differs
 
 Deno.test("a local group's own contribution is routed to the group's DH owner, so KRAM can pool it", async () => {
   await run(function*() {
-    const w = yield* world({ runtime: { ipexOwners: "per-identifier" } });
+    const w = yield* world();
     const { runtime, group } = w.alice, ipex = runtime.protocol.qvy!;
     assertEquals(owned(runtime), []);
     const own = query(Dhke.Route, { x: "any-xid", pk: {} }, {
@@ -328,5 +292,26 @@ Deno.test("a local group's own contribution is routed to the group's DH owner, s
     assertEquals(owned(runtime), [group!.pre]);
     // A message from a non-local sender without stored state is not claimed.
     assertEquals(ipex.claims!(envelopeFromFrame(frame(w.bob.hab, Dhke.Route, "any-xid")).serder), false);
+  });
+});
+
+Deno.test("a read-only Habery has no v2 registry store, so no owners and no operations", async () => {
+  await run(function*() {
+    const name = crypto.randomUUID();
+    const writable = yield* createHabery({ name, temp: true, skipConfig: true, bran: "ReadOnlyPasscodeSecretAB" });
+    writable.makeHab("a");
+    const hby = yield* createHabery({
+      name,
+      temp: true,
+      skipConfig: true,
+      readonly: true,
+      skipSignator: true,
+      bran: "ReadOnlyPasscodeSecretAB",
+    });
+    yield* ensure(() => hby.close());
+    const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {});
+    yield* ensure(() => runtime.close());
+    assertEquals([runtime.ipex, runtime.operations, runtime.rootReplicator], [null, null, null]);
+    yield* writable.close(true);
   });
 });

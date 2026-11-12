@@ -8,7 +8,7 @@
 import { type Operation, run, spawn } from "effection";
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert";
 import type { RootCopyResult } from "../../../../src/app/credentials/root-replicating.ts";
-import { replicateRegistryRoots, replicateRootCopies } from "../../../../src/app/credentials/root-replicating.ts";
+import { replicateRootCopies } from "../../../../src/app/credentials/root-replicating.ts";
 import { RootReplicator, RootSendsPerPass } from "../../../../src/app/credentials/root-replicator.ts";
 import { MemoryChangeSink } from "../../../../src/app/runtime/workflow-contract.ts";
 import { readCesrRequestBytes } from "../../../../src/app/transport/cesr-http.ts";
@@ -247,7 +247,7 @@ Deno.test("root replicator: markers of a departed group or recipient are pruned,
   });
 });
 
-Deno.test("root replicating: typed results keep the error and map to the legacy root_copy lines", async () => {
+Deno.test("root replicating: typed results keep the error and map to the root_copy lines", async () => {
   await run(function*() {
     const posted: Uint8Array[] = [];
     const w = yield* posting(posted);
@@ -259,12 +259,22 @@ Deno.test("root replicating: typed results keep the error and map to the legacy 
       for (const reachability of [false, true]) {
         if (reachability) reachable(w.alice, w.bob);
         const [typed] = yield* replicateRootCopies(...args, [w.registry], { timeoutMs: 30_000 });
-        const [legacy] = yield* replicateRegistryRoots(...args, [w.registry], { timeoutMs: 30_000 });
         assertEquals(typed.kin, reachability ? "sent" : "failed");
         assertEquals(typed.error instanceof Error, !reachability);
-        // The CLI line is today's line: same fields in the same order, apart from the per-send exchange.
-        const { exchange: _typed, ...line } = rootCopyLine(typed), { exchange: _legacy, ...old } = legacy;
-        assertEquals(JSON.stringify(line), JSON.stringify(old));
+        // The CLI line: these fields in this order, apart from the per-send exchange.
+        const { exchange: _typed, ...line } = rootCopyLine(typed);
+        assertEquals(
+          JSON.stringify(line),
+          JSON.stringify({
+            phase: "root_copy",
+            gid: typed.group,
+            registry: typed.registry,
+            sender: typed.sender,
+            recipient: typed.recipient,
+            transmitted: reachability,
+            ...(reachability ? {} : { error: (typed.error as Error).message, recovery: "tufa vc registry root send" }),
+          }),
+        );
         assertEquals(line.recovery, reachability ? undefined : "tufa vc registry root send");
       }
     } finally {

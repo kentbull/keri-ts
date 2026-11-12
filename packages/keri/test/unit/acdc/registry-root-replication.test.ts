@@ -13,13 +13,17 @@ import { assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/asser
 import { registryRoot } from "../../../../tufa/src/cli/commands/registry-root.ts";
 import { RootUnverified } from "../../../src/acdc/salting.ts";
 import {
-  replicateRegistryRoots,
-  resealRegistryRoots,
-  RootCopyRecovery,
-  type RootCopyReport,
-  type RootResealFailure,
+  replicateRootCopies,
+  resealRootCopies,
 } from "../../../src/app/credentials/root-replicating.ts";
 import { readCesrRequestBytes } from "../../../src/app/transport/cesr-http.ts";
+import {
+  type RootCopyLine,
+  rootCopyLine,
+  RootCopyRecoveryCommand,
+  type RootResealLine,
+  rootResealLine,
+} from "../../../src/cli/messaging/root-copy-lines.ts";
 import { ValidationError } from "../../../src/core/errors.ts";
 import { Roles } from "../../../src/core/roles.ts";
 import { httpClient } from "../../support/http-client.ts";
@@ -60,30 +64,45 @@ function* replicate(
   side: Side,
   registries: readonly string[],
   options: { recipients?: readonly string[]; timeoutMs?: number } = {},
-): Operation<RootCopyReport[]> {
+): Operation<RootCopyLine[]> {
   const delivering = yield* spawn(() => side.runtime.postman.deliverDo());
   try {
-    return yield* replicateRegistryRoots(side.root, side.runtime.postman, side.runtime.clock, side.group!, registries, {
-      timeoutMs: 30_000,
-      ...options,
-    });
+    const copies = yield* replicateRootCopies(
+      side.root,
+      side.runtime.postman,
+      side.runtime.clock,
+      side.group!,
+      registries,
+      {
+        timeoutMs: 30_000,
+        ...options,
+      },
+    );
+    return copies.map(rootCopyLine);
   } finally {
     yield* delivering.halt();
   }
 }
 
 /** Run `side`'s accepted-rotation re-seal while its Poster delivers. */
-function* reseal(side: Side, rotation: string): Operation<(RootCopyReport | RootResealFailure)[]> {
+function* reseal(side: Side, rotation: string): Operation<(RootCopyLine | RootResealLine)[]> {
   const delivering = yield* spawn(() => side.runtime.postman.deliverDo());
   try {
-    return yield* resealRegistryRoots(side.root, side.runtime.postman, side.runtime.clock, side.group!, rotation);
+    const { examination, copies } = yield* resealRootCopies(
+      side.root,
+      side.runtime.postman,
+      side.runtime.clock,
+      side.group!,
+      rotation,
+    );
+    return examination ? [rootResealLine(examination)] : copies.map(rootCopyLine);
   } finally {
     yield* delivering.halt();
   }
 }
 
 /** Deliver each posted copy to the side its report names. */
-function* deliverPosted(w: World, posted: readonly Uint8Array[], reports: readonly RootCopyReport[]) {
+function* deliverPosted(w: World, posted: readonly Uint8Array[], reports: readonly RootCopyLine[]) {
   assertEquals(posted.map(said), reports.map(report => report.exchange));
   for (const [index, wire] of posted.entries()) {
     yield* receive(w.sides.find(side => side.hab.pre === reports[index].recipient)!, wire);
@@ -243,7 +262,11 @@ Deno.test("registry root replication: a copy that cannot be sent is reported and
     yield* storeGrant(w.alice, [w.credential]);
     // Bob has no end role at Alice, so the Poster attempt fails.
     const [failed] = yield* replicate(w.alice, [w.registry]);
-    assertEquals([failed.recipient, failed.transmitted, failed.recovery], [w.bob.hab.pre, false, RootCopyRecovery]);
+    assertEquals([failed.recipient, failed.transmitted, failed.recovery], [
+      w.bob.hab.pre,
+      false,
+      RootCopyRecoveryCommand,
+    ]);
     assertStringIncludes(failed.error!, "No end roles");
     assertEquals(posted, []);
     // A registry with no accepted BUP is reported, not sent, and does not stop the others.
@@ -280,7 +303,7 @@ Deno.test("registry root replication: an accepted rotation re-seals to newcomers
     assertEquals(yield* reseal(w.bob, rotation), []);
     reachable(w.alice, w.bob);
     reachable(w.alice, w.outsider);
-    const reports = (yield* reseal(w.alice, rotation)) as RootCopyReport[];
+    const reports = (yield* reseal(w.alice, rotation)) as RootCopyLine[];
     assertEquals(reports.map(report => [report.recipient, report.transmitted]), [
       [w.bob.hab.pre, true],
       [w.outsider.hab.pre, true],
@@ -300,7 +323,7 @@ Deno.test("registry root replication: a re-seal reaches a continuing member unde
     const rotation = yield* rotate(w, [w.alice, w.bob], [w.alice, w.bob], "2");
     assertEquals(w.alice.root.newcomers(w.alice.group!, rotation), []);
     reachable(w.alice, w.bob);
-    const reports = (yield* reseal(w.alice, rotation)) as RootCopyReport[];
+    const reports = (yield* reseal(w.alice, rotation)) as RootCopyLine[];
     assertEquals(reports.map(report => [report.recipient, report.transmitted]), [[w.bob.hab.pre, true]]);
     // Sealed to Bob's rotated key, the copy decrypts and is retained on arrival.
     yield* deliverPosted(w, posted, reports);
@@ -320,7 +343,7 @@ Deno.test("registry root replication: a member holding only a copy re-seals via 
     reachable(w.bob, w.alice);
     reachable(w.bob, w.outsider);
     // Copies carry their hint encrypted, so without stored Grant evidence Bob reports his re-seal unsent.
-    const unsent = (yield* reseal(w.bob, rotation)) as RootCopyReport[];
+    const unsent = (yield* reseal(w.bob, rotation)) as RootCopyLine[];
     assertEquals(unsent.map(report => [report.recipient, report.transmitted]), [
       [w.alice.hab.pre, false],
       [w.outsider.hab.pre, false],
@@ -329,7 +352,7 @@ Deno.test("registry root replication: a member holding only a copy re-seals via 
     assertEquals(posted, []);
     // The Grant nested in the /multisig/exn proposal Bob signed yields the hint.
     yield* storeGrant(w.bob, [w.credential], { wrapped: true });
-    const reports = (yield* reseal(w.bob, rotation)) as RootCopyReport[];
+    const reports = (yield* reseal(w.bob, rotation)) as RootCopyLine[];
     assertEquals(reports.map(report => [report.recipient, report.transmitted]), [
       [w.alice.hab.pre, true],
       [w.outsider.hab.pre, true],

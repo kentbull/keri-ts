@@ -1,11 +1,9 @@
 import { WireParseError } from "cesr-ts";
 import { call, type Operation, resource, spawn, suspend } from "npm:effection@^3.6.0";
 import type { AcdcWalkPolicy } from "../../acdc/chaining.ts";
-import type { Dhke } from "../../acdc/dhking.ts";
 import { RegistryObserver } from "../../acdc/observing.ts";
 import { createRegery as createAcdcRegery, type Regery as AcdcRegery } from "../../acdc/registraring.ts";
 import { RegistryRoot } from "../../acdc/salting.ts";
-import type { Unblind } from "../../acdc/unblinding.ts";
 import type { AgentCue } from "../../core/cues.ts";
 import { Deck } from "../../core/deck.ts";
 import type { KeriDispatchEnvelope, TransIdxSigGroup } from "../../core/dispatch.ts";
@@ -68,16 +66,6 @@ import { observeUntil } from "./workflow-contract.ts";
 
 export type { KeriDispatchEnvelope, OobiJob, TransIdxSigGroup };
 
-/** One explicitly selected local IPEX auxiliary owner; construction never approves a Grant. */
-export type IpexAuxiliarySelection =
-  | { kind: "dhke"; hab: Hab }
-  | { kind: "unblind"; hab: Hab };
-
-/** Concrete owner exposed only at composition for finite application orchestration. */
-export type IpexAuxiliary =
-  | { kind: "dhke"; owner: Dhke }
-  | { kind: "unblind"; owner: Unblind };
-
 /**
  * Shared runtime composition root owned by one `Habery`.
  *
@@ -116,19 +104,18 @@ export interface AgentRuntime {
   exc: Exchanger;
   /** Group proposal coordinator behind the registered `/multisig/*` routes; owners share routes by child route. */
   mux: Multiplexor;
-  /** Selected process-local IPEX operation owner, released on explicit close or scope exit. */
-  readonly ipexAuxiliary: IpexAuxiliary | null;
   /**
-   * Per-identifier DH and Unblind owners, present with `ipexOwners` or `ipexAuxiliary`.
-   * Owners can be obtained or released at any time, including while the runtime loop runs.
+   * Per-identifier DH and Unblind owners, created on first use for any local identifier, including
+   * ones made after the runtime. Null only for a read-only Habery, which has no v2 registry store.
+   * Obtaining an owner grants no consent; with KRAM off `approve` throws a "requires KRAM" error.
    */
   readonly ipex: IpexAuxiliaries | null;
   /**
-   * Issuance, presentation and Unblind operations owners; present with `ipexOwners`.
-   * `runAgentRuntime` runs each `processOnce` in its own fiber.
+   * Issuance, presentation and Unblind operations owners, composed whenever `ipex` is.
+   * `runAgentRuntime` runs them on one fiber with an adaptive cadence.
    */
   readonly operations: RuntimeOperations | null;
-  /** Root copy replicator driven by the owners loop; null without `ipexOwners` or a registry root owner. */
+  /** Root copy replicator driven by the owners loop; null without `ipex` or under `registryRoots: "refuse"`. */
   readonly rootReplicator: RootReplicator | null;
   /** Durable OOBI job owner, independent of outgoing delivery. */
   oobiery: Oobiery;
@@ -205,20 +192,15 @@ export interface AgentRuntimeOptions {
   acdc?: AcdcRegery;
   /** Sender filtering for v2 non-event ingress; denial always wins. */
   messagePolicy?: MessagePolicy;
-  /** Optional KRAM uses the trusted runtime receiver clock; enabled without `caches` uses `DEFAULT_KRAM_CACHES`. */
-  kram?: KramConfig;
-  /** Select one local owner; requires an available v2 registry and explicitly enabled KRAM. */
-  ipexAuxiliary?: IpexAuxiliarySelection;
   /**
-   * `"per-identifier"` composes the owner registry without selecting an identifier, for hosts
-   * such as wallets that create identifiers after the runtime exists and need DH and Unblind for
-   * each. Obtain owners with `runtime.ipex`. Needs a v2 registry and explicitly enabled KRAM,
-   * like `ipexAuxiliary`, and may be combined with it.
+   * Optional KRAM uses the trusted runtime receiver clock; enabled without `caches` uses `DEFAULT_KRAM_CACHES`.
+   * Omitting it leaves KRAM off, which KERIpy also does by default. DH and Unblind need it: with it off the
+   * owners still compose, but their `approve` throws a "requires KRAM" error.
    */
-  ipexOwners?: "per-identifier";
+  kram?: KramConfig;
   /**
-   * Stores and policy of the operations owners that `ipexOwners` adds. Omitted stores are
-   * process-local; a wallet supplies durable ones.
+   * What an embedder may supply to the operation owners (the blind-derivation store and a change sink);
+   * the rest is composed. See {@link OperationStores}.
    */
   operationStores?: OperationStores;
   /**
@@ -300,15 +282,6 @@ export function* createAgentRuntime(
   clock: RuntimeClock,
   options: AgentRuntimeOptions = {},
 ): Operation<AgentRuntime> {
-  const selected = options.ipexAuxiliary;
-  if (selected || options.ipexOwners) {
-    if (options.kram?.enabled !== true) {
-      throw new ValidationError("IPEX auxiliary runtime requires explicitly enabled KRAM");
-    }
-    if (selected && (!selected.hab.pre || hby.habs.get(selected.hab.pre) !== selected.hab)) {
-      throw new ValidationError("IPEX auxiliary runtime requires its actual local habitat");
-    }
-  }
   const injectedSignaler = options.signaler ?? options.notifier?.signaler;
   if (
     (options.notifier && options.notifier.signator !== hby.signator)
@@ -344,9 +317,6 @@ export function* createAgentRuntime(
   const acdc = options.acdc ?? (!hby.readonly ? (yield* openAcdcRegeryForHabery(hby)) : null);
   const ownsAcdcRegery = options.acdc === undefined && acdc !== null;
   const acdcRegery = acdc;
-  if ((selected || options.ipexOwners) && !acdc) {
-    throw new ValidationError("IPEX auxiliary runtime requires a v2 registry");
-  }
   // Acquire after stores, before processors/consumers: reverse teardown joins consumers, clears cues, closes stores.
   const cues = yield* resource<Deck<AgentCue>>(function*(provide) {
     const owned = new Deck<AgentCue>();
@@ -376,10 +346,10 @@ export function* createAgentRuntime(
   const kvy = new Kevery(hby.db, { cues: protocolCues, rvy: revery, messagePolicy: options.messagePolicy, kramer });
   const exc = new Exchanger(hby, { cues: protocolCues, now });
   const registry = acdc ? new RegistryObserver(hby.db, acdc.store) : null;
-  // One registry serves the legacy single selection and per-identifier hosts: one dispatch path.
-  const ipex = (selected || options.ipexOwners) && registry
+  // Every runtime with a v2 registry store owns the per-identifier DH and Unblind owners: one dispatch path.
+  const ipex = registry
     ? yield* resource<IpexAuxiliaries>(function*(provide) {
-      const owners = new IpexAuxiliaries(exc, registry, revery, now);
+      const owners = new IpexAuxiliaries(exc, registry, revery, now, options.kram?.enabled === true);
       try {
         owners.registerReplyRoutes(revery.rtr);
         yield* provide(owners);
@@ -387,11 +357,6 @@ export function* createAgentRuntime(
         owners.close();
       }
     })
-    : null;
-  const ipexAuxiliary: IpexAuxiliary | null = selected && ipex
-    ? (selected.kind === "dhke"
-      ? { kind: "dhke", owner: ipex.dhke(selected.hab) }
-      : { kind: "unblind", owner: ipex.unblind(selected.hab) })
     : null;
   const replies = new QueryReplies(cues);
   const protocol = new ProtocolProcessor(
@@ -491,7 +456,7 @@ export function* createAgentRuntime(
     signaler ? signalerChangeSink(signaler) : undefined,
     { anchorer: delegating, querying },
   );
-  const owned = options.ipexOwners && acdc && ipex
+  const owned = acdc && ipex
     ? composeOwners({
       hby,
       acdc,
@@ -521,7 +486,6 @@ export function* createAgentRuntime(
     replies,
     exc,
     mux,
-    ipexAuxiliary,
     ipex,
     operations: owned?.operations ?? null,
     rootReplicator: owned?.rootReplicator ?? null,
