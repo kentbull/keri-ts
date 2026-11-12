@@ -16,6 +16,7 @@
  *   or a group; every field below is read from the stored, indexed wrapper.
  */
 import { type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import type { Operation } from "npm:effection@^3.6.0";
 import type { RegistryStore } from "../../acdc/registering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
@@ -23,11 +24,22 @@ import { loadNests } from "../../db/exchange/exchange-nests.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import type { Habery } from "../identity/habbing.ts";
 import type { Notifier } from "../notifications/notifying.ts";
-import { type GroupEventRef } from "./counseling.ts";
+import { abortable } from "../runtime/abortable.ts";
+import { collectBytes } from "../transport/byte-source.ts";
+import type { CounselInputs, Counselor, GroupEventRef } from "./counseling.ts";
 import { findLocalGroupMember, groupSigningMembers, uniqueMembers } from "./group-members.ts";
 import { acdcV2RegistryProposal, MULTISIG_RPY_ROUTE, type MultisigChild, multisigChild } from "./grouping.ts";
 import { multisigEmbeddedSection, multisigPayloadSaid, storedGroupMessage } from "./multisig-messaging.ts";
-import { isKelRoute, isVdrRoute, kelApproval, payloadSection } from "./multisig-workflows.ts";
+import {
+  type ApprovalChannels,
+  type ApprovalResult,
+  approveKelProposal,
+  approveRpyProposal,
+  isKelRoute,
+  isVdrRoute,
+  kelApproval,
+  payloadSection,
+} from "./multisig-workflows.ts";
 
 /** Page size when reading the notice store; no proposal is hidden behind the first page. */
 const NOTICE_PAGE = 100;
@@ -81,6 +93,26 @@ export interface GroupProposalReadDeps {
   readonly notifier: Pick<Notifier, "list"> | null;
   /** ACDC v2 registry store, or null; without it `rip` and `bup` proposals are not recognised. */
   readonly registryStore: RegistryStore | null;
+}
+
+/** Collaborators for {@link approveGroupProposal}. */
+export interface GroupApprovalDeps extends ApprovalChannels, Omit<GroupProposalReadDeps, "exc"> {
+  /** Told of the approved group event; only its `start` is used. */
+  readonly counselor: Pick<Counselor, "start">;
+}
+
+/** Choices a user makes when approving; see {@link GroupProposal.needs}. */
+export interface GroupApprovalChoices extends CounselInputs {
+  /** Local alias for a group not joined yet. */
+  groupAlias?: string;
+  /** Local name for a registry proposal. */
+  registryName?: string;
+}
+
+/** Result of {@link approveGroupProposal}. */
+export interface GroupApprovalResult extends ApprovalResult {
+  /** The group event now counseled, where the proposal sets one up; read its progress with `counselor.status`. */
+  readonly event?: GroupEventRef;
 }
 
 /** Collaborators for {@link dismissGroupProposal}. */
@@ -298,4 +330,65 @@ export function dismissGroupProposal(deps: GroupProposalDismissDeps, said: strin
     if (typeof attrs.d === "string" && wrappers.has(attrs.d)) stale.push(rid);
   });
   return stale.filter(rid => deps.notifier!.remove(rid)).length;
+}
+
+/**
+ * Approve one proposal, named by its wrapper SAID: sign this member's
+ * contribution to the embedded event, send it to the other members and hand the
+ * group event to the Counselor. Returns without waiting for other members; read
+ * progress with `counselor.status(result.event)`. This is the only call that
+ * signs, and it acts on exactly the SAID given: nothing is selected from the
+ * notice store, so a proposal the caller did not name cannot be approved.
+ *
+ * Calling it is the user's consent, so it never prompts. Repeating it after a
+ * crash resumes: this member's recorded signatures and stored wrapper are
+ * replayed, never replaced, and the group is not joined twice.
+ *
+ * Supports KEL (`icp`, `rot`, `ixn`) and reply (`rpy`) proposals.
+ *
+ * @throws ValidationError for a SAID that is not a stored supported proposal, a missing `groupAlias` when the proposal {@link GroupProposal.needs} one, or a proposal that cannot be approved.
+ */
+export function* approveGroupProposal(
+  deps: GroupApprovalDeps,
+  said: string,
+  choices: GroupApprovalChoices = {},
+): Operation<GroupApprovalResult> {
+  const { hby } = deps;
+  const proposal = findGroupProposal(deps, said);
+  const exn = hby.db.exns.get([said]);
+  if (!proposal || !exn) throw new ValidationError(`No group proposal ${said} is stored.`);
+  const route = exn.route ?? "";
+  if (!isKelRoute(route) && route !== MULTISIG_RPY_ROUTE) {
+    throw new ValidationError(`Approving ${proposal.kind} proposals is not supported yet.`);
+  }
+  const payloadSaid = multisigPayloadSaid(exn)!;
+  if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) {
+    // Acceptance commits before the asynchronous handler; resume that ordinary intake.
+    const message = yield* abortable(signal => collectBytes(deps.exc.replay(said, signal)));
+    yield* deps.reactor.processBytes(message, { local: true });
+    if (!hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) {
+      throw new ValidationError(`Group proposal ${said} is not indexed after replay.`);
+    }
+  }
+  const callbacks = {
+    approveProposal: () => true,
+    chooseGroupAlias: (group: string) => {
+      if (!choices.groupAlias) throw new ValidationError(`A group alias is required to join ${group}.`);
+      return choices.groupAlias;
+    },
+    chooseRegistryName: (registry: string) => {
+      if (!choices.registryName) throw new ValidationError(`A registry name is required for ${registry}.`);
+      return choices.registryName;
+    },
+  };
+  const result = isKelRoute(route)
+    ? yield* approveKelProposal(hby, deps, exn, route, { callbacks })
+    : yield* approveRpyProposal(hby, deps, exn, route, { callbacks });
+  if (!result) throw new ValidationError(`Group proposal ${said} cannot be approved.`);
+  const { event } = proposal;
+  if (event) {
+    const { auths, fallbackAfterMs, proxy } = choices;
+    deps.counselor.start(event, { auths, fallbackAfterMs, proxy });
+  }
+  return { ...result, ...(event ? { event } : {}) };
 }

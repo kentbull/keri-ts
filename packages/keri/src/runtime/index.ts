@@ -395,8 +395,12 @@ export type {
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
+  approveGroupProposal,
   dismissGroupProposal,
   findGroupProposal,
+  type GroupApprovalChoices,
+  type GroupApprovalDeps,
+  type GroupApprovalResult,
   type GroupProposal,
   type GroupProposalDismissDeps,
   type GroupProposalFilter,
