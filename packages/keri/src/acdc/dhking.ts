@@ -555,6 +555,18 @@ export class Dhke implements AuxiliaryQueryProcessor {
     op.abandoned = true;
   }
 
+  /**
+   * Whether this local habitat is the party of DH transaction `xid` with `sender`.
+   *
+   * Messages carry no recipient, so a per-identifier registry selects the owner by transaction:
+   * an approved operation here, or a stored Grant from `sender` addressed to this habitat.
+   */
+  inTransaction(sender: string, xid: string): boolean {
+    return this.operations.has(xid)
+      || [...this.hab.db.tmsc.getTopItemIter([sender, xid])]
+        .some(([key]) => this.hab.db.epse.get([key[2]])?.sad?.ri === this.hab.pre);
+  }
+
   /** Release all process-local approvals and retry bytes; zero owned ephemeral scalar arrays. */
   close(): void {
     for (const op of this.operations.values()) this.clearPrivate(op);

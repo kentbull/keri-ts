@@ -134,6 +134,17 @@ Revery, and supplies the same owner as immutable `ProtocolProcessor.qvy`. Both
 owners accept an explicit `rvy` dependency with matching database; standalone
 composition defaults to the habitat's Revery.
 
+`ipexOwners: "per-identifier"` composes the same owner registry without selecting
+an identifier, for hosts such as wallets whose identifiers appear after the runtime
+exists. `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab, states)` create and
+register one owner per identifier and kind on first use; `release(pre)` removes
+both. It has the same registry and KRAM requirements and may be combined with
+`ipexAuxiliary`, which is registered in it. Dispatch keys on sender plus transaction
+id (`q.x` or `a.x`), because the messages name no recipient: `AuxiliaryQueryProcessor.claims`
+admits a query, before KRAM, only when exactly one owner's `inTransaction` holds,
+and replies select the owner at the shared Router resource. Anything else is an
+unowned message, handled as with no owner configured.
+
 The returned `runtime.ipexAuxiliary` identifies the concrete owner for a finite
 application to approve a selected Grant and drain its outgoing Deck. Construction
 supplies no consent and starts no protocol operation. Commands still abandon their

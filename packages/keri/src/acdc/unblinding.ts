@@ -651,6 +651,21 @@ export class Unblind implements AuxiliaryQueryProcessor {
     return { requested, children };
   }
 
+  /**
+   * Whether this local habitat is the party of Unblind transaction `xid` with `sender`.
+   *
+   * Messages carry no recipient, so a per-identifier registry selects the owner by transaction:
+   * an approved operation here, or a stored Grant from this habitat addressed to `sender`.
+   */
+  inTransaction(sender: string, xid: string): boolean {
+    return this.operations.has(xid)
+      || [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, xid])]
+        .some(([key]) => {
+          const grant = this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]);
+          return grant?.pre === this.hab.pre && grant.sad?.ri === sender;
+        });
+  }
+
   /** Release all process-local approvals, opening references and retry bytes without changing stores. */
   close(): void {
     for (const xid of this.operations.keys()) this.abandon(xid);
