@@ -1,11 +1,13 @@
 # V2 ACDC and registry roadmap
 
-Status: deferred from the current implementation/qualification goal by explicit
-scope decision on 2026-10-20. Publication of 2.0.0 waits for the separate work.
-KERIpy `rip`, `bup` and `upd` implementation is being completed separately.
-No completion date or package version is promised here. This roadmap owns the
-remaining v2-dependent work formerly tracked as R2 v2 and cuts 25–30,
-and v2 interoperability cases N1–N3 in the release plan.
+Status: largely shipped; peer qualification open. 2.0.0, published 2026-11-07,
+ships ACDC v2 registry acceptance, issuance, `revoked` BUP and all six IPEX verbs
+through `--acdc-v2` rather than the `--protocol v2` proposed below; the
+[release notes](../../versioning/2.0.0-release-notes.md) own that scope. The cuts
+below keep their original contracts. Check a cut against current source before
+treating any part of it as open. What remains is the reciprocal peer confidence
+in N1–N3 and the explicit `upd` assessment. No completion date or package
+version is promised here.
 
 ## Re-entry gate and current capability
 
@@ -18,9 +20,9 @@ implementing dependent CLI behavior. Do not port incomplete reference behavior,
 patch Python for a passing test, or infer wallet acceptance from proof verification.
 
 Retain merged v2 library/runtime work, including #627 ordinary intake and
-reopen/API proofs, as partial capability. Those checks do not establish a complete
-v2 registry or credential lifecycle. Existing relevant regression tests remain;
-new v2 feature development and completion gates are deferred. Known failures
+reopen/API proofs; the 2.0.0 `--acdc-v2` CLI builds on it. Those checks do not
+establish reciprocal peer qualification, so the N1–N3 completion gates stay open.
+Existing relevant regression tests remain. Known failures
 must remain visible with their pin and claim boundary, never relabeled as passes.
 Independent legacy NoBackers TEL and KERI/CESR v2 work remain in the release
 plan. Autonomous legacy backing is retired; observer verification remains. The

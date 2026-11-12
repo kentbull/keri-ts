@@ -94,9 +94,9 @@ actual source. Protocol parity and qualification outrank optional additions.
 Green narrow tests do not establish final composed interoperability.
 
 The [2.0.0 preparation report](../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
-owns the later completed implementation/organization and unpublished qualification.
-Publication waits for separate v2 registry/wallet completion and affected
-requalification. ProtocolProcessor remains a shared dispatch/reply-capture/escrow
+qualified source `f50fbf89` only. 2.0.0 was published on 2026-11-07 with the
+later v2 registry, IPEX and service-package work; its release notes own that
+scope and the post-publication battery. ProtocolProcessor remains a shared dispatch/reply-capture/escrow
 owner without a mutex; ESSR uses pinned-main LMDB sets and authenticated owned bytes.
 
 ## Maintenance and handoff

@@ -23,17 +23,17 @@ message production, delivery, completion and lifecycle behavior. The
 [reliability roadmap](runtime/cue-reliability-roadmap.md) records deferred
 capabilities and the evidence required before extending that behavior.
 
-## V2 ACDC registry: separate completion before publication
+## V2 ACDC registry: remaining qualification
 
-The [v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md)
-owns remaining work dependent on KERIpy `rip`, `bup` and `upd` completion, including
-v2 CLI authoring, disclosure custody, group v2 approval, IPEX/wallet,
-presentation and reciprocal peer qualification. Re-entry requires inspecting and
-pinning the completed reference implementation. Merged partial capability stays;
-legacy TEL replay and independent KERI/CESR v2 are qualified in the
+2.0.0, published 2026-11-07, ships ACDC v2 registry acceptance, issuance,
+revocation and all six IPEX verbs through `--acdc-v2`; the
+[release notes](../versioning/2.0.0-release-notes.md) own that scope. The
+[v2 ACDC registry roadmap](credentials/V2_ACDC_REGISTRY_ROADMAP.md) owns what
+remains: reciprocal peer qualification (N1–N3) and the explicit `upd` assessment,
+against a freshly pinned reference implementation. Legacy TEL replay and
+independent KERI/CESR v2 are qualified in the
 [completed implementation/preparation plan](V2_RELEASE_COMPLETION_PLAN.md).
-Publication waits for the separate work and fresh affected qualification; this is
-not a promise of a later package version. Autonomous legacy TEL backing and
+This is not a promise of a later package version. Autonomous legacy TEL backing and
 backed-registry application authoring are removed under ADR-0014; external
 observer verification remains. The [2.0.0 preparation report](../reports/parity/V2_PREPARATION_2026-10-21.md)
 owns current evidence rather than the historical 1.0.0 baseline above.

@@ -195,10 +195,12 @@ Shared provider/wallet helpers live in `test/contract/kf-provider.ts`.
 
 ## Packaging and release
 
-The [unpublished 2.0.0 qualification](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
-owns the current source/artifact evidence and deliberate limits. V2 lifecycle
-completion and publication remain deferred. Later notes must be reconciled into
-the still-unpublished major, not mechanically versioned as 3.0.0.
+2.0.0 (2026-11-07) and 2.0.1 (2026-11-09) are published; the
+[2.0.0 release notes](../../docs/versioning/2.0.0-release-notes.md) and package
+changelogs own what shipped. The
+[2.0.0 preparation report](../../docs/reports/parity/V2_PREPARATION_2026-10-21.md)
+qualifies earlier source `f50fbf89` only. Version later changes through
+changesets against the published packages.
 
 Use dprint and deterministic version generation in checks; opt into build metadata
 only for artifacts. Package manifests are authoritative for both Deno version
