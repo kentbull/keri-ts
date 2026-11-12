@@ -395,6 +395,17 @@ export type {
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
 export {
+  dismissGroupProposal,
+  findGroupProposal,
+  type GroupProposal,
+  type GroupProposalDismissDeps,
+  type GroupProposalFilter,
+  type GroupProposalKind,
+  type GroupProposalNeeds,
+  type GroupProposalReadDeps,
+  listGroupProposals,
+} from "../app/multisig/proposals.ts";
+export {
   Notifier,
 } from "../app/notifications/notifying.ts";
 export {

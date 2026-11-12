@@ -1,0 +1,301 @@
+/**
+ * Group proposal reads, owned by the library so that a CLI, a browser wallet and
+ * a service all see and dismiss the same proposals. Operations follow the
+ * workflow contract (`app/runtime/workflow-contract.ts`):
+ * - `listGroupProposals` and `findGroupProposal` are pure reads of stored
+ *   exchange messages, the multisig embed index (`meids.`) and the notifier.
+ * - `dismissGroupProposal` removes local notices only.
+ *
+ * A proposal is identified by the SAID of the outer exchange wrapper that
+ * announced it. Approval, which is the only step that signs, names that SAID
+ * explicitly; nothing here or in the notice store selects a proposal to approve.
+ *
+ * Boundaries:
+ * - Dependencies are declared collaborators, not an AgentRuntime (ADR-0013).
+ * - Notices discover candidates only. Their attributes never authorize a route
+ *   or a group; every field below is read from the stored, indexed wrapper.
+ */
+import { type SerderKERI, Vrsn_2_0 } from "cesr-ts";
+import type { RegistryStore } from "../../acdc/registering.ts";
+import { ValidationError } from "../../core/errors.ts";
+import { isV2RegistryRoute } from "../../core/exchange/protocol-exchanging.ts";
+import { loadNests } from "../../db/exchange/exchange-nests.ts";
+import type { Exchanger } from "../exchanges/exchanging.ts";
+import type { Habery } from "../identity/habbing.ts";
+import type { Notifier } from "../notifications/notifying.ts";
+import { type GroupEventRef } from "./counseling.ts";
+import { findLocalGroupMember, groupSigningMembers, uniqueMembers } from "./group-members.ts";
+import { acdcV2RegistryProposal, MULTISIG_RPY_ROUTE, type MultisigChild, multisigChild } from "./grouping.ts";
+import { multisigEmbeddedSection, multisigPayloadSaid, storedGroupMessage } from "./multisig-messaging.ts";
+import { isKelRoute, isVdrRoute, kelApproval, payloadSection } from "./multisig-workflows.ts";
+
+/** Page size when reading the notice store; no proposal is hidden behind the first page. */
+const NOTICE_PAGE = 100;
+
+/** Proposal kinds, named by the last segment of their `/multisig/<kind>` route. */
+export type GroupProposalKind = "icp" | "rot" | "ixn" | "rpy" | "rip" | "bup" | "vcp" | "iss" | "rev";
+
+/** Choices a host must collect from the user before approving. */
+export interface GroupProposalNeeds {
+  /** Local alias for a group this member has not joined yet (`icp`, or `rot` of an unjoined group). */
+  readonly groupAlias: boolean;
+  /** Local name for a registry (`vcp`) this member has not approved yet. */
+  readonly registryName: boolean;
+}
+
+/** One group proposal as stored locally. */
+export interface GroupProposal {
+  /** SAID of the stored outer wrapper; the key for approval, lookup and dismissal. */
+  readonly said: string;
+  readonly kind: GroupProposalKind;
+  /** Group prefix. */
+  readonly group: string;
+  /** SAID of the embedded business event: the KEL event, reply, or TEL event. */
+  readonly embedded: string;
+  /** Sender of the wrapper. */
+  readonly proposer: string;
+  /** Signing members named by the proposal, or the group's current signing members where it names none. */
+  readonly smids: readonly string[];
+  /** Rotation members named by the proposal; empty where it names none. */
+  readonly rmids: readonly string[];
+  /** `approved` once the local member's own contribution to this payload is stored. */
+  readonly local: "unapproved" | "approved";
+  /** Choices approval will need; both false once the proposal is locally approved. */
+  readonly needs: GroupProposalNeeds;
+  /** The group KEL event this proposal sets up, or the anchor that seals its TEL event; absent for replies. */
+  readonly event?: GroupEventRef;
+}
+
+/** Filter for {@link listGroupProposals}. */
+export interface GroupProposalFilter {
+  /** Only proposals for this group prefix or local alias. */
+  group?: string;
+}
+
+/** Collaborators for the pure reads. */
+export interface GroupProposalReadDeps {
+  readonly hby: Habery;
+  /** Authenticates v2 nested children; an `Exchanger` fits. */
+  readonly exc: Pick<Exchanger, "verifyAccepted">;
+  /** Notice store, or null for a host without one (then nothing is listed). */
+  readonly notifier: Pick<Notifier, "list"> | null;
+  /** ACDC v2 registry store, or null; without it `rip` and `bup` proposals are not recognised. */
+  readonly registryStore: RegistryStore | null;
+}
+
+/** Collaborators for {@link dismissGroupProposal}. */
+export interface GroupProposalDismissDeps {
+  readonly hby: Pick<Habery, "db">;
+  readonly notifier: Pick<Notifier, "list" | "remove"> | null;
+}
+
+/** Wrapper route to proposal kind, or null for routes this API does not cover. */
+function proposalKind(route: string): GroupProposalKind | null {
+  if (!isKelRoute(route) && !isVdrRoute(route) && route !== MULTISIG_RPY_ROUTE && !isV2RegistryRoute(route)) {
+    return null;
+  }
+  return route.slice("/multisig/".length) as GroupProposalKind;
+}
+
+/** Page through every notice; `fn` sees each in durable order. */
+function eachNotice(
+  notifier: Pick<Notifier, "list">,
+  fn: (note: { rid: string; attrs: { r?: unknown; d?: unknown; e?: unknown } }) => void,
+): void {
+  for (let start = 0;; start += NOTICE_PAGE) {
+    const page = notifier.list(start, NOTICE_PAGE);
+    for (const note of page) fn({ rid: note.pad.i, attrs: note.pad.a });
+    if (page.length < NOTICE_PAGE) break;
+  }
+}
+
+/** Wrapper SAIDs the notice store holds for multisig proposals, oldest first and without repeats. */
+function noticedWrappers(notifier: Pick<Notifier, "list">): string[] {
+  const saids = new Set<string>();
+  eachNotice(notifier, ({ attrs }) => {
+    if (typeof attrs.d === "string") saids.add(attrs.d);
+  });
+  return [...saids];
+}
+
+/** The local member that would approve, without throwing for a group not yet joined. */
+function approvingMember(hby: Habery, group: string, members: readonly string[]) {
+  const mid = hby.db.getHab(group)?.mid;
+  return (mid ? hby.habs.get(mid) : null) ?? findLocalGroupMember(hby, members);
+}
+
+/**
+ * Event body of a wrapper's named child. v1 reads the pathed embed; v2 reads the
+ * first nest of a wrapper that authenticates through its own route. Proofs are
+ * not read: a listing never signs, so only the body is needed.
+ */
+function childBody(
+  deps: GroupProposalReadDeps,
+  wrapper: SerderKERI,
+  route: string,
+  label: string,
+): MultisigChild | null {
+  if (wrapper.pvrsn.major === 1) return multisigChild(deps.hby, wrapper, label);
+  if (!wrapper.said || !deps.exc.verifyAccepted(wrapper.said, route)) return null;
+  const body = loadNests(deps.hby.db, wrapper.said)[0]?.body;
+  const event = body as SerderKERI | undefined;
+  if (!event || typeof event.pre !== "string") return null;
+  return { event, attachment: new Uint8Array(), genus: event.gvrsn ?? event.pvrsn ?? Vrsn_2_0 };
+}
+
+function eventRef(event: SerderKERI, pre: string): GroupEventRef | undefined {
+  return event.said && event.sn !== null ? { pre, sn: event.sn, said: event.said } : undefined;
+}
+
+/** What a proposal says about itself, before the local member's standing is added. */
+interface Decoded {
+  group: string;
+  embedded: string;
+  smids: readonly string[];
+  rmids: readonly string[];
+  event?: GroupEventRef;
+  kind: GroupProposalKind;
+}
+
+function decode(deps: GroupProposalReadDeps, exn: SerderKERI, route: string, kind: GroupProposalKind): Decoded | null {
+  const { hby } = deps;
+  const payload = payloadSection(exn.ked ?? {});
+  if (isKelRoute(route)) {
+    const child = childBody(deps, exn, route, kind);
+    const approval = child && kelApproval(exn, route, child);
+    if (!approval) return null;
+    const { smids, rmids } = approval.proposal.attrs as { smids: string[]; rmids?: string[] };
+    return {
+      kind,
+      group: approval.group,
+      embedded: approval.event.said ?? "",
+      smids,
+      rmids: rmids ?? [],
+      event: eventRef(approval.event, approval.group),
+    };
+  }
+  if (isV2RegistryRoute(route)) {
+    const nests = loadNests(hby.db, exn.said!);
+    const registry = acdcV2RegistryProposal(exn, nests, deps.registryStore);
+    if (!registry?.anchor.pre) return null;
+    const group = registry.anchor.pre;
+    return {
+      kind,
+      group,
+      embedded: registry.tel.said ?? "",
+      smids: groupSigningMembers(hby, group),
+      rmids: [],
+      event: eventRef(registry.anchor, group),
+    };
+  }
+  const group = typeof payload.gid === "string" ? payload.gid : "";
+  if (!group) return null;
+  const smids = groupSigningMembers(hby, group);
+  if (route === MULTISIG_RPY_ROUTE) {
+    const child = childBody(deps, exn, route, "rpy");
+    return child?.event.said ? { kind, group, embedded: child.event.said, smids, rmids: [] } : null;
+  }
+  // vcp, iss and rev: the named TEL event, sealed by the group event in `anc`.
+  const anchor = multisigChild(hby, exn, "anc");
+  const tel = multisigEmbeddedSection(exn.ked ?? {})?.[kind];
+  const embedded = tel && typeof tel === "object" ? (tel as { d?: unknown }).d : undefined;
+  if (!anchor || anchor.event.pre !== group || typeof embedded !== "string") return null;
+  return { kind, group, embedded, smids, rmids: [], event: eventRef(anchor.event, group) };
+}
+
+/** Read one stored wrapper; null when it is not a well-formed proposal of a supported kind. */
+function readProposal(deps: GroupProposalReadDeps, said: string): GroupProposal | null {
+  const { hby } = deps;
+  const exn = hby.db.exns.get([said]);
+  if (!exn?.ked || !exn.said || !exn.pre) return null;
+  const route = exn.route ?? "";
+  const kind = proposalKind(route);
+  if (!kind || !multisigPayloadSaid(exn)) return null;
+  let decoded: Decoded | null;
+  try {
+    decoded = decode(deps, exn, route, kind);
+  } catch (error) {
+    if (error instanceof ValidationError) return null; // one malformed row never hides the others
+    throw error;
+  }
+  if (!decoded) return null;
+  const member = approvingMember(hby, decoded.group, uniqueMembers([...decoded.smids, ...decoded.rmids]));
+  const approved = !!member && storedGroupMessage(hby.db, member.pre, exn) !== null;
+  return {
+    said: exn.said,
+    kind,
+    group: decoded.group,
+    embedded: decoded.embedded,
+    proposer: exn.pre,
+    smids: decoded.smids,
+    rmids: decoded.rmids,
+    local: approved ? "approved" : "unapproved",
+    needs: {
+      groupAlias: !approved && (kind === "icp" || (kind === "rot" && !hby.habs.has(decoded.group))),
+      registryName: !approved && kind === "vcp",
+    },
+    ...(decoded.event ? { event: decoded.event } : {}),
+  };
+}
+
+/** Group prefix for a prefix or local alias. */
+function resolveGroup(hby: Habery, group: string): string {
+  return hby.habByName(group)?.pre ?? group;
+}
+
+/**
+ * List the proposals the notice store announces, oldest notice first. Pure. Only
+ * wrappers that are stored, indexed in `meids.` and well formed are listed, one
+ * entry per wrapper; every notice page is read, so nothing hides behind the
+ * first 100. A dismissed proposal has no notice and is not listed; it remains
+ * available through {@link findGroupProposal}.
+ */
+export function listGroupProposals(
+  deps: GroupProposalReadDeps,
+  { group }: GroupProposalFilter = {},
+): GroupProposal[] {
+  if (!deps.notifier) return [];
+  const wanted = group === undefined ? undefined : resolveGroup(deps.hby, group);
+  const proposals: GroupProposal[] = [];
+  const seen = new Set<string>();
+  for (const said of noticedWrappers(deps.notifier)) {
+    const exn = deps.hby.db.exns.get([said]);
+    const payloadSaid = exn && multisigPayloadSaid(exn);
+    if (!payloadSaid || !deps.hby.db.meids.get([payloadSaid]).some(index => index.qb64 === said)) continue;
+    const proposal = readProposal(deps, said);
+    if (!proposal || (wanted !== undefined && proposal.group !== wanted) || seen.has(said)) continue;
+    seen.add(said);
+    proposals.push(proposal);
+  }
+  return proposals;
+}
+
+/**
+ * Read one stored proposal by its wrapper SAID, whether or not a notice remains.
+ * Pure. Null when no such well-formed proposal is stored.
+ */
+export function findGroupProposal(deps: GroupProposalReadDeps, said: string): GroupProposal | null {
+  return readProposal(deps, said);
+}
+
+/**
+ * Dismiss a proposal locally: remove the notices that announce it, including
+ * those other members' wrappers of the same payload raised. The stored wrapper
+ * and the multisig index stay, so the proposal can still be found and approved
+ * by SAID. KERI has no reject message: nothing is sent, and the proposer and the
+ * other members learn nothing from a dismissal.
+ *
+ * @returns Number of notices removed.
+ */
+export function dismissGroupProposal(deps: GroupProposalDismissDeps, said: string): number {
+  if (!deps.notifier) return 0;
+  const exn = deps.hby.db.exns.get([said]);
+  const payloadSaid = exn && multisigPayloadSaid(exn);
+  const wrappers = new Set([said]);
+  if (payloadSaid) for (const index of deps.hby.db.meids.get([payloadSaid])) wrappers.add(index.qb64);
+  const stale: string[] = [];
+  eachNotice(deps.notifier, ({ rid, attrs }) => {
+    if (typeof attrs.d === "string" && wrappers.has(attrs.d)) stale.push(rid);
+  });
+  return stale.filter(rid => deps.notifier!.remove(rid)).length;
+}
