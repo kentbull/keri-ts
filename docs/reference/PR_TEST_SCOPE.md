@@ -97,7 +97,9 @@ A skipped lane is scoped validation, never a claim that its tests ran.
 shared `storeContract` and `wrapperContract` cases for `WebDBer` over real IndexedDB and
 for `MemStore`, an IndexedDB reopen-fidelity case, and the engine-sensitive cases in
 `engine-cases.ts` (aborted and latched batches, two openers on one database name, and a
-few-thousand-row round trip) in Chromium, Firefox and WebKit through Playwright. For each
+few-thousand-row round trip), the halting cases in `halt-cases.ts` (a request that never answers,
+answers headers only, or goes idle mid-stream must halt and close its connection, against the page's
+own `/stall` route) and `wallet-cases.ts` (`openWebWallet` closes while a mailbox poll is idle) in Chromium, Firefox and WebKit through Playwright. For each
 engine it fails unless the browser executed exactly the case names `deno test` registers and
 every one passed. Cases report engine behavior through `note`; the runner prints those per
 engine. The bundle must contain no `node:` or LMDB import.

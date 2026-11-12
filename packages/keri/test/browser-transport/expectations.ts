@@ -83,7 +83,7 @@ export const EXPECTED: Record<string, Row> = {
   "mailbox-topic-credential|keripy": all(true, DELIVERED, MAILBOX),
   "mailbox-cursor-resume|keripy": all(
     true,
-    "resumed after the stored cursor",
+    "replayed 0, new 1",
     "a fresh poller resumes from the stored cursor",
   ),
   // Tufa mailbox host.
@@ -97,13 +97,18 @@ export const EXPECTED: Record<string, Row> = {
   "witness-authorization-header|tufa": all(true, DELIVERED, "passes now that Authorization is allowed"),
   "mailbox-admin-cesr|tufa": all(true, "HTTP 200", "CESR-body administration passes"),
   "mailbox-admin-multipart|tufa": all(true, "HTTP 200", "multipart administration passes"),
+  "mailbox-delivery-multipart-authorized|tufa": all(
+    true,
+    DELIVERED,
+    "an identifier authorized through the multipart form receives mail",
+  ),
   "mailbox-topic-reply|tufa": all(true, DELIVERED, MAILBOX),
   "mailbox-topic-receipt|tufa": all(true, DELIVERED, MAILBOX),
   "mailbox-topic-multisig|tufa": all(true, DELIVERED, MAILBOX),
   "mailbox-topic-credential|tufa": all(true, DELIVERED, MAILBOX),
   "mailbox-cursor-resume|tufa": all(
     true,
-    "resumed after the stored cursor",
+    "replayed 0, new 1",
     "a fresh poller resumes from the stored cursor",
   ),
 };

@@ -30,13 +30,17 @@ import {
   parseStringOption,
 } from "keri-ts/cli";
 import {
+  admitIssuance,
   type AgentRuntime,
   approveStoredMultisigIpexWrappers,
   CREDENTIAL_MAILBOX_TOPIC,
+  deliverIssuanceAdmit,
   type Hab,
   type Habery,
   isLocalGroupHab,
+  MemoryIssuanceOperationStore,
   Organizer,
+  posterDelivery,
   prepareAcdcV2GroupIpex,
   publishInitialGroupIpex,
   Receiptor,
@@ -229,41 +233,33 @@ function* acdcV2Admit(args: Record<string, unknown>): Operation<void> {
           const admission = yield* call(() => wallet.recordAdmission(said, admit.said!, { consent }));
           return { ...result, ...admission };
         }
-        const prepared = yield* wallet.prepareAdmit(said, hab.pre, {
-          consent,
-          auths,
-          message,
-          gvrsn,
+        const deps = {
+          hby,
+          rgy: runtime.acdc,
+          exc: runtime.exc,
           receiptor: new Receiptor(hby, runtime.protocol, runtime.http, runtime.clock, {
             gvrsn: parseGvrsn(args.witnessGvrsn ?? "1"),
           }),
-        });
-        const wire = concatBytes(prepared.support, prepared.wire);
-        yield* runtime.reactor.processBytes(wire, { local: true });
-        yield* runtime.protocol.processEscrowsOnce();
-        if (!runtime.exc.complete(prepared.admit.said!)) {
-          throw new ValidationError("Local ACDC v2 Admit was not accepted.");
-        }
-        const admission = yield* call(() => wallet.recordAdmission(said, prepared.admit.said!, { consent }));
+          reactor: runtime.reactor,
+          protocol: runtime.protocol,
+          delivery: posterDelivery(runtime.postman),
+          store: new MemoryIssuanceOperationStore(),
+          clock: runtime.clock,
+        };
+        const admitted = yield* admitIssuance(deps, { hab, grant: said, message, gvrsn, auths });
+        // The inventory record precedes delivery, as before: the embedder reacts to the accepted Admit.
+        const admission = yield* call(() => wallet.recordAdmission(said, admitted.admit.said!, { consent }));
         let deliveries: string[] = [];
-        if (out) Deno.writeFileSync(out, wire);
+        if (out) Deno.writeFileSync(out, admitted.wire);
         else {
           const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: false }));
           try {
-            const event = runtime.postman.send({
-              src: hab.pre,
-              dest: prepared.admit.sad!.ri as string,
-              topic: CREDENTIAL_MAILBOX_TOPIC,
-              msg: wire,
-            }, { notify: true });
-            const outcome = yield* runtime.postman.wait(event);
-            if (outcome.kin === "failed") throw outcome.error;
-            deliveries = outcome.deliveries;
+            deliveries = yield* deliverIssuanceAdmit(deps, hab, admitted);
           } finally {
             yield* host.halt();
           }
         }
-        return { ...admission, said: prepared.admit.said!, deliveries };
+        return { ...admission, said: admitted.admit.said!, deliveries };
       });
     },
   );

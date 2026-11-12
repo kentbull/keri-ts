@@ -60,7 +60,7 @@ export interface MailboxAdminResponse {
 }
 
 /** Administrative replay material in both the normalized and legacy multipart shapes. */
-interface MailboxAdminSubmission {
+export interface MailboxAdminSubmission {
   /** Verifier-ready stream for the raw CESR body: delegation chain then KEL. */
   readonly replay: Uint8Array;
   readonly kel: Uint8Array;
@@ -219,7 +219,7 @@ export function* waitForMailboxState(
  * `kel`/`delkel` preserve the legacy multipart wrapper contract used by
  * existing KERIpy mailbox admin hosts.
  */
-function collectMailboxAdminSubmission(hby: Habery, pre: string): MailboxAdminSubmission {
+export function collectMailboxAdminSubmission(hby: Habery, pre: string): MailboxAdminSubmission {
   const kever = hby.db.getKever(pre);
   const delkel = kever ? concatBytes(...hby.db.cloneDelegation(kever)) : new Uint8Array();
   const kel = concatBytes(...hby.db.clonePreIter(pre));
@@ -243,7 +243,7 @@ function* postMailboxAdmin(
 }
 
 /** Send finite administrative CESR bytes with `CESR-DESTINATION` selecting the hosted mailbox. */
-function* postMailboxAdminCesr(
+export function* postMailboxAdminCesr(
   http: HttpClient,
   url: string,
   mailbox: string,
@@ -263,7 +263,7 @@ function* postMailboxAdminCesr(
  * Send the legacy multipart form (`kel`, optional `delkel`, `rpy`). The platform
  * encoder runs once so the generated boundary stays consistent with the body.
  */
-function* postMailboxAdminMultipart(
+export function* postMailboxAdminMultipart(
   http: HttpClient,
   url: string,
   mailbox: string,
