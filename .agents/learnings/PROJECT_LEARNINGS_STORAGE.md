@@ -68,7 +68,16 @@ and is the only handle that orders all commits. A latched queue fails the reques
 `OutputBarrierError` and sends nothing; the wrapper drops `tcp` so no dialer bypasses it.
 `acquireStoreLock` takes `navigator.locks` before any `reopen` because the mirror is a snapshot, keyed
 `keri-ts:store:[base,name,durable|temp]` (the IndexedDB database name minus the family); an absent
-API fails closed. Real-browser lock and eviction behavior is unverified until PR 14.
+API fails closed.
+
+`openWebWallet` (`@keri-ts/wallet/web`) is the one browser composition root and wires no protocol
+owner itself: lock, one `indexedDbOpener`, `openHabery` (`skipConfig`), inventory on `hby.opener`, `createAgentRuntime`
+over `barrierHttpClient`, `runAgentRuntime`. Encryption is decided from arguments (passcode, or seed plus AEID) and
+again from the Manager's stored AEID and live seed. Close halts workers, closes runtime sidecars, inventory and Habery
+(each joins the shared queue), then releases the lock, and reports every failure after all steps ran; a halted task does
+not report a failing finalizer, so the composition returns its outcome through a callback. A latched queue shows in
+`health()`; recovery is `close()` (rejects with the cause) then `openWebWallet()`, which loads the durable prefix.
+`pagehide` flushes are best effort; the barrier protects. Real Web Locks and IndexedDB run in the browser lane.
 
 LMDBer.inWriteTransaction owns pinned native writer inspection. Domain processors
 use that boolean to distinguish owning a commit from borrowing a caller's writer;
