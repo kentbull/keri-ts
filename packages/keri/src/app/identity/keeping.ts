@@ -467,6 +467,11 @@ export class Manager {
   private encrypter: Encrypter | null = null;
   /** Private box key derived from passcode/seed; required for encrypted reads. */
   private decrypter: Decrypter | null = null;
+  /**
+   * Borrowed, volatile signers keyed by qualified public key (`hold()`).
+   * Never written to the Keeper and never consulted by `Keeper` rows.
+   */
+  private readonly held = new Map<string, Signer>();
 
   constructor(args: ManagerArgs) {
     const {
@@ -707,8 +712,62 @@ export class Manager {
     return this.decrypter ?? undefined;
   }
 
-  /** Load one managed signer seed by its public verifier key. */
+  /**
+   * Borrow live signers for signing, decryption and ESSR opening without
+   * persisting them.
+   *
+   * Held signers are consulted before stored keys by the one private lookup
+   * every `sign`, `decrypt`, `open`, group-member and endpoint-role path
+   * resolves through. They live only in this `Manager` instance's memory:
+   * nothing is written to any Keeper table, re-encryption by `updateAeid()`
+   * neither reads nor changes them, and a new `Manager` over the same Keeper
+   * starts with none.
+   *
+   * Contract:
+   * - The table is keyed by `signer.verfer.qb64`. The same raw key encodes
+   *   differently when transferable (`D...`) and non-transferable (`B...`), so
+   *   build each `Signer` with the transferability the key list or prefix uses,
+   *   and hold that encoding. A request for the other encoding does not match.
+   * - The host owns each `Signer` and its seed bytes, including zeroing them.
+   *   This keeps the reference only; it never copies seed bytes and never
+   *   erases them. Dropping a reference with `release()` does not zero memory.
+   * - Holding a pub that is already held replaces the earlier signer. A held
+   *   signer shadows a stored key with the same public key.
+   * - The `pre/path` branch of `sign()` re-derives salty keys from the stored
+   *   prefix salt and never consults held signers.
+   *
+   * @param signers Signers to borrow; all are validated before any is held.
+   */
+  hold(signers: readonly Signer[]): void {
+    const batch = new Map<string, Signer>();
+    for (const signer of signers) {
+      if (!(signer instanceof Signer)) {
+        throw new ValidationError("Held signers must be Signer instances");
+      }
+      batch.set(signer.verfer.qb64, signer);
+    }
+    for (const [pub, signer] of batch) this.held.set(pub, signer);
+  }
+
+  /**
+   * Drop held signer references: all of them, or only those for `pubs`.
+   *
+   * Unheld pubs are ignored. Afterwards a request for a released key resolves
+   * from stored keys only and fails as any missing key does. This drops
+   * references; zeroing a signer's seed stays the host's job.
+   */
+  release(pubs?: readonly string[]): void {
+    if (pubs === undefined) {
+      this.held.clear();
+      return;
+    }
+    for (const pub of pubs) this.held.delete(pub);
+  }
+
+  /** Resolve one signer by qualified public key: held first, then the Keeper's `pris.`. */
   private getSignerByPub(pub: string): Signer {
+    const held = this.held.get(pub);
+    if (held) return held;
     const signer = this.ks.pris.get(pub, this.signerDecrypter());
     if (!signer) {
       throw new Error(`Missing prikey in db for pubkey=${pub}`);

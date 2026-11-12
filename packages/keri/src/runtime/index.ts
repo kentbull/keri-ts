@@ -100,6 +100,7 @@ export {
 export {
   type DerivedUpdate,
   type DerivedUpdateStore,
+  MemoryDerivedUpdateStore,
   RegistryCustody,
   type RegistryCustodyOptions,
 } from "../acdc/custody.ts";
@@ -395,6 +396,17 @@ export type {
 } from "../app/multisig/multisig-messaging.ts";
 export { signGroupMessage } from "../app/multisig/multisig-messaging.ts";
 export { approveAcdcV2Registry, publishAcdcV2Registry } from "../app/multisig/multisig-workflows.ts";
+export {
+  dismissGroupProposal,
+  findGroupProposal,
+  type GroupProposal,
+  type GroupProposalDismissDeps,
+  type GroupProposalFilter,
+  type GroupProposalKind,
+  type GroupProposalNeeds,
+  type GroupProposalReadDeps,
+  listGroupProposals,
+} from "../app/multisig/proposals.ts";
 export {
   Notifier,
 } from "../app/notifications/notifying.ts";
@@ -825,6 +837,35 @@ export {
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
 
+// Runtime-owned single-signature DH issuance operations (begin, process, status, wait, abandon).
+export {
+  abandonIssuance,
+  type AdmitDeps,
+  admitIssuance,
+  approveIssuanceExchange,
+  beginIssuance,
+  type BeginIssuanceInput,
+  deliverIssuanceAdmit,
+  type IssuanceAdmit,
+  type IssuanceBegun,
+  type IssuanceDelivery,
+  type IssuanceDeps,
+  type IssuanceEndState,
+  type IssuanceNeed,
+  IssuanceOperations,
+  type IssuanceOperationStore,
+  type IssuancePhase,
+  type IssuanceRecord,
+  type IssuanceRole,
+  type IssuanceStatus,
+  issuanceStatus,
+  type IssuanceWaitOptions,
+  MemoryIssuanceOperationStore,
+  posterDelivery,
+  prepareIssuanceGrant,
+  waitForIssuance,
+} from "../app/ipex/issuance.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
@@ -847,3 +888,6 @@ export {
   waitForDelegationApproval,
   type WaitForDelegationApprovalOptions,
 } from "../app/identity/delegation-approval.ts";
+
+// Pre-signed hab adoption (Habery.makeSignedHab).
+export type { SignedHabArgs } from "../app/identity/habbing.ts";

@@ -196,3 +196,29 @@ for (const mode of ["headers", "unread", "blocked", "early", "external"] as cons
     }
   });
 }
+
+Deno.test("halting a request whose fetch rejects with a fresh AbortError completes cleanly", async () => {
+  // WebKit and Node 20 reject an aborted fetch with a new native AbortError, not `signal.reason`.
+  const original = globalThis.fetch;
+  let request: Request | undefined;
+  globalThis.fetch = (input) => {
+    request = input as Request;
+    return new Promise<Response>((_resolve, reject) => {
+      request!.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+  };
+  try {
+    const task = run(() => new FetchHttpClient().open("https://peer.test/"));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    await task.halt();
+    assertEquals(request?.signal.aborted, true);
+    const cancelled = new Error("caller cancelled");
+    const controller = new AbortController();
+    const waiting = run(() => new FetchHttpClient().open("https://peer.test/", { signal: controller.signal }));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    controller.abort(cancelled);
+    assertStrictEquals(await assertRejects(() => waiting), cancelled);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
