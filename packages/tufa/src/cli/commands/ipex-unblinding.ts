@@ -6,7 +6,6 @@ import { parseIntegerOption, parseNumberOption, parseStringOption, withRuntimeWo
 import {
   abandonUnblinding,
   type AgentRuntime,
-  approveUnblind,
   consoleLogger,
   createAgentRuntime,
   envelopeFromFrame,
@@ -39,6 +38,8 @@ export interface PresentationUnblindOptions {
   timeoutMs: number;
   proposer?: string;
   listen?: number;
+  /** Ordinary-state vocabulary frozen on the approved operation; omitted uses the library default. */
+  states?: readonly string[];
 }
 /** Proof exchange completion does not authorize or create a wallet Admit. */
 export interface PresentationUnblindResult {
@@ -96,7 +97,7 @@ export function* runPresentationUnblind(
 function* runUnblind(
   runtime: AgentRuntime,
   grant: string,
-  { timeoutMs, proposer }: PresentationUnblindOptions,
+  { timeoutMs, proposer, states }: PresentationUnblindOptions,
 ): Operation<PresentationUnblindResult> {
   const selected = runtime.ipexAuxiliary;
   if (selected?.kind !== "unblind" || !runtime.acdc || selected.owner.exc !== runtime.exc) {
@@ -112,7 +113,7 @@ function* runUnblind(
   ) {
     throw new ValidationError("Group Unblind requires a current signing member proposer; individual Unblind has none");
   }
-  const xid = protocol.approve(grant);
+  const xid = protocol.approve(grant, { states });
   const input = runtime.exc.retainedInput(grant)!;
   const requester = input.serder.sad!.ri === hab.pre;
   const role = requester ? "requester" : "responder";
@@ -312,9 +313,9 @@ function* runIndividualUnblind(
     clock: runtime.clock,
   });
   const requester = runtime.exc.retainedInput(grant)?.serder.sad?.ri === hab.pre;
-  const consent = requester ? requestUnblind : approveUnblind;
   const run = function*() {
-    const { xid, role } = consent(ops, { hab, grant, states });
+    // The disclosee consents explicitly; the discloser only listens, and the owner answers an authenticated query.
+    const begun = requester ? requestUnblind(ops, { hab, grant, states }) : null;
     const outcome = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: true }, function*() {
       const driver = yield* spawn(function*() {
         while (true) {
@@ -323,11 +324,19 @@ function* runIndividualUnblind(
         }
       });
       try {
-        return yield* waitForUnblinding(ops, grant, { timeoutMs });
+        const stop = runtime.clock.now() + timeoutMs;
+        while (!begun && !ops.deps.store.get(grant)) {
+          if (runtime.clock.now() >= stop) {
+            throw new ValidationError("Unblind reached its elapsed limit or original Grant deadline without Admit");
+          }
+          yield* wait(runtime, 50);
+        }
+        return yield* waitForUnblinding(ops, grant, { timeoutMs: Math.max(1, stop - runtime.clock.now()) });
       } finally {
         yield* driver.halt();
       }
     });
+    const xid = begun?.xid ?? ops.deps.store.get(grant)!.xid, role = requester ? "requester" : "responder";
     const { status } = outcome;
     if (status.state === "done") return { grant, xid, role, completed: true, admitted: false } as const;
     if (status.state === "active") abandonUnblinding(ops, grant, "Elapsed limit");
@@ -385,7 +394,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
       kram: hby.cf?.get<{ kram?: KramConfig }>().kram,
       ...individual
         ? { ipexOwners: "per-identifier" as const }
-        : { ipexAuxiliary: { kind: "unblind" as const, hab, states } },
+        : { ipexAuxiliary: { kind: "unblind" as const, hab } },
     });
     try {
       const input = parseStringOption(args.input, "input");
@@ -397,6 +406,7 @@ export function* ipexLiveUnblindCommand(args: Record<string, unknown>): Operatio
         timeoutMs: timeout * 1000,
         proposer: parseStringOption(args.proposer, "proposer"),
         listen,
+        states,
       };
       return individual
         ? yield* runIndividualUnblind(runtime, hab, grant, { ...options, states })

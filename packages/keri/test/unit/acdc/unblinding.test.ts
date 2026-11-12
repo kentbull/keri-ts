@@ -84,7 +84,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
       const runtime = yield* createAgentRuntime(hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "unblind", hab, states: ["issued", "revoked", ""] },
+        ipexAuxiliary: { kind: "unblind", hab },
       });
       yield* ensure(() => runtime.close());
       assert(runtime.ipexAuxiliary?.kind === "unblind");
@@ -214,6 +214,7 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(presenter.exc.complete(pending.said!), true);
     assertEquals(observer.exc.complete(pending.said!), false);
     assertExists(observer.hby.db.epse.get(pending.said!));
+    const second = yield* presentation("Second pending presentation");
     const deadline = observer.exc.exchangeDeadline(pending);
     assertThrows(() => presenter.route.approve(original.said!), Error, undefined, "an admitted Grant is terminal");
     const xid = observer.route.approve(pending.said!);
@@ -233,9 +234,29 @@ Deno.test("Unblind repairs pending and live exact presentations without changing
     assertEquals(requested.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
     assertEquals(envelopeFromFrame(requested).bsqs, [], "query carries public state, never openings");
     yield* presenter.reactor.processBytes(query);
-    assertEquals(presenter.route.outgoing.length, 0, "receipt without release consent discloses no proofs");
-    assertEquals(presenter.store.head(rip.said!)!.qb64, event1.said!, "unapproved public suffix is not imported");
+    assertEquals(presenter.route.outgoing.length, 1, "the discloser answers an authenticated query for its live Grant");
+    assertEquals(presenter.store.head(rip.said!)!.qb64, events[2].said!, "the authenticated suffix is imported");
     assertEquals(presenter.route.approve(pending.said!), xid);
+    {
+      // The state vocabulary belongs to each approved operation, not to the owner.
+      const frozen = (id: string) =>
+        (presenter.route as unknown as { operations: Map<string, { states: string[] }> }).operations.get(id)!.states;
+      const secondXid = presenter.route.approve(second.said!, { states: ["issued"] });
+      assertEquals(frozen(xid), ["issued", "revoked", ""], "default vocabulary");
+      assertEquals(frozen(secondXid), ["issued"], "explicit vocabulary on the same owner");
+      assertEquals(presenter.route.approve(second.said!), secondXid, "repeat without states keeps the frozen ones");
+      assertEquals(frozen(secondXid), ["issued"]);
+      assertThrows(
+        () => presenter.route.approve(second.said!, { states: ["revoked"] }),
+        Error,
+        "different states",
+      );
+      assertThrows(
+        () => presenter.route.approve(pending.said!, { states: ["bogus", 1 as unknown as string] }),
+        Error,
+        "state strings",
+      );
+    }
     yield* presenter.reactor.processBytes(query);
     assertEquals(
       presenter.store.head(rip.said!)!.qb64,
@@ -396,7 +417,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
       const runtime = yield* createAgentRuntime(side.hby, new FetchHttpClient(), systemClock, {
         acdc: rgy,
         kram: { enabled: true, caches: { "~": [1000, 5000, 60000, 300000, 5000, 60000, 300000] } },
-        ipexAuxiliary: { kind: "unblind", hab, states: ["issued", "revoked", ""] },
+        ipexAuxiliary: { kind: "unblind", hab },
       });
       yield* ensure(() => runtime.close());
       assert(runtime.ipexAuxiliary?.kind === "unblind");
@@ -565,9 +586,7 @@ Deno.test("v2 KERI/ACDC group Unblind elects a rootless sender after exact proof
     });
     assertEquals(query.nests!.map(nest => nest.body.raw), events.map(event => event.raw));
     assertEquals(queryEvidence.tsgs.flatMap(group => group.sigers.map(siger => siger.index)).sort(), [0, 1]);
-    for (const side of presenters) {
-      assertEquals(side.store.head(rip.said!)!.qb64, event1.said!, "unapproved receipt does not import or disclose");
-    }
+    // A group discloser needs member contributions before any reply exists; none has been authored yet.
     assertEquals(replies, []);
 
     // Index 1 authors the proof; rootless index 0 validates and contributes under its one setup approval.

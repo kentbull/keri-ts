@@ -13,6 +13,16 @@ export interface KramConfig {
   denials?: readonly KramExemption[];
   caches?: Readonly<Record<string, KramWindows>>;
 }
+/**
+ * Windows an enabled policy uses when no caches are configured: one catchall row, in milliseconds
+ * `[d, sl, ll, xl, psl, pll, pxl]` (1 s drift, 5 s single-key, 60 s multi-key and 5 min exchange acceptance,
+ * pruned no earlier than they expire). KERIpy defines no built-in windows and requires `kram.caches` in
+ * configuration; these are the values its own tests and the keri-ts interop suites use, so an unconfigured
+ * runtime behaves like a configured KERIpy peer.
+ */
+export const DEFAULT_KRAM_CACHES: NonNullable<KramConfig["caches"]> = Object.freeze({
+  "~": Object.freeze([1000, 5000, 60000, 300000, 5000, 60000, 300000] as const),
+});
 /** Checked cache values; transitional acceptance windows may temporarily be zero. */
 export type KramCacheType = Required<CacheTypeRecordShape>;
 /** Receiver-clocked acceptance expansion that survives a database reopen. */
@@ -146,11 +156,19 @@ export class KramPolicy {
       return [intToB64(version[0], 1) + intToB64(version[1], 2), ...(type ? [type] : []), ...(route ? [route] : [])]
         .join(".") + (route ? "" : ".");
     });
-    const requested = configuration(config.caches);
+    const requested = configuration(config.caches ?? (this.enabled ? DEFAULT_KRAM_CACHES : undefined));
     const stored = db.hbys.get(policyKey);
     this.storedState = stored;
     if (stored !== null) {
       this.state = policyState(stored, db);
+      if (!Object.keys(this.state.caches).length && Object.keys(requested).length) {
+        // A store first opened without caches (KRAM off) has no rows to protect: install the windows directly.
+        this.state = { caches: requested, pending: {} };
+        this.commit(() => {
+          for (const [key, tuple] of Object.entries(requested)) db.ctyp.pin(key, cacheRecord(tuple));
+        });
+        return;
+      }
       const identical = sameKeys(Object.keys(requested), Object.keys(this.state.caches))
         && Object.keys(requested).every((key) => requested[key].every((v, i) => v === this.state.caches[key][i]));
       if (config.caches !== undefined && !identical) this.change(requested);

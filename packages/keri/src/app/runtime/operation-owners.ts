@@ -151,8 +151,8 @@ function* every(clock: RuntimeClock, pass: () => Operation<unknown>): Operation<
 }
 
 /**
- * Run every owner in its own fiber until halted. The replicator's fiber first makes sure every local
- * identifier has its DH owner, prompts the replicator with their `replicated` cues, then runs a pass.
+ * Run every owner in its own fiber until halted. The replicator's fiber prompts the replicator with the
+ * live DH owners' `replicated` cues, then runs a pass.
  */
 export function* operationOwnersDo(
   owners: ComposedOwners & { ipex: IpexAuxiliaries; clock: RuntimeClock },
@@ -167,7 +167,6 @@ export function* operationOwnersDo(
     fibers.push(
       yield* spawn(() =>
         every(clock, function*() {
-          ipex.ensureDhkes();
           for (const dh of ipex.dhkeOwners()) {
             while (dh.replicated.length) rootReplicator.replicate(dh.replicated.pull()!);
           }
