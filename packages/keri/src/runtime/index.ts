@@ -244,6 +244,7 @@ export {
   type ContactRecord,
   Organizer,
 } from "../app/identity/organizing.ts";
+export { IpexAdmitter, type PreparedAdmit } from "../app/ipex/ipex-admitting.ts";
 export { ipexExnBody, type IpexV2BodyOptions, prepareIpexExn } from "../app/ipex/ipex-building.ts";
 export {
   type CredentialAdmitMessage,
@@ -264,7 +265,9 @@ export {
   type CredentialViews,
   type DisclosureSelection,
   exchangeWire,
+  type GrantFileSelection,
   type HeldCredential,
+  type InspectedGrantFile,
   IpexDiscloser,
   type IssuanceGrantOptions,
   type PreparedDisclosure,
