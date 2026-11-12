@@ -38,12 +38,20 @@ class _Owner:
         self.exc, self.dh, self.psr = peer.exc, peer.dh, peer.parser
         self.tock, self.deadline, self.grantDeadline = .005, time.monotonic() + 180, None
 
+    @property
+    def tyme(self):
+        """Clock of ``deadline``; KERIpy's post-issuance root copies budget from it."""
+        return time.monotonic()
+
     def check(self):
         if time.monotonic() >= self.deadline or self.grantDeadline and nowUTC() >= self.grantDeadline:
             raise TimeoutError('selected group fixture operation expired')
 
     def extend(self, doers):
         self.peer.doist.extend(doers)
+
+    def remove(self, doers):
+        self.peer.doist.remove(doers)
 
     def record(self, raw, *, initial=False):
         pass  # Public proposal files and normal stores already retain the selected evidence.

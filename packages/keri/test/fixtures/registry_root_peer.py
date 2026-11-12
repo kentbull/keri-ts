@@ -9,6 +9,20 @@ leaves protocol delivery to the installed `kli vc registry root` commands:
 - ``accept`` gives a holder a foreign issuer's public KEL and TEL;
 - ``root`` prints the root retained for one holder AID and registry.
 
+For a mixed KERIpy and Tufa group whose KEL anchors come from the real
+``multisig interact`` commands, three steps author a group registry held by
+this member as DH custodian would hold it:
+
+- ``group-registry`` stages a group ``rip`` and prints its anchor seal;
+- ``group-issue`` accepts the anchored ``rip``, retains a fresh root and stages
+  the root-blinded ``bup``, printing its anchor seal;
+- ``group-publish`` accepts the anchored ``bup``, retains its opening (the
+  verification-hint evidence a custodian has from its own Grant) and writes
+  the public TEL for the other member.
+
+``replicate`` then runs KERIpy's group issuance completion send,
+``rootreplicating.replicate``, for one registry under its own finite host.
+
 Adapted from KERIpy tests/cli/commands/test_registry_root_cli.py.
 """
 import argparse
@@ -17,10 +31,11 @@ from pathlib import Path
 
 from hio.base import doing
 from keri import Vrsn_2_0 as V2
-from keri.acdc import Regery, Registrar, acdcmap, regeventing
-from keri.app import Receiptor
-from keri.cli.common import setupHby
-from keri.core import Kevery, Parser, Salter, SealSource, SerderACDC, messagize
+from keri.acdc import Regery, Registrar, acdcmap, regeventing, salting
+from keri.app import Notifier, Receiptor
+from keri.cli.common import rootreplicating, setupHby
+from keri.core import Blinder, Kevery, Parser, Salter, SealSource, SerderACDC, messagize
+from keri.peer import Exchanger
 
 # Short-lag window 1 s + 5 s: a copy fetched later than that is outside it.
 KRAM = dict(enabled=True, denials=[], caches={'~': [1000, 5000, 60000, 300000, 5000, 60000, 300000]})
@@ -105,9 +120,91 @@ def root(args):
         hby.close()
 
 
+def seal(event):
+    return dict(i=event.sad['rd'] if event.ilk == 'bup' else event.said, s=event.sad['n'], d=event.said)
+
+
+def group_registry(args):
+    hby, rgy = opened(args)
+    try:
+        ghab = hby.habByName(args.alias)
+        registry = Registrar(rgy).makeRegistry('group', ghab.pre)
+        return dict(registry=registry.regk, seal=seal(rgy.store.event(registry.regk)))
+    finally:
+        rgy.close()
+        hby.close()
+
+
+def group_issue(args):
+    hby, rgy = opened(args)
+    try:
+        ghab = hby.habByName(args.alias)
+        registry = rgy.regs[args.registry]
+        registry.anchorMsg(args.registry)
+        rgy.processEscrows()
+        assert rgy.store.headEvent(args.registry).said == args.registry
+        root = Salter()
+        ghab.mgr.putRegistryRoot(ghab.pre, args.registry, root)
+        body = acdcmap(israid=ghab.pre, iseaid=args.recipient, regid=args.registry,
+                       attribute=dict(d='', role='group reader'))
+        _, event = Registrar(rgy).issue(registry, body, salt=root.qb64)
+        return dict(acdc=body.said, event=event.said, seal=seal(event))
+    finally:
+        rgy.close()
+        hby.close()
+
+
+def group_publish(args):
+    hby, rgy = opened(args)
+    try:
+        ghab = hby.habByName(args.alias)
+        registry = rgy.regs[args.registry]
+        registry.anchorMsg(args.event)
+        rgy.processEscrows()
+        assert rgy.store.headEvent(args.registry).said == args.event
+        root = ghab.mgr.getRegistryRoot(ghab.pre, args.registry)
+        blinder = Blinder.blind(salt=root.qb64, sn=1, acdc=args.acdc, state='issued')
+        rgy.store.putOpening(args.event, blinder)
+        tel = [bytes(raw).decode() for raw in rgy.store.cloneTelIter(args.registry)]
+        Path(args.tel).write_text(json.dumps(tel))
+        return dict(gid=ghab.pre, registry=args.registry, event=args.event, root=root.qb64)
+    finally:
+        rgy.close()
+        hby.close()
+
+
+class _Replication(doing.DoDoer):
+    """Host one ``rootreplicating.replicate`` call as a finite command DoDoer would."""
+
+    def __init__(self, hby, ghab, root, registry):
+        self.hby, self.ghab, self.root, self.registry = hby, ghab, root, registry
+        super().__init__(doers=[doing.doify(self.run)])
+
+    def run(self, tymth, tock=0.03125, **kwa):
+        self.wind(tymth)
+        self.tock = tock
+        yield tock
+        yield from rootreplicating.replicate(self, self.ghab, self.root, [self.registry], timeout=45)
+
+
+def replicate(args):
+    hby, rgy = opened(args)
+    try:
+        ghab = hby.habByName(args.alias)
+        exc = Exchanger(hby=hby, handlers=[])
+        root = salting.loadHandlers(hby, exc, Notifier(hby), rgy)
+        host = _Replication(hby, ghab, root, args.registry)
+        doing.Doist(real=True, tock=0.03125, limit=60).do(doers=[host])
+        return dict(done=host.done)
+    finally:
+        rgy.close()
+        hby.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('command', choices=['kram', 'author', 'accept', 'root'])
+    parser.add_argument('command', choices=['kram', 'author', 'accept', 'root', 'group-registry', 'group-issue',
+                                            'group-publish', 'replicate'])
     parser.add_argument('--name', required=True)
     parser.add_argument('--base', default='')
     parser.add_argument('--passcode', required=True)
@@ -118,8 +215,12 @@ def main():
     parser.add_argument('--gid')
     parser.add_argument('--kel')
     parser.add_argument('--tel')
+    parser.add_argument('--acdc')
+    parser.add_argument('--event')
     args = parser.parse_args()
-    print(json.dumps(dict(kram=kram, author=author, accept=accept, root=root)[args.command](args)), flush=True)
+    commands = {'kram': kram, 'author': author, 'accept': accept, 'root': root, 'group-registry': group_registry,
+                'group-issue': group_issue, 'group-publish': group_publish, 'replicate': replicate}
+    print(json.dumps(commands[args.command](args)), flush=True)
 
 
 if __name__ == '__main__':
