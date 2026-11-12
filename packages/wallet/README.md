@@ -13,7 +13,9 @@ Exchanger and an opened WalletBaser. Callers own and close those stores.
   `openWalletBaser(opener, identity)`, which opens the same `WalletBaser` through any
   `StoreOpener`. Pass the composition's own opener (for example `hby.opener`, or
   `indexedDbOpener()` from `keri-ts/db/indexeddb`) so the wallet shares its single
-  store queue. Flush with `db.store.flushed()` before relying on durability.
+  store queue. Flush with `db.store.flushed()` before relying on durability. An
+  `indexedDbOpener()` holds the single-writer store lock for its identity, so a second
+  opener on the wallet's own `name` and `base` is refused while the wallet is open.
 
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
 opening. `recordAdmission(..., {consent: true})` requires current authenticated

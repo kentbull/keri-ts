@@ -66,12 +66,15 @@ Browser host duties live in `keri-ts/runtime/web`. `barrierHttpClient` (ADR-0015
 `WebStoreOpener.queue.flushed()`, not one store's `flushed()`: the queue is shared by every family
 and is the only handle that orders all commits. A latched queue fails the request with
 `OutputBarrierError` and sends nothing; the wrapper drops `tcp` so no dialer bypasses it.
-`acquireStoreLock` takes `navigator.locks` before any `reopen` because the mirror is a snapshot, keyed
+The single-writer lock belongs to the IndexedDB store, not the wallet: `indexedDbOpener()` takes
+`navigator.locks` in its first store's `reopen`, before anything loads (the mirror is a snapshot), shares it across
+families by reference count and releases it with the last close, even if a close step fails. Key
 `keri-ts:store:[base,name,durable|temp]` (the IndexedDB database name minus the family); an absent
-API fails closed.
+API fails closed. `unsafeSkipStoreLock` and `locks` are the opt-out and test injection. The primitive lives in
+`src/db/store-lock.ts` (db must not import runtime) and `keri-ts/runtime/web` re-exports it.
 
 `openWebWallet` (`@keri-ts/wallet/web`) is the one browser composition root and wires no protocol
-owner itself: lock, one `indexedDbOpener`, `openHabery` (`skipConfig`), inventory on `hby.opener`, `createAgentRuntime`
+owner itself: one `indexedDbOpener` (which locks), `openHabery` (`skipConfig`), inventory on `hby.opener`, `createAgentRuntime`
 over `barrierHttpClient`, `runAgentRuntime`. Encryption is decided from arguments (passcode, or seed plus AEID) and
 again from the Manager's stored AEID and live seed. Close halts workers, closes runtime sidecars, inventory and Habery
 (each joins the shared queue), then releases the lock, and reports every failure after all steps ran; a halted task does
