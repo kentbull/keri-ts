@@ -787,3 +787,6 @@ export {
   waitForIpexArrival,
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
+
+// Pre-signed hab adoption (Habery.makeSignedHab).
+export type { SignedHabArgs } from "../app/identity/habbing.ts";
