@@ -211,6 +211,8 @@ Library workflow contract (OOBI, query, event completion; `app/runtime/workflow-
 4. One-shot CLI commands run workers around the wait with `cli/common/runtime-workers.ts`; a wallet's already-running runtime does the work.
 5. Status reads are unions on `state` (`phase`, optional `blocked`); wait results discriminate on `outcome`. Owners may push identity-only `ChangeSink` changes after commit (a failing sink drops them). Key-state query status is process-local (`scope: "process"`), anchor status is durable.
 
+IPEX poll-and-settle is library code (`app/mailbox/ipex-arrival.ts`: `settleStoredGrants`, `ipexArrivalStatus`, `waitForIpexArrival`). A wallet reads status and waits; `tufa ipex poll` supplies the workers, mailbox poller and `MailboxIntakeTally` itself.
+
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
 key-state facts once into an explicitly supplied command-owned Deck with one

@@ -772,3 +772,18 @@ export {
   type WorkflowChange,
   type WorkflowKind,
 } from "../app/runtime/workflow-contract.ts";
+
+// Library poll-and-settle for credential IPEX arrivals (settle, status, wait).
+export {
+  type IpexArrivalDeps,
+  type IpexArrivalStatus,
+  ipexArrivalStatus,
+  type IpexArrivalWaitDeps,
+  type IpexBaseline,
+  ipexBaseline,
+  MailboxIntakeTally,
+  settleStoredGrants,
+  type StoredGrantSettleDeps,
+  waitForIpexArrival,
+  type WaitForIpexArrivalOptions,
+} from "../app/mailbox/ipex-arrival.ts";
