@@ -262,8 +262,14 @@ accepted anchors reuse retained local contributions, including after key retirem
 (Number, Diger) tuple, judges receipts against the event's own establishment,
 derives "must submit" from stored receipts, and lets non-elected members submit after
 `fallbackAfterMs`. The `cgms` key number is whatever width `start` was given (KERIpy
-auto-sizes; only `delegate confirm` writes `0A`), so readers accept both. Delegated
-`dip/drt` park in `gdee` as `blocked: notSupported` until the delegation stage lands.
+auto-sizes; only `delegate confirm` writes `0A`), so readers accept both. A delegate
+accepts its own `dip/drt` before the anchor and before witnesses receipt it; the event
+waits in `gdee`. The publishing member (elected, or any after `fallbackAfterMs`) begins
+the Anchorer, which owns request, anchor and publication, and the Counselor writes
+`cgms` when it completes. Other members query for the anchor, pin `aess` and finish in
+`gpwe`. A delegated inception needs a supplied proxy (KERIpy uses the member hab);
+proxy and witness auths are memory only. Anchorer escrows key by `(pre, snh)`, KERIpy's
+by `(pre, said)`. Without an Anchorer the event reads `notSupported`.
 Direct stored-proposal approval is `approvePendingMultisigProposal`; it accepts
 only proposal selection and immediate UI decisions. Explicit selection reads accepted
 EXNs and their Multiplexor indexes independently of notification presence. When
