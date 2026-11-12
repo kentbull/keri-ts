@@ -41,6 +41,7 @@ import { Kever } from "../core/kel/kever.ts";
 import { query, reply } from "../core/protocol-eventing.ts";
 import { messagize } from "../core/protocol-serialization.ts";
 import { fetchStoredTsgs, type ReplyProcessDecision, type Revery, unverifiedReplyDecision } from "../core/routing.ts";
+import type { Baser } from "../db/basing.ts";
 import { prepareNests, publishNests } from "../db/exchange/exchange-nests.ts";
 import { timestampMicros } from "../time/mod.ts";
 import type { RegistryObserver } from "./observing.ts";
@@ -675,11 +676,17 @@ export class Unblind implements AuxiliaryQueryProcessor {
    */
   inTransaction(sender: string, xid: string): boolean {
     return this.operations.has(xid) || (this.group && sender === this.hab.pre)
-      || [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, xid])]
-        .some(([key]) => {
-          const grant = this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]);
-          return grant?.pre === this.hab.pre && grant.sad?.ri === sender;
-        });
+      || Unblind.recipients(this.hab.db, this.hab.pre!, xid).includes(sender);
+  }
+
+  /** Recipients of the Grants `pre` sent in transaction `xid`, from KRAM-accepted store rows. */
+  static recipients(db: Baser, pre: string, xid: string): string[] {
+    const recipients: string[] = [];
+    for (const [key] of db.tmsc.getTopItemIter([pre, xid])) {
+      const grant = db.exns.get([key[2]]) ?? db.epse.get([key[2]]);
+      if (grant?.pre === pre && typeof grant.sad?.ri === "string") recipients.push(grant.sad.ri);
+    }
+    return recipients;
   }
 
   /** Release all process-local approvals, opening references and retry bytes without changing stores. */

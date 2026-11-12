@@ -1,6 +1,6 @@
 /**
- * Runtime wiring of the operations owners (`ipexOwners: "per-identifier"`): owner composition, DH owners for every
- * local identifier before traffic, one fiber per owner, and root replication as a runtime reaction.
+ * Runtime wiring of the operations owners (`ipexOwners: "per-identifier"`): owner composition, DH owners created at the first
+ * message that addresses an identifier, one fiber per owner, and root replication as a runtime reaction.
  */
 import { parseBytes } from "cesr-ts";
 import { type Operation, run, sleep, spawn } from "effection";
@@ -62,13 +62,9 @@ Deno.test("a DH query that arrives before any explicit dhke(hab) call finds its 
     yield* ops.processOnce();
     const query = s.log.find((sent) => new TextDecoder().decode(sent.msg).includes("/ipex/dhke"))!;
     const serder = envelopeFromFrame(parseBytes(query.msg)[0]).serder;
-    const owners = [...s.holder.runtime.ipex!.dhkeOwners()].map((owner) => owner.hab.pre);
-    assertEquals(owners, [s.holder.habs[0].pre], "the owner exists without an explicit call");
-    assert(s.holder.runtime.ipex!.claims(serder), "the held Grant lets that owner claim the query");
-    // An identifier created after the runtime gets its owner at the next DH dispatch.
-    const late = s.holder.hby.makeHab("late");
-    s.holder.runtime.ipex!.claims(serder);
-    assert([...s.holder.runtime.ipex!.dhkeOwners()].some((owner) => owner.hab.pre === late.pre));
+    const owners = () => [...s.holder.runtime.ipex!.dhkeOwners()].map((owner) => owner.hab.pre);
+    assert(s.holder.runtime.ipex!.claims(serder), "the held Grant lets its recipient claim the query");
+    assertEquals(owners(), [s.holder.habs[0].pre], "the claimant is the recipient's owner");
   });
 });
 
