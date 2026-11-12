@@ -14,8 +14,11 @@ import {
   publishAcdcV2Registry,
   Receiptor,
   type RegistryDisclosure,
+  registryEventRef,
+  registryEventStatus,
   runAgentRuntime,
   Schemer,
+  settleRegistryEvent,
   validateAcdcSchema,
   ValidationError,
   type WitnessAuthMap,
@@ -56,13 +59,13 @@ export function* approveAcdcV2RegistryEvent(
   yield* publishAcdcV2Registry(hby, runtime.postman, hab, approved);
   const anchor = (approved[0].sad!.a as { anc: string }).anc;
   const sealing = hby.db.getEvtSerder(hab.pre, anchor)!;
-  const regid = event.ilk === "rip" ? event.said! : event.regid!;
-  while (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said !== event.said) {
+  const deps = { db: hby.db, store: runtime.acdc!.store, protocol: runtime.protocol };
+  const ref = registryEventRef(event, { pre: hab.pre, sn: sealing.sn!, said: anchor });
+  while (registryEventStatus(deps, ref).state !== "accepted") {
     if (hby.db.kels.getLast(hab.pre, sealing.sn!) === anchor) {
       yield* receiptor.receipt(hab.pre, { sn: sealing.sn!, allowTcp: true, auths });
     }
-    yield* runtime.protocol.processEscrowsOnce();
-    if (runtime.acdc!.store.seqEvent(regid, Number(BigInt(`0x${event.sad!.n}`)))?.said === event.said) break;
+    if ((yield* settleRegistryEvent(deps, ref)).state === "accepted") break;
     yield* sleep(100);
   }
 }

@@ -908,6 +908,19 @@ export {
 
 // Library TEL completion status/waits and challenge respond/status/wait.
 export {
+  REGISTRY_WAIT_POLL_MS,
+  type RegistryEventReadDeps,
+  type RegistryEventRef,
+  registryEventRef,
+  type RegistryEventStatus,
+  registryEventStatus,
+  type RegistrySettleDeps,
+  type RegistryWaitOptions,
+  type RegistryWaitResult,
+  settleRegistryEvent,
+  waitForRegistryEvent,
+} from "../app/credentials/registry-settling.ts";
+export {
   issuedCredentialStatus,
   type TelCompletionDeps,
   type TelEventStatus,

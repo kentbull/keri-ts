@@ -53,6 +53,7 @@ import {
   validateRegistryName,
   validateRegistryProposal,
 } from "../credentials/credential-proposals.ts";
+import { telEventStatus } from "../credentials/tel-completion.ts";
 import type { Poster } from "../delivery/forwarding.ts";
 import type { Exchanger } from "../exchanges/exchanging.ts";
 import {
@@ -878,7 +879,8 @@ export function* approveVdrProposal(
     tel: {
       pre: embeddedSerder.pre!,
       sn: embeddedSerder.sn!,
-      publicationComplete: rgy.publication.complete(embeddedSerder.pre!, embeddedSerder.sn!),
+      publicationComplete:
+        telEventStatus({ publication: rgy.publication }, embeddedSerder.pre!, embeddedSerder.sn!).state === "complete",
     },
     ...published,
   };
