@@ -28,6 +28,7 @@ import {
   parseGvrsn,
   parseNumberOption,
   parseStringOption,
+  withRuntimeWorkers,
 } from "keri-ts/cli";
 import {
   admitIssuance,
@@ -39,9 +40,15 @@ import {
   type Habery,
   isLocalGroupHab,
   MemoryIssuanceOperationStore,
+  MemoryPresentationOperationStore,
   Organizer,
   posterDelivery,
   prepareAcdcV2GroupIpex,
+  preparePresentation,
+  present,
+  type PresentationDeps,
+  type PresentationInput,
+  PresentationOperations,
   publishInitialGroupIpex,
   Receiptor,
   type RegistryDisclosure,
@@ -49,6 +56,7 @@ import {
   runAgentRuntime,
   sendCompletedGroupIpex,
   ValidationError,
+  waitForPresentation,
 } from "keri-ts/runtime";
 import { withAgentRuntime, withHabAndAgentRuntime } from "../support/context.ts";
 import { writeJsonLine } from "../support/rendering.ts";
@@ -385,41 +393,53 @@ function* acdcV2Disclosure(
           );
           return yield* acdcV2GroupDisclosure(hby, runtime, hab, selected.exn, candidate, args);
         }
-        const prepared = verb === "apply"
-          ? yield* discloser.prepareApply(hab.pre, options)
-          : verb === "offer"
-          ? yield* discloser.prepareOffer(hab.pre, selection, options)
-          : verb === "grant"
-          ? yield* discloser.prepareGrant(hab.pre, selection, {
-            ...options,
-            presentation: registryName ? runtime.acdc.registryByName(registryName) ?? undefined : undefined,
-          })
-          : yield* discloser.prepareReply(hab.pre, verb, priorSaid ?? "", message, recipient, auths);
-        const wire = concatBytes(discloser.kel(hab), prepared.support, prepared.wire);
-        yield* runtime.reactor.processBytes(wire, { local: true });
-        yield* runtime.protocol.processEscrowsOnce();
-        if (!runtime.exc.complete(prepared.exn.said!)) {
-          throw new ValidationError("ACDC v2 exchange remains pending authenticated intake.");
+        // TODO(group proposal API): group Apply/Offer/Agree/Spurn still take the single-signature path, which
+        // refuses a group identifier; the group Grant branch above stays here until that API replaces it.
+        const custody = derive
+          ? new RegistryCustody({ hby, hab, registry: wallet.registry, db: wallet.db })
+          : undefined;
+        const deps: PresentationDeps = {
+          hby,
+          rgy: runtime.acdc,
+          exc: runtime.exc,
+          receiptor: discloser.receiptor,
+          reactor: runtime.reactor,
+          protocol: runtime.protocol,
+          delivery: posterDelivery(runtime.postman),
+          store: new MemoryPresentationOperationStore(),
+          clock: runtime.clock,
+          views: wallet,
+          derived: custody?.options.store,
+        };
+        const request: PresentationInput = verb === "apply"
+          ? { verb, hab, options }
+          : verb === "agree" || verb === "spurn"
+          ? { verb, hab, prior: priorSaid ?? "", message, recipient, auths }
+          : { verb, hab, selection, options: { ...options, presentationRegistry: registryName } };
+        if (out) {
+          const prepared = yield* preparePresentation(deps, request);
+          Deno.writeFileSync(out, prepared.wire);
+          return { said: prepared.exn.said, accepted: true, deliveries: [] as string[] };
         }
-        let deliveries: string[] = [];
-        if (out) Deno.writeFileSync(out, wire);
-        else {
-          const host = yield* spawn(() => runAgentRuntime(runtime, { hab, pollMailbox: false }));
+        const ops = new PresentationOperations(deps);
+        const { said } = yield* present(ops, request, { maxAttempts: 1 });
+        // Delivery has no CLI deadline of its own: the transport outcome or the Grant's original deadline ends it.
+        const { status } = yield* withRuntimeWorkers(runtime, { hab, pollMailbox: false }, function*() {
+          const driver = yield* spawn(function*() {
+            while (true) {
+              yield* ops.processOnce();
+              yield* sleep(50);
+            }
+          });
           try {
-            const sent = runtime.postman.send({
-              src: hab.pre,
-              dest: prepared.exn.sad!.ri as string,
-              topic: CREDENTIAL_MAILBOX_TOPIC,
-              msg: wire,
-            }, { notify: true });
-            const result = yield* runtime.postman.wait(sent);
-            if (result.kin === "failed") throw result.error;
-            deliveries = result.deliveries;
+            return yield* waitForPresentation(ops, said, { timeoutMs: 2 ** 31 - 1 });
           } finally {
-            yield* host.halt();
+            yield* driver.halt();
           }
-        }
-        return { said: prepared.exn.said, accepted: true, deliveries };
+        });
+        if (status.state === "done") return { said, accepted: true, deliveries: [...status.deliveries] };
+        if (status.state === "active") throw new ValidationError("ACDC v2 presentation delivery did not finish.");
+        throw status.state === "failed" ? new Error(status.reason) : new ValidationError(status.reason);
       });
     },
   );
