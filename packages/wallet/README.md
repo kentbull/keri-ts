@@ -4,6 +4,17 @@ This application package retains issued credential bytes and explicit consent to
 one accepted Grant/Admit pair. Supply the actual Habery, ACDC v2 RegistryStore,
 Exchanger and an opened WalletBaser. Callers own and close those stores.
 
+## Entries
+
+- `@keri-ts/wallet` is the Node entry. `createWalletBaser(options)` opens the
+  inventory on LMDB, so the root cannot be bundled for a browser.
+- `@keri-ts/wallet/web` is the browser entry, with a `browser` export condition. It
+  exports everything the root does except `createWalletBaser`, plus
+  `openWalletBaser(opener, identity)`, which opens the same `WalletBaser` through any
+  `StoreOpener`. Pass the composition's own opener (for example `hby.opener`, or
+  `indexedDbOpener()` from `keri-ts/db/indexeddb`) so the wallet shares its single
+  store queue. Flush with `db.store.flushed()` before relying on durability.
+
 `recordIssued` verifies accepted local issuance and accepts an explicit blinded
 opening. `recordAdmission(..., {consent: true})` requires current authenticated
 root truth, the intended local holder and the actual accepted response.

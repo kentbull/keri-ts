@@ -57,6 +57,11 @@ real-engine behavior (durability hints, eviction, blocked ordering) is only chec
 It is public only as `keri-ts/db/indexeddb` (`IndexedDbPersistence`, `indexedDbOpener`), never from
 `keri-ts/db`, whose Node consumers must not type-check DOM types.
 
+`@keri-ts/wallet` splits by backend: the root keeps LMDB `createWalletBaser` and stays Node-only
+(no `browser` condition); `@keri-ts/wallet/web` has the same surface minus LMDB plus
+`openWalletBaser(opener, identity)`. Open application stores through the composition's opener
+(`hby.opener`) so they share its one `WebStoreOpener` queue.
+
 Browser host duties live in `keri-ts/runtime/web`. `barrierHttpClient` (ADR-0015 rule 6) waits on
 `WebStoreOpener.queue.flushed()`, not one store's `flushed()`: the queue is shared by every family
 and is the only handle that orders all commits. A latched queue fails the request with
