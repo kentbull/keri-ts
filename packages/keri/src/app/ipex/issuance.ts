@@ -200,12 +200,13 @@ export interface LiveIssuance {
   readonly xid: string;
   readonly role: IssuanceRole;
   /** The Grant's original exchange deadline (ISO 8601). */
-  readonly deadline: string;
+  deadline: string | null;
   readonly hab: Hab;
   readonly dh: Dhke;
   readonly peer: string;
   readonly registry: string;
-  readonly expires: bigint;
+  /** Null while a group issuer's Grant lacks member contributions: KRAM fixes the lifetime once the group authenticates it. */
+  expires: bigint | null;
   /** Issuer only: what the loop sends and anchors. Absent for a holder. */
   readonly issuer?: {
     readonly credential: SerderACDC;
@@ -316,11 +317,11 @@ export class IssuanceOperations {
       if (op.busy || !this.live.has(op.grant)) continue;
       op.busy = true;
       try {
-        const left = op.expires - BigInt(this.deps.clock.now()) * 1000n;
-        if (left <= 0n) this.end(op, "expired", EXPIRED);
-        else if ((yield* race([this.step(op), this.timer(Number(left) / 1000)])) === "expired") {
-          this.end(op, "expired", EXPIRED);
-        }
+        const left = op.expires === null ? null : op.expires - BigInt(this.deps.clock.now()) * 1000n;
+        if (left !== null && left <= 0n) this.end(op, "expired", EXPIRED);
+        else if (
+          (yield* race([this.step(op), ...(left === null ? [] : [this.timer(Number(left) / 1000)])])) === "expired"
+        ) this.end(op, "expired", EXPIRED);
       } catch (error) {
         this.end(op, "failed", message(error));
       } finally {
@@ -421,8 +422,8 @@ export class IssuanceOperations {
    */
   beginGroup(begin: GroupBegin): IssuanceBegun {
     const { deps } = this, { hab, coordinator, custodian } = begin.sel;
-    const deadline = deps.exc.exchangeDeadline(begin.frozen), expires = timestampMicros(deadline);
-    if (!deadline || expires === null) throw new ValidationError("Selected group Grant has no original deadline");
+    // A group issuer's partial Grant has no accepted lifetime yet; `stepGroup` fixes it once the group authenticates it.
+    const deadline = deps.exc.exchangeDeadline(begin.frozen), expires = deadline ? timestampMicros(deadline) : null;
     registerGroupRoutes(this);
     const dh = deps.dhkes.dhke(hab);
     const approve = begin.role === "holder" && !begin.proofOnly;
@@ -710,7 +711,7 @@ export function issuanceStatus(
   const { deps } = ops, ended = ops.ended.get(grant), live = ops.live.get(grant);
   if (ended) return { state: ended.state, role: ended.role, reason: ended.reason };
   if (live && !reached(deps, live.expires)) {
-    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline };
+    return { state: "active", role: live.role, phase: live.phase, deadline: live.deadline ?? undefined };
   }
   const parties = grantParties(deps, grant);
   if (!parties) throw new ValidationError("No issuance was begun for this Grant");
@@ -721,9 +722,12 @@ export function issuanceStatus(
     if (admitted) return { state: "done", role: "holder", phase: "admitted" };
     return { state: "active", role: "holder", phase: "awaitingAdmitConsent", needs: "admit" };
   }
-  const deadline = deps.exc.exchangeDeadline(serder), expires = timestampMicros(deadline);
-  if (!deadline || expires === null) throw new ValidationError("No issuance was begun for this Grant");
   const role: IssuanceRole = issuer ? "issuer" : "holder", hab = (issuer ?? holder)!;
+  const group = isLocalGroupHab(deps.hby, hab);
+  // A group issuer's partial Grant has no accepted lifetime until its members' contributions authenticate it.
+  const lifetime = deps.exc.exchangeDeadline(serder) ?? undefined;
+  const deadline = lifetime, expires = lifetime ? timestampMicros(lifetime) : null;
+  if (!group && (!deadline || expires === null)) throw new ValidationError("No issuance was begun for this Grant");
   if (reached(deps, expires)) {
     const credential = deps.exc.retainedInput(grant)?.nests?.[0]?.body;
     const registry = credential instanceof SerderACDC ? credential.regid : undefined;
@@ -731,7 +735,6 @@ export function issuanceStatus(
     return { state: "expired", role, reason: late ? EXPIRED_LATE : EXPIRED };
   }
   if (resumable(deps, hab, grant, role)) return { state: "active", role, phase: "rootRetained", deadline };
-  const group = isLocalGroupHab(deps.hby, hab);
   if ((role === "holder" || group) && !heldRoot(deps, hab, grant)) {
     // A group issuer's Grant may still be a partial one that only its members' contributions authenticate.
     if (!group && !deps.exc.retainedInput(grant, { pending: true })) {

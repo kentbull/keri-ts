@@ -51,6 +51,7 @@ import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import { messagize } from "../../core/protocol-serialization.ts";
 import { loadNests } from "../../db/exchange/exchange-nests.ts";
+import { timestampMicros } from "../../time/mod.ts";
 import {
   type RegistryEventRef,
   registryEventRef,
@@ -725,6 +726,13 @@ export function* stepGroup(ops: IssuanceOperations, op: LiveIssuance): Operation
     for (const peer of others()) yield* send(peer, msg);
   };
   if (deps.exc.complete(grant)) return true;
+  if (op.expires === null) {
+    const deadline = deps.exc.exchangeDeadline(g.frozenGrant);
+    if (deadline) {
+      op.deadline = deadline;
+      op.expires = timestampMicros(deadline);
+    }
+  }
   if (g.proposal) {
     const proposal = g.proposal;
     g.proposal = undefined;
