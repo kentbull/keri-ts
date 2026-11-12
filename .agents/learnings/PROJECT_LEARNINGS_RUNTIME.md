@@ -193,8 +193,12 @@ key-state facts once into an explicitly supplied command-owned Deck with one
 noticer consumer. Only received, validated/persisted KSNs produce keyStateSaved;
 ordinary KEL acceptance is observed through the accepted-state store. Runtime
 pending state describes sending, while the invoking operation represents active semantic work. Tufa owns
-query command composition and final display after close; an unsatisfied deadline
-fails without OOBI catch-up. HTTP queries acknowledge intake and send-only
+query command display after close; the library (`app/queries/query-workflows.ts`)
+owns workflow choice, worker spawn and the elapsed-deadline race, so a CLI is a thin
+caller. An unsatisfied deadline fails without OOBI catch-up. Key-state query status is
+process-local (its cue leaves no durable record); anchor status is durable. OOBI
+resolution likewise lives in `app/bootstrap/oobi-resolving.ts`: begin queues, status
+reads the Oobiery records, resolve is begin plus a bounded runtime wait. HTTP queries acknowledge intake and send-only
 HTTPMessenger binds an endpoint and HTTP
 client without protocol state or a clock. TCPMessenger binds its endpoint and clock;
 only duplex replies need a protocol receiver. Ordinary sendSource means per-message

@@ -1,8 +1,7 @@
 import { type Operation } from "npm:effection@^3.6.0";
-import { oobiTerminalState } from "../../app/bootstrap/oobiery.ts";
+import { resolveOobi } from "../../app/bootstrap/oobi-resolving.ts";
 import { OOBI_MAILBOX_TOPIC, OOBI_REQUEST_ROUTE, oobiRequestExn } from "../../app/bootstrap/oobiery.ts";
 import { sendExchangeMessage } from "../../app/exchanges/exchange-messaging.ts";
-import { enqueueOobi, runAgentRuntimeUntil, runtimeOobiConverged } from "../../app/runtime/agent-runtime.ts";
 import { systemClock } from "../../app/runtime/runtime-clock.ts";
 import { NodeHttpClient } from "../../app/transport/node-http-client.ts";
 import { ValidationError } from "../../core/errors.ts";
@@ -200,24 +199,12 @@ export function* oobiResolveCommand(
       skipSignator: false,
     },
     function*({ runtime }) {
-      enqueueOobi(runtime, {
-        url,
-        alias: commandArgs.oobiAlias,
-      });
-      yield* runAgentRuntimeUntil(
-        runtime,
-        () => runtimeOobiConverged(runtime, url),
-        { timeoutMs: 30_000, pollMailbox: false },
-      );
-
-      const terminal = oobiTerminalState(runtime.hby.db, url);
-      if (terminal.status === "failed") {
-        throw new ValidationError(
-          `OOBI ${url} failed: ${terminal.record?.state ?? "failed"}`,
-        );
+      const result = yield* resolveOobi(runtime, url, { alias: commandArgs.oobiAlias, timeoutMs: 30_000 });
+      if (result.status === "timed-out") {
+        throw new Error(`Runtime did not converge within ${result.timeoutMs}ms.`);
       }
-      if (terminal.status !== "resolved") {
-        throw new ValidationError(`OOBI ${url} did not resolve.`);
+      if (result.status === "failed") {
+        throw new ValidationError(`OOBI ${url} failed: ${result.reason}`);
       }
       console.log(url);
     },
