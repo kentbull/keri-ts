@@ -695,12 +695,21 @@ export class Manager {
     return root;
   }
 
-  /** Retain once, returning false for the identical root without replacing ciphertext. */
-  putRegistryRoot(aid: string, regid: string, root: Salter): boolean {
+  /**
+   * Retain once, returning false for the identical root without replacing ciphertext. `overwrite` replaces a
+   * different held root; only a caller that has shown that root was never used (no update staged or accepted
+   * for its registry) may set it.
+   */
+  putRegistryRoot(aid: string, regid: string, root: Salter, overwrite = false): boolean {
     const keys = this.registryRootKeys(aid, regid);
     if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128) throw new Error("Registry root must be Salt128");
     const { aeid, encrypter, decrypter } = this.registryRootCrypto();
-    return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter);
+    return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter, overwrite);
+  }
+
+  /** Whether a root is retained for `aid` and `regid`; reads no ciphertext and needs no unlocked Keeper. */
+  hasRegistryRoot(aid: string, regid: string): boolean {
+    return !!this.ks.rroots.get(this.registryRootKeys(aid, regid));
   }
 
   private signerDecrypter(): Decrypter | undefined {

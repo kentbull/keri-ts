@@ -834,7 +834,10 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
     assertNotEquals(issuer.mgr.ks.rroots.get([issuer.pre, rip.said!])!.qb64, root.qb64);
     assertEquals(new TextDecoder().decode(query).includes(root.qb64), false);
     assertEquals(new TextDecoder().decode(response.msg).includes(root.qb64), false);
-    assertThrows(() => new Dhke({ hab: issuer, exc: left.exc, registryStore: left.store }).approve(grant.said!));
+    // The registry has no staged or accepted update, so the held root is unused: a new owner may approve over it,
+    // but nothing is overwritten until that exchange retains its own root.
+    new Dhke({ hab: issuer, exc: left.exc, registryStore: left.store }).approve(grant.said!);
+    assertEquals(issuer.mgr.getRegistryRoot(issuer.pre, rip.said!)!.qb64, root.qb64);
 
     // DH creates custody only. Exact issued evidence finishes the original Grant, then Admit is separate.
     yield* call(() => assertRejects(() => run(() => left.dh.finish(grant.said!))));

@@ -421,13 +421,17 @@ export class Keeper extends StoreOwner {
     });
   }
 
-  /** Retain an immutable root under the authenticated policy, owning its commit. */
+  /**
+   * Retain a root under the authenticated policy, owning its commit. Immutable unless `overwrite`, which the
+   * caller sets only for a root it has established was never used; the old root then stays until this write.
+   */
   retainRegistryRoot(
     keys: string[],
     root: Salter,
     currentAeid: string,
     encrypter: Encrypter,
     decrypter: Decrypter,
+    overwrite = false,
   ): boolean {
     if (this.readonly) throw new DatabaseOperationError("Cannot retain registry roots in a read-only keeper");
     if (!this.store.opened) throw new DatabaseNotOpenError("Keeper environment is not open");
@@ -439,6 +443,12 @@ export class Keeper extends StoreOwner {
         throw new DatabaseOperationError("Keeper AEID changed before registry root retention; reopen the manager");
       }
       const old = this.rroots.get(keys);
+      if (old && overwrite) {
+        if (!this.rroots.pin(keys, encrypter.encrypt({ prim: root }))) {
+          throw new DatabaseOperationError("Keeper registry root write failed");
+        }
+        return true;
+      }
       if (old) {
         const retained = decrypter.decrypt({ cipher: old, ctor: Salter }) as Salter;
         if (retained.qb64 !== root.qb64) {
