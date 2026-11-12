@@ -68,12 +68,17 @@ interface UnblindOperation {
   requested: Selection | null;
   selected: Selection | null;
   openings: Map<string, RegistryDisclosure>;
+  /** Ordinary-state vocabulary frozen when the operation was approved. */
+  states: readonly string[];
   requestedByPeer: boolean;
   received: boolean;
   abandoned: boolean;
   proposal: Uint8Array | null;
   contribution: Uint8Array | null;
 }
+
+/** Ordinary registry states an Unblind operation may reveal unless its approval names others. */
+export const DEFAULT_UNBLIND_STATES: readonly string[] = Object.freeze(["issued", "revoked", ""]);
 
 /** Member signing proposals or elected delivery of full aggregates; all bytes are process-local. */
 export interface UnblindOutgoing {
@@ -125,15 +130,13 @@ export class Unblind implements AuxiliaryQueryProcessor {
   readonly exc: Exchanger;
   readonly rvy: Revery;
   readonly registry: RegistryObserver;
-  readonly states: readonly string[];
   readonly group: boolean;
 
-  /** Bind the exact Grant verifier's store and an explicit ordinary-state vocabulary. */
-  constructor({ hab, exc, registry, states, rvy = hab.rvy, now = Date.now }: {
+  /** Bind the exact Grant verifier's store; the state vocabulary is chosen per approved operation. */
+  constructor({ hab, exc, registry, rvy = hab.rvy, now = Date.now }: {
     hab: Hab;
     exc: Exchanger;
     registry: RegistryObserver;
-    states: readonly string[];
     rvy?: Revery;
     now?: () => number;
   }) {
@@ -145,19 +148,24 @@ export class Unblind implements AuxiliaryQueryProcessor {
     }
     this.group = isLocalGroupHab(exc.hby, hab);
     if (this.group) localGroupMember(exc.hby, hab.pre!);
-    if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
-      throw new ValidationError("Unblind requires an explicit sequence of state strings");
-    }
     this.now = now;
     this.hab = hab;
     this.exc = exc;
     this.rvy = rvy;
     this.registry = registry;
-    this.states = [...states];
   }
 
-  /** Freeze one authenticated live Grant's exact bodies, parties and authorized registry scope. */
-  approve(grant: string): string {
+  /**
+   * Freeze one authenticated live Grant's exact bodies, parties, authorized registry scope and
+   * ordinary-state vocabulary. `states` defaults to the registry-root triple and applies to this
+   * operation only; approving the same Grant again with different explicit states is refused,
+   * while omitting `states` on a repeat approval keeps the frozen vocabulary.
+   */
+  approve(grant: string, options: { states?: readonly string[] } = {}): string {
+    const states = options.states ?? DEFAULT_UNBLIND_STATES;
+    if (!Array.isArray(states) || states.some((state) => typeof state !== "string")) {
+      throw new ValidationError("Unblind requires an explicit sequence of state strings");
+    }
     this.pruneQueries();
     const input = this.exc.retainedInput(grant);
     if (!input) throw new ValidationError("Unblind requires an authenticated retained Grant");
@@ -174,6 +182,12 @@ export class Unblind implements AuxiliaryQueryProcessor {
     const existing = this.operations.get(xid);
     if (existing) {
       if (existing.grant !== grant) throw new ValidationError("Another Grant is selected for this transaction");
+      if (
+        options.states
+        && (existing.states.length !== states.length || existing.states.some((state, i) => state !== states[i]))
+      ) {
+        throw new ValidationError("Unblind operation already approved with different states");
+      }
       this.live(existing);
       return xid;
     }
@@ -192,6 +206,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
       requested: null,
       selected: null,
       openings: new Map(),
+      states: [...states],
       requestedByPeer: false,
       received: false,
       abandoned: false,
@@ -203,8 +218,8 @@ export class Unblind implements AuxiliaryQueryProcessor {
   }
 
   /** Freeze a signed disclosee query over the missing accepted public suffix. */
-  start(grant: string): Uint8Array {
-    const op = this.operation(this.approve(grant));
+  start(grant: string, options: { states?: readonly string[] } = {}): Uint8Array {
+    const op = this.operation(this.approve(grant, options));
     if (this.hab.pre !== op.recipient) throw new ValidationError("Only the disclosee starts Unblind");
     if (!op.query && !op.contribution) {
       const { requested, children } = this.request(op);
@@ -1056,7 +1071,7 @@ export class Unblind implements AuxiliaryQueryProcessor {
             said: String(event.sad!.b),
             uuid: makeBlindUuid({ salt: root.qb64, sn: BigInt(ordinal(event)) }),
             acdc: target,
-            states: this.states,
+            states: op.states,
           });
           if (opening) break;
         }

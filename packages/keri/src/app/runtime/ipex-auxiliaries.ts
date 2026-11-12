@@ -89,28 +89,13 @@ export class IpexAuxiliaries implements AuxiliaryQueryProcessor {
     return owner;
   }
 
-  /**
-   * The Unblind owner for `hab`, created and registered on first use with `states`.
-   *
-   * @throws ValidationError when an owner exists with a different state vocabulary.
-   */
-  unblind(hab: Hab, states: readonly string[]): Unblind {
+  /** The Unblind owner for `hab`, created and registered on first use. */
+  unblind(hab: Hab): Unblind {
     let owner = this.unblinds.get(hab.pre!);
-    if (owner) {
-      if (owner.states.length !== states.length || owner.states.some((state, i) => state !== states[i])) {
-        throw new ValidationError("Unblind owner already exists with different states");
-      }
-      return owner;
+    if (!owner) {
+      owner = new Unblind({ hab, exc: this.exc, registry: this.registry, rvy: this.rvy, now: this.now });
+      this.unblinds.set(hab.pre!, owner);
     }
-    owner = new Unblind({
-      hab,
-      exc: this.exc,
-      registry: this.registry,
-      states,
-      rvy: this.rvy,
-      now: this.now,
-    });
-    this.unblinds.set(hab.pre!, owner);
     return owner;
   }
 

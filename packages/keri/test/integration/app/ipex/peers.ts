@@ -1347,7 +1347,7 @@ async function withDerivedTypeScriptPeer(body: (peer: DerivedIpexPeer) => Promis
           const runtime = yield* createAgentRuntime(hby, http, systemClock, {
             acdc: rgy,
             kram: { enabled: true, denials: [], caches: { "~": [1000, 60000, 120000, 300000, 60000, 120000, 300000] } },
-            ipexAuxiliary: kind === "dhke" ? { kind, hab } : { kind, hab, states: ["issued", "revoked", ""] },
+            ipexAuxiliary: kind === "dhke" ? { kind, hab } : { kind, hab },
           });
           resolve(runtime);
           try {

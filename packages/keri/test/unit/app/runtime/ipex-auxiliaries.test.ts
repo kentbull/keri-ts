@@ -20,7 +20,6 @@ import { query, reply } from "../../../../src/core/protocol-eventing.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
 
 const KRAM = { enabled: true } as const;
-const STATES = ["issued", "revoked", ""];
 
 /** One wallet Habery with two local identifiers, one remote sender, and a runtime over them. */
 function* wallet(
@@ -84,10 +83,9 @@ Deno.test("per-identifier owners are created once per identifier and kind, and r
     const ipex = runtime.ipex!;
     assert(ipex.dhke(a) === ipex.dhke(a));
     assert(ipex.dhke(a) !== ipex.dhke(b));
-    assert(ipex.unblind(a, STATES) === ipex.unblind(a, STATES));
+    assert(ipex.unblind(a) === ipex.unblind(a));
     assertEquals(ipex.dhke(a).hab, a);
-    assertEquals(ipex.unblind(a, STATES).hab, a);
-    assertThrows(() => ipex.unblind(a, ["issued"]), ValidationError, "different states");
+    assertEquals(ipex.unblind(a).hab, a);
     const before = ipex.dhke(a);
     ipex.release(a.pre!);
     assert(ipex.dhke(a) !== before, "a released identifier gets a fresh owner");
@@ -102,10 +100,10 @@ Deno.test("each identifier receives only its own DH queries, and both kinds coex
     const seen: string[] = [];
     spyQueries(ipex.dhke(a), "dhke-a", seen);
     spyQueries(ipex.dhke(b), "dhke-b", seen);
-    spyQueries(ipex.unblind(a, STATES), "unblind-a", seen);
+    spyQueries(ipex.unblind(a), "unblind-a", seen);
     yield* approve(ipex.dhke(a), "xid-a");
     yield* approve(ipex.dhke(b), "xid-b");
-    yield* approve(ipex.unblind(a, STATES), "xid-u");
+    yield* approve(ipex.unblind(a), "xid-u");
     for (const [route, xid] of [[Dhke.Route, "xid-b"], [Dhke.Route, "xid-a"], [Unblind.Route, "xid-u"]]) {
       const envelope = envelopeFromFrame(frame(remote, route, xid));
       assert(runtime.protocol.qvy!.claims!(envelope.serder));
@@ -165,11 +163,11 @@ Deno.test("the legacy single owner is the registry's owner and other identifiers
   await run(function*() {
     const { a, remote, runtime } = yield* wallet(({ a }) => ({
       kram: KRAM,
-      ipexAuxiliary: { kind: "unblind", hab: a, states: STATES },
+      ipexAuxiliary: { kind: "unblind", hab: a },
     }));
     const owner = runtime.ipexAuxiliary!.owner;
     assertEquals(runtime.ipexAuxiliary!.kind, "unblind");
-    assert(owner === runtime.ipex!.unblind(a, STATES));
+    assert(owner === runtime.ipex!.unblind(a));
     assert(runtime.protocol.qvy === runtime.ipex);
     const seen: string[] = [];
     spyQueries(owner, "legacy", seen);
