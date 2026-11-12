@@ -5,6 +5,7 @@
  */
 
 import { type Browser, type BrowserType, chromium, firefox, webkit } from "npm:playwright-core@1.56.1";
+import { echoHandler } from "./transport_echo.ts";
 
 const packageDir = new URL("../", import.meta.url);
 export const engines: Record<string, BrowserType> = { chromium, firefox, webkit };
@@ -39,13 +40,17 @@ export async function bundle(outDir: string, entry: string, html: URL): Promise<
   await Deno.copyFile(html, `${outDir}/index.html`);
 }
 
-/** Serve the bundle directory on an ephemeral localhost port, a secure context for IndexedDB. */
+/**
+ * Serve the bundle directory on an ephemeral localhost port, a secure context for IndexedDB.
+ * Any other path goes to the echo handler, so cases can talk to a server on the page's own origin.
+ */
 export function serve(dir: string): { origin: string; server: Deno.HttpServer } {
+  const echo = echoHandler();
   const types: Record<string, string> = { "/": "text/html", "/index.html": "text/html", "/main.js": "text/javascript" };
   const server = Deno.serve({ hostname: "127.0.0.1", port: 0, onListen: () => {} }, async (request) => {
     const path = new URL(request.url).pathname;
     const type = types[path];
-    if (!type) return new Response("not found", { status: 404 });
+    if (!type) return await echo(request);
     return new Response(await Deno.readFile(`${dir}/${path === "/" ? "index.html" : path.slice(1)}`), {
       headers: { "content-type": type },
     });

@@ -323,7 +323,10 @@ local; infrastructure/cleanup failures reach the host.
 Composition supplies HttpClient.request (completed finite bytes) and open
 (scoped streaming response). FetchHttpClient constructs Request
 before native fetch classification and owns response-read cancellation and joined
-cleanup. Producers prepare finite HTTP bodies before requesting; no upload-source
+cleanup. It holds the Request and its signal strongly until the request scope ends: WebKit
+drops a pending fetch's abort link when either is collected, after which abort never settles
+the fetch or closes the connection. WebKit and Node 20 reject an abort with a fresh AbortError,
+which is the cancellation, not a transport failure. Producers prepare finite HTTP bodies before requesting; no upload-source
 factory or upload pump remains. Consumers borrow HttpStreamResponse metadata and body(signal) only through open;
 finite HttpResponse bytes remain usable after request cleanup. Native Response never escapes.
 Source/parser/consumer errors remain distinct; test clients explicitly produce
