@@ -11,6 +11,7 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
     unit: { kind: "ci", targets: [] },
     interop: [],
     packageSmoke: false,
+    browser: false,
   });
   const source = selectScope({ ...input, files: ["packages/keri/src/core/routing.ts"] });
   assertEquals(source.unit, {
@@ -35,12 +36,14 @@ Deno.test("PR scope preserves path and release defaults without an override", ()
       },
       interop: [],
       packageSmoke: true,
+      browser: false,
     });
   }
   assertEquals(selectScope({ ...input, release: true, files: ["packages/keri/deno.json"] }), {
     unit: { kind: "ci", targets: [] },
     interop: [],
     packageSmoke: true,
+    browser: false,
   });
 });
 
@@ -54,6 +57,7 @@ Deno.test("PR scope credits local units only for the exact head and retains sele
     unit: { kind: "local", head },
     interop: ["interop-delegation", "interop-v2-registry"],
     packageSmoke: false,
+    browser: false,
   });
   assertThrows(() => requestedScope(body, "b".repeat(40)), Error, "exact head");
   assertThrows(() => requestedScope(block({ unit: { local: head, context: {} }, interop: [], package: false }), head));
@@ -82,6 +86,7 @@ Deno.test("PR scope uses existing owners and full mode covers the maintained bat
     },
     interop,
     packageSmoke: true,
+    browser: true,
   });
 });
 
@@ -94,6 +99,7 @@ Deno.test("PR scope rejects malformed, duplicate, overlapping and executable sel
       { unit: ["tufa; echo unsafe"], interop: [], package: false },
       { unit: [], interop: ["unknown"], package: false },
       { unit: [], interop: [], package: "false" },
+      { unit: [], interop: [], package: false, browser: "true" },
       { unit: [], interop: [], package: false, extra: {} },
       { full: true, package: false },
     ]
@@ -117,4 +123,23 @@ Deno.test("PR scope cannot downscope fork checks through its description", () =>
   });
   assertEquals(result.interop, ["interop-parity"]);
   assertEquals(result.packageSmoke, true);
+});
+
+Deno.test("PR scope selects the browser lane from an explicit flag or from the paths it can regress", () => {
+  const explicit = requestedScope(block({ unit: [], interop: [], package: false, browser: true }), head);
+  assertEquals(explicit?.browser, true);
+  assertEquals(requestedScope(block({ unit: [], interop: [], package: false }), head)?.browser, false);
+  const input = { body: "", head, sameRepository: true, release: false };
+  for (
+    const file of [
+      "packages/keri/src/db/core/indexeddb-persistence.ts",
+      "packages/keri/test/browser/engine-cases.ts",
+      "packages/keri/scripts/run_browser_tests.ts",
+    ]
+  ) assertEquals(selectScope({ ...input, files: [file] }).browser, true, file);
+  assertEquals(selectScope({ ...input, files: ["packages/keri/src/core/routing.ts"] }).browser, false);
+  assertEquals(
+    selectScope({ ...input, release: true, files: ["packages/keri/src/db/core/webdber.ts"] }).browser,
+    false,
+  );
 });

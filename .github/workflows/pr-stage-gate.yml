@@ -53,6 +53,7 @@ jobs:
       run_unit: ${{ steps.scope_dispatch.outputs.run_unit || steps.scope.outputs.run_unit }}
       run_interop: ${{ steps.scope_dispatch.outputs.run_interop || steps.scope.outputs.run_interop }}
       run_package: ${{ steps.scope_dispatch.outputs.run_package || steps.scope.outputs.run_package }}
+      run_browser: ${{ steps.scope_dispatch.outputs.run_browser || steps.scope.outputs.run_browser }}
       unit_targets: ${{ steps.scope_dispatch.outputs.unit_targets || steps.scope.outputs.unit_targets }}
       interop_targets: ${{ steps.scope_dispatch.outputs.interop_targets || steps.scope.outputs.interop_targets }}
     steps:
@@ -205,6 +206,38 @@ jobs:
           if-no-files-found: ignore
           retention-days: 3
 
+  # Real-browser lane: runs the store contract and engine-sensitive cases against real
+  # IndexedDB in Chromium, Firefox and WebKit. Selected by the `browser` field of the
+  # keri-ci block or by paths; procedure: docs/reference/PR_TEST_SCOPE.md.
+  browser-tests:
+    needs:           changeset-required
+    if:              needs.changeset-required.outputs.run_browser == 'true'
+    runs-on:         ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/common-release-setup
+        with:
+          do-fmt-check: "false"
+
+      - name: read the pinned Playwright version
+        id:   playwright
+        run:  bash scripts/ci/playwright-version.sh
+
+      # Browser binaries are large and change only with the Playwright version.
+      - name: restore the Playwright browser cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key:  playwright-${{ runner.os }}-${{ runner.arch }}-${{ steps.playwright.outputs.version }}
+
+      - name: install browsers and their system libraries
+        run:  bash scripts/ci/install-browser-deps.sh
+
+      - name: run the three-engine browser lane
+        run:  deno task test:browser
+
   package-smoke:
     needs: changeset-required
     if: needs.changeset-required.outputs.run_package == 'true'
@@ -315,7 +348,7 @@ jobs:
 
   stage-gate:
     if: ${{ always() }}
-    needs: [static-checks, changeset-required, unit-tests, interop-parity, package-smoke]
+    needs: [static-checks, changeset-required, unit-tests, interop-parity, package-smoke, browser-tests]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
@@ -326,9 +359,11 @@ jobs:
           UNIT: ${{ needs.unit-tests.result }}
           INTEROP: ${{ needs.interop-parity.result }}
           PACKAGE: ${{ needs.package-smoke.result }}
+          BROWSER: ${{ needs.browser-tests.result }}
         run: |
           test "$STATIC" = success
           test "$CHANGESET" = success
           test "$UNIT" = success || test "$UNIT" = skipped
           test "$INTEROP" = success || test "$INTEROP" = skipped
           test "$PACKAGE" = success || test "$PACKAGE" = skipped
+          test "$BROWSER" = success || test "$BROWSER" = skipped

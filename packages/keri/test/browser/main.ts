@@ -13,6 +13,9 @@ export interface BrowserRun {
   done: boolean;
   engine: string;
   results: CaseResult[];
+  /** Observations the cases reported through `note`. */
+  notes: string[];
+  elapsedMs: number;
 }
 
 async function runCase({ name, fn }: Case): Promise<CaseResult> {
@@ -20,12 +23,19 @@ async function runCase({ name, fn }: Case): Promise<CaseResult> {
     await fn();
     return { name, ok: true };
   } catch (error) {
-    return { name, ok: false, error: error instanceof Error ? (error.stack ?? error.message) : String(error) };
+    return {
+      name,
+      ok: false,
+      error: error instanceof Error ? `${error.name}: ${error.message}\n${error.stack ?? ""}` : String(error),
+    };
   }
 }
 
-const state: BrowserRun = { done: false, engine: navigator.userAgent, results: [] };
+const started = performance.now();
+const state: BrowserRun = { done: false, engine: navigator.userAgent, results: [], notes: [], elapsedMs: 0 };
+(globalThis as unknown as { keriBrowserNotes: string[] }).keriBrowserNotes = state.notes;
 (globalThis as unknown as { keriBrowserRun: BrowserRun }).keriBrowserRun = state;
 
 for (const testCase of collect(registerCases)) state.results.push(await runCase(testCase));
+state.elapsedMs = performance.now() - started;
 state.done = true;
