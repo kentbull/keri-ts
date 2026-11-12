@@ -34,9 +34,7 @@
  * the BUP with `multisig join`; an individual holder on the custodian's
  * implementation completes DH and admits. Issuance completion alone sends the
  * root copy, and the other member, on the other implementation, retains the
- * identical root from its mailbox. Credential bodies carry an explicit empty
- * attribute SAID (`"d":""`) because Tufa rejects the SAID-less attribute
- * section that KERIpy `vc create --data` otherwise emits.
+ * identical root from its mailbox.
  */
 import { makeBlindState, MtrDex, parseBytes, Salter, SerderACDC, type SerderKERI, Vrsn_2_0 } from "cesr-ts";
 import { call, type Operation, run } from "effection";
@@ -282,7 +280,7 @@ Deno.test("Interop registry root: KERIpy and Tufa replicate roots to each other 
       yield* seal(rip, 0);
       const root = new Salter({ raw: crypto.getRandomValues(new Uint8Array(16)), code: MtrDex.Salt_128 });
       hab.mgr.putRegistryRoot(hab.pre!, rip.said!, root);
-      const acdc = acdcmap(hab.pre!, { regid: rip.said!, attribute: { d: "", i: kliPre, role: "reader" } });
+      const acdc = acdcmap(hab.pre!, { regid: rip.said!, attribute: { i: kliPre, role: "reader" } });
       const opening = makeBlindState({ salt: root.qb64, sn: 1, acdc: acdc.said!, state: "issued" });
       const event = blindate(rip.said!, rip.said!, opening.d.nonce);
       yield* seal(event, 1);
@@ -690,7 +688,7 @@ async function tufaCustodian(group: MixedGroup) {
     hby.mgr.putRegistryRoot(group.group, rip.said!, root);
     const acdc = acdcmap(group.group, {
       regid: rip.said!,
-      attribute: { d: "", i: group.kliPre, role: "group reader" },
+      attribute: { i: group.kliPre, role: "group reader" },
     });
     const opening = makeBlindState({ salt: root.qb64, sn: 1, acdc: acdc.said!, state: "issued" });
     return { root: root.qb64, opening, event: blindate(rip.said!, rip.said!, opening.d.nonce) };
@@ -1090,7 +1088,7 @@ Deno.test("Interop registry root: a mixed group issues with DH through the CLIs 
         "--recipient",
         holder.pre,
         "--data",
-        "{\"d\":\"\",\"role\":\"group reader\"}",
+        "{\"role\":\"group reader\"}",
       ],
       ...["--out", bodyFile],
     ]);
@@ -1218,7 +1216,7 @@ Deno.test("Interop registry root: a mixed group issues with DH through the CLIs 
     const bodyFile = `${headDirPath}/body.cesr`;
     await kliRun(group, "kli vc create --output", [
       ...["vc", "create", ...group.kliStore, ...group.versions, "--alias", "group", "--registry-name", "issuer-fresh"],
-      ...["--recipient", holder.pre, "--data", "{\"d\":\"\",\"role\":\"group reader\"}", "--output", bodyFile],
+      ...["--recipient", holder.pre, "--data", "{\"role\":\"group reader\"}", "--output", bodyFile],
     ]);
     const body = new SerderACDC({ raw: await Deno.readFile(bodyFile) });
     const registry = body.regid!;

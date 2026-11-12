@@ -181,7 +181,7 @@ Deno.test("acdc/messaging - native Mapper encodes ambiguous ordinary text like K
 });
 
 Deno.test("acdc/messaging - top-level and section builders produce compact disclosure set", () => {
-  const attribute = { LEI: "5493001KJTIIGC8Y1R12" };
+  const attribute = { d: "", LEI: "5493001KJTIIGC8Y1R12" };
   const [acdc, sch, att, agg, edg, rul] = sectionate(issuer, {
     ilk: Ilks.act,
     uuid,
@@ -195,7 +195,7 @@ Deno.test("acdc/messaging - top-level and section builders produce compact discl
   assertEquals(acdc.issuer, issuer);
   assertEquals(acdc.regid, regid);
   assertEquals(agg, null);
-  assertEquals(att?.ked?.a, { d: acdc.ked?.a, ...attribute, i: issuee });
+  assertEquals(att?.ked?.a, { ...attribute, d: acdc.ked?.a, i: issuee });
   assertEquals(sch.ked?.s, actSchemaDefault()[1]);
   assertEquals([acdc.ked?.e, edg.ked?.e], [{}, {}]);
   assertEquals([acdc.ked?.r, rul.ked?.r], [{}, {}]);
@@ -205,6 +205,13 @@ Deno.test("acdc/messaging - top-level and section builders produce compact discl
   assertEquals(expanded.said, acdc.said);
   assertEquals(typeof expanded.ked?.a, "object");
   assertEquals(typeof acdc.ked?.a, "string");
+
+  // Without its own `d` the attribute section has no compact form, as in KERIpy.
+  const plain = { LEI: "5493001KJTIIGC8Y1R12" };
+  const [open, , openAtt] = sectionate(issuer, { ilk: Ilks.act, uuid, regid, issuee, attribute: plain });
+  assertEquals(open.ked?.a, { ...plain, i: issuee });
+  assertEquals(openAtt?.ked?.a, open.ked?.a);
+  assertEquals(acdcatt(issuer, { uuid, regid, issuee, attribute: plain }).said, open.said);
 });
 
 Deno.test("acdc/messaging - map builder enforces attribute xor aggregate", () => {

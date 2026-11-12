@@ -33,6 +33,10 @@ still round-trips from visible SAD. Preserve supplied canonical a/e/r section
 commitments, including partial roots; do not rehash their visible disclosure.
 Compute the credential's most-compact commitment independently, as KERIpy does.
 Blank semantic section mappings still need construction before disclosure.
+An a/e/r map without a top-level `d` is valid (`d` is reserved, not required):
+never insert one. It stays expanded in both visible and hashed views, even under
+compactify, while nested maps carrying `d` are saidified; only schema gains a
+placeholder (`$id`). Section vectors: `scripts/reference-section-said-vectors.py`.
 Partial section-message ilks keep the section
 expanded and verify embedded identifiers. V1 registry credentials use expanded-body
 top-level SAIDs after subject saidification. Extend the shared native matrix rather
