@@ -62,6 +62,7 @@ import {
   OobiRecord,
   type OobiRecordShape,
   ReceiptCouple,
+  RootSentRecord,
   SourceSealTriple,
   TopicsRecord,
   type TopicsRecordShape,
@@ -288,6 +289,8 @@ export class Baser extends StoreOwner {
   public essrs!: CesrIoSetSuber<Texter>;
   /** KERIpy `rrpe.`: `/registry/root` copies in `exns`/`essrs` awaiting automatic retention; SAID -> time it entered escrow; no timeout. */
   public rrpe!: CesrSuber<Dater>;
+  /** keri-ts only. Sent `/registry/root` copies; (group, registry, recipient) -> recipient key sealed to and send time. Never a root. */
+  public rrsn!: Komer<RootSentRecord>;
   public chas!: CesrIoSetSuber<Diger>; // Accepted signed challenge-response exchange SAIDs.
   public reps!: CesrIoSetSuber<Diger>; // Successful signed challenge-response exchange SAIDs.
   public wkas!: IoSetKomer<WellKnownAuthN>; // Authorized well-known OOBI records.
@@ -703,6 +706,9 @@ export class Baser extends StoreOwner {
 
       // Registry root copies awaiting automatic retention, keyed by exchange SAID.
       this.rrpe = new CesrSuber<Dater>(this.store, { subkey: "rrpe.", ctor: Dater });
+
+      // Registry root copies sent, keyed by group, registry and recipient.
+      this.rrsn = new Komer<RootSentRecord>(this.store, { subkey: "rrsn.", recordClass: RootSentRecord });
 
       // Accepted signed challenge-response exchange-message SAIDs keyed by the
       // signer prefix.

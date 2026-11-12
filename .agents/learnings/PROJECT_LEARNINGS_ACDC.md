@@ -274,10 +274,7 @@ pass `registryRoots: "refuse"` (`RouteRefuser`, nothing persisted). Never regist
 `newcomers` derives the prior roster from the accepted KEL; `rekeyed` adds continuing members with a changed key.
 `prepare` derives each registry's `td` hint (held opening, else an ACDC nested at any depth in a stored exchange,
 including a Grant inside a signed `/multisig/exn`) and self-checks it before sealing; `--acdc` overrides, `""` sends
-none, `hinted` refuses. Automatic copies are fire and forget, with no ack, record or retry: the DH custodian sends at
-group issuance completion (end of `ipex grant --issue`, or of holder group `ipex setup`, since keri-ts splits setup from
-Admit), and every rotation signer with a prior key and held roots re-seals to new or rekeyed members after
-`multisig rotate|join` (`resealed`, no election). Failures are `root_copy` lines naming `tufa vc registry root send`
+none, `hinted` refuses. Automatic copies are derived, not queued: `RootReplicator` owes every other current member a copy of each held root unless `Baser.rrsn.` (group, registry, recipient -> sealed-to public key, time; written when the Poster reports sent, never a root) already shows one for the member's current contributing key, so new and rekeyed members are re-sealed after a rotation and a crash before the send is recovered by the next pass. The Dhke completion cue (end of `ipex grant --issue`, or of holder group `ipex setup`) only prompts a pass; failures back off in process memory and show in `status()`. CLI sites that build a private replicator share the marker and send through `send`/`processOnce`. Failures are `root_copy` lines naming `tufa vc registry root send`
 and never fail the command. Tufa `vc registry root send|receive|newcomers` mirror kli; `receive` is an optional drain (`--message`, `--listen --registry`, reconcile plus one escrow retry, `retained` output). `@keri-ts/multisync/v2` remains a separate explicit-
 roster selector; missing custody never starts fresh DH.
 `deliverRegistryRoots` sends prepared copies through Poster with one sent/failed outcome per copy

@@ -414,6 +414,12 @@ export class RegistryRoot implements ExchangeRouteHandler {
     return found.sort((left, right) => left[0] - right[0]).map(([, aid]) => aid);
   }
 
+  /** Public key by which `member` currently contributes to `gid`, or null while not a known current signing member. */
+  contributor(gid: string, member: string): string | null {
+    const gkever = this.hby.db.getKever(gid);
+    return gkever ? contribution(this.hby.db, member, gkever.verfers)?.key ?? null : null;
+  }
+
   /** Return the registry SAIDs with a root retained locally for `gid`. */
   held(gid: string): string[] {
     const found: string[] = [];

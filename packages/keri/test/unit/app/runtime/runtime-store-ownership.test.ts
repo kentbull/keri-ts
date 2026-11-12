@@ -170,6 +170,8 @@ Deno.test("runtime stores - readonly Habery acquires no default store", async ()
         assertEquals(runtime.mailboxer, null);
         assertEquals(runtime.acdc, null);
         assertEquals(runtime.vdr, null);
+        assertEquals(runtime.rootReplicator, null);
+        assertEquals(readonly.db.rrsn.cnt(), 0, "a read-only store tolerates the absent sent-marker table");
         yield* runtime.close();
         assertEquals(readonly.db.opened, true);
         assertThrows(() => Deno.statSync(`${headDirPath}/keri/acdc/reg`), Deno.errors.NotFound);
