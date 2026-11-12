@@ -890,6 +890,27 @@ export {
   waitForPresentation,
 } from "../app/ipex/presenting.ts";
 
+// Runtime-owned single-signature IPEX Unblind operations (request, approve, process, status, wait, abandon).
+export {
+  abandonUnblinding,
+  approveUnblind,
+  MemoryUnblindingOperationStore,
+  requestUnblind,
+  type UnblindingBegun,
+  type UnblindingDeps,
+  type UnblindingEndState,
+  UnblindingOperations,
+  type UnblindingOperationStore,
+  type UnblindingPhase,
+  type UnblindingRecord,
+  type UnblindingRequest,
+  type UnblindingRole,
+  type UnblindingStatus,
+  unblindingStatus,
+  type UnblindingWaitOptions,
+  waitForUnblinding,
+} from "../app/ipex/unblinding-workflow.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
