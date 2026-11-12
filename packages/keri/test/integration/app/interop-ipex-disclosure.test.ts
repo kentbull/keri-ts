@@ -186,6 +186,51 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
         assertEquals(arrivals, [rejected, grant], "both grants crossed real ingress in scenario order");
       }));
   }
+
+  // Grant walk policy: both peers share one policy and nothing escrows. These rows need a KERIpy
+  // reference with the configurable Grant walk; the pinned v2-spec head walks closed only.
+  for (const grantWalk of ["open", "closed"] as const) {
+    const negotiate = async ({ issuer, holder }: IpexPeers) => {
+      const apply = await exchange(holder, issuer, "apply");
+      const offer = await exchange(issuer, holder, "offer", apply);
+      return await exchange(holder, issuer, "agree", offer);
+    };
+    /** The negotiated graph is carried unchanged; the walk policy alone refuses it. */
+    const refuseAsSent = async ({ issuer, holder }: IpexPeers, agree: string) => {
+      const refused = await issuer.send("grant", agree, "refused");
+      await observed(
+        `${holder.implementation} received refused grant`,
+        async () => (await holder.snapshot()).received.includes(refused) ? true : undefined,
+      );
+      await assertRejected(issuer, holder, refused);
+    };
+    const admitAfterRefusal = async (peers: IpexPeers) => {
+      const { issuer, holder } = peers;
+      const agree = await negotiate(peers);
+      const rejected = await refuseInvalidGrant(issuer, holder, agree);
+      const grant = await exchange(issuer, holder, "grant", agree);
+      await exchange(holder, issuer, "admit", grant);
+      await assertConversation(peers, ["apply", "offer", "agree", "grant", "admit"], [], grant);
+      await assertRejected(issuer, holder, rejected);
+    };
+
+    Deno.test(
+      `IPEX ${issuer} issuer, ${grantWalk} walk: OR with an undisclosed branch ${
+        grantWalk === "open" ? "admits through its valid sibling" : "refuses"
+      }`,
+      () =>
+        withIpexPeers({ issuer, graph: "OR-undisclosed", grantWalk }, async (peers) => {
+          if (grantWalk === "open") return await admitAfterRefusal(peers);
+          await refuseAsSent(peers, await negotiate(peers));
+        }),
+    );
+    Deno.test(`IPEX ${issuer} issuer, ${grantWalk} walk: AND with an undisclosed branch refuses without escrow`, () =>
+      withIpexPeers({ issuer, graph: "AND-undisclosed", grantWalk }, async (peers) => {
+        await refuseAsSent(peers, await negotiate(peers));
+      }));
+    Deno.test(`IPEX ${issuer} issuer, ${grantWalk} walk: a planned node the Grant does not nest refuses`, () =>
+      withIpexPeers({ issuer, graph: "plan-unnested", grantWalk }, admitAfterRefusal));
+  }
 }
 
 for (const implementation of ["TypeScript", "KERIpy"] as const) {
