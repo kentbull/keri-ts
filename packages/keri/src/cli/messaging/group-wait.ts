@@ -80,6 +80,13 @@ export function supplyWitnessAuths(
   if (event && auths) runtime.counselor.supply(event, { auths });
 }
 
+/** Give a delegated event just approved here its proxy; other events need none. */
+export function supplyDelegationProxy(hby: Habery, runtime: AgentRuntime, event: GroupEventRef, alias?: string): void {
+  const ilk = hby.db.getEvtSerder(event.pre, event.said)?.ilk;
+  if (ilk !== Ilks.dip && ilk !== Ilks.drt) return;
+  runtime.counselor.supply(event, { proxy: delegationProxy(hby, alias, event.pre) });
+}
+
 /**
  * Wait for the Counselor to complete an accepted event: witness receipts and,
  * for a delegated event, the delegator's approval.
