@@ -1,6 +1,6 @@
 /** Group commands sign only the proposal they were asked to sign: join consent and proposer waits. */
-import { run } from "effection";
-import { assertEquals } from "jsr:@std/assert";
+import { call, run } from "effection";
+import { assertEquals, assertRejects } from "jsr:@std/assert";
 import { findGroupProposal } from "../../../../src/app/multisig/proposals.ts";
 import { proposeGroupInteraction } from "../../../../src/app/multisig/proposing.ts";
 import { type JoinDeps, joinProposal } from "../../../../src/cli/messaging/group-join.ts";
@@ -145,6 +145,31 @@ Deno.test("a proposer waiting for its event never signs another stored proposal"
       assertEquals(accepted, false, "the second member never signed");
       assertEquals(counts.signs, 1);
       assertEquals(findGroupProposal(readDeps(s), unrelated.signed.exnSaid)?.local, "unapproved");
+    }, "2");
+  });
+});
+
+Deno.test("join --said refuses a proposal that belongs to another group and signs nothing", async () => {
+  await run(function*() {
+    yield* scenario(function*(s) {
+      const counts = countSigns(s);
+      const { signed } = yield* peerInteraction(s, [{ n: 1 }]);
+      yield* call(() =>
+        assertRejects(
+          () =>
+            run(() =>
+              joinProposal(joinDeps(s), {
+                said: signed.exnSaid,
+                group: s.alice.pre,
+                deadline: Date.now(),
+                ...joinPrompts({ auto: true }),
+              })
+            ),
+          Error,
+          "belongs to group",
+        )
+      );
+      assertEquals(counts.signs, 0);
     }, "2");
   });
 });
