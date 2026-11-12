@@ -10,6 +10,7 @@
 import { Diger, NumberPrimitive, NumDex, type SerderKERI, Siger } from "cesr-ts";
 import { ensure, type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
+import { Anchorer } from "../../../../src/app/identity/delegating.ts";
 import { type Hab, type Habery, openHabery } from "../../../../src/app/identity/habbing.ts";
 import {
   Counselor,
@@ -30,14 +31,15 @@ interface Side {
 interface Proposal {
   serder: SerderKERI;
   sigers: Siger[];
+  wigers?: Siger[];
 }
 
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const ref = (serder: SerderKERI): GroupEventRef => ({ pre: serder.pre!, sn: serder.sn!, said: serder.said! });
 
 /** Accept `serder` at `hby` as group coordination does: local intake, then escrows. */
-function deliver(hby: Habery, { serder, sigers }: Proposal, local = true) {
-  hby.kevery.processEvent({ serder, sigers, wigers: [], frcs: [], sscs: [], ssts: [], local });
+function deliver(hby: Habery, { serder, sigers, wigers = [] }: Proposal, local = true) {
+  hby.kevery.processEvent({ serder, sigers, wigers, frcs: [], sscs: [], ssts: [], local });
   hby.kevery.processEscrows();
 }
 
@@ -45,7 +47,13 @@ function deliver(hby: Habery, { serder, sigers }: Proposal, local = true) {
 function share(from: Habery, pre: string, to: Habery[], local = false) {
   for (const [, said] of [...from.db.getKelItemIter(pre)]) {
     const serder = from.db.getEvtSerder(pre, said)!;
-    for (const hby of to) deliver(hby, { serder, sigers: from.db.sigs.get(dgKey(pre, said)) }, local);
+    for (const hby of to) {
+      deliver(
+        hby,
+        { serder, sigers: from.db.sigs.get(dgKey(pre, said)), wigers: from.db.wigs.get(dgKey(pre, said)) },
+        local,
+      );
+    }
   }
 }
 
@@ -140,10 +148,26 @@ class FakeReceipting implements GroupReceipting {
 }
 
 /** Counselor with a controllable clock over `side`. */
-function counselor(side: Side, wits: Hab[] = [], clock = { t: 0 }) {
+function counselor(side: Side, wits: Hab[] = [], clock = { t: 0 }, delegated = false) {
   const receipting = new FakeReceipting(side.hby, wits);
   const changes = new MemoryChangeSink();
-  return { clock, receipting, changes, c: new Counselor(side.hby, receipting, { now: () => clock.t }, changes) };
+  const anchorer = new FakeAnchorer();
+  const queries: unknown[] = [];
+  const delegation = delegated ? { anchorer, querying: { enqueue: (q: unknown) => queries.push(q) } } : undefined;
+  const c = new Counselor(side.hby, receipting, { now: () => clock.t }, changes, delegation);
+  return { clock, receipting, changes, anchorer, queries, c };
+}
+
+/** Stand-in for the Anchorer: records `begin`; the test marks events done as the Anchorer would. */
+class FakeAnchorer {
+  begun: Array<{ said: string; sender: string | undefined }> = [];
+  done = new Set<string>();
+  begin(serder: SerderKERI, options: { communicationHab?: Hab } = {}) {
+    this.begun.push({ said: serder.said!, sender: options.communicationHab?.pre });
+  }
+  complete(pre: string, sn: number | string) {
+    return this.done.has(`${pre}:${sn}`);
+  }
 }
 
 Deno.test("KERIpy test_counselor: signatures stage across inception and three rotations", async () => {
@@ -630,5 +654,293 @@ Deno.test("groupElectedMember requires a current signing member; groupWitnesser 
     hby.joinGroupHab(gid, "g", sides[0].hab, smids.slice(1), smids);
     assertEquals(groupWitnesser(hby, gid, inception), true);
     assertEquals(groupElectedMember(hby, gid, inception), null);
+  });
+});
+
+const blockedOf = (status: ReturnType<Counselor["status"]>) => status.state === "pending" ? status.blocked : undefined;
+const stageOf = (status: ReturnType<Counselor["status"]>) => status.state === "pending" ? status.stage : undefined;
+
+/** Witness `serder` at `hby` with `witness` as receipt index 0. */
+function witness(hby: Habery, serder: SerderKERI, witness: Hab) {
+  const signature = witness.sign(serder.raw, true)[0];
+  hby.db.wigs.put(dgKey(serder.pre!, serder.said!), [
+    new Siger({ code: signature.code, raw: signature.raw, index: 0 }),
+  ]);
+}
+
+/**
+ * Two members delegate a group (witnessed by `gw`) under delegator `del` (witnessed by `dw` when `witnessed`).
+ * Every side holds every KEL; the group's own event is accepted by both members, with no anchor yet.
+ */
+function* delegated({ witnessed = false, known = true, delegateWits = true } = {}) {
+  const sides = yield* members(3);
+  const [a, b, d] = sides;
+  const [dw, gw] = yield* witnesses(2);
+  const del = witnessed
+    ? d.hby.makeHab("delegator", undefined, { wits: [dw.pre!], toad: 1 })
+    : d.hby.makeHab("delegator");
+  if (witnessed) witness(d.hby, del.kever!.serder, dw);
+  if (known) share(d.hby, del.pre!, [a.hby, b.hby]);
+  const smids = pres([a, b]);
+  const args = { isith: "2", nsith: "2", delpre: del.pre!, ...(delegateWits ? { wits: [gw.pre!], toad: 1 } : {}) };
+  const created = [a, b].map(s => incept(s, smids, args));
+  [a, b].forEach((s, i) => deliver(s.hby, created[1 - i]));
+  const anchor = (serder: SerderKERI) => {
+    del.interact({ data: [{ i: serder.pre, s: serder.snh, d: serder.said }] });
+    const ixn = d.hby.db.getEvtSerder(del.pre!, del.kever!.said)!;
+    if (witnessed) witness(d.hby, ixn, dw);
+    share(d.hby, del.pre!, [a.hby, b.hby]);
+    return ixn;
+  };
+  return { a, b, d, del, dw, gw, smids, created, gid: created[0].serder.pre!, anchor, dip: ref(created[0].serder) };
+}
+
+Deno.test("design risk 4: a delegate accepts its own delegated event and takes witness receipts before the delegator's anchor", async () => {
+  await run(function*() {
+    const w = yield* delegated();
+    const { a, gid, gw, dip, anchor } = w;
+    const seal = { i: gid, s: "0", d: gid };
+    assertEquals(a.hby.db.kels.getLast(gid, 0), gid); // accepted by its own members, unanchored
+    assertEquals(a.hby.db.fetchLastSealingEventByEventSeal(w.del.pre!, seal), null);
+    witness(a.hby, w.created[0].serder, gw);
+    assert(a.hby.db.fullyWitnessed(w.created[0].serder)); // receipts count with no anchor
+    const { c } = counselor(a, [gw], undefined, true);
+    c.start(dip);
+    yield* c.processOnce();
+    // So the delegation stage follows acceptance and holds the Anchorer's receipts-request-anchor-publish phases.
+    assertEquals(stageOf(c.status(dip)), "delegation");
+    anchor(w.created[0].serder);
+    assert(a.hby.db.fetchLastSealingEventByEventSeal(w.del.pre!, seal));
+  });
+});
+
+Deno.test("KERIpy test_counselor (delegated): the publishing member drives the Anchorer with the member hab, an explicit proxy wins, and it completes", async () => {
+  await run(function*() {
+    const { a, gid, gw, dip } = yield* delegated();
+    const x = counselor(a, [gw], undefined, true);
+    x.c.start(dip);
+    yield* x.c.processOnce();
+    // KERIpy sends group traffic from the member hab: an inception needs no proxy.
+    assertEquals(x.anchorer.begun, [{ said: gid, sender: a.hab.pre }]);
+    assertEquals(x.receipting.calls, ["receipt:0"]);
+    assertEquals(blockedOf(x.c.status(dip)), undefined);
+
+    const proxy = a.hby.makeHab("proxy");
+    x.c.supply(dip, { proxy });
+    yield* x.c.processOnce();
+    yield* x.c.processOnce();
+    assertEquals(x.anchorer.begun.at(-1), { said: gid, sender: proxy.pre }); // re-pinned once, then stable
+    assertEquals(x.anchorer.begun.length, 2);
+    assertEquals(blockedOf(x.c.status(dip)), undefined);
+    assertEquals(x.c.status(dip).state, "pending");
+
+    x.anchorer.done.add(`${gid}:0`); // the Anchorer finished: request, anchor, publication
+    yield* x.c.processOnce();
+    assertEquals(x.c.status(dip), { state: "complete" });
+    assertEquals([a.hby.db.gdee.get([gid]), a.hby.db.cgms.get([gid, "MAAA"])?.qb64], [[], gid]);
+  });
+});
+
+Deno.test("a delegated rotation completes through the member's own hab, with no proxy", async () => {
+  await run(function*() {
+    const w = yield* delegated();
+    const { a, b, gid, gw, d, smids } = w;
+    rotateMembers([a, b, d], [a, b]);
+    const rots = [a, b].map(s => rotate(s, smids, smids, { isith: "2", nsith: "2", toad: 1 }));
+    [a, b].forEach((s, i) => deliver(s.hby, rots[1 - i]));
+    const drt = ref(rots[0].serder);
+    assertEquals([rots[0].serder.ilk, drt.sn], ["drt", 1]);
+    const x = counselor(a, [gw], undefined, true);
+    x.c.start(drt);
+    yield* x.c.processOnce();
+    assertEquals(x.anchorer.begun, [{ said: drt.said, sender: a.hab.pre }]);
+    assertEquals([stageOf(x.c.status(drt)), blockedOf(x.c.status(drt))], ["delegation", undefined]);
+    x.anchorer.done.add(`${gid}:1`);
+    yield* x.c.processOnce();
+    assertEquals(x.c.status(drt), { state: "complete" });
+  });
+});
+
+Deno.test("a non-elected member queries the delegator's witness, pins the anchor seal, and continues to witness receipts", async () => {
+  await run(function*() {
+    const w = yield* delegated({ witnessed: true });
+    const { b, gid, gw, dw, dip, anchor } = w;
+    b.hby.db.locs.pin([dw.pre!, "http"], { url: "http://127.0.0.1:1" } as never);
+    const y = counselor(b, [gw], undefined, true);
+    y.c.start(dip);
+    yield* y.c.processOnce();
+    const waiting = y.c.status(dip);
+    assertEquals([waiting.state === "pending" && waiting.elected, blockedOf(waiting), y.queries.length], [
+      false,
+      undefined,
+      1,
+    ]);
+    assertEquals(y.anchorer.begun, []); // only the publishing member begins the Anchorer
+
+    const ixn = anchor(w.created[0].serder);
+    yield* y.c.processOnce();
+    // test_anchorer's final check: aess holds the delegating event's sn and said.
+    const seal = b.hby.db.aess.get(dgKey(gid, gid))!;
+    assertEquals([seal[0].num, seal[1].qb64], [BigInt(ixn.sn!), ixn.said]);
+    assertEquals([stageOf(y.c.status(dip)), y.queries.length], ["witnesses", 1]);
+
+    assertEquals(y.receipting.calls, ["get:0"]); // fetching, not submitting
+    y.receipting.fetchable = true; // the elected member's receipts become fetchable
+    y.clock.t = 5_000; // past the retry backoff
+    yield* y.c.processOnce();
+    assertEquals([y.receipting.calls, y.c.status(dip)], [["get:0", "get:0"], { state: "complete" }]);
+  });
+});
+
+Deno.test("fallback publishes the delegation request at 0 and after a positive grace", async () => {
+  await run(function*() {
+    const { b, gid, gw, dip } = yield* delegated();
+    const proxy = b.hby.makeHab("proxy");
+    const eager = counselor(b, [gw], undefined, true);
+    eager.c.start(dip, { fallbackAfterMs: 0, proxy });
+    yield* eager.c.processOnce();
+    assertEquals(eager.anchorer.begun, [{ said: gid, sender: proxy.pre }]); // every member publishes
+
+    const patient = counselor(b, [gw], { t: 0 }, true);
+    patient.c.start(dip, { fallbackAfterMs: 3_000, proxy });
+    for (const t of [0, 2_999]) {
+      patient.clock.t = t;
+      yield* patient.c.processOnce();
+    }
+    assertEquals(patient.anchorer.begun, []);
+    patient.clock.t = 3_000;
+    yield* patient.c.processOnce();
+    assertEquals(patient.anchorer.begun.length, 1);
+  });
+});
+
+Deno.test("a restarted Counselor resumes a delegated inception from its rows with the member hab, and re-pins a supplied proxy", async () => {
+  await run(function*() {
+    const { a, gid, gw, dip } = yield* delegated();
+    const proxy = a.hby.makeHab("proxy");
+    const first = counselor(a, [gw], undefined, true);
+    first.c.start(dip, { proxy });
+    yield* first.c.processOnce();
+    assertEquals(first.anchorer.begun.length, 1);
+
+    // The rows survive; the proxy and the Anchorer hand-off do not.
+    const second = counselor(a, [gw], undefined, true);
+    assertEquals(second.c.pending(), [{ ...dip, stage: "delegation" }]);
+    yield* second.c.processOnce();
+    assertEquals([blockedOf(second.c.status(dip)), second.anchorer.begun], [undefined, [{
+      said: gid,
+      sender: a.hab.pre,
+    }]]);
+    second.c.supply(dip, { proxy });
+    yield* second.c.processOnce();
+    assertEquals(second.anchorer.begun.at(-1), { said: gid, sender: proxy.pre });
+    second.anchorer.done.add(`${gid}:0`);
+    yield* second.c.processOnce();
+    assertEquals(second.c.status(dip), { state: "complete" });
+  });
+});
+
+Deno.test("a delegated event reads delegatorUnknown until the delegator's KEL arrives, and supersession drops only its tuple", async () => {
+  await run(function*() {
+    const w = yield* delegated({ known: false });
+    const { a, gid, gw, dip, d, del } = w;
+    const x = counselor(a, [gw], undefined, true);
+    x.c.start(dip);
+    yield* x.c.processOnce();
+    assertEquals(blockedOf(x.c.status(dip)), { kind: "delegatorUnknown", delpre: del.pre });
+    assertEquals(x.anchorer.begun, []);
+    share(d.hby, del.pre!, [a.hby]);
+    assertEquals(blockedOf(x.c.status(dip)), undefined);
+
+    // A stale tuple at the same sn is removed alone.
+    const stale = { pre: gid, sn: 0, said: "E" + "C".repeat(43) };
+    a.hby.db.gdee.add([gid], [NumberPrimitive.fromNum(0n), new Diger({ qb64: stale.said })]);
+    assertEquals(x.c.status(stale), { state: "superseded", accepted: gid });
+    yield* x.c.processOnce();
+    assertEquals(x.c.pending(), [{ ...dip, stage: "delegation" }]);
+  });
+});
+
+Deno.test("G1 review: a counseled event whose body is not stored reads pending, never unknown", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const gid = pair(sides);
+    const { c } = counselor(sides[0]);
+    const future = { pre: gid, sn: 5, said: "E" + "D".repeat(43) };
+    c.start(future);
+    assertEquals(c.status(future), {
+      state: "pending",
+      stage: "signatures",
+      elected: null,
+      receipts: { have: 0, need: 0 },
+    });
+  });
+});
+
+Deno.test("G1 review: start does not retain inputs for a complete or superseded event, and keeps them for a counseled one", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const gid = pair(sides);
+    const { c } = counselor(sides[0]);
+    const runs = () => (c as unknown as { runs: Map<string, unknown> }).runs.size;
+    const icp = { pre: gid, sn: 0, said: gid };
+    c.start(icp, { auths: { a: "b" } });
+    assertEquals(c.start(icp, { auths: { a: "c" } }), false); // counseled: inputs are re-supplied
+    assertEquals(runs(), 1);
+    yield* c.processOnce();
+    assertEquals(c.status(icp), { state: "complete" });
+    assertEquals([c.start(icp, { auths: { a: "d" } }), runs()], [false, 0]); // complete
+    const rival = { ...icp, said: "E" + "F".repeat(43) };
+    assertEquals([c.start(rival, { auths: { a: "d" } }), runs()], [false, 0]); // another SAID holds sn 0
+    c.supply(icp, { auths: { a: "e" } });
+    assertEquals(runs(), 0);
+  });
+});
+
+Deno.test("G1 review: abandon publishes one <pre>:<sn> change per removed event", async () => {
+  await run(function*() {
+    const sides = yield* members(2);
+    const gid = pair(sides);
+    const { c, changes } = counselor(sides[0]);
+    c.start({ pre: gid, sn: 0, said: gid });
+    yield* c.processOnce(); // sn 0 completes (cgms)
+    c.start({ pre: gid, sn: 1, said: "E" + "D".repeat(43) }); // sn 1 stays in gpse
+    changes.changes.length = 0;
+    c.abandon(gid);
+    assertEquals(changes.changes.map(change => change.id).sort(), [`${gid}:0`, `${gid}:1`]);
+  });
+});
+
+Deno.test("the real Anchorer, begun by the Counselor, completes and the Counselor records it", async () => {
+  await run(function*() {
+    const w = yield* delegated({ delegateWits: false });
+    const { a, gid, dip, anchor } = w;
+    const sent: unknown[] = [];
+    const postman = {
+      send: (request: unknown) => sent.push(request),
+      *wait() {
+        return { kin: "sent" };
+      },
+    };
+    const clock = { now: () => 0 } as never;
+    const anchorer = new Anchorer(a.hby, postman as never, { enqueue() {} }, null, {} as never, clock);
+    const receipting = new FakeReceipting(a.hby, []);
+    const c = new Counselor(a.hby, receipting, clock, undefined, { anchorer, querying: { enqueue() {} } });
+    const proxy = a.hby.makeHab("proxy");
+    c.start(dip, { proxy });
+    yield* c.processOnce();
+    assertEquals(anchorer.workflowStatus(gid, "0"), {
+      phase: "waitingWitnessReceipts",
+      proxyDependent: true,
+      complete: false,
+    });
+    yield* anchorer.processAllOnce(); // request and event go to the delegator through the proxy
+    assertEquals(sent.length, 2);
+    assertEquals(anchorer.workflowStatus(gid, "0").phase, "waitingDelegatorAnchor");
+    anchor(w.created[0].serder);
+    yield* anchorer.processAllOnce();
+    assert(anchorer.complete(gid, 0));
+    yield* c.processOnce();
+    assertEquals(c.status(dip), { state: "complete" });
   });
 });

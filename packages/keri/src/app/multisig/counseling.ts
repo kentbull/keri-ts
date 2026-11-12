@@ -19,11 +19,21 @@
  *   receipts and, after `fallbackAfterMs`, submit as the elected one would;
  *   KERIpy stalls when the elected member is offline.
  * - A newer completion at the same `(pre, sn)` replaces the `cgms` digest.
- * - Delegated `dip`/`drt` events are parked in `gdee` and reported as blocked;
- *   the delegation stage is a later change.
+ * - A delegated `dip`/`drt` is accepted by its own delegate before the delegator's
+ *   anchor and before witnesses receipt it (KERIpy `validateDelegation`: the
+ *   delegatee accepts its own event to trigger receipting and approval). It
+ *   waits in `gdee`. The publishing member (elected, or any member once the
+ *   fallback grace passes) hands it to the Anchorer, which requests approval,
+ *   awaits the anchor and publishes; the Counselor gates and observes, and
+ *   writes `cgms` when the Anchorer completes. Any other member queries the
+ *   delegator's witness for the anchor, pins `aess`, and continues in `gpwe`.
+ *   Without an Anchorer such events stay in `gdee`, reported `notSupported`.
  *
- * Witness authorization codes and retry timers are process memory only, as in
- * KERIpy. Collaborators are narrow (ADR-0013); nothing here reaches a runtime.
+ * Witness authorization codes, the delegation proxy and retry timers are process
+ * memory only, as in KERIpy and the Anchorer. Without a proxy the local group
+ * member sends delegation traffic, as KERIpy does for every group event, so a
+ * restart never leaves a delegated event waiting for one. Collaborators are
+ * narrow (ADR-0013); nothing here reaches a runtime.
  */
 import { Diger, Ilks, NumberPrimitive, NumDex, type SerderKERI, Verfer } from "cesr-ts";
 import { type Operation } from "npm:effection@^3.6.0";
@@ -31,11 +41,17 @@ import { ValidationError } from "../../core/errors.ts";
 import { Kever } from "../../core/kel/kever.ts";
 import type { Baser } from "../../db/basing.ts";
 import { dgKey } from "../../db/core/keys.ts";
-import type { Habery } from "../identity/habbing.ts";
+import {
+  type Anchorer,
+  type AnchorQueryDeps,
+  pinAuthorizingSeal,
+  retryDelegatorWitnessQuery,
+} from "../identity/delegating.ts";
+import type { Hab, Habery } from "../identity/habbing.ts";
 import type { RuntimeClock } from "../runtime/runtime-clock.ts";
 import { type ChangeSink, observeUntil, type WaitResult } from "../runtime/workflow-contract.ts";
 import type { WitnessAuthMap } from "../witness/receipting.ts";
-import { groupWitnesser, isLocalGroupHab } from "./group-members.ts";
+import { groupWitnesser, isLocalGroupHab, localGroupMember } from "./group-members.ts";
 
 /** Exact group event a Counselor tracks. */
 export interface GroupEventRef {
@@ -51,6 +67,8 @@ export type CounselStage = "signatures" | "delegation" | "witnesses";
 export type CounselBlock =
   | { kind: "witnessAuth"; witnesses: string[] }
   | { kind: "witness"; reason: string }
+  | { kind: "delegatorUnknown"; delpre: string }
+  /** No Anchorer was supplied, so delegated events cannot progress. */
   | { kind: "notSupported"; feature: "delegation" };
 
 /** Status of one group event; a pure read of durable rows plus retry state. */
@@ -77,6 +95,20 @@ export interface CounselInputs {
    * Zero makes every member submit. Default {@link DEFAULT_FALLBACK_AFTER_MS}.
    */
   fallbackAfterMs?: number;
+  /**
+   * Local hab that sends the delegation request and queries the delegator's
+   * witness. Optional: the local group member sends when none is supplied, as
+   * in KERIpy. An explicit proxy wins. Memory only.
+   */
+  proxy?: Hab;
+}
+
+/** Delegation collaborators; both are borrowed and run by the host. */
+export interface GroupDelegation {
+  /** Existing delegation workflow owner; the Counselor only begins and observes it. */
+  anchorer: Pick<Anchorer, "begin" | "complete">;
+  /** Query producer for delegator-anchor discovery by members that do not publish. */
+  querying: AnchorQueryDeps["querying"];
 }
 
 /** Receipting collaborator; `Receiptor` fits. */
@@ -99,6 +131,9 @@ interface Run {
   nextAt: number;
   delay: number;
   failure: string | null;
+  proxy: Hab | null;
+  /** Whether this process handed the event to the Anchorer with the current proxy. */
+  begun: boolean;
 }
 
 /** Escrow tables in stage order. */
@@ -131,13 +166,19 @@ export class Counselor {
    * @param receipting Submits or fetches witness receipts for accepted events.
    * @param clock Time source for fallback and retry; only `now` is used.
    * @param changes Optional sink told `{kind:"group", id:"<pre>:<sn>"}` after commits.
+   * @param delegation Anchorer and query port for delegated events; omit for non-delegated hosts.
    */
   constructor(
     private readonly hby: Habery,
     private readonly receipting: GroupReceipting,
     private readonly clock: Pick<RuntimeClock, "now">,
     private readonly changes?: ChangeSink,
-  ) {}
+    private readonly delegation?: GroupDelegation,
+  ) {
+    this.anchorQuery = delegation && { hby, querying: delegation.querying, retryPasses: new Map() };
+  }
+
+  private readonly anchorQuery: AnchorQueryDeps | undefined;
 
   /**
    * Begin counseling an event. Idempotent and safe before local acceptance.
@@ -151,11 +192,20 @@ export class Counselor {
     if (!Number.isSafeInteger(sn) || sn < 0 || !said) throw new ValidationError("Invalid group event reference.");
     const hab = this.hby.habs.get(pre);
     if (!hab || !isLocalGroupHab(this.hby, hab)) throw new ValidationError(`${pre} is not a local group.`);
-    this.retain(event, inputs);
     const db = this.hby.db;
-    const accepted = db.kels.getLast(pre, sn);
-    if ((accepted && accepted !== said) || this.completed(pre, sn) !== null || this.stageOf(event)) return false;
+    if (this.settled(event)) return false; // nothing to counsel, so nothing to retain
+    this.retain(event, inputs);
+    if (this.stageOf(event)) return false;
     return db.gpse.add([pre], [NumberPrimitive.fromNum(BigInt(sn)), new Diger({ qb64: said })]);
+  }
+
+  /**
+   * Replace in-memory inputs of a counseled event, for example witness auths or
+   * a proxy after a restart, and re-arm any attempt waiting out its backoff.
+   * Ignored for an event that is already complete or superseded.
+   */
+  supply(event: GroupEventRef, inputs: CounselInputs): void {
+    if (!this.settled(event)) this.retain(event, inputs);
   }
 
   /** Pure read of one event's state. */
@@ -166,20 +216,45 @@ export class Counselor {
     const accepted = this.hby.db.kels.getLast(pre, sn);
     if (accepted && accepted !== said) return { state: "superseded", accepted };
     const stage = this.stageOf(event);
-    const serder = stage ? this.hby.db.getEvtSerder(pre, said) : null;
-    if (!stage || !serder) return { state: "unknown" };
+    if (!stage) return { state: "unknown" };
+    // A counseled event may not be stored locally yet; it is still pending, not unknown.
+    const serder = this.hby.db.getEvtSerder(pre, said);
+    if (!serder) return { state: "pending", stage, elected: null, receipts: { have: 0, need: 0 } };
     const { have, need, missing } = receiptProgress(this.hby.db, serder);
     const elected = accepted ? groupWitnesser(this.hby, pre, { sn, said }) : null;
     const status: GroupEventStatus = { state: "pending", stage, elected, receipts: { have, need } };
-    if (stage === "delegation") status.blocked = { kind: "notSupported", feature: "delegation" };
     const run = this.runs.get(this.runKey(event));
-    if (stage === "witnesses" && run?.failure) {
-      const unauthorized = missing.filter(witness => !(witness in run.auths));
-      status.blocked = unauthorized.length
-        ? { kind: "witnessAuth", witnesses: unauthorized }
-        : { kind: "witness", reason: run.failure };
-    }
+    const failure = run?.failure ? this.receiptBlock(run, missing) : undefined;
+    if (stage === "delegation") status.blocked = this.delegationBlock(event) ?? failure;
+    else if (stage === "witnesses") status.blocked = failure;
+    if (!status.blocked) delete status.blocked;
     return status;
+  }
+
+  /** Why a receipt attempt failed: missing auths for unreceipted witnesses, else the witness's own reason. */
+  private receiptBlock(run: Run, missing: string[]): CounselBlock {
+    const unauthorized = missing.filter(witness => !(witness in run.auths));
+    return unauthorized.length
+      ? { kind: "witnessAuth", witnesses: unauthorized }
+      : { kind: "witness", reason: run.failure! };
+  }
+
+  /** What keeps a delegated event in `gdee`, if anything the caller can fix. */
+  private delegationBlock(event: GroupEventRef): CounselBlock | undefined {
+    if (!this.delegation) return { kind: "notSupported", feature: "delegation" };
+    const delpre = this.hby.db.getKever(event.pre)?.delpre;
+    if (delpre && !this.hby.db.getKever(delpre)) return { kind: "delegatorUnknown", delpre };
+    return undefined;
+  }
+
+  private fallbackElapsed(run: Run | undefined): boolean {
+    return !!run && run.since !== null && this.clock.now() - run.since >= run.fallbackAfterMs;
+  }
+
+  /** True when the event is complete, or another SAID holds its sn. */
+  private settled({ pre, sn, said }: GroupEventRef): boolean {
+    const accepted = this.hby.db.kels.getLast(pre, sn);
+    return (!!accepted && accepted !== said) || this.completed(pre, sn) !== null;
   }
 
   /** Events still counseled for `pre`, or for every prefix, in stage order. */
@@ -206,18 +281,25 @@ export class Counselor {
    */
   abandon(pre: string): void {
     const db = this.hby.db;
+    const removed = new Set(this.pending(pre).map(event => event.sn));
+    for (const [[, number]] of db.cgms.getTopItemIter([pre], { topive: true })) {
+      removed.add(Number(new NumberPrimitive({ qb64: number }).num));
+    }
     db.transaction(() => {
       for (const [, table] of STAGES) db[table].rem([pre]);
       for (const [keys] of [...db.cgms.getTopItemIter([pre], { topive: true })]) db.cgms.rem(keys);
     });
     for (const key of [...this.runs.keys()]) if (key.startsWith(`${pre}:`)) this.runs.delete(key);
-    this.changes?.push({ kind: "group", id: pre });
+    for (const sn of removed) this.changes?.push({ kind: "group", id: `${pre}:${sn}` });
   }
 
   /** One pass over all stages, as KERIpy `processEscrows`. */
   *processOnce(): Operation<void> {
+    // A runtime calls this every turn; with nothing counseled, three row counts are the whole cost.
+    const db = this.hby.db;
+    if (db.gpse.cnt() === 0 && db.gdee.cnt() === 0 && db.gpwe.cnt() === 0) return;
     this.processSignatures();
-    this.processParkedDelegation();
+    yield* this.processDelegation();
     yield* this.processWitnesses();
   }
 
@@ -237,11 +319,81 @@ export class Counselor {
     }
   }
 
-  /** Delegated events wait for the delegation stage; only supersession is handled. */
-  private processParkedDelegation(): void {
-    for (const [[pre], [number, diger]] of [...this.hby.db.gdee.getTopItemIter()]) {
-      this.dropIfSuperseded(this.hby.db.gdee, this.refOf(pre, number, diger), number, diger);
+  /**
+   * Delegated events: the publishing member drives the Anchorer, any other member
+   * watches for the delegator's anchor. Both wait for the delegator's KEL.
+   */
+  private *processDelegation(): Operation<void> {
+    const db = this.hby.db;
+    for (const [[pre], [number, diger]] of [...db.gdee.getTopItemIter()]) {
+      const event = this.refOf(pre, number, diger);
+      if (this.dropIfSuperseded(db.gdee, event, number, diger)) continue;
+      const serder = db.getEvtSerder(pre, event.said);
+      const delpre = db.getKever(pre)?.delpre;
+      if (!this.delegation || !serder || !delpre || !db.getKever(delpre)) continue;
+      const run = this.retain(event, {});
+      run.since ??= this.clock.now();
+      const member = localGroupMember(this.hby, pre);
+      if (groupWitnesser(this.hby, pre, event) || this.fallbackElapsed(run)) {
+        yield* this.publishDelegation(event, serder, run, member, [number, diger]);
+      } else {
+        this.watchAnchor(event, serder, run, member, delpre, [number, diger]);
+      }
     }
+  }
+
+  /** Publishing duty: begin the Anchorer, keep receipts coming, and record completion. */
+  private *publishDelegation(
+    event: GroupEventRef,
+    serder: SerderKERI,
+    run: Run,
+    member: Hab,
+    row: [NumberPrimitive, Diger],
+  ): Operation<void> {
+    const { anchorer } = this.delegation!;
+    if (anchorer.complete(event.pre, event.sn)) {
+      this.finish(this.hby.db.gdee, event, row);
+      return;
+    }
+    // The Anchorer asks the delegator only once the event's witnesses have receipted it.
+    if (!this.hby.db.fullyWitnessed(serder)) yield* this.pursueReceipts(event, serder, true);
+    if (!run.begun) {
+      anchorer.begin(serder, { communicationHab: run.proxy ?? member });
+      run.begun = true;
+      this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+    }
+  }
+
+  /** Non-publishing duty: find the delegator's sealing event, pin it, and move on to receipts. */
+  private watchAnchor(
+    event: GroupEventRef,
+    serder: SerderKERI,
+    run: Run,
+    member: Hab,
+    delpre: string,
+    row: [NumberPrimitive, Diger],
+  ): void {
+    const db = this.hby.db;
+    retryDelegatorWitnessQuery(this.anchorQuery!, serder, run.proxy ?? member);
+    const delegating = db.fetchLastSealingEventByEventSeal(delpre, { i: event.pre, s: serder.snh!, d: event.said });
+    if (!delegating) return;
+    pinAuthorizingSeal(this.hby, serder, delegating);
+    db.transaction(() => {
+      db.gdee.rem([event.pre], row);
+      db.gpwe.add([event.pre], row);
+    });
+    this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
+  }
+
+  /** Record completion of a counseled event and drop its row from `table`. */
+  private finish(table: Baser["gpse"], event: GroupEventRef, row: [NumberPrimitive, Diger]): void {
+    const db = this.hby.db;
+    db.transaction(() => {
+      table.rem([event.pre], row);
+      db.cgms.pin([event.pre, row[0].qb64], row[1]);
+    });
+    this.runs.delete(this.runKey(event));
+    this.changes?.push({ kind: "group", id: `${event.pre}:${event.sn}` });
   }
 
   /** Complete events whose own witness threshold is met; otherwise submit or fetch receipts. */
@@ -256,22 +408,17 @@ export class Counselor {
         yield* this.pursueReceipts(event, serder);
         if (!db.fullyWitnessed(serder)) continue;
       }
-      db.transaction(() => {
-        db.gpwe.rem([pre], [number, diger]);
-        db.cgms.pin([pre, number.qb64], diger);
-      });
-      this.runs.delete(this.runKey(event));
-      this.changes?.push({ kind: "group", id: `${pre}:${event.sn}` });
+      this.finish(db.gpwe, event, [number, diger]);
     }
   }
 
-  /** One backed-off receipt attempt: submit when elected or past the grace, else fetch. */
-  private *pursueReceipts(event: GroupEventRef, serder: SerderKERI): Operation<void> {
+  /** One backed-off receipt attempt: submit when forced, elected or past the grace, else fetch. */
+  private *pursueReceipts(event: GroupEventRef, serder: SerderKERI, forceSubmit = false): Operation<void> {
     const run = this.retain(event, {});
     const now = this.clock.now();
     run.since ??= now;
     if (now < run.nextAt) return;
-    const submit = groupWitnesser(this.hby, event.pre, event) || now - run.since >= run.fallbackAfterMs;
+    const submit = forceSubmit || groupWitnesser(this.hby, event.pre, event) || now - run.since >= run.fallbackAfterMs;
     try {
       if (submit) yield* this.receipting.receipt(event.pre, { sn: event.sn, auths: run.auths });
       else yield* this.receipting.get(event.pre, { sn: event.sn, said: event.said });
@@ -328,7 +475,7 @@ export class Counselor {
   }
 
   /** Get or create the in-memory run for an event, applying supplied inputs. */
-  private retain(event: GroupEventRef, { auths, fallbackAfterMs }: CounselInputs): Run {
+  private retain(event: GroupEventRef, { auths, fallbackAfterMs, proxy }: CounselInputs): Run {
     if (fallbackAfterMs !== undefined && !(fallbackAfterMs >= 0 && Number.isFinite(fallbackAfterMs))) {
       throw new ValidationError("fallbackAfterMs must be a finite nonnegative duration.");
     }
@@ -341,7 +488,13 @@ export class Counselor {
         nextAt: 0,
         delay: RECEIPT_BACKOFF_MS.first,
         failure: null,
+        proxy: null,
+        begun: false,
       };
+    if (proxy) {
+      run.proxy = proxy;
+      run.begun = false; // the Anchorer pins its sender per begin, so re-pin
+    }
     if (auths) {
       run.auths = { ...auths };
       run.nextAt = 0; // New credentials re-arm an attempt that was waiting out its backoff.
