@@ -256,10 +256,13 @@ export const suites: Record<string, TestSuite> = {
     ],
   },
   "db-web": {
-    // Browser store adapter over fake-indexeddb; never opens LMDB.
+    // Browser store adapter over fake-indexeddb and browser host fakes; never opens LMDB.
     files: [
       "test/unit/db/core/indexeddb-persistence.test.ts",
       "test/unit/db/indexeddb-opener.test.ts",
+      "test/unit/runtime/web/output-barrier.test.ts",
+      "test/unit/runtime/web/persistent-storage.test.ts",
+      "test/unit/runtime/web/store-lock.test.ts",
     ],
   },
   "interop-keystore-parity": {

@@ -22,6 +22,7 @@ const ENTRYPOINT = "./src/npm/index.ts";
 const CLI_ENTRYPOINT = "./src/npm/cli.ts";
 const RUNTIME_ENTRYPOINT = "./src/npm/runtime.ts";
 const RUNTIME_NODE_ENTRYPOINT = "./src/npm/runtime-node.ts";
+const RUNTIME_WEB_ENTRYPOINT = "./src/npm/runtime-web.ts";
 const DB_ENTRYPOINT = "./src/npm/db.ts";
 const DB_LMDB_ENTRYPOINT = "./src/npm/db-lmdb.ts";
 const DB_INDEXEDDB_ENTRYPOINT = "./src/npm/db-indexeddb.ts";
@@ -35,6 +36,8 @@ const NPM_RUNTIME_PATH = "./esm/keri/npm/src/keri/src/npm/runtime.js";
 const NPM_RUNTIME_TYPES_PATH = "./types/keri/src/npm/runtime.d.ts";
 const NPM_RUNTIME_NODE_PATH = "./esm/keri/npm/src/keri/src/npm/runtime-node.js";
 const NPM_RUNTIME_NODE_TYPES_PATH = "./types/keri/src/npm/runtime-node.d.ts";
+const NPM_RUNTIME_WEB_PATH = "./esm/keri/npm/src/keri/src/npm/runtime-web.js";
+const NPM_RUNTIME_WEB_TYPES_PATH = "./types/keri/src/npm/runtime-web.d.ts";
 const NPM_DB_PATH = "./esm/keri/npm/src/keri/src/npm/db.js";
 const NPM_DB_TYPES_PATH = "./types/keri/src/npm/db.d.ts";
 const NPM_DB_LMDB_PATH = "./esm/keri/npm/src/keri/src/npm/db-lmdb.js";
@@ -76,6 +79,7 @@ const ENTRYPOINT_MARKERS = {
   cli: "npm subpath entrypoint for `keri-ts/cli`.",
   runtime: "npm subpath entrypoint for `keri-ts/runtime`.",
   runtimeNode: "npm subpath entrypoint for `keri-ts/runtime/node`.",
+  runtimeWeb: "npm subpath entrypoint for `keri-ts/runtime/web`.",
   db: "npm subpath entrypoint for `keri-ts/db`.",
   dbLmdb: "npm subpath entrypoint for `keri-ts/db/lmdb`.",
   dbIndexedDb: "npm subpath entrypoint for `keri-ts/db/indexeddb`.",
@@ -182,6 +186,24 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
         },
       ),
     },
+    runtimeWeb: {
+      import: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/esm`,
+          outDir: OUT_DIR,
+          fileName: "runtime-web.js",
+          marker: ENTRYPOINT_MARKERS.runtimeWeb,
+        },
+      ),
+      types: findGeneratedEntrypoint(
+        {
+          root: `${OUT_DIR}/types`,
+          outDir: OUT_DIR,
+          fileName: "runtime-web.d.ts",
+          marker: ENTRYPOINT_MARKERS.runtimeWeb,
+        },
+      ),
+    },
     db: {
       import: findGeneratedEntrypoint(
         { root: `${OUT_DIR}/esm`, outDir: OUT_DIR, fileName: "db.js", marker: ENTRYPOINT_MARKERS.db },
@@ -220,7 +242,7 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
 
   // Only the surfaces that `check_library_boundary.ts` proves browser-safe get a
   // `browser` condition; `cli`, `db/lmdb` and `runtime/node` stay Node-only.
-  for (const target of [targets.root, targets.runtime, targets.db, targets.dbIndexedDb]) {
+  for (const target of [targets.root, targets.runtime, targets.runtimeWeb, targets.db, targets.dbIndexedDb]) {
     target.browser = emitBrowserEntrypoint(OUT_DIR, target.import);
   }
 
@@ -246,7 +268,7 @@ function resolveGeneratedExportTargets(): NpmExportTargets {
  * - `main` and `module` to the discovered root ESM entrypoint
  * - `types` to the discovered root declaration entrypoint
  * - `exports["."]`, `exports["./cli"]`, `exports["./runtime"]`,
- *   `exports["./runtime/node"]`, `exports["./db"]`, `exports["./db/lmdb"]` and
+ *   `exports["./runtime/node"]`, `exports["./runtime/web"]`, `exports["./db"]`, `exports["./db/lmdb"]` and
  *   `exports["./db/indexeddb"]`
  *   to their discovered import/types pairs
  *
@@ -280,6 +302,11 @@ function normalizeBuiltManifest(): void {
     "./runtime/node": {
       import: targets.runtimeNode.import,
       types: targets.runtimeNode.types,
+    },
+    "./runtime/web": {
+      browser: targets.runtimeWeb.browser,
+      import: targets.runtimeWeb.import,
+      types: targets.runtimeWeb.types,
     },
     "./db": {
       browser: targets.db.browser,
@@ -342,6 +369,7 @@ try {
       CLI_ENTRYPOINT,
       RUNTIME_ENTRYPOINT,
       RUNTIME_NODE_ENTRYPOINT,
+      RUNTIME_WEB_ENTRYPOINT,
       DB_ENTRYPOINT,
       DB_LMDB_ENTRYPOINT,
       DB_INDEXEDDB_ENTRYPOINT,
@@ -392,6 +420,10 @@ try {
         "./runtime/node": {
           import: NPM_RUNTIME_NODE_PATH,
           types: NPM_RUNTIME_NODE_TYPES_PATH,
+        },
+        "./runtime/web": {
+          import: NPM_RUNTIME_WEB_PATH,
+          types: NPM_RUNTIME_WEB_TYPES_PATH,
         },
         "./db": {
           import: NPM_DB_PATH,

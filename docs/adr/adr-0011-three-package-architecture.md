@@ -59,7 +59,9 @@ Package ownership is:
 - `./db` is backend-neutral per ADR-0015; the native LMDB surface lives behind
   `./db/lmdb`; the browser IndexedDB adapter lives behind `./db/indexeddb`
 - `./runtime` carries no sockets or files; TCP transport, `NodeHttpClient`,
-  `fileBytes` and `Configer` live behind `./runtime/node`
+  `fileBytes` and `Configer` live behind `./runtime/node`; the browser host
+  concerns (output barrier, single-writer store lock, persistence request) live
+  behind the browser-safe `./runtime/web`
 - must not own Hono, listener startup, or runnable CLI entrypoints
 
 ### `@keri-ts/verifier`
