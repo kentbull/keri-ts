@@ -182,6 +182,9 @@ body after non-refusal. Pending material is not acceptance. Accepted cloneTel re
 uses framed exact bodies and retained counted openings, with an empty foot otherwise;
 event/seqEvent remain raw access. Replay validates without writing, including readonly
 stores. Local constructor returns, private custody and IPEX proofs never publish implicitly.
+IpexDiscloser (`app/ipex/ipex-discloser.ts`) holds the inventory-free Grant half (exchange wire,
+source anchoring, fresh-issuance Grant body, proof support, KEL replay); `WalletDiscloser` extends it
+and keeps selection from issued/held views until the rest moves.
 RegistryAuthor (`acdc/authoring.ts`) holds stage, anchor and update; `WalletAuthor` extends it
 and adds only the inventory methods `issue`, `stageRevocation` and `revoke`.
 RegistryCustody (core in `acdc/custody.ts`; the wallet class extends it and supplies
