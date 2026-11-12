@@ -2,7 +2,7 @@
  * Holder side of issuance operations: the exchange consent, reload and expiry, and the separate Admit consent.
  * The issuer runs in its own owner, so both halves of one exchange are the library's code.
  */
-import { parseBytes, Saider, type SerderACDC } from "cesr-ts";
+import { MtrDex, parseBytes, Saider, Salter, type SerderACDC } from "cesr-ts";
 import { run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { type Operation } from "npm:effection@^3.6.0";
@@ -559,5 +559,24 @@ Deno.test("an expired exchange that left an unused root says to start again, and
       first.grant,
       "replaced only on retention",
     );
+  });
+});
+
+Deno.test("Manager.putRegistryRoot with an exchange: the identical root for the same Grant is a no-op; any other held root refuses", async () => {
+  await run(function*() {
+    const s = yield* scenario(), { issuerHab, grant, reg } = yield* bothRetained(s);
+    const mgr = issuerHab.mgr, root = mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!;
+    assertEquals(mgr.registryRootGrant(issuerHab.pre!, reg.regid), grant);
+    assertEquals(mgr.putRegistryRoot(issuerHab.pre!, reg.regid, root, { grant }), false);
+    assertEquals(mgr.registryRootGrant(issuerHab.pre!, reg.regid), grant);
+    const other = new Salter({ raw: crypto.getRandomValues(new Uint8Array(16)), code: MtrDex.Salt_128 });
+    assertThrows(() => mgr.putRegistryRoot(issuerHab.pre!, reg.regid, other, { grant }), Error, "already retained");
+    assertThrows(
+      () => mgr.putRegistryRoot(issuerHab.pre!, reg.regid, root, { grant: reg.regid }),
+      Error,
+      "different exchange",
+    );
+    assertEquals(mgr.putRegistryRoot(issuerHab.pre!, reg.regid, root), false, "unbound repeat of an identical root");
+    assertEquals(mgr.getRegistryRoot(issuerHab.pre!, reg.regid)!.qb64, root.qb64);
   });
 });

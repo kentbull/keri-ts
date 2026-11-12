@@ -461,7 +461,7 @@ function expiredReason(deps: IssuanceDeps, record: IssuanceRecord): string {
 function heldRoot(deps: IssuanceDeps, record: IssuanceRecord): "none" | "unused" | "committed" {
   const hab = deps.hby.habs.get(record.hab), credential = deps.exc.retainedInput(record.grant)?.nests?.[0]?.body;
   const registry = credential instanceof SerderACDC ? credential.regid : undefined;
-  if (!hab || !registry || hab.mgr.ks.registryRootGrant([hab.pre!, registry]) !== record.grant) return "none";
+  if (!hab || !registry || hab.mgr.registryRootGrant(hab.pre!, registry) !== record.grant) return "none";
   return registryUncommitted(deps.rgy.store, registry) ? "unused" : "committed";
 }
 
@@ -480,7 +480,7 @@ function exchangeAlive(ops: IssuanceOperations, grant: string): boolean {
  * its unchanged conflict error, which is also what a CLI re-run sees. Reads stores and the table only.
  */
 function replacedRoot(ops: IssuanceOperations, hab: Hab, registry: string): { replaces?: string } {
-  const bound = hab.mgr.ks.registryRootGrant([hab.pre!, registry]);
+  const bound = hab.mgr.registryRootGrant(hab.pre!, registry);
   if (!bound || !registryUncommitted(ops.deps.rgy.store, registry) || exchangeAlive(ops, bound)) return {};
   return { replaces: bound };
 }

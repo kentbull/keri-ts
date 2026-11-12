@@ -695,12 +695,29 @@ export class Manager {
     return root;
   }
 
-  /** Retain once, returning false for the identical root without replacing ciphertext. */
-  putRegistryRoot(aid: string, regid: string, root: Salter): boolean {
+  /**
+   * Retain once, returning false for the identical root without replacing ciphertext. A DH `exchange` binds
+   * the root to its Grant atomically (see {@link Keeper.retainRegistryRoot}); `replacing` names the Grant of
+   * the dead exchange whose unused root it supersedes. Provisioned and copied roots pass no exchange.
+   */
+  putRegistryRoot(
+    aid: string,
+    regid: string,
+    root: Salter,
+    exchange?: { grant: string; replacing?: string },
+  ): boolean {
     const keys = this.registryRootKeys(aid, regid);
     if (!(root instanceof Salter) || root.code !== MtrDex.Salt_128) throw new Error("Registry root must be Salt128");
+    if (exchange && new Saider({ qb64: exchange.grant }).qb64 !== exchange.grant) {
+      throw new Error("Exchange Grant must be a canonical SAID");
+    }
     const { aeid, encrypter, decrypter } = this.registryRootCrypto();
-    return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter);
+    return this.ks.retainRegistryRoot(keys, root, aeid, encrypter, decrypter, exchange);
+  }
+
+  /** SAID of the Grant whose DH exchange retained the root for `aid` and `regid`, or null. Needs no decryption. */
+  registryRootGrant(aid: string, regid: string): string | null {
+    return this.ks.registryRootGrant(this.registryRootKeys(aid, regid));
   }
 
   private signerDecrypter(): Decrypter | undefined {

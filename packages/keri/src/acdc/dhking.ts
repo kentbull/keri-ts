@@ -10,7 +10,6 @@ import {
   concatBytes,
   Counter,
   type Diger,
-  Encrypter,
   Kinds,
   makeBlindUuid,
   Matter,
@@ -169,7 +168,7 @@ export function resumableExchange(
   const scope = grantScope(hab, exc, grant);
   if (typeof scope === "string") return null;
   const held = scope.registries.every((registry) =>
-    hab.mgr.ks.registryRootGrant([hab.pre!, registry]) === grant && registryStore.headEvent(registry)?.ilk === "rip"
+    hab.mgr.registryRootGrant(hab.pre!, registry) === grant && registryStore.headEvent(registry)?.ilk === "rip"
   );
   return held ? scope : null;
 }
@@ -811,7 +810,7 @@ export class Dhke implements AuxiliaryQueryProcessor {
       }
     }
     for (const registry of op.registries) {
-      const bound = this.hab.mgr.ks.registryRootGrant([this.hab.pre!, registry]);
+      const bound = this.hab.mgr.registryRootGrant(this.hab.pre!, registry);
       if (bound === replaces && registryUncommitted(this.registryStore, registry)) op.replaces.set(registry, bound);
     }
   }
@@ -884,14 +883,13 @@ export class Dhke implements AuxiliaryQueryProcessor {
 
   private retain(op: DhkeOperation, peer: Record<string, string>, roots: ReadonlyMap<string, Salter>): void {
     this.hab.mgr.requireRegistryRootAccess();
-    const { aeid } = this.hab.mgr, encrypter = new Encrypter({ verkey: aeid });
     for (const [registry, root] of roots) {
       const replacing = op.replaces.get(registry);
       // Recheck at commit time, from stores: the root must still be unused, and the Keeper still compares its binding.
       if (replacing !== undefined && !registryUncommitted(this.registryStore, registry)) {
         throw new ValidationError("Registry root conflicts with this live DH operation");
       }
-      this.hab.mgr.ks.retainExchangeRoot([this.hab.pre!, registry], root, op.grant, aeid, encrypter, replacing);
+      this.hab.mgr.putRegistryRoot(this.hab.pre!, registry, root, { grant: op.grant, replacing });
     }
     op.peer = { ...peer };
     op.completed = true;
