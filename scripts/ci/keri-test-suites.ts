@@ -26,6 +26,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/interop/keripy-runtime.test.ts",
       "test/unit/interop/child-lifetime.test.ts",
       "test/unit/app/mailbox/mailbox-sse.test.ts",
+      "test/unit/app/mailbox/mailbox-admin.test.ts",
       "test/unit/app/queries/query-delivery.test.ts",
       "test/unit/app/transport/cesr-http.test.ts",
       "test/unit/app/identity/challenge/challenge-generate.test.ts",

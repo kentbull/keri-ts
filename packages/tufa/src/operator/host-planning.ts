@@ -6,6 +6,7 @@
  * environment, and listener side effects.
  */
 import { EndpointRoles, type Habery, type Scheme, Schemes, ValidationError } from "keri-ts/runtime";
+export { mailboxAdminUrl } from "keri-ts/runtime";
 
 /** Build KLI/Tufa-compatible config path candidates from explicit roots. */
 export function configFileCandidates(
@@ -139,21 +140,6 @@ export function synthesizeTcpUrl(
 export function canonicalOrigin(url: string): string {
   const parsed = new URL(url);
   return `${parsed.protocol}//${parsed.host}`;
-}
-
-/** Derive the mailbox-admin URL relative to one hosted endpoint path. */
-export function mailboxAdminUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
-    const base = pathname === "/" ? "" : pathname;
-    return `${parsed.protocol}//${parsed.host}${base}/mailboxes`;
-  } catch (error) {
-    if (error instanceof ValidationError) {
-      throw error;
-    }
-    throw new ValidationError(`Invalid mailbox URL: ${url}`);
-  }
 }
 
 /** Map an advertised URL protocol to the KERI location scheme identifier. */

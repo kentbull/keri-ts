@@ -104,6 +104,16 @@ are callers. Receipting is a no-op until accepted key state has witnesses;
 delegation begin, status and wait are separate, status being the Anchorer's
 durable escrow phase. Deps are narrow collaborators; the host lends its runtime
 through `withDelegation` for one scope, and witness auth prompting stays in the CLI.
+Single-signature mailbox administration lives in `app/mailbox/mailbox-admin.ts`
+(exported from `keri-ts/runtime`); `tufa mailbox add|remove` call it. It posts the
+signed end-role reply through a fetch-only `HttpClient` (raw CESR first, multipart
+on 406/415), accepts it locally and confirms state; `mailboxStatus` reads accepted
+`ends.`, and `waitForMailboxState` only observes and returns a timed-out value.
+Group add keeps its CLI propose/complete split (the proposal needs Poster delivery
+and the group coordinator as collaborators) and reuses `completeMailboxAdmin`.
+`ipex poll` still hosts a full runtime inside the command and is not yet split into
+an observing wait plus a CLI-only runtime helper; `mailbox update` only writes a
+`tops.` cursor row and is a different operation.
 
 ## Protocol and output owners
 
