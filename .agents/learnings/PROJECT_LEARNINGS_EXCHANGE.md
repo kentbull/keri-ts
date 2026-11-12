@@ -238,7 +238,10 @@ wins, and a hint applies only to a child with attachments. Parent signatures nev
 supply missing child proofs. Groups are explicitly v1 or v2 by KEL version. New
 KEL/reply proposals follow KERIpy for both: a v1 `e`-embed wrapper around the
 group-version child (`kli multisig join` reads only `e`); v2 nested wrappers are
-explicit for native v2 routes. Outer member endorsements use the wrapper's
+explicit for native v2 routes. `kli multisig rotate --version 2.0` proposes a v2
+nested wrapper, and KERIpy's Multiplexor merges a contribution only under its
+proposal's index key (v1 `e.d`, v2 child SAID), so a KEL approval replies in its
+proposal's wrapper version. Outer member endorsements use the wrapper's
 attachment genus. Receiving accepts both forms. Shared proposal
 publication registers its actual signed wire through intake before transmission,
 so later peer proofs can replay without another approval prompt. Endpoint-role

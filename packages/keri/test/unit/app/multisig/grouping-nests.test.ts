@@ -590,6 +590,70 @@ Deno.test("a proposer commits accepted rotation members that add a newcomer", as
   });
 });
 
+Deno.test("multisig join answers a v2 nested rotation proposal in its proposal's v2 wrapper form", async () => {
+  await participants(async (left, right, alice, bob, notifier) => {
+    const mids = [alice.pre, bob.pre];
+    const local = left.makeGroupHab("group", alice, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const remote = right.makeGroupHab("group", bob, mids, mids, undefined, { isith: "2", nsith: "2", toad: 0 });
+    const icp = parseBytes(messagize(local.serder, { sigers: [...local.sigers, ...remote.sigers] }))[0];
+    await run(function*() {
+      for (const target of [left, right]) {
+        yield* dispatchEnvelope(envelopeFromFrame(icp, true), target.rvy, target.kevery);
+      }
+    });
+    alice.rotate();
+    bob.rotate();
+    await learn(left, bob);
+    await learn(right, alice);
+    // KERIpy `kli multisig rotate --version 2.0` proposes a v2 group rotation in a v2 nested wrapper.
+    const peer = right.rotateGroupHab("group", mids, mids, { isith: "2", nsith: "2", version: Vrsn_2_0 });
+    await run(function*() {
+      const runtime = yield* createAgentRuntime(left, new FetchHttpClient(), systemClock, { notifier });
+      try {
+        const sent: CesrFrame[] = [];
+        runtime.postman.send = function(evt) {
+          sent.push(parseBytes(evt.msg)[0]);
+          return { ...evt, kin: "msg" };
+        };
+        runtime.postman.wait = function*(evt) {
+          return { kin: "sent", evt, deliveries: ["test"] };
+        };
+        const proposed = signGroupMessage(
+          bob,
+          alice.pre,
+          yield* prepareMultisigEventExn(
+            bob.pre,
+            { route: "/multisig/rot", attrs: { gid: local.hab.pre, smids: mids, rmids: mids } },
+            peer.message,
+            { recipient: alice.pre, pvrsn: Vrsn_2_0 },
+          ),
+        );
+        yield* runtime.reactor.processBytes(proposed.message, { local: true });
+        const result = yield* approvePendingMultisigProposal(left, runtime, {
+          callbacks: {
+            approveProposal: () => true,
+            chooseGroupAlias: () => "group",
+            chooseRegistryName: () => "registry",
+          },
+        });
+        assertEquals(result?.said, proposed.exnSaid);
+        assertEquals(result?.accepted, true);
+        assertEquals(left.db.getKever(local.hab.pre)?.said, peer.serder.said);
+        // KERIpy merges a contribution only under its proposal's index key: the v2 child SAID.
+        assertEquals(sent.length, 1);
+        const reply = sent[0].body as SerderKERI;
+        assertEquals(reply.pvrsn, Vrsn_2_0);
+        assertEquals(reply.route, "/multisig/rot");
+        assertEquals(reply.ked!.a, { gid: local.hab.pre, smids: mids, rmids: mids, rot: peer.serder.said });
+        assertEquals(sent[0].nests?.map(nest => nest.body.said), [peer.serder.said]);
+        assertEquals(multisigPayloadSaid(reply), proposed.payloadSaid);
+      } finally {
+        yield* runtime.close();
+      }
+    });
+  });
+});
+
 for (const genus of [Vrsn_1_0, Vrsn_2_0]) {
   for (const remoteFirst of [false, true]) {
     Deno.test(`v1 multisig replays genus ${genus.major} children after approval (${remoteFirst ? "remote" : "local"} first)`, async () => {
