@@ -113,8 +113,8 @@ export function selectScope(args: {
   // IndexedDB store code, the browser harness and its CI scripts are what the lane can regress.
   const browser = infrastructure
     || args.files.some((file) =>
-      file.startsWith("packages/keri/test/browser/") || file.startsWith("packages/keri/src/db/")
-      || file === "packages/keri/scripts/run_browser_tests.ts"
+      file.startsWith("packages/keri/test/browser") || file.startsWith("packages/keri/src/db/")
+      || file.startsWith("packages/keri/scripts/") && file.includes("browser")
       || file === "packages/keri/test/unit/db/store-contract.ts"
       || file.startsWith("scripts/ci/") && file.includes("browser")
     );

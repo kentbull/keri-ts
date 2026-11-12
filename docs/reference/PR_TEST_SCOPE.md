@@ -123,6 +123,24 @@ otherwise `stage-gate` accepts it as skipped. The Playwright browser cache is ke
 ```
 ````
 
+### Transport probe (local only)
+
+`deno task test:browser:transport [engine ...]` is a second real-browser lane. It sends keri-ts's
+own HTTP traffic (`FetchHttpClient`, `HTTPMessenger`, `HTTPStreamMessenger`, `Poster`,
+`MailboxPoller`, mailbox administration) from a page on one origin to a KERIpy witness, a Tufa
+mailbox and a small echo server on other origins, in each engine, and fails unless every result
+equals the table in `packages/keri/test/browser-transport/expectations.ts`. Evidence and gaps are in
+[the transport probe report](../reports/browser-transport-probe-2026-11.md).
+
+It is not in the `browser-tests` job. The servers come from `scripts/ci/browser-transport-servers.sh`,
+which runs them in Docker from the interop harness' cached KERIpy volumes (`keri-interop-keripy`,
+`keri-interop-venvs`) and a named volume holding this working tree; state never leaves named
+volumes. Running it in CI would need a native variant of that script: the pinned KERIpy peer from
+`.github/actions/setup-keripy-main-peer`, the LMDB rebuild of `deno task setup:compat-lmdb`, and
+two background processes with a readiness wait, before several more minutes of probes in
+three engines. Selecting `"browser":true` still runs only the store-contract lane. Firefox does
+not launch on the macOS host; run it from a Linux container (the report says how).
+
 ## Browser bundle gate (package smoke)
 
 Selecting `"package": true` also runs `scripts/npm/check_browser_bundle.mjs` inside the
