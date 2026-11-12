@@ -94,6 +94,24 @@ export function groupElectedMember(hby: Habery, group: string, coordinator: Grou
   ) ?? null;
 }
 
+/**
+ * True when the local member is the witnesser for the exact accepted group event
+ * `coordinator`, as KERIpy `_groupWitnesser`: the member's latest contribution to
+ * the governing establishment's keys holds the lowest verified signing index.
+ *
+ * Unlike `groupElectedMember` this does not require that member to be a current
+ * signing member, so a historical event keeps its witnesser after a later
+ * rotation. Like it, the answer depends on locally stored signatures and suits
+ * idempotent duties only.
+ */
+export function groupWitnesser(hby: Habery, group: string, coordinator: GroupCoordinator): boolean {
+  const selection = groupWitnesserSelection(hby.db, group, coordinator);
+  if (!selection) return false;
+  const member = localGroupMember(hby, group).pre;
+  const contribution = member ? latestGroupContribution(hby.db, member, selection.establishment.verfers) : null;
+  return contribution?.index === selection.index;
+}
+
 /** Return current group signing member AIDs in signing-index order. */
 export function groupSigningMembers(hby: Habery, groupPre: string): string[] {
   const stored = hby.ks.getSmids(groupPre).map((tuple) => tuple[0].qb64);

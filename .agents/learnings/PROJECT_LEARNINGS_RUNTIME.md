@@ -28,6 +28,15 @@ Exchanger, registry and Revery before immutable query dispatch is constructed;
 standalone owners may use Hab Revery. Selection is not approval. Runtime teardown
 clears process-local approvals/retries and best-effort zeros pending DH scalars;
 commands still abandon their scoped XID and join workers before closing stores.
+`runtime.ipex` (`IpexAuxiliaries`) is the one owner registry and dispatch path: the
+single `ipexAuxiliary` selection is its first entry, and `ipexOwners: "per-identifier"` lets a wallet obtain `dhke(hab)` / `unblind(hab, states)` per
+identifier after the runtime, even its loop, exists. KRAM stays required because
+owners rely on its receiver-time message cache and accumulated sender signatures.
+`/ipex/*` messages carry no recipient: the key is sender plus transaction id
+(`q.x`/`a.x`), claimed by the one owner holding an approved operation, a stored
+Grant between the two parties, or (group) its own members' contributions, which
+KRAM must pool before consent exists. No or ambiguous claim is the
+unowned path (query `missingProcessor` before KRAM; reply Router missing-route).
 Choose concrete dependencies at construction; no parent-runtime discovery in
 Respondant, WitnessInquisitor, Anchorer, receipt owners or lower TCP transport.
 
@@ -210,6 +219,8 @@ Library workflow contract (OOBI, query, event completion; `app/runtime/workflow-
 3. A wait deadline is a returned value `WaitResult<S>` = `{ outcome: "settled" | "timed-out", status, timeoutMs? }` where `status` is the status read at return; only contract, invariant and infrastructure failures throw. The CLI turns a timeout into its fixed error text.
 4. One-shot CLI commands run workers around the wait with `cli/common/runtime-workers.ts`; a wallet's already-running runtime does the work.
 5. Status reads are unions on `state` (`phase`, optional `blocked`); wait results discriminate on `outcome`. Owners may push identity-only `ChangeSink` changes after commit (a failing sink drops them). Key-state query status is process-local (`scope: "process"`), anchor status is durable.
+
+Delegator approval is library code (`app/identity/delegation-approval.ts`: `listPendingDelegations`, `approveDelegation`, `delegationApprovalStatus`, `waitForDelegationApproval`, `settleDelegationApproval`, `dismissDelegation`). Idempotence evidence is the seal `{i,s,d}` inside the delegator's own KEL, found by a local scan that does not require witness receipts (`Baser.fetchLastSealingEventByEventSeal` does, and would re-anchor in the sign-to-receipt crash window). The wait observes; its `settle` host hook (pin `aess.`, process `delegables.`) is local and runs only once a witnessed delegate's event arrived by replay. `dismissDelegation` removes only the `/delegate/request` notice. `tufa delegate confirm` keeps the group-delegator branch (`interactGroupHab`) until the group proposal API replaces it.
 
 IPEX poll-and-settle is library code (`app/mailbox/ipex-arrival.ts`: `settleStoredGrants`, `ipexArrivalStatus`, `waitForIpexArrival`). A wallet reads status and waits; `tufa ipex poll` supplies the workers, mailbox poller and `MailboxIntakeTally` itself.
 

@@ -16,7 +16,7 @@ import { type RuntimeClock, systemClock } from "./runtime-clock.ts";
 import { runtimeTurn } from "./runtime-turn.ts";
 
 /** Workflow families that publish changes. */
-export type WorkflowKind = "oobi" | "query" | "event" | "delegation";
+export type WorkflowKind = "oobi" | "query" | "event" | "delegation" | "group";
 
 /** Identity of a workflow whose status may have changed; consumers re-read status. */
 export interface WorkflowChange {
