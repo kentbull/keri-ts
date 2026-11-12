@@ -223,7 +223,9 @@ Deno.test("wallet keeps distinct partial/full consent and exact retained proofs 
 for (const operator of ["I2I", "UNKNOWN"]) {
   Deno.test(`wallet refuses ${operator === "I2I" ? "false" : "unsupported"} IPEX roots without signing or creating consent`, async () => {
     await withPeers(function*(p) {
-      const far = acdcmap(p.issuer.pre, { issuee: p.holder.pre, attribute: { d: "", role: "authority" } });
+      // Unrecognized tokens are ANDed with the I2I default, so only the false row breaks that relation.
+      const issuee = operator === "I2I" ? p.holder.pre : p.issuer.pre;
+      const far = acdcmap(p.issuer.pre, { issuee, attribute: { d: "", role: "authority" } });
       const near = acdcmap(p.issuer.pre, {
         attribute: { d: "", role: "near" },
         edge: { d: "", proof: { n: far.said!, o: operator } },

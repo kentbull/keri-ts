@@ -1,8 +1,8 @@
 /** Shared chaining preserves source reductions while callers own state policy. */
-import { type MapperMap, type SerderACDC, Vrsn_2_0 } from "cesr-ts";
+import { type MapperMap, SerderACDC, Vrsn_2_0 } from "cesr-ts";
 import { ensure, run } from "effection";
 import { assert, assertEquals, assertExists } from "jsr:@std/assert";
-import { type ChainVerdict, evaluateChain } from "../../../src/acdc/chaining.ts";
+import { type ChainVerdict, evaluateChain, walkAcdcGraph } from "../../../src/acdc/chaining.ts";
 import { acdcmap } from "../../../src/acdc/messaging.ts";
 import { createHabery } from "../../../src/app/identity/lmdb-habery.ts";
 import { walkIpexGraph } from "../../../src/app/ipex/ipex-graph.ts";
@@ -58,6 +58,154 @@ Deno.test("DI2I composes fixed-inception authority with pins, far-node truth and
     assertEquals(evaluate(delegate.pre, far, { operator: ["I2I", "DI2I"] })?.kind, "valid");
     assertEquals(evaluate(delegate.pre, far, { operator: ["DI2I", "I2I"] })?.kind, "invalid");
     assertEquals(evaluate(delegate.pre, far, { operator: ["DI2I", "NOT"] })?.kind, "unknown");
+    assertEquals(
+      evaluate(delegate.pre, far, { operator: ["I2I", "NOT"] })?.kind,
+      "invalid",
+      "NOT never short-circuits",
+    );
+  });
+});
+
+/** Walk then evaluate real views with authenticated nodes; null is malformed at either seam. */
+function walked(db: Parameters<typeof evaluateChain>[2], root: SerderACDC, ...far: SerderACDC[]) {
+  const nodes = new Map([root, ...far].map((body) => [body.said!, { body }]));
+  const order = walkAcdcGraph(root.said!, nodes, true);
+  if (!order) return null;
+  return evaluateChain({ nodes, order }, new Map(order.map((said) => [said, { kind: "valid" } as ChainVerdict])), db);
+}
+/** Replace a carried commitment without makify recomputing it. */
+function falseCommitment(body: SerderACDC, said: string, replacement: string): SerderACDC {
+  const raw = new TextEncoder().encode(new TextDecoder().decode(body.raw).replace(said, replacement));
+  return new SerderACDC({ raw, verify: false });
+}
+
+Deno.test("I1I and DI1I compose, suppress defaults, and preserve retryability", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const root = hby.makeHab("root"), unrelated = hby.makeHab("unrelated");
+    const issuee = hby.makeHab("issuee"), otherIssuee = hby.makeHab("other-issuee");
+    const delegate = hby.makeHab("delegate", undefined, { delpre: root.pre });
+    const missingAnchor = hby.makeHab("missing-anchor", undefined, { delpre: root.pre });
+    const rootFar = acdcmap(root.pre, { attribute: { d: "", role: "far" } });
+    const unrelatedFar = acdcmap(unrelated.pre, { attribute: { d: "", role: "far" } });
+    const targetedFar = acdcmap(root.pre, { attribute: { d: "", role: "targeted-far" }, issuee: issuee.pre });
+    const evaluate = (
+      issuer: string,
+      far: SerderACDC,
+      o: unknown,
+      options: { issuee?: string; schema?: string } = {},
+    ) => {
+      const near = acdcmap(issuer, {
+        attribute: { d: "", role: "near" },
+        issuee: options.issuee,
+        edge: {
+          d: "",
+          source: { d: "", n: far.said!, o, ...(options.schema ? { s: options.schema } : {}) } as MapperMap,
+        },
+      });
+      return walked(hby.db, near, far);
+    };
+    const pending = (verdict: ChainVerdict | null, retryable: boolean) =>
+      assert(verdict?.kind === "unknown" && verdict.retryable === retryable, JSON.stringify(verdict));
+
+    assertEquals(evaluate(root.pre, rootFar, "I1I")?.kind, "valid");
+    assertEquals(evaluate(unrelated.pre, rootFar, "I1I")?.kind, "invalid");
+    assertEquals(evaluate(root.pre, rootFar, "DI1I")?.kind, "valid", "DI1I accepts equality");
+    pending(evaluate(delegate.pre, rootFar, "DI1I"), true);
+    pending(evaluate(delegate.pre, rootFar, ["FOO", "DI1I"]), false);
+    root.interact({ data: [{ i: delegate.pre, s: "0", d: delegate.pre }] });
+    assertEquals(evaluate(delegate.pre, rootFar, "DI1I")?.kind, "valid");
+    assertEquals(evaluate(delegate.pre, unrelatedFar, "DI1I")?.kind, "invalid");
+    // The issuer-identity group is latest-wins.
+    assertEquals(evaluate(delegate.pre, rootFar, ["DI1I", "I1I"])?.kind, "invalid");
+    assertEquals(evaluate(delegate.pre, rootFar, ["I1I", "DI1I"])?.kind, "valid");
+    // Explicit I1I suppresses the targeted far node's I2I default and never reads issuees.
+    assertEquals(evaluate(root.pre, targetedFar, "I1I")?.kind, "valid");
+    assertEquals(evaluate(root.pre, targetedFar, ["NI2I", "I1I"])?.kind, "valid");
+    assertEquals(evaluate(root.pre, targetedFar, ["I2I", "I1I"])?.kind, "invalid", "independent groups both apply");
+    assertEquals(evaluate(issuee.pre, targetedFar, ["I2I", "DI1I"])?.kind, "invalid");
+    assertEquals(evaluate(root.pre, targetedFar, ["E1E", "I1I"], { issuee: issuee.pre })?.kind, "valid");
+    assertEquals(evaluate(root.pre, targetedFar, ["E1E", "I1I"], { issuee: otherIssuee.pre })?.kind, "invalid");
+    assertEquals(evaluate(root.pre, targetedFar, ["E1E", "DI1I", "NI2I"], { issuee: issuee.pre })?.kind, "valid");
+    // Unrecognized operators are ANDed and never weaken a proven failure.
+    assertEquals(evaluate(unrelated.pre, rootFar, ["BOGUS", "I1I"])?.kind, "invalid");
+    assertEquals(evaluate(root.pre, targetedFar, "BOGUS")?.kind, "invalid", "the default still applies");
+    pending(evaluate(root.pre, rootFar, ["BOGUS", "I1I"]), false);
+    pending(evaluate(root.pre, rootFar, ["NOT", "I1I"]), false);
+    assertEquals(evaluate(unrelated.pre, rootFar, ["NOT", "I1I"])?.kind, "invalid");
+    // Pins, decided failures over retryable evidence and malformed operator lists.
+    const ownSchema = (rootFar.schema as MapperMap).$id as string;
+    assertEquals(evaluate(root.pre, rootFar, "I1I", { schema: ownSchema })?.kind, "valid");
+    assertEquals(
+      evaluate(missingAnchor.pre, targetedFar, ["E1E", "DI1I"], { issuee: otherIssuee.pre })?.kind,
+      "invalid",
+    );
+    assertEquals(evaluate(root.pre, rootFar, ["I1I", 1]), null);
+  });
+});
+
+Deno.test("Edge Sections are one expanded group or an opaque compact commitment", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const issuer = hby.makeHab("issuer").pre;
+    const far = acdcmap(issuer, { attribute: { d: "", role: "far" } });
+    const other = acdcmap(issuer, { attribute: { d: "", role: "other" } });
+    const near = (edge: unknown) => acdcmap(issuer, { attribute: { d: "", role: "near" }, edge: edge as MapperMap });
+    const source = { d: "", n: far.said!, o: "I1I" };
+    const expanded = near({ d: "", source });
+
+    assertEquals(walked(hby.db, near({})), { kind: "valid" }, "an empty section carries no requirements");
+    const hidden = acdcmap(issuer, { attribute: { d: "", role: "near" }, edge: { d: "", source }, compactify: true });
+    const compact = near(hidden.sad!.e);
+    const nodes = new Map([[compact.said!, { body: compact }]]);
+    assertEquals(walkAcdcGraph(compact.said!, nodes, true), [compact.said!], "compact sections are terminals");
+    const verdict = walked(hby.db, compact);
+    assert(verdict?.kind === "unknown" && !verdict.retryable, "hidden logic cannot be evaluated or retried");
+    for (const malformed of ["", "garbage", [], [{ source }], null, 0, false]) {
+      const body = new SerderACDC({ sad: { ...expanded.sad!, e: malformed }, makify: true });
+      assertEquals(walked(hby.db, body, far), null, JSON.stringify(malformed));
+    }
+    assertEquals(walked(hby.db, near(source), far), null, "the top-level section is a group, not a leaf");
+    assertEquals(walked(hby.db, near({ d: "", w: 1, source }), far), null, "a top-level group has no weight");
+    assertEquals(walked(hby.db, near({ d: "", o: "OR", source, compact: "garbage" }), far), null);
+    // Carried section and nested-block SAIDs are re-verified by the walk.
+    const e = expanded.sad!.e as { d: string; source: { d: string } };
+    for (const carried of [e.d, e.source.d]) {
+      assertEquals(walked(hby.db, falseCommitment(expanded, carried, other.said!), far), null);
+    }
+    assertEquals(walked(hby.db, expanded, far), { kind: "valid" });
+  });
+});
+
+Deno.test("Every schema pin is evaluated unless the relation is already invalid", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    yield* ensure(() => hby.close(true));
+    const issuer = hby.makeHab("issuer").pre, other = hby.makeHab("other").pre;
+    const far = acdcmap(issuer, { attribute: { d: "", name: "Ada" } });
+    const missing = new Schemer({ sed: { $id: "", version: "1.0.0", type: "object" } });
+    const wrong = new Schemer({
+      sed: { $id: "", version: "1.0.0", type: "object", properties: { a: { properties: { name: { const: "Bob" } } } } },
+    });
+    const near = (nearIssuer: string) =>
+      acdcmap(nearIssuer, {
+        attribute: { d: "", role: "near" },
+        edge: { d: "", group: { s: missing.said, link: { n: far.said!, o: "I1I", s: wrong.sed as MapperMap } } },
+      });
+    assertEquals(walked(hby.db, near(issuer), far), { kind: "invalid" }, "a later invalid pin outranks a missing one");
+    assertEquals(walked(hby.db, near(other), far), { kind: "invalid" });
+    const valid = acdcmap(issuer, {
+      attribute: { d: "", role: "near" },
+      edge: { d: "", group: { s: missing.said, link: { n: far.said!, o: "I1I" } } },
+    });
+    assertEquals(walked(hby.db, valid, far), {
+      kind: "unknown",
+      retryable: true,
+      reason: `Missing edge schema ${missing.said}.`,
+      schemas: [missing.said],
+    });
   });
 });
 

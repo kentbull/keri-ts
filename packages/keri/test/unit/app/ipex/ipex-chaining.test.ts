@@ -9,7 +9,18 @@ import { dispatchEnvelope, envelopeFromFrame } from "../../../../src/app/protoco
 import { Schemer } from "../../../../src/core/scheming.ts";
 import vectors from "../../../fixtures/keripy-ipex-graph-vectors.json" with { type: "json" };
 
-for (const row of vectors.cases) {
+/**
+ * Rows whose recorded 1f0f68a6 outcome upstream KERIpy PR 1757 deliberately changes:
+ * the Edge Section is one top-level group, never a leaf or list. The wires stay
+ * labeled by their actual source until vectors are regenerated from the port.
+ */
+const pr1757Outcomes: Readonly<Record<string, string>> = {
+  "direct top-level leaf": "reject",
+  "edge block list": "reject",
+};
+
+for (const recorded of vectors.cases) {
+  const row = { ...recorded, outcome: pr1757Outcomes[recorded.name] ?? recorded.outcome };
   Deno.test(`Python IPEX graph: ${row.name}`, async () => {
     await run(function*() {
       const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });

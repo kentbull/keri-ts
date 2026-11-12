@@ -160,6 +160,9 @@ for (const issuer of ["TypeScript", "KERIpy"] as const) {
     const [graph, defect] of [
       ["I2I", "authority issuee differs from root issuer"],
       ["DI2I", "far issuee is outside the approved two-hop delegation ancestry"],
+      ["I1I", "far issuer differs from root issuer"],
+      ["DI1I", "far issuer is outside the approved two-hop delegation ancestry"],
+      ["E1E+DI1I", "delegated issuers carry different issuees"],
       ["NI2I", "authority proof missing"],
       ["E1E", "node issuees differ"],
       ["AND", "one required logical branch is false"],

@@ -93,6 +93,10 @@ def graph_disclosures(hby, hab, graph_case):
         return deep_graph(hby, hab, graph_case)
     if graph_case == "DI2I":
         return delegated_graph(hby, hab)
+    if graph_case == "I1I":
+        return same_issuer_graph(hby, hab)
+    if graph_case in ("DI1I", "E1E+DI1I"):
+        return delegated_issuer_graph(hby, hab, graph_case)
     if graph_case in ("I2I", "NI2I", "E1E", "AND", "OR"):
         return relation_graph(hby, hab, graph_case)
     if graph_case in ("unknown-leaf", "unknown-group", "malformed-leaf", "simple-edge", "edge-schema", "inherited-schema", "malformed-schema"):
@@ -112,6 +116,53 @@ def delegated_graph(hby, hab):
 
     def near(target):
         return disclosure(issuer.pre, edge=dict(d="", authority=dict(n=target.said, o="DI2I")))
+
+    full, partial = near(far)
+    return DisclosureGraph([full, far_full], [partial, far], [near(bad_far)[1], bad_far],
+                           [hab, root, middle, issuer], None)
+
+
+def delegated_graph_case(graph_case):
+    """Peers replay each delegator's full KEL, including approvals, for delegated-authority rows."""
+    return graph_case in ("DI2I", "DI1I", "E1E+DI1I")
+
+
+def same_issuer_graph(hby, hab):
+    """Explicit I1I suppresses the I2I default; a different far issuer refuses."""
+    authority = hby.makeHab(name="authority")
+    far_full, far = disclosure(hab.pre, issuee=authority.pre)
+    _, bad_far = disclosure(authority.pre, issuee=authority.pre)
+
+    def near(target):
+        return disclosure(hab.pre, edge=dict(d="", authority=dict(n=target.said, o="I1I")))
+
+    full, partial = near(far)
+    return DisclosureGraph([full, far_full], [partial, far], [near(bad_far)[1], bad_far],
+                           [hab, authority], None)
+
+
+def delegated_issuer_graph(hby, hab, graph_case):
+    """Two approved hops make the near issuer a delegated descendant of the far issuer.
+
+    DI1I refuses a far issuer outside that ancestry; the composed row keeps DI1I
+    valid and refuses on unequal issuees instead.
+    """
+    root = hby.makeHab(name="delegation-root")
+    middle = hby.makeHab(name="delegation-middle", delpre=root.pre)
+    issuer = hby.makeHab(name="delegated-issuer", delpre=middle.pre)
+    root.interact(data=[dict(i=middle.pre, s="0", d=middle.pre)])
+    middle.interact(data=[dict(i=issuer.pre, s="0", d=issuer.pre)])
+    composed = graph_case == "E1E+DI1I"
+    far_full, far = disclosure(root.pre, issuee=hab.pre)
+    if composed:
+        _, bad_far = disclosure(root.pre, issuee=root.pre)
+    else:
+        _, bad_far = disclosure(hab.pre, issuee=hab.pre)
+
+    def near(target):
+        return disclosure(issuer.pre, issuee=hab.pre if composed else None,
+                          edge=dict(d="", authority=dict(n=target.said,
+                                                         o=["E1E", "DI1I"] if composed else "DI1I")))
 
     full, partial = near(far)
     return DisclosureGraph([full, far_full], [partial, far], [near(bad_far)[1], bad_far],

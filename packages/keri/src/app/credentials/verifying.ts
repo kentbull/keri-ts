@@ -7,7 +7,8 @@
  *
  * TypeScript divergence:
  * - ordinary outcomes are explicit decisions instead of exception-only control
- *   flow; durable corruption and unsupported `DI2I` still fail explicitly
+ *   flow; durable corruption and unsupported delegated `DI2I`/`DI1I` still
+ *   fail explicitly
  */
 import {
   Dater,
@@ -340,11 +341,17 @@ export class Verifier {
     }
     const attrib = creder.attrib;
     let operator = op;
-    if (operator !== "I2I" && operator !== "DI2I" && operator !== "NI2I") {
+    if (operator === "I1I" || operator === "DI1I") {
+      // Issuer identity suppresses the issuee default and never reads issuees.
+      if (creder.issuer !== issuer) {
+        if (operator === "I1I") return null;
+        throw new ValidationError("DI1I credential chain verification is not implemented.");
+      }
+    } else if (operator !== "I2I" && operator !== "DI2I" && operator !== "NI2I") {
       operator = isRecord(attrib) && typeof attrib.i === "string" ? "I2I" : "NI2I";
     }
 
-    if (operator !== "NI2I") {
+    if (operator === "I2I" || operator === "DI2I") {
       if (!isRecord(attrib) || typeof attrib.i !== "string") {
         return null;
       }

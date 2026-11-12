@@ -122,8 +122,11 @@ export type EdgeRefusalCase =
   | "inherited-schema"
   | "malformed-schema";
 export type PathShapeCase = "required-edge" | "optional-edge";
+/** Issuer-identity rows; the composed row ANDs E1E with DI1I. */
+export type IssuerIdentityCase = "I1I" | "DI1I" | "E1E+DI1I";
 export type GraphCase =
   | PathShapeCase
+  | IssuerIdentityCase
   | "I2I"
   | "DI2I"
   | "NI2I"
@@ -151,6 +154,8 @@ export function graphDisclosures(hby: Habery, hab: Hab, graphCase?: GraphCase): 
   if (graphCase === "required-edge" || graphCase === "optional-edge") return pathShapeGraph(hby, hab, graphCase);
   if (graphCase === "multi-hop" || graphCase === "branching") return deepGraph(hby, hab, graphCase);
   if (graphCase === "DI2I") return delegatedGraph(hby, hab);
+  if (graphCase === "I1I") return sameIssuerGraph(hby, hab);
+  if (graphCase === "DI1I" || graphCase === "E1E+DI1I") return delegatedIssuerGraph(hby, hab, graphCase);
   switch (graphCase) {
     case "I2I":
     case "NI2I":
@@ -173,6 +178,57 @@ function delegatedGraph(hby: Habery, hab: Hab): DisclosureGraph {
   const far = disclosure(root.pre, { issuee: root.pre }), badFar = disclosure(root.pre, { issuee: hab.pre });
   const near = (target: SerderACDC) =>
     disclosure(issuer.pre, { edge: { d: "", authority: { n: target.said, o: "DI2I" } } });
+  const valid = near(far.partial);
+  return {
+    fullNodes: [valid.full, far.full],
+    nodes: [valid.partial, far.partial],
+    badNodes: [near(badFar.partial).partial, badFar.partial],
+    issuers: [hab, root, middle, issuer],
+    unsigned: null,
+  };
+}
+
+/** Peers replay each delegator's full KEL, including approvals, for delegated-authority rows. */
+export function delegatedGraphCase(graphCase?: GraphCase): boolean {
+  return graphCase === "DI2I" || graphCase === "DI1I" || graphCase === "E1E+DI1I";
+}
+
+/** Explicit I1I suppresses the I2I default: the far issuee is not the near issuer; a different far issuer refuses. */
+function sameIssuerGraph(hby: Habery, hab: Hab): DisclosureGraph {
+  const authority = hby.makeHab("authority");
+  const far = disclosure(hab.pre, { issuee: authority.pre }),
+    badFar = disclosure(authority.pre, { issuee: authority.pre });
+  const near = (target: SerderACDC) =>
+    disclosure(hab.pre, { edge: { d: "", authority: { n: target.said, o: "I1I" } } });
+  const valid = near(far.partial);
+  return {
+    fullNodes: [valid.full, far.full],
+    nodes: [valid.partial, far.partial],
+    badNodes: [near(badFar.partial).partial, badFar.partial],
+    issuers: [hab, authority],
+    unsigned: null,
+  };
+}
+
+/**
+ * Two approved hops make the near issuer a delegated descendant of the far issuer.
+ * DI1I refuses a far issuer outside that ancestry; the composed row keeps DI1I
+ * valid and refuses on unequal issuees instead.
+ */
+function delegatedIssuerGraph(hby: Habery, hab: Hab, graphCase: "DI1I" | "E1E+DI1I"): DisclosureGraph {
+  const root = hby.makeHab("delegation-root");
+  const middle = hby.makeHab("delegation-middle", undefined, { delpre: root.pre });
+  const issuer = hby.makeHab("delegated-issuer", undefined, { delpre: middle.pre });
+  root.interact({ data: [{ i: middle.pre, s: "0", d: middle.pre }] });
+  middle.interact({ data: [{ i: issuer.pre, s: "0", d: issuer.pre }] });
+  const composed = graphCase === "E1E+DI1I";
+  const far = disclosure(root.pre, { issuee: hab.pre });
+  const badFar = composed ? disclosure(root.pre, { issuee: root.pre }) : disclosure(hab.pre, { issuee: hab.pre });
+  const near = (target: SerderACDC) =>
+    disclosure(issuer.pre, {
+      issuee: composed ? hab.pre : undefined,
+      edge: { d: "", authority: { n: target.said, o: composed ? ["E1E", "DI1I"] : "DI1I" } },
+    });
   const valid = near(far.partial);
   return {
     fullNodes: [valid.full, far.full],
