@@ -126,6 +126,8 @@ export interface Scenario {
   holderStore: IssuanceOperationStore;
   holderChanges: { id: string }[];
   fail: { on: boolean };
+  /** The in-process transport shared by both parties. */
+  delivery: IssuanceDelivery["deliver"];
   author: RegistryAuthor;
   /** A fresh registry for issuer hab `index`, and a credential for holder hab `index`. */
   registry(index: number): Operation<{ regid: string; credential: () => SerderACDC }>;
@@ -158,6 +160,7 @@ export function* scenario(count = 1, onReceipt = () => {}): Operation<Scenario> 
     derived,
     changes,
     fail,
+    delivery: deliver,
     author,
     holderStore,
     holderChanges,

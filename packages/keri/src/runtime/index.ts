@@ -839,6 +839,30 @@ export {
   waitForIssuance,
 } from "../app/ipex/issuance.ts";
 
+// Runtime-owned single-signature IPEX presentation operations (present, process, status, wait, abandon).
+export {
+  abandonPresentation,
+  MemoryPresentationOperationStore,
+  type PreparedPresentation,
+  preparePresentation,
+  present,
+  type PresentationBegun,
+  type PresentationDeps,
+  type PresentationEndState,
+  type PresentationInput,
+  PresentationOperations,
+  type PresentationOperationStore,
+  type PresentationOptions,
+  type PresentationRecord,
+  type PresentationResponse,
+  type PresentationStatus,
+  presentationStatus,
+  type PresentationVerb,
+  type PresentationWaitOptions,
+  type PresentOptions,
+  waitForPresentation,
+} from "../app/ipex/presenting.ts";
+
 // Library delegator approval (list, approve, status, wait, dismiss).
 export {
   approveDelegation,
