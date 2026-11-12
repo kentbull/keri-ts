@@ -96,7 +96,7 @@ Deno.test("issuance completes: Grant, query, reply, anchored BUP, finish, proof 
   });
 });
 
-Deno.test("issuing.py: the query is resent unchanged each second until DH completes", async () => {
+Deno.test("the query is resent each second, freshly dated with the same keys, until DH completes", async () => {
   await run(function*() {
     const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
     const { grant } = yield* beginIssuance(ops, {
@@ -111,7 +111,10 @@ Deno.test("issuing.py: the query is resent unchanged each second until DH comple
     s.clock.skew += 1100;
     yield* ops.processOnce();
     assertEquals(queries().length, 2);
-    assertEquals(queries()[1].msg, queries()[0].msg, "start() is not repeated: same bytes, keys and lifetime");
+    const [first, resent] = queries().map((sent) => new TextDecoder().decode(parseBytes(sent.msg)[0].body.raw));
+    assert(first !== resent, "an identical resend would be a KRAM replay");
+    const keys = (query: string) => JSON.stringify(JSON.parse(query).q);
+    assertEquals(keys(resent), keys(first), "start() is not repeated: same transaction and ephemeral keys");
     assertEquals(issuanceStatus(ops, grant).state, "active");
   });
 });
@@ -332,7 +335,7 @@ Deno.test("two identifiers issue concurrently on one owner without crossing", as
   });
 });
 
-Deno.test("an aged query is re-dated and accepted; a timely one is resent unchanged", async () => {
+Deno.test("a query the peer never got is replaced by a freshly dated one, which is accepted", async () => {
   await run(function*() {
     // A 300 ms single-key window lets the query age in real time.
     const s = yield* scenario(1, undefined, true, {
@@ -364,7 +367,26 @@ Deno.test("an aged query is re-dated and accepted; a timely one is resent unchan
     lose = false;
     yield* ops.processOnce();
     assertEquals(queries.length, 2, "the query was due again");
-    assert(text(queries[0]) !== text(queries[1]), "an aged query is re-signed with a new date, not resent");
+    assert(text(queries[0]) !== text(queries[1]), "the resend is signed with a new date, not repeated");
+    yield* settle(s, ops, [grant]);
+    assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
+  });
+});
+
+Deno.test("a peer that took the query and lost it before consenting is answered by the next fresh query", async () => {
+  await run(function*() {
+    const s = yield* scenario(), ops = s.owner(), reg = yield* s.registry(0);
+    const { grant } = yield* beginIssuance(ops, {
+      hab: s.issuer.habs[0],
+      credential: reg.credential(),
+      options: grantOptions(s),
+    });
+    yield* ops.processOnce(); // Grant and query reach the holder, which retains the query for its consent
+    const holderDh = s.holder.runtime.ipex!.dhke(s.holder.habs[0]);
+    holderDh.close(); // the process that held it ends: the retained query goes, the KRAM replay record stays
+    holderApproves(s, grant);
+    assertEquals(holderDh.outgoing.length, 0, "no query is left to answer");
+    s.clock.skew += 1100;
     yield* settle(s, ops, [grant]);
     assertEquals(issuanceStatus(ops, grant), { state: "done", role: "issuer", phase: "issued" });
   });
