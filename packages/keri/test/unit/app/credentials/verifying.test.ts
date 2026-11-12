@@ -411,6 +411,46 @@ Deno.test("Verifier rejects DI2I chains explicitly", async () => {
   });
 });
 
+Deno.test("Verifier checks I1I issuer identity and refuses delegated DI1I without default coercion", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: `verifier-i1i-${crypto.randomUUID()}`, temp: true, skipConfig: true });
+    const reger = yield* createReger({ name: `verifier-i1i-${crypto.randomUUID()}`, temp: true });
+    try {
+      const issuer = makePrefixer(), other = makePrefixer(), holder = makePrefixer();
+      const registry = digestFor("registry-i1i").qb64;
+      const schemer = new Schemer({ sed: schemaSed() });
+      hby.db.schema.pin(schemer.said, schemer);
+      // The far issuee is not the near issuer, so a coerced I2I default would escrow.
+      const child = makeCredential({
+        issuer: issuer.qb64,
+        registry,
+        schema: schemer.said,
+        attrib: { i: holder.qb64, role: "far" },
+      });
+      setState(reger, registry, child.said!, Ilks.iss);
+      const verifier = new Verifier(hby, { reger });
+      assertDecision(verifier.processCredential(anchorArgs(child, issuer)), "accept");
+      const parent = (prefixer: Prefixer, o: string) => {
+        const creder = makeCredential({
+          issuer: prefixer.qb64,
+          registry,
+          schema: schemer.said,
+          edge: { child: { n: child.said, o } },
+        });
+        setState(reger, registry, creder.said!, Ilks.iss);
+        return verifier.processCredential(anchorArgs(creder, prefixer));
+      };
+      assertDecision(parent(issuer, "I1I"), "accept");
+      assertDecision(parent(issuer, "DI1I"), "accept");
+      assertDecision(parent(other, "I1I"), "escrow", "missingChain");
+      assertDecision(parent(other, "DI1I"), "reject", "unsupportedChainOperator");
+    } finally {
+      yield* reger.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
 Deno.test("Verifier publishes saved and dependency cues with credential or escrow writes", async () => {
   await run(function*() {
     const hby = yield* createHabery({ name: `verifier-cues-${crypto.randomUUID()}`, temp: true, skipConfig: true });

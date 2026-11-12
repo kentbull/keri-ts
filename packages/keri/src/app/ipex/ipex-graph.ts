@@ -1,6 +1,6 @@
 /** Borrowed IPEX frame DAGs, negotiated disclosure paths and traversal policy. */
 import { type CesrFrame, Compactor, makePather, type MapperMap, SerderACDC } from "cesr-ts";
-import { acdcEdgeBlocks as blocks, acdcEdgeTarget, type AcdcGraph, acdcGroupLabels } from "../../acdc/chaining.ts";
+import { type AcdcGraph, walkAcdcGraph } from "../../acdc/chaining.ts";
 
 /** One node selection: schema query, graph path and relative disclosure paths. */
 export type DisclosurePlan = readonly (readonly [schema: string, path: string, fields: readonly string[]])[];
@@ -63,7 +63,7 @@ export function singleDagDisclosurePlan(value: unknown): DisclosurePlan | null {
 }
 
 /**
- * Index unique disclosed credential nodes and walk their reachable graph in BFS order.
+ * Index unique disclosed credential frames, then delegate the graph walk to `walkAcdcGraph`.
  * Offers may omit far nodes; grants require every referenced node. Nested ownership
  * does not make these nodes independently accepted runtime messages.
  */
@@ -76,65 +76,15 @@ export function walkIpexGraph(
   for (const [index, frame] of nests.entries()) {
     const body = frame.body;
     if (
-      !(body instanceof SerderACDC) || !body.verify() || !nodeIlks.has(body.ilk)
+      !(body instanceof SerderACDC) || !nodeIlks.has(body.ilk)
       || !body.said || (index === 0 && body.said !== origin) || nodes.has(body.said)
     ) return null;
     // Descendants are not additional implicit evidence for this disclosed node.
     if (frame.nests?.length) return null;
     nodes.set(body.said, frame as CesrFrame & { body: SerderACDC });
   }
-  if (!nodes.has(origin)) return null;
-  const seen = new Set<string>();
-  const order: string[] = [];
-  const dependencies = new Map<string, Set<string>>();
-  const queue = [origin];
-  for (let index = 0; index < queue.length; index++) {
-    const said = queue[index];
-    if (seen.has(said)) continue;
-    seen.add(said);
-    order.push(said);
-    const farNodes = new Set<string>();
-    dependencies.set(said, farNodes);
-    const edges = blocks(nodes.get(said)!.body.sad!.e);
-    if (!edges) return null;
-    const groups: unknown[] = [...edges];
-    for (let g = 0; g < groups.length; g++) {
-      const edge = groups[g];
-      const target = acdcEdgeTarget(edge);
-      if (target === false) return null;
-      if (typeof target === "string") {
-        if (!nodes.has(target)) {
-          if (closed) return null;
-        } else {
-          farNodes.add(target);
-          if (!seen.has(target)) queue.push(target);
-        }
-      } else {
-        if (!record(edge)) return null;
-        for (const [key, value] of Object.entries(edge)) {
-          if (acdcGroupLabels.has(key) || typeof value === "string") continue;
-          groups.push(value);
-        }
-      }
-    }
-  }
-  if (seen.size !== nodes.size) return null;
-  const parents = new Map<string, Set<string>>();
-  for (const [near, children] of dependencies) {
-    for (const far of children) {
-      if (!parents.has(far)) parents.set(far, new Set());
-      parents.get(far)!.add(near);
-    }
-  }
-  const dependencyOrder = order.filter((said) => dependencies.get(said)!.size === 0);
-  for (let i = 0; i < dependencyOrder.length; i++) {
-    for (const near of parents.get(dependencyOrder[i]) ?? []) {
-      const children = dependencies.get(near)!;
-      children.delete(dependencyOrder[i]);
-      if (!children.size) dependencyOrder.push(near);
-    }
-  }
-  return dependencyOrder.length === nodes.size ? { nodes, order } : null;
+  const order = walkAcdcGraph(origin, nodes, closed);
+  return order ? { nodes, order } : null;
 }
 
 /** Compare SAD values structurally while retaining list order; map insertion order is not semantic here. */

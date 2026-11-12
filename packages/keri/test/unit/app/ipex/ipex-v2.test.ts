@@ -1881,8 +1881,8 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
       });
       assertEquals(
         (yield* edgeIntake([arrayEdge, valid], ["/", "/e/0/link/_/"])).kind,
-        "accept",
-        "expanded arrays retain explicit-hop support",
+        "reject",
+        "a schema cannot redefine the Edge Section as a list",
       );
       for (const prefix of ["/a/link/_/", "/e/link/_/a/link/_/"]) {
         assertEquals((yield* edgeIntake([stringEdge, valid], ["/", prefix])).kind, "reject");
@@ -1964,6 +1964,76 @@ Deno.test("IPEX schema gates precede issuer reduction and validate every edge pi
         hby.db.schema.get = get;
       }
       assertEquals(hby.db.exns.get(valid.said!), null, "conversation acceptance does not accept a credential");
+    } finally {
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("IPEX accepts, refuses or escrows issuer-identity edge results", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const root = hby.makeHab("root"), delegate = hby.makeHab("delegate", undefined, { delpre: root.pre });
+    const unrelated = hby.makeHab("unrelated"), recipient = hby.makeHab("recipient");
+    const bounded = hby.makeHab("bounded", undefined, { DnD: true });
+    const blocked = hby.makeHab("blocked", undefined, { delpre: bounded.pre });
+    const exchanger = new Exchanger(hby);
+    loadIpexHandlers(hby, exchanger);
+    type Signer = typeof root;
+    const signed = (body: SerderACDC, hab: Signer): CesrFrame => ({
+      body,
+      attachments: messageAttachmentGroups({
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: hab.pre }),
+            NumberPrimitive.fromNum(BigInt(hab.kever!.lastEst.s)),
+            new Diger({ qb64: hab.kever!.lastEst.d }),
+            hab.sign(body.raw, true),
+          ),
+        ],
+      }, Vrsn_2_0),
+    });
+    const send = function*(issuer: Signer, farIssuer: Signer, o: string) {
+      const far = acdcmap(farIssuer.pre, { attribute: { d: "", role: "far" } });
+      const origin = acdcmap(issuer.pre, {
+        attribute: { d: "", role: "near" },
+        issuee: recipient.pre,
+        edge: { d: "", source: { d: "", n: far.said!, o } },
+      });
+      const id = (body: SerderACDC) => (body.schema as MapperMap).$id as string;
+      const serder = ipexExnBody(issuer.pre, "/ipex/grant", [origin, far], {
+        message: crypto.randomUUID(),
+        recipient: recipient.pre,
+        plan: [[id(origin), "/", []], [id(far), "/e/source/_/", []]],
+      });
+      const decision = yield* exchanger.processEvent({
+        serder,
+        nests: [signed(origin, issuer), signed(far, farIssuer)],
+        tsgs: [
+          new TransIdxSigGroup(
+            new Prefixer({ qb64: issuer.pre }),
+            NumberPrimitive.fromNum(BigInt(issuer.kever!.lastEst.s)),
+            new Diger({ qb64: issuer.kever!.lastEst.d }),
+            issuer.sign(serder.raw, true),
+          ),
+        ],
+      });
+      return { said: serder.said!, kind: decision.kind };
+    };
+    const state = (said: string) => [Boolean(hby.db.exns.get(said)), Boolean(hby.db.epse.get(said))];
+    try {
+      const equal = yield* send(root, root, "I1I");
+      assertEquals([equal.kind, ...state(equal.said)], ["accept", true, false]);
+      const unrelatedRoots = yield* send(unrelated, root, "DI1I");
+      assertEquals([unrelatedRoots.kind, ...state(unrelatedRoots.said)], ["reject", false, false]);
+      bounded.interact({ data: [{ i: blocked.pre, s: "0", d: blocked.pre }] });
+      const dnd = yield* send(blocked, bounded, "DI1I");
+      assertEquals([dnd.kind, ...state(dnd.said)], ["reject", false, false], "DND is a decided refusal");
+      const awaiting = yield* send(delegate, root, "DI1I");
+      assertEquals([awaiting.kind, ...state(awaiting.said)], ["escrow", false, true]);
+      root.interact({ data: [{ i: delegate.pre, s: "0", d: delegate.pre }] });
+      yield* exchanger.processEscrows();
+      assertEquals(state(awaiting.said), [true, false], "the anchor's arrival accepts the unchanged Grant");
     } finally {
       yield* hby.close(true);
     }

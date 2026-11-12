@@ -54,7 +54,7 @@ export const suites: Record<string, TestSuite> = {
       "test/unit/acdc/dhking.test.ts",
       "test/unit/acdc/registry-root.test.ts",
       "test/integration/app/registry-root-runtime.test.ts",
-      "test/unit/acdc/relating.test.ts",
+      "test/unit/core/kel/delegation-ancestry.test.ts",
       "test/unit/acdc/unblinding.test.ts",
       "test/unit/app/protocol/nested-frame-boundary.test.ts",
       "test/unit/app/protocol/message-admission.test.ts",

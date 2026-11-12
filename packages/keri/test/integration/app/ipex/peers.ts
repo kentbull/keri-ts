@@ -71,6 +71,7 @@ import {
   stopChild,
 } from "../interop-test-helpers.ts";
 import {
+  delegatedGraphCase,
   type DisclosureGraph,
   disclosurePlan,
   type GraphCase,
@@ -297,7 +298,7 @@ class TypeScriptPeer implements DerivedIpexPeer {
     this.remote = remote;
     this.plan = plan;
     for (const issuer of this.graph.issuers) {
-      if (this.graphCase === "DI2I") {
+      if (delegatedGraphCase(this.graphCase)) {
         // The graph orders delegators before delegates; replay the actual approvals as well as inceptions.
         for (const wire of this.hby.db.clonePreIter(issuer.pre, 0, Vrsn_2_0)) {
           for (const frame of parseBytes(concatBytes(Counter.makeGVC(Vrsn_2_0), wire))) await this.post(frame);

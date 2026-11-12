@@ -301,31 +301,50 @@ Unregistered nodes require issuer authentication but no registry state.
 
 Own schemas and malformed graph shape are global obligations. Strong AND/OR may
 reduce an unused false or unknown branch, while missing decisive dependencies
-remain retryable. Unsupported NOT and m-ary operators remain unknown under
-the selected Python profile. There is no separate private EGF interpreter.
-Applications require a valid root before signatures or new consent records;
-historical inventory and exact retained disclosure remain unchanged.
+remain retryable. Unsupported NOT, unrecognized unary tokens and m-ary operators
+are non-retryable unknowns; unary unknowns are ANDed with the leaf's recognized
+relations rather than replacing them, so they never weaken a decided failure.
+There is no separate private EGF interpreter. Applications require a valid root
+before signatures or new consent records; historical inventory and exact retained
+disclosure remain unchanged.
 
-DI2I follows merged KERIpy `84301a9ff4bbb644ce134f9649ad56b49aa130f2`
-(`acdc.relating` and `IpexHandler`): the near issuer may equal the far issuee or
-reach it through approved delegated inceptions at any depth. Each hop checks the
-delegator's accepted inception DND and the exact dip approval, independent of later
-delegate rotations. Missing KEL/anchor evidence is retryable; a wrong ancestry,
-untargeted far node or DND is false. Pending delegation is conjoined with pins and
-far-node truth, so it cannot conceal a decided failure.
+Edge semantics follow upstream KERIpy PR 1757 as adopted by the owner decisions
+for this port. `walkAcdcGraph` (wrapped by `walkIpexGraph`, which owns frame
+admission) verifies every view including its carried section SAIDs, then walks
+BFS with closure, reachability and acyclicity. The Edge Section is absent, an
+empty map, one expanded top-level Edge-group, or a compact SAID. Lists, falsy
+non-map values, non-SAID strings and a top-level `n` or `w` are malformed. A
+compact section is an opaque terminal whose node verdict is a non-retryable
+unknown. String group members must be SAIDs and remain opaque compact Edge blocks;
+schema-classified simple string edges (`classifyEdge`) are deferred.
 
-`acdc/relating.ts` reads accepted storage without repairing aess. Cached first-seen
-approvals remain usable after superseding; without a cached approval the search
-uses the last accepted KEL events. KEL intake owns cache repair. This retains
-upstream's history-dependent lookup distinction, not a superseding convergence
-guarantee. Unlike Python's verified-only cache assumption, TypeScript protected
-intake may retain an unverified attached source hint; its named event must contain
-the exact dip seal. An unrelated hint falls back to the last-accepted KEL search,
-so it cannot veto a later genuine approval. Missing first-seen event bodies
-remain storage failures. The companion specification PR
-[ToIP #213](https://github.com/trustoverip/kswg-acdc-specification/pull/213) is still
-open at this source review; implementation parity is not a claim of ratified text.
-The legacy TEL verifier is outside this v2 scope.
+Unary relations form two independent latest-wins groups, I2I/NI2I/DI2I
+(issuer-to-issuee) and I1I/DI1I (issuer-to-issuer); E1E composes with both. Any
+explicit I2I, NI2I, DI2I, E1E, I1I or DI1I suppresses the implicit default (I2I
+when the far node has an issuee, else NI2I). I1I requires equal near and far
+issuers; DI1I accepts equality or approved delegated descent of the near issuer
+from the far issuer. Neither reads issuees. Relations are conjoined by Kleene AND.
+Every schema pin is evaluated unless the relation is already invalid, and the far
+node's own verdict is always conjoined.
+
+DI2I and DI1I use `core/kel/delegation-ancestry.ts` (KERIpy `delegationRefusal` /
+`Kevery.isDelegated`): `pre === ancestor` is not delegation; each hop needs the
+delegate's key state, the delegator's KEL and accepted inception without DND
+(checked before the anchor), the dip and an accepted approval carrying its exact
+`{i,s,d}` seal. Missing evidence is retryable unknown and escrows; a wrong
+ancestry, DND or cycle is false. The approval is the aess-named first-seen event
+when it carries the seal, otherwise any first-seen (`fons`) delegator event
+carrying it, superseded events included, so cached and uncached validators agree.
+Lookup is read-only and never repairs aess; KEL intake owns cache writes. Protected
+intake may retain an unverified source hint; it neither grants authority nor
+vetoes a later genuine approval. A missing body for an aess-named first-seen event
+is a storage failure.
+
+The Grant walk stays closed: an undisclosed far node refuses because fixed Grant
+nests cannot be completed by retry. The operator-blind own-schema gate before
+pending authorization also stays. The legacy TEL verifier checks I1I issuer
+equality and reports delegated DI1I (like DI2I) as unsupported rather than
+coercing either to the default.
 
 Wallet disclosure support includes deduplicated delegation ancestry root-first for
 selected issuers, issuees, senders and source sealers. It replays their accepted

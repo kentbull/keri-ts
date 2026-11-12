@@ -27,7 +27,7 @@ from keri.core import Codens, Counter, Diger, Kevery, Number, Parser, SealSource
 from keri.peer import Exchanger
 from keri.peer.exchanging import loadParsedNestedSubstreams, serializeMessage, serializeParsedSubstream
 
-from ipex_disclosures import graph_disclosures, partial_disclosure
+from ipex_disclosures import delegated_graph_case, graph_disclosures, partial_disclosure
 
 
 class Recorder:
@@ -132,8 +132,8 @@ class IpexPeer:
     def connect(self, remote, plan):
         self.remote, self.plan = remote, plan
         for issuer in self.graph.issuers:
-            if self.witnessed or self.graph_case == "DI2I":
-                # DI2I graph order is root-first; real replay includes each delegator's approval.
+            if self.witnessed or delegated_graph_case(self.graph_case):
+                # Delegated graph order is root-first; real replay includes each delegator's approval.
                 self.post(b"".join(self.hby.db.clonePreIter(pre=issuer.pre, gvrsn=Vrsn_2_0)))
                 continue
             self.post(issuer.msgOwnEvent(sn=0, framed=True, gvrsn=Vrsn_2_0))

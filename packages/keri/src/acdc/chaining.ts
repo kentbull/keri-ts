@@ -1,9 +1,16 @@
-/** Read-only ACDC chaining over caller-owned node verdicts; authentication and application state policy stay separate. */
+/**
+ * Read-only ACDC chaining over caller-owned node verdicts; authentication and application state policy stay separate.
+ *
+ * KERIpy correspondence: the graph walk and Edge evaluation of upstream PR 1757's
+ * `acdc.evaluating.EdgeEvaluator`. keri-ts keeps a functional seam: protocols
+ * (IPEX) own node authentication and frame admission, then call `walkAcdcGraph`
+ * and `evaluateChain` without this module knowing any disclosure protocol.
+ */
 import { ParserError, Saider, type SerderACDC } from "cesr-ts";
 import { ValidationError } from "../core/errors.ts";
+import { delegationAncestry } from "../core/kel/delegation-ancestry.ts";
 import { Schemer } from "../core/scheming.ts";
 import type { Baser } from "../db/basing.ts";
-import { delegationRelation } from "./relating.ts";
 import { validateSchema } from "./scheming.ts";
 
 /** Borrow a complete reachable DAG of verified credential views, with its origin first, without projecting frames. */
@@ -12,12 +19,16 @@ export interface AcdcGraph {
   order: readonly string[];
 }
 
-/** Reserved section/group labels include a pin at every level. */
+/** Reserved Edge-group labels include a pin at every level. The top-level Edge Section additionally forbids `w`. */
 export const acdcGroupLabels: ReadonlySet<string> = new Set(["d", "u", "s", "o", "w"]);
 const leafLabels = new Set([...acdcGroupLabels, "n"]);
-const unary = new Set(["I2I", "NI2I", "DI2I", "E1E", "NOT"]);
+const unary = new Set(["I2I", "NI2I", "DI2I", "E1E", "I1I", "DI1I", "NOT"]);
+/** Latest-wins issuer-to-issuee group. */
 const delegative = new Set(["I2I", "NI2I", "DI2I"]);
-const suppressDefault = new Set([...delegative, "E1E"]);
+/** Latest-wins issuer-to-issuer group, independent of the delegative group; E1E composes with both. */
+const issuerIdentity = new Set(["I1I", "DI1I"]);
+/** Any explicit relation suppresses the implicit I2I/NI2I default. */
+const suppressDefault = new Set([...delegative, "E1E", ...issuerIdentity]);
 /** A truth verdict cannot absorb malformed input; callers represent that separately as null. */
 export type ChainVerdict =
   | { kind: "valid" }
@@ -28,13 +39,7 @@ export type ChainVerdict =
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-/** Empty section containers carry no disclosed edge semantics; malformed nonempty values refuse. */
-export function acdcEdgeBlocks(value: unknown): Record<string, unknown>[] | null {
-  if (!value || (Array.isArray(value) && !value.length) || (record(value) && !Object.keys(value).length)) return [];
-  if (record(value)) return [value];
-  return Array.isArray(value) && value.every(record) ? value : null;
-}
-/** Only canonical qualified digests identify expanded leaf targets and schema pins. */
+/** Only canonical qualified digests identify expanded leaf targets, compact commitments and schema pins. */
 function said(value: unknown): value is string {
   if (typeof value !== "string") return false;
   try {
@@ -43,11 +48,107 @@ function said(value: unknown): value is string {
     return false;
   }
 }
+
+/** One node's Edge Section: absent or empty, an opaque compact commitment, or one expanded top-level Edge-group. */
+export type AcdcEdgeSection =
+  | { kind: "none" }
+  | { kind: "compact"; said: string }
+  | { kind: "expanded"; section: Record<string, unknown> };
+
+/**
+ * Classify a node's `e` field; null is malformed.
+ * Lists, falsy non-map values, non-SAID strings and a top-level `n` or `w` are
+ * malformed. A compact SAID is a valid opaque terminal that names no far nodes.
+ */
+export function acdcEdgeSection(sad: Readonly<Record<string, unknown>>): AcdcEdgeSection | null {
+  if (!Object.hasOwn(sad, "e")) return { kind: "none" };
+  const value = sad.e;
+  if (record(value)) {
+    if (!Object.keys(value).length) return { kind: "none" };
+    // The Edge Section is itself an Edge-group, never a leaf, and carries no weight.
+    if (Object.hasOwn(value, "n") || Object.hasOwn(value, "w")) return null;
+    return { kind: "expanded", section: value };
+  }
+  return said(value) ? { kind: "compact", said: value } : null;
+}
 /** Compact Edge strings name blocks, never far ACDCs. Expanded leaves have exact labels. */
 export function acdcEdgeTarget(value: unknown): string | null | false {
   if (!record(value) || !Object.hasOwn(value, "n")) return null;
   return Object.keys(value).every((label) => leafLabels.has(label)) && said(value.n) ? value.n : false;
 }
+
+/**
+ * Walk a disclosed graph of credential views from `origin` in BFS order.
+ *
+ * Every view must verify (including its carried section SAIDs) under its own
+ * SAID key, every Edge Section must be well shaped, every disclosed node must be
+ * reachable and the reachable graph must be acyclic. Closed walks also require
+ * every expanded leaf target to be disclosed; open walks skip undisclosed ones.
+ * Compact Edge Sections and compact Edge members are opaque terminals.
+ * Protocol frame admission (ilks, nests, duplicates) belongs to the caller.
+ */
+export function walkAcdcGraph(
+  origin: string,
+  nodes: ReadonlyMap<string, { readonly body: SerderACDC }>,
+  closed: boolean,
+): string[] | null {
+  for (const [id, { body }] of nodes) if (body.said !== id || !body.verify()) return null;
+  if (!nodes.has(origin)) return null;
+  const seen = new Set<string>();
+  const order: string[] = [];
+  const dependencies = new Map<string, Set<string>>();
+  const queue = [origin];
+  for (let index = 0; index < queue.length; index++) {
+    const id = queue[index];
+    if (seen.has(id)) continue;
+    seen.add(id);
+    order.push(id);
+    const farNodes = new Set<string>();
+    dependencies.set(id, farNodes);
+    const section = acdcEdgeSection(nodes.get(id)!.body.sad!);
+    if (!section) return null;
+    if (section.kind !== "expanded") continue;
+    const groups: Record<string, unknown>[] = [section.section];
+    for (let g = 0; g < groups.length; g++) {
+      for (const [label, member] of Object.entries(groups[g])) {
+        if (acdcGroupLabels.has(label)) continue;
+        if (typeof member === "string") {
+          if (!said(member)) return null;
+          continue;
+        }
+        const target = acdcEdgeTarget(member);
+        if (target === false) return null;
+        if (target === null) {
+          if (!record(member)) return null;
+          groups.push(member);
+        } else if (!nodes.has(target)) {
+          if (closed) return null;
+        } else {
+          farNodes.add(target);
+          if (!seen.has(target)) queue.push(target);
+        }
+      }
+    }
+  }
+  if (seen.size !== nodes.size) return null;
+  const parents = new Map<string, Set<string>>();
+  for (const [near, children] of dependencies) {
+    for (const far of children) {
+      if (!parents.has(far)) parents.set(far, new Set());
+      parents.get(far)!.add(near);
+    }
+  }
+  const dependencyOrder = order.filter((id) => dependencies.get(id)!.size === 0);
+  for (let i = 0; i < dependencyOrder.length; i++) {
+    for (const near of parents.get(dependencyOrder[i]) ?? []) {
+      const children = dependencies.get(near)!;
+      children.delete(dependencyOrder[i]);
+      if (!children.size) dependencyOrder.push(near);
+    }
+  }
+  return dependencyOrder.length === nodes.size ? order : null;
+}
+
 /** Missing proof/pin dependencies retain their ordered schema causes for the existing escrow owner. */
 function unknown(reason: string, retryable = false, schemas: readonly string[] = []): ChainVerdict {
   return { kind: "unknown", reason, retryable, schemas };
@@ -66,12 +167,57 @@ function reduce(op: "AND" | "OR", members: readonly ChainVerdict[]): ChainVerdic
   }
   return { kind: op === "AND" ? "valid" : "invalid" };
 }
+/** Accepted delegation ancestry is the only evidence beyond the two ACDCs; missing KEL evidence can still arrive. */
+function delegatedFrom(db: Baser, op: string, pre: string, ancestor: string): ChainVerdict {
+  const ancestry = delegationAncestry(db, pre, ancestor);
+  if (ancestry.kind === "valid") return { kind: "valid" };
+  if (ancestry.kind === "refused") return { kind: "invalid" };
+  return unknown(`${op} delegation evidence: ${ancestry.reason}`, true);
+}
+
+/**
+ * Evaluate the unary relations of one leaf between its near and far ACDCs.
+ *
+ * Unrecognized tokens and the unimplemented NOT are non-retryable unknowns that
+ * are ANDed with, not substituted for, the recognized relations. Absent any
+ * explicit relation, I2I applies when the far node has an issuee, else NI2I.
+ * The delegative and issuer-identity groups are each latest-wins.
+ */
+function leafRelation(db: Baser, ops: readonly string[], near: SerderACDC, far: SerderACDC): ChainVerdict {
+  const relations: ChainVerdict[] = [];
+  const unrecognized = ops.filter((token) => !unary.has(token));
+  if (unrecognized.length) relations.push(unknown(`Unrecognized unary Edge operator ${unrecognized.join(", ")}.`));
+  if (ops.includes("NOT")) relations.push(unknown("Unimplemented unary Edge operator NOT."));
+  const operators = [...ops];
+  if (!operators.some((token) => suppressDefault.has(token))) operators.push(far.issuee !== null ? "I2I" : "NI2I");
+  const delegate = operators.findLast((token) => delegative.has(token));
+  const identity = operators.findLast((token) => issuerIdentity.has(token));
+  const truth = (value: boolean): ChainVerdict => ({ kind: value ? "valid" : "invalid" });
+
+  if (operators.includes("E1E")) {
+    relations.push(truth(Boolean(near.issuee && far.issuee && near.issuee === far.issuee)));
+  }
+  if (delegate === "I2I") relations.push(truth(Boolean(far.issuee && near.issuer === far.issuee)));
+  if (delegate === "DI2I") {
+    if (!near.issuer || !far.issuee) relations.push({ kind: "invalid" });
+    else if (near.issuer !== far.issuee) relations.push(delegatedFrom(db, "DI2I", near.issuer, far.issuee));
+  }
+  // Issuer identity never reads issuees.
+  if (identity) {
+    if (!near.issuer || !far.issuer) relations.push({ kind: "invalid" });
+    else if (near.issuer !== far.issuer) {
+      relations.push(identity === "I1I" ? { kind: "invalid" } : delegatedFrom(db, "DI1I", near.issuer, far.issuer));
+    }
+  }
+  return reduce("AND", relations);
+}
 
 /**
  * Validate every own schema, then conjoin each caller verdict with its complete edge expression.
  * Every branch is inspected for malformed shape, even when its truth value is unused.
  * Protocol callers supply issuer authentication; applications supply their state policy.
- * This helper reads schemas but writes no records and publishes no cues.
+ * The graph must come from `walkAcdcGraph` (directly or through a protocol walk).
+ * This helper reads schemas and KEL state but writes no records and publishes no cues.
  */
 export function evaluateChain(
   graph: AcdcGraph,
@@ -91,11 +237,13 @@ export function evaluateChain(
     const node = graph.nodes.get(id)?.body, auth = verdicts.get(id);
     if (!node || !auth) return null;
     memo.set(id, unknown(`Node ${id} is already being evaluated.`));
-    const blocks = acdcEdgeBlocks(node.sad!.e);
-    if (!blocks) return null;
+    const section = acdcEdgeSection(node.sad!);
+    if (!section) return null;
     const members: ChainVerdict[] = [auth];
-    for (const block of blocks) {
-      const result = evaluateEdge(block, node, []);
+    if (section.kind === "compact") {
+      members.push(unknown(`Node ${id} carries compact Edge Section ${section.said}, which cannot be evaluated.`));
+    } else if (section.kind === "expanded") {
+      const result = evaluateGroup(section.section, node, []);
       if (!result) return null;
       members.push(result);
     }
@@ -103,28 +251,27 @@ export function evaluateChain(
     memo.set(id, result);
     return result;
   };
-  const evaluateEdge = (
-    edge: Record<string, unknown>,
+  const evaluateGroup = (
+    group: Record<string, unknown>,
     near: SerderACDC,
     inherited: readonly unknown[],
   ): ChainVerdict | null => {
-    const target = acdcEdgeTarget(edge);
-    if (target === false) return null;
-    const pins = Object.hasOwn(edge, "s") ? [...inherited, edge.s] : inherited;
-    if (target !== null) return evaluateLeaf(edge, target, near, pins);
-    const op = Object.hasOwn(edge, "o") ? edge.o : "AND";
+    const pins = Object.hasOwn(group, "s") ? [...inherited, group.s] : inherited;
+    const op = Object.hasOwn(group, "o") ? group.o : "AND";
     if (typeof op !== "string") return null;
     const members: ChainVerdict[] = [];
-    for (const [label, member] of Object.entries(edge)) {
+    for (const [label, member] of Object.entries(group)) {
       if (acdcGroupLabels.has(label)) continue;
       if (typeof member === "string") {
+        if (!said(member)) return null;
         members.push(unknown(`Compact Edge ${label} cannot be dereferenced.`));
-      } else {
-        if (!record(member)) return null;
-        const result = evaluateEdge(member, near, pins);
-        if (!result) return null;
-        members.push(result);
+        continue;
       }
+      const target = acdcEdgeTarget(member);
+      if (target === false || !record(member)) return null;
+      const result = target === null ? evaluateGroup(member, near, pins) : evaluateLeaf(member, target, near, pins);
+      if (!result) return null;
+      members.push(result);
     }
     if (!members.length) return null;
     return op === "AND" || op === "OR" ? reduce(op, members) : unknown(`Unsupported Edge-group operator ${op}.`);
@@ -133,13 +280,14 @@ export function evaluateChain(
     edge: Record<string, unknown>,
     target: string,
     near: SerderACDC,
-    pins: readonly unknown[],
+    inherited: readonly unknown[],
   ): ChainVerdict | null => {
     const far = graph.nodes.get(target)?.body;
     if (!far) return null;
+    const pins = Object.hasOwn(edge, "s") ? [...inherited, edge.s] : inherited;
     const op = edge.o;
     const ops = op == null ? [] : typeof op === "string" ? [op] : Array.isArray(op) ? [...op] : null;
-    if (!ops) return null;
+    if (!ops || !ops.every((token) => typeof token === "string")) return null;
     // Pin shape is morphological, so validate it before unsupported tokens or relations.
     const resolved: (string | Record<string, unknown>)[] = [];
     const ownSchema = far.schema;
@@ -160,46 +308,24 @@ export function evaluateChain(
         resolved.push(pin);
       } else return null;
     }
-    let own: ChainVerdict;
-    if (ops.some((token) => typeof token !== "string" || !unary.has(token))) {
-      own = unknown("Unrecognized unary Edge operator.");
-    } else {
-      const operators = ops as string[];
-      if (!operators.some((token) => suppressDefault.has(token))) operators.push(far.issuee !== null ? "I2I" : "NI2I");
-      const delegate = operators.findLast((token) => delegative.has(token));
-      if (operators.includes("NOT")) {
-        own = unknown("Unimplemented unary Edge operator.");
-      } else {
-        let matched = (!operators.includes("E1E") || Boolean(near.issuee && far.issuee && near.issuee === far.issuee))
-          && (delegate !== "I2I" || Boolean(far.issuee && near.issuer === far.issuee));
-        let pending: ChainVerdict | undefined;
-        if (matched && delegate === "DI2I") {
-          if (!far.issuee || !near.issuer) matched = false;
-          else if (near.issuer !== far.issuee) {
-            const relation = delegationRelation(db, near.issuer, far.issuee);
-            if (relation.kind === "refused") matched = false;
-            else if (relation.kind === "pending") pending = unknown(relation.reason, true);
-          }
-        }
-        own = { kind: matched ? "valid" : "invalid" };
-        if (matched) {
-          for (let pin of resolved) {
-            if (pin === ownSchemaId && record(ownSchema)) pin = ownSchema;
-            const result = validateSchema(far, db, pin);
-            if (result.kind === "valid") continue;
-            own = result.kind === "missing"
-              ? unknown(`Missing edge schema ${result.said}.`, true, [result.said])
-              : { kind: "invalid" };
-            break;
-          }
-        }
-        // Pending delegation cannot replace a pin's decided refusal.
-        if (pending) own = reduce("AND", [own, pending]);
+    const relation = leafRelation(db, ops as string[], near, far);
+    const own = [relation];
+    // A decided relation refusal needs no pin evidence; otherwise every pin is evaluated, not only the first failure.
+    if (relation.kind !== "invalid") {
+      for (let pin of resolved) {
+        if (pin === ownSchemaId && record(ownSchema)) pin = ownSchema;
+        const result = validateSchema(far, db, pin);
+        if (result.kind === "valid") continue;
+        own.push(
+          result.kind === "missing"
+            ? unknown(`Missing edge schema ${result.said}.`, true, [result.said])
+            : { kind: "invalid" },
+        );
       }
     }
     // Do not short-circuit a far subtree: its shape cannot be outvoted by this leaf.
     const farVerdict = evaluateNode(target);
-    return farVerdict ? reduce("AND", [own, farVerdict]) : null;
+    return farVerdict ? reduce("AND", [reduce("AND", own), farVerdict]) : null;
   };
   return graph.order.length ? evaluateNode(graph.order[0]) : null;
 }

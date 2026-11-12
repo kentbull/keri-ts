@@ -54,22 +54,32 @@ record schemas in structing.ts and counted transport in wrappers.
 
 ## TEL, verifier and IPEX
 
-`acdc/chaining.ts` owns one read-only graph evaluator and shared edge shape.
-Callers supply node verdicts; own schemas and malformed shape remain global
-obligations before strong AND/OR reductions. Missing evidence on an unused OR
-branch does not defeat a valid alternative. IPEX supplies issuer authentication
-without interpreting authenticated registry state as validity. Wallet, discloser,
-group approval and current verifier use issued/revoked policy at every registered
-node, including the origin. Unsupported vocabulary remains unknown; applications
-require a valid root. Exact consented views and historical inventory remain
-separate from new-use decisions. Negotiated disclosure stays with IPEX.
+`acdc/chaining.ts` owns the pure graph walk (`walkAcdcGraph`), Edge shape and one
+read-only evaluator; `walkIpexGraph` only admits frames. Callers supply node
+verdicts; own schemas and malformed shape remain global obligations before strong
+AND/OR reductions. Missing evidence on an unused OR branch does not defeat a valid
+alternative. IPEX supplies issuer authentication without interpreting authenticated
+registry state as validity. Wallet, discloser, group approval and current verifier
+use issued/revoked policy at every registered node, including the origin.
+Unsupported vocabulary remains unknown; applications require a valid root. Exact
+consented views and historical inventory remain separate from new-use decisions.
+Negotiated disclosure stays with IPEX.
 
-DI2I uses `acdc/relating.ts` for read-only, fixed-inception delegation checks at
-every hop. Read DND from accepted inception, not mutable current-state projection.
-Cached first-seen approval and uncached last-accepted KEL lookup preserve the
-84301a9f upstream distinction; protected-party source hints still require an exact
-dip seal. Missing approval is retryable and never bypasses pin/far-node reduction.
-KEL intake owns cache writes; the legacy Verifier remains outside the v2 scope.
+Edges follow KERIpy PR 1757 as owner-adapted: `e` is absent, `{}`, one expanded
+group or an opaque compact SAID (non-retryable unknown); lists, falsy non-maps and
+top-level `n`/`w` are malformed. I2I/NI2I/DI2I and I1I/DI1I are independent
+latest-wins groups, E1E composes, and any explicit relation suppresses the default.
+Unrecognized/NOT tokens are ANDed non-retryable unknowns, never a short-circuit.
+All pins are evaluated unless the relation is invalid. Grant walks stay closed and
+keep the own-schema gate. String simple edges (classifyEdge) are deferred.
+
+DI2I/DI1I ask `core/kel/delegation-ancestry.ts`: fixed-inception checks at every
+hop, DND from accepted inception before the anchor, and an approval that is the
+aess-named or any first-seen (`fons`) delegator event with the exact dip seal,
+superseded included, so cached and uncached lookup agree. Missing evidence is
+retryable and never bypasses pin/far-node reduction. Lookup never repairs aess;
+KEL intake owns cache writes. The legacy Verifier checks I1I and refuses DI1I/DI2I
+as unsupported instead of default-coercing.
 Wallet disclosure exports deduplicated ancestor KELs root-first, including retained
 first-seen history and exact attachments. Receiver intake still establishes
 authority; export cannot override superseding policy or imply convergence.
