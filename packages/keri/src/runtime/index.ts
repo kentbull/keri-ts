@@ -278,6 +278,20 @@ export {
   ipexSpurnExn,
 } from "../app/ipex/ipexing.ts";
 export {
+  addMailbox,
+  completeMailboxAdmin,
+  type MailboxAdminDeps,
+  type MailboxAdminResponse,
+  mailboxAdminUrl,
+  type MailboxStatus,
+  mailboxStatus,
+  type MailboxWaitOptions,
+  type MailboxWaitResult,
+  removeMailbox,
+  requireMailboxEndpointUrl,
+  waitForMailboxState,
+} from "../app/mailbox/mailbox-admin.ts";
+export {
   MailboxDirector,
 } from "../app/mailbox/mailbox-director.ts";
 export {

@@ -9,30 +9,25 @@ import { writeGroupEndpointRoleProposal } from "./endpoints.ts";
  * seams over the runtime and databaser contracts documented elsewhere; the goal
  * here is to keep the operational flow obvious.
  */
-import { concatBytes } from "cesr-ts";
 import { call, type Operation, spawn } from "effection";
 import {
-  abortable,
-  type AgentRuntime,
-  buildCesrStreamRequest,
-  collectBytes,
+  addMailbox,
+  completeMailboxAdmin,
   endpointRoleAccepted,
-  fetchEndpointUrls,
-  type Hab,
   type Habery,
   isLocalGroupHab,
   loadAcceptedEndpointRole,
-  makeNowIso8601,
+  type MailboxAdminDeps,
   Organizer,
-  preferredUrl,
   proposeGroupEndpointRole,
+  removeMailbox,
+  requireMailboxEndpointUrl,
   Roles,
-  settleRuntimeIngress,
   TopicsRecord,
   ValidationError,
 } from "keri-ts/runtime";
 import { runIndirectHost } from "../../host/indirect-host.ts";
-import { canonicalOrigin, configFileCandidates, mailboxAdminUrl } from "../../operator/host-planning.ts";
+import { canonicalOrigin, configFileCandidates } from "../../operator/host-planning.ts";
 import {
   collectConfiguredMailboxes,
   collectMailboxDebugReport,
@@ -309,12 +304,13 @@ function* withMailboxWorkflow(
     mailboxOpenOptions(args),
     function*({ hby, hab, runtime }) {
       const mailboxAid = resolveMailboxAid(hby, args.mailbox!);
-      const endpointUrl = preferredUrl(fetchEndpointUrls(hby, mailboxAid));
-      if (!endpointUrl) {
-        throw new ValidationError(
-          `No endpoint URL is stored for mailbox ${mailboxAid}.`,
-        );
-      }
+      const endpointUrl = requireMailboxEndpointUrl(hby, mailboxAid);
+      const deps: MailboxAdminDeps = {
+        hby,
+        http: new NodeHttpClient(),
+        reactor: runtime.reactor,
+        protocol: runtime.protocol,
+      };
 
       if (isLocalGroupHab(hby, hab)) {
         if (!allow) {
@@ -350,7 +346,7 @@ function* withMailboxWorkflow(
           );
         }
         const rpy = loadAcceptedEndpointRole(hab, mailboxAid, Roles.mailbox);
-        yield* completeMailboxAdmin(runtime, hby, hab, mailboxAid, endpointUrl, rpy, allow);
+        yield* completeMailboxAdmin(deps, hab, mailboxAid, endpointUrl, rpy, true);
         console.log(`added ${mailboxAid}`);
         return;
       }
@@ -359,57 +355,10 @@ function* withMailboxWorkflow(
         throw new ValidationError("--multisig-mode is only valid for local group aliases.");
       }
 
-      const existing = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
-      const rpy = allow && existing?.allowed
-        ? hab.loadEndRole(hab.pre, mailboxAid, Roles.mailbox)
-        : hab.makeEndRole(mailboxAid, Roles.mailbox, allow);
-      if (rpy.length === 0) {
-        throw new ValidationError(
-          `No accepted mailbox role reply is available for ${hab.pre}.`,
-        );
-      }
-      yield* completeMailboxAdmin(runtime, hby, hab, mailboxAid, endpointUrl, rpy, allow);
-
+      yield* allow ? addMailbox(deps, hab, mailboxAid) : removeMailbox(deps, hab, mailboxAid);
       console.log(`${allow ? "added" : "removed"} ${mailboxAid}`);
     },
   );
-}
-
-function* completeMailboxAdmin(
-  runtime: AgentRuntime,
-  hby: Habery,
-  hab: Hab,
-  mailboxAid: string,
-  endpointUrl: string,
-  rpy: Uint8Array,
-  allow: boolean,
-): Operation<void> {
-  const submission = collectMailboxAdminSubmission(hby, hab.pre);
-  const response = yield* postMailboxAdmin(
-    endpointUrl,
-    mailboxAid,
-    submission,
-    rpy,
-  );
-  if (!response.ok) {
-    throw new ValidationError(
-      `Mailbox admin request failed with HTTP ${response.status}: ${response.body}`,
-    );
-  }
-
-  yield* settleRuntimeIngress(runtime, [rpy]);
-
-  const end = hby.db.ends.get([hab.pre, Roles.mailbox, mailboxAid]);
-  if (allow && !end?.allowed) {
-    throw new ValidationError(
-      "Mailbox add was not accepted into local state.",
-    );
-  }
-  if (!allow && (!end || end.allowed)) {
-    throw new ValidationError(
-      "Mailbox removal was not accepted into local state.",
-    );
-  }
 }
 
 /** Normalize mailbox CLI shared storage/runtime open arguments. */
@@ -553,117 +502,4 @@ function resolveMailboxAid(
     );
   }
   return matches[0]!.id;
-}
-
-/**
- * Collect mailbox-admin replay material in both normalized and legacy shapes.
- *
- * `replay` is the verifier-ready stream used by raw CESR ingress.
- * `kel`/`delkel` preserve the legacy multipart wrapper contract used by
- * existing KERIpy mailbox admin hosts.
- */
-function collectMailboxAdminSubmission(
-  hby: Habery,
-  pre: string,
-): {
-  replay: Uint8Array;
-  kel: Uint8Array;
-  delkel: Uint8Array;
-} {
-  const kever = hby.db.getKever(pre);
-  const delkel = kever ? concatBytes(...hby.db.cloneDelegation(kever)) : new Uint8Array();
-  const kel = concatBytes(...hby.db.clonePreIter(pre));
-  return {
-    replay: concatBytes(delkel, kel),
-    kel,
-    delkel,
-  };
-}
-
-/**
- * Submit one mailbox add/remove request to the remote mailbox provider.
- *
- * Wire shape:
- * - raw `application/cesr` body
- * - controller replay plus terminal signed `rpy`
- * - response body surfaced verbatim on failure for debugging
- */
-function* postMailboxAdmin(
-  url: string,
-  mailboxAid: string,
-  submission: {
-    replay: Uint8Array;
-    kel: Uint8Array;
-    delkel: Uint8Array;
-  },
-  rpy: Uint8Array,
-): Operation<{ ok: boolean; status: number; body: string }> {
-  const raw = yield* call(() => postMailboxAdminCesr(url, mailboxAid, concatBytes(submission.replay, rpy)));
-  if (raw.ok || (raw.status !== 406 && raw.status !== 415)) {
-    return raw;
-  }
-  return yield* call(() => postMailboxAdminMultipart(url, mailboxAid, submission, rpy));
-}
-
-/**
- * Send finite administrative CESR bytes and inspect the completed response.
- *
- * @param url Provider administration endpoint.
- * @param mailboxAid Exact hosted mailbox selected at the shared provider origin.
- * @param bytes Finite signed administrative CESR wire.
- */
-function* postMailboxAdminCesr(
-  url: string,
-  mailboxAid: string,
-  bytes: Uint8Array,
-): Operation<{ ok: boolean; status: number; body: string }> {
-  const request = buildCesrStreamRequest(bytes, { destination: mailboxAid });
-  const response = yield* new NodeHttpClient().request(mailboxAdminUrl(url), {
-    method: "POST",
-    headers: request.headers,
-    body: request.body,
-  });
-
-  // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const body = new TextDecoder().decode(response.body);
-  return { ok: response.ok, status: response.status, body };
-}
-
-/**
- * Prepare multipart control bytes before starting the administrative HTTP request.
- *
- * @param url Provider administration endpoint.
- * @param mailboxAid Exact hosted mailbox selected at the shared provider origin.
- * @param submission Prepared administrative submission fields/artifacts.
- * @param rpy Signed endpoint-role reply bytes included in the multipart body.
- */
-function* postMailboxAdminMultipart(
-  url: string,
-  mailboxAid: string,
-  submission: {
-    kel: Uint8Array;
-    delkel: Uint8Array;
-  },
-  rpy: Uint8Array,
-): Operation<{ ok: boolean; status: number; body: string }> {
-  const form = new FormData();
-  form.append("kel", new TextDecoder().decode(submission.kel));
-  if (submission.delkel.length > 0) {
-    form.append("delkel", new TextDecoder().decode(submission.delkel));
-  }
-  form.append("rpy", new TextDecoder().decode(rpy));
-
-  // Use the platform encoder once, preserving its generated multipart boundary.
-  const prepared = new Response(form);
-  prepared.headers.set("CESR-DESTINATION", mailboxAid);
-  const bytes = yield* call(() => prepared.arrayBuffer());
-  const response = yield* new NodeHttpClient().request(mailboxAdminUrl(url), {
-    method: "POST",
-    headers: prepared.headers,
-    body: bytes,
-  });
-
-  // Administrative JSON/diagnostics are finite metadata, not an unbounded stream.
-  const body = new TextDecoder().decode(response.body);
-  return { ok: response.ok, status: response.status, body };
 }
