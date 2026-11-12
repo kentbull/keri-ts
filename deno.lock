@@ -37,7 +37,8 @@
     "npm:lmdb@*": "3.5.3",
     "npm:lmdb@3.4.4": "3.4.4",
     "npm:lmdb@3.5.3": "3.5.3",
-    "npm:otpauth@9.4.1": "9.4.1"
+    "npm:otpauth@9.4.1": "9.4.1",
+    "npm:playwright-core@1.56.1": "1.56.1"
   },
   "jsr": {
     "@david/code-block-writer@13.0.3": {
@@ -557,6 +558,10 @@
       "dependencies": [
         "@noble/hashes"
       ]
+    },
+    "playwright-core@1.56.1": {
+      "integrity": "sha512-hutraynyn31F+Bifme+Ps9Vq59hKuUCz7H1kDOcBs+2oGguKkWTU50bBWrtz34OUWmIwpBTWDxaRPXrIXkgvmQ==",
+      "bin": true
     },
     "require-from-string@2.0.2": {
       "integrity": "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw=="

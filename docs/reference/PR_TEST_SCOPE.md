@@ -89,3 +89,15 @@ has moved is refused; use the current source run. See GitHub's
 [rerun behavior](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/re-run-workflows-and-jobs).
 The selection job records the exact head and resolved scope in its summary.
 A skipped lane is scoped validation, never a claim that its tests ran.
+
+## Real-browser lane (local only)
+
+`deno task test:browser` bundles `packages/keri/test/browser/` with
+`deno bundle --platform browser`, serves it from a local static server, and runs the
+shared `storeContract` and `wrapperContract` cases for `WebDBer` over real IndexedDB and
+for `MemStore`, plus an IndexedDB reopen-fidelity case, in Chromium through Playwright.
+It fails unless the browser executed exactly the case names `deno test` registers and
+every one passed. The bundle must contain no `node:` or LMDB import. It is not a
+`keri-ci` unit choice and no workflow runs it; Firefox, WebKit and CI follow separately.
+Install the browser once with `npx playwright-core@1.56.1 install chromium`; binaries
+stay in Playwright's user cache.
