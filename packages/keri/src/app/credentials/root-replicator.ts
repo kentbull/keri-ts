@@ -98,6 +98,13 @@ export interface RootReplicatorDeps {
   changes?: ChangeSink;
 }
 
+/**
+ * Owes, sends and settles registry root copies for a wallet's local groups.
+ *
+ * Holds no durable state of its own: owed copies and examined rotations live in the
+ * `RootLedger`, and the last failure per copy is process-local status. A host calls
+ * `replicate` for each Dhke cue and `processOnce` on its loop; both are safe to repeat.
+ */
 export class RootReplicator {
   readonly #deps: RootReplicatorDeps;
   readonly #failures = new Map<string, unknown>();
