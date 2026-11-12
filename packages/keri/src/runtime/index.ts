@@ -831,3 +831,24 @@ export {
   waitForDelegationApproval,
   type WaitForDelegationApprovalOptions,
 } from "../app/identity/delegation-approval.ts";
+
+// Library TEL completion status/waits and challenge respond/status/wait.
+export {
+  issuedCredentialStatus,
+  type TelCompletionDeps,
+  type TelEventStatus,
+  telEventStatus,
+  type TelPhase,
+  type TelWaitOptions,
+  type TelWaitResult,
+  waitForIssuedCredential,
+  waitForTelEvent,
+} from "../app/credentials/tel-completion.ts";
+export {
+  type ChallengeRespondDeps,
+  type ChallengeStatus,
+  challengeStatus,
+  respondToChallenge,
+  type WaitForChallengeOptions,
+  waitForChallengeResponse,
+} from "../app/identity/challenging.ts";

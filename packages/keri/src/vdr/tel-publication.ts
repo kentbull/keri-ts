@@ -129,6 +129,25 @@ export class TelPublication {
     return this.reger.ctel.get([pre, ordinal(sn).qb64]) !== null;
   }
 
+  /**
+   * Durable progress of one TEL event, read without side effects: waiting for the
+   * issuer's accepted anchor (`tmse.`), for the anchoring event's witness receipts
+   * (`tpwe.`), for local publication (`tede.`), complete (`ctel.`), or untracked.
+   */
+  progress(
+    pre: string,
+    sn = 0,
+  ): "awaitingAnchor" | "awaitingReceipts" | "awaitingPublication" | "complete" | null {
+    if (this.complete(pre, sn)) return "complete";
+    const coordinates = [pre, ordinal(sn).qb64];
+    if (this.reger.tede.get(coordinates).length > 0) return "awaitingPublication";
+    if (this.reger.tpwe.get(coordinates).length > 0) return "awaitingReceipts";
+    const waiting = [...this.reger.tmse.getTopItemIter()].some(([keys]) =>
+      keys[0] === pre && keys[1] === coordinates[1]
+    );
+    return waiting ? "awaitingAnchor" : null;
+  }
+
   /** Reverify by unique roster index; multiple signatures from one witness never fill another's slot. */
   private allReceipts(target: TelPublicationTarget): boolean {
     const current = this.target(this.keys(target), this.seal(target));

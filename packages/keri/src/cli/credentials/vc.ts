@@ -1,5 +1,5 @@
 import { concatBytes } from "cesr-ts";
-import { call, type Operation, spawn } from "npm:effection@^3.6.0";
+import type { Operation } from "npm:effection@^3.6.0";
 import { importCredentialStream } from "../../app/credentials/credential-importing.ts";
 import {
   type CredentialRevokeResult,
@@ -19,15 +19,16 @@ import {
   pinSchemaBytes,
   type RegistryResult,
 } from "../../app/credentials/credential-workflows.ts";
+import { waitForIssuedCredential, waitForTelEvent } from "../../app/credentials/tel-completion.ts";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { isLocalGroupHab, localGroupMember } from "../../app/multisig/group-members.ts";
-import { type AgentRuntime, runAgentRuntime } from "../../app/runtime/agent-runtime.ts";
+import type { AgentRuntime } from "../../app/runtime/agent-runtime.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { Reger } from "../../db/reger.ts";
 import type { Regery } from "../../vdr/credentialing.ts";
 import { withAgentRuntime, withExistingHabery } from "../common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringListOption, parseStringOption } from "../common/parsing.ts";
-import { waitForIssuedCredential, waitForTelPublication } from "../common/tel-completion.ts";
+import { withRuntimeWorkers } from "../common/runtime-workers.ts";
 
 interface VcBaseArgs {
   name?: string;
@@ -111,27 +112,22 @@ export function* vcRegistryInceptCommand(
     const hab = requireHab(hby, vcArgs.alias);
     const group = isLocalGroupHab(hby, hab);
     const signer = group ? localGroupMember(hby, hab.pre) : hab;
-    const result = yield* call(function*() {
-      const postman = runtime.postman;
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
-      try {
-        const deadline = Date.now() + timeout * 1000;
-        const created = yield* inceptCredentialRegistry(rgy, runtime.reactor, postman, hab, {
-          registryName: vcArgs.registryName!,
-          estOnly: vcArgs.estOnly,
-          usage: vcArgs.usage,
-        });
-        created.publicationComplete = yield* waitForTelPublication(rgy.publication, created.registry!, 0, deadline);
-        if (created.group) {
-          created.group.accepted = rgy.reger.tels.getOn(created.registry!, 0)?.qb64 === created.registry;
-          if (created.group.accepted) created.group.status = "accept";
-        }
-        return created;
-      } finally {
-        yield* worker.halt();
+    return yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
+      const deadline = Date.now() + timeout * 1000;
+      const created = yield* inceptCredentialRegistry(rgy, runtime.reactor, runtime.postman, hab, {
+        registryName: vcArgs.registryName!,
+        estOnly: vcArgs.estOnly,
+        usage: vcArgs.usage,
+      });
+      const waited = yield* waitForTelEvent(rgy, created.registry!, 0, { deadline });
+      created.publicationComplete = waited.outcome === "settled";
+      // TODO: the group branch moves to the group proposal API (app/multisig counseling); until then it stays here.
+      if (created.group) {
+        created.group.accepted = rgy.reger.tels.getOn(created.registry!, 0)?.qb64 === created.registry;
+        if (created.group.accepted) created.group.status = "accept";
       }
+      return created;
     });
-    return result;
   });
 }
 
@@ -188,31 +184,26 @@ export function* vcCreateCommand(args: Record<string, unknown>): Operation<Issue
     if (issuer.pre !== registry.hab.pre) throw new ValidationError("Selected alias does not control this registry.");
     const group = isLocalGroupHab(hby, issuer);
     const signer = group ? localGroupMember(hby, issuer.pre) : issuer;
-    const result = yield* call(function*() {
-      const postman = runtime.postman;
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
-      try {
-        const deadline = Date.now() + timeout * 1000;
-        const created = yield* createCredential(rgy, runtime.reactor, postman, {
-          registryName: vcArgs.registryName!,
-          schema: schema!,
-          recipient,
-          data,
-          edges,
-          rules,
-        });
-        yield* waitForIssuedCredential(rgy.publication, created.creder.said!, deadline);
-        const saved = rgy.reger.saved.get(created.creder.said!) !== null;
-        created.publicationComplete = rgy.publication.complete(created.creder.said!);
-        if (saved) created.status = "accept";
-        if (created.group) {
-          created.group.saved = saved;
-          if (rgy.reger.tels.getOn(created.creder.said!, 0)?.qb64 === created.tel) created.group.telStatus = "accept";
-        }
-        return created;
-      } finally {
-        yield* worker.halt();
+    const result = yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
+      const deadline = Date.now() + timeout * 1000;
+      const created = yield* createCredential(rgy, runtime.reactor, runtime.postman, {
+        registryName: vcArgs.registryName!,
+        schema: schema!,
+        recipient,
+        data,
+        edges,
+        rules,
+      });
+      yield* waitForIssuedCredential(rgy, created.creder.said!, { deadline });
+      const saved = rgy.reger.saved.get(created.creder.said!) !== null;
+      created.publicationComplete = rgy.publication.complete(created.creder.said!);
+      if (saved) created.status = "accept";
+      // TODO: the group branch moves to the group proposal API (app/multisig counseling); until then it stays here.
+      if (created.group) {
+        created.group.saved = saved;
+        if (rgy.reger.tels.getOn(created.creder.said!, 0)?.qb64 === created.tel) created.group.telStatus = "accept";
       }
+      return created;
     });
     if (vcArgs.out) {
       writeBytes(credentialStreamBytes(hby, reger, result.creder, result.recipient), vcArgs.out);
@@ -321,26 +312,21 @@ export function* vcRevokeCommand(args: Record<string, unknown>): Operation<Crede
     }
     const group = isLocalGroupHab(hby, registry.hab);
     const signer = group ? localGroupMember(hby, registry.hab.pre) : registry.hab;
-    const result = yield* call(function*() {
-      const postman = runtime.postman;
-      const worker = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
-      try {
-        const deadline = Date.now() + timeout * 1000;
-        const revoked = yield* revokeCredential(rgy, runtime.reactor, postman, {
-          registryName: vcArgs.registryName!,
-          credentialSaid: vcArgs.said!,
-        });
-        revoked.publicationComplete = yield* waitForTelPublication(rgy.publication, revoked.said, 1, deadline);
-        revoked.accepted = reger.tels.getOn(revoked.said, 1)?.qb64 === revoked.tel;
-        if (revoked.accepted) revoked.status = "accept";
-        const recipients = revocationRecipients(revoked.creder, vcArgs.send ?? [], !!vcArgs.alias);
-        if (recipients.length > 0) {
-          revoked.deliveries = yield* deliverCredentialRevocation(rgy, postman, revoked.said, recipients);
-        }
-        return revoked;
-      } finally {
-        yield* worker.halt();
+    const result = yield* withRuntimeWorkers(runtime, { hab: signer, pollMailbox: group }, function*() {
+      const deadline = Date.now() + timeout * 1000;
+      const revoked = yield* revokeCredential(rgy, runtime.reactor, runtime.postman, {
+        registryName: vcArgs.registryName!,
+        credentialSaid: vcArgs.said!,
+      });
+      const waited = yield* waitForTelEvent(rgy, revoked.said, 1, { deadline });
+      revoked.publicationComplete = waited.outcome === "settled";
+      revoked.accepted = reger.tels.getOn(revoked.said, 1)?.qb64 === revoked.tel;
+      if (revoked.accepted) revoked.status = "accept";
+      const recipients = revocationRecipients(revoked.creder, vcArgs.send ?? [], !!vcArgs.alias);
+      if (recipients.length > 0) {
+        revoked.deliveries = yield* deliverCredentialRevocation(rgy, runtime.postman, revoked.said, recipients);
       }
+      return revoked;
     });
     if (vcArgs.out && result.accepted && result.publicationComplete) {
       const recipient = vcArgs.recipient ? resolveAid(hby, vcArgs.recipient) : result.creder.issuee ?? "";
