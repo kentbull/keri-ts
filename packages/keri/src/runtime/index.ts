@@ -793,3 +793,27 @@ export {
   waitForIpexArrival,
   type WaitForIpexArrivalOptions,
 } from "../app/mailbox/ipex-arrival.ts";
+
+// Library legacy IPEX conversation (apply, offer, agree, spurn; status and wait).
+export {
+  type IpexAgreeOptions,
+  type IpexApplyOptions,
+  type IpexCredentialFact,
+  type IpexExchangeStatus,
+  ipexExchangeStatus,
+  type IpexMessageOptions,
+  type IpexOfferOptions,
+  type IpexSendDeps,
+  type IpexSent,
+  type IpexSpurnOptions,
+  type IpexStatusDeps,
+  type IpexWaitFor,
+  type IpexWaitOptions,
+  requireIpexPrior,
+  requireIpexSender,
+  sendIpexAgree,
+  sendIpexApply,
+  sendIpexOffer,
+  sendIpexSpurn,
+  waitForIpexExchange,
+} from "../app/ipex/ipex-conversation.ts";

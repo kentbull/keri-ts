@@ -3,6 +3,14 @@ import { action, type Operation, spawn } from "npm:effection@^3.6.0";
 import type { Hab, Habery } from "../../app/identity/habbing.ts";
 import { Organizer } from "../../app/identity/organizing.ts";
 import {
+  type IpexSendDeps,
+  requireIpexPrior,
+  sendIpexAgree,
+  sendIpexApply,
+  sendIpexOffer,
+  sendIpexSpurn,
+} from "../../app/ipex/ipex-conversation.ts";
+import {
   ipexCredentialAdmit,
   ipexCredentialGrant,
   processCredentialPresentationArtifacts,
@@ -47,7 +55,6 @@ import { fileBytes } from "../../app/transport/file-bytes.ts";
 import { parseGvrsn } from "../../core/attachment-countering.ts";
 import { ValidationError } from "../../core/errors.ts";
 import { exchange } from "../../core/exchange/protocol-exchanging.ts";
-import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { Reger } from "../../db/reger.ts";
 import { withAgentRuntime } from "../common/context.ts";
 import { parseBooleanOption, parseNumberOption, parseStringOption } from "../common/parsing.ts";
@@ -153,13 +160,23 @@ export function* ipexApplyCommand(args: Record<string, unknown>): Operation<Ipex
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    const prepared = exchange(IPEX_APPLY_ROUTE, {
-      m: ipexArgs.message ?? "",
-      s: schema,
-      a: attrs,
-      i: recipient,
-    }, { sender: hab.pre, recipient });
-    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
+    if (isLocalGroupHab(hby, hab)) {
+      // TODO(group proposal API): replace with the multisig proposal API from app/multisig/counseling.ts.
+      const prepared = exchange(IPEX_APPLY_ROUTE, {
+        m: ipexArgs.message ?? "",
+        s: schema,
+        a: attrs,
+        i: recipient,
+      }, { sender: hab.pre, recipient });
+      return yield* sendGroupConversation(hby, runtime, hab, recipient, prepared, timeout);
+    }
+    return yield* withRuntimeWorkers(runtime, { hab }, () =>
+      sendIpexApply(ipexSendDeps(hby, runtime), hab, {
+        recipient,
+        schema: schema!,
+        attrs,
+        message: ipexArgs.message,
+      }));
   });
 }
 
@@ -179,14 +196,24 @@ export function* ipexOfferCommand(args: Record<string, unknown>): Operation<Ipex
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    if (apply) requireConversationPrior(hby, hab, recipient, apply, "offer");
-    const prepared = exchange(IPEX_OFFER_ROUTE, { m: ipexArgs.message ?? "" }, {
-      sender: hab.pre,
-      recipient,
-      dig: apply,
-      embeds: { acdc: Deno.readFileSync(acdcFile!) },
-    });
-    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
+    // A bad prior is reported before an unreadable ACDC file.
+    if (apply) requireIpexPrior(hby, hab.pre, recipient, apply, "offer");
+    const acdc = Deno.readFileSync(acdcFile!);
+    if (isLocalGroupHab(hby, hab)) {
+      // TODO(group proposal API): replace with the multisig proposal API from app/multisig/counseling.ts.
+      const prepared = exchange(IPEX_OFFER_ROUTE, { m: ipexArgs.message ?? "" }, {
+        sender: hab.pre,
+        recipient,
+        dig: apply,
+        embeds: { acdc },
+      });
+      return yield* sendGroupConversation(hby, runtime, hab, recipient, prepared, timeout);
+    }
+    return yield* withRuntimeWorkers(
+      runtime,
+      { hab },
+      () => sendIpexOffer(ipexSendDeps(hby, runtime), hab, { recipient, acdc, apply, message: ipexArgs.message }),
+    );
   });
 }
 
@@ -206,15 +233,24 @@ export function* ipexSpurnCommand(args: Record<string, unknown>): Operation<Ipex
   return yield* withIpexRuntime(ipexArgs, function*({ hby, runtime }) {
     const hab = requireHab(hby, ipexArgs.alias);
     const dest = new Organizer(hby.db, hby.signator).resolveRecipient(requireString(ipexArgs.recipient, "Recipient"));
-    requireConversationPrior(hby, hab, dest, prior, "spurn");
-    const prepared = exchange(IPEX_SPURN_ROUTE, { m: ipexArgs.message ?? "" }, {
-      sender: hab.pre,
-      recipient: dest,
-      dig: prior,
-    });
-    return yield* sendConversation(hby, runtime, hab, dest, prepared, timeout);
+    if (isLocalGroupHab(hby, hab)) {
+      requireIpexPrior(hby, hab.pre, dest, prior, "spurn");
+      // TODO(group proposal API): replace with the multisig proposal API from app/multisig/counseling.ts.
+      const prepared = exchange(IPEX_SPURN_ROUTE, { m: ipexArgs.message ?? "" }, {
+        sender: hab.pre,
+        recipient: dest,
+        dig: prior,
+      });
+      return yield* sendGroupConversation(hby, runtime, hab, dest, prepared, timeout);
+    }
+    return yield* withRuntimeWorkers(
+      runtime,
+      { hab },
+      () => sendIpexSpurn(ipexSendDeps(hby, runtime), hab, { recipient: dest, prior, message: ipexArgs.message }),
+    );
   });
 }
+
 /**
  * Implement `tufa ipex grant` and optional grant artifact export/delivery.
  *
@@ -609,9 +645,17 @@ function* sendPriorResponse(
     const recipient = new Organizer(hby.db, hby.signator).resolveRecipient(
       requireString(ipexArgs.recipient, "Recipient"),
     );
-    requireConversationPrior(hby, hab, recipient, prior!, "agree");
-    const prepared = exchange(route, { m: ipexArgs.message ?? "" }, { sender: hab.pre, recipient, dig: prior });
-    return yield* sendConversation(hby, runtime, hab, recipient, prepared, timeout);
+    if (isLocalGroupHab(hby, hab)) {
+      requireIpexPrior(hby, hab.pre, recipient, prior!, "agree");
+      // TODO(group proposal API): replace with the multisig proposal API from app/multisig/counseling.ts.
+      const prepared = exchange(route, { m: ipexArgs.message ?? "" }, { sender: hab.pre, recipient, dig: prior });
+      return yield* sendGroupConversation(hby, runtime, hab, recipient, prepared, timeout);
+    }
+    return yield* withRuntimeWorkers(
+      runtime,
+      { hab },
+      () => sendIpexAgree(ipexSendDeps(hby, runtime), hab, { recipient, offer: prior!, message: ipexArgs.message }),
+    );
   });
 }
 
@@ -623,21 +667,21 @@ function requireConversationPrior(
   said: string,
   verb: "offer" | "agree" | "grant" | "admit" | "spurn",
 ): void {
-  const prior = hby.db.exns.get([said]);
-  if (!prior) throw new ValidationError("Prior IPEX exchange is not accepted.");
-  validateIpexReply(prior, verb, hab.pre, recipient);
-  if (hby.db.erpy.get([said])) {
-    throw new ValidationError("Prior IPEX exchange already has an accepted response; resume the existing exchange.");
-  }
+  requireIpexPrior(hby, hab.pre, recipient, said, verb);
+}
+
+/** Collaborators for the library send operations, adapted once from the command runtime. */
+function ipexSendDeps(hby: Habery, runtime: AgentRuntime): IpexSendDeps {
+  return { hby, reactor: runtime.reactor, protocol: runtime.protocol, postman: runtime.postman };
 }
 
 /**
- * Run one command host through local intake, member approval and concrete delivery.
- * Local conversation state survives transport failure. Group publication and business
- * acceptance are separate facts; only an accepted child's elected member sends it
- * externally. The caller's resource scope closes stores after this host joins.
+ * Run one group command host through local intake, member approval and concrete delivery.
+ * Group publication and business acceptance are separate facts; only an accepted
+ * child's elected member sends it externally. The caller's resource scope closes
+ * stores after this host joins. Single-signature sends use `sendIpex*`.
  */
-function* sendConversation(
+function* sendGroupConversation(
   hby: Habery,
   runtime: AgentRuntime,
   hab: Hab,
@@ -645,32 +689,13 @@ function* sendConversation(
   [exn, attachments]: readonly [SerderKERI, Uint8Array],
   timeout: number,
 ): Operation<IpexSendResult> {
-  const group = isLocalGroupHab(hby, hab);
   const genus = exn.gvrsn ?? exn.pvrsn;
-  const wire = group
-    ? groupIpexPartial(hby, hab, exn, attachments, genus)
-    : concatBytes(hab.endorse(exn, { pipelined: false, gvrsn: genus }), attachments);
-  const signer = group ? localGroupMember(hby, hab.pre) : hab;
-  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: group }));
+  const wire = groupIpexPartial(hby, hab, exn, attachments, genus);
+  const signer = localGroupMember(hby, hab.pre);
+  const host = yield* spawn(() => runAgentRuntime(runtime, { hab: signer, pollMailbox: true }));
   try {
     yield* runtime.reactor.processBytes(concatBytes(Counter.makeGVC(genus), wire), { local: true });
     yield* runtime.protocol.processEscrowsOnce();
-    if (!group) {
-      if (!runtime.exc.complete(exn.said!)) throw new ValidationError("Local IPEX exchange was not accepted.");
-      let deliveries: string[];
-      if (exn.route === IPEX_SPURN_ROUTE) {
-        deliveries = yield* sendCredentialStream(runtime.postman, hab, recipient, [wire]);
-      } else {
-        const evt = runtime.postman.send(
-          { src: hab.pre, dest: recipient, topic: CREDENTIAL_MAILBOX_TOPIC, msg: wire },
-          { notify: true },
-        );
-        const outcome = yield* runtime.postman.wait(evt);
-        if (outcome.kin === "failed") throw outcome.error;
-        deliveries = outcome.deliveries;
-      }
-      return { exn, deliveries };
-    }
     const publication = yield* publishInitialGroupIpex(hby, runtime.protocol, runtime.postman, hab, wire, genus);
     const complete = yield* waitForGroupIpexApproval(hby, runtime.protocol, exn.said!, timeout, null);
     const lead = complete ? runtime.exc.lead(hab, exn.said!) : null;

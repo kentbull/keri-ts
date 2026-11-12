@@ -213,6 +213,8 @@ Library workflow contract (OOBI, query, event completion; `app/runtime/workflow-
 
 IPEX poll-and-settle is library code (`app/mailbox/ipex-arrival.ts`: `settleStoredGrants`, `ipexArrivalStatus`, `waitForIpexArrival`). A wallet reads status and waits; `tufa ipex poll` supplies the workers, mailbox poller and `MailboxIntakeTally` itself.
 
+Legacy IPEX conversation is library code for single-signature controllers (`app/ipex/ipex-conversation.ts`: `sendIpexApply/Offer/Agree/Spurn`, `ipexExchangeStatus`, `waitForIpexExchange`). A send validates the prior (`requireIpexPrior`), signs one exn, accepts it locally and awaits the Poster outcome, so the host must run the Poster worker (`tufa` wraps the call in `withRuntimeWorkers`). Status is `unknown | awaiting-reply | replied` from `exns`, `erpy` and `reger.saved`; durable state records acceptance, not delivery. Re-answering a prior is refused ("already has an accepted response"); apply and an un-agreed grant are not idempotent and author a new exn each call. Group branches stay in the CLI until the group proposal API replaces them.
+
 WitnessInquisitor owns pending requests and one current attempt, never workflow observers.
 Concrete query operations own accepted-state waits; the composition routes live
 key-state facts once into an explicitly supplied command-owned Deck with one
