@@ -26,9 +26,11 @@ import { PACKAGE_VERSION } from "keri-ts";
 import { createAgentRuntime, FetchHttpClient, openHabery } from "keri-ts/runtime";
 import { openOwner, WebStoreOpener } from "keri-ts/db";
 import { indexedDbOpener } from "keri-ts/db/indexeddb";
+import { acquireStoreLock, barrierHttpClient, requestPersistentStorage } from "keri-ts/runtime/web";
 export const surface = {
   Diger, PACKAGE_VERSION, createAgentRuntime, openHabery, openOwner, WebStoreOpener,
   http: new FetchHttpClient(), opener: indexedDbOpener(),
+  acquireStoreLock, barrierHttpClient, requestPersistentStorage,
 };
 `;
 
