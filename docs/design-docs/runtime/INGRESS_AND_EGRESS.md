@@ -141,7 +141,8 @@ register one owner per identifier and kind on first use; `release(pre)` removes
 both. It has the same registry and KRAM requirements and may be combined with
 `ipexAuxiliary`, which is registered in it. Dispatch keys on sender plus transaction
 id (`q.x` or `a.x`), because the messages name no recipient: `AuxiliaryQueryProcessor.claims`
-admits a query, before KRAM, only when exactly one owner's `inTransaction` holds,
+admits a query, before KRAM, only when exactly one owner's `inTransaction` holds (an
+approved operation, a stored Grant, or a group's own contribution awaiting KRAM pooling),
 and replies select the owner at the shared Router resource. Anything else is an
 unowned message, handled as with no owner configured.
 

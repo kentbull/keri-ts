@@ -655,10 +655,11 @@ export class Unblind implements AuxiliaryQueryProcessor {
    * Whether this local habitat is the party of Unblind transaction `xid` with `sender`.
    *
    * Messages carry no recipient, so a per-identifier registry selects the owner by transaction:
-   * an approved operation here, or a stored Grant from this habitat addressed to `sender`.
+   * an approved operation here, a stored Grant from this habitat addressed to `sender`, or, for a
+   * group, its own members' contributions, which KRAM must pool before this owner consents.
    */
   inTransaction(sender: string, xid: string): boolean {
-    return this.operations.has(xid)
+    return this.operations.has(xid) || (this.group && sender === this.hab.pre)
       || [...this.hab.db.tmsc.getTopItemIter([this.hab.pre, xid])]
         .some(([key]) => {
           const grant = this.hab.db.exns.get([key[2]]) ?? this.hab.db.epse.get([key[2]]);

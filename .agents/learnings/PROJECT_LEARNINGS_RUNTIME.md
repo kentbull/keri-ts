@@ -33,8 +33,9 @@ single `ipexAuxiliary` selection is its first entry, and `ipexOwners: "per-ident
 identifier after the runtime, even its loop, exists. KRAM stays required because
 owners rely on its receiver-time message cache and accumulated sender signatures.
 `/ipex/*` messages carry no recipient: the key is sender plus transaction id
-(`q.x`/`a.x`), claimed by the one owner holding an approved operation or, for
-queries, a stored Grant between the two parties. No or ambiguous claim is the
+(`q.x`/`a.x`), claimed by the one owner holding an approved operation, a stored
+Grant between the two parties, or (group) its own members' contributions, which
+KRAM must pool before consent exists. No or ambiguous claim is the
 unowned path (query `missingProcessor` before KRAM; reply Router missing-route).
 Choose concrete dependencies at construction; no parent-runtime discovery in
 Respondant, WitnessInquisitor, Anchorer, receipt owners or lower TCP transport.

@@ -559,10 +559,11 @@ export class Dhke implements AuxiliaryQueryProcessor {
    * Whether this local habitat is the party of DH transaction `xid` with `sender`.
    *
    * Messages carry no recipient, so a per-identifier registry selects the owner by transaction:
-   * an approved operation here, or a stored Grant from `sender` addressed to this habitat.
+   * an approved operation here, a stored Grant from `sender` addressed to this habitat, or, for a
+   * group, its own members' contributions, which KRAM must pool before this owner consents.
    */
   inTransaction(sender: string, xid: string): boolean {
-    return this.operations.has(xid)
+    return this.operations.has(xid) || (this.group && sender === this.hab.pre)
       || [...this.hab.db.tmsc.getTopItemIter([sender, xid])]
         .some(([key]) => this.hab.db.epse.get([key[2]])?.sad?.ri === this.hab.pre);
   }
