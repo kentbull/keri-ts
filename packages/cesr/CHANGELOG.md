@@ -4,6 +4,23 @@
 
 ### Minor Changes
 
+- Release 2.1.0 for every published package. It adds the SEDI `I1I` and `DI1I` issuer-identity Edge operators with KERIpy's open Grant walk as the default, a pluggable store contract (ADR-0015) that lets `keri-ts/db` and `keri-ts/runtime` be bundled for a browser over `MemStore` or IndexedDB-backed `WebDBer`, automatic registry root replication to group members at issuance and after rotation, and KERIpy's handling of v2 ACDC sections without a top-level `d`.
+
+  This release contains breaking changes. Upgrade every `@keri-ts/*` package and `cesr-ts` together and follow the [upgrade guide](../../docs/reference/compatibility/MIGRATING_FROM_2_0.md).
+
+  **Breaking changes**
+
+  - The native LMDB surface moves from `keri-ts/db` to `keri-ts/db/lmdb`: `LMDBer`, `PathManager`, `openLMDB`, the `create*` store factories and, from `keri-ts/runtime`, `createHabery`. `openRegistry` requires an `opener` and loses `web`; `openLmdbRegistry` is the LMDB default.
+  - Host-only transport moves from `keri-ts/runtime` to `keri-ts/runtime/node`: `Configer` and `createConfiger`, `NodeHttpClient`, `TCPMessenger`, `TCPStreamMessenger`, the TCP send helpers, `socketBytes` and `fileBytes`. `FetchHttpClient` can no longer reach `tcp:` endpoints; use `NodeHttpClient`.
+  - The new `openHabery` needs a `StoreOpener` or borrowed stores, and one of `cf`, `createConfig` or `skipConfig`. `createHabery` keeps its arguments.
+  - `Baser`, `Keeper`, `Reger`, `Noter`, `Mailboxer`, `RegBaser`, `WalletBaser` and `VerifierCueBaser` compose over an injected `DBer`; their constructors take a store and their LMDB path statics become `Family`. `Suber`, `Komer` and `LMDBer` table methods take an opaque `Table`.
+  - `LMDBer` behavior: empty dupsort values and empty or over-long keys throw `DatabaseKeyError`, `addVal` no longer accepts `null`, duplicate reads of an empty key report absent, and failures raise `DatabaseKeyError`, `DatabaseNotOpenError` or `DatabaseOperationError` instead of a bare `Error`.
+  - Config files move from `keri/cf/{base}/{name}/{name}.json` to `keri/cf/{base}/{name}.json`, the default `Configer` base is `main`, and the `--compat` home fallback is `~/.keri/cf`. Absolute `--base` and names are refused, the store directory is set to owner-only mode on every open, and an unusable store directory falls back to the home directory.
+  - Delivery to a recipient, witness or mailbox whose latest accepted event is KERI v1 fails with `PeerVersionError` instead of sending v2.
+  - Grants walk open by default, as in KERIpy. `walkIpexGraph` takes a `"open" | "closed"` policy instead of a boolean and `AcdcGraph` carries it as `walk`; pass `grantWalk: "closed"` for the 2.0 refusal of every Grant that omits a far node.
+  - Edge chain evaluation follows KERIpy more strictly: unrecognized unary operators and `NOT` are non-retryable unknowns, every schema pin is checked, and a list, falsy or `n`/`w`-bearing Edge Section is malformed.
+  - A v2 ACDC attribute, edge or rule section without a top-level `d` is no longer given one. The bytes and SAID built for such a body change to KERIpy's; credentials authored by 2.0.x keep their inserted `d` and still verify.
+- c907d83: Breaking: a v2 ACDC attribute, edge or rule section without a top-level `d` is no longer given one, so the bytes and SAID keri-ts builds for such a body change to match KERIpy. ACDC v2 attribute, edge and rule sections without a top-level `d` now match KERIpy. Such a section is a valid form: `d` is reserved in these sections, not required, and `kli vc create --version 2.0 --data` emits it whenever the data carries no `d`. `SerderACDC` previously inserted `d` at the end of the map while authoring, producing different bytes and a different SAID from KERIpy, and rejected KERIpy's bytes with "Invalid disclosed <label> section commitment." It now never inserts the label. The section stays expanded in both the displayed and the hashed message, also under `compactify`, while nested maps that carry their own `d` are still saidified. Sections that carry `d`, the schema section and v1 bodies are unchanged. Bodies keri-ts authored earlier carry the inserted `d` and still verify; the same input now yields KERIpy's SAID instead.
 - e8e7c1f: Remove libsodium from the published packages. Argon2id `Salter` stretching now runs on `@keri-ts/hash-wasm`, a fork of `hash-wasm` with empty-password support and a synchronous API, and stays byte-identical to KERIpy on every tier. The crypto layer's browser payload falls from about 188 KB gzipped to about 31 KB.
 
 ### Patch Changes
