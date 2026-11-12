@@ -7,6 +7,7 @@
 import { b } from "cesr-ts";
 import { assertEquals, assertInstanceOf, assertRejects, assertThrows } from "jsr:@std/assert";
 import { run } from "npm:effection@^3.6.0";
+import { indexedDbOpener, StoreLockHeldError } from "../../db-indexeddb.ts";
 import { DatabaseOperationError } from "../../src/core/errors.ts";
 import { IndexedDbPersistence } from "../../src/db/core/indexeddb-persistence.ts";
 import { type Persistence, PersistenceQueue, WebDBer } from "../../src/db/core/webdber.ts";
@@ -92,15 +93,22 @@ async function durableValue(name: string, key: string): Promise<string | null> {
   }
 }
 
+/** A store from a fresh opener with the single-writer lock off, so one database can be opened twice. */
+async function openUnlocked(name: string): Promise<WebDBer> {
+  const store = indexedDbOpener({ unsafeSkipStoreLock: true }).create({ tail: "db" }, { name });
+  await run(() => store.reopen());
+  return store;
+}
+
 /**
- * Two openers on one database name in one page. Evidence for a future single-writer lock:
- * nothing excludes the second opener, mirrors diverge, and the last flushed write wins.
- * What is asserted holds in every engine; the rest is printed.
+ * Two openers on one database name in one page, through the `unsafeSkipStoreLock` opt-out: nothing
+ * excludes the second opener, mirrors diverge, and the last flushed write wins. That is the hazard
+ * the default lock guards. What is asserted holds in every engine; the rest is printed.
  */
 async function twoOpenersSameName(): Promise<void> {
   const name = unique("two-openers");
-  const first = await open(name);
-  const second = await open(name);
+  const first = await openUnlocked(name);
+  const second = await openUnlocked(name);
   try {
     const t1 = first.openTable("t.");
     const t2 = second.openTable("t.");
@@ -133,6 +141,23 @@ async function twoOpenersSameName(): Promise<void> {
     await run(() => second.close(true)).catch(() => undefined);
     await adapter(name).clear();
   }
+}
+
+/** With real Web Locks a bare opener refuses a second opener in the page until the first store closes. */
+async function bareOpenerIsSingleWriter(): Promise<void> {
+  const name = unique("opener-lock");
+  const first = indexedDbOpener().create({ tail: "db" }, { name });
+  await run(() => first.reopen());
+  try {
+    const second = indexedDbOpener().create({ tail: "db" }, { name });
+    await assertRejects(() => run(() => second.reopen()), StoreLockHeldError);
+    assertEquals(second.opened, false);
+  } finally {
+    await run(() => first.close(true));
+  }
+  const again = indexedDbOpener().create({ tail: "db" }, { name });
+  await run(() => again.reopen());
+  await run(() => again.close(true));
 }
 
 /** A few thousand rows through flush, close and reopen; the elapsed open time is the evidence. */
@@ -183,5 +208,6 @@ export function registerEngineCases(): void {
   Deno.test("engine: an aborted batch applies nothing to real IndexedDB", abortedWriteLeavesNothing);
   Deno.test("engine: a failed batch latches the store and leaves a durable prefix", failedBatchLatchesStore);
   Deno.test("engine: two openers on one database name diverge and the last flush wins", twoOpenersSameName);
+  Deno.test("engine: a bare indexedDbOpener refuses a second opener on the same identity", bareOpenerIsSingleWriter);
   Deno.test("engine: a few thousand rows round-trip through flush, close and reopen", largeStoreRoundTrip);
 }
