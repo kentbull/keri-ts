@@ -700,7 +700,7 @@ Deno.test("DHKE requires explicit consent and complete peer proofs before encryp
         "DH authenticates replies through its composed runtime owner",
       );
       assertEquals(dh.rvy === hab.rvy, false, "the ordinary runtime has its own Revery");
-      assertEquals(runtime.protocol.qvy === dh, true);
+      assertEquals(runtime.protocol.qvy === runtime.ipex && runtime.ipex.dhke(hab) === dh, true);
       assertEquals(dh.outgoing.length, 0, "construction implies no approval or delivery");
       parties.push({
         hby,

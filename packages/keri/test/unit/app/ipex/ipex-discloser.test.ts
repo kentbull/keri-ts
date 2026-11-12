@@ -1,5 +1,5 @@
 /** IpexDiscloser prepares exchange wires, proof support and fresh-issuance refusals with no wallet inventory. */
-import { parseBytes, type SerderACDC } from "cesr-ts";
+import { concatBytes, Counter, parseBytes, type SerderACDC } from "cesr-ts";
 import { type Operation, run } from "effection";
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert";
 import { acdcmap, regcept } from "../../../../src/acdc/messaging.ts";
@@ -8,7 +8,13 @@ import { Exchanger } from "../../../../src/app/exchanges/exchanging.ts";
 import type { Habery } from "../../../../src/app/identity/habbing.ts";
 import { createHabery } from "../../../../src/app/identity/lmdb-habery.ts";
 import { ipexExnBody } from "../../../../src/app/ipex/ipex-building.ts";
-import { anchorExchange, exchangeWire, IpexDiscloser } from "../../../../src/app/ipex/ipex-discloser.ts";
+import {
+  anchorExchange,
+  type CredentialViews,
+  exchangeWire,
+  type HeldCredential,
+  IpexDiscloser,
+} from "../../../../src/app/ipex/ipex-discloser.ts";
 import type { Receiptor } from "../../../../src/app/witness/receipting.ts";
 import { ValidationError } from "../../../../src/core/errors.ts";
 import { openLmdbRegistry } from "../../../../src/db/lmdb-stores.ts";
@@ -138,6 +144,84 @@ Deno.test("IpexDiscloser prepares Apply, keeps the whole view without paths and 
         "possessed disclosure UUID",
       );
       assertThrows(() => discloser.require(credential.said!, new Uint8Array()), Error);
+    } finally {
+      yield* baser.close(true);
+      yield* hby.close(true);
+    }
+  });
+});
+
+Deno.test("IpexDiscloser selects offered credentials through an in-memory CredentialViews port", async () => {
+  await run(function*() {
+    const hby = yield* createHabery({ name: crypto.randomUUID(), temp: true, skipConfig: true });
+    const baser = yield* openLmdbRegistry({ name: crypto.randomUUID(), temp: true });
+    try {
+      const hab = hby.makeHab("sender"), registry = new RegistryStore(baser), exc = new Exchanger(hby);
+      const credential = acdcmap(hab.pre, {
+        regid: regcept(hab.pre).said!,
+        attribute: { d: "", i: hab.pre, name: "Alice" },
+      });
+      const heldCalls: unknown[] = [];
+      const views: CredentialViews = {
+        issued(said) {
+          if (said !== credential.said) throw new ValidationError("Issued credential is required.");
+          return credential;
+        },
+        issuedRegistry: () => credential.regid ?? undefined,
+        held(grant, options) {
+          heldCalls.push([grant, options]);
+          return Promise.resolve(
+            {
+              credential,
+              proof: concatBytes(credential.raw, Counter.enclose({ qb64: new Uint8Array() })),
+              artifacts: [],
+            } as unknown as HeldCredential,
+          );
+        },
+      };
+      const options = { message: "", recipient: hab.pre, plan: [] };
+      const discloser = new IpexDiscloser(hby, registry, exc, receiptorFor(hby), undefined, views);
+
+      const offer = yield* discloser.prepareOffer(hab.pre, { said: credential.said! }, options);
+      assertEquals(offer.exn.route, "/ipex/offer");
+      assertEquals((offer.exn.sad!.a as { o: string[] }).o, [credential.said]);
+      assertEquals(parseBytes(offer.wire)[0].body.said, offer.exn.said);
+
+      const retained = yield* discloser.prepareOffer(
+        hab.pre,
+        { fromGrant: "Egrant", presenterAuthorized: true },
+        options,
+      );
+      assertEquals((retained.exn.sad!.a as { o: string[] }).o, [credential.said]);
+      assertEquals(heldCalls, [["Egrant", { presenterAuthorized: true }]]);
+
+      const refusals: [unknown, string][] = [
+        [{}, "exactly one issued credential"],
+        [{ said: credential.said, fromGrant: "Egrant" }, "exactly one issued credential"],
+        [{ said: credential.said, refresh: true }, "Refresh requires a retained view"],
+        [{ fromGrant: "Egrant", derive: true }, "explicit refresh"],
+        [{ transferred: new Uint8Array() }, "explicit presenter authorization"],
+        [{ said: "Emissing" }, "Issued credential is required."],
+      ];
+      for (const [selection, message] of refusals) {
+        let refusal: unknown;
+        try {
+          yield* discloser.prepareOffer(hab.pre, selection as never, options);
+        } catch (error) {
+          refusal = error;
+        }
+        assert(refusal instanceof ValidationError, message);
+        assert(refusal.message.includes(message), `${refusal.message} / ${message}`);
+      }
+
+      const bare = new IpexDiscloser(hby, registry, exc, receiptorFor(hby));
+      let missing: unknown;
+      try {
+        yield* bare.prepareOffer(hab.pre, { said: credential.said! }, options);
+      } catch (error) {
+        missing = error;
+      }
+      assert(missing instanceof ValidationError && missing.message.includes("credential views"));
     } finally {
       yield* baser.close(true);
       yield* hby.close(true);

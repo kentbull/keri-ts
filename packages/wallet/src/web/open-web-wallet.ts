@@ -77,10 +77,11 @@ export type OpenWebWalletOptions = WebWalletSecret & {
   name: string;
   base?: string;
   /**
-   * Passed to `createAgentRuntime` unchanged. Dhke and Unblind are mutually exclusive and both
-   * need `kram.enabled`. Default none.
+   * Passed to `createAgentRuntime`. The wallet enables `ipexOwners: "per-identifier"` and KRAM by
+   * default, because DH and Unblind owners need KRAM; obtain them per identifier after open with
+   * `runtime.ipex.dhke(hab)` and `runtime.ipex.unblind(hab, states)`. Disabling KRAM fails the open.
    */
-  runtime?: Pick<AgentRuntimeOptions, "kram" | "ipexAuxiliary">;
+  runtime?: Pick<AgentRuntimeOptions, "kram" | "ipexAuxiliary" | "ipexOwners">;
   host?: WebWalletHost;
 };
 
@@ -173,7 +174,11 @@ function* compose(
       try {
         yield* scoped(function*() {
           const http = barrierHttpClient(host.http ?? new FetchHttpClient(), () => opener.queue.flushed());
-          const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, options.runtime);
+          const runtime = yield* createAgentRuntime(hby, http, host.clock ?? systemClock, {
+            ipexOwners: "per-identifier",
+            ...options.runtime,
+            kram: options.runtime?.kram ?? { enabled: true },
+          });
           try {
             const worker = yield* spawn(() => runAgentRuntime(runtime, { pollMailbox: true }));
             try {
