@@ -6,7 +6,7 @@
  * and records that authorisation in memory. The host's runtime loop (or, in a one-shot CLI, a driver
  * under `withRuntimeWorkers`) then calls `processOnce`, which performs exactly the steps
  * `tufa ipex --issue` performed itself: send the proof support and Grant, deliver DH traffic, resend
- * the unchanged query each second, and once DH completes stage and anchor the registry update (BUP),
+ * a freshly dated query each second until DH completes, and once DH completes stage and anchor the registry update (BUP),
  * `finish` the Grant and send the final proof support. Nothing starts an operation or signs except
  * inside an operation the user began while its in-memory authorisation lives.
  *
@@ -73,7 +73,6 @@ import { type DerivedUpdateStore, RegistryCustody } from "../../acdc/custody.ts"
 import { Dhke, registryUncommitted, resumableExchange } from "../../acdc/dhking.ts";
 import type { Regery } from "../../acdc/registraring.ts";
 import { ValidationError } from "../../core/errors.ts";
-import { singleKeyQueryWindow } from "../../core/mailbox/kram-policy.ts";
 import { CREDENTIAL_MAILBOX_TOPIC } from "../../core/mailbox/mailbox-topics.ts";
 import { timestampMicros } from "../../time/mod.ts";
 import type { Poster } from "../delivery/forwarding.ts";
@@ -88,7 +87,12 @@ import type { Receiptor, WitnessAuthMap } from "../witness/receipting.ts";
 import { IpexAdmitter } from "./ipex-admitting.ts";
 import { exchangeWire, IpexDiscloser, type IssuanceGrantOptions, storedExchangeWire } from "./ipex-discloser.ts";
 
-/** Milliseconds between resends of the unchanged issuer query, as `tufa ipex --issue` and KERIpy do. */
+/**
+ * Milliseconds between resends of the issuer query. Each resend is a new query (new date, SAID and signatures):
+ * the peer's KRAM caches every query it accepts, so an identical resend is a replay it drops, which would
+ * strand a peer that took the first query and then lost it before consenting (a process that ended, or a
+ * retained query that outlived its window).
+ */
 export const ISSUANCE_QUERY_RESEND_MS = 1000;
 
 /** Which side of the exchange the local identifier is. */
@@ -195,10 +199,8 @@ interface LiveIssuance {
     /** Grant body and nested disclosure, the input of proof support. */
     readonly raw: Uint8Array;
     readonly grantWire: Uint8Array;
-    /** The DH query to resend; null once DH is complete (a completed issuer after a restart). */
+    /** The latest signed DH query; null once DH is complete (a completed issuer after a restart). */
     query: Uint8Array | null;
-    /** When {@link query} was signed (host clock, ms); it is re-dated once older than the single-key window. */
-    queryAt: number;
     /** Transient witness codes for the anchor. */
     readonly auths?: WitnessAuthMap;
     sent: boolean;
@@ -369,7 +371,7 @@ export class IssuanceOperations {
       peer: wires ? retained.serder.sad!.ri as string : retained.serder.pre!,
       registry: credential.regid!,
       expires,
-      issuer: wires ? { credential, ...wires, query: null, queryAt: 0, sent: true, nextQuery: 0 } : undefined,
+      issuer: wires ? { credential, ...wires, query: null, sent: true, nextQuery: 0 } : undefined,
       phase: "rootRetained",
       busy: false,
     });
@@ -406,7 +408,7 @@ export class IssuanceOperations {
     }
     if (!op.dh.complete(op.xid)) {
       if (issuer?.query && this.deps.clock.now() >= issuer.nextQuery) {
-        yield* this.send(op, op.peer, this.current(op, issuer));
+        yield* this.send(op, op.peer, this.renewed(op, issuer));
         issuer.nextQuery = this.deps.clock.now() + ISSUANCE_QUERY_RESEND_MS;
       }
     } else if (issuer) yield* this.finish(op, issuer);
@@ -415,19 +417,21 @@ export class IssuanceOperations {
   }
 
   /**
-   * The query to send now: the signed bytes unchanged while they are timely, so a resend stays a replay the
-   * peer's KRAM ignores, and a re-dated one (`Dhke.requery`: same keys and scope, new `dt`, SAID and
-   * signatures) once they are older than the single-key window, which KRAM would drop as stale. Re-signing
-   * happens only here, inside the live authorisation that began the operation. A group threshold query cannot
-   * be re-dated by one member; group issuance is not run here.
+   * The query to resend now, signed afresh (`Dhke.requery`: same keys and scope, new `dt`, SAID and signatures).
+   * An unchanged resend is a KRAM replay once the peer has accepted the original, so it can never reach a peer
+   * that lost it; a new query is timely whatever window the peer runs. Re-signing happens only here, inside the
+   * live authorisation that began the operation; with the Keeper locked the last query goes again unchanged. A
+   * group threshold query cannot be re-dated by one member; group issuance is not run here.
    */
-  private current(op: LiveIssuance, issuer: NonNullable<LiveIssuance["issuer"]>): Uint8Array {
-    const now = this.deps.clock.now(), window = singleKeyQueryWindow(this.deps.hby.db, Dhke.Route);
-    if (window !== null && now - issuer.queryAt >= window) {
-      issuer.query = op.dh.requery(op.xid);
-      issuer.queryAt = now;
+  private renewed(op: LiveIssuance, issuer: NonNullable<LiveIssuance["issuer"]>): Uint8Array {
+    try {
+      op.hab.mgr.requireRegistryRootAccess();
+    } catch (error) {
+      if (error instanceof ValidationError) return issuer.query!;
+      throw error;
     }
-    return issuer.query!;
+    issuer.query = op.dh.requery(op.xid);
+    return issuer.query;
   }
 
   /**
@@ -618,7 +622,7 @@ export function* beginIssuance(ops: IssuanceOperations, input: BeginIssuanceInpu
     peer: retained.serder.sad!.ri as string,
     registry: credential.regid!,
     expires,
-    issuer: { credential, raw, grantWire, query, queryAt: deps.clock.now(), auths, sent: false, nextQuery: 0 },
+    issuer: { credential, raw, grantWire, query, auths, sent: false, nextQuery: 0 },
     phase: "exchangingKeys",
     busy: false,
   });
