@@ -272,8 +272,8 @@ Deno.test("abandon is local and final", async () => {
 
 Deno.test("an aged Unblind query is re-dated and accepted instead of resent as a stale replay", async () => {
   await run(function*() {
-    // A 300 ms single-key window lets the query age in real time.
-    const f = yield* fixture({ enabled: true, caches: { "~": [100, 300, 60000, 300000, 300, 60000, 300000] } });
+    // A 2 s single-key window lets the query age in real time while the fixture still builds in time.
+    const f = yield* fixture({ enabled: true, caches: { "~": [100, 2000, 60000, 300000, 2000, 60000, 300000] } });
     let lose = true;
     const queries: Uint8Array[] = [];
     const requester = new UnblindingOperations({
@@ -294,7 +294,7 @@ Deno.test("an aged Unblind query is re-dated and accepted instead of resent as a
     const responder = f.mk(f.presenter), g = f.grant.said!;
     requestUnblind(requester, { hab: f.verifier, grant: g, states: STATES });
     yield* requester.processOnce();
-    yield* sleep(1100); // past the resend interval and the window
+    yield* sleep(2200); // past the resend interval and the window
     lose = false;
     yield* requester.processOnce();
     assertEquals(queries.length, 2);
