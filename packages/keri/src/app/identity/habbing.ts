@@ -1585,8 +1585,10 @@ export class Habery {
   /**
    * Populate the in-memory habitat cache from durable `habs.` + `states.` data.
    *
-   * Bare metadata records without corresponding accepted key state are skipped
-   * so `Habery.habs` only contains reopenable local habitats.
+   * Like KERIpy `loadHabs`, a local group record is held even while its
+   * inception is unaccepted: the `Hab` reads accepted state on demand, so it
+   * becomes usable the moment the event is accepted. A non-group record without
+   * accepted state is an orphan; `Baser.reloadKevers` already dropped it.
    */
   private loadHabs(): void {
     this.reconfigure();
@@ -1633,6 +1635,7 @@ export class Habery {
    * Commit the members of a local group's latest accepted establishment event
    * when the stored record is stale (KERIpy `GroupHab.recoverAcceptedMembers`).
    *
+          this.habs.set(hab.pre, hab);
    * A process that stopped after a rotation was accepted but before its live
    * `commitAcceptedGroupMembers` leaves `smids`/`rmids` stale. Members are
    * derived from local KELs, trying the stored members first and every AID
